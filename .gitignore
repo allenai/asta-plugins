@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.env
+.pytest_cache/
+.ruff_cache/
+.claude/settings.local.json
+CLAUDE.local.md

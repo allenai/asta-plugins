@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "asta": {
+      "type": "http",
+      "url": "https://asta-tools.apps.allenai.org/mcp/v1",
+      "headers": {
+        "x-api-key": "${ASTA_TOOL_KEY:-}"
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "asta-plugins",
+  "owner": {
+    "name": "AI2 Asta Team"
+  },
+  "metadata": {
+    "description": "Asta science tools for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "asta",
+      "source": "./",
+      "description": "Paper search, citations, literature reports, and Semantic Scholar API tools",
+      "version": "0.1.0",
+      "author": {
+        "name": "AI2 Asta Team"
+      },
+      "repository": "https://github.com/allenai/asta-plugins",
+      "license": "Apache-2.0",
+      "keywords": ["academic", "papers", "citations", "semantic-scholar", "literature"]
+    }
+  ]
+}

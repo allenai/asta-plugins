@@ -1,0 +1,6 @@
+[tools]
+uv = "latest"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+_.file = ".env"
