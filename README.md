@@ -19,15 +19,19 @@ Plugins by the [Asta](REDACTED_ASTA_PROD_URL) team for Claude Code.
 
 ## Installation
 
-In Claude Code, run:
-
+To install from the remote marketplace, open Claude Code and run:
 ```
 /plugin marketplace add allenai/asta-plugins
 /plugin install asta@asta-plugins
 ```
 
-Or load from a local directory for development:
+To install from a local marketplace (e.g., after git cloning `allenai/asta-plugins`), open Claude Code and run:
+```
+/plugin marketplace add /path/to/asta-plugins
+/plugin install asta@asta-plugins
+```
 
+To run a single Claude Code session from a local marketplace, start Claude Code with:
 ```bash
 claude --plugin-dir /path/to/asta-plugins
 ```
