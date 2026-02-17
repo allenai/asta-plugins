@@ -1,131 +1,45 @@
-# Asta Plugins
+# Asta
 
-Plugins by the [Asta](REDACTED_ASTA_PROD_URL) team for Claude Code.
+Asta is a CLI for scientific literature research, usable by local coding agents.
 
-## What's Included
+## Skill Installation
 
-### MCP Servers
+```commandline
+# Using skills.sh
+npx skills add add allenai/asta-plugins/skills
 
-| Server | Description |
-|--------|-------------|
-| **asta** | Semantic Scholar API tools (get_paper, search_papers, citations, etc.) |
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/generate-report` | Generate literature reports from academic search |
-| `/find-papers` | AI-powered natural language paper search |
-
-## Installation
-
-To install from the remote marketplace, open Claude Code and run:
-```
-/plugin marketplace add allenai/asta-plugins
-/plugin install asta@asta-plugins
+# In Claude Code
+> /plugin marketplace add allenai/asta-plugins
+> /plugin install asta-plugins
 ```
 
-To install from a local marketplace (e.g., after git cloning `allenai/asta-plugins`), open Claude Code and run:
-```
-/plugin marketplace add /path/to/asta-plugins
-/plugin install asta@asta-plugins
-```
+### Available Skills
 
-To run a single Claude Code session from a local marketplace, start Claude Code with:
+- **Find Literature** - General paper searching and citation finding
+- **Literature Report Generation** - Comprehensive report writing with synthesis
+- **Semantic Scholar Lookup** - Quick paper/author lookups and metadata queries
+
+Example user requests that would trigger these skills:
+- "Find papers on RLHF"
+- "Generate a literature review on transformers"
+- "Get details for arXiv:2005.14165"
+- "What papers cite the GPT-3 paper?"
+
+
+## CLI Installation
+
+Install the `asta` CLI tool:
+
 ```bash
-claude --plugin-dir /path/to/asta-plugins
+uv tool install git+https://github.com/allenai/asta-plugins.git
 ```
 
-## Requirements
-
-- Claude Code
-- Python 3.10+
-
-## Setup
-
-### API Key
-
-The `asta` MCP server may require an API key:
-
-1. Request a key at [allenai.org/asta/resources/mcp](https://allenai.org/asta/resources/mcp)
-2. Set the environment variable:
-   ```bash
-   export ASTA_TOOL_KEY="your-api-key"
-   ```
-
-## Usage
-
-### Generate Literature Report
-
-```
-/asta:generate-report recent advances in RLHF for language models
-```
-
-Creates a comprehensive literature report saved to `~/.asta/reports/`.
-
-### Find Papers (AI-powered)
-
-```
-/asta:find-papers recent papers on RLHF and language models
-```
-
-Results are saved to `~/.asta/widgets/` for later reference.
-
-### Semantic Scholar API
-
-```
-Get details for arXiv:2005.14165
-```
-
-```
-What papers cite the GPT-3 paper?
-```
-
-## Available Tools
-
-### From `asta` server (Semantic Scholar)
-
-- `get_paper` - Get paper details by ID (DOI, arXiv, CorpusId, etc.)
-- `get_paper_batch` - Get multiple papers at once
-- `get_citations` - Get papers citing a given paper
-- `search_papers_by_relevance` - Keyword search for papers
-- `search_paper_by_title` - Search by title
-- `snippet_search` - Find text snippets inside papers
-- `search_authors_by_name` - Search for authors
-- `get_author_papers` - Get papers by an author
-
-### Paper Finder CLI
-
-The `/find-papers` and `/generate-report` commands use a CLI script for AI-powered paper search. Results are saved to `~/.asta/widgets/` as JSON for exploration with `jq`.
+See `asta --help` for usage instructions.
 
 ## Development
 
-### Running Tests
+See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.
 
-```bash
-uv run --extra test pytest -v
-```
+## License
 
-### Linting and Formatting
-
-```bash
-uvx ruff check .         # lint
-uvx ruff format --check . # check formatting
-uvx ruff format .         # fix formatting
-```
-
-CI runs these checks on Python 3.10-3.12, plus shellcheck on shell scripts.
-
-### Manual Testing
-
-To test the plugin locally without installing:
-
-```bash
-claude --plugin-dir . --debug
-```
-
-This loads the plugin from the current directory and writes debug logs to `~/.claude/debug/`. After running a command like `/generate-report`, you can provide the log file to Claude for analysis:
-
-```
-look at the debug log: ~/.claude/debug/<session-id>.txt
-```
+Apache 2.0
