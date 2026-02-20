@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
 Asta Paper Finder API Client
-
-Complete search results are saved to ~/.asta/widgets/ for later analysis.
 """
 
 import json
@@ -12,20 +10,6 @@ import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any
-
-# Widget storage directory
-WIDGET_STORAGE_DIR = Path.home() / ".asta" / "widgets"
-
-# Ensure storage directory exists
-WIDGET_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def save_search_to_file(search_id: str, data: dict[str, Any]) -> Path:
-    """Save search data to a file and return the file path"""
-    file_path = WIDGET_STORAGE_DIR / f"{search_id}.json"
-    with open(file_path, "w") as f:
-        json.dump(data, f, indent=2)
-    return file_path
 
 
 class AstaPaperFinder:
@@ -134,8 +118,19 @@ class AstaPaperFinder:
         self.send_message(query, thread_id)
         return thread_id
 
-    def find_papers(self, query: str, timeout: int = 300) -> dict[str, Any]:
-        """Complete workflow to find papers (blocking). Saves results to file."""
+    def find_papers(
+        self, query: str, timeout: int = 300, save_to_file: Path | None = None
+    ) -> dict[str, Any]:
+        """Complete workflow to find papers (blocking).
+
+        Args:
+            query: Search query
+            timeout: Maximum time to wait for results
+            save_to_file: Optional path to save results. If None, no file is saved.
+
+        Returns:
+            Complete search results including widget data
+        """
         thread_id = self.start_search(query)
 
         # Get widget ID
@@ -148,7 +143,7 @@ class AstaPaperFinder:
 
         papers = widget_result.get("results", [])
 
-        # Save to file
+        # Build complete search data
         search_data = {
             "query": query,
             "thread_id": thread_id,
@@ -156,11 +151,13 @@ class AstaPaperFinder:
             "status": "completed",
             "widget": widget_result,
             "timestamp": time.time(),
-        }
-        file_path = save_search_to_file(widget_id, search_data)
-
-        return {
-            "widget_id": widget_id,
-            "file_path": str(file_path),
             "paper_count": len(papers),
         }
+
+        # Save to file if path provided
+        if save_to_file:
+            with open(save_to_file, "w") as f:
+                json.dump(search_data, f, indent=2)
+            search_data["file_path"] = str(save_to_file)
+
+        return search_data

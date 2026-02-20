@@ -1,12 +1,11 @@
-"""Tests for the paper-finder API client."""
+"""Tests for the Asta core API client."""
 
 import json
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from asta_paper_finder import AstaPaperFinder
+
+from asta.core import AstaPaperFinder
 
 
 def mock_response(data):
@@ -19,7 +18,7 @@ def mock_response(data):
 @pytest.fixture
 def mock_urlopen():
     """Fixture providing mocked urlopen for AstaPaperFinder tests."""
-    with patch("asta_paper_finder.urllib.request.urlopen") as mock:
+    with patch("asta.core.client.urllib.request.urlopen") as mock:
         yield mock
 
 
@@ -67,7 +66,7 @@ class TestAstaPaperFinder:
         ]
 
         finder = AstaPaperFinder()
-        with patch("asta_paper_finder.time.sleep"):
+        with patch("asta.core.client.time.sleep"):
             widget_id = finder.get_widget_id("thread-123", max_retries=3)
 
         assert widget_id == "widget-456"
@@ -78,7 +77,7 @@ class TestAstaPaperFinder:
         mock_urlopen.return_value = mock_response({"last_event": {}})
 
         finder = AstaPaperFinder()
-        with patch("asta_paper_finder.time.sleep"):
+        with patch("asta.core.client.time.sleep"):
             widget_id = finder.get_widget_id("thread-123", max_retries=2)
 
         assert widget_id is None
@@ -121,7 +120,7 @@ class TestAstaPaperFinder:
             finder.poll_for_results("widget-123", timeout=10)
 
     def test_find_papers_full_flow(self, mock_urlopen, tmp_path):
-        """Test complete find_papers workflow."""
+        """Test complete find_papers workflow without file saving."""
         mock_urlopen.side_effect = [
             # create_thread
             mock_response({"thread": {"key": "thread-123"}}),
@@ -146,43 +145,54 @@ class TestAstaPaperFinder:
             ),
         ]
 
-        with patch("asta_paper_finder.WIDGET_STORAGE_DIR", tmp_path):
-            finder = AstaPaperFinder()
-            result = finder.find_papers("test query", timeout=10)
+        finder = AstaPaperFinder()
+        result = finder.find_papers("test query", timeout=10)
 
         assert result["widget_id"] == "widget-456"
         assert result["paper_count"] == 1
-        assert result["file_path"] == str(tmp_path / "widget-456.json")
+        assert "file_path" not in result
 
-        saved_file = tmp_path / "widget-456.json"
-        assert saved_file.exists()
+    def test_find_papers_with_file_output(self, mock_urlopen, tmp_path):
+        """Test find_papers with file output."""
+        mock_urlopen.side_effect = [
+            # create_thread
+            mock_response({"thread": {"key": "thread-123"}}),
+            # send_message
+            mock_response({}),
+            # get_widget_id
+            mock_response({"last_event": {"data": {"id": "widget-456"}}}),
+            # poll_for_results
+            mock_response(
+                {
+                    "roundStatus": {"kind": "completed"},
+                    "results": [
+                        {
+                            "corpusId": 12345,
+                            "title": "Test Paper",
+                            "authors": [{"name": "Alice"}],
+                            "venue": "NeurIPS",
+                            "year": 2024,
+                        }
+                    ],
+                }
+            ),
+        ]
 
+        finder = AstaPaperFinder()
+        output_file = tmp_path / "results.json"
+        result = finder.find_papers("test query", timeout=10, save_to_file=output_file)
 
-class TestCLI:
-    """Tests for the find_papers.py CLI."""
+        assert result["widget_id"] == "widget-456"
+        assert result["paper_count"] == 1
+        assert result["file_path"] == str(output_file)
 
-    def test_cli_help(self):
-        """CLI --help should work."""
-        result = subprocess.run(
-            ["python3", "servers/paper-finder/find_papers.py", "--help"],
-            capture_output=True,
-            text=True,
-            cwd=Path(__file__).parent.parent,
-        )
+        assert output_file.exists()
+        import json
 
-        assert result.returncode == 0
-        assert "query" in result.stdout
-
-    def test_cli_missing_query_fails(self):
-        """CLI should fail without a query argument."""
-        result = subprocess.run(
-            ["python3", "servers/paper-finder/find_papers.py"],
-            capture_output=True,
-            text=True,
-            cwd=Path(__file__).parent.parent,
-        )
-
-        assert result.returncode != 0
+        with open(output_file) as f:
+            data = json.load(f)
+        assert data["widget_id"] == "widget-456"
+        assert data["paper_count"] == 1
 
 
 if __name__ == "__main__":

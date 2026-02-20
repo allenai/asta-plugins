@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mkdir -p ~/.asta/reports ~/.asta/widgets"
+            "command": "mkdir -p ~/.asta/literature"
           }
         ]
       }
