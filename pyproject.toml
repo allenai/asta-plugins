@@ -1,21 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "asta-plugins"
-version = "0.1.0"
-description = "Asta science tools for Claude Code"
+name = "asta"
+version = "0.2.0"
+description = "Asta CLI for scientific literature review"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
+dependencies = [
+    "click>=8.0",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+asta = "asta.cli:cli"
 
 [project.optional-dependencies]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "requests>=2.31",
-    "asta-paper-finder",
 ]
 
 [tool.uv.sources]
-asta-paper-finder = { path = "servers/paper-finder", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asta"]
 
 [tool.ruff]
 target-version = "py310"
@@ -25,6 +37,6 @@ select = ["E", "F", "I", "UP"]
 ignore = ["E501"]  # line length handled by formatter
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "servers/paper-finder"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
