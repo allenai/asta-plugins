@@ -10,6 +10,24 @@ if [[ "$COMMAND" == asta\ * ]]; then
   exit 0
 fi
 
+# Auto-approve curl to theorizer endpoint
+if [[ "$COMMAND" == curl*"ai2-reviz--theorizer"* ]]; then
+  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+  exit 0
+fi
+
+# Auto-approve python3 scripts for artifact export on ~/.asta/ paths
+if [[ "$COMMAND" == python3* ]] && [[ "$COMMAND" == *"/.asta/"* ]]; then
+  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+  exit 0
+fi
+
+# Auto-approve pip install for asta-sdk
+if [[ "$COMMAND" == "pip install"*"asta-sdk"* ]]; then
+  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+  exit 0
+fi
+
 # Check if command references ~/.asta/ or $HOME/.asta/ paths
 if [[ "$COMMAND" == *"/.asta/"* ]] || [[ "$COMMAND" == *'~/.asta/'* ]]; then
   # Additional safety: only approve read-only commands like jq, cat, ls
