@@ -17,7 +17,7 @@ help:
 	@echo "  build            Build distribution packages"
 	@echo "  publish          Publish to PyPI"
 	@echo "  publish-test     Publish to TestPyPI"
-	@echo "  release          Create GitHub release (requires VERSION)"
+	@echo "  release          Create GitHub release using current version"
 	@echo "  version          Show current version"
 
 # Install with test dependencies
@@ -82,17 +82,18 @@ publish-test: build
 	uv pip install twine
 	uv run twine upload --repository testpypi dist/*
 
-# Create GitHub release (requires VERSION=x.y.z)
+# Create GitHub release using version from code
 release:
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Error: VERSION is required. Usage: make release VERSION=0.3.0"; \
+	@VERSION=$$(uv run python -c "from src.asta import __version__; print(__version__)"); \
+	echo "Creating release v$$VERSION..."; \
+	if git rev-parse v$$VERSION >/dev/null 2>&1; then \
+		echo "Error: Tag v$$VERSION already exists"; \
 		exit 1; \
-	fi
-	@echo "Creating release v$(VERSION)..."
-	git tag v$(VERSION)
-	git push origin v$(VERSION)
-	@echo "Release v$(VERSION) created. Create GitHub release at:"
-	@echo "https://github.com/allenai/asta-plugins/releases/new?tag=v$(VERSION)"
+	fi; \
+	git tag v$$VERSION && \
+	git push origin v$$VERSION && \
+	echo "Release v$$VERSION created. Create GitHub release at:" && \
+	echo "https://github.com/allenai/asta-plugins/releases/new?tag=v$$VERSION"
 
 # Show current version
 version:

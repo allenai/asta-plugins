@@ -382,11 +382,13 @@ make publish-test  # Build and publish to TestPyPI
 2. Push tag: `git push origin v0.3.0`
 3. Create GitHub release with changelog
 
-Or use Make to tag and push:
+Or use Make to tag and push (automatically uses version from code):
 ```bash
-make release VERSION=0.3.0
+make release  # Uses version from src/asta/__init__.py
 # Then create GitHub release at the URL provided
 ```
+
+The release target will fail if the git tag already exists, preventing accidental overwrites.
 
 ## Testing Strategy
 
