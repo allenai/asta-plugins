@@ -22,8 +22,11 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        run: make install
+
       - name: Run tests
-        run: uv run --extra test pytest -v
+        run: make test
 
   lint:
     runs-on: ubuntu-latest
@@ -33,11 +36,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Lint Python with ruff
-        run: uvx ruff check .
-
-      - name: Check Python formatting with ruff
-        run: uvx ruff format --check .
+      - name: Check formatting and lint
+        run: make format-check
 
       - name: Lint shell scripts with shellcheck
         uses: ludeeus/action-shellcheck@master

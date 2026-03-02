@@ -57,56 +57,36 @@ hooks/                         # Claude Code permission hooks
 ### Prerequisites
 
 - Python 3.10+
-- `uv` (recommended) or `pip`
-- `make` (optional, for convenience commands)
+- `uv` (for running commands)
+- `make` (for development tasks)
 
-### Quick Start with Make
+### Quick Start
 
-A Makefile is provided for common development tasks:
+A Makefile is provided for all common development tasks:
 
 ```bash
-make help  # Show all available targets
+make help     # Show all available targets
 make install  # Install with test dependencies
-make test  # Run all tests
-make lint  # Check code style
-make format  # Auto-fix formatting
-make check  # Quick pre-commit check (format + lint + unit tests)
-make ci  # Full CI check (format + lint + all tests)
-make build  # Build distribution packages
-make clean  # Remove build artifacts
+make test     # Run all tests
+make lint     # Check code style
+make format   # Auto-fix formatting
+make check    # Quick pre-commit check (format + lint + unit tests)
+make ci       # Full CI check (format + lint + all tests)
+make build    # Build distribution packages
+make clean    # Remove build artifacts
 ```
-
-All Makefile targets are convenience wrappers around `uv` commands. You can use either approach.
 
 ### Install for Development
 
 ```bash
 git clone https://github.com/allenai/asta-plugins.git
 cd asta-plugins
-
-# Install with test dependencies
-uv sync --extra test
-
-# Or with pip
-pip install -e ".[test]"
-
-# Or use Make
 make install
 ```
 
 ### Run Tests
 
 ```bash
-# Run all tests
-uv run --extra test pytest -v
-
-# Run specific test file
-uv run --extra test pytest tests/test_cli.py -v
-
-# Run with coverage
-uv run --extra test pytest --cov=src/asta --cov-report=html
-
-# Or use Make
 make test              # Run all tests
 make test-unit         # Run unit tests only
 make test-integration  # Run integration tests only
@@ -116,6 +96,9 @@ make test-coverage     # Run with HTML coverage report
 ### Test the CLI
 
 ```bash
+# Install the package in development mode
+make install
+
 # Run directly from source
 uv run python -m asta.cli --version
 uv run python -m asta.cli literature find "test query" --timeout 60
@@ -123,31 +106,15 @@ uv run python -m asta.cli literature find "test query" --timeout 60
 # Test documents pass-through (will auto-install asta-documents on first use)
 uv run python -m asta.cli documents --help
 uv run python -m asta.cli documents list
-
-# Or install as tool and test
-uv tool install .
-asta --version
-asta literature find "test query"
-asta documents list
 ```
 
 ### Linting and Formatting
 
 ```bash
-# Check code style
-uvx ruff check .
-
-# Fix formatting
-uvx ruff format .
-
-# Check formatting without changes
-uvx ruff format --check .
-
-# Or use Make
 make lint          # Check code style
 make format        # Auto-fix formatting
 make format-check  # Check formatting without changes
-make check         # Quick check before commit (format-check + lint + unit tests)
+make check         # Quick pre-commit check (format-check + lint + unit tests)
 ```
 
 ## Adding New Commands
@@ -350,39 +317,22 @@ Also update in `.claude-plugin/plugin.json` if needed.
 ### Building Distribution
 
 ```bash
-# Build package
-uv build
-
-# Creates dist/asta-0.3.0.tar.gz and dist/asta-0.3.0-*.whl
-
-# Or use Make
 make build  # Cleans and builds distribution packages
 ```
+
+Creates `dist/asta-VERSION.tar.gz` and `dist/asta-VERSION-*.whl`
 
 ### Publishing to PyPI
 
 ```bash
-# Install twine
-uv pip install twine
-
-# Upload to PyPI
-uv run twine upload dist/*
-
-# Or to TestPyPI first
-uv run twine upload --repository testpypi dist/*
-
-# Or use Make
 make publish       # Build and publish to PyPI
 make publish-test  # Build and publish to TestPyPI
 ```
 
 ### GitHub Release
 
-1. Tag the release: `git tag v0.3.0`
-2. Push tag: `git push origin v0.3.0`
-3. Create GitHub release with changelog
+To create a GitHub release (automatically uses version from code):
 
-Or use Make to tag and push (automatically uses version from code):
 ```bash
 make release  # Uses version from src/asta/__init__.py
 # Then create GitHub release at the URL provided
@@ -411,14 +361,8 @@ The release target will fail if the git tag already exists, preventing accidenta
 ### Running Specific Test Categories
 
 ```bash
-# Just core tests
-uv run --extra test pytest tests/test_client.py tests/test_cli.py
-
-# Just integration
-uv run --extra test pytest tests/test_integration.py
-
-# Just Claude Code plugin
-uv run --extra test pytest tests/test_config.py
+make test-unit         # Core tests (client, cli)
+make test-integration  # Integration and compatibility tests
 ```
 
 ## Common Development Tasks
@@ -428,7 +372,7 @@ uv run --extra test pytest tests/test_config.py
 Only add dependencies if absolutely necessary:
 
 1. Add to `dependencies` in `pyproject.toml`
-2. Run `uv sync`
+2. Run `make install` to sync dependencies
 3. Update tests to verify it works
 4. Document why it's needed
 
@@ -519,7 +463,6 @@ When a new version of a passthrough tool is released:
    ```bash
    # Uninstall current version
    uv tool uninstall asta-documents
-
    # Test auto-installation with new version
    uv run python -m asta.cli documents --help
    ```
@@ -548,30 +491,28 @@ install_source="package-name"  # Will use PyPI
 ### Debugging
 
 ```bash
-# Enable Python warnings
-PYTHONWARNINGS=default uv run python -m asta.cli literature find "test"
-
 # Run with Python debugger
 uv run python -m pdb -m asta.cli literature find "test"
 
-# Check what's installed
-uv pip list
+# Enable Python warnings
+PYTHONWARNINGS=default uv run python -m asta.cli literature find "test"
 ```
 
 ## Contributing Guidelines
 
 ### Before Submitting a PR
 
-1. Run all tests: `uv run --extra test pytest -v` or `make test`
-2. Check formatting: `uvx ruff format --check .` or `make format-check`
-3. Check linting: `uvx ruff check .` or `make lint`
-4. Update documentation if adding features
-5. Add tests for new functionality
-
-Or run all checks at once:
+Run all checks at once:
 ```bash
 make ci  # Runs format-check, lint, and all tests
 ```
+
+Or individually:
+1. Run all tests: `make test`
+2. Check formatting: `make format-check`
+3. Check linting: `make lint`
+4. Update documentation if adding features
+5. Add tests for new functionality
 
 ### PR Guidelines
 
