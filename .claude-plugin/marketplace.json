@@ -11,13 +11,19 @@
       "name": "asta",
       "source": "./",
       "description": "Paper search, citations, literature reports, and Semantic Scholar API tools",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "author": {
         "name": "AI2 Asta Team"
       },
       "repository": "https://github.com/allenai/asta-plugins",
       "license": "Apache-2.0",
-      "keywords": ["academic", "papers", "citations", "semantic-scholar", "literature"]
+      "keywords": [
+        "academic",
+        "papers",
+        "citations",
+        "semantic-scholar",
+        "literature"
+      ]
     }
   ]
 }
