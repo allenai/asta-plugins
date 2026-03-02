@@ -3,7 +3,6 @@
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -12,8 +11,8 @@ def ensure_tool_installed(
     tool_name: str,
     install_source: str,
     version: str,
-    friendly_name: Optional[str] = None,
-) -> Optional[Path]:
+    friendly_name: str | None = None,
+) -> Path | None:
     """Check if a tool is installed, install if not.
 
     Args:
@@ -88,8 +87,8 @@ def create_passthrough_command(
     install_source: str,
     version: str,
     command_name: str,
-    friendly_name: Optional[str] = None,
-    docstring: Optional[str] = None,
+    friendly_name: str | None = None,
+    docstring: str | None = None,
 ):
     """Create a Click command that passes through to an external tool.
 
