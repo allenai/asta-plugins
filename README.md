@@ -10,7 +10,7 @@ npx skills add add allenai/asta-plugins/skills
 
 # In Claude Code
 > /plugin marketplace add allenai/asta-plugins
-> /plugin install asta-plugins
+> /plugin install asta
 ```
 
 ### Available Skills
@@ -36,6 +36,12 @@ Install the `asta` CLI tool:
 
 ```bash
 uv tool install git+https://github.com/allenai/asta-plugins.git
+```
+
+To upgrade:
+
+```bash
+uv tool upgrade asta
 ```
 
 See `asta --help` for usage instructions.
