@@ -58,6 +58,25 @@ hooks/                         # Claude Code permission hooks
 
 - Python 3.10+
 - `uv` (recommended) or `pip`
+- `make` (optional, for convenience commands)
+
+### Quick Start with Make
+
+A Makefile is provided for common development tasks:
+
+```bash
+make help  # Show all available targets
+make install  # Install with test dependencies
+make test  # Run all tests
+make lint  # Check code style
+make format  # Auto-fix formatting
+make check  # Quick pre-commit check (format + lint + unit tests)
+make ci  # Full CI check (format + lint + all tests)
+make build  # Build distribution packages
+make clean  # Remove build artifacts
+```
+
+All Makefile targets are convenience wrappers around `uv` commands. You can use either approach.
 
 ### Install for Development
 
@@ -70,6 +89,9 @@ uv sync --extra test
 
 # Or with pip
 pip install -e ".[test]"
+
+# Or use Make
+make install
 ```
 
 ### Run Tests
@@ -83,6 +105,12 @@ uv run --extra test pytest tests/test_cli.py -v
 
 # Run with coverage
 uv run --extra test pytest --cov=src/asta --cov-report=html
+
+# Or use Make
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-integration  # Run integration tests only
+make test-coverage     # Run with HTML coverage report
 ```
 
 ### Test the CLI
@@ -114,6 +142,12 @@ uvx ruff format .
 
 # Check formatting without changes
 uvx ruff format --check .
+
+# Or use Make
+make lint          # Check code style
+make format        # Auto-fix formatting
+make format-check  # Check formatting without changes
+make check         # Quick check before commit (format-check + lint + unit tests)
 ```
 
 ## Adding New Commands
@@ -320,6 +354,9 @@ Also update in `.claude-plugin/plugin.json` if needed.
 uv build
 
 # Creates dist/asta-0.3.0.tar.gz and dist/asta-0.3.0-*.whl
+
+# Or use Make
+make build  # Cleans and builds distribution packages
 ```
 
 ### Publishing to PyPI
@@ -333,6 +370,10 @@ uv run twine upload dist/*
 
 # Or to TestPyPI first
 uv run twine upload --repository testpypi dist/*
+
+# Or use Make
+make publish       # Build and publish to PyPI
+make publish-test  # Build and publish to TestPyPI
 ```
 
 ### GitHub Release
@@ -340,6 +381,12 @@ uv run twine upload --repository testpypi dist/*
 1. Tag the release: `git tag v0.3.0`
 2. Push tag: `git push origin v0.3.0`
 3. Create GitHub release with changelog
+
+Or use Make to tag and push:
+```bash
+make release VERSION=0.3.0
+# Then create GitHub release at the URL provided
+```
 
 ## Testing Strategy
 
@@ -513,11 +560,16 @@ uv pip list
 
 ### Before Submitting a PR
 
-1. Run all tests: `uv run --extra test pytest -v`
-2. Check formatting: `uvx ruff format --check .`
-3. Check linting: `uvx ruff check .`
+1. Run all tests: `uv run --extra test pytest -v` or `make test`
+2. Check formatting: `uvx ruff format --check .` or `make format-check`
+3. Check linting: `uvx ruff check .` or `make lint`
 4. Update documentation if adding features
 5. Add tests for new functionality
+
+Or run all checks at once:
+```bash
+make ci  # Runs format-check, lint, and all tests
+```
 
 ### PR Guidelines
 
