@@ -7,7 +7,6 @@
   },
   "repository": "https://github.com/allenai/asta-plugins",
   "license": "Apache-2.0",
-  "commands": "./commands/",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"
 }
