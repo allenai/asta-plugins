@@ -13,9 +13,15 @@ src/asta/                      # Main CLI package
 ├── core/
 │   ├── __init__.py
 │   └── client.py              # AstaPaperFinder API client (stdlib only)
+├── utils/
+│   ├── __init__.py
+│   └── passthrough.py         # Generic passthrough utility for external tools
 ├── documents/
 │   ├── __init__.py
 │   └── passthrough.py         # `asta documents` pass-through to asta-documents CLI
+├── experiment/
+│   ├── __init__.py
+│   └── passthrough.py         # `asta experiment` pass-through to panda CLI
 ├── literature/
 │   ├── __init__.py
 │   └── find.py                # `asta literature find` command
@@ -36,45 +42,63 @@ hooks/                         # Claude Code permission hooks
 
 1. **Core is dependency-free**: `asta.core.client` and `asta.papers.client` use only stdlib (json, urllib, time, etc.)
 2. **CLI layer is thin**: Click commands wrap the core clients
-3. **Pass-through commands**: `asta documents` is a pass-through to the external `asta-documents` CLI, which is auto-installed on first use
-4. **Claude Code integration**: Uses the CLI via Bash tool for portability
+3. **Generic passthrough architecture**: `asta.utils.passthrough` provides reusable utilities for external tool integration
+   - `ensure_tool_installed()`: Checks for tool, auto-installs if missing
+   - `create_passthrough_command()`: Factory function for creating passthrough commands
+4. **Pass-through commands**: Commands that delegate to external tools, auto-installed on first use
+   - `asta documents` → `asta-documents` CLI (document metadata management)
+   - `asta experiment` → `panda` CLI (computational experiments)
+   - Version pinning: Each passthrough defines a version constant (e.g., `ASTA_DOCUMENTS_VERSION`, `PANDA_VERSION`)
+   - Future: will install from PyPI instead of git
+5. **Claude Code integration**: Uses the CLI via Bash tool for portability
 
 ## Development Setup
 
 ### Prerequisites
 
 - Python 3.10+
-- `uv` (recommended) or `pip`
+- `uv` (for running commands)
+- `make` (for development tasks)
+
+### Quick Start
+
+A Makefile is provided for all common development tasks:
+
+```bash
+make help     # Show all available targets
+make install  # Install with test dependencies
+make test     # Run all tests
+make lint     # Check code style
+make format   # Auto-fix formatting
+make check    # Quick pre-commit check (format + lint + unit tests)
+make ci       # Full CI check (format + lint + all tests)
+make build    # Build distribution packages
+make clean    # Remove build artifacts
+```
 
 ### Install for Development
 
 ```bash
 git clone https://github.com/allenai/asta-plugins.git
 cd asta-plugins
-
-# Install with test dependencies
-uv sync --extra test
-
-# Or with pip
-pip install -e ".[test]"
+make install
 ```
 
 ### Run Tests
 
 ```bash
-# Run all tests
-uv run --extra test pytest -v
-
-# Run specific test file
-uv run --extra test pytest tests/test_cli.py -v
-
-# Run with coverage
-uv run --extra test pytest --cov=src/asta --cov-report=html
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-integration  # Run integration tests only
+make test-coverage     # Run with HTML coverage report
 ```
 
 ### Test the CLI
 
 ```bash
+# Install the package in development mode
+make install
+
 # Run directly from source
 uv run python -m asta.cli --version
 uv run python -m asta.cli literature find "test query" --timeout 60
@@ -82,25 +106,15 @@ uv run python -m asta.cli literature find "test query" --timeout 60
 # Test documents pass-through (will auto-install asta-documents on first use)
 uv run python -m asta.cli documents --help
 uv run python -m asta.cli documents list
-
-# Or install as tool and test
-uv tool install .
-asta --version
-asta literature find "test query"
-asta documents list
 ```
 
 ### Linting and Formatting
 
 ```bash
-# Check code style
-uvx ruff check .
-
-# Fix formatting
-uvx ruff format .
-
-# Check formatting without changes
-uvx ruff format --check .
+make lint          # Check code style
+make format        # Auto-fix formatting
+make format-check  # Check formatting without changes
+make check         # Quick pre-commit check (format-check + lint + unit tests)
 ```
 
 ## Adding New Commands
@@ -290,43 +304,110 @@ packages = ["src/asta"]
 
 ## Release Process
 
-### Version Bumping
+The version number is stored in four locations and must be kept in sync:
+- `src/asta/__init__.py` - `__version__` variable (Python package version)
+- `pyproject.toml` - `version` field (Build system version)
+- `.claude-plugin/plugin.json` - `version` field (Plugin manifest for Claude Code)
+- `.claude-plugin/marketplace.json` - `plugins[0].version` field (Marketplace listing for `/plugin marketplace add`)
 
-Update version in `src/asta/__init__.py`:
+**Note:** Both `.claude-plugin/plugin.json` (individual plugin manifest) and `.claude-plugin/marketplace.json` (marketplace repository listing) are required. The marketplace file allows users to install via `/plugin marketplace add allenai/asta-plugins` in Claude Code.
 
-```python
-__version__ = "0.3.0"
+### Complete Release Workflow
+
+1. **Update version in all files:**
+   ```bash
+   make set-version VERSION=0.3.0
+   ```
+   This updates all three version locations atomically.
+
+2. **Review changes:**
+   ```bash
+   git diff
+   ```
+   Verify that all three files were updated correctly.
+
+3. **Run full test suite:**
+   ```bash
+   make ci
+   ```
+   Ensures all tests pass, code is formatted, and linting is clean.
+
+4. **Commit version bump:**
+   ```bash
+   git add -A
+   git commit -m "chore: bump version to 0.3.0"
+   git push
+   ```
+
+5. **Create GitHub release:**
+   ```bash
+   make release
+   ```
+   This command will:
+   - Verify all three version files are in sync (fails if they differ)
+   - Check that the git tag doesn't already exist
+   - Create and push the git tag (e.g., `v0.3.0`)
+   - Provide a URL to create the GitHub release
+
+6. **Create GitHub release notes:**
+   - Visit the URL provided by `make release`
+   - Add release notes describing changes
+   - Publish the release
+
+7. **Publish to PyPI (optional):**
+   ```bash
+   make publish       # Production PyPI
+   make publish-test  # TestPyPI for testing
+   ```
+
+### Version Management Commands
+
+**Check current version:**
+```bash
+make version
 ```
 
-Also update in `.claude-plugin/plugin.json` if needed.
+**Set version in all files:**
+```bash
+make set-version VERSION=x.y.z
+```
+- Updates all four version locations atomically
+- Fails with error if VERSION parameter is not provided
+- Provides suggested commit command after success
+
+**Create release:**
+```bash
+make release
+```
+- Checks version consistency across all four files
+- Fails with clear error if versions don't match
+- Shows current versions in each file when there's a mismatch
+- Creates and pushes git tag if all checks pass
+- Fails if git tag already exists (prevents accidental overwrites)
+
+### Version Mismatch Example
+
+If you try to release with mismatched versions:
+
+```bash
+$ make release
+Checking version consistency...
+Error: Version mismatch detected:
+  src/asta/__init__.py:              0.3.0
+  pyproject.toml:                    0.2.0
+  .claude-plugin/plugin.json:        0.2.0
+  .claude-plugin/marketplace.json:   0.2.0
+
+Run 'make set-version VERSION=x.y.z' to sync versions
+```
 
 ### Building Distribution
 
 ```bash
-# Build package
-uv build
-
-# Creates dist/asta-0.3.0.tar.gz and dist/asta-0.3.0-*.whl
+make build  # Cleans and builds distribution packages
 ```
 
-### Publishing to PyPI
-
-```bash
-# Install twine
-uv pip install twine
-
-# Upload to PyPI
-uv run twine upload dist/*
-
-# Or to TestPyPI first
-uv run twine upload --repository testpypi dist/*
-```
-
-### GitHub Release
-
-1. Tag the release: `git tag v0.3.0`
-2. Push tag: `git push origin v0.3.0`
-3. Create GitHub release with changelog
+Creates `dist/asta-VERSION.tar.gz` and `dist/asta-VERSION-*.whl`
 
 ## Testing Strategy
 
@@ -349,14 +430,8 @@ uv run twine upload --repository testpypi dist/*
 ### Running Specific Test Categories
 
 ```bash
-# Just core tests
-uv run --extra test pytest tests/test_client.py tests/test_cli.py
-
-# Just integration
-uv run --extra test pytest tests/test_integration.py
-
-# Just Claude Code plugin
-uv run --extra test pytest tests/test_config.py
+make test-unit         # Core tests (client, cli)
+make test-integration  # Integration and compatibility tests
 ```
 
 ## Common Development Tasks
@@ -366,7 +441,7 @@ uv run --extra test pytest tests/test_config.py
 Only add dependencies if absolutely necessary:
 
 1. Add to `dependencies` in `pyproject.toml`
-2. Run `uv sync`
+2. Run `make install` to sync dependencies
 3. Update tests to verify it works
 4. Document why it's needed
 
@@ -381,26 +456,130 @@ If Asta's API changes:
 3. Update documentation examples
 4. Consider backward compatibility
 
+### Adding a New Passthrough Command
+
+To add a new external tool as an `asta` passthrough command:
+
+1. **Create the passthrough module:**
+   ```python
+   # src/asta/newtool/__init__.py
+   from asta.newtool.passthrough import newtool
+   __all__ = ["newtool"]
+
+   # src/asta/newtool/passthrough.py
+   from asta.utils.passthrough import create_passthrough_command
+
+   NEWTOOL_VERSION = "v1.0.0"  # Pin to specific version
+
+   newtool = create_passthrough_command(
+       tool_name="newtool-cli",              # Executable name
+       install_source="git+https://github.com/org/newtool",
+       version=NEWTOOL_VERSION,
+       command_name="newtool",               # asta subcommand name
+       friendly_name="NewTool",              # Display name
+       docstring="Description for --help"
+   )
+   ```
+
+2. **Register in CLI:**
+   ```python
+   # src/asta/cli.py
+   from asta.newtool import newtool
+   cli.add_command(newtool)
+   ```
+
+3. **Add tests:**
+   ```python
+   # tests/test_cli.py
+   class TestNewToolCommand:
+       def test_newtool_version_constant(self):
+           from asta.newtool.passthrough import NEWTOOL_VERSION
+           assert isinstance(NEWTOOL_VERSION, str)
+           assert len(NEWTOOL_VERSION) > 0
+
+       def test_newtool_passthrough_when_installed(self, runner, tmp_path):
+           # Test passthrough behavior
+           ...
+   ```
+
+4. **Create skill (optional):**
+   ```markdown
+   # skills/newtool/SKILL.md
+   ---
+   name: NewTool Skill
+   description: When to use this skill
+   allowed-tools:
+     - Bash(asta newtool *)
+   ---
+
+   Use `asta newtool` to invoke the external tool...
+   ```
+
+5. **Update documentation:**
+   - Add to README.md skill list
+   - Document in DEVELOPER.md
+
+### Updating Passthrough Tool Versions
+
+When a new version of a passthrough tool is released:
+
+**For asta-documents:**
+1. Update `ASTA_DOCUMENTS_VERSION` in `src/asta/documents/passthrough.py`
+   ```python
+   ASTA_DOCUMENTS_VERSION = "v0.2.0"  # Change to new tag
+   ```
+2. Test the installation works:
+   ```bash
+   # Uninstall current version
+   uv tool uninstall asta-documents
+   # Test auto-installation with new version
+   uv run python -m asta.cli documents --help
+   ```
+3. Update release notes mentioning the new version
+
+**For panda (experiment command):**
+1. Update `PANDA_VERSION` in `src/asta/experiment/passthrough.py`
+   ```python
+   PANDA_VERSION = "v1.0.0"  # Change to new tag
+   ```
+2. Test similarly:
+   ```bash
+   uv tool uninstall panda
+   uv run python -m asta.cli experiment --help
+   ```
+
+**Note**: In the future, when these tools are available on PyPI, update the installation source in the passthrough files:
+```python
+# Change from:
+install_source="git+https://github.com/org/repo"
+
+# To:
+install_source="package-name"  # Will use PyPI
+```
+
 ### Debugging
 
 ```bash
-# Enable Python warnings
-PYTHONWARNINGS=default uv run python -m asta.cli literature find "test"
-
 # Run with Python debugger
 uv run python -m pdb -m asta.cli literature find "test"
 
-# Check what's installed
-uv pip list
+# Enable Python warnings
+PYTHONWARNINGS=default uv run python -m asta.cli literature find "test"
 ```
 
 ## Contributing Guidelines
 
 ### Before Submitting a PR
 
-1. Run all tests: `uv run --extra test pytest -v`
-2. Check formatting: `uvx ruff format --check .`
-3. Check linting: `uvx ruff check .`
+Run all checks at once:
+```bash
+make ci  # Runs format-check, lint, and all tests
+```
+
+Or individually:
+1. Run all tests: `make test`
+2. Check formatting: `make format-check`
+3. Check linting: `make lint`
 4. Update documentation if adding features
 5. Add tests for new functionality
 

@@ -45,7 +45,6 @@ def test_asta_cli_installed():
     )
 
     assert result.returncode == 0, f"asta --version failed: {result.stderr}"
-    assert "0.2.0" in result.stdout
     print("✓ Asta CLI is installed and working")
 
 

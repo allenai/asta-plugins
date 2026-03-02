@@ -22,7 +22,6 @@ class TestCLIBasics:
         """Test --version flag."""
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.2.0" in result.output
 
     def test_help(self, runner):
         """Test --help flag."""
@@ -187,6 +186,139 @@ class TestFindCommand:
         mock_instance.find_papers.assert_called_once_with(
             "test query", timeout=60, save_to_file=None
         )
+
+
+class TestPassthroughUtility:
+    """Test generic passthrough utility functions."""
+
+    def test_ensure_tool_installed_already_exists(self):
+        """Test ensure_tool_installed when tool is already on PATH."""
+        from asta.utils.passthrough import ensure_tool_installed
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/local/bin/test-tool"
+            result = ensure_tool_installed(
+                "test-tool", "git+https://example.com/repo.git", "v1.0.0"
+            )
+
+        assert result is not None
+        assert str(result) == "/usr/local/bin/test-tool"
+
+    def test_ensure_tool_installed_installation_needed(self):
+        """Test ensure_tool_installed when installation is needed."""
+        from asta.utils.passthrough import ensure_tool_installed
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            # First call returns None (not found), second returns path (after install)
+            mock_which.side_effect = [None, "/usr/local/bin/test-tool"]
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+
+                result = ensure_tool_installed(
+                    "test-tool",
+                    "git+https://example.com/repo.git",
+                    "v1.0.0",
+                    friendly_name="Test Tool",
+                )
+
+        assert result is not None
+        mock_run.assert_called_once()
+
+
+class TestDocumentsCommand:
+    """Test 'asta documents' passthrough command."""
+
+    def test_documents_version_constant(self):
+        """Test that ASTA_DOCUMENTS_VERSION is properly defined."""
+        from asta.documents.passthrough import ASTA_DOCUMENTS_VERSION
+
+        # Should be a non-empty string starting with 'v'
+        assert isinstance(ASTA_DOCUMENTS_VERSION, str)
+        assert len(ASTA_DOCUMENTS_VERSION) > 0
+        assert ASTA_DOCUMENTS_VERSION.startswith("v")
+        # Should look like a version tag (v0.1.0 format)
+        assert ASTA_DOCUMENTS_VERSION.count(".") >= 1
+
+    def test_documents_help_requires_installation(self, runner):
+        """Test documents command behavior when asta-documents not installed."""
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = None
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_subprocess:
+                # Mock installation failure
+                mock_subprocess.side_effect = FileNotFoundError("uv not found")
+
+                result = runner.invoke(cli, ["documents", "--help"])
+
+        assert result.exit_code != 0
+        assert "uv" in result.output.lower()
+
+    def test_documents_passthrough_when_installed(self, runner, tmp_path):
+        """Test documents command passes through when asta-documents is installed."""
+        # Create a fake asta-documents executable
+        fake_exe = tmp_path / "asta-documents"
+        fake_exe.write_text("#!/bin/bash\necho 'passthrough success'")
+        fake_exe.chmod(0o755)
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = str(fake_exe)
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_subprocess:
+                mock_subprocess.return_value = MagicMock(
+                    returncode=0, stdout="passthrough success\n", stderr=""
+                )
+
+                result = runner.invoke(cli, ["documents", "list"])
+
+        assert result.exit_code == 0
+        assert "passthrough success" in result.output
+
+
+class TestExperimentCommand:
+    """Test 'asta experiment' passthrough command."""
+
+    def test_experiment_version_constant(self):
+        """Test that PANDA_VERSION is properly defined."""
+        from asta.experiment.passthrough import PANDA_VERSION
+
+        # Should be a non-empty string
+        assert isinstance(PANDA_VERSION, str)
+        assert len(PANDA_VERSION) > 0
+
+    def test_experiment_help_requires_installation(self, runner):
+        """Test experiment command behavior when panda not installed."""
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = None
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_subprocess:
+                # Mock installation failure
+                mock_subprocess.side_effect = FileNotFoundError("uv not found")
+
+                result = runner.invoke(cli, ["experiment", "--help"])
+
+        assert result.exit_code != 0
+        assert "uv" in result.output.lower()
+
+    def test_experiment_passthrough_when_installed(self, runner, tmp_path):
+        """Test experiment command passes through when panda is installed."""
+        # Create a fake panda executable
+        fake_exe = tmp_path / "panda"
+        fake_exe.write_text("#!/bin/bash\necho 'panda running'")
+        fake_exe.chmod(0o755)
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = str(fake_exe)
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_subprocess:
+                mock_subprocess.return_value = MagicMock(
+                    returncode=0, stdout="panda running\n", stderr=""
+                )
+
+                result = runner.invoke(cli, ["experiment", "--task", "test"])
+
+        assert result.exit_code == 0
+        assert "running" in result.output
 
 
 if __name__ == "__main__":
