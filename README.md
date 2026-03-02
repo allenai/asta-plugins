@@ -19,6 +19,7 @@ npx skills add add allenai/asta-plugins/skills
 - **Literature Report Generation** - Comprehensive report writing with synthesis
 - **Semantic Scholar Lookup** - Quick paper/author lookups and metadata queries
 - **Document Management** - Local document metadata index for tracking and searching papers
+- **Run Experiment** - Computational experiments with automated report generation
 
 Example user requests that would trigger these skills:
 - "Find papers on RLHF"
@@ -26,6 +27,7 @@ Example user requests that would trigger these skills:
 - "Get details for arXiv:2005.14165"
 - "What papers cite the GPT-3 paper?"
 - "Store this paper in Asta" / "Search my Asta documents for transformers"
+- "Run an experiment to test GPT-4 translation quality"
 
 
 ## CLI Installation

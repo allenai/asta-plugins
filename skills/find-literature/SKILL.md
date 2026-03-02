@@ -21,7 +21,7 @@ questions to clarify the topic and refine the query before running the search.
 
 Run in background for comprehensive searches (30-60s):
 ```bash
-# Saves to ~/.asta/literature/YYYY-MM-DD-HH-MM-SS-{query-slug}.json by default
+# Saves to .asta/literature/find/YYYY-MM-DD-HH-MM-SS-{query-slug}.json by default
 Bash(command="asta literature find 'query' --timeout 300", run_in_background=true)
 
 # Or specify a custom output path
@@ -31,12 +31,12 @@ Bash(command="asta literature find 'query' --timeout 300 -o results.json", run_i
 Bash(command="asta literature find 'query' --timeout 300 -o -", run_in_background=true)
 ```
 
-The command saves results to `~/.asta/literature/` by default with an auto-generated filename. Use `-o <file>` to specify a custom path, or `-o -` to write to stdout.
+The command saves results to `.asta/literature/find/` (in current working directory) by default with an auto-generated filename. Use `-o <file>` to specify a custom path, or `-o -` to write to stdout.
 
 Browse results with jq:
 ```bash
 # If using default location, get the most recent file
-jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' ~/.asta/literature/*.json | tail -1
+jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' .asta/literature/find/*.json | tail -1
 
 # Or use a specific file
 jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' results.json
@@ -109,7 +109,7 @@ jq '.results[] | select(.corpusId == 123456) | .snippets[].text' results.json
 
 ## Reports
 
-Save to `~/.asta/literature/YYYY-MM-DD-slug.md`. Create early, update progressively.
+Save to `.asta/literature/find/YYYY-MM-DD-slug.md` (in current working directory). Create early, update progressively.
 
 Citation format - use bracketed links:
 ```markdown
