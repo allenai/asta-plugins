@@ -13,9 +13,15 @@ src/asta/                      # Main CLI package
 ├── core/
 │   ├── __init__.py
 │   └── client.py              # AstaPaperFinder API client (stdlib only)
+├── utils/
+│   ├── __init__.py
+│   └── passthrough.py         # Generic passthrough utility for external tools
 ├── documents/
 │   ├── __init__.py
 │   └── passthrough.py         # `asta documents` pass-through to asta-documents CLI
+├── experiment/
+│   ├── __init__.py
+│   └── passthrough.py         # `asta experiment` pass-through to panda CLI
 ├── literature/
 │   ├── __init__.py
 │   └── find.py                # `asta literature find` command
@@ -36,8 +42,15 @@ hooks/                         # Claude Code permission hooks
 
 1. **Core is dependency-free**: `asta.core.client` and `asta.papers.client` use only stdlib (json, urllib, time, etc.)
 2. **CLI layer is thin**: Click commands wrap the core clients
-3. **Pass-through commands**: `asta documents` is a pass-through to the external `asta-documents` CLI, which is auto-installed on first use
-4. **Claude Code integration**: Uses the CLI via Bash tool for portability
+3. **Generic passthrough architecture**: `asta.utils.passthrough` provides reusable utilities for external tool integration
+   - `ensure_tool_installed()`: Checks for tool, auto-installs if missing
+   - `create_passthrough_command()`: Factory function for creating passthrough commands
+4. **Pass-through commands**: Commands that delegate to external tools, auto-installed on first use
+   - `asta documents` → `asta-documents` CLI (document metadata management)
+   - `asta experiment` → `panda` CLI (computational experiments)
+   - Version pinning: Each passthrough defines a version constant (e.g., `ASTA_DOCUMENTS_VERSION`, `PANDA_VERSION`)
+   - Future: will install from PyPI instead of git
+5. **Claude Code integration**: Uses the CLI via Bash tool for portability
 
 ## Development Setup
 
@@ -380,6 +393,108 @@ If Asta's API changes:
 2. Add/update tests in `tests/test_client.py`
 3. Update documentation examples
 4. Consider backward compatibility
+
+### Adding a New Passthrough Command
+
+To add a new external tool as an `asta` passthrough command:
+
+1. **Create the passthrough module:**
+   ```python
+   # src/asta/newtool/__init__.py
+   from asta.newtool.passthrough import newtool
+   __all__ = ["newtool"]
+
+   # src/asta/newtool/passthrough.py
+   from asta.utils.passthrough import create_passthrough_command
+
+   NEWTOOL_VERSION = "v1.0.0"  # Pin to specific version
+
+   newtool = create_passthrough_command(
+       tool_name="newtool-cli",              # Executable name
+       install_source="git+https://github.com/org/newtool",
+       version=NEWTOOL_VERSION,
+       command_name="newtool",               # asta subcommand name
+       friendly_name="NewTool",              # Display name
+       docstring="Description for --help"
+   )
+   ```
+
+2. **Register in CLI:**
+   ```python
+   # src/asta/cli.py
+   from asta.newtool import newtool
+   cli.add_command(newtool)
+   ```
+
+3. **Add tests:**
+   ```python
+   # tests/test_cli.py
+   class TestNewToolCommand:
+       def test_newtool_version_constant(self):
+           from asta.newtool.passthrough import NEWTOOL_VERSION
+           assert isinstance(NEWTOOL_VERSION, str)
+           assert len(NEWTOOL_VERSION) > 0
+
+       def test_newtool_passthrough_when_installed(self, runner, tmp_path):
+           # Test passthrough behavior
+           ...
+   ```
+
+4. **Create skill (optional):**
+   ```markdown
+   # skills/newtool/SKILL.md
+   ---
+   name: NewTool Skill
+   description: When to use this skill
+   allowed-tools:
+     - Bash(asta newtool *)
+   ---
+
+   Use `asta newtool` to invoke the external tool...
+   ```
+
+5. **Update documentation:**
+   - Add to README.md skill list
+   - Document in DEVELOPER.md
+
+### Updating Passthrough Tool Versions
+
+When a new version of a passthrough tool is released:
+
+**For asta-documents:**
+1. Update `ASTA_DOCUMENTS_VERSION` in `src/asta/documents/passthrough.py`
+   ```python
+   ASTA_DOCUMENTS_VERSION = "v0.2.0"  # Change to new tag
+   ```
+2. Test the installation works:
+   ```bash
+   # Uninstall current version
+   uv tool uninstall asta-documents
+
+   # Test auto-installation with new version
+   uv run python -m asta.cli documents --help
+   ```
+3. Update release notes mentioning the new version
+
+**For panda (experiment command):**
+1. Update `PANDA_VERSION` in `src/asta/experiment/passthrough.py`
+   ```python
+   PANDA_VERSION = "v1.0.0"  # Change to new tag
+   ```
+2. Test similarly:
+   ```bash
+   uv tool uninstall panda
+   uv run python -m asta.cli experiment --help
+   ```
+
+**Note**: In the future, when these tools are available on PyPI, update the installation source in the passthrough files:
+```python
+# Change from:
+install_source="git+https://github.com/org/repo"
+
+# To:
+install_source="package-name"  # Will use PyPI
+```
 
 ### Debugging
 

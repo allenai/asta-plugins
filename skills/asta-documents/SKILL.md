@@ -1,10 +1,11 @@
 ---
 name: asta-documents
-description: Local document metadata index for scientific documents
+description: Local document metadata index for files used by Asta skills and tools
 allowed-tools:
-  - Bash(asta *)
+  - Bash(asta documents *)
   - Read(*)
-  - Write(~/.asta/*)
+  - TaskOutput
+  - Write(.asta/*)
 ---
 
 # Asta Documents Management
@@ -16,26 +17,29 @@ This skill provides complete document management functionality for tracking rese
 
 **What it does:** Track document metadata (URLs, summaries, tags) in a local index. Think of it as a smart bookmark manager with powerful search capabilities.
 
-## Automatic Indexing of ~/.asta Documents
+**Default Index Location:** `.asta/documents/index.yaml` (relative to current working directory). The `--index-path` flag is optional when using the default location; it's only needed for custom index locations or remote indexes.
 
-**IMPORTANT:** When other Asta skills (like literature research) write documents to `~/.asta/`, you should automatically index them in the document store. This ensures all Asta-generated documents are tracked and searchable. Use the `--index-path` parameter to index files in `~/.astas/documents/index.yaml`.
+## Automatic Indexing of .asta Documents
+
+**IMPORTANT:** When other Asta skills (like literature research) write documents to `.asta/` (in the current working directory), you should automatically index them in the document store. This ensures all Asta-generated documents are tracked and searchable.
 
 **Workflow:**
-1. After any Asta skill writes files to `~/.asta/` (e.g., literature reports, paper collections)
+1. After any Asta skill writes files to `.asta/` (e.g., literature reports, paper collections)
 2. Scan the directory for new documents
 3. For each document, add it to the index with appropriate metadata:
    - **name**: Extract from filename or document title
-   - **url**: Use `file://` URL pointing to the local path
+   - **url**: Use `file://` URL pointing to the local path (use absolute paths for file:// URLs)
    - **summary**: Extract from document content or use a brief description
    - **tags**: Add relevant tags (e.g., "asta-generated", "literature-report", etc.)
    - **mime-type**: Detect from file extension (e.g., "text/markdown", "application/pdf")
 
 **Example:**
 ```bash
-# After a literature report is written to ~/.asta/literature-report-2024-01-15.md
-asta documents add file://$HOME/.asta/literature-report-2024-01-15.md \
-  --index-path $HOME/.asta/documents/index.yaml \
-  --name="Literature Report: Machine Learning" \lkjlkj
+# After a literature report is written to .asta/literature/report/2024-01-15-ml.md
+# Convert relative path to absolute for file:// URL
+REPORT_PATH="$(pwd)/.asta/literature/report/2024-01-15-ml.md"
+asta documents add "file://${REPORT_PATH}" \
+  --name="Literature Report: Machine Learning" \
   --summary="Comprehensive report on machine learning papers from 2023-2024" \
   --tags="asta-generated,literature-report,ml" \
   --mime-type="text/markdown"
@@ -54,6 +58,7 @@ Verify installation with `asta documents --help`
 ## Quick Command Reference
 
 Add `--json` flag to any command for machine-readable output.
+Uses `.asta/documents/index.yaml` by default (add `--index-path <file>` for custom locations).
 
 ```bash
 # List documents
@@ -72,14 +77,20 @@ asta documents search --summary="transformers" --tags="ai"
 # Multi-field search (union - matches ANY)
 asta documents search --summary="transformers" --name="BERT" --union
 
-# Add document
-asta documents add <url> --name="Title" --summary="Description" --tags="tag1,tag2" --extra='{"author": "Smith et al", "year": 2024, "venue": "NeurIPS"}'
+# Add document (use absolute path for file:// URLs)
+asta documents add <url> \
+  --name="Title" \
+  --summary="Description" \
+  --tags="tag1,tag2" \
+  --extra='{"author": "Smith et al", "year": 2024, "venue": "NeurIPS"}'
 
 # Get document metadata
 asta documents get <uuid>
 
 # Update document
-asta documents update <uuid> --name="New Title" --tags="new,tags"
+asta documents update <uuid> \
+  --name="New Title" \
+  --tags="new,tags"
 
 # Fetch document content
 asta documents fetch <uuid> -o /tmp/document.pdf
@@ -307,12 +318,13 @@ asta documents cache info <hash>
 ### Workflow 1: Index Asta-Generated Documents
 
 ```bash
-# After literature find writes to ~/.asta/
-# List all files in ~/.asta/
-ls -la ~/.asta/
+# After literature find writes to .asta/
+# List all files in .asta/
+ls -la .asta/
 
-# For each new document, add to index
-asta documents add file://$HOME/.asta/literature-report.md \
+# For each new document, add to index (convert to absolute path for file:// URL)
+REPORT_PATH="$(pwd)/.asta/literature/report/literature-report.md"
+asta documents add "file://${REPORT_PATH}" \
   --name="Literature Report: Transformers" \
   --summary="Research findings on transformer architectures" \
   --tags="asta-generated,literature-report,transformers" \
@@ -514,13 +526,14 @@ asta documents search --summary="transformers" --name="Attention" --extra=".year
 
 ## Best Practices
 
-1. **Auto-index Asta documents**: Always index documents written to ~/.asta/ by other skills
+1. **Auto-index Asta documents**: Always index documents written to `.asta/` by other skills (uses `.asta/documents/index.yaml` by default)
 2. **Use descriptive summaries**: They're indexed for search
 3. **Tag consistently**: Establish a tagging scheme (e.g., "asta-generated" for auto-indexed docs)
 4. **Use extra metadata**: Store author, year, venue for papers
 5. **Let fetch handle caching**: Don't manually check cache
 6. **Use JSON for scripting**: More reliable than parsing text
 7. **Use quiet mode in scripts**: `-q` suppresses progress messages
+8. **Use absolute paths for file:// URLs**: Convert relative paths with `$(pwd)/` to ensure correct resolution
 
 ## Troubleshooting
 
