@@ -4,9 +4,9 @@ description: This skill should be used when the user asks to "generate a report"
 allowed-tools:
   - Bash(asta literature find *)
   - Bash(asta papers *)
-  - Write($HOME/.asta/literature/*)
-  - Edit($HOME/.asta/literature/*)
-  - Read($HOME/.asta/literature/*)
+  - Write(.asta/literature/report/*)
+  - Edit(.asta/literature/report/*)
+  - Read(.asta/literature/*)
   - Read(*.json)
   - TaskOutput
   - Bash(jq *)
@@ -40,7 +40,7 @@ Generate comprehensive literature reports by searching academic literature, anal
 
 Start with the paper finder in background (30-60s):
 ```bash
-# Uses default location ~/.asta/literature/YYYY-MM-DD-HH-MM-SS-{query-slug}.json
+# Uses default location .asta/literature/find/YYYY-MM-DD-HH-MM-SS-{query-slug}.json
 Bash(command="asta literature find 'query' --timeout 300", run_in_background=true)
 
 # Or specify a custom output location
@@ -52,7 +52,7 @@ Launch additional targeted CLI searches as needed while paper finder runs.
 ### 3. Create Report File Immediately
 
 Don't wait for searches to complete. Create the report file early with:
-- Default file path: `~/.asta/literature/YYYY-MM-DD-topic-slug.md`
+- Default file path: `.asta/literature/report/YYYY-MM-DD-topic-slug.md` (in current working directory)
 - Custom path: User can specify a different location if desired
 - Initial structure: Title, Executive Summary (placeholder), section headings, References
 
@@ -69,7 +69,7 @@ This keeps the user informed and avoids losing work.
 ```bash
 TaskOutput(task_id="<id>")
 ```
-- The results file will be at `~/.asta/literature/` (check TaskOutput for the exact filename), or at the path you specified with `-o`
+- The results file will be at `.asta/literature/find/` (check TaskOutput for the exact filename), or at the path you specified with `-o`
 
 Browse results with jq (sorted by relevance):
 ```bash
@@ -101,7 +101,7 @@ jq '.results[] | select(.corpusId == CORPUS_ID) | {title, abstract, snippets: [.
 jq '[.results[] | select(.corpusId == CORPUS_ID) | .citationContexts[].text]' RESULTS_FILE
 ```
 
-Replace `RESULTS_FILE` with the actual results file path (found in `~/.asta/literature/`, user-provided, or from TaskOutput).
+Replace `RESULTS_FILE` with the actual results file path (found in `.asta/literature/find/`, user-provided, or from TaskOutput).
 
 ### 6. Use CLI Tools for Targeted Research
 

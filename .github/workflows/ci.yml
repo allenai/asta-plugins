@@ -7,6 +7,25 @@ on:
     branches: [main]
 
 jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Check formatting
+        run: make format-check
+
+      - name: lint
+        run: make lint
+
+      - name: Lint shell scripts with shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './servers ./hooks'
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -23,23 +42,5 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Run tests
-        run: uv run --extra test pytest -v
+        run: make test
 
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Lint Python with ruff
-        run: uvx ruff check .
-
-      - name: Check Python formatting with ruff
-        run: uvx ruff format --check .
-
-      - name: Lint shell scripts with shellcheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: './servers ./hooks'
