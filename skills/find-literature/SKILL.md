@@ -1,5 +1,5 @@
 ---
-name: Find Literature
+name: Asta Literature Search
 description: This skill should be used when the user asks to "find papers", "search for papers", "what does the literature say", "find research on", "academic papers about", "literature review", "cite papers", or needs to answer questions using academic literature.
 allowed-tools:
   - Bash(asta literature find *)
@@ -15,6 +15,14 @@ Search academic literature for papers relevant to a query. The search will retur
 This is an advanced search, so the query can be long and complex. You may ask the user
 questions to clarify the topic and refine the query before running the search.
 
+## Installation
+
+If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
+
+**Prerequisites:** Python 3.10+ and [uv package manager](https://docs.astral.sh/uv/)
+
+Verify installation with `asta literature --help`
+
 ## Tools Available
 
 ### Paper Finder
@@ -23,23 +31,19 @@ Run in background for comprehensive searches (30-60s):
 ```bash
 # Saves to .asta/literature/find/YYYY-MM-DD-HH-MM-SS-{query-slug}.json by default
 Bash(command="asta literature find 'query' --timeout 300", run_in_background=true)
-
-# Or specify a custom output path
-Bash(command="asta literature find 'query' --timeout 300 -o results.json", run_in_background=true)
-
-# Or write to stdout with -o -
-Bash(command="asta literature find 'query' --timeout 300 -o -", run_in_background=true)
 ```
+The command saves results to `.asta/literature/find/` (in current working directory) by default with an auto-generated filename.
+The filename is printed to the console when the search is finished. Use the TaskOutput tool to capture the filename for later processing
 
-The command saves results to `.asta/literature/find/` (in current working directory) by default with an auto-generated filename. Use `-o <file>` to specify a custom path, or `-o -` to write to stdout.
+After the file has been created, index it using the [asta-documents](../asta-documents/SKILL.md) skill.
+
+```bash
+Bash(command="asta documents add file://<filename> --name=... --summary=...")
+```
 
 Browse results with jq:
 ```bash
-# If using default location, get the most recent file
-jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' .asta/literature/find/*.json | tail -1
-
-# Or use a specific file
-jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' results.json
+jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' <filename>
 ```
 
 Go through all highly relevant papers, extracting relevance criteria, snippets, and citation contexts from each.
@@ -98,25 +102,11 @@ The output is a `LiteratureSearchResult` with the following structure:
 Example access patterns:
 ```bash
 # Top 10 papers by relevance
-jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, score: .relevanceScore}]' results.json
+jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, score: .relevanceScore}]' <filename>
 
 # Papers with relevance summary
-jq '.results[] | {title, summary: .relevanceJudgement.relevanceSummary}' results.json
+jq '.results[] | {title, summary: .relevanceJudgement.relevanceSummary}' <filename>
 
 # Extract snippets from a specific paper
-jq '.results[] | select(.corpusId == 123456) | .snippets[].text' results.json
-```
-
-## Reports
-
-Save to `.asta/literature/find/YYYY-MM-DD-slug.md` (in current working directory). Create early, update progressively.
-
-Citation format - use bracketed links:
-```markdown
-This was shown by [[Author2024]].
-
-## References
-- [[Author2024]] Author, A. (2024). Title. Venue.
-
-[Author2024]: https://semanticscholar.org/p/CORPUS_ID
+jq '.results[] | select(.corpusId == 123456) | .snippets[].text' <filename>
 ```

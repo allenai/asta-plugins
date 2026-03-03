@@ -1,6 +1,7 @@
 """Tests for the Asta CLI."""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -191,18 +192,156 @@ class TestFindCommand:
 class TestPassthroughUtility:
     """Test generic passthrough utility functions."""
 
-    def test_ensure_tool_installed_already_exists(self):
-        """Test ensure_tool_installed when tool is already on PATH."""
+    def test_get_installed_version(self):
+        """Test extracting version from tool --version output."""
+        from asta.utils.passthrough import get_installed_version
+
+        with patch("asta.utils.passthrough.subprocess.run") as mock_run:
+            # Test various version output formats
+            test_cases = [
+                ("panda 0.1.0\n", "0.1.0"),
+                ("v1.2.3\n", "v1.2.3"),
+                ("tool version v2.3.4\n", "v2.3.4"),
+                ("1.0.0\n", "1.0.0"),
+            ]
+
+            for output, expected in test_cases:
+                mock_run.return_value = MagicMock(returncode=0, stdout=output)
+                version = get_installed_version(Path("/usr/local/bin/test-tool"))
+                assert version == expected, f"Failed for output: {output}"
+
+    def test_parse_semver(self):
+        """Test semantic version parsing."""
+        from asta.utils.passthrough import parse_semver
+
+        # Valid versions
+        assert parse_semver("1.2.3") == (1, 2, 3)
+        assert parse_semver("v1.2.3") == (1, 2, 3)
+        assert parse_semver("0.1.0") == (0, 1, 0)
+        assert parse_semver("10.20.30") == (10, 20, 30)
+
+        # Invalid versions
+        assert parse_semver("1.2") is None
+        assert parse_semver("1") is None
+        assert parse_semver("main") is None
+        assert parse_semver("") is None
+        assert parse_semver(None) is None
+
+    def test_validate_semver(self):
+        """Test semantic version validation."""
+        from asta.utils.passthrough import validate_semver
+
+        # Valid versions
+        assert validate_semver("1.2.3") is True
+        assert validate_semver("v1.2.3") is True
+        assert validate_semver("0.1.0") is True
+
+        # Invalid versions
+        assert validate_semver("1.2") is False
+        assert validate_semver("main") is False
+        assert validate_semver("") is False
+
+    def test_version_meets_minimum(self):
+        """Test minimum version checking."""
+        from asta.utils.passthrough import version_meets_minimum
+
+        # Same version
+        assert version_meets_minimum("1.0.0", "1.0.0") is True
+        assert version_meets_minimum("v1.0.0", "1.0.0") is True
+
+        # Newer versions (should pass)
+        assert version_meets_minimum("1.0.1", "1.0.0") is True
+        assert version_meets_minimum("1.1.0", "1.0.0") is True
+        assert version_meets_minimum("2.0.0", "1.0.0") is True
+        assert version_meets_minimum("v2.0.0", "1.0.0") is True
+
+        # Older versions (should fail)
+        assert version_meets_minimum("0.9.0", "1.0.0") is False
+        assert version_meets_minimum("1.0.0", "1.0.1") is False
+        assert version_meets_minimum("1.0.0", "1.1.0") is False
+
+        # None or invalid versions
+        assert version_meets_minimum(None, "1.0.0") is False
+        assert version_meets_minimum("invalid", "1.0.0") is False
+
+        # Invalid minimum version format should raise ValueError
+        import pytest
+
+        with pytest.raises(ValueError, match="Invalid minimum_version format"):
+            version_meets_minimum("1.0.0", "main")
+
+    def test_ensure_tool_installed_meets_minimum(self):
+        """Test ensure_tool_installed when installed version meets minimum."""
         from asta.utils.passthrough import ensure_tool_installed
 
         with patch("asta.utils.passthrough.shutil.which") as mock_which:
             mock_which.return_value = "/usr/local/bin/test-tool"
-            result = ensure_tool_installed(
-                "test-tool", "git+https://example.com/repo.git", "v1.0.0"
-            )
+
+            with patch("asta.utils.passthrough.get_installed_version") as mock_version:
+                # Installed version 1.2.0 meets minimum 1.0.0
+                mock_version.return_value = "1.2.0"
+
+                result = ensure_tool_installed(
+                    "test-tool", "git", "git+https://example.com/repo.git", "1.0.0"
+                )
 
         assert result is not None
         assert str(result) == "/usr/local/bin/test-tool"
+
+    def test_ensure_tool_installed_below_minimum(self):
+        """Test ensure_tool_installed when version is below minimum."""
+        from asta.utils.passthrough import ensure_tool_installed
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            # First call finds old version, second call after reinstall
+            mock_which.side_effect = [
+                "/usr/local/bin/test-tool",
+                "/usr/local/bin/test-tool",
+            ]
+
+            with patch("asta.utils.passthrough.get_installed_version") as mock_version:
+                mock_version.return_value = "0.9.0"  # Below minimum
+
+                with patch("asta.utils.passthrough.install_tool") as mock_install:
+                    mock_install.return_value = True
+
+                    result = ensure_tool_installed(
+                        "test-tool", "git", "git+https://example.com/repo.git", "1.0.0"
+                    )
+
+        assert result is not None
+        mock_install.assert_called_once()
+
+    def test_ensure_tool_installed_invalid_minimum_version(self):
+        """Test ensure_tool_installed with invalid minimum_version format."""
+        from asta.utils.passthrough import ensure_tool_installed
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/local/bin/test-tool"
+
+            # Should raise ValueError for invalid minimum_version
+            import pytest
+
+            with pytest.raises(ValueError, match="Invalid minimum_version"):
+                ensure_tool_installed(
+                    "test-tool", "git", "git+https://example.com/repo.git", "main"
+                )
+
+    def test_ensure_tool_installed_invalid_install_type(self):
+        """Test ensure_tool_installed with invalid install_type."""
+        from asta.utils.passthrough import ensure_tool_installed
+
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = None
+
+            with patch("asta.utils.passthrough.install_tool") as mock_install:
+                # install_tool should raise ValueError for invalid type
+                mock_install.side_effect = ValueError("Invalid install_type")
+
+                import pytest
+
+                with pytest.raises(ValueError, match="Invalid install_type"):
+                    ensure_tool_installed("test-tool", "invalid", "source", "1.0.0")
 
     def test_ensure_tool_installed_installation_needed(self):
         """Test ensure_tool_installed when installation is needed."""
@@ -212,33 +351,96 @@ class TestPassthroughUtility:
             # First call returns None (not found), second returns path (after install)
             mock_which.side_effect = [None, "/usr/local/bin/test-tool"]
 
-            with patch("asta.utils.passthrough.subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+            with patch("asta.utils.passthrough.install_tool") as mock_install:
+                mock_install.return_value = True
 
                 result = ensure_tool_installed(
                     "test-tool",
+                    "git",
                     "git+https://example.com/repo.git",
-                    "v1.0.0",
+                    "1.0.0",
                     friendly_name="Test Tool",
                 )
 
         assert result is not None
-        mock_run.assert_called_once()
+        mock_install.assert_called_once()
+
+    def test_install_tool_pypi(self):
+        """Test install_tool with PyPI source."""
+        from asta.utils.passthrough import install_tool
+
+        with patch("asta.utils.passthrough.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = install_tool("test-tool", "pypi", "test-package", "1.0.0")
+
+            assert result is True
+            # Verify the command includes >=version for PyPI
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            assert "test-package>=1.0.0" in call_args
+
+    def test_install_tool_git(self):
+        """Test install_tool with Git source."""
+        from asta.utils.passthrough import install_tool
+
+        with patch("asta.utils.passthrough.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = install_tool(
+                "test-tool", "git", "git+https://github.com/user/repo", "1.0.0"
+            )
+
+            assert result is True
+            # Verify the command includes @v{version} for git
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            assert "git+https://github.com/user/repo@v1.0.0" in call_args
+
+    def test_install_tool_local(self):
+        """Test install_tool with local filesystem source."""
+        from asta.utils.passthrough import install_tool
+
+        with patch("asta.utils.passthrough.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = install_tool("test-tool", "local", "~/dev/my-package", "1.0.0")
+
+            assert result is True
+            # Verify the path is expanded
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args[0][0]
+            # Should have expanded ~ to home directory
+            assert "~" not in " ".join(call_args)
+
+    def test_install_tool_invalid_type(self):
+        """Test install_tool with invalid install type."""
+        import pytest
+
+        from asta.utils.passthrough import install_tool
+
+        with pytest.raises(ValueError, match="Invalid install_type"):
+            install_tool("test-tool", "invalid", "source", "1.0.0")
 
 
 class TestDocumentsCommand:
     """Test 'asta documents' passthrough command."""
 
-    def test_documents_version_constant(self):
-        """Test that ASTA_DOCUMENTS_VERSION is properly defined."""
-        from asta.documents.passthrough import ASTA_DOCUMENTS_VERSION
+    def test_documents_config(self):
+        """Test that documents configuration is properly defined."""
+        from asta.utils.config import get_passthrough_config
+        from asta.utils.passthrough import validate_semver
 
-        # Should be a non-empty string starting with 'v'
-        assert isinstance(ASTA_DOCUMENTS_VERSION, str)
-        assert len(ASTA_DOCUMENTS_VERSION) > 0
-        assert ASTA_DOCUMENTS_VERSION.startswith("v")
-        # Should look like a version tag (v0.1.0 format)
-        assert ASTA_DOCUMENTS_VERSION.count(".") >= 1
+        config = get_passthrough_config("documents")
+
+        # Should have required fields
+        assert config["tool_name"] == "asta-documents"
+        assert "install_type" in config
+        assert config["install_type"] in ("pypi", "git", "local")
+        assert "minimum_version" in config
+        assert validate_semver(config["minimum_version"])
+        assert "install_source" in config
+        assert config["command_name"] == "documents"
 
     def test_documents_help_requires_installation(self, runner):
         """Test documents command behavior when asta-documents not installed."""
@@ -278,13 +480,21 @@ class TestDocumentsCommand:
 class TestExperimentCommand:
     """Test 'asta experiment' passthrough command."""
 
-    def test_experiment_version_constant(self):
-        """Test that PANDA_VERSION is properly defined."""
-        from asta.experiment.passthrough import PANDA_VERSION
+    def test_experiment_config(self):
+        """Test that experiment configuration is properly defined."""
+        from asta.utils.config import get_passthrough_config
+        from asta.utils.passthrough import validate_semver
 
-        # Should be a non-empty string
-        assert isinstance(PANDA_VERSION, str)
-        assert len(PANDA_VERSION) > 0
+        config = get_passthrough_config("experiment")
+
+        # Should have required fields
+        assert config["tool_name"] == "panda"
+        assert "install_type" in config
+        assert config["install_type"] in ("pypi", "git", "local")
+        assert "minimum_version" in config
+        assert validate_semver(config["minimum_version"])
+        assert "install_source" in config
+        assert config["command_name"] == "experiment"
 
     def test_experiment_help_requires_installation(self, runner):
         """Test experiment command behavior when panda not installed."""

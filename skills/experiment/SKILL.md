@@ -1,5 +1,5 @@
 ---
-name: Run Experiment
+name: Asta Software Experiment Runner
 description: Run scientific (software) experiments. Use when the user asks to "run an experiment", "run an investigation", or "research with Asta." Also use this skill to analyze experimental data generate a research report from it. The user may refer to this system by its internal project name, "Panda."
 allowed-tools:
   - Bash(asta experiment *)
@@ -14,6 +14,14 @@ Run a computational experiment. Given a research question that can be answered v
 this skill will write and run the necessary software and generate a report on the results.
 
 This skill can also be used to analyze experimental data and generate a research report from it, even if the experiment itself was not run by Asta. In that case, the user can provide the experimental data as a file input, and Asta will analyze it and generate a report.
+
+## Installation
+
+If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
+
+**Prerequisites:** Python 3.10+ and [uv package manager](https://docs.astral.sh/uv/)
+
+Verify installation with `asta experiment --help`
 
 ## Workflow
 
