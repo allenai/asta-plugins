@@ -84,6 +84,46 @@ cd asta-plugins
 make install
 ```
 
+`make install` creates `.venv/bin/asta` as an editable install — changes to Python source
+are picked up immediately, no reinstall needed.
+
+#### Using dev asta from other directories
+
+To use the dev `asta` from any directory, either invoke it directly:
+
+```bash
+/path/to/asta-plugins/.venv/bin/asta --help
+```
+
+Or activate the venv:
+
+```bash
+source /path/to/asta-plugins/.venv/bin/activate
+```
+
+If you have a global `asta` installed, it stays unaffected — the venv takes precedence
+only while active.
+
+For coding agents like Claude that invoke bare `asta` from arbitrary working directories,
+add to `~/.zshrc`:
+
+```bash
+alias claude-asta='PATH="/path/to/asta-plugins/.venv/bin:$PATH" claude --plugin-dir /path/to/asta-plugins'
+```
+
+The PATH prepend ensures skills resolve `asta` to your local source for that session,
+without affecting your global install. If you have the `asta` plugin installed globally,
+disable or uninstall it via Claude Code settings while developing to avoid loading it
+twice alongside `--plugin-dir`.
+
+#### Picking up changes
+
+| Changed | Action needed |
+|---|---|
+| Python files (`src/asta/`) | None — editable install |
+| `pyproject.toml` (new deps/scripts) | `make install` |
+| Skills, hooks, `plugin.json` | Restart `claude-asta` session |
+
 ### Run Tests
 
 ```bash
