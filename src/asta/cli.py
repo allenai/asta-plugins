@@ -15,7 +15,7 @@ from asta.papers.search import search
 @click.group()
 @click.version_option(version=__version__, prog_name="asta")
 def cli():
-    """Asta - Science literature research tools
+    """Asta - Tools for Scientific Workflows
 
     Use 'asta COMMAND --help' for more information on a specific command.
     """
