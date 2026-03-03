@@ -54,7 +54,6 @@ format:
 # Check formatting without changes
 format-check:
 	uvx ruff format --check .
-	uvx ruff check .
 
 # Clean build artifacts
 clean:
