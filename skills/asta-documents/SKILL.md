@@ -1,6 +1,7 @@
 ---
-name: asta-documents
-description: Local document metadata index for files used by Asta skills and tools
+name: Asta Library
+description: Local document metadata index for files used by Asta skills and tools. Use this skill when the user asks to store a document "in Asta" or retrieve "from Asta". Use it when the
+  user references an "Asta document" or anything with an `asta://` URI.
 allowed-tools:
   - Bash(asta documents *)
   - Read(*)
@@ -9,9 +10,6 @@ allowed-tools:
 ---
 
 # Asta Documents Management
-
-Use this skill when the user asks to store a document "in Asta" or retrieve "from Asta". Use it when the
-user references an "Asta document" or anything with an `asta://` URI.
 
 This skill provides complete document management functionality for tracking research papers, documentation, and resources using the `asta documents` CLI.
 
@@ -47,11 +45,9 @@ asta documents add "file://${REPORT_PATH}" \
 
 ## Installation
 
-The `asta documents` command is a pass-through to the `asta-documents` CLI tool. It will be installed automatically on first use.
+If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
 
 **Prerequisites:** Python 3.10+ and [uv package manager](https://docs.astral.sh/uv/)
-
-If manual installation is needed: `uv tool install git+ssh://git@github.com/allenai/asta-resource-repo.git`
 
 Verify installation with `asta documents --help`
 

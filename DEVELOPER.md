@@ -15,6 +15,8 @@ src/asta/                      # Main CLI package
 │   └── client.py              # AstaPaperFinder API client (stdlib only)
 ├── utils/
 │   ├── __init__.py
+│   ├── config.py              # Configuration management using HOCON
+│   ├── passthrough.conf       # Passthrough tool configurations (HOCON format)
 │   └── passthrough.py         # Generic passthrough utility for external tools
 ├── documents/
 │   ├── __init__.py
@@ -45,12 +47,16 @@ hooks/                         # Claude Code permission hooks
 3. **Generic passthrough architecture**: `asta.utils.passthrough` provides reusable utilities for external tool integration
    - `ensure_tool_installed()`: Checks for tool, auto-installs if missing
    - `create_passthrough_command()`: Factory function for creating passthrough commands
-4. **Pass-through commands**: Commands that delegate to external tools, auto-installed on first use
+4. **Configuration management**: `asta.utils.config` loads passthrough settings from HOCON
+   - All passthrough configurations centralized in `src/asta/utils/passthrough.conf`
+   - Uses pyhocon for flexible, hierarchical configuration
+   - `get_passthrough_config()`: Retrieves settings for specific commands
+5. **Pass-through commands**: Commands that delegate to external tools, auto-installed on first use
    - `asta documents` → `asta-documents` CLI (document metadata management)
    - `asta experiment` → `panda` CLI (computational experiments)
-   - Version pinning: Each passthrough defines a version constant (e.g., `ASTA_DOCUMENTS_VERSION`, `PANDA_VERSION`)
+   - Configuration: Version pinning, install sources, and other settings in `passthrough.conf`
    - Future: will install from PyPI instead of git
-5. **Claude Code integration**: Uses the CLI via Bash tool for portability
+6. **Claude Code integration**: Uses the CLI via Bash tool for portability
 
 ## Development Setup
 
@@ -379,18 +385,18 @@ The version number is stored in four locations and must be kept in sync:
    git push
    ```
 
-5. **Create GitHub release:**
+5. **Create and push version tag:**
    ```bash
-   make release
+   make push-version-tag
    ```
    This command will:
    - Verify all three version files are in sync (fails if they differ)
    - Check that the git tag doesn't already exist
-   - Create and push the git tag (e.g., `v0.3.0`)
+   - Create and push the git tag (e.g., `0.3.0`)
    - Provide a URL to create the GitHub release
 
 6. **Create GitHub release notes:**
-   - Visit the URL provided by `make release`
+   - Visit the URL provided by `make push-version-tag`
    - Add release notes describing changes
    - Publish the release
 
@@ -415,9 +421,9 @@ make set-version VERSION=x.y.z
 - Fails with error if VERSION parameter is not provided
 - Provides suggested commit command after success
 
-**Create release:**
+**Push version tag:**
 ```bash
-make release
+make push-version-tag
 ```
 - Checks version consistency across all four files
 - Fails with clear error if versions don't match
@@ -427,10 +433,10 @@ make release
 
 ### Version Mismatch Example
 
-If you try to release with mismatched versions:
+If you try to push a version tag with mismatched versions:
 
 ```bash
-$ make release
+$ make push-version-tag
 Checking version consistency...
 Error: Version mismatch detected:
   src/asta/__init__.py:              0.3.0
@@ -500,49 +506,79 @@ If Asta's API changes:
 
 To add a new external tool as an `asta` passthrough command:
 
-1. **Create the passthrough module:**
+1. **Add configuration** to `src/asta/utils/passthrough.conf`:
+   ```hocon
+   passthrough {
+     # ... existing configs ...
+
+     newtool {
+       tool_name = "newtool-cli"
+       install_type = "pypi"  # or "git" or "local"
+       install_source = "newtool-package"  # package name, git URL, or filesystem path
+       minimum_version = "1.0.0"  # Must be x.y.z format
+       command_name = "newtool"
+       friendly_name = "NewTool"
+       docstring = "Description for --help"
+     }
+   }
+   ```
+
+   **Installation source types:**
+   - `pypi`: Install from PyPI (e.g., `install_source = "package-name"`)
+   - `git`: Install from Git repository (e.g., `install_source = "git+https://github.com/user/repo"`)
+   - `local`: Install from local filesystem (e.g., `install_source = "/path/to/package"` or `"~/dev/package"`)
+
+2. **Create the passthrough module:**
    ```python
    # src/asta/newtool/__init__.py
    from asta.newtool.passthrough import newtool
    __all__ = ["newtool"]
 
    # src/asta/newtool/passthrough.py
+   from asta.utils.config import get_passthrough_config
    from asta.utils.passthrough import create_passthrough_command
 
-   NEWTOOL_VERSION = "v1.0.0"  # Pin to specific version
+   # Load configuration from passthrough.conf
+   config = get_passthrough_config("newtool")
 
+   # Create the passthrough command
    newtool = create_passthrough_command(
-       tool_name="newtool-cli",              # Executable name
-       install_source="git+https://github.com/org/newtool",
-       version=NEWTOOL_VERSION,
-       command_name="newtool",               # asta subcommand name
-       friendly_name="NewTool",              # Display name
-       docstring="Description for --help"
+       tool_name=config["tool_name"],
+       install_type=config["install_type"],
+       install_source=config["install_source"],
+       minimum_version=config["minimum_version"],
+       command_name=config["command_name"],
+       friendly_name=config["friendly_name"],
+       docstring=config["docstring"],
    )
    ```
 
-2. **Register in CLI:**
+3. **Register in CLI:**
    ```python
    # src/asta/cli.py
    from asta.newtool import newtool
    cli.add_command(newtool)
    ```
 
-3. **Add tests:**
+4. **Add tests:**
    ```python
    # tests/test_cli.py
    class TestNewToolCommand:
-       def test_newtool_version_constant(self):
-           from asta.newtool.passthrough import NEWTOOL_VERSION
-           assert isinstance(NEWTOOL_VERSION, str)
-           assert len(NEWTOOL_VERSION) > 0
+       def test_newtool_config(self):
+           from asta.utils.config import get_passthrough_config
+           from asta.utils.passthrough import validate_semver
+
+           config = get_passthrough_config("newtool")
+           assert config["tool_name"] == "newtool-cli"
+           assert config["install_type"] in ("pypi", "git", "local")
+           assert validate_semver(config["minimum_version"])
 
        def test_newtool_passthrough_when_installed(self, runner, tmp_path):
            # Test passthrough behavior
            ...
    ```
 
-4. **Create skill (optional):**
+5. **Create skill (optional):**
    ```markdown
    # skills/newtool/SKILL.md
    ---
@@ -561,40 +597,71 @@ To add a new external tool as an `asta` passthrough command:
 
 ### Updating Passthrough Tool Versions
 
-When a new version of a passthrough tool is released:
+The passthrough system automatically enforces minimum version requirements for external tools.
 
-**For asta-documents:**
-1. Update `ASTA_DOCUMENTS_VERSION` in `src/asta/documents/passthrough.py`
-   ```python
-   ASTA_DOCUMENTS_VERSION = "v0.2.0"  # Change to new tag
+**How it works:**
+
+1. When you run a passthrough command (e.g., `asta documents`), the system:
+   - Checks if the tool is installed
+   - If installed, runs `tool --version` to check the version
+   - Compares with the `minimum_version` specified in `passthrough.conf`
+   - Automatically reinstalls **only if the installed version is below the minimum**
+
+2. Version requirements:
+   - Must be in semantic version format: `x.y.z` (e.g., `0.1.0`, `1.2.3`)
+   - The 'v' prefix is optional when parsing installed versions (both `1.0.0` and `v1.0.0` are accepted)
+   - Versions are compared semantically: `1.0.1` > `1.0.0`, `1.1.0` > `1.0.9`, `2.0.0` > `1.99.99`
+   - If the installed version is **greater than or equal** to minimum_version, it will be kept (no downgrade)
+
+3. This allows users to:
+   - Install newer versions manually and have them respected
+   - Get automatic updates only when their version is too old
+   - Avoid unnecessary reinstallations on every run
+
+**To require a newer minimum version:**
+
+1. **Update the configuration** in `src/asta/utils/passthrough.conf`:
+   ```hocon
+   passthrough {
+     documents {
+       minimum_version = "0.2.0"  # Require at least version 0.2.0
+       # ... other settings
+     }
+     experiment {
+       minimum_version = "1.0.0"  # Require at least version 1.0.0
+       # ... other settings
+     }
+   }
    ```
-2. Test the installation works:
+
+2. **Next time someone runs the command**, it will automatically update if their version is too old:
    ```bash
-   # Uninstall current version
-   uv tool uninstall asta-documents
-   # Test auto-installation with new version
-   uv run python -m asta.cli documents --help
-   ```
-3. Update release notes mentioning the new version
-
-**For panda (experiment command):**
-1. Update `PANDA_VERSION` in `src/asta/experiment/passthrough.py`
-   ```python
-   PANDA_VERSION = "v1.0.0"  # Change to new tag
-   ```
-2. Test similarly:
-   ```bash
-   uv tool uninstall panda
-   uv run python -m asta.cli experiment --help
+   # If installed version < 0.2.0, will reinstall
+   # If installed version >= 0.2.0, will use existing installation
+   asta documents --help
+   asta experiment --help
    ```
 
-**Note**: In the future, when these tools are available on PyPI, update the installation source in the passthrough files:
-```python
-# Change from:
-install_source="git+https://github.com/org/repo"
+3. **Update release notes** mentioning the new minimum version requirement
 
-# To:
-install_source="package-name"  # Will use PyPI
+**Switching installation sources:**
+
+When a tool becomes available on PyPI, update `passthrough.conf`:
+```hocon
+# Change from Git:
+install_type = "git"
+install_source = "git+https://github.com/org/repo"
+
+# To PyPI:
+install_type = "pypi"
+install_source = "package-name"
+```
+
+For local development:
+```hocon
+# Use local installation:
+install_type = "local"
+install_source = "~/dev/my-package"
 ```
 
 ### Debugging
