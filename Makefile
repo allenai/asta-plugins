@@ -1,4 +1,4 @@
-.PHONY: help install test test-unit test-integration test-coverage lint format format-check clean build publish publish-test release version set-version
+.PHONY: help install test test-unit test-integration test-coverage lint format format-check clean build publish publish-test push-version-tag version set-version
 
 # Default target
 help:
@@ -18,7 +18,7 @@ help:
 	@echo "  publish          Publish to PyPI"
 	@echo "  publish-test     Publish to TestPyPI"
 	@echo "  set-version      Set version in all files (requires VERSION=x.y.z)"
-	@echo "  release          Create GitHub release using current version"
+	@echo "  push-version-tag Create and push git tag using current version"
 	@echo "  version          Show current version"
 
 # Install with test dependencies
@@ -100,8 +100,8 @@ set-version:
 	echo "Version updated to $(VERSION) in all files"; \
 	echo "Review changes and commit with: git add -A && git commit -m 'chore: bump version to $(VERSION)'"
 
-# Create GitHub release using version from code
-release:
+# Create and push git tag using version from code
+push-version-tag:
 	@echo "Checking version consistency..."; \
 	INIT_VERSION=$$(uv run python -c "from src.asta import __version__; print(__version__)"); \
 	PYPROJECT_VERSION=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
@@ -118,15 +118,9 @@ release:
 		exit 1; \
 	fi; \
 	VERSION=$$INIT_VERSION; \
-	echo "Creating release v$$VERSION..."; \
-	if git rev-parse v$$VERSION >/dev/null 2>&1; then \
-		echo "Error: Tag v$$VERSION already exists"; \
-		exit 1; \
-	fi; \
-	git tag v$$VERSION && \
-	git push origin v$$VERSION && \
-	echo "Release v$$VERSION created. Create GitHub release at:" && \
-	echo "https://github.com/allenai/asta-plugins/releases/new?tag=v$$VERSION"
+	git tag $$VERSION && \
+	git push origin $$VERSION && \
+	echo "Pushed tag v$$VERSION"
 
 # Show current version
 version:

@@ -1,5 +1,5 @@
 ---
-name: Literature Report Generation
+name: Asta Literature Reports
 description: This skill should be used when the user asks to "generate a report", "write a literature review", "create a comprehensive summary", "synthesize the literature", or needs a detailed written report on an academic topic. Use this for thorough, multi-paper synthesis tasks that produce written deliverables. Can work with existing paper-finder results or launch new searches.
 allowed-tools:
   - Bash(asta literature find *)
