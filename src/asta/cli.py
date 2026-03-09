@@ -6,6 +6,7 @@ from asta import __version__
 from asta.documents import documents
 from asta.experiment import experiment
 from asta.literature.find import find
+from asta.ocr import ocr
 from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
@@ -37,6 +38,9 @@ def papers():
 # Register passthrough commands
 cli.add_command(documents)
 cli.add_command(experiment)
+
+# Register ocr command
+cli.add_command(ocr)
 
 # Register literature subcommands
 literature.add_command(find)

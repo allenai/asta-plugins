@@ -434,5 +434,38 @@ class TestExperimentCommand:
         assert result.exit_code != 0
 
 
+class TestOCRCommand:
+    """Test 'asta ocr' passthrough command."""
+
+    def test_ocr_config(self):
+        """Test that ocr configuration is properly defined."""
+        from asta.utils.config import get_passthrough_config
+        from asta.utils.passthrough import validate_semver
+
+        config = get_passthrough_config("ocr")
+
+        # Should have required fields
+        assert config["tool_name"] == "olmocr"
+        assert "install_type" in config
+        assert config["install_type"] in ("pypi", "git", "local")
+        assert "minimum_version" in config
+        assert validate_semver(config["minimum_version"])
+        assert "install_source" in config
+        assert config["command_name"] == "ocr"
+
+    def test_ocr_help_requires_installation(self, runner):
+        """Test ocr command behavior when olmocr not installed."""
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = None
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_subprocess:
+                # Mock installation failure
+                mock_subprocess.side_effect = FileNotFoundError("uv not found")
+
+                result = runner.invoke(cli, ["ocr", "--help"])
+
+        assert result.exit_code != 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
