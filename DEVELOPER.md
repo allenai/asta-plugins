@@ -62,7 +62,7 @@ hooks/                         # Claude Code permission hooks
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - `uv` (for running commands)
 - `make` (for development tasks)
 

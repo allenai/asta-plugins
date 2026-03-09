@@ -19,7 +19,7 @@ questions to clarify the topic and refine the query before running the search.
 
 If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
 
-**Prerequisites:** Python 3.10+ and [uv package manager](https://docs.astral.sh/uv/)
+**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
 
 Verify installation with `asta literature --help`
 
