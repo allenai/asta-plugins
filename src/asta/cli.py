@@ -10,6 +10,7 @@ from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
+from asta.pdf import batch_extract, to_text
 
 
 @click.group()
@@ -34,6 +35,12 @@ def papers():
     pass
 
 
+@cli.group()
+def pdf():
+    """PDF processing commands"""
+    pass
+
+
 # Register passthrough commands
 cli.add_command(documents)
 cli.add_command(experiment)
@@ -46,6 +53,10 @@ papers.add_command(get)
 papers.add_command(search)
 papers.add_command(citations)
 papers.add_command(author)
+
+# Register pdf subcommands
+pdf.add_command(to_text)
+pdf.add_command(batch_extract)
 
 
 if __name__ == "__main__":

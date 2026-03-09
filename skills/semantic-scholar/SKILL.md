@@ -23,7 +23,7 @@ Fast, targeted lookups of paper metadata, citations, and authors using the Seman
 
 If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
 
-**Prerequisites:** Python 3.10+ and [uv package manager](https://docs.astral.sh/uv/)
+**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
 
 Verify installation with `asta papers --help`
 
