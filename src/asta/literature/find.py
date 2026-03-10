@@ -19,7 +19,13 @@ from asta.literature.models import LiteratureSearchResult
     default=300,
     help="Maximum time to wait for results (seconds)",
 )
-def find(query: str, timeout: int):
+@click.option(
+    "--mode",
+    type=click.Choice(["infer", "fast", "diligent"]),
+    default="infer",
+    help="Search strategy: infer (auto-detect), fast (quick results), or diligent (comprehensive)",
+)
+def find(query: str, timeout: int, mode: str):
     """Find papers matching QUERY using Asta Paper Finder.
 
     Saves results to .asta/literature/find/ with an auto-generated filename.
@@ -31,10 +37,18 @@ def find(query: str, timeout: int):
 
         # With custom timeout
         asta literature find "transformers" --timeout 60
+
+        # Use fast mode for quick results
+        asta literature find "deep learning" --mode fast
+
+        # Use diligent mode for comprehensive search
+        asta literature find "neural networks" --mode diligent
     """
     try:
         client = AstaPaperFinder()
-        raw_result = client.find_papers(query, timeout=timeout, save_to_file=None)
+        raw_result = client.find_papers(
+            query, timeout=timeout, save_to_file=None, operation_mode=mode
+        )
 
         # Transform to literature search result format
         literature_result = LiteratureSearchResult(
