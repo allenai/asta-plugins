@@ -140,7 +140,40 @@ class TestFindCommand:
 
         assert result.exit_code == 0
         mock_instance.find_papers.assert_called_once_with(
-            "test query", timeout=60, save_to_file=None
+            "test query", timeout=60, save_to_file=None, operation_mode="infer"
+        )
+
+    def test_find_with_mode_option(self, runner):
+        """Test find command with different operation modes."""
+        mock_result = {
+            "query": "test query",
+            "status": "completed",
+            "paper_count": 1,
+            "widget": {
+                "results": [
+                    {
+                        "corpusId": 123,
+                        "title": "Test Paper",
+                        "relevanceScore": 0.9,
+                        "authors": [],
+                    }
+                ]
+            },
+        }
+
+        with patch("asta.literature.find.AstaPaperFinder") as MockFinder:
+            mock_instance = MagicMock()
+            mock_instance.find_papers.return_value = mock_result
+            MockFinder.return_value = mock_instance
+
+            # Test fast mode
+            result = runner.invoke(
+                cli, ["literature", "find", "test query", "--mode", "fast"]
+            )
+
+        assert result.exit_code == 0
+        mock_instance.find_papers.assert_called_with(
+            "test query", timeout=300, save_to_file=None, operation_mode="fast"
         )
 
 
