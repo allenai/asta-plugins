@@ -118,8 +118,8 @@ push-version-tag:
 		exit 1; \
 	fi; \
 	VERSION=$$INIT_VERSION; \
-	git tag $$VERSION && \
-	git push origin $$VERSION && \
+	git tag v$$VERSION && \
+	git push origin v$$VERSION && \
 	echo "Pushed tag v$$VERSION"
 
 # Show current version
