@@ -4,6 +4,7 @@ Asta Paper Finder API Client
 """
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -15,19 +16,31 @@ from typing import Any
 class AstaPaperFinder:
     """Client for Asta Paper Finder API"""
 
-    def __init__(self, base_url: str = "https://asta.allen.ai"):
-        self.base_url = base_url
-        self.mabool_url = "https://mabool-demo.allen.ai"
-        self.user_id = str(uuid.uuid4())
+    def __init__(
+        self,
+        base_url: str | None = None,
+        mabool_url: str | None = None,
+        user_id: str | None = None,
+    ):
+        # Temp: use asta-rc until the workers profile in asta.allen.ai points to: https://mabool-workers.allen.ai
+        self.base_url = base_url or os.environ.get(
+            "ASTA_API_URL", "https://asta-rc.allen.ai"
+        )
+        self.mabool_url = mabool_url or os.environ.get(
+            "ASTA_MABOOL_URL", "https://mabool-workers.allen.ai"
+        )
+        self.user_id = user_id or str(uuid.uuid4())
         self.headers = {
             "X-Anonymous-User-ID": self.user_id,
             "Content-Type": "application/json",
         }
 
+    # -- private helpers --
+
     def _request(
         self, url: str, method: str = "GET", data: dict | None = None
     ) -> dict[str, Any] | list:
-        """Make an HTTP request and return JSON response"""
+        """Make an HTTP request and return JSON response."""
         body = json.dumps(data).encode() if data else None
         req = urllib.request.Request(
             url, data=body, headers=self.headers, method=method
@@ -35,50 +48,72 @@ class AstaPaperFinder:
         response = urllib.request.urlopen(req)
         return json.loads(response.read())
 
+    def _get_current_widget_id(self, thread_id: str) -> str | None:
+        """Fetch the current widget ID (single request, no polling)."""
+        url = f"{self.base_url}/api/rest/thread/{thread_id}/event/widget_paper_finder"
+        try:
+            req = urllib.request.Request(url, headers=self.headers)
+            response = urllib.request.urlopen(req)
+            data = json.loads(response.read())
+            last_event = data.get("last_event")
+            if last_event and isinstance(last_event, dict):
+                event_data = last_event.get("data")
+                if event_data and isinstance(event_data, dict):
+                    return event_data.get("id")
+        except urllib.error.HTTPError:
+            pass
+        return None
+
+    def _get_agent_messages(self, thread_id: str) -> list[dict]:
+        """Return all agent messages from a thread (in order)."""
+        data = self.get_thread(thread_id)
+        messages = data.get("thread", {}).get("messages", [])
+        return [
+            m for m in messages
+            if m.get("sender", {}).get("display_name") == "asta"
+        ]
+
+    def _fetch_widget(
+        self, widget_id: str | None, timeout: int,
+    ) -> tuple[dict, list]:
+        """Fetch widget results if a widget ID is available."""
+        if not widget_id:
+            return {}, []
+        result = self.poll_for_results(widget_id, timeout)
+        return result, result.get("results", [])
+
+    # -- low-level API --
+
     def create_thread(self) -> str:
-        """Create a new thread"""
+        """Create a new thread."""
         result = self._request(f"{self.base_url}/api/chat/thread", method="PUT")
         return result["thread"]["key"]
 
     def send_message(
-        self, text: str, thread_id: str, profile: str = "paper-finder-only"
+        self, text: str, thread_id: str, profile: str = "paper-finder-workers"
     ) -> dict[str, Any]:
-        """Send a message to the thread"""
+        """Send a message to the thread."""
         return self._request(
             f"{self.base_url}/api/chat/message",
             method="POST",
             data={"text": text, "thread_id": thread_id, "profile": profile},
         )
 
-    def get_widget_id(self, thread_id: str, max_retries: int = 20) -> str | None:
-        """Get the widget ID from thread events"""
-        url = f"{self.base_url}/api/rest/thread/{thread_id}/event/widget_paper_finder"
-        for _ in range(max_retries):
-            try:
-                req = urllib.request.Request(url, headers=self.headers)
-                response = urllib.request.urlopen(req)
-                data = json.loads(response.read())
-                last_event = data.get("last_event")
-                if last_event and isinstance(last_event, dict):
-                    event_data = last_event.get("data")
-                    if event_data and isinstance(event_data, dict):
-                        widget_id = event_data.get("id")
-                        if widget_id:
-                            return widget_id
-            except urllib.error.HTTPError:
-                pass
-            time.sleep(2)
-        return None
+    def get_thread(self, thread_id: str) -> dict[str, Any]:
+        """Fetch the full thread including messages."""
+        return self._request(f"{self.base_url}/api/chat/thread/{thread_id}")
 
     def get_widget_results(self, widget_id: str) -> dict[str, Any] | list:
-        """Get widget results from mabool service"""
+        """Get widget results from mabool service."""
         url = f"{self.mabool_url}/api/2/rounds/{widget_id}/result/widget"
         req = urllib.request.Request(url, headers=self.headers)
         response = urllib.request.urlopen(req)
         return json.loads(response.read())
 
+    # -- polling --
+
     def poll_for_results(self, widget_id: str, timeout: int = 300):
-        """Poll for results until completion or timeout"""
+        """Poll for widget results until completion or timeout."""
         start_time = time.time()
         poll_interval = 2
 
@@ -112,8 +147,37 @@ class AstaPaperFinder:
 
         raise TimeoutError(f"Timeout after {timeout} seconds")
 
+    def poll_for_agent_response(
+        self,
+        thread_id: str,
+        *,
+        previous_message_count: int,
+        timeout: int = 300,
+        interval: int = 5,
+    ) -> str:
+        """Poll until the agent posts a new message in the thread.
+
+        Compares the current number of agent messages against
+        *previous_message_count* to detect when the agent has responded.
+        Returns the new message text, or raises TimeoutError.
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                agent_msgs = self._get_agent_messages(thread_id)
+                if len(agent_msgs) > previous_message_count:
+                    return agent_msgs[-1].get("stripped_text", "")
+            except urllib.error.HTTPError:
+                pass
+            time.sleep(interval)
+        raise TimeoutError(
+            f"Agent did not respond within {timeout}s"
+        )
+
+    # -- high-level workflows --
+
     def start_search(self, query: str) -> str:
-        """Start a paper search and return thread_id immediately (non-blocking)"""
+        """Start a paper search and return thread_id immediately (non-blocking)."""
         thread_id = self.create_thread()
         self.send_message(query, thread_id)
         return thread_id
@@ -133,15 +197,14 @@ class AstaPaperFinder:
         """
         thread_id = self.start_search(query)
 
-        # Get widget ID
-        widget_id = self.get_widget_id(thread_id)
-        if not widget_id:
-            raise Exception("Failed to get widget ID after retries")
+        # Wait for the agent to respond (new thread, so 0 previous messages)
+        response_text = self.poll_for_agent_response(
+            thread_id, previous_message_count=0, timeout=timeout,
+        )
 
-        # Poll for results
-        widget_result = self.poll_for_results(widget_id, timeout)
-
-        papers = widget_result.get("results", [])
+        # By the time the agent responds, the widget is available (if any)
+        widget_id = self._get_current_widget_id(thread_id)
+        widget_result, papers = self._fetch_widget(widget_id, timeout)
 
         # Build complete search data
         search_data = {
@@ -149,6 +212,7 @@ class AstaPaperFinder:
             "thread_id": thread_id,
             "widget_id": widget_id,
             "status": "completed",
+            "response": response_text,
             "widget": widget_result,
             "timestamp": time.time(),
             "paper_count": len(papers),
@@ -161,3 +225,38 @@ class AstaPaperFinder:
             search_data["file_path"] = str(save_to_file)
 
         return search_data
+
+    def send_followup(
+        self, thread_id: str, message: str, timeout: int = 300
+    ) -> dict[str, Any]:
+        """Send a follow-up message and wait for the agent to respond.
+
+        The agent may respond with text only, or text plus a new paper search.
+        We poll for the agent's text response first (always expected), then
+        check whether a new widget (paper search) was also produced.
+        """
+        old_widget_id = self._get_current_widget_id(thread_id)
+        prev_agent_count = len(self._get_agent_messages(thread_id))
+
+        self.send_message(message, thread_id)
+
+        # Wait for the agent to respond (text is always expected)
+        response_text = self.poll_for_agent_response(
+            thread_id, previous_message_count=prev_agent_count, timeout=timeout,
+        )
+
+        # Check once if a new widget was produced — by the time the agent
+        # message appears, the widget ID (if any) is already available.
+        widget_id = self._get_current_widget_id(thread_id)
+        if widget_id == old_widget_id:
+            widget_id = None
+
+        widget_result, papers = self._fetch_widget(widget_id, timeout)
+
+        return {
+            "thread_id": thread_id,
+            "widget_id": widget_id or old_widget_id,
+            "response": response_text,
+            "widget": widget_result,
+            "paper_count": len(papers),
+        }
