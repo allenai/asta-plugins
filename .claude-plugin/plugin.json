@@ -1,6 +1,6 @@
 {
   "name": "asta",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Asta science tools for Claude Code - paper search, citations, and more",
   "author": {
     "name": "AI2 Asta Team"
