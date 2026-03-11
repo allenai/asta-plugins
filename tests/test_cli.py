@@ -60,25 +60,22 @@ class TestFindCommand:
         }
 
         with patch("asta.literature.find.AstaPaperFinder") as MockFinder:
-            with patch("asta.literature.find.Path.cwd", return_value=tmp_path):
-                mock_instance = MagicMock()
-                mock_instance.find_papers.return_value = mock_result
-                MockFinder.return_value = mock_instance
+            mock_instance = MagicMock()
+            mock_instance.find_papers.return_value = mock_result
+            MockFinder.return_value = mock_instance
 
-                result = runner.invoke(cli, ["literature", "find", "test query"])
+            output_file = tmp_path / "results.json"
+            result = runner.invoke(
+                cli, ["literature", "find", "test query", "-o", str(output_file)]
+            )
 
         assert result.exit_code == 0
 
-        # Verify file was created in default location
-        output_dir = tmp_path / ".asta" / "literature" / "find"
-        assert output_dir.exists()
-
-        # Find the created file (should match pattern: YYYY-MM-DD-HH-MM-SS-test-query.json)
-        json_files = list(output_dir.glob("*-test-query.json"))
-        assert len(json_files) == 1
+        # Verify file was created at specified location
+        assert output_file.exists()
 
         # Verify file contents
-        with open(json_files[0]) as f:
+        with open(output_file) as f:
             data = json.load(f)
 
         assert data["query"] == "test query"
@@ -86,7 +83,7 @@ class TestFindCommand:
         assert data["results"][0]["corpusId"] == 123
         assert data["results"][1]["corpusId"] == 456
 
-    def test_find_timeout_error(self, runner):
+    def test_find_timeout_error(self, runner, tmp_path):
         """Test find command with timeout error."""
         with patch("asta.literature.find.AstaPaperFinder") as MockFinder:
             mock_instance = MagicMock()
@@ -95,22 +92,28 @@ class TestFindCommand:
             )
             MockFinder.return_value = mock_instance
 
-            result = runner.invoke(cli, ["literature", "find", "test query"])
+            output_file = tmp_path / "results.json"
+            result = runner.invoke(
+                cli, ["literature", "find", "test query", "-o", str(output_file)]
+            )
 
         assert result.exit_code == 2
 
-    def test_find_general_error(self, runner):
+    def test_find_general_error(self, runner, tmp_path):
         """Test find command with general error."""
         with patch("asta.literature.find.AstaPaperFinder") as MockFinder:
             mock_instance = MagicMock()
             mock_instance.find_papers.side_effect = Exception("API error")
             MockFinder.return_value = mock_instance
 
-            result = runner.invoke(cli, ["literature", "find", "test query"])
+            output_file = tmp_path / "results.json"
+            result = runner.invoke(
+                cli, ["literature", "find", "test query", "-o", str(output_file)]
+            )
 
         assert result.exit_code == 1
 
-    def test_find_custom_timeout(self, runner):
+    def test_find_custom_timeout(self, runner, tmp_path):
         """Test find command with custom timeout."""
         mock_result = {
             "query": "test query",
@@ -134,8 +137,18 @@ class TestFindCommand:
             mock_instance.find_papers.return_value = mock_result
             MockFinder.return_value = mock_instance
 
+            output_file = tmp_path / "results.json"
             result = runner.invoke(
-                cli, ["literature", "find", "test query", "--timeout", "60"]
+                cli,
+                [
+                    "literature",
+                    "find",
+                    "test query",
+                    "-o",
+                    str(output_file),
+                    "--timeout",
+                    "60",
+                ],
             )
 
         assert result.exit_code == 0
@@ -143,7 +156,7 @@ class TestFindCommand:
             "test query", timeout=60, save_to_file=None, operation_mode="infer"
         )
 
-    def test_find_with_mode_option(self, runner):
+    def test_find_with_mode_option(self, runner, tmp_path):
         """Test find command with different operation modes."""
         mock_result = {
             "query": "test query",
@@ -166,9 +179,19 @@ class TestFindCommand:
             mock_instance.find_papers.return_value = mock_result
             MockFinder.return_value = mock_instance
 
+            output_file = tmp_path / "results.json"
             # Test fast mode
             result = runner.invoke(
-                cli, ["literature", "find", "test query", "--mode", "fast"]
+                cli,
+                [
+                    "literature",
+                    "find",
+                    "test query",
+                    "-o",
+                    str(output_file),
+                    "--mode",
+                    "fast",
+                ],
             )
 
         assert result.exit_code == 0
@@ -413,11 +436,10 @@ class TestDocumentsCommand:
 
         # Should have required fields
         assert config["tool_name"] == "asta-documents"
-        assert "install_type" in config
-        assert config["install_type"] in ("pypi", "git", "local")
-        assert "minimum_version" in config
+        assert config["install_type"] == "pypi"
+        assert config["install_source"] == "asta-resource-repository"
+        assert config["minimum_version"] == "0.3.0"
         assert validate_semver(config["minimum_version"])
-        assert "install_source" in config
         assert config["command_name"] == "documents"
 
     def test_documents_help_requires_installation(self, runner):
