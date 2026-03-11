@@ -11,7 +11,7 @@
       "name": "asta",
       "source": "./",
       "description": "Paper search, citations, literature reports, and Semantic Scholar API tools",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "author": {
         "name": "AI2 Asta Team"
       },
