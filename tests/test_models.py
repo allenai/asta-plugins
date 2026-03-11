@@ -43,6 +43,37 @@ class TestPaper:
         assert paper.authors == []
         assert paper.snippets == []
 
+    def test_paper_snake_case_fields(self):
+        """Test paper creation with snake_case field names (API format)"""
+        data = {
+            "corpus_id": 12345,
+            "title": "Test Paper",
+            "relevance_score": 0.95,
+            "publication_date": "2024-01-15",
+            "citation_count": 42,
+        }
+        paper = Paper(**data)
+        assert paper.corpusId == 12345
+        assert paper.relevanceScore == 0.95
+        assert paper.publicationDate == "2024-01-15"
+        assert paper.citationCount == 42
+
+    def test_paper_string_authors_conversion(self):
+        """Test automatic conversion of string authors to Author objects"""
+        data = {
+            "corpus_id": 12345,
+            "title": "Test Paper",
+            "relevance_score": 0.95,
+            "authors": ["Alice Smith", "Bob Jones", "Charlie Brown"],
+        }
+        paper = Paper(**data)
+        assert len(paper.authors) == 3
+        assert isinstance(paper.authors[0], Author)
+        assert paper.authors[0].name == "Alice Smith"
+        assert paper.authors[0].id == ""
+        assert paper.authors[1].name == "Bob Jones"
+        assert paper.authors[2].name == "Charlie Brown"
+
     def test_paper_complete(self):
         """Test paper with all fields"""
         paper = Paper(
