@@ -29,16 +29,21 @@ Verify installation with `asta literature --help`
 
 Run in background for comprehensive searches (30-60s):
 ```bash
-# Saves to .asta/literature/find/YYYY-MM-DD-HH-MM-SS-{query-slug}.json by default
-Bash(command="asta literature find 'query' --timeout 300", run_in_background=true)
+# Save to a temporary file with explicit -o parameter (required)
+Bash(command="asta literature find 'query' -o /tmp/literature-search-result.json --timeout 300", run_in_background=true)
 ```
-The command saves results to `.asta/literature/find/` (in current working directory) by default with an auto-generated filename.
-The filename is printed to the console when the search is finished. Use the TaskOutput tool to capture the filename for later processing
 
-After the file has been created, index it using the [asta-documents](../asta-documents/SKILL.md) skill.
+After the search completes, move the file to `.asta/documents/literature/find/` and index it:
 
 ```bash
-Bash(command="asta documents add file://<filename> --name=... --summary=...")
+# Create directory if it doesn't exist
+mkdir -p .asta/documents/literature/find
+
+# Move the result file to the documents directory
+mv /tmp/literature-search-result.json .asta/documents/literature/find/
+
+# Index the file using asta-documents
+Bash(command="asta documents add file://.asta/documents/literature/find/literature-search-result.json --name='Literature Search: <query>' --summary='Search results for: <query>'")
 ```
 
 Browse results with jq:

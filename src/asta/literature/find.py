@@ -1,8 +1,6 @@
 """Find papers command"""
 
 import json
-import re
-from datetime import datetime
 from pathlib import Path
 
 import click
@@ -13,6 +11,13 @@ from asta.literature.models import LiteratureSearchResult
 
 @click.command()
 @click.argument("query")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    required=True,
+    help="Output file path for the results (required)",
+)
 @click.option(
     "--timeout",
     type=int,
@@ -25,24 +30,24 @@ from asta.literature.models import LiteratureSearchResult
     default="infer",
     help="Search strategy: infer (auto-detect), fast (quick results), or diligent (comprehensive)",
 )
-def find(query: str, timeout: int, mode: str):
+def find(query: str, output: str, timeout: int, mode: str):
     """Find papers matching QUERY using Asta Paper Finder.
 
-    Saves results to .asta/literature/find/ with an auto-generated filename.
+    Requires an output file path to save results.
 
     Examples:
 
-        # Save to default location
-        asta literature find "machine learning in healthcare"
+        # Save to specific file
+        asta literature find "machine learning in healthcare" -o results.json
 
         # With custom timeout
-        asta literature find "transformers" --timeout 60
+        asta literature find "transformers" -o results.json --timeout 60
 
         # Use fast mode for quick results
-        asta literature find "deep learning" --mode fast
+        asta literature find "deep learning" -o results.json --mode fast
 
         # Use diligent mode for comprehensive search
-        asta literature find "neural networks" --mode diligent
+        asta literature find "neural networks" -o results.json --mode diligent
     """
     try:
         client = AstaPaperFinder()
@@ -58,15 +63,9 @@ def find(query: str, timeout: int, mode: str):
         # Convert to dict for output
         output_data = literature_result.model_dump(mode="json", exclude_none=False)
 
-        # Generate default path: .asta/literature/find/YYYY-MM-DD-HH-MM-SS-query-slug.json
-        default_dir = Path.cwd() / ".asta" / "literature" / "find"
-        default_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        # Create a slug from the query (lowercase, alphanumeric and hyphens only, max 50 chars)
-        query_slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")[:50]
-        filename = f"{timestamp}-{query_slug}.json"
-        output_path = default_dir / filename
+        # Use the specified output path
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Save to file
         with open(output_path, "w") as f:
