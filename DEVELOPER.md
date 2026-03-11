@@ -220,9 +220,9 @@ from asta.core import AstaPaperFinder
 
 client = AstaPaperFinder()
 
-# Simple synchronous search using headless endpoint
+# Blocking search using async headless endpoint (start + poll)
 result = client.find_papers("query", timeout=300)
-# Returns: {query, widget, status, timestamp, paper_count}
+# Returns: {query, task_id, widget, status, timestamp, paper_count}
 
 # With operation mode control
 result = client.find_papers(
@@ -231,6 +231,10 @@ result = client.find_papers(
     operation_mode="fast",  # "infer", "fast", or "diligent"
     include_full_metadata=True
 )
+
+# Low-level async API
+task_id = client.start_search("query", operation_mode="fast", timeout_seconds=300)
+result = client.poll_for_results(task_id, timeout=300)
 ```
 
 ### SemanticScholarClient

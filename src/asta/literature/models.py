@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Author(BaseModel):
@@ -62,7 +62,10 @@ class CitationContext(BaseModel):
 class Paper(BaseModel):
     """Paper search result with relevance judgements"""
 
-    corpusId: int
+    model_config = ConfigDict(populate_by_name=True)
+
+    # Use Field aliases to support both camelCase and snake_case
+    corpusId: int = Field(alias="corpus_id")
     title: str
     abstract: str | None = None
     year: int | None = None
@@ -70,19 +73,40 @@ class Paper(BaseModel):
     venue: str | None = None
     journal: dict[str, Any] | None = None
     url: str | None = None
-    publicationDate: str | None = None
-    citationCount: int | None = None
+    publicationDate: str | None = Field(default=None, alias="publication_date")
+    citationCount: int | None = Field(default=None, alias="citation_count")
     categories: list[str] = Field(default_factory=list)
 
     # Asta Paper Finder specific fields
-    relevanceScore: float
-    relevanceJudgement: RelevanceJudgement | None = None
+    relevanceScore: float = Field(alias="relevance_score")
+    relevanceJudgement: RelevanceJudgement | None = Field(
+        default=None, alias="relevance_judgement"
+    )
     snippets: list[Snippet] = Field(default_factory=list)
-    citationContexts: list[CitationContext] = Field(default_factory=list)
+    citationContexts: list[CitationContext] = Field(
+        default_factory=list, alias="citation_contexts"
+    )
 
     # Legal/filtering fields
-    legalToShow: bool = True
-    numOfOmittedCitationContextsDueLegal: int = 0
+    legalToShow: bool = Field(default=True, alias="legal_to_show")
+    numOfOmittedCitationContextsDueLegal: int = Field(
+        default=0, alias="num_of_omitted_citation_contexts_due_legal"
+    )
+
+    @field_validator("authors", mode="before")
+    @classmethod
+    def convert_author_strings(cls, v):
+        """Convert author strings to Author objects if needed."""
+        if not isinstance(v, list):
+            return v
+        result = []
+        for author in v:
+            if isinstance(author, str):
+                # Convert string to Author dict
+                result.append({"name": author, "id": ""})
+            else:
+                result.append(author)
+        return result
 
 
 class LiteratureSearchResult(BaseModel):
