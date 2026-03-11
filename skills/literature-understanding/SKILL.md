@@ -57,7 +57,7 @@ Thread: abc123
 Papers found: 14
 Session: ~/.asta/literature/sessions/2026-03-09-143052-protein-folding/
 Results: ~/.asta/literature/sessions/.../results-01-protein-folding.json
-Asta: REDACTED_ASTA_RC_URL/share/abc123
+Asta: REDACTED_ASTA_PROD_URL/share/abc123
 ```
 
 You can also write to a custom path (`-o results.json`) or stdout (`-o -`).
@@ -81,7 +81,7 @@ Top hits:
   2. ...
 Session: ~/.asta/literature/sessions/2026-03-09-143052-protein-folding/
 Results: ~/.asta/literature/sessions/.../results-02-focus-on-diffusion-models.json
-Asta: REDACTED_ASTA_RC_URL/share/abc123
+Asta: REDACTED_ASTA_PROD_URL/share/abc123
 ```
 
 ### 3. Manage Sessions
@@ -201,7 +201,7 @@ Example:
 
 ```
 **Links:**
-- Asta: REDACTED_ASTA_RC_URL/share/abc123
+- Asta: REDACTED_ASTA_PROD_URL/share/abc123
 - Session: file:///Users/markpolak/.asta/literature/sessions/2026-03-09-143052-protein-folding/
 - Results: file:///Users/markpolak/.asta/literature/sessions/.../results-01-protein-folding.json
 ```

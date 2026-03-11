@@ -22,9 +22,8 @@ class AstaPaperFinder:
         mabool_url: str | None = None,
         user_id: str | None = None,
     ):
-        # Temp: use asta-rc until the workers profile in asta.allen.ai points to: REDACTED_MABOOL_WORKERS_URL
         self.base_url = base_url or os.environ.get(
-            "ASTA_API_URL", "REDACTED_ASTA_RC_URL"
+            "ASTA_API_URL", "REDACTED_ASTA_PROD_URL"
         )
         self.mabool_url = mabool_url or os.environ.get(
             "ASTA_MABOOL_URL", "REDACTED_MABOOL_WORKERS_URL"
