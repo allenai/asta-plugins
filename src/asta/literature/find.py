@@ -1,14 +1,17 @@
 """Find papers command"""
 
 import json
-import re
-from datetime import datetime
 from pathlib import Path
 
 import click
 
 from asta.core import AstaPaperFinder
 from asta.literature.models import LiteratureSearchResult
+from asta.literature.threads import (
+    create_initial_state,
+    save_results,
+    session_dir,
+)
 
 
 @click.command()
@@ -19,47 +22,89 @@ from asta.literature.models import LiteratureSearchResult
     default=300,
     help="Maximum time to wait for results (seconds)",
 )
-def find(query: str, timeout: int):
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output file path. Use '-' to write to stdout instead of session folder.",
+)
+def find(query: str, timeout: int, output: Path | None):
     """Find papers matching QUERY using Asta Paper Finder.
 
-    Saves results to .asta/literature/find/ with an auto-generated filename.
+    Results are saved to a session folder under ~/.asta/literature/sessions/.
+    Use -o to specify a custom output path, or -o - to write to stdout.
 
     Examples:
 
-        # Save to default location
         asta literature find "machine learning in healthcare"
 
-        # With custom timeout
-        asta literature find "transformers" --timeout 60
+        asta literature find "deep learning" -o results.json
+
+        asta literature find "transformers" -o -
     """
     try:
         client = AstaPaperFinder()
         raw_result = client.find_papers(query, timeout=timeout, save_to_file=None)
 
-        # Transform to literature search result format
         literature_result = LiteratureSearchResult(
             query=raw_result["query"], results=raw_result["widget"]["results"]
         )
-
-        # Convert to dict for output
         output_data = literature_result.model_dump(mode="json", exclude_none=False)
+        response_text = raw_result.get("response", "")
 
-        # Generate default path: .asta/literature/find/YYYY-MM-DD-HH-MM-SS-query-slug.json
-        default_dir = Path.cwd() / ".asta" / "literature" / "find"
-        default_dir.mkdir(parents=True, exist_ok=True)
+        write_to_stdout = str(output) == "-" if output is not None else False
 
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        # Create a slug from the query (lowercase, alphanumeric and hyphens only, max 50 chars)
-        query_slug = re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-")[:50]
-        filename = f"{timestamp}-{query_slug}.json"
-        output_path = default_dir / filename
+        if write_to_stdout:
+            click.echo(json.dumps(output_data, indent=2))
+            return
 
-        # Save to file
-        with open(output_path, "w") as f:
-            json.dump(output_data, f, indent=2)
+        # Create thread state (sets up session folder)
+        thread_id = raw_result.get("thread_id", "")
+        widget_id = raw_result.get("widget_id", "")
+
+        if thread_id:
+            state = create_initial_state(
+                thread_id=thread_id,
+                widget_id=widget_id,
+                query=query,
+                results=raw_result["widget"]["results"],
+                user_id=client.user_id,
+            )
+            # Save results into session folder (include agent response)
+            output_data["response"] = response_text
+            results_path = save_results(
+                state.session_slug,
+                1,
+                query,
+                output_data,
+            )
+            sess_dir = session_dir(state.session_slug)
+        else:
+            results_path = None
+            sess_dir = None
+
+        # Also save to custom output if specified
+        if output is not None:
+            with open(output, "w") as f:
+                json.dump(output_data, f, indent=2)
+
+        # Print agent response to stdout
+        if response_text:
+            click.echo(response_text)
 
         # Print summary to stderr
-        click.echo(f"Results saved to: {output_path}", err=True)
+        click.echo("Search completed successfully!", err=True)
+        click.echo(f"Thread: {thread_id}", err=True)
+        click.echo(f"Papers found: {len(literature_result.results)}", err=True)
+        if sess_dir:
+            click.echo(f"Session: {sess_dir}", err=True)
+        if results_path:
+            click.echo(f"Results: {results_path}", err=True)
+        if output is not None:
+            click.echo(f"Output: {output}", err=True)
+        if thread_id:
+            click.echo(f"Asta: {client.base_url}/share/{thread_id}", err=True)
 
     except TimeoutError as e:
         click.echo(f"Error: {e}", err=True)

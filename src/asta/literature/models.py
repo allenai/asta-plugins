@@ -1,6 +1,6 @@
 """Pydantic models for literature search results"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -96,3 +96,27 @@ class LiteratureSearchResult(BaseModel):
 
     query: str
     results: list[Paper]
+
+
+class Turn(BaseModel):
+    """A single turn in a multi-turn literature search thread."""
+
+    turn_number: int
+    type: Literal["search", "followup"]
+    input: str
+    timestamp: str
+    result_count: int
+
+
+class ThreadState(BaseModel):
+    """Persisted state for a multi-turn literature search thread."""
+
+    thread_id: str
+    widget_id: str
+    session_slug: str = ""
+    user_id: str = ""
+    created_at: str
+    updated_at: str
+    turns: list[Turn] = Field(default_factory=list)
+    current_results: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

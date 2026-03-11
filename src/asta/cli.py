@@ -5,7 +5,10 @@ import click
 from asta import __version__
 from asta.documents import documents
 from asta.experiment import experiment
+from asta.literature.export import export
 from asta.literature.find import find
+from asta.literature.followup import followup
+from asta.literature.threads import show, threads_list
 from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
@@ -47,6 +50,10 @@ cli.add_command(experiment)
 
 # Register literature subcommands
 literature.add_command(find)
+literature.add_command(followup)
+literature.add_command(threads_list)
+literature.add_command(show)
+literature.add_command(export)
 
 # Register papers subcommands
 papers.add_command(get)

@@ -47,39 +47,22 @@ class TestAstaPaperFinder:
         assert result == {"message_id": "msg-123"}
         mock_urlopen.assert_called_once()
 
-    def test_get_widget_id_success(self, mock_urlopen):
-        """Test getting widget ID from thread events."""
+    def test_get_current_widget_id_success(self, mock_urlopen):
+        """Test getting current widget ID (single request)."""
         mock_urlopen.return_value = mock_response(
             {"last_event": {"data": {"id": "widget-456"}}}
         )
 
         finder = AstaPaperFinder()
-        widget_id = finder.get_widget_id("thread-123", max_retries=1)
-
+        widget_id = finder._get_current_widget_id("thread-123")
         assert widget_id == "widget-456"
 
-    def test_get_widget_id_retry_then_success(self, mock_urlopen):
-        """Test widget ID retrieval with retry."""
-        mock_urlopen.side_effect = [
-            mock_response({"last_event": {}}),
-            mock_response({"last_event": {"data": {"id": "widget-456"}}}),
-        ]
-
-        finder = AstaPaperFinder()
-        with patch("asta.core.client.time.sleep"):
-            widget_id = finder.get_widget_id("thread-123", max_retries=3)
-
-        assert widget_id == "widget-456"
-        assert mock_urlopen.call_count == 2
-
-    def test_get_widget_id_timeout(self, mock_urlopen):
-        """Test widget ID retrieval timeout."""
+    def test_get_current_widget_id_none(self, mock_urlopen):
+        """Test returns None when no widget exists."""
         mock_urlopen.return_value = mock_response({"last_event": {}})
 
         finder = AstaPaperFinder()
-        with patch("asta.core.client.time.sleep"):
-            widget_id = finder.get_widget_id("thread-123", max_retries=2)
-
+        widget_id = finder._get_current_widget_id("thread-123")
         assert widget_id is None
 
     def test_poll_for_results_completed(self, mock_urlopen):
@@ -126,7 +109,20 @@ class TestAstaPaperFinder:
             mock_response({"thread": {"key": "thread-123"}}),
             # send_message
             mock_response({}),
-            # get_widget_id
+            # poll_for_agent_response -> get_thread
+            mock_response(
+                {
+                    "thread": {
+                        "messages": [
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "Here are papers.",
+                            },
+                        ]
+                    }
+                }
+            ),
+            # _get_current_widget_id
             mock_response({"last_event": {"data": {"id": "widget-456"}}}),
             # poll_for_results
             mock_response(
@@ -146,10 +142,12 @@ class TestAstaPaperFinder:
         ]
 
         finder = AstaPaperFinder()
-        result = finder.find_papers("test query", timeout=10)
+        with patch("asta.core.client.time.sleep"):
+            result = finder.find_papers("test query", timeout=10)
 
         assert result["widget_id"] == "widget-456"
         assert result["paper_count"] == 1
+        assert result["response"] == "Here are papers."
         assert "file_path" not in result
 
     def test_find_papers_with_file_output(self, mock_urlopen, tmp_path):
@@ -159,7 +157,17 @@ class TestAstaPaperFinder:
             mock_response({"thread": {"key": "thread-123"}}),
             # send_message
             mock_response({}),
-            # get_widget_id
+            # poll_for_agent_response -> get_thread
+            mock_response(
+                {
+                    "thread": {
+                        "messages": [
+                            {"sender": {"display_name": "asta"}, "stripped_text": ""},
+                        ]
+                    }
+                }
+            ),
+            # _get_current_widget_id
             mock_response({"last_event": {"data": {"id": "widget-456"}}}),
             # poll_for_results
             mock_response(
@@ -180,7 +188,10 @@ class TestAstaPaperFinder:
 
         finder = AstaPaperFinder()
         output_file = tmp_path / "results.json"
-        result = finder.find_papers("test query", timeout=10, save_to_file=output_file)
+        with patch("asta.core.client.time.sleep"):
+            result = finder.find_papers(
+                "test query", timeout=10, save_to_file=output_file
+            )
 
         assert result["widget_id"] == "widget-456"
         assert result["paper_count"] == 1
@@ -193,6 +204,113 @@ class TestAstaPaperFinder:
             data = json.load(f)
         assert data["widget_id"] == "widget-456"
         assert data["paper_count"] == 1
+
+    def test_send_followup_with_new_widget(self, mock_urlopen):
+        """Test follow-up that produces both text and a new paper search."""
+        mock_urlopen.side_effect = [
+            # _get_current_widget_id (old widget)
+            mock_response({"last_event": {"data": {"id": "widget-old"}}}),
+            # _get_agent_messages (count before sending)
+            mock_response(
+                {
+                    "thread": {
+                        "messages": [
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "Old response",
+                            },
+                        ]
+                    }
+                }
+            ),
+            # send_message
+            mock_response({}),
+            # poll_for_agent_response — new message appeared
+            mock_response(
+                {
+                    "thread": {
+                        "messages": [
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "Old response",
+                            },
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "New response",
+                            },
+                        ]
+                    }
+                }
+            ),
+            # _get_current_widget_id — new widget
+            mock_response({"last_event": {"data": {"id": "widget-new"}}}),
+            # poll_for_results
+            mock_response(
+                {
+                    "roundStatus": {"kind": "completed"},
+                    "results": [{"corpusId": 1, "title": "New Paper"}],
+                }
+            ),
+        ]
+
+        finder = AstaPaperFinder()
+        with patch("asta.core.client.time.sleep"):
+            result = finder.send_followup("thread-123", "narrow to 2024")
+
+        assert result["response"] == "New response"
+        assert result["widget_id"] == "widget-new"
+        assert result["paper_count"] == 1
+
+    def test_send_followup_text_only(self, mock_urlopen):
+        """Test follow-up where the agent responds with text only (no new widget)."""
+        old_widget = mock_response({"last_event": {"data": {"id": "widget-old"}}})
+        mock_urlopen.side_effect = [
+            # _get_current_widget_id (old widget)
+            old_widget,
+            # _get_agent_messages (count before sending)
+            mock_response(
+                {
+                    "thread": {
+                        "messages": [
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "Old response",
+                            },
+                        ]
+                    }
+                }
+            ),
+            # send_message
+            mock_response({}),
+            # poll_for_agent_response — new message appeared
+            mock_response(
+                {
+                    "thread": {
+                        "messages": [
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "Old response",
+                            },
+                            {
+                                "sender": {"display_name": "asta"},
+                                "stripped_text": "Just a text reply",
+                            },
+                        ]
+                    }
+                }
+            ),
+            # _get_current_widget_id — still old widget, no new search
+            old_widget,
+        ]
+
+        finder = AstaPaperFinder()
+        with patch("asta.core.client.time.sleep"):
+            result = finder.send_followup("thread-123", "thanks, got it")
+
+        assert result["response"] == "Just a text reply"
+        assert result["widget_id"] == "widget-old"
+        assert result["paper_count"] == 0
+        assert result["widget"] == {}
 
 
 if __name__ == "__main__":

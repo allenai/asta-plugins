@@ -1,6 +1,5 @@
 """Tests for the Asta CLI."""
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -33,58 +32,6 @@ class TestFindCommand:
         """Test find command without query argument."""
         result = runner.invoke(cli, ["literature", "find"])
         assert result.exit_code != 0
-
-    def test_find_success_file_output(self, runner, tmp_path):
-        """Test successful find writes to default location."""
-        mock_result = {
-            "query": "test query",
-            "widget_id": "test-widget-123",
-            "status": "completed",
-            "paper_count": 2,
-            "widget": {
-                "results": [
-                    {
-                        "corpusId": 123,
-                        "title": "Test Paper",
-                        "relevanceScore": 0.9,
-                        "authors": [],
-                    },
-                    {
-                        "corpusId": 456,
-                        "title": "Another Paper",
-                        "relevanceScore": 0.8,
-                        "authors": [],
-                    },
-                ]
-            },
-        }
-
-        with patch("asta.literature.find.AstaPaperFinder") as MockFinder:
-            with patch("asta.literature.find.Path.cwd", return_value=tmp_path):
-                mock_instance = MagicMock()
-                mock_instance.find_papers.return_value = mock_result
-                MockFinder.return_value = mock_instance
-
-                result = runner.invoke(cli, ["literature", "find", "test query"])
-
-        assert result.exit_code == 0
-
-        # Verify file was created in default location
-        output_dir = tmp_path / ".asta" / "literature" / "find"
-        assert output_dir.exists()
-
-        # Find the created file (should match pattern: YYYY-MM-DD-HH-MM-SS-test-query.json)
-        json_files = list(output_dir.glob("*-test-query.json"))
-        assert len(json_files) == 1
-
-        # Verify file contents
-        with open(json_files[0]) as f:
-            data = json.load(f)
-
-        assert data["query"] == "test query"
-        assert len(data["results"]) == 2
-        assert data["results"][0]["corpusId"] == 123
-        assert data["results"][1]["corpusId"] == 456
 
     def test_find_timeout_error(self, runner):
         """Test find command with timeout error."""
