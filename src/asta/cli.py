@@ -3,6 +3,7 @@
 import click
 
 from asta import __version__
+from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
 from asta.literature.find import find
@@ -40,6 +41,9 @@ def pdf():
     """PDF processing commands"""
     pass
 
+
+# Register auth commands
+cli.add_command(auth)
 
 # Register passthrough commands
 cli.add_command(documents)

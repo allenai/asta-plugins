@@ -429,10 +429,10 @@ class TestDocumentsCommand:
 
     def test_documents_config(self):
         """Test that documents configuration is properly defined."""
-        from asta.utils.config import get_passthrough_config
+        from asta.utils.config import get_config
         from asta.utils.passthrough import validate_semver
 
-        config = get_passthrough_config("documents")
+        config = get_config()["passthrough"]["documents"]
 
         # Should have required fields
         assert config["tool_name"] == "asta-documents"
@@ -461,10 +461,10 @@ class TestExperimentCommand:
 
     def test_experiment_config(self):
         """Test that experiment configuration is properly defined."""
-        from asta.utils.config import get_passthrough_config
+        from asta.utils.config import get_config
         from asta.utils.passthrough import validate_semver
 
-        config = get_passthrough_config("experiment")
+        config = get_config()["passthrough"]["experiment"]
 
         # Should have required fields
         assert config["tool_name"] == "panda"

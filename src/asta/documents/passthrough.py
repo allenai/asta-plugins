@@ -1,10 +1,10 @@
 """Pass-through command for asta-documents CLI"""
 
-from asta.utils.config import get_passthrough_config
+from asta.utils.config import get_config
 from asta.utils.passthrough import create_passthrough_command
 
-# Load configuration from passthrough.conf
-config = get_passthrough_config("documents")
+# Load configuration from asta.conf
+config = get_config()["passthrough"]["documents"]
 
 # Create the documents passthrough command
 documents = create_passthrough_command(

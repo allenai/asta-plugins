@@ -117,10 +117,86 @@ class TestHoconConfig:
         assert "documents" in passthrough
         assert "experiment" in passthrough
 
-    def test_passthrough_conf_file_exists(self):
-        """Test that the passthrough.conf file exists."""
-        conf_path = ROOT / "src" / "asta" / "utils" / "passthrough.conf"
-        assert conf_path.exists(), f"passthrough.conf not found at {conf_path}"
+    def test_asta_conf_file_exists(self):
+        """Test that the asta.conf file exists."""
+        conf_path = ROOT / "src" / "asta" / "utils" / "asta.conf"
+        assert conf_path.exists(), f"asta.conf not found at {conf_path}"
+
+    def test_get_auth_config(self):
+        """Test loading auth configuration."""
+        from asta.utils.config import get_config
+
+        config = get_config()["auth"]
+
+        # Verify required fields
+        assert "auth0_domain" in config
+        assert "auth0_client_id" in config
+        assert "auth0_audience" in config
+        assert "gateway_url" in config
+
+        # Verify types
+        assert isinstance(config["auth0_domain"], str)
+        assert isinstance(config["auth0_client_id"], str)
+        assert isinstance(config["auth0_audience"], str)
+        assert isinstance(config["gateway_url"], str)
+
+    def test_get_auth_settings(self):
+        """Test loading auth settings through auth_config module."""
+        from asta.utils.auth_config import get_auth_settings
+
+        settings = get_auth_settings()
+
+        # Verify settings has expected attributes
+        assert hasattr(settings, "auth0_domain")
+        assert hasattr(settings, "auth0_client_id")
+        assert hasattr(settings, "auth0_audience")
+        assert hasattr(settings, "gateway_url")
+
+        # Verify values are strings
+        assert isinstance(settings.auth0_domain, str)
+        assert isinstance(settings.auth0_client_id, str)
+        assert isinstance(settings.auth0_audience, str)
+        assert isinstance(settings.gateway_url, str)
+
+    def test_custom_config_file_path(self, tmp_path, monkeypatch):
+        """Test that ASTA_CONFIG_FILE environment variable works."""
+        from asta.utils.config import get_config_path
+
+        # Create a custom config file
+        custom_config = tmp_path / "custom.conf"
+        custom_config.write_text(
+            """
+            auth {
+              auth0_domain = "custom.domain.com"
+              auth0_client_id = "custom_client_id"
+              auth0_audience = "https://custom.audience"
+              gateway_url = "https://custom.gateway"
+            }
+            passthrough {
+              documents {
+                tool_name = "asta-documents"
+                install_type = "pypi"
+                install_source = "asta-resource-repository"
+                minimum_version = "0.3.0"
+                command_name = "documents"
+                friendly_name = "asta-documents"
+                docstring = "Test"
+              }
+            }
+            """
+        )
+
+        # Set environment variable
+        monkeypatch.setenv("ASTA_CONFIG_FILE", str(custom_config))
+
+        # Verify config path is set correctly
+        assert get_config_path() == custom_config
+
+        # Verify we can load the custom config
+        from asta.utils.config import get_config
+
+        config = get_config()
+        assert config["auth"]["auth0_domain"] == "custom.domain.com"
 
 
 if __name__ == "__main__":
