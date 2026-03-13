@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asta"
-version = "0.5.1"
+version = "0.6"
 description = "Asta CLI for scientific literature review"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,10 +12,16 @@ license = "Apache-2.0"
 dependencies = [
     "click>=8.0",
     "pydantic>=2.0",
+    "pydantic-settings>=2.1.0",
     "pyhocon>=0.3.60",
     "pymupdf>=1.27.0",
     "pymupdf-layout>=1.27.0",
     "pymupdf4llm>=0.3.0",
+    "httpx>=0.26.0",
+    "rich>=13.7.0",
+    "python-jose[cryptography]>=3.3.0",
+    "keyring>=24.3.0",
+    "platformdirs>=4.1.0",
 ]
 
 [project.scripts]
