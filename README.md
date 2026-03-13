@@ -48,6 +48,22 @@ uv tool upgrade asta
 
 See `asta --help` for usage instructions.
 
+## Authentication
+
+The Asta CLI makes calls to Ai2-hosted APIs. To authenticate use of those APIs, you must
+create a login with your email address and a password.
+
+```bash
+# Login (opens browser for authentication)
+asta auth login
+
+# Check authentication status
+asta auth status
+
+# Logout
+asta auth logout
+```
+
 ## Development
 
 See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.

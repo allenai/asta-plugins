@@ -1,18 +1,35 @@
 """Configuration management for asta using pyhocon"""
 
+import os
 from pathlib import Path
 from typing import Any
 
 from pyhocon import ConfigFactory
 
 
-def get_config() -> dict[str, Any]:
-    """Load the passthrough configuration from HOCON file.
+def get_config_path() -> Path:
+    """Get the path to the configuration file.
 
     Returns:
-        Configuration dictionary with passthrough tool settings
+        Path to the configuration file, either from ASTA_CONFIG_FILE env var
+        or the default asta.conf in this module's directory
     """
-    config_path = Path(__file__).parent / "passthrough.conf"
+    config_file = os.environ.get("ASTA_CONFIG_FILE")
+    if config_file:
+        return Path(config_file)
+    return Path(__file__).parent / "asta.conf"
+
+
+def get_config() -> dict[str, Any]:
+    """Load the complete configuration from HOCON file.
+
+    Returns:
+        Configuration dictionary with all asta settings (auth, passthrough, etc.)
+
+    Raises:
+        FileNotFoundError: If the configuration file doesn't exist
+    """
+    config_path = get_config_path()
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
