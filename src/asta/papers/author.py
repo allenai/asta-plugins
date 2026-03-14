@@ -38,6 +38,7 @@ def search_author(name: str, limit: int, output_format: str):
         asta papers author search "Hinton" --limit 5
     """
     try:
+        # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
         result = client.search_author(name, limit=limit)
 
@@ -95,6 +96,7 @@ def author_papers(author_id: str, fields: str, limit: int, output_format: str):
         asta papers author papers 1741101 --limit 10 --fields title,year
     """
     try:
+        # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
         result = client.get_author_papers(author_id, fields=fields, limit=limit)
 

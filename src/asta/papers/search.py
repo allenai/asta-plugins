@@ -43,6 +43,7 @@ def search(query: str, fields: str, limit: int, year: str | None, output_format:
         asta papers search "neural networks" --fields title,year,abstract
     """
     try:
+        # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
         result = client.search_papers(query, fields=fields, limit=limit, year=year)
 

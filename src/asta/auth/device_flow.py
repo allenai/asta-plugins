@@ -45,7 +45,7 @@ class DeviceAuthFlow:
         domain: str,
         client_id: str,
         audience: str,
-        scopes: str = "openid profile email offline_access",
+        scopes: str = "openid profile email offline_access access:all",
     ):
         self.domain = domain
         self.client_id = client_id
@@ -55,11 +55,6 @@ class DeviceAuthFlow:
         self.token_url = f"https://{domain}/oauth/token"
 
     async def initiate(self) -> DeviceCodeResponse:
-        """
-        Step 1: Initiate device authorization flow.
-
-        Returns device code and user instructions.
-        """
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 self.device_code_url,
