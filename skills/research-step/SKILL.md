@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Write
 Look at the mission.md file in the current directory. This is the current research mission to perform reserach on.
 
 If there is NOT a mission.md file, exit this skill with a message saying:
-* "Please provide a mission.md file! See examples at https://tinyurl.com/example-missions"
+* "Please add a mission.md file to the current directory describing your research task/mission. See examples at https://tinyurl.com/example-missions"
 
 Otherwise, continue.
 
