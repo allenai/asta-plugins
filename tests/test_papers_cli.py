@@ -251,5 +251,65 @@ class TestPapersAuthor:
         assert "Author's Paper" in result.output
 
 
+class TestSemanticScholarClient:
+    """Test SemanticScholarClient initialization and configuration."""
+
+    def test_init_with_explicit_params(self):
+        """Test that client initializes with explicit parameters."""
+        from asta.papers.client import SemanticScholarClient
+
+        custom_url = "https://custom.semantic.example.com/v1"
+        token = "test-access-token-456"
+        client = SemanticScholarClient(base_url=custom_url, access_token=token)
+        assert client.base_url == custom_url
+        assert client.access_token == token
+        assert "Authorization" in client.headers
+        assert client.headers["Authorization"] == f"Bearer {token}"
+
+    def test_init_from_config(self):
+        """Test that client loads from config when available."""
+        from asta.papers.client import SemanticScholarClient
+
+        with patch("asta.papers.client.get_api_config") as mock_get_api:
+            with patch("asta.papers.client.get_access_token") as mock_get_token:
+                mock_get_api.return_value = {"base_url": "https://config.url"}
+                mock_get_token.return_value = "config-token"
+
+                client = SemanticScholarClient()
+                assert client.base_url == "https://config.url"
+                assert client.access_token == "config-token"
+
+    def test_init_fails_without_base_url(self):
+        """Test that client fails without base_url."""
+        from asta.papers.client import SemanticScholarClient
+
+        with patch("asta.papers.client.get_api_config") as mock_get_api:
+            with patch("asta.papers.client.get_access_token") as mock_get_token:
+                mock_get_api.side_effect = KeyError("Not found")
+                mock_get_token.return_value = "test-token"
+
+                with pytest.raises(
+                    ValueError, match="No value for apis.semantic_scholar.base_url"
+                ):
+                    SemanticScholarClient()
+
+    def test_init_fails_without_access_token(self):
+        """Test that client fails without access_token."""
+        from asta.auth.exceptions import AuthenticationError
+        from asta.papers.client import SemanticScholarClient
+
+        with patch("asta.papers.client.get_api_config") as mock_get_api:
+            with patch("asta.papers.client.get_access_token") as mock_get_token:
+                mock_get_api.return_value = {"base_url": "https://test.url"}
+                mock_get_token.side_effect = AuthenticationError(
+                    "Not authenticated. Please run 'asta auth login' to authenticate."
+                )
+
+                with pytest.raises(
+                    AuthenticationError, match="Please run 'asta auth login'"
+                ):
+                    SemanticScholarClient()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

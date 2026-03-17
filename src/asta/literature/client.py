@@ -10,14 +10,38 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from asta.utils.auth_helper import get_access_token
+from asta.utils.config import get_api_config, get_config_path
+
 
 class AstaPaperFinder:
     """Client for Asta Paper Finder API using headless endpoint"""
 
-    def __init__(self, base_url: str = "REDACTED_MABOOL_WORKERS_URL"):
+    def __init__(self, base_url: str | None = None, access_token: str | None = None):
+        # Load base URL from config if not provided
+        if base_url is None:
+            try:
+                config = get_api_config("paper_finder")
+                base_url = config.get("base_url")
+            except (KeyError, FileNotFoundError):
+                base_url = None
+
+        if not base_url:
+            raise ValueError(
+                f"No value for apis.paper_finder.base_url in {get_config_path()}"
+                "base_url is required. Either provide it as a parameter or configure it in asta.conf"
+            )
+
+        # Load access token from storage if not provided
+        # AuthenticationError will propagate with helpful message
+        if access_token is None:
+            access_token = get_access_token()
+
         self.base_url = base_url
+        self.access_token = access_token
         self.headers = {
             "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.access_token}",
         }
 
     def _request(

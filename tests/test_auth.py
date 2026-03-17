@@ -141,6 +141,47 @@ class TestAuthCommands:
         assert result.exit_code == 0
         assert "Logged out successfully" in result.output
 
+    def test_auth_print_token_no_token(self):
+        """Test print-token when no token exists."""
+        runner = CliRunner()
+
+        # Mock TokenStorage.load_tokens to return None
+        with patch.object(TokenStorage, "load_tokens", return_value=None):
+            result = runner.invoke(cli, ["auth", "print-token"])
+            assert result.exit_code == 1
+            assert "No token found" in result.output
+
+    def test_auth_print_token_raw(self):
+        """Test print-token with --raw flag."""
+        runner = CliRunner()
+
+        # Mock token
+        test_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiaWF0IjoxNTE2MjM5MDIyfQ.signature"
+        mock_tokens = {"access_token": test_token}
+
+        with patch.object(TokenStorage, "load_tokens", return_value=mock_tokens):
+            result = runner.invoke(cli, ["auth", "print-token", "--raw"])
+            assert result.exit_code == 0
+            assert test_token in result.output
+
+    def test_auth_print_token_decoded(self):
+        """Test print-token without --raw flag (decoded output)."""
+        runner = CliRunner()
+
+        # Create a valid JWT token
+        # Header: {"alg":"HS256","typ":"JWT"}
+        # Payload: {"sub":"1234567890","email":"test@example.com","scope":"openid profile email access:semantic-scholar"}
+        test_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBlbWFpbCBhY2Nlc3M6c2VtYW50aWMtc2Nob2xhciJ9.signature"
+        mock_tokens = {"access_token": test_token}
+
+        with patch.object(TokenStorage, "load_tokens", return_value=mock_tokens):
+            result = runner.invoke(cli, ["auth", "print-token"])
+            assert result.exit_code == 0
+            assert "JWT Header:" in result.output
+            assert "JWT Payload:" in result.output
+            assert "test@example.com" in result.output
+            assert "access:semantic-scholar" in result.output
+
 
 class TestTokenVerification:
     """Tests for server-side token verification."""

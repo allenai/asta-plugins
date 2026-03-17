@@ -38,6 +38,7 @@ def get(paper_id: str, fields: str, output_format: str):
         asta papers get "DOI:10.18653/v1/N18-3011" --fields title,year,authors
     """
     try:
+        # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
         result = client.get_paper(paper_id, fields=fields)
 

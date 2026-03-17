@@ -42,7 +42,7 @@ hooks/                         # Claude Code permission hooks
 
 ### Design Principles
 
-1. **Core is dependency-free**: `asta.core.client` and `asta.papers.client` use only stdlib (json, urllib, time, etc.)
+1. **Core clients are dependency-free**: `asta.literature.client` and `asta.papers.client` use only stdlib (json, urllib, time, etc.)
 2. **CLI layer is thin**: Click commands wrap the core clients
 3. **Generic passthrough architecture**: `asta.utils.passthrough` provides reusable utilities for external tool integration
    - `ensure_tool_installed()`: Checks for tool, auto-installs if missing
@@ -172,7 +172,7 @@ Add a new file in `src/asta/literature/` (or create a new subpackage):
 ```python
 # src/asta/literature/analyze.py
 import click
-from asta.core import AstaPaperFinder
+from asta.literature.client import AstaPaperFinder
 
 @click.command()
 @click.argument("widget_id")
@@ -213,10 +213,10 @@ Update README.md and this DEVELOPER.md with the new command.
 
 ### AstaPaperFinder
 
-The `AstaPaperFinder` client in `src/asta/core/client.py` handles paper finder API interactions.
+The `AstaPaperFinder` client in `src/asta/literature/client.py` handles paper finder API interactions.
 
 ```python
-from asta.core import AstaPaperFinder
+from asta.literature import AstaPaperFinder
 
 client = AstaPaperFinder()
 
@@ -494,13 +494,13 @@ Only add dependencies if absolutely necessary:
 3. Update tests to verify it works
 4. Document why it's needed
 
-Core (`asta.core`) should remain dependency-free.
+Core API clients (`asta.literature.client`, `asta.papers.client`) should remain dependency-free.
 
 ### Updating API Endpoints
 
 If Asta's API changes:
 
-1. Update `AstaPaperFinder` in `src/asta/core/client.py`
+1. Update `AstaPaperFinder` in `src/asta/literature/client.py`
 2. Add/update tests in `tests/test_client.py`
 3. Update documentation examples
 4. Consider backward compatibility

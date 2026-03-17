@@ -39,6 +39,7 @@ def citations(paper_id: str, fields: str, limit: int, output_format: str):
         asta papers citations "CorpusId:218487638" --limit 20
     """
     try:
+        # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
         result = client.get_paper_citations(paper_id, fields=fields, limit=limit)
 

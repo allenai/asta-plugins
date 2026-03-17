@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from asta.core import AstaPaperFinder
+from asta.literature import AstaPaperFinder
 
 
 def mock_response(data):
@@ -18,12 +18,59 @@ def mock_response(data):
 @pytest.fixture
 def mock_urlopen():
     """Fixture providing mocked urlopen for AstaPaperFinder tests."""
-    with patch("asta.core.client.urllib.request.urlopen") as mock:
+    with patch("asta.literature.client.urllib.request.urlopen") as mock:
         yield mock
 
 
 class TestAstaPaperFinder:
     """Tests for AstaPaperFinder API client using headless endpoint."""
+
+    def test_init_with_explicit_params(self):
+        """Test that client initializes with explicit parameters."""
+        custom_url = "https://custom.api.example.com"
+        token = "test-token-123"
+        finder = AstaPaperFinder(base_url=custom_url, access_token=token)
+        assert finder.base_url == custom_url
+        assert finder.access_token == token
+        assert "Authorization" in finder.headers
+        assert finder.headers["Authorization"] == f"Bearer {token}"
+
+    def test_init_from_config(self):
+        """Test that client loads from config when available."""
+        with patch("asta.literature.client.get_api_config") as mock_get_api:
+            with patch("asta.literature.client.get_access_token") as mock_get_token:
+                mock_get_api.return_value = {"base_url": "https://config.url"}
+                mock_get_token.return_value = "config-token"
+
+                finder = AstaPaperFinder()
+                assert finder.base_url == "https://config.url"
+                assert finder.access_token == "config-token"
+
+    def test_init_fails_without_base_url(self):
+        """Test that client fails without base_url."""
+        with patch("asta.literature.client.get_api_config") as mock_get_api:
+            with patch("asta.literature.client.get_access_token") as mock_get_token:
+                mock_get_api.side_effect = KeyError("Not found")
+                mock_get_token.return_value = "test-token"
+
+                with pytest.raises(ValueError, match="base_url is required"):
+                    AstaPaperFinder()
+
+    def test_init_fails_without_access_token(self):
+        """Test that client fails without access_token."""
+        from asta.auth.exceptions import AuthenticationError
+
+        with patch("asta.literature.client.get_api_config") as mock_get_api:
+            with patch("asta.literature.client.get_access_token") as mock_get_token:
+                mock_get_api.return_value = {"base_url": "https://test.url"}
+                mock_get_token.side_effect = AuthenticationError(
+                    "Not authenticated. Please run 'asta auth login' to authenticate."
+                )
+
+                with pytest.raises(
+                    AuthenticationError, match="Please run 'asta auth login'"
+                ):
+                    AstaPaperFinder()
 
     def test_find_papers_success(self, mock_urlopen):
         """Test successful paper search."""
@@ -54,7 +101,7 @@ class TestAstaPaperFinder:
             }
         )
 
-        finder = AstaPaperFinder()
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
         result = finder.find_papers("test query", timeout=10)
 
         assert result["status"] == "completed"
@@ -83,7 +130,7 @@ class TestAstaPaperFinder:
             }
         )
 
-        finder = AstaPaperFinder()
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
         output_file = tmp_path / "results.json"
         result = finder.find_papers("test query", timeout=10, save_to_file=output_file)
 
@@ -106,7 +153,7 @@ class TestAstaPaperFinder:
             }
         )
 
-        finder = AstaPaperFinder()
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
         with pytest.raises(Exception, match="Paper search failed"):
             finder.find_papers("test query", timeout=10)
 
@@ -120,7 +167,7 @@ class TestAstaPaperFinder:
             }
         )
 
-        finder = AstaPaperFinder()
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
 
         # Test each operation mode
         for mode in ["infer", "fast", "diligent"]:
@@ -137,7 +184,7 @@ class TestAstaPaperFinder:
         )
         mock_urlopen.side_effect = error
 
-        finder = AstaPaperFinder()
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
         with pytest.raises(Exception, match="API request failed: Invalid query"):
             finder.find_papers("test query")
 

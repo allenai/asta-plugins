@@ -58,3 +58,24 @@ def get_passthrough_config(command_name: str) -> dict[str, Any]:
         )
 
     return passthrough_config[command_name]
+
+
+def get_api_config(api_name: str) -> dict[str, Any]:
+    """Get configuration for a specific API.
+
+    Args:
+        api_name: Name of the API (e.g., "semantic_scholar", "paper_finder")
+
+    Returns:
+        Configuration dictionary for the specified API
+
+    Raises:
+        KeyError: If the API is not found in configuration
+    """
+    config = get_config()
+    apis_config = config.get("apis", {})
+
+    if api_name not in apis_config:
+        raise KeyError(f"API '{api_name}' not found in apis configuration")
+
+    return apis_config[api_name]

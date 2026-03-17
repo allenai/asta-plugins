@@ -1,22 +1,47 @@
 """Semantic Scholar API client"""
 
 import json
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
 
+from asta.utils.auth_helper import get_access_token
+from asta.utils.config import get_api_config, get_config_path
+
 
 class SemanticScholarClient:
     """Client for Semantic Scholar API"""
 
-    def __init__(self, api_key: str | None = None):
-        self.base_url = "https://api.semanticscholar.org/graph/v1"
-        self.api_key = api_key or os.environ.get("ASTA_TOOL_KEY")
-        self.headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            self.headers["x-api-key"] = self.api_key
+    def __init__(
+        self,
+        base_url: str | None = None,
+        access_token: str | None = None,
+    ):
+        # Load base URL from config if not provided
+        if base_url is None:
+            try:
+                config = get_api_config("semantic_scholar")
+                base_url = config.get("base_url")
+            except (KeyError, FileNotFoundError):
+                base_url = None
+
+        if not base_url:
+            raise ValueError(
+                f"No value for apis.semantic_scholar.base_url in {get_config_path()}"
+            )
+
+        # Load access token from storage if not provided
+        # AuthenticationError will propagate with helpful message
+        if access_token is None:
+            access_token = get_access_token()
+
+        self.base_url = base_url
+        self.access_token = access_token
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.access_token}",
+        }
 
     def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """Make a GET request to the API"""
@@ -42,7 +67,7 @@ class SemanticScholarClient:
             fields: Comma-separated list of fields to return
         """
         params = {"fields": fields} if fields else None
-        return self._request(f"/paper/{paper_id}", params)
+        return self._request(f"/graph/v1/paper/{paper_id}", params)
 
     def search_papers(
         self,
@@ -65,7 +90,7 @@ class SemanticScholarClient:
             "limit": min(limit, 100),
             "year": year,
         }
-        return self._request("/paper/search", params)
+        return self._request("/graph/v1/paper/search", params)
 
     def get_paper_citations(
         self,
@@ -81,7 +106,7 @@ class SemanticScholarClient:
             limit: Max results (default 100, max 1000)
         """
         params = {"fields": fields, "limit": min(limit, 1000)}
-        return self._request(f"/paper/{paper_id}/citations", params)
+        return self._request(f"/graph/v1/paper/{paper_id}/citations", params)
 
     def get_paper_references(
         self,
@@ -97,7 +122,7 @@ class SemanticScholarClient:
             limit: Max results (default 100, max 1000)
         """
         params = {"fields": fields, "limit": min(limit, 1000)}
-        return self._request(f"/paper/{paper_id}/references", params)
+        return self._request(f"/graph/v1/paper/{paper_id}/references", params)
 
     def search_author(self, name: str, limit: int = 10) -> dict[str, Any]:
         """Search for authors by name
@@ -107,7 +132,7 @@ class SemanticScholarClient:
             limit: Max results (default 10, max 1000)
         """
         params = {"query": name, "limit": min(limit, 1000)}
-        return self._request("/author/search", params)
+        return self._request("/graph/v1/author/search", params)
 
     def get_author_papers(
         self,
@@ -123,4 +148,4 @@ class SemanticScholarClient:
             limit: Max results (default 100, max 1000)
         """
         params = {"fields": fields, "limit": min(limit, 1000)}
-        return self._request(f"/author/{author_id}/papers", params)
+        return self._request(f"/graph/v1/author/{author_id}/papers", params)

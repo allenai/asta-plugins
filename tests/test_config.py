@@ -158,6 +158,47 @@ class TestHoconConfig:
         assert isinstance(settings.auth0_audience, str)
         assert isinstance(settings.gateway_url, str)
 
+    def test_get_api_config_semantic_scholar(self):
+        """Test loading semantic_scholar API configuration."""
+        from asta.utils.config import get_api_config
+
+        config = get_api_config("semantic_scholar")
+
+        # Verify required fields
+        assert "base_url" in config
+        assert isinstance(config["base_url"], str)
+        assert config["base_url"].startswith("https://")
+
+    def test_get_api_config_paper_finder(self):
+        """Test loading paper_finder API configuration."""
+        from asta.utils.config import get_api_config
+
+        config = get_api_config("paper_finder")
+
+        # Verify required fields
+        assert "base_url" in config
+        assert isinstance(config["base_url"], str)
+        assert config["base_url"].startswith("https://")
+
+    def test_get_api_config_invalid_api(self):
+        """Test that invalid API names raise KeyError."""
+        from asta.utils.config import get_api_config
+
+        with pytest.raises(KeyError, match="not found in apis configuration"):
+            get_api_config("nonexistent_api")
+
+    def test_config_has_apis_section(self):
+        """Test that config includes apis section."""
+        from asta.utils.config import get_config
+
+        config = get_config()
+        assert "apis" in config
+        apis = config["apis"]
+
+        # Should have semantic_scholar and paper_finder
+        assert "semantic_scholar" in apis
+        assert "paper_finder" in apis
+
     def test_custom_config_file_path(self, tmp_path, monkeypatch):
         """Test that ASTA_CONFIG_FILE environment variable works."""
         from asta.utils.config import get_config_path

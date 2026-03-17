@@ -3,7 +3,9 @@ Authentication commands: login, logout, status.
 """
 
 import asyncio
+import base64
 import datetime
+import json
 
 import click
 from rich.console import Console
@@ -183,3 +185,59 @@ def status():
             console.print(
                 "   You may need to run [cyan]asta auth login[/cyan] to re-authenticate."
             )
+
+
+@auth.command(name="print-token")
+@click.option("--raw", is_flag=True, help="Print raw base64-encoded token")
+def print_token(raw):
+    """Print the stored access token."""
+    storage = TokenStorage()
+    tokens = storage.load_tokens()
+
+    if not tokens or not tokens.get("access_token"):
+        console.print("❌ [red]No token found[/red]")
+        console.print("   Run [cyan]asta auth login[/cyan] to authenticate")
+        raise click.Abort()
+
+    access_token = tokens["access_token"]
+
+    if raw:
+        # Print raw base64-encoded token
+        click.echo(access_token)
+    else:
+        # Decode and pretty-print the JWT
+        try:
+            # JWT format: header.payload.signature
+            parts = access_token.split(".")
+            if len(parts) != 3:
+                console.print("❌ [red]Invalid JWT format[/red]")
+                raise click.Abort()
+
+            # Decode header and payload (add padding if needed)
+            def decode_base64url(data):
+                """Decode base64url, adding padding if necessary."""
+                # Add padding if needed
+                padding = 4 - (len(data) % 4)
+                if padding != 4:
+                    data += "=" * padding
+                # Replace URL-safe characters
+                data = data.replace("-", "+").replace("_", "/")
+                return base64.b64decode(data)
+
+            header = json.loads(decode_base64url(parts[0]))
+            payload = json.loads(decode_base64url(parts[1]))
+
+            # Pretty print the decoded token
+            console.print("[bold]JWT Header:[/bold]")
+            console.print(json.dumps(header, indent=2))
+            console.print()
+            console.print("[bold]JWT Payload:[/bold]")
+            console.print(json.dumps(payload, indent=2))
+
+        except Exception as e:
+            console.print(f"❌ [red]Failed to decode token: {e}[/red]")
+            console.print()
+            console.print(
+                "[yellow]Tip:[/yellow] Use [cyan]--raw[/cyan] to see the encoded token"
+            )
+            raise click.Abort()

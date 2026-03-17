@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from asta.core import AstaPaperFinder
+from asta.literature.client import AstaPaperFinder
 from asta.literature.models import LiteratureSearchResult
 
 
@@ -50,6 +50,7 @@ def find(query: str, output: str, timeout: int, mode: str):
         asta literature find "neural networks" -o results.json --mode diligent
     """
     try:
+        # Create client (loads config and auth token automatically)
         client = AstaPaperFinder()
         raw_result = client.find_papers(
             query, timeout=timeout, save_to_file=None, operation_mode=mode
