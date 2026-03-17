@@ -14,9 +14,6 @@ dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.1.0",
     "pyhocon>=0.3.60",
-    "pymupdf>=1.27.0",
-    "pymupdf-layout>=1.27.0",
-    "pymupdf4llm>=0.3.0",
     "httpx>=0.26.0",
     "rich>=13.7.0",
     "python-jose[cryptography]>=3.3.0",
@@ -52,7 +49,4 @@ python_files = ["test_*.py"]
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::pyparsing.exceptions.PyparsingDeprecationWarning",
-    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
-    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
-    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
 ]
