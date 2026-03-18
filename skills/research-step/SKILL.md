@@ -1,7 +1,6 @@
 ---
 name: research step
 description: Do one step of autonomous research, based on the current research state in the current working directory. Use when asked to "run AstaBot" "do an AstaBot step", "AstaBot, or "do a research step".
-allowed-tools: Bash, Read, Write
 ---
 
 # Research Loop
@@ -19,11 +18,13 @@ Otherwise, continue.
 
 Look to see if there is a research_state.md file in the current directory.
 
-If there is one, go to the next step.
+If there is one, go to the Research step below (next heading).
 
-If there is NOT one, then create it as follows: This file, research_state.md, is to be a LIVING RESEARCH document for keeping track of research progress for the research mission (mission.md), that you can use in collaboration with other researchers working with you. The idea is that both you and the other researchers can contribute to the document, use it for inspiration as next steps, and each update information in the documents as the research continues.
+If there is NOT one, then create it as follows: 
 
-Now create a research_state.md file and write into it your own initial hypotheses and observations about the mission, to help get started. It is fine to leave sections blank until future research fills in the details. Where appropriate, include your rough confidence estimates (as a percentage) in the document. The document should help new researchers join the effort, and quickly learn about what we know and what we don't, and where in the research process the team is, and what tasks should be done next, so that they can easily see where to contribute. 
+Background: This file, research_state.md, is to be a LIVING RESEARCH document for keeping track of research progress for the research mission (mission.md), that you can use in collaboration with other researchers working with you. The idea is that both you and the other researchers can contribute to the document, use it for inspiration as next steps, and each update information in the documents as the research continues.
+
+Action: Create a research_state.md file and write into it your own initial hypotheses and observations about the mission, to help get started. It is fine to leave sections blank until future research fills in the details. Where appropriate, include your rough confidence estimates (as a percentage) in the document. The document should help new researchers join the effort, and quickly learn about what we know and what we don't, and where in the research process the team is, and what tasks should be done next, so that they can easily see where to contribute. 
 
 To help plan your research, you will later have tools you can use including:
  - literature search
@@ -53,7 +54,7 @@ Finally, run a single iteration of the following research loop:
 When that task has been completed:
 
 5. Make a backup copy of research_state.md to the "history/" folder:
-   a. Look in the "history/" directory for backup copies of research_state.md, e.g., "reearch-bk1.md", "research-bk2.md". If the directory doesn't exist create it.
+   a. Look in the "history/" directory for backup copies of research_state.md, e.g., "research_state-bk1.md", "research_state-bk2.md". If the directory doesn't exist create it.
    b. Place a backup copy of research_state.md in the "history/" directory, called "research_state_bk<N>.md" where N is the next unused number (1 if this is the first backup).
 6. UPDATE the main research_state.md with the results, so that the current state of research is up to date, including a correct summary of what has been done, what is still to do, and what has been learned. research_state.md should be ready then for the next iteration of the research.
 
