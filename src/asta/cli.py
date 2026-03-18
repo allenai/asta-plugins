@@ -3,6 +3,7 @@
 import click
 
 from asta import __version__
+from asta.analyze_data import analyze_data
 from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
@@ -39,6 +40,7 @@ def papers():
 cli.add_command(auth)
 
 # Register passthrough commands
+cli.add_command(analyze_data)
 cli.add_command(documents)
 cli.add_command(experiment)
 
