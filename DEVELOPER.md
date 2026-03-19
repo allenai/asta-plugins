@@ -494,7 +494,7 @@ make version
 ```bash
 make set-version VERSION=x.y.z
 ```
-- Updates `__init__.py`, `pyproject.toml`, and `marketplace.json`
+- Updates all locations where version is referenced
 - Run `make build-plugins` after to regenerate plugin packages
 - Fails with error if VERSION parameter is not provided
 - Provides suggested commit command after success

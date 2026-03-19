@@ -104,43 +104,21 @@ publish-test: build
 
 # Set version in all files
 set-version:
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Error: VERSION parameter is required. Usage: make set-version VERSION=x.y.z"; \
-		exit 1; \
-	fi; \
-	echo "Setting version to $(VERSION) in all files..."; \
-	echo "Updating src/asta/__init__.py..."; \
-	sed -i.bak 's/__version__ = ".*"/__version__ = "$(VERSION)"/' src/asta/__init__.py && rm src/asta/__init__.py.bak; \
-	echo "Updating pyproject.toml..."; \
-	sed -i.bak 's/^version = ".*"/version = "$(VERSION)"/' pyproject.toml && rm pyproject.toml.bak; \
-	echo "Updating .claude-plugin/marketplace.json..."; \
-	uv run python -c "import json; f = open('.claude-plugin/marketplace.json', 'r'); data = json.load(f); f.close(); [p.__setitem__('version', '$(VERSION)') for p in data['plugins']]; f = open('.claude-plugin/marketplace.json', 'w'); json.dump(data, f, indent=2); f.write('\n'); f.close()"; \
-	echo "Version set to $(VERSION)"; \
-	echo "Now run: make build-plugins"
+	@uv run python scripts/manage-version.py set $(VERSION)
 
 # Create and push git tag using version from code
 push-version-tag:
-	@echo "Checking version consistency..."; \
-	INIT_VERSION=$$(uv run python -c "from src.asta import __version__; print(__version__)"); \
-	PYPROJECT_VERSION=$$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/'); \
-	MARKETPLACE_VERSION=$$(uv run python -c "import json; data = json.load(open('.claude-plugin/marketplace.json')); print(data['plugins'][0]['version'])"); \
-	if [ "$$INIT_VERSION" != "$$PYPROJECT_VERSION" ] || [ "$$INIT_VERSION" != "$$MARKETPLACE_VERSION" ]; then \
-		echo "Error: Version mismatch detected:"; \
-		echo "  src/asta/__init__.py:            $$INIT_VERSION"; \
-		echo "  pyproject.toml:                  $$PYPROJECT_VERSION"; \
-		echo "  .claude-plugin/marketplace.json: $$MARKETPLACE_VERSION"; \
-		echo ""; \
-		echo "Run 'make set-version VERSION=x.y.z' to sync versions"; \
+	@if ! uv run python scripts/manage-version.py check; then \
 		exit 1; \
 	fi; \
-	VERSION=$$INIT_VERSION; \
+	VERSION=$$(uv run python scripts/manage-version.py show); \
 	git tag v$$VERSION && \
 	git push origin v$$VERSION && \
 	echo "Pushed tag v$$VERSION"
 
 # Show current version
 version:
-	@uv run python -c "from src.asta import __version__; print(__version__)"
+	@uv run python scripts/manage-version.py show
 
 # Quick check before commit
 check: format-check lint test-unit

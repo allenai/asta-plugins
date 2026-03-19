@@ -9,7 +9,6 @@ allowed-tools:
   - Read(.asta/experiment/*)
   - TaskOutput
 ---
-
 # Run Experiments
 
 Run a computational experiment. Given a research question that can be answered via software,
@@ -19,11 +18,18 @@ This skill can also be used to analyze experimental data and generate a research
 
 ## Installation
 
-If `asta` command is not available install it using `uv tool install git+https://github.com/allenai/asta-plugins.git`
+This skill requires the `asta` CLI:
+
+```bash
+# Install/reinstall at the correct version
+PLUGIN_VERSION=0.8.1
+if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
+  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
+fi
+```
 
 **Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
 
-Verify installation with `asta experiment --help`
 
 ## Workflow
 

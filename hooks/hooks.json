@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "mkdir -p ~/.asta/literature"
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/sync-cli-version.sh"
           }
         ]
       }

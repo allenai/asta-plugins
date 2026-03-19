@@ -3,10 +3,9 @@ name: PDF Text Extraction
 description: Extract text from PDFs using olmOCR. Use when user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
 allowed-tools:
   - Bash(asta pdf-extraction *)
-  - Bash(olmocr *)
   - Read(.asta/documents/*)
-  - Read(*/markdown/*)
   - Write(.asta/documents/*)
+  - Read(*/markdown/*)
   - Bash(mv *)
   - Bash(cp *)
 ---
@@ -15,11 +14,24 @@ allowed-tools:
 
 Extract high-quality text from PDFs using the [olmOCR](https://github.com/allenai/olmOCR) tool. This skill uses the olmocr CLI for cloud-based OCR processing.
 
+## Installation
+
+This skill requires the `asta` CLI:
+
+```bash
+# Install/reinstall at the correct version
+PLUGIN_VERSION=0.8.1
+if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
+  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
+fi
+```
+
+**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
+
+
 ## Quick Start
 
-### Extract Text from PDF
-
-The olmocr CLI will auto-install on first use. Basic usage:
+Basic usage:
 
 ```bash
 # Extract text from a PDF using a temporary workspace
@@ -29,19 +41,23 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
   --markdown
 
 # Output will be in $TEMP_WORKSPACE/markdown/document.md
-```
 
-### Understanding olmocr CLI
-
-The `asta pdf-extraction` command is a passthrough to `olmocr` with this syntax:
-
-```bash
-olmocr <workspace> [OPTIONS]
+# Batch extract text from multiple PDFs
+TEMP_WORKSPACE=$(mktemp -d)
+asta pdf-extraction "$TEMP_WORKSPACE" \
+  --pdfs list-of-pdf-file-paths.txt \
+  --markdown
+  
+# Batch extract text from PDFs stored in S3
+TEMP_WORKSPACE=$(mktemp -d)
+asta pdf-extraction "$TEMP_WORKSPACE" \
+  --pdfs s3://my-bucket/prefix/*.pdf \
+  --markdown
 ```
 
 **Key arguments:**
-- `<workspace>` - Output directory (required, positional argument)
-- `--pdfs` - PDF file(s) to process
+- `<workspace>` - Output directory (required: positional argument)
+- `--pdfs` - PDF file(s) to process (required: single path, path with wildcard, S3 path with wildcard, or a text file with paths)
 - `--markdown` - Generate markdown output (recommended)
 - `--workers` - Parallel workers (default: 20)
 
