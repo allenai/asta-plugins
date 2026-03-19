@@ -1,8 +1,6 @@
 ---
 name: PDF Text Extraction
 description: Extract text from PDFs using olmOCR. Use when user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
-metadata:
-  internal: true
 allowed-tools:
   - Bash(asta pdf-extraction *)
   - Read(.asta/documents/*)
