@@ -9,8 +9,26 @@
   "plugins": [
     {
       "name": "asta",
-      "source": "./",
-      "description": "Paper search, citations, literature reports, and Semantic Scholar API tools",
+      "source": "./plugins/asta",
+      "description": "Paper search, metadata, and document management for scientific research",
+      "version": "0.8.0",
+      "author": {
+        "name": "AI2 Asta Team"
+      },
+      "repository": "https://github.com/allenai/asta-plugins",
+      "license": "Apache-2.0",
+      "keywords": [
+        "academic",
+        "papers",
+        "citations",
+        "semantic-scholar",
+        "literature"
+      ]
+    },
+    {
+      "name": "asta-preview",
+      "source": "./plugins/asta-preview",
+      "description": "Paper search, metadata, document management, literature reports, and experiments for scientific research",
       "version": "0.8.0",
       "author": {
         "name": "AI2 Asta Team"

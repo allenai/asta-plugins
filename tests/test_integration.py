@@ -12,8 +12,9 @@ ROOT = Path(__file__).parent.parent
 
 def test_plugin_structure():
     """Verify plugin has correct directory structure."""
-    assert (ROOT / ".claude-plugin" / "plugin.json").exists()
-    assert (ROOT / ".mcp.json").exists()
+    assert (ROOT / ".claude-plugin" / "marketplace.json").exists()
+    assert (ROOT / "plugins" / "asta" / "skills").is_dir()
+    assert (ROOT / "plugins" / "asta-preview" / "skills").is_dir()
     assert (ROOT / "skills").is_dir()
     assert (ROOT / "hooks").is_dir()
     assert (ROOT / "src" / "asta").is_dir()
@@ -24,15 +25,14 @@ def test_plugin_structure():
     print("✓ Plugin structure is correct")
 
 
-def test_plugin_manifest():
-    """Verify plugin.json is valid and has required fields."""
-    manifest_path = ROOT / ".claude-plugin" / "plugin.json"
-    with open(manifest_path) as f:
-        manifest = json.load(f)
-
-    assert "name" in manifest
-    assert "version" in manifest
-    print(f"✓ Plugin manifest valid: {manifest['name']} v{manifest['version']}")
+def test_marketplace_has_plugins():
+    """Verify marketplace.json lists both plugins."""
+    with open(ROOT / ".claude-plugin" / "marketplace.json") as f:
+        marketplace = json.load(f)
+    names = {p["name"] for p in marketplace["plugins"]}
+    assert "asta" in names
+    assert "asta-preview" in names
+    print("✓ Marketplace lists both plugins")
 
 
 def test_asta_cli_installed():
@@ -82,7 +82,7 @@ def test_asta_cli_help():
 
 if __name__ == "__main__":
     test_plugin_structure()
-    test_plugin_manifest()
+    test_marketplace_has_plugins()
     test_asta_cli_installed()
     test_asta_cli_help()
     print("\n✓ All integration tests passed!")
