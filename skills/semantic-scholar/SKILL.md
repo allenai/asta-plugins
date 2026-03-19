@@ -7,7 +7,7 @@ allowed-tools:
 
 # Semantic Scholar Lookup
 
-Fast, targeted lookups of paper metadata, citations, and authors using the Semantic Scholar API via `asta papers` commands.
+    Fast, targeted lookups of paper metadata, citations, and authors using the Semantic Scholar API via `asta papers` commands.
 
 ## When to Use This Skill
 
@@ -21,11 +21,17 @@ Fast, targeted lookups of paper metadata, citations, and authors using the Seman
 
 ## Installation
 
-If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
+This skill requires the `asta` CLI:
+
+```bash
+# Install/reinstall at the correct version
+PLUGIN_VERSION=0.8.1
+if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
+  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
+fi
+```
 
 **Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
-Verify installation with `asta papers --help`
 
 ## Available Commands
 

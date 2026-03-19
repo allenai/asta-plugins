@@ -10,18 +10,25 @@ allowed-tools:
 
 # Find Literature
 
-Search academic literature for papers relevant to a query. The search will return a ranked list of papers with relevance scores, summaries, and supporting snippets. 
+Search academic literature for papers relevant to a query. The search will return a ranked list of papers with relevance scores, summaries, and supporting snippets.
 
 This is an advanced search, so the query can be long and complex. You may ask the user
 questions to clarify the topic and refine the query before running the search.
 
 ## Installation
 
-If `asta` command is not available install it using `uv tool install git+ssh://git@github.com/allenai/asta-plugins.git`
+This skill requires the `asta` CLI:
+
+```bash
+# Install/reinstall at the correct version
+PLUGIN_VERSION=0.8.1
+if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
+  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
+fi
+```
 
 **Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
 
-Verify installation with `asta literature --help`
 
 ## Tools Available
 

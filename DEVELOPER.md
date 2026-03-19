@@ -420,7 +420,7 @@ make version
 ```bash
 make set-version VERSION=x.y.z
 ```
-- Updates all four version locations atomically
+- Updates all locations atomically
 - Fails with error if VERSION parameter is not provided
 - Provides suggested commit command after success
 
@@ -444,7 +444,6 @@ Checking version consistency...
 Error: Version mismatch detected:
   src/asta/__init__.py:              0.3.0
   pyproject.toml:                    0.2.0
-  .claude-plugin/plugin.json:        0.2.0
   .claude-plugin/marketplace.json:   0.2.0
 
 Run 'make set-version VERSION=x.y.z' to sync versions

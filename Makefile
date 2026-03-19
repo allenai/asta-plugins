@@ -97,6 +97,10 @@ set-version:
 	uv run python -c "import json; f = open('.claude-plugin/plugin.json', 'r'); data = json.load(f); f.close(); data['version'] = '$(VERSION)'; f = open('.claude-plugin/plugin.json', 'w'); json.dump(data, f, indent=2); f.write('\n'); f.close()"; \
 	echo "Updating .claude-plugin/marketplace.json..."; \
 	uv run python -c "import json; f = open('.claude-plugin/marketplace.json', 'r'); data = json.load(f); f.close(); data['plugins'][0]['version'] = '$(VERSION)'; f = open('.claude-plugin/marketplace.json', 'w'); json.dump(data, f, indent=2); f.write('\n'); f.close()"; \
+	echo "Updating skill installation sections..."; \
+	find skills -name "SKILL.md" -exec sed -i.bak "s/PLUGIN_VERSION=[0-9]*\.[0-9]*\.[0-9]*/PLUGIN_VERSION=$(VERSION)/g" {} \; && find skills -name "*.bak" -delete; \
+	echo "Updating sync-version hook..."; \
+	sed -i.bak "s/PLUGIN_VERSION=[0-9]*\.[0-9]*\.[0-9]*/PLUGIN_VERSION=$(VERSION)/g" hooks/sync-cli-version.sh && rm hooks/sync-cli-version.sh.bak; \
 	echo "Version updated to $(VERSION) in all files"; \
 	echo "Review changes and commit with: git add -A && git commit -m 'chore: bump version to $(VERSION)'"
 
