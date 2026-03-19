@@ -360,7 +360,6 @@ class TestPassthroughUtility:
                     "git",
                     "git+https://example.com/repo.git",
                     "1.0.0",
-                    friendly_name="Test Tool",
                 )
 
         assert result is not None
@@ -485,6 +484,39 @@ class TestExperimentCommand:
                 mock_subprocess.side_effect = FileNotFoundError("uv not found")
 
                 result = runner.invoke(cli, ["experiment", "--help"])
+
+        assert result.exit_code != 0
+
+
+class TestPDFExtractionCommand:
+    """Test 'asta pdf-extraction' passthrough command."""
+
+    def test_pdf_extraction_config(self):
+        """Test that pdf-extraction configuration is properly defined."""
+        from asta.utils.config import get_passthrough_config
+        from asta.utils.passthrough import validate_semver
+
+        config = get_passthrough_config("pdf-extraction")
+
+        # Should have required fields
+        assert config["tool_name"] == "olmocr"
+        assert "install_type" in config
+        assert config["install_type"] in ("pypi", "git", "local")
+        assert "minimum_version" in config
+        assert validate_semver(config["minimum_version"])
+        assert "install_source" in config
+        assert config["command_name"] == "pdf-extraction"
+
+    def test_pdf_extraction_help_requires_installation(self, runner):
+        """Test pdf-extraction command behavior when olmocr not installed."""
+        with patch("asta.utils.passthrough.shutil.which") as mock_which:
+            mock_which.return_value = None
+
+            with patch("asta.utils.passthrough.subprocess.run") as mock_subprocess:
+                # Mock installation failure
+                mock_subprocess.side_effect = FileNotFoundError("uv not found")
+
+                result = runner.invoke(cli, ["pdf-extraction", "--help"])
 
         assert result.exit_code != 0
 
