@@ -24,7 +24,12 @@ jobs:
       - name: Lint shell scripts with shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
-          scandir: './servers ./hooks'
+          scandir: './scripts ./hooks'
+
+      - name: Verify generated plugins are up to date
+        run: |
+          ./scripts/build-plugins.sh
+          git diff --exit-code plugins/ || { echo "plugins/ is out of date. Run 'make build-plugins' and commit."; exit 1; }
 
   test:
     runs-on: ubuntu-latest
@@ -35,6 +40,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
@@ -43,4 +55,3 @@ jobs:
 
       - name: Run tests
         run: make test
-
