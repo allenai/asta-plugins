@@ -520,7 +520,6 @@ To add a new external tool as an `asta` passthrough command:
        install_source = "newtool-package"  # package name, git URL, or filesystem path
        minimum_version = "1.0.0"  # Must be x.y.z format
        command_name = "newtool"
-       friendly_name = "NewTool"
        docstring = "Description for --help"
      }
    }
@@ -551,7 +550,6 @@ To add a new external tool as an `asta` passthrough command:
        install_source=config["install_source"],
        minimum_version=config["minimum_version"],
        command_name=config["command_name"],
-       friendly_name=config["friendly_name"],
        docstring=config["docstring"],
    )
    ```

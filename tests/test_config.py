@@ -45,7 +45,6 @@ class TestHoconConfig:
         # Verify required fields
         assert config["tool_name"] == "asta-documents"
         assert config["command_name"] == "documents"
-        assert config["friendly_name"] == "asta-documents"
         assert "install_type" in config
         assert "install_source" in config
         assert "minimum_version" in config
@@ -77,7 +76,6 @@ class TestHoconConfig:
         # Verify required fields
         assert config["tool_name"] == "panda"
         assert config["command_name"] == "experiment"
-        assert config["friendly_name"] == "panda"
         assert "install_type" in config
         assert "install_source" in config
         assert "minimum_version" in config
@@ -167,7 +165,8 @@ class TestHoconConfig:
         # Verify required fields
         assert "base_url" in config
         assert isinstance(config["base_url"], str)
-        assert config["base_url"].startswith("https://")
+        # Accept both http and https (for local development configs)
+        assert config["base_url"].startswith(("http://", "https://"))
 
     def test_get_api_config_paper_finder(self):
         """Test loading paper_finder API configuration."""
@@ -178,7 +177,8 @@ class TestHoconConfig:
         # Verify required fields
         assert "base_url" in config
         assert isinstance(config["base_url"], str)
-        assert config["base_url"].startswith("https://")
+        # Accept both http and https (for local development configs)
+        assert config["base_url"].startswith(("http://", "https://"))
 
     def test_get_api_config_invalid_api(self):
         """Test that invalid API names raise KeyError."""
@@ -220,7 +220,6 @@ class TestHoconConfig:
                 install_source = "asta-resource-repository"
                 minimum_version = "0.3.0"
                 command_name = "documents"
-                friendly_name = "asta-documents"
                 docstring = "Test"
               }
             }

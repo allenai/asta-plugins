@@ -1,6 +1,6 @@
 # Asta
 
-Asta is a CLI for scientific literature research, usable by local coding agents.
+Asta is a set of skills for scientific research, usable by local coding agents.
 
 ## Skill Installation
 
@@ -19,7 +19,7 @@ npx skills add add allenai/asta-plugins/skills
 - **Literature Report Generation** - Comprehensive report writing with synthesis
 - **Semantic Scholar Lookup** - Quick paper/author lookups and metadata queries
 - **Document Management** - Local document metadata index for tracking and searching papers
-- **PDF Text Extraction** - Extract structured text from PDF files with advanced layout detection
+- **PDF Text Extraction** - Extract text from PDFs using olmOCR (cloud-based, no GPU required)
 - **Run Experiment** - Computational experiments with automated report generation
 
 Example user requests that would trigger these skills:
@@ -30,39 +30,18 @@ Example user requests that would trigger these skills:
 - "Store this paper in Asta" / "Search my Asta documents for transformers"
 - "Extract text from this PDF" / "Convert PDF to markdown"
 - "Run an experiment to test GPT-4 translation quality"
+- "Extract text from this PDF" / "OCR this document"
 
 
-## CLI Installation
+## Implementation
 
-Install the `asta` CLI tool:
+The skills install an `asta` CLI tool, which has sub-commands for the various research functions. 
+The CLI can be used directly from the command line or invoked by agents via Bash commands.
 
-```bash
-uv tool install git+https://github.com/allenai/asta-plugins.git
-```
+Some skills are pass-through commands to CLIs hosted in other repos. These are installed automatically
+on first invocation.
 
-To upgrade:
-
-```bash
-uv tool upgrade asta
-```
-
-See `asta --help` for usage instructions.
-
-## Authentication
-
-The Asta CLI makes calls to Ai2-hosted APIs. To authenticate use of those APIs, you must
-create a login with your email address and a password.
-
-```bash
-# Login (opens browser for authentication)
-asta auth login
-
-# Check authentication status
-asta auth status
-
-# Logout
-asta auth logout
-```
+Some skills are implemented by calling external APIs hosted by Ai2. For these, the CLI will prompt you to authenticate on first use.
 
 ## Development
 

@@ -11,6 +11,7 @@ from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
+from asta.pdf_extraction import pdf_extraction
 
 
 @click.group()
@@ -41,6 +42,7 @@ cli.add_command(auth)
 # Register passthrough commands
 cli.add_command(documents)
 cli.add_command(experiment)
+cli.add_command(pdf_extraction)
 
 # Register literature subcommands
 literature.add_command(find)

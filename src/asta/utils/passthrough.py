@@ -3,6 +3,7 @@
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import click
@@ -119,7 +120,6 @@ def install_tool(
     install_type: str,
     install_source: str,
     minimum_version: str,
-    friendly_name: str | None = None,
     force: bool = False,
 ) -> bool:
     """Install or reinstall a tool using uv.
@@ -129,7 +129,6 @@ def install_tool(
         install_type: Type of installation source ("pypi", "git", or "local")
         install_source: Source location (package name, git URL, or filesystem path)
         minimum_version: Minimum version tag to install
-        friendly_name: Human-readable name for messages
         force: If True, use --force to reinstall
 
     Returns:
@@ -138,7 +137,7 @@ def install_tool(
     Raises:
         ValueError: If install_type is not valid
     """
-    display_name = friendly_name or tool_name
+    display_name = tool_name
 
     # Validate install_type
     valid_types = ("pypi", "git", "local")
@@ -202,7 +201,6 @@ def ensure_tool_installed(
     install_type: str,
     install_source: str,
     minimum_version: str,
-    friendly_name: str | None = None,
 ) -> Path | None:
     """Check if a tool is installed with minimum required version, install/update if needed.
 
@@ -211,7 +209,6 @@ def ensure_tool_installed(
         install_type: Type of installation source ("pypi", "git", or "local")
         install_source: Source location (package name, git URL, or filesystem path)
         minimum_version: Minimum required version (e.g., "0.1.0", "1.2.3")
-        friendly_name: Human-readable name for messages (defaults to tool_name)
 
     Returns:
         Path to executable or None if installation failed
@@ -219,7 +216,7 @@ def ensure_tool_installed(
     Raises:
         ValueError: If minimum_version is not in valid x.y.z format or install_type is invalid
     """
-    display_name = friendly_name or tool_name
+    display_name = tool_name
 
     # Validate minimum_version format
     if not validate_semver(minimum_version):
@@ -258,7 +255,6 @@ def ensure_tool_installed(
             install_type,
             install_source,
             minimum_version,
-            friendly_name,
             force=True,
         ):
             # Verify installation
@@ -271,9 +267,7 @@ def ensure_tool_installed(
     # Not found, try to install it
     click.echo(f"{display_name} not found.", err=True)
 
-    if install_tool(
-        tool_name, install_type, install_source, minimum_version, friendly_name
-    ):
+    if install_tool(tool_name, install_type, install_source, minimum_version):
         # Check again after installation
         tool_path = shutil.which(tool_name)
         if tool_path:
@@ -303,8 +297,9 @@ def create_passthrough_command(
     install_source: str,
     minimum_version: str,
     command_name: str,
-    friendly_name: str | None = None,
     docstring: str | None = None,
+    tool_args: list[str] | Callable[[], list[str]] | None = None,
+    help_transform: Callable[[str], str] | None = None,
 ):
     """Create a Click command that passes through to an external tool.
 
@@ -314,13 +309,19 @@ def create_passthrough_command(
         install_source: Source location (package name, git URL, or filesystem path)
         minimum_version: Minimum required version in x.y.z format
         command_name: Name for the Click command (e.g., "documents", "experiment")
-        friendly_name: Human-readable name for messages
         docstring: Help text for the command
+        tool_args: Additional command-line arguments to pass to the tool.
+            Can be a list of strings (e.g., ["--verbose", "--format", "json"])
+            or a callable that returns a list of strings (for lazy evaluation).
+        help_transform: Optional function to transform the tool's help output.
+            Receives the original help text and returns the transformed text.
+            Default behavior is to replace tool_name with "asta command_name".
+            Can be used to completely overwrite the original help text.
 
     Returns:
         A Click command function
     """
-    display_name = friendly_name or tool_name
+    display_name = tool_name
 
     @click.command(
         name=command_name,
@@ -337,30 +338,55 @@ def create_passthrough_command(
         """Passthrough command"""
         # Ensure tool is installed with minimum version
         tool_path = ensure_tool_installed(
-            tool_name, install_type, install_source, minimum_version, friendly_name
+            tool_name, install_type, install_source, minimum_version
         )
 
         if not tool_path:
             raise click.ClickException(f"Could not find or install {display_name}")
 
-        # Pass through to tool with all arguments
+        # Check if user is requesting help
+        is_help_request = "--help" in args or "-h" in args
+
+        # Pass through to tool with extra args + user args
         try:
-            result = subprocess.run(
-                [str(tool_path)] + list(args),
-                capture_output=True,
-                text=True,
-                check=False,  # Don't raise on non-zero exit
-            )
+            if is_help_request:
+                # Capture output for help requests to transform it
+                result = subprocess.run(
+                    [str(tool_path)] + list(args),
+                    capture_output=True,
+                    text=True,
+                    check=False,  # Don't raise on non-zero exit
+                )
 
-            # Output stdout and stderr, replacing tool_name with "asta command_name"
-            if result.stdout:
-                output = result.stdout.replace(tool_name, f"asta {command_name}")
-                click.echo(output, nl=False)
-            if result.stderr:
-                output = result.stderr.replace(tool_name, f"asta {command_name}")
-                click.echo(output, nl=False, err=True)
+                # Use custom transform if provided, otherwise default to simple replace
+                transform_func = help_transform or (
+                    lambda text: text.replace(tool_name, f"asta {command_name}")
+                )
 
-            ctx.exit(result.returncode)
+                if result.stdout:
+                    output = transform_func(result.stdout)
+                    click.echo(output, nl=False)
+                if result.stderr:
+                    output = transform_func(result.stderr)
+                    click.echo(output, nl=False, err=True)
+
+                ctx.exit(result.returncode)
+            else:
+                # Evaluate tool_args if it's a callable, otherwise use directly
+                if callable(tool_args):
+                    extra_args = tool_args()
+                elif tool_args:
+                    extra_args = tool_args
+                else:
+                    extra_args = []
+
+                # Stream output directly without transformation for non-help requests
+                result = subprocess.run(
+                    [str(tool_path)] + extra_args + list(args),
+                    check=False,  # Don't raise on non-zero exit
+                )
+                ctx.exit(result.returncode)
+
         except click.exceptions.Exit:
             raise
         except Exception as e:
