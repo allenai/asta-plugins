@@ -8,6 +8,11 @@ __pycache__/
 .claude/settings.local.json
 CLAUDE.local.md
 
+# Test artifacts
+.goose/
+skills-lock.json
+.agents/
+
 # IDEs
 .idea/
 *.iml
