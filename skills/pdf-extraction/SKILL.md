@@ -20,7 +20,7 @@ This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.8.1
+PLUGIN_VERSION=0.8.2
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi
@@ -42,10 +42,11 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
 
 # Output will be in $TEMP_WORKSPACE/markdown/document.md
 
-# Batch extract text from multiple PDFs
+# Batch extract text from all PDFs in a directory
 TEMP_WORKSPACE=$(mktemp -d)
+find /path/to/pdfs -name "*.pdf" > "$TEMP_WORKSPACE/pdf-list.txt"
 asta pdf-extraction "$TEMP_WORKSPACE" \
-  --pdfs list-of-pdf-file-paths.txt \
+  --pdfs "$TEMP_WORKSPACE/pdf-list.txt" \
   --markdown
   
 # Batch extract text from PDFs stored in S3
