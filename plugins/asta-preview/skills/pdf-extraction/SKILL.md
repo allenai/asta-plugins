@@ -1,6 +1,8 @@
 ---
 name: PDF Text Extraction
-description: Extract text from PDFs using olmOCR. Use when user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
+description: Extract text from PDFs using olmOCR or remote OCR. Use when user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
+metadata:
+  internal: true
 allowed-tools:
   - Bash(asta pdf-extraction *)
   - Read(.asta/documents/*)
@@ -12,7 +14,10 @@ allowed-tools:
 
 # PDF Text Extraction
 
-Extract high-quality text from PDFs using the [olmOCR](https://github.com/allenai/olmOCR) tool. This skill uses the olmocr CLI for cloud-based OCR processing.
+Extract high-quality text from PDFs using two OCR engines:
+
+- **`asta pdf-extraction olmocr`** — cloud-based extraction via [olmOCR](https://github.com/allenai/olmOCR) (best for large batches, S3, and complex layouts)
+- **`asta pdf-extraction remote`** — quick single-file extraction via the Asta remote OCR API
 
 ## Installation
 
@@ -20,7 +25,7 @@ This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.8.2
+PLUGIN_VERSION=0.9.0
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi
@@ -31,12 +36,12 @@ fi
 
 ## Quick Start
 
-Basic usage:
+### olmocr (cloud batch extraction)
 
 ```bash
 # Extract text from a PDF using a temporary workspace
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs document.pdf \
   --markdown
 
@@ -45,13 +50,13 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
 # Batch extract text from all PDFs in a directory
 TEMP_WORKSPACE=$(mktemp -d)
 find /path/to/pdfs -name "*.pdf" > "$TEMP_WORKSPACE/pdf-list.txt"
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs "$TEMP_WORKSPACE/pdf-list.txt" \
   --markdown
-  
+
 # Batch extract text from PDFs stored in S3
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs s3://my-bucket/prefix/*.pdf \
   --markdown
 ```
@@ -61,6 +66,29 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
 - `--pdfs` - PDF file(s) to process (required: single path, path with wildcard, S3 path with wildcard, or a text file with paths)
 - `--markdown` - Generate markdown output (recommended)
 - `--workers` - Parallel workers (default: 20)
+
+### remote (single-file extraction)
+
+```bash
+# Print extracted markdown to stdout
+asta pdf-extraction remote paper.pdf
+
+# Save to a file
+asta pdf-extraction remote paper.pdf -o paper.md
+
+# Process a large PDF in steps (pages 0-49, then 50-99, etc.)
+asta pdf-extraction remote paper.pdf --start-page 0  --max-pages 50 -o paper-part1.md
+asta pdf-extraction remote paper.pdf --start-page 50 --max-pages 50 -o paper-part2.md
+```
+
+**Key arguments:**
+- `<pdf>` - PDF file to process (required: local path)
+- `-o / --output` - Output file path (default: stdout)
+- `--start-page` - First page to process, 0-indexed (default: 0)
+- `--max-pages` - Maximum number of pages to process (default: 50)
+- `--images` - Extract and save embedded images alongside the markdown; images are saved in the same directory as the output file and referenced by filename in the markdown
+
+**Requirements:** Asta login (same as `olmocr`).
 
 ## Workspace Best Practices
 
@@ -73,7 +101,7 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
 TEMP_WORKSPACE=$(mktemp -d)
 
 # 2. Extract text
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs research-paper.pdf \
   --markdown
 
@@ -103,7 +131,7 @@ rm -rf "$TEMP_WORKSPACE"
 ```bash
 # Create temporary workspace and extract
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs paper.pdf \
   --markdown
 
@@ -123,7 +151,7 @@ rm -rf "$TEMP_WORKSPACE"
 ```bash
 # Process all PDFs in a directory
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs papers/*.pdf \
   --markdown \
   --workers 10
@@ -141,7 +169,7 @@ rm -rf "$TEMP_WORKSPACE"
 ```bash
 # 1. Extract text to temporary workspace
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs research-paper.pdf \
   --markdown
 
@@ -169,7 +197,7 @@ olmOCR supports reading PDFs from S3 and using S3 as a workspace.
 ```bash
 # Extract PDF stored in S3
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs s3://my-bucket/documents/paper.pdf \
   --markdown
 
@@ -181,7 +209,7 @@ cat "$TEMP_WORKSPACE/markdown/paper.md"
 
 ```bash
 # Use S3 bucket as workspace (requires AWS credentials)
-asta pdf-extraction s3://my-bucket/ocr-workspace \
+asta pdf-extraction olmocr s3://my-bucket/ocr-workspace \
   --pdfs document.pdf \
   --markdown
 
@@ -219,7 +247,7 @@ The extracted text is saved as markdown, preserving:
 ```bash
 # Process with 50 parallel workers (faster for large batches)
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs papers/*.pdf \
   --workers 50 \
   --markdown
@@ -230,7 +258,7 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
 ```bash
 # Apply filters to skip non-English or form-like documents
 TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction "$TEMP_WORKSPACE" \
+asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
   --pdfs documents/*.pdf \
   --apply_filter \
   --markdown
@@ -240,7 +268,7 @@ asta pdf-extraction "$TEMP_WORKSPACE" \
 
 ```bash
 # View statistics about a workspace
-asta pdf-extraction ~/workspace/output --stats
+asta pdf-extraction olmocr ~/workspace/output --stats
 ```
 
 ## Performance and Cost
@@ -257,10 +285,10 @@ The first argument must be a workspace directory:
 
 ```bash
 # ✓ Correct
-asta pdf-extraction ~/workspace/output --pdfs file.pdf ...
+asta pdf-extraction olmocr ~/workspace/output --pdfs file.pdf ...
 
 # ✗ Wrong (missing workspace)
-asta pdf-extraction --pdfs file.pdf ...
+asta pdf-extraction olmocr --pdfs file.pdf ...
 ```
 
 ### "Connection failed"
@@ -280,6 +308,17 @@ Check the output directories:
 2. Check bucket permissions (read for --pdfs, read/write for workspace)
 3. Ensure IAM user/role has s3:GetObject, s3:PutObject, s3:ListBucket permissions
 
+## Choosing an Engine
+
+| | `olmocr` | `remote` |
+|---|---|---|
+| Input | Local file, S3 path, or glob | Local file only |
+| Output | Files in workspace directory | Stdout or single file |
+| Batch processing | Yes (--workers) | No |
+| S3 support | Yes | No |
+| Auth required | Asta login | Asta login |
+| Best for | Large batches, complex layouts | Quick single-file extraction |
+
 ## When to Use This Skill
 
 ✅ Use PDF extraction when:
@@ -290,7 +329,7 @@ Check the output directories:
 - Need high-quality text extraction for downstream tasks
 
 ❌ Don't use when:
-- User wants to process images directly (olmOCR is PDF-specific)
+- User wants to process images directly (both engines are PDF-specific)
 - User needs real-time/streaming extraction
 
 ## Additional Resources
