@@ -12,6 +12,7 @@ from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
 from asta.pdf_extraction import pdf_extraction
+from asta.pdf_extraction_local import pdf_extraction_local
 
 
 @click.group()
@@ -43,6 +44,7 @@ cli.add_command(auth)
 cli.add_command(documents)
 cli.add_command(experiment)
 cli.add_command(pdf_extraction)
+cli.add_command(pdf_extraction_local)
 
 # Register literature subcommands
 literature.add_command(find)
