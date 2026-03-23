@@ -11,7 +11,7 @@
       "name": "asta",
       "source": "./plugins/asta",
       "description": "Paper search, metadata, and document management for scientific research",
-      "version": "0.8.2",
+      "version": "0.9.0",
       "author": {
         "name": "AI2 Asta Team"
       },
