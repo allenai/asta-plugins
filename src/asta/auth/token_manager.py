@@ -2,7 +2,9 @@
 High-level token management with automatic refresh.
 """
 
+import asyncio
 import json
+import logging
 import time
 import urllib.error
 import urllib.request
@@ -15,6 +17,12 @@ from rich.panel import Panel
 from .device_flow import DeviceAuthFlow, DeviceCodeResponse, TokenResponse
 from .exceptions import AuthenticationError
 from .storage import TokenStorage
+
+logger = logging.getLogger(__name__)
+
+# Retry settings for token refresh
+REFRESH_MAX_RETRIES = 3
+REFRESH_RETRY_DELAY = 2  # seconds, doubles each retry
 
 
 class TokenManager:
@@ -121,26 +129,58 @@ class TokenManager:
                     "Please re-authenticate with 'asta auth login'."
                 )
 
-            try:
-                token_response = await self.flow.refresh_token(refresh_token)
+            # Retry refresh with exponential backoff to handle transient errors
+            last_error = None
+            for attempt in range(REFRESH_MAX_RETRIES):
+                try:
+                    if attempt > 0:
+                        delay = REFRESH_RETRY_DELAY * (2 ** (attempt - 1))
+                        logger.info(
+                            "Retrying token refresh (attempt %d/%d) after %ds",
+                            attempt + 1,
+                            REFRESH_MAX_RETRIES,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
 
-                # Save new tokens
-                self.storage.save_tokens(
-                    {
-                        "access_token": token_response.access_token,
-                        "refresh_token": token_response.refresh_token or refresh_token,
-                        "id_token": token_response.id_token,
-                        "expires_at": int(time.time()) + token_response.expires_in,
-                    }
-                )
+                    token_response = await self.flow.refresh_token(refresh_token)
 
-                return token_response.access_token
+                    # Save new tokens
+                    self.storage.save_tokens(
+                        {
+                            "access_token": token_response.access_token,
+                            "refresh_token": token_response.refresh_token
+                            or refresh_token,
+                            "id_token": token_response.id_token,
+                            "expires_at": int(time.time()) + token_response.expires_in,
+                        }
+                    )
 
-            except Exception as e:
-                raise AuthenticationError(
-                    f"Token refresh failed: {e}. "
-                    f"Please re-authenticate with 'asta auth login'."
-                )
+                    if attempt > 0:
+                        logger.info(
+                            "Token refresh succeeded on attempt %d", attempt + 1
+                        )
+
+                    return token_response.access_token
+
+                except AuthenticationError:
+                    # Auth errors (invalid grant, denied) won't be fixed by retry
+                    raise
+
+                except Exception as e:
+                    last_error = e
+                    logger.warning(
+                        "Token refresh attempt %d/%d failed: %s",
+                        attempt + 1,
+                        REFRESH_MAX_RETRIES,
+                        e,
+                    )
+
+            raise AuthenticationError(
+                f"Token refresh failed after {REFRESH_MAX_RETRIES} attempts: "
+                f"{last_error}. "
+                f"Please re-authenticate with 'asta auth login'."
+            )
 
         return access_token
 
