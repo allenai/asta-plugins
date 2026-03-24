@@ -33,7 +33,7 @@ def get_pdf_extraction_tool_args() -> list[str]:
 
 
 _HELP_TEXT = """\
-usage: asta pdf-extraction [-h] [--pdfs [PDFS ...]] [--model MODEL]
+usage: asta pdf-extraction olmocr [-h] [--pdfs [PDFS ...]] [--model MODEL]
               [--workspace_profile WORKSPACE_PROFILE]
               [--pdf_profile PDF_PROFILE] [--pages_per_group PAGES_PER_GROUP]
               [--max_page_retries MAX_PAGE_RETRIES]
@@ -117,12 +117,12 @@ VLLM arguments:
 """
 
 # Create the passthrough command with tool arguments
-pdf_extraction = create_passthrough_command(
+olmocr = create_passthrough_command(
     tool_name=config["tool_name"],
     install_type=config["install_type"],
     install_source=config["install_source"],
     minimum_version=config["minimum_version"],
-    command_name=config["command_name"],
+    command_name="olmocr",
     docstring=config["docstring"],
     tool_args=get_pdf_extraction_tool_args,  # Pass callable, not the result
     help_transform=lambda _: _HELP_TEXT,
