@@ -189,17 +189,37 @@ def status():
 
 @auth.command(name="print-token")
 @click.option("--raw", is_flag=True, help="Print raw base64-encoded token")
-def print_token(raw):
+@click.option(
+    "--refresh", is_flag=True, help="Refresh the token if expired before printing"
+)
+def print_token(raw, refresh):
     """Print the stored access token."""
-    storage = TokenStorage()
-    tokens = storage.load_tokens()
+    if refresh:
+        # Go through TokenManager to trigger auto-refresh if needed
+        from asta.auth.exceptions import AuthenticationError
 
-    if not tokens or not tokens.get("access_token"):
-        console.print("❌ [red]No token found[/red]")
-        console.print("   Run [cyan]asta auth login[/cyan] to authenticate")
-        raise click.Abort()
+        try:
+            settings = get_auth_settings()
+            manager = TokenManager(
+                auth0_domain=settings.auth0_domain,
+                client_id=settings.auth0_client_id,
+                audience=settings.auth0_audience,
+                gateway_url=settings.gateway_url,
+            )
+            access_token = asyncio.run(manager.get_valid_access_token())
+        except AuthenticationError as e:
+            console.print(f"❌ [red]{e}[/red]")
+            raise click.Abort()
+    else:
+        storage = TokenStorage()
+        tokens = storage.load_tokens()
 
-    access_token = tokens["access_token"]
+        if not tokens or not tokens.get("access_token"):
+            console.print("❌ [red]No token found[/red]")
+            console.print("   Run [cyan]asta auth login[/cyan] to authenticate")
+            raise click.Abort()
+
+        access_token = tokens["access_token"]
 
     if raw:
         # Print raw base64-encoded token
