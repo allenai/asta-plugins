@@ -75,6 +75,7 @@ class SemanticScholarClient:
         fields: str | None = None,
         limit: int = 50,
         year: str | None = None,
+        publication_date_or_year: str | None = None,
     ) -> dict[str, Any]:
         """Search papers by keyword
 
@@ -83,12 +84,14 @@ class SemanticScholarClient:
             fields: Comma-separated fields to return
             limit: Max results (default 50, max 100)
             year: Year filter (e.g., "2020", "2020-2024", "2020-")
+            publication_date_or_year: Date range filter (e.g., ":2024-12-31", "2020:2024")
         """
         params = {
             "query": query,
             "fields": fields,
             "limit": min(limit, 100),
             "year": year,
+            "publicationDateOrYear": publication_date_or_year,
         }
         return self._request("/graph/v1/paper/search", params)
 
@@ -97,6 +100,7 @@ class SemanticScholarClient:
         paper_id: str,
         fields: str | None = None,
         limit: int = 100,
+        publication_date_or_year: str | None = None,
     ) -> dict[str, Any]:
         """Get papers that cite this paper
 
@@ -104,8 +108,13 @@ class SemanticScholarClient:
             paper_id: Paper ID
             fields: Comma-separated fields for citing papers
             limit: Max results (default 100, max 1000)
+            publication_date_or_year: Date range filter (e.g., ":2024-12-31")
         """
-        params = {"fields": fields, "limit": min(limit, 1000)}
+        params = {
+            "fields": fields,
+            "limit": min(limit, 1000),
+            "publicationDateOrYear": publication_date_or_year,
+        }
         return self._request(f"/graph/v1/paper/{paper_id}/citations", params)
 
     def get_paper_references(
@@ -139,6 +148,7 @@ class SemanticScholarClient:
         author_id: str,
         fields: str | None = None,
         limit: int = 100,
+        publication_date_or_year: str | None = None,
     ) -> dict[str, Any]:
         """Get papers by an author
 
@@ -146,6 +156,11 @@ class SemanticScholarClient:
             author_id: Author ID from search
             fields: Comma-separated fields to return
             limit: Max results (default 100, max 1000)
+            publication_date_or_year: Date range filter (e.g., ":2024-12-31")
         """
-        params = {"fields": fields, "limit": min(limit, 1000)}
+        params = {
+            "fields": fields,
+            "limit": min(limit, 1000),
+            "publicationDateOrYear": publication_date_or_year,
+        }
         return self._request(f"/graph/v1/author/{author_id}/papers", params)
