@@ -1,6 +1,6 @@
 ---
 name: Allen Brain Cell Atlas
-description: This skill should be used when the user asks about "brain cell types", "Allen Institute", "ABC Atlas", "cell type taxonomy", "brain-map.org", "CTKE", "MapMyCells", "MERFISH", "spatial transcriptomics in brain", "neuron types", "GABAergic", "glutamatergic", "brain region cell composition", or needs to answer questions grounded in the Allen Institute Brain Cell Atlas and neuroscience cell type literature.
+description: This skill should be used when the user asks about "brain cell types", "Allen Institute", "ABC Atlas", "cell type taxonomy", "brain-map.org", "CTKE", "MapMyCells", "MERFISH", "spatial transcriptomics in brain", "neuron types", "GABAergic", "glutamatergic", "brain region cell composition", "brain structure ontology", "brain region hierarchy", "cell electrophysiology", "cell morphology", "Allen Cell Types Database", or needs to answer questions grounded in the Allen Institute Brain Cell Atlas and neuroscience cell type literature.
 allowed-tools:
   - Bash(asta papers *)
   - Bash(asta literature find *)
@@ -22,6 +22,9 @@ Domain-grounded literature search and cell type knowledge for the Allen Institut
 - User wants papers on cell type classification, brain region composition, or cross-species comparisons
 - User needs to map between cell type names, classes, subclasses, or ontology terms
 - User asks about gene markers for brain cell types
+- User asks about brain region anatomy, hierarchy, or structure ontology (e.g., "where is CA1?")
+- User asks about electrophysiology or morphology data for specific cell types
+- User needs human brain cell type data or cross-species comparisons
 
 **Not for generic paper search** — use Semantic Scholar Lookup for non-atlas queries.
 
@@ -45,15 +48,76 @@ The tool is located at `reference/abc_query.py` relative to this skill file. Use
 python /path/to/skills/brain-cell-atlas/reference/abc_query.py <command> [args]
 ```
 
+#### Cell Type Taxonomy (mouse + human)
+
 | Command | Purpose | Example |
 |---|---|---|
 | `lookup <name>` | Find a cell type by name — returns hierarchy, markers, brain regions, cell counts | `lookup "Sst"` |
-| `markers <name>` | Get marker genes for a cell type at any hierarchy level | `markers "L5 IT"` |
-| `region <region>` | List cell types found in a brain region (aggregated by subclass) | `region "hippocampus"` |
-| `hierarchy <level>` | List all entries at a taxonomy level (class/subclass/supertype/cluster) | `hierarchy class` |
+| `lookup <name> -s human` | Look up cell type in human brain taxonomy | `lookup "Oligodendrocyte" -s human` |
+| `markers <name>` | Get marker genes for a cell type at any hierarchy level (mouse only) | `markers "L5 IT"` |
+| `gene <symbol>` | Reverse lookup: which cell types express a gene? (mouse only) | `gene "Gad2"` |
+| `region <region>` | List cell types found in a brain region (aggregated by subclass, mouse only) | `region "hippocampus"` |
+| `hierarchy <level>` | List all entries at a taxonomy level | `hierarchy class` |
+| `hierarchy <level> -s human` | Human taxonomy levels: supercluster, cluster, subcluster, neurotransmitter | `hierarchy supercluster -s human` |
 | `search <term>` | Free-text search across all annotations | `search "dopamine"` |
+| `search <term> -s both` | Search across mouse and human taxonomies | `search "astrocyte" -s both` |
+
+**Mouse-only commands:** `markers`, `gene`, and `region` only work with the mouse taxonomy (which has marker gene annotations and anatomical data). For human cell types, use `lookup -s human`, `hierarchy -s human`, or `search -s human`.
+
+#### Cell Type Nomenclature Resolution
+
+| Command | Purpose | Example |
+|---|---|---|
+| `resolve <name>` | Map any cell type name to its canonical Allen taxonomy entry | `resolve "fast-spiking interneuron"` |
+| `resolve <name> -r <region>` | Disambiguate by brain region | `resolve "basket cell" -r cortex` |
+
+The `resolve` command bridges naming conventions — morphological names ("chandelier cell"), electrophysiological names ("fast-spiking interneuron"), transgenic line names ("X94 interneuron"), and colloquial names ("rosehip cell") all resolve to canonical Allen taxonomy entries. It reports `match_quality` as "exact", "partial", or "ambiguous" and flags when a term is ambiguous across brain regions.
+
+**When to use `resolve` vs `lookup`:** Use `resolve` when the user provides a non-Allen name (e.g., from a paper or textbook). Use `lookup` when searching by Allen taxonomy names directly.
+
+#### Brain Structure Ontology
+
+| Command | Purpose | Example |
+|---|---|---|
+| `structure <name>` | Look up brain structures by name or acronym | `structure "hippocampus"` |
+| `structure <name> -c` | Include direct children of the matched structure | `structure "Ammon's horn" -c` |
+| `structure-path <name>` | Show the full path from root to a structure, plus siblings | `structure-path "CA1"` |
+
+#### Cell Types Database (electrophysiology & morphology)
+
+| Command | Purpose | Example |
+|---|---|---|
+| `specimen --id <id>` | Get full details for a specific specimen (includes web URL) | `specimen --id 485909730` |
+| `specimen --region <acr>` | Filter specimens by brain region acronym | `specimen --region VISp` |
+| `specimen --type <type>` | Filter by dendrite type (spiny/aspiny/sparsely spiny) | `specimen --type spiny` |
+| `specimen --layer <n>` | Filter by cortical layer | `specimen --layer 5` |
+| `specimen --has-morphology` | Only specimens with 3D reconstructions | `specimen --has-morphology` |
+| `specimen --has-model` | Only specimens with GLIF computational models | `specimen --has-model` |
+| `specimen --species <sp>` | Filter by species (mouse/human) | `specimen --species human` |
+
+Filters can be combined: `specimen --region VISp --type spiny --layer 5 --has-morphology`. Running `specimen` with no filters returns all ~2,300 specimens.
 
 All commands output JSON. Use `--limit N` (or `-l N`) to cap results. The `hierarchy` command supports `--filter` (or `-f`) to narrow by keyword.
+
+### Choosing the Right Command
+
+```
+User question about cells
+├── Uses a non-Allen name? (paper/textbook terminology)
+│   └── resolve first, then use the canonical name with other commands
+├── Needs definitive data? → Use abc_query.py
+│   ├── "What type is X?" → lookup
+│   ├── "What markers does X have?" → markers
+│   ├── "What cells express gene Y?" → gene
+│   ├── "What cells are in region Z?" → region
+│   │   └── Want anatomy context? → also run structure-path on the region
+│   ├── "List all X-level types" → hierarchy
+│   ├── "Does the human brain have X?" → lookup -s human / hierarchy -s human
+│   ├── "Compare mouse vs human X" → search -s both
+│   ├── "Where is brain region Z?" → structure / structure-path
+│   ├── "Ephys/morphology data for X?" → specimen
+│   └── "Is X the same as Y?" → resolve both, compare canonical names
+└── Needs interpretation/mechanisms? → Use asta papers search
 
 ### Translating User Questions to Queries
 
@@ -61,12 +125,61 @@ All commands output JSON. Use `--limit N` (or `-l N`) to cap results. The `hiera
 |---|---|
 | "What type of cell is an Sst interneuron?" | `lookup "Sst"` |
 | "What are the marker genes for L5 IT neurons?" | `markers "L5 IT"` |
+| "Which cell types express Gad2?" | `gene "Gad2"` |
 | "What cell types are in the hippocampus?" | `region "hippocampus"` |
 | "List all GABAergic subclasses" | `hierarchy subclass -f GABA` |
 | "How many parvalbumin cells are there?" | `lookup "parvalbumin"` |
 | "What are the 34 cell classes in the mouse brain?" | `hierarchy class` |
 | "Find dopaminergic cell types" | `search "dopamine"` |
 | "What markers distinguish L5 IT subtypes?" | `markers "L5 IT"` (check `markers_within_subclass` field) |
+| "Where is CA1 in the brain hierarchy?" | `structure-path "CA1"` |
+| "What subregions does the hippocampus have?" | `structure "hippocampus" -c` |
+| "Show me electrophysiology data for spiny cells in layer 5" | `specimen --type spiny --layer 5` |
+| "Are there human oligodendrocyte subtypes?" | `lookup "Oligodendrocyte" -s human` |
+| "What neurotransmitter types exist in the human brain?" | `hierarchy neurotransmitter -s human` |
+| "Compare astrocytes across species" | `search "astrocyte" -s both` |
+| "Get details for specimen 485909730" | `specimen --id 485909730` |
+| "What cells have morphological reconstructions in visual cortex?" | `specimen --region VISp --has-morphology` |
+| "What is a fast-spiking interneuron in Allen taxonomy?" | `resolve "fast-spiking interneuron"` |
+| "Is a chandelier cell the same as an axo-axonic cell?" | `resolve "chandelier cell"` then `resolve "axo-axonic cell"` — both → Pvalb chandelier |
+| "What is a basket cell?" (ambiguous) | `resolve "basket cell"` — returns disambiguation with 3 candidates |
+| "What is a cortical basket cell?" | `resolve "basket cell" -r cortex` — resolves to Pvalb |
+| "Map 'pyramidal tract neuron' to Allen nomenclature" | `resolve "pyramidal tract neuron"` → L5 ET CTX Glut |
+| "What is the Allen name for a rosehip cell?" | `resolve "rosehip cell"` → Lamp5 LCP2 |
+
+**Human taxonomy naming caveat:** The human taxonomy uses descriptive names (e.g., "MGE interneuron", "Upper-layer intratelencephalic") rather than marker-gene abbreviations (e.g., "Pvalb", "L2/3 IT"). Searching for "Pvalb" with `-s human` will return no results — use "MGE interneuron" or broader terms like "interneuron" instead.
+
+### Output JSON Fields
+
+**`lookup` (mouse):** `level`, `cluster_id`, `supertype`, `subclass`, `class`, `neurotransmitter`, `anatomical_annotation`, `neighborhood`, `marker_genes`, `merfish_markers`, `tf_markers`, `nt_markers`, `cell_count`
+
+**`lookup -s human`:** `level`, `name`, `label`, `parent`, `cell_count`, `description`
+
+**`markers`:** `level`, `name`, `neurotransmitter`, `marker_genes`, `tf_markers`, `markers_within_subclass` (supertype only), `merfish_markers` (cluster only)
+
+**`gene`:** `level`, `name`, `subclass`, `class`, `neurotransmitter`, `marker_type`/`marker_types` — tells you *why* this gene is listed (subclass_marker, tf_marker, merfish_marker, nt_marker, etc.)
+
+**`region`:** `subclass`, `class`, `neurotransmitter`, `cluster_count`, `total_cells`, `anatomical_annotations`
+
+**`specimen`:** `specimen_id`, `name`, `species`, `brain_region`, `region_acronym`, `layer`, `dendrite_type`, `web_url`, `electrophysiology` (vrest, ri, tau, avg_firing_rate, etc.), `morphology` (reconstruction_type, number_bifurcations, etc.), `models_available`, `ccf_coordinates`
+
+**`structure`:** `id`, `acronym`, `name`, `parent`, `depth`, `color`, optionally `children`
+
+**`structure-path`:** `structure`, `path_from_root` (list), `siblings` (list)
+
+**`resolve`:** `canonical`, `level`, `class`, `region`, `matched_alias`, `alias_source`, `match_type` (canonical_exact/alias/disambiguated_by_region), `match_quality` (exact/partial/ambiguous), `note`, `score`. When ambiguous: `ambiguous: true` with `disambiguation.candidates` listing all possible cell types and `disambiguation.hint` for how to resolve.
+
+### Mouse ↔ Human Taxonomy Levels
+
+The two species use different hierarchy level names:
+
+| Mouse level | Human equivalent | Description |
+|---|---|---|
+| class (34) | supercluster (31) | Broadest grouping |
+| subclass (338) | cluster (461) | Intermediate grouping |
+| supertype (1,201) | — | Region-specific variants (mouse only) |
+| cluster (5,322) | subcluster (461) | Finest resolution |
+| — | neurotransmitter (20) | NT type assignment (human only) |
 
 ### Synonym Support
 
@@ -78,13 +191,31 @@ The tool automatically expands common neuroscience terms to their atlas abbrevia
 - astrocyte → Astro, oligodendrocyte → Oligo, microglia → Immune
 - glutamatergic/excitatory → Glut, gabaergic/inhibitory → GABA
 
-### Data Source
+### Data Sources
 
-All data comes from the Allen Brain Cell Atlas public S3 bucket (no auth required):
+All data is public — no API keys or authentication required.
+
+**Mouse taxonomy (S3):**
 - **Base URL:** `https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/metadata/WMB-taxonomy/20231215/`
-- **Taxonomy version:** WMB-taxonomy 20231215 (Yao et al. 2023)
-- **Coverage:** 5,322 clusters, 1,201 supertypes, 338 subclasses, 34 classes across ~4 million mouse brain cells
-- **Cache location:** `~/.abc_atlas_cache/`
+- **Version:** WMB-taxonomy 20231215 (Yao et al. 2023)
+- **Coverage:** 5,322 clusters, 1,201 supertypes, 338 subclasses, 34 classes across ~4 million cells
+
+**Human taxonomy (S3):**
+- **Base URL:** `https://allen-brain-cell-atlas.s3.us-west-2.amazonaws.com/metadata/WHB-taxonomy/20240330/`
+- **Version:** WHB-taxonomy 20240330 (Siletti et al. 2023)
+- **Coverage:** 461 subclusters, 461 clusters, 31 superclusters, 20 neurotransmitter types across ~3.4 million cells
+- **Note:** Human taxonomy uses different naming (e.g., "MGE interneuron" not "Pvalb") and lacks marker gene annotations
+
+**Brain structure ontology (API):**
+- **Endpoint:** `https://api.brain-map.org/api/v2/structure_graph_download/1.json`
+- **Coverage:** ~700 brain structures with full parent-child hierarchy
+
+**Cell Types Database (API):**
+- **Endpoint:** `https://api.brain-map.org/api/v2/data/query.json`
+- **Coverage:** ~2,300 specimens with electrophysiology, morphology, and computational models
+- **Species:** Mouse and human
+
+**Cache location:** `~/.abc_atlas_cache/` (taxonomy files only; API queries are live)
 
 ### Agent SDK Integration
 
@@ -95,22 +226,29 @@ When building agents (e.g., with [Claude Agent SDK](https://github.com/anthropic
 # The agent can shell out to abc_query.py and parse the JSON output
 import subprocess, json
 
-def query_brain_atlas(command: str, query: str, limit: int = 20) -> dict:
-    """Query the Allen Brain Cell Atlas taxonomy."""
+def query_brain_atlas(command: str, *args: str) -> dict:
+    """Query the Allen Brain Cell Atlas, structure ontology, or cell types DB."""
     result = subprocess.run(
-        ["python", "abc_query.py", command, query, "-l", str(limit)],
+        ["python", "abc_query.py", command, *args],
         capture_output=True, text=True
     )
     return json.loads(result.stdout)
 
-# Cell type lookup
+# Cell type lookup (mouse or human)
 info = query_brain_atlas("lookup", "Pvalb")
+human = query_brain_atlas("lookup", "Oligodendrocyte", "-s", "human")
 
 # Marker genes
 markers = query_brain_atlas("markers", "L5 IT")
 
 # Brain region composition
 region = query_brain_atlas("region", "hippocampus")
+
+# Brain structure ontology
+path = query_brain_atlas("structure-path", "CA1")
+
+# Electrophysiology specimens
+specimens = query_brain_atlas("specimen", "--region", "VISp", "--type", "spiny")
 ```
 
 ## Search Strategy
@@ -198,15 +336,21 @@ The atlas query returns actual cell types with counts (CA1-ProS Glut, CA3 Glut, 
 ### "How do human and mouse cortical cell types compare?"
 
 ```bash
-# Atlas data is mouse-only — use literature for cross-species questions
+# 1. Get mouse cortical classes
+python abc_query.py hierarchy class
+
+# 2. Get human superclusters for comparison
+python abc_query.py hierarchy supercluster -s human
+
+# 3. Cross-species search for specific types
+python abc_query.py search "astrocyte" -s both
+
+# 4. For detailed comparison, search papers
 asta papers search "human mouse cortex cell types cross-species conservation" \
   --year 2020- --limit 10 --fields title,abstract,year,authors,citationCount
-
-# Key BICCN paper
-asta papers get "DOI:10.1038/s41586-021-03465-8" --fields title,abstract,authors,year,citationCount
 ```
 
-Reference Bakken et al. 2021 as the foundational cross-species comparison.
+Mouse uses marker-gene names (e.g., "Pvalb Gaba"), human uses descriptive names (e.g., "MGE interneuron"). Reference Bakken et al. 2021 for the foundational cross-species comparison.
 
 ### "What genes define L2/3 IT neurons?"
 
@@ -240,3 +384,91 @@ python abc_query.py hierarchy class
 python abc_query.py search "astrocyte"
 python abc_query.py search "oligodendrocyte"
 ```
+
+### "Where is the dentate gyrus in the brain?"
+
+```bash
+# Get the full anatomical path
+python abc_query.py structure-path "DG"
+
+# See what subregions it contains
+python abc_query.py structure "Dentate gyrus" -c
+```
+
+Returns: root → Basic cell groups → Cerebrum → Cerebral cortex → Cortical plate → Hippocampal formation → Hippocampal region → Dentate gyrus, plus subregions (molecular layer, polymorph layer, granule cell layer, etc.).
+
+### "What electrophysiology data exists for mouse visual cortex interneurons?"
+
+```bash
+# Find aspiny (inhibitory) specimens in primary visual cortex
+python abc_query.py specimen --region VISp --type aspiny --species mouse -l 10
+```
+
+Returns specimens with resting potential, input resistance, firing rate, adaptation index, f-I curve slope, and GLIF model availability. Use specimen IDs for deeper analysis.
+
+### "Are there human brain cell recordings available?"
+
+```bash
+# Query for human specimens with morphological reconstructions
+python abc_query.py specimen --species human --has-morphology -l 10
+```
+
+### "Which cell types express Gad2?"
+
+```bash
+# Reverse gene lookup — find all cell types where Gad2 is a marker
+python abc_query.py gene "Gad2"
+```
+
+Returns subclasses, supertypes, and clusters where Gad2 is listed as a marker gene. The `marker_type` field tells you whether it's a cluster marker, TF marker, MERFISH marker, or neurotransmitter marker.
+
+### "What cell types are in the thalamus?" (combining structure + region)
+
+```bash
+# 1. Understand the anatomy — what is the thalamus?
+python abc_query.py structure-path "TH"
+
+# 2. Get cell types in the thalamus
+python abc_query.py region "TH"
+
+# The structure acronym from step 1 feeds directly into the region query
+```
+
+Use `structure` or `structure-path` to resolve anatomy, then pass the acronym to `region` for cell type composition.
+
+### "A paper mentions 'fast-spiking basket cells' — what are those in the Allen taxonomy?"
+
+```bash
+# Resolve the non-Allen name to the canonical taxonomy entry
+python abc_query.py resolve "fast-spiking basket cell"
+```
+
+Returns: Pvalb (subclass), match_quality: partial (basket cells are one morphological subtype within the Pvalb subclass). The agent can then use `lookup "Pvalb"` or `markers "Pvalb"` for detailed data.
+
+### "Is a chandelier cell the same as an axo-axonic cell?"
+
+```bash
+# Resolve both names
+python abc_query.py resolve "chandelier cell"
+python abc_query.py resolve "axo-axonic cell"
+```
+
+Both resolve to Pvalb chandelier (supertype) — they are the same cell type described by different naming conventions (morphology vs synaptic targeting).
+
+### "Find papers about basket cells" (ambiguous term)
+
+```bash
+# 1. Check if the term is ambiguous
+python abc_query.py resolve "basket cell"
+# → ambiguous=true, 3 candidates: cortical PV+, cerebellar, hippocampal CCK+
+
+# 2. If the user means cortical basket cells:
+python abc_query.py resolve "basket cell" -r cortex
+# → Pvalb (subclass)
+
+# 3. Now search with both the canonical AND common names
+asta papers search "parvalbumin basket cell cortex fast-spiking" \
+  --year 2018- --limit 10 --fields title,abstract,year,authors
+```
+
+When a cell type name is ambiguous, always resolve first, then use both the canonical Allen name AND the user's original term in paper searches to maximize coverage across naming conventions.

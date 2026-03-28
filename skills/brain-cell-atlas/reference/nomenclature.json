@@ -1,0 +1,590 @@
+{
+  "_metadata": {
+    "description": "Cell type nomenclature alias database mapping historical, morphological, electrophysiological, and colloquial cell type names to canonical Allen Brain Cell Atlas taxonomy entries.",
+    "taxonomy": "Allen ABC Atlas — Yao et al. 2023. Hierarchy: 34 classes → 338 subclasses → 1,201 supertypes → 5,322 clusters.",
+    "version": "1.0.0"
+  },
+
+  "entries": [
+
+    {
+      "canonical": "Pvalb",
+      "level": "subclass",
+      "class": "07 CTX-MGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "cortex",
+      "aliases": [
+        {"name": "fast-spiking interneuron", "source": "electrophysiology"},
+        {"name": "FS interneuron", "source": "electrophysiology"},
+        {"name": "FS cell", "source": "electrophysiology"},
+        {"name": "parvalbumin-positive interneuron", "source": "immunohistochemistry"},
+        {"name": "PV+ interneuron", "source": "immunohistochemistry"},
+        {"name": "PV interneuron", "source": "immunohistochemistry"},
+        {"name": "PV+ neuron", "source": "immunohistochemistry"},
+        {"name": "PV basket cell", "source": "morphology", "match_quality": "partial", "note": "basket cells are one morphological subtype within Pvalb"},
+        {"name": "fast-spiking basket cell", "source": "electrophysiology+morphology", "match_quality": "partial"}
+      ],
+      "supertypes": [
+        {
+          "canonical": "Pvalb chandelier",
+          "aliases": [
+            {"name": "chandelier cell", "source": "morphology"},
+            {"name": "axo-axonic cell", "source": "synaptic targeting"},
+            {"name": "AAC", "source": "abbreviation"},
+            {"name": "ChC", "source": "abbreviation"},
+            {"name": "Pvalb Vipr2", "source": "transcriptomics"}
+          ],
+          "note": "Targets axon initial segments of pyramidal cells, NOT somata like basket cells"
+        }
+      ],
+      "disambiguation": [
+        {"confusable": "cerebellar basket cell", "region": "cerebellum", "how_to_distinguish": "Cerebellar basket cells are in the molecular layer and target Purkinje cell somata. Different developmental origin and molecular profile from cortical PV+ basket cells."},
+        {"confusable": "CCK+ basket cell", "region": "hippocampus", "how_to_distinguish": "CCK+ basket cells express cholecystokinin, not parvalbumin. They are CGE-derived (Sncg/Vip subclass), while PV basket cells are MGE-derived."}
+      ]
+    },
+
+    {
+      "canonical": "Sst",
+      "level": "subclass",
+      "class": "07 CTX-MGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "cortex",
+      "aliases": [
+        {"name": "somatostatin interneuron", "source": "immunohistochemistry"},
+        {"name": "SST interneuron", "source": "immunohistochemistry"},
+        {"name": "SST+ interneuron", "source": "immunohistochemistry"},
+        {"name": "SST+ neuron", "source": "immunohistochemistry"},
+        {"name": "low-threshold spiking interneuron", "source": "electrophysiology"},
+        {"name": "LTS interneuron", "source": "electrophysiology"},
+        {"name": "LTS cell", "source": "electrophysiology"},
+        {"name": "Martinotti cell", "source": "morphology", "match_quality": "partial", "note": "Martinotti cells are one morphological subtype; not all Sst neurons are Martinotti cells. Some authors use 'Martinotti' broadly for all Sst neurons with ascending axons."}
+      ],
+      "supertypes": [
+        {
+          "canonical": "Sst Calb2",
+          "aliases": [
+            {"name": "fanning-out Martinotti cell", "source": "morphology"},
+            {"name": "deep-layer Martinotti cell", "source": "morphology", "match_quality": "partial"}
+          ],
+          "note": "Fanning-out morphology in L1, distinct from T-shaped Martinotti cells (Sst Chrna2)"
+        },
+        {
+          "canonical": "Sst Chrna2",
+          "aliases": [
+            {"name": "T-shaped Martinotti cell", "source": "morphology"}
+          ]
+        },
+        {
+          "canonical": "Sst Myh8",
+          "aliases": [
+            {"name": "X94 interneuron", "source": "transgenic line"},
+            {"name": "non-Martinotti SST cell", "source": "morphology", "match_quality": "partial"},
+            {"name": "L4-targeting SST neuron", "source": "connectivity"}
+          ],
+          "note": "Non-Martinotti Sst neurons that target L4, labeled by X94 transgenic line"
+        },
+        {
+          "canonical": "Sst Etv1",
+          "aliases": [
+            {"name": "X94 interneuron", "source": "transgenic line", "match_quality": "partial"},
+            {"name": "non-Martinotti SST cell", "source": "morphology", "match_quality": "partial"}
+          ]
+        }
+      ],
+      "disambiguation": [
+        {"confusable": "hypothalamic SST neuron", "region": "hypothalamus", "how_to_distinguish": "Hypothalamic SST neurons are in a different class (HY GABA) and have different functions (neuroendocrine regulation vs cortical inhibition)."}
+      ]
+    },
+
+    {
+      "canonical": "Sst Chodl",
+      "level": "subclass",
+      "class": "07 CTX-MGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "cortex",
+      "aliases": [
+        {"name": "long-range projecting interneuron", "source": "connectivity"},
+        {"name": "LRP interneuron", "source": "connectivity"},
+        {"name": "long-range projecting GABAergic interneuron", "source": "connectivity"},
+        {"name": "nNOS+ SST neuron", "source": "immunohistochemistry"},
+        {"name": "nNOS-expressing SST interneuron", "source": "immunohistochemistry"},
+        {"name": "SST-CR neuron", "source": "immunohistochemistry"},
+        {"name": "SST Chodl neuron", "source": "transcriptomics"}
+      ],
+      "note": "Only known cortical interneuron with long-range axonal projections. Co-expresses somatostatin, chondrolectin (Chodl), and neuronal nitric oxide synthase (nNOS)."
+    },
+
+    {
+      "canonical": "Vip",
+      "level": "subclass",
+      "class": "06 CTX-CGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "cortex",
+      "aliases": [
+        {"name": "VIP interneuron", "source": "immunohistochemistry"},
+        {"name": "VIP+ interneuron", "source": "immunohistochemistry"},
+        {"name": "VIP+ neuron", "source": "immunohistochemistry"},
+        {"name": "vasoactive intestinal peptide interneuron", "source": "immunohistochemistry"},
+        {"name": "VIP bipolar cell", "source": "morphology", "match_quality": "partial", "note": "bipolar morphology is common but not universal in Vip neurons"},
+        {"name": "interneuron-selective interneuron", "source": "connectivity", "match_quality": "partial", "note": "Many Vip neurons preferentially inhibit other interneurons (IS cells), but not all do"}
+      ],
+      "disambiguation": [
+        {"confusable": "retinal bipolar cell", "region": "retina", "how_to_distinguish": "VIP bipolar cells in cortex are GABAergic interneurons named for dendritic morphology. Retinal bipolar cells are glutamatergic neurons relaying photoreceptor signals. Entirely different cell types."}
+      ]
+    },
+
+    {
+      "canonical": "Lamp5",
+      "level": "subclass",
+      "class": "06 CTX-CGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "cortex",
+      "aliases": [
+        {"name": "LAMP5 interneuron", "source": "transcriptomics"},
+        {"name": "LAMP5+ neuron", "source": "transcriptomics"},
+        {"name": "neurogliaform cell", "source": "morphology", "match_quality": "partial", "note": "Neurogliaform cells are one major type within Lamp5, but Lamp5 also includes single-bouquet cells and others"},
+        {"name": "NGFC", "source": "morphology", "match_quality": "partial"},
+        {"name": "late-spiking interneuron", "source": "electrophysiology", "match_quality": "partial"}
+      ],
+      "supertypes": [
+        {
+          "canonical": "Lamp5 LCP2",
+          "aliases": [
+            {"name": "rosehip cell", "source": "morphology (Boldog et al. 2018)"},
+            {"name": "rosehip neuron", "source": "morphology"},
+            {"name": "Inh L1-4 LAMP5 LCP2", "source": "Allen CCN"}
+          ],
+          "note": "Human-enriched GABAergic interneuron with compact axon arbor. Described by Boldog et al. 2018 (Nature Neuroscience)."
+        }
+      ]
+    },
+
+    {
+      "canonical": "Sncg",
+      "level": "subclass",
+      "class": "06 CTX-CGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "cortex",
+      "aliases": [
+        {"name": "SNCG interneuron", "source": "transcriptomics"},
+        {"name": "synuclein gamma interneuron", "source": "transcriptomics"},
+        {"name": "single-bouquet cell", "source": "morphology", "match_quality": "partial", "note": "Single-bouquet cells in human cortex map to Sncg (Hodge et al. 2019)"},
+        {"name": "bitufted cell", "source": "morphology", "match_quality": "partial", "note": "Some authors use 'bitufted cell' for the same morphological type"},
+        {"name": "CCK+ interneuron", "source": "immunohistochemistry", "match_quality": "partial", "note": "Some CCK-expressing interneurons fall in Sncg, but CCK is also expressed in other types"}
+      ]
+    },
+
+    {
+      "canonical": "L2/3 IT CTX Glut",
+      "level": "subclass",
+      "class": "01 IT-ET Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L2/3 IT neuron", "source": "Allen taxonomy"},
+        {"name": "layer 2/3 pyramidal cell", "source": "morphology"},
+        {"name": "L2/3 pyramidal neuron", "source": "morphology"},
+        {"name": "superficial pyramidal cell", "source": "morphology"},
+        {"name": "intratelencephalic L2/3 neuron", "source": "connectivity"},
+        {"name": "callosal projection neuron", "source": "connectivity", "match_quality": "partial", "note": "L2/3 IT neurons project through corpus callosum, but IT neurons in other layers do too"}
+      ]
+    },
+
+    {
+      "canonical": "L5 IT CTX Glut",
+      "level": "subclass",
+      "class": "01 IT-ET Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L5 IT neuron", "source": "Allen taxonomy"},
+        {"name": "layer 5 intratelencephalic neuron", "source": "connectivity"},
+        {"name": "L5 thin-tufted neuron", "source": "morphology"},
+        {"name": "L5a pyramidal cell", "source": "classical anatomy", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "L5 ET CTX Glut",
+      "level": "subclass",
+      "class": "01 IT-ET Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L5 ET neuron", "source": "Allen taxonomy"},
+        {"name": "layer 5 ET neuron", "source": "Allen taxonomy"},
+        {"name": "extratelencephalic neuron", "source": "Allen taxonomy"},
+        {"name": "pyramidal tract neuron", "source": "electrophysiology/connectivity"},
+        {"name": "PT neuron", "source": "electrophysiology/connectivity"},
+        {"name": "corticofugal neuron", "source": "connectivity"},
+        {"name": "subcortically projecting neuron", "source": "connectivity"},
+        {"name": "L5 thick-tufted neuron", "source": "morphology"},
+        {"name": "L5b pyramidal cell", "source": "classical anatomy"},
+        {"name": "Fezf2+ neuron", "source": "transgenic/transcriptomics"},
+        {"name": "Betz cell", "source": "morphology", "match_quality": "partial", "note": "Betz cells are giant L5 ET neurons specific to motor cortex"},
+        {"name": "Von Economo neuron", "source": "morphology", "match_quality": "partial", "note": "VENs are regionally specialized ET neurons in anterior cingulate and fronto-insular cortex (Hodge et al. 2020)"},
+        {"name": "VEN", "source": "morphology", "match_quality": "partial"},
+        {"name": "spindle neuron", "source": "morphology", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "L5/6 NP CTX Glut",
+      "level": "subclass",
+      "class": "02 NP-CT-L6b Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L5/6 NP neuron", "source": "Allen taxonomy"},
+        {"name": "near-projecting neuron", "source": "Allen taxonomy"},
+        {"name": "NP neuron", "source": "Allen taxonomy"},
+        {"name": "corticostriatal neuron", "source": "connectivity", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "L6 CT CTX Glut",
+      "level": "subclass",
+      "class": "02 NP-CT-L6b Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L6 CT neuron", "source": "Allen taxonomy"},
+        {"name": "corticothalamic neuron", "source": "connectivity"},
+        {"name": "CT neuron", "source": "connectivity"},
+        {"name": "layer 6 corticothalamic cell", "source": "connectivity"},
+        {"name": "L6a pyramidal cell", "source": "classical anatomy", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "L6b CTX Glut",
+      "level": "subclass",
+      "class": "02 NP-CT-L6b Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L6b neuron", "source": "Allen taxonomy"},
+        {"name": "layer 6b neuron", "source": "classical anatomy"},
+        {"name": "subplate neuron", "source": "developmental", "match_quality": "partial", "note": "L6b neurons are the adult remnant of the developmental subplate, but not all subplate-derived neurons end up in L6b"}
+      ]
+    },
+
+    {
+      "canonical": "L4/5 IT CTX Glut",
+      "level": "subclass",
+      "class": "01 IT-ET Glut",
+      "neurotransmitter": "Glut",
+      "region": "cortex",
+      "aliases": [
+        {"name": "L4 IT neuron", "source": "Allen taxonomy"},
+        {"name": "spiny stellate cell", "source": "morphology", "match_quality": "partial", "note": "Spiny stellate cells are one morphological type in L4 IT, but L4 IT also includes pyramidal cells"},
+        {"name": "L4 stellate cell", "source": "morphology", "match_quality": "partial"},
+        {"name": "L4 excitatory neuron", "source": "physiology"},
+        {"name": "Scnn1a+ neuron", "source": "transgenic", "match_quality": "partial"},
+        {"name": "barrel cortex L4 cell", "source": "anatomy", "match_quality": "partial"}
+      ],
+      "disambiguation": [
+        {"confusable": "cerebellar stellate cell", "region": "cerebellum", "how_to_distinguish": "Cerebellar stellate cells are GABAergic inhibitory interneurons in the molecular layer. Cortical L4 stellate cells are glutamatergic excitatory neurons. Opposite neurotransmitter types."},
+        {"confusable": "hepatic stellate cell", "region": "liver", "how_to_distinguish": "Hepatic stellate cells are non-neuronal cells in the liver. Not related to brain stellate cells at all."}
+      ]
+    },
+
+    {
+      "canonical": "DG Glut",
+      "level": "subclass",
+      "class": "04 DG-IMN Glut",
+      "neurotransmitter": "Glut",
+      "region": "hippocampus",
+      "aliases": [
+        {"name": "dentate gyrus granule cell", "source": "classical anatomy"},
+        {"name": "hippocampal granule cell", "source": "classical anatomy"},
+        {"name": "DG granule cell", "source": "classical anatomy"},
+        {"name": "granule cell", "source": "classical anatomy", "match_quality": "ambiguous", "note": "Ambiguous without region context — also refers to cerebellar and olfactory bulb granule cells"}
+      ],
+      "disambiguation": [
+        {"confusable": "cerebellar granule cell", "region": "cerebellum", "how_to_distinguish": "Cerebellar granule cells are the most numerous neurons in the brain, in the granular layer. Different developmental origin, connectivity, and molecular profile from hippocampal granule cells."},
+        {"confusable": "olfactory bulb granule cell", "region": "olfactory bulb", "how_to_distinguish": "OB granule cells are GABAergic (inhibitory), while hippocampal granule cells are glutamatergic (excitatory). Completely different neurotransmitter types."}
+      ]
+    },
+
+    {
+      "canonical": "CB Granule",
+      "level": "subclass",
+      "class": "29 CB Glut",
+      "neurotransmitter": "Glut",
+      "region": "cerebellum",
+      "aliases": [
+        {"name": "cerebellar granule cell", "source": "classical anatomy"},
+        {"name": "granule cell", "source": "classical anatomy", "match_quality": "ambiguous"}
+      ]
+    },
+
+    {
+      "canonical": "MSN D1",
+      "level": "subclass",
+      "class": "09 CNU-LGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "striatum",
+      "aliases": [
+        {"name": "D1 medium spiny neuron", "source": "classical anatomy"},
+        {"name": "D1 MSN", "source": "classical anatomy"},
+        {"name": "D1-type MSN", "source": "classical anatomy"},
+        {"name": "Drd1+ MSN", "source": "transcriptomics"},
+        {"name": "direct pathway MSN", "source": "connectivity"},
+        {"name": "direct pathway neuron", "source": "connectivity"},
+        {"name": "striatonigral neuron", "source": "connectivity"},
+        {"name": "medium spiny neuron", "source": "classical anatomy", "match_quality": "ambiguous", "note": "Without D1/D2 qualifier, 'MSN' is ambiguous between D1 and D2 subtypes"}
+      ],
+      "disambiguation": [
+        {"confusable": "D2 MSN", "region": "striatum", "how_to_distinguish": "D1 MSNs express Drd1 and project in the direct pathway to substantia nigra. D2 MSNs express Drd2 and project in the indirect pathway to globus pallidus. Transcriptomically and functionally distinct."}
+      ]
+    },
+
+    {
+      "canonical": "MSN D2",
+      "level": "subclass",
+      "class": "09 CNU-LGE GABA",
+      "neurotransmitter": "GABA",
+      "region": "striatum",
+      "aliases": [
+        {"name": "D2 medium spiny neuron", "source": "classical anatomy"},
+        {"name": "D2 MSN", "source": "classical anatomy"},
+        {"name": "D2-type MSN", "source": "classical anatomy"},
+        {"name": "Drd2+ MSN", "source": "transcriptomics"},
+        {"name": "indirect pathway MSN", "source": "connectivity"},
+        {"name": "indirect pathway neuron", "source": "connectivity"},
+        {"name": "striatopallidal neuron", "source": "connectivity"}
+      ]
+    },
+
+    {
+      "canonical": "CA1-ProS Glut",
+      "level": "subclass",
+      "class": "01 IT-ET Glut",
+      "neurotransmitter": "Glut",
+      "region": "hippocampus",
+      "aliases": [
+        {"name": "CA1 pyramidal cell", "source": "classical anatomy"},
+        {"name": "CA1 pyramidal neuron", "source": "classical anatomy"},
+        {"name": "hippocampal CA1 neuron", "source": "classical anatomy"},
+        {"name": "place cell", "source": "physiology", "match_quality": "partial", "note": "Place cells are a functional property of some CA1 pyramidal neurons, not a transcriptomic type"}
+      ]
+    },
+
+    {
+      "canonical": "CA3 Glut",
+      "level": "subclass",
+      "class": "01 IT-ET Glut",
+      "neurotransmitter": "Glut",
+      "region": "hippocampus",
+      "aliases": [
+        {"name": "CA3 pyramidal cell", "source": "classical anatomy"},
+        {"name": "CA3 pyramidal neuron", "source": "classical anatomy"},
+        {"name": "hippocampal CA3 neuron", "source": "classical anatomy"}
+      ]
+    },
+
+    {
+      "canonical": "Astro",
+      "level": "subclass",
+      "class": "30 Astro-Epen",
+      "neurotransmitter": "NA",
+      "region": "whole brain",
+      "aliases": [
+        {"name": "astrocyte", "source": "classical"},
+        {"name": "astroglia", "source": "classical"},
+        {"name": "protoplasmic astrocyte", "source": "morphology", "match_quality": "partial"},
+        {"name": "fibrous astrocyte", "source": "morphology", "match_quality": "partial"},
+        {"name": "reactive astrocyte", "source": "pathology", "match_quality": "partial"},
+        {"name": "GFAP+ cell", "source": "immunohistochemistry", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "Oligo",
+      "level": "subclass",
+      "class": "31 OPC-Oligo",
+      "neurotransmitter": "NA",
+      "region": "whole brain",
+      "aliases": [
+        {"name": "oligodendrocyte", "source": "classical"},
+        {"name": "myelinating oligodendrocyte", "source": "classical"},
+        {"name": "mature oligodendrocyte", "source": "developmental"}
+      ]
+    },
+
+    {
+      "canonical": "OPC",
+      "level": "subclass",
+      "class": "31 OPC-Oligo",
+      "neurotransmitter": "NA",
+      "region": "whole brain",
+      "aliases": [
+        {"name": "oligodendrocyte precursor cell", "source": "developmental"},
+        {"name": "OPC", "source": "developmental"},
+        {"name": "NG2 cell", "source": "immunohistochemistry"},
+        {"name": "NG2+ cell", "source": "immunohistochemistry"},
+        {"name": "NG2 glia", "source": "immunohistochemistry"},
+        {"name": "polydendrocyte", "source": "morphology"}
+      ]
+    },
+
+    {
+      "canonical": "Micro-PVM",
+      "level": "subclass",
+      "class": "34 Immune",
+      "neurotransmitter": "NA",
+      "region": "whole brain",
+      "aliases": [
+        {"name": "microglia", "source": "classical"},
+        {"name": "microglial cell", "source": "classical"},
+        {"name": "brain macrophage", "source": "immunology", "match_quality": "partial"},
+        {"name": "perivascular macrophage", "source": "immunology", "match_quality": "partial"},
+        {"name": "Iba1+ cell", "source": "immunohistochemistry"},
+        {"name": "CX3CR1+ cell", "source": "immunohistochemistry"}
+      ]
+    },
+
+    {
+      "canonical": "Purkinje",
+      "level": "subclass",
+      "class": "28 CB GABA",
+      "neurotransmitter": "GABA",
+      "region": "cerebellum",
+      "aliases": [
+        {"name": "Purkinje cell", "source": "classical anatomy"},
+        {"name": "Purkinje neuron", "source": "classical anatomy"},
+        {"name": "cerebellar Purkinje cell", "source": "classical anatomy"}
+      ]
+    },
+
+    {
+      "canonical": "MB Dopa",
+      "level": "class",
+      "class": "21 MB Dopa",
+      "neurotransmitter": "Dopa",
+      "region": "midbrain",
+      "aliases": [
+        {"name": "dopaminergic neuron", "source": "classical", "match_quality": "partial", "note": "MB Dopa is the main class but dopaminergic neurons also exist elsewhere"},
+        {"name": "midbrain dopaminergic neuron", "source": "classical"},
+        {"name": "dopamine neuron", "source": "classical"},
+        {"name": "SNc dopamine neuron", "source": "anatomy", "match_quality": "partial"},
+        {"name": "VTA dopamine neuron", "source": "anatomy", "match_quality": "partial"},
+        {"name": "A9 neuron", "source": "classical nomenclature", "match_quality": "partial"},
+        {"name": "A10 neuron", "source": "classical nomenclature", "match_quality": "partial"},
+        {"name": "TH+ neuron", "source": "immunohistochemistry", "match_quality": "partial", "note": "TH (tyrosine hydroxylase) is also expressed in noradrenergic neurons"}
+      ]
+    },
+
+    {
+      "canonical": "MB-HB Sero",
+      "level": "class",
+      "class": "22 MB-HB Sero",
+      "neurotransmitter": "Sero",
+      "region": "midbrain/hindbrain",
+      "aliases": [
+        {"name": "serotonergic neuron", "source": "classical"},
+        {"name": "serotonin neuron", "source": "classical"},
+        {"name": "5-HT neuron", "source": "pharmacology"},
+        {"name": "raphe neuron", "source": "anatomy", "match_quality": "partial"},
+        {"name": "dorsal raphe neuron", "source": "anatomy", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "Cholinergic",
+      "level": "subclass",
+      "class": "08 CNU-MGE GABA",
+      "neurotransmitter": "Chol",
+      "region": "basal forebrain",
+      "aliases": [
+        {"name": "cholinergic neuron", "source": "classical", "match_quality": "partial"},
+        {"name": "basal forebrain cholinergic neuron", "source": "anatomy"},
+        {"name": "ChAT+ neuron", "source": "immunohistochemistry"},
+        {"name": "nucleus basalis neuron", "source": "anatomy", "match_quality": "partial"}
+      ]
+    },
+
+    {
+      "canonical": "Ependymal",
+      "level": "subclass",
+      "class": "30 Astro-Epen",
+      "neurotransmitter": "NA",
+      "region": "ventricles",
+      "aliases": [
+        {"name": "ependymal cell", "source": "classical"},
+        {"name": "ependymocyte", "source": "classical"}
+      ]
+    },
+
+    {
+      "canonical": "VLMC",
+      "level": "subclass",
+      "class": "33 Vascular",
+      "neurotransmitter": "NA",
+      "region": "whole brain",
+      "aliases": [
+        {"name": "vascular leptomeningeal cell", "source": "classical"},
+        {"name": "pericyte", "source": "classical", "match_quality": "partial"},
+        {"name": "vascular smooth muscle cell", "source": "classical", "match_quality": "partial"},
+        {"name": "endothelial cell", "source": "classical", "match_quality": "partial"}
+      ]
+    }
+  ],
+
+  "ambiguous_terms": [
+    {
+      "term": "basket cell",
+      "candidates": [
+        {"canonical": "Pvalb", "region": "cortex", "description": "PV+ fast-spiking basket cell, MGE-derived"},
+        {"canonical": "CB GABA (basket)", "region": "cerebellum", "description": "Cerebellar basket cell in molecular layer, targets Purkinje somata"},
+        {"canonical": "CCK+ basket cell", "region": "hippocampus", "description": "CCK-expressing basket cell, CGE-derived, distinct from PV+ basket cells"}
+      ],
+      "disambiguation_hint": "Specify region (cortex/cerebellum/hippocampus) and/or molecular marker (PV/CCK)"
+    },
+    {
+      "term": "granule cell",
+      "candidates": [
+        {"canonical": "DG Glut", "region": "hippocampus", "description": "Dentate gyrus granule cell, glutamatergic"},
+        {"canonical": "CB Granule", "region": "cerebellum", "description": "Cerebellar granule cell, most numerous neuron in brain"},
+        {"canonical": "OB granule cell", "region": "olfactory bulb", "description": "OB granule cell, GABAergic, dendrodendritic synapses"}
+      ],
+      "disambiguation_hint": "Specify region (hippocampus/cerebellum/olfactory bulb)"
+    },
+    {
+      "term": "stellate cell",
+      "candidates": [
+        {"canonical": "L4/5 IT CTX Glut", "region": "cortex", "description": "L4 spiny stellate cell, glutamatergic excitatory"},
+        {"canonical": "CB GABA (stellate)", "region": "cerebellum", "description": "Cerebellar stellate cell, GABAergic inhibitory"},
+        {"canonical": "hepatic stellate cell", "region": "liver", "description": "Non-neuronal cell, completely unrelated"}
+      ],
+      "disambiguation_hint": "Specify region and excitatory/inhibitory"
+    },
+    {
+      "term": "bipolar cell",
+      "candidates": [
+        {"canonical": "Vip", "region": "cortex", "description": "VIP+ bipolar interneuron, GABAergic, CGE-derived"},
+        {"canonical": "retinal bipolar cell", "region": "retina", "description": "Glutamatergic relay neuron between photoreceptors and ganglion cells"}
+      ],
+      "disambiguation_hint": "Specify region (cortex vs retina)"
+    },
+    {
+      "term": "medium spiny neuron",
+      "candidates": [
+        {"canonical": "MSN D1", "region": "striatum", "description": "D1-type MSN, direct pathway, Drd1+"},
+        {"canonical": "MSN D2", "region": "striatum", "description": "D2-type MSN, indirect pathway, Drd2+"}
+      ],
+      "disambiguation_hint": "Specify D1/D2 or direct/indirect pathway"
+    },
+    {
+      "term": "Martinotti cell",
+      "candidates": [
+        {"canonical": "Sst Calb2", "region": "cortex", "description": "Fanning-out Martinotti cell in deep layers"},
+        {"canonical": "Sst Chrna2", "region": "cortex", "description": "T-shaped Martinotti cell"},
+        {"canonical": "Sst (broad)", "region": "cortex", "description": "Some authors use 'Martinotti' for all SST neurons with ascending axons to L1"}
+      ],
+      "disambiguation_hint": "Specify morphological subtype (fanning-out vs T-shaped) or layer context"
+    }
+  ]
+}

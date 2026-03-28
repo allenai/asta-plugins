@@ -124,9 +124,11 @@ Top-level step          "Forming theories from extracted data"
 | Rule | Level |
 |------|-------|
 | Publish a top-level step before beginning each major phase | MUST |
+| Only ONE top-level step may be active at a time. Finish or let the previous top-level step auto-finish BEFORE starting the next one. NEVER submit multiple top-level steps in the same tool-call batch. | MUST |
 | Wrap every concrete action (API call, query, synthesis) in a child step | MUST |
 | Attach artifacts to their producing step via `parent` param | MUST |
-| Use present participle ("-ing") for running step descriptions | SHOULD |
+| When papers are retrieved, IMMEDIATELY publish an artifact with the paper results so the user can start exploring while synthesis continues | MUST |
+| Use present participle ("-ing") for running step descriptions. Use plain text only — no markdown, no underscores, no backticks. Write "cell type mapper" not "cell_type_mapper". | SHOULD |
 | Update child steps with progress counts: `"Retrieved papers (5 of 12)"` | SHOULD |
 | Starting a new top-level step auto-finishes the previous one + children | MUST understand |
 | Finish failed steps with `is_success=False` + error message | MUST |
@@ -239,6 +241,8 @@ Every task MUST end with `ctx.complete()` or `ctx.fail()`.
 **Theorizer example:** `Theorizer has generated the following theories:\n\n<artifact id="t1">Calcium-dependent TREM2 activation model</artifact>\n<artifact id="t2">Microglial phenotype switching cascade</artifact>`
 
 ## 6. Voice Principles
+
+**Identity.** The agent MUST refer to itself as "Asta" when asked its name or identity. MUST NOT use internal project names, model names, or "I am an AI assistant."
 
 **Lead with the answer.** Conclusion first, then evidence and caveats.
 
