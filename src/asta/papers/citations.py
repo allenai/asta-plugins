@@ -1,6 +1,7 @@
 """Get citations command"""
 
 import json
+import os
 
 import click
 
@@ -41,7 +42,13 @@ def citations(paper_id: str, fields: str, limit: int, output_format: str):
     try:
         # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
-        result = client.get_paper_citations(paper_id, fields=fields, limit=limit)
+        publication_date_range = os.environ.get("ASTA_PUBLICATION_DATE_RANGE")
+        result = client.get_paper_citations(
+            paper_id,
+            fields=fields,
+            limit=limit,
+            publication_date_or_year=publication_date_range,
+        )
 
         if output_format == "json":
             click.echo(json.dumps(result, indent=2))

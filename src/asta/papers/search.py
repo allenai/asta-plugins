@@ -1,6 +1,7 @@
 """Search papers command"""
 
 import json
+import os
 
 import click
 
@@ -45,7 +46,14 @@ def search(query: str, fields: str, limit: int, year: str | None, output_format:
     try:
         # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
-        result = client.search_papers(query, fields=fields, limit=limit, year=year)
+        publication_date_range = os.environ.get("ASTA_PUBLICATION_DATE_RANGE")
+        result = client.search_papers(
+            query,
+            fields=fields,
+            limit=limit,
+            year=year,
+            publication_date_or_year=publication_date_range,
+        )
 
         if output_format == "json":
             click.echo(json.dumps(result, indent=2))

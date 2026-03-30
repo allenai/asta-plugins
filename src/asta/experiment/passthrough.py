@@ -13,6 +13,5 @@ experiment = create_passthrough_command(
     install_source=config["install_source"],
     minimum_version=config["minimum_version"],
     command_name=config["command_name"],
-    friendly_name=config["friendly_name"],
     docstring=config["docstring"],
 )

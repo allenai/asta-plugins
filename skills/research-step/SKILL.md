@@ -1,6 +1,8 @@
 ---
 name: research step
 description: Do one step of autonomous research, based on the current research state in the current working directory. Use when asked to "run AstaBot" "do an AstaBot step", "AstaBot, or "do a research step".
+metadata:
+  internal: true
 ---
 
 # Research Loop

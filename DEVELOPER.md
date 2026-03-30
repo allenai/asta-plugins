@@ -35,9 +35,14 @@ src/asta/                      # Main CLI package
     ├── citations.py           # `asta papers citations` command
     └── author.py              # `asta papers author` commands
 
-skills/                        # Claude Code skill definitions
+skills/                        # Canonical skill definitions (edit here)
 hooks/                         # Claude Code permission hooks
-.claude-plugin/plugin.json     # Claude Code plugin manifest
+scripts/                       # Build and maintenance scripts
+
+# Claude Code marketplace distribution:
+plugins/                       # Generated plugin packages (do not edit)
+.claude-plugin/
+  marketplace.json             # Marketplace listing (asta + asta-preview plugins)
 ```
 
 ### Design Principles
@@ -65,6 +70,7 @@ hooks/                         # Claude Code permission hooks
 - Python 3.11+
 - `uv` (for running commands)
 - `make` (for development tasks)
+- Node.js 20+ / `npx` (for skill discovery tests — `make test` skips these if missing)
 
 ### Quick Start
 
@@ -77,9 +83,11 @@ make test     # Run all tests
 make lint     # Check code style
 make format   # Auto-fix formatting
 make check    # Quick pre-commit check (format + lint + unit tests)
-make ci       # Full CI check (format + lint + all tests)
-make build    # Build distribution packages
-make clean    # Remove build artifacts
+make ci       # Full CI check (format + lint + all tests + plugins check)
+
+# Claude Code marketplace (run after editing skills/)
+make build-plugins  # Regenerate plugins/ from skills/
+make check-plugins  # Verify plugins/ is up to date
 ```
 
 ### Install for Development
@@ -114,7 +122,7 @@ For coding agents like Claude that invoke bare `asta` from arbitrary working dir
 add to `~/.zshrc`:
 
 ```bash
-alias claude-asta='PATH="/path/to/asta-plugins/.venv/bin:$PATH" claude --plugin-dir /path/to/asta-plugins'
+alias claude-asta='PATH="/path/to/asta-plugins/.venv/bin:$PATH" claude --plugin-dir /path/to/asta-plugins/plugins/asta-preview'
 ```
 
 The PATH prepend ensures skills resolve `asta` to your local source for that session,
@@ -128,7 +136,7 @@ twice alongside `--plugin-dir`.
 |---|---|
 | Python files (`src/asta/`) | None — editable install |
 | `pyproject.toml` (new deps/scripts) | `make install` |
-| Skills, hooks, `plugin.json` | Restart `claude-asta` session |
+| Skills (`skills/`) or hooks (`hooks/`) | `make build-plugins`, then restart `claude-asta` session |
 
 ### Run Tests
 
@@ -283,6 +291,67 @@ allowed-tools:
 Instructions and examples...
 ```
 
+#### Skill distribution design
+
+All skills live in `skills/` — this is the **single source of truth**. Whether a skill is included in the default install or requires opt-in is determined by its SKILL.md frontmatter:
+
+```yaml
+# Default skill — no metadata.internal field
+---
+name: Semantic Scholar Lookup
+---
+
+# Preview skill — add metadata.internal: true
+---
+name: Find Literature
+metadata:
+  internal: true
+---
+```
+
+This one flag drives all distribution behavior — no lists to maintain elsewhere.
+
+**Two distribution channels, same source:**
+
+| Channel | Default install | All skills |
+|---------|----------------|------------|
+| npx skills CLI | `npx skills add allenai/asta-plugins` (default only) | `--all` or `--skill "Name"` |
+| Claude Code plugin | `/plugin install asta` (default only) | `/plugin install asta-preview` |
+| Local dev | `claude --plugin-dir plugins/asta-preview` (all skills) | — |
+
+**Why `plugins/` exists:**
+
+The npx skills CLI reads `metadata.internal` directly from SKILL.md, so filtering works automatically. Claude Code plugins, however, auto-discover every skill in the `skills/` directory — they have no per-skill filtering mechanism. The only way to ship a subset of skills via Claude Code is to package separate plugin directories with different skill sets.
+
+`plugins/` contains these generated packages:
+- `plugins/asta/` — default skills only
+- `plugins/asta-preview/` — all skills (default + preview)
+
+**Never edit `plugins/` directly.** It's generated from `skills/` by `scripts/build-plugins.sh`.
+
+**Workflow for changing skills:**
+
+```bash
+# Edit the canonical source
+vim skills/my-skill/SKILL.md
+
+# Regenerate plugin packages
+make build-plugins
+
+# Commit both
+git add skills/ plugins/
+git commit -m "Update my-skill"
+```
+
+CI enforces that `plugins/` stays in sync — PRs fail if someone edits a skill without rebuilding.
+
+**Adding a new skill:**
+
+1. Create `skills/<name>/SKILL.md`
+2. Add `metadata.internal: true` if it shouldn't be in the default install yet
+3. Run `make build-plugins`
+4. To promote to default later: remove the `metadata.internal` block and rebuild
+
 ### Hooks
 
 Hooks in `hooks/` are bash scripts that can auto-approve tool usage:
@@ -316,7 +385,7 @@ Register hooks in `hooks/hooks.json`:
 
 ```bash
 # Run Claude Code with local plugin
-claude --plugin-dir . --debug
+claude --plugin-dir plugins/asta-preview --debug
 
 # In Claude, test skills naturally
 # Skills activate automatically based on what you ask
@@ -353,57 +422,62 @@ packages = ["src/asta"]
 
 ## Release Process
 
-The version number is stored in four locations and must be kept in sync:
+The version number is stored in three source locations:
 - `src/asta/__init__.py` - `__version__` variable (Python package version)
 - `pyproject.toml` - `version` field (Build system version)
-- `.claude-plugin/plugin.json` - `version` field (Plugin manifest for Claude Code)
-- `.claude-plugin/marketplace.json` - `plugins[0].version` field (Marketplace listing for `/plugin marketplace add`)
+- `.claude-plugin/marketplace.json` - `plugins[].version` fields (Claude Code auto-updates)
 
-**Note:** Both `.claude-plugin/plugin.json` (individual plugin manifest) and `.claude-plugin/marketplace.json` (marketplace repository listing) are required. The marketplace file allows users to install via `/plugin marketplace add allenai/asta-plugins` in Claude Code.
+`make set-version` updates all three.
 
 ### Complete Release Workflow
 
-1. **Update version in all files:**
+1. **Update version in all source files:**
    ```bash
    make set-version VERSION=0.3.0
    ```
-   This updates all three version locations atomically.
+   Updates `src/asta/__init__.py`, `pyproject.toml`, and `.claude-plugin/marketplace.json`.
 
 2. **Review changes:**
    ```bash
    git diff
    ```
-   Verify that all three files were updated correctly.
+   Verify the version updated correctly.
 
-3. **Run full test suite:**
+3. **Rebuild generated plugin packages:**
+   ```bash
+   make build-plugins
+   ```
+   Rebuilds `plugins/` from `skills/`, `hooks/`, and `marketplace.json`.
+
+4. **Run full test suite:**
    ```bash
    make ci
    ```
-   Ensures all tests pass, code is formatted, and linting is clean.
+   Ensures all tests pass, linting is clean, code is formatted, and generated files are in sync.
 
-4. **Commit version bump:**
+5. **Commit version bump:**
    ```bash
    git add -A
    git commit -m "chore: bump version to 0.3.0"
    git push
    ```
 
-5. **Create and push version tag:**
+6. **Create and push version tag:**
    ```bash
    make push-version-tag
    ```
    This command will:
-   - Verify all three version files are in sync (fails if they differ)
+   - Verify all version files are in sync (fails if they differ)
    - Check that the git tag doesn't already exist
    - Create and push the git tag (e.g., `0.3.0`)
    - Provide a URL to create the GitHub release
 
-6. **Create GitHub release notes:**
+7. **Create GitHub release notes:**
    - Visit the URL provided by `make push-version-tag`
    - Add release notes describing changes
    - Publish the release
 
-7. **Publish to PyPI (optional):**
+8. **Publish to PyPI (optional):**
    ```bash
    make publish       # Production PyPI
    make publish-test  # TestPyPI for testing
@@ -420,7 +494,8 @@ make version
 ```bash
 make set-version VERSION=x.y.z
 ```
-- Updates all four version locations atomically
+- Updates all locations where version is referenced
+- Run `make build-plugins` after to regenerate plugin packages
 - Fails with error if VERSION parameter is not provided
 - Provides suggested commit command after success
 
@@ -428,9 +503,8 @@ make set-version VERSION=x.y.z
 ```bash
 make push-version-tag
 ```
-- Checks version consistency across all four files
-- Fails with clear error if versions don't match
-- Shows current versions in each file when there's a mismatch
+- Checks that `__init__.py`, `pyproject.toml`, and `marketplace.json` versions match
+- Fails with clear error if they differ
 - Creates and pushes git tag if all checks pass
 - Fails if git tag already exists (prevents accidental overwrites)
 
@@ -442,10 +516,9 @@ If you try to push a version tag with mismatched versions:
 $ make push-version-tag
 Checking version consistency...
 Error: Version mismatch detected:
-  src/asta/__init__.py:              0.3.0
-  pyproject.toml:                    0.2.0
-  .claude-plugin/plugin.json:        0.2.0
-  .claude-plugin/marketplace.json:   0.2.0
+  src/asta/__init__.py:            0.3.0
+  pyproject.toml:                  0.2.0
+  .claude-plugin/marketplace.json: 0.2.0
 
 Run 'make set-version VERSION=x.y.z' to sync versions
 ```
@@ -520,7 +593,6 @@ To add a new external tool as an `asta` passthrough command:
        install_source = "newtool-package"  # package name, git URL, or filesystem path
        minimum_version = "1.0.0"  # Must be x.y.z format
        command_name = "newtool"
-       friendly_name = "NewTool"
        docstring = "Description for --help"
      }
    }
@@ -551,7 +623,6 @@ To add a new external tool as an `asta` passthrough command:
        install_source=config["install_source"],
        minimum_version=config["minimum_version"],
        command_name=config["command_name"],
-       friendly_name=config["friendly_name"],
        docstring=config["docstring"],
    )
    ```

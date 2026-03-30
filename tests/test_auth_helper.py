@@ -54,13 +54,11 @@ class TestAuthHelper:
                 )
                 MockManager.return_value = mock_manager
 
-                with pytest.raises(
-                    AuthenticationError, match="Please run 'asta auth login'"
-                ):
+                with pytest.raises(AuthenticationError):
                     get_access_token()
 
     def test_get_access_token_refresh_failure(self):
-        """Test that token refresh failures are handled with helpful message."""
+        """Test that token refresh failures are re-raised with original message."""
         from asta.auth.exceptions import AuthenticationError
         from asta.utils.auth_helper import get_access_token
 
@@ -81,9 +79,7 @@ class TestAuthHelper:
                 )
                 MockManager.return_value = mock_manager
 
-                with pytest.raises(
-                    AuthenticationError, match="Please run 'asta auth login'"
-                ):
+                with pytest.raises(AuthenticationError):
                     get_access_token()
 
     def test_get_access_token_other_error(self):

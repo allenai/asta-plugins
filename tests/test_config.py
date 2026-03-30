@@ -1,25 +1,10 @@
 """Tests for plugin configuration files."""
 
-import json
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).parent.parent
-
-
-def test_plugin_json_valid():
-    """Verify plugin.json is valid JSON and has required structure."""
-    plugin_path = ROOT / ".claude-plugin" / "plugin.json"
-    with open(plugin_path) as f:
-        config = json.load(f)
-
-    assert "name" in config, "Expected 'name' key"
-    assert "version" in config, "Expected 'version' key"
-
-    print(
-        f"✓ plugin.json is valid (name={config['name']}, version={config['version']})"
-    )
 
 
 class TestHoconConfig:
@@ -45,7 +30,6 @@ class TestHoconConfig:
         # Verify required fields
         assert config["tool_name"] == "asta-documents"
         assert config["command_name"] == "documents"
-        assert config["friendly_name"] == "asta-documents"
         assert "install_type" in config
         assert "install_source" in config
         assert "minimum_version" in config
@@ -77,7 +61,6 @@ class TestHoconConfig:
         # Verify required fields
         assert config["tool_name"] == "panda"
         assert config["command_name"] == "experiment"
-        assert config["friendly_name"] == "panda"
         assert "install_type" in config
         assert "install_source" in config
         assert "minimum_version" in config
@@ -167,7 +150,8 @@ class TestHoconConfig:
         # Verify required fields
         assert "base_url" in config
         assert isinstance(config["base_url"], str)
-        assert config["base_url"].startswith("https://")
+        # Accept both http and https (for local development configs)
+        assert config["base_url"].startswith(("http://", "https://"))
 
     def test_get_api_config_paper_finder(self):
         """Test loading paper_finder API configuration."""
@@ -178,7 +162,8 @@ class TestHoconConfig:
         # Verify required fields
         assert "base_url" in config
         assert isinstance(config["base_url"], str)
-        assert config["base_url"].startswith("https://")
+        # Accept both http and https (for local development configs)
+        assert config["base_url"].startswith(("http://", "https://"))
 
     def test_get_api_config_invalid_api(self):
         """Test that invalid API names raise KeyError."""
@@ -220,7 +205,6 @@ class TestHoconConfig:
                 install_source = "asta-resource-repository"
                 minimum_version = "0.3.0"
                 command_name = "documents"
-                friendly_name = "asta-documents"
                 docstring = "Test"
               }
             }
@@ -241,6 +225,5 @@ class TestHoconConfig:
 
 
 if __name__ == "__main__":
-    test_plugin_json_valid()
     pytest.main([__file__, "-v"])
     print("\n✓ All config tests passed!")

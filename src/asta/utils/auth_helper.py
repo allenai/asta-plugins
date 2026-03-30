@@ -1,6 +1,7 @@
 """Helper utilities for authentication in CLI commands."""
 
 import asyncio
+import os
 
 from asta.auth.exceptions import AuthenticationError
 from asta.auth.token_manager import TokenManager
@@ -22,6 +23,9 @@ def get_access_token() -> str:
         This function handles token refresh automatically. If the token
         is expired and a refresh token is available, it will be refreshed.
     """
+    if token := os.environ.get("ASTA_TOKEN"):
+        return token
+
     try:
         # Get auth settings from config
         settings = get_auth_settings()
@@ -39,10 +43,8 @@ def get_access_token() -> str:
         return asyncio.run(manager.get_valid_access_token())
 
     except AuthenticationError:
-        # Re-raise with user-friendly message
-        raise AuthenticationError(
-            "Not authenticated. Please run 'asta auth login' to authenticate."
-        )
+        # Re-raise with original message preserved (includes refresh failure details)
+        raise
     except Exception as e:
         # Convert any other errors to AuthenticationError with helpful message
         raise AuthenticationError(
