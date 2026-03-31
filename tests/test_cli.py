@@ -437,7 +437,7 @@ class TestDocumentsCommand:
         assert config["tool_name"] == "asta-documents"
         assert config["install_type"] == "pypi"
         assert config["install_source"] == "asta-resource-repository"
-        assert config["minimum_version"] == "0.3.0"
+        assert config["minimum_version"] == "0.3.1"
         assert validate_semver(config["minimum_version"])
         assert config["command_name"] == "documents"
 

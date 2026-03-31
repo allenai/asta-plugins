@@ -203,7 +203,7 @@ class TestHoconConfig:
                 tool_name = "asta-documents"
                 install_type = "pypi"
                 install_source = "asta-resource-repository"
-                minimum_version = "0.3.0"
+                minimum_version = "0.3.1"
                 command_name = "documents"
                 docstring = "Test"
               }
