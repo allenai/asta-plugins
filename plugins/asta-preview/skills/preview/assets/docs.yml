@@ -1,0 +1,99 @@
+name: Build and Deploy Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Render site
+        if: github.event.action != 'closed'
+        run: quarto render 2>&1 | tee quarto-render.log
+
+      - name: Validate render output
+        if: github.event.action != 'closed'
+        run: |
+          if [ ! -f _site/index.html ]; then
+            echo "::error::Quarto render failed — _site/index.html not found"
+            exit 1
+          fi
+          # Fail on Quarto warnings (broken citations, dead links, etc.)
+          WARNINGS=$(sed 's/\x1b\[[0-9;]*m//g' quarto-render.log | grep -E '\[WARNING\]|^WARN:' || true)
+          if [ -n "$WARNINGS" ]; then
+            echo "## ⚠️ Quarto warnings" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$WARNINGS" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Deploy to gh-pages
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch gh-pages or create it
+          git fetch origin gh-pages:gh-pages 2>/dev/null || git checkout --orphan gh-pages
+
+          # Work in a temp directory
+          tmp=$(mktemp -d)
+          git worktree add "$tmp" gh-pages
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Main deploy: replace everything except pr-preview/
+            cd "$tmp"
+            for f in *; do
+              [ "$f" = "pr-preview" ] && continue
+              rm -rf "$f"
+            done
+            cp -r "$GITHUB_WORKSPACE/_site/"* "$tmp/"
+          elif [ "${{ github.event.action }}" = "closed" ]; then
+            # PR closed: clean up preview
+            rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
+          else
+            # PR preview: deploy to pr-preview/pr-<N>/
+            mkdir -p "$tmp/pr-preview/pr-$PR_NUMBER"
+            rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"/*
+            cp -r "$GITHUB_WORKSPACE/_site/"* "$tmp/pr-preview/pr-$PR_NUMBER/"
+          fi
+
+          cd "$tmp"
+          git add -A
+          git diff --cached --quiet && exit 0  # nothing to commit
+          git commit -m "Deploy: ${{ github.event_name }} ${{ github.sha }}"
+          git push origin gh-pages
+
+          # Comment on PR with preview link
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.action }}" != "closed" ]; then
+            REPO="${{ github.repository }}"
+            OWNER="${REPO%%/*}"
+            REPO_NAME="${REPO##*/}"
+            PREVIEW_URL="https://${OWNER}.github.io/${REPO_NAME}/pr-preview/pr-${PR_NUMBER}/"
+            BODY="📄 Preview: ${PREVIEW_URL}"
+            # Update or create comment
+            EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '.[] | select(.body | startswith("📄 Preview:")) | .id' | head -1)
+            if [ -n "$EXISTING" ]; then
+              gh api "repos/${REPO}/issues/comments/${EXISTING}" -X PATCH -f body="$BODY"
+            else
+              gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$BODY"
+            fi
+          fi

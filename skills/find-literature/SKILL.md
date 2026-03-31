@@ -124,3 +124,7 @@ jq '.results[] | {title, summary: .relevanceJudgement.relevanceSummary}' <filena
 # Extract snippets from a specific paper
 jq '.results[] | select(.corpusId == 123456) | .snippets[].text' <filename>
 ```
+
+## Using Results
+
+After a search completes, results can be used by the **Literature Report** skill.
