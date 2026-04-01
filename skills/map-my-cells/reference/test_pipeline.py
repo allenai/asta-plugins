@@ -10,9 +10,12 @@ import tempfile
 
 import anndata
 import numpy as np
+import pandas as pd
 import scipy.sparse as scipy_sparse
 
 WORK_DIR = pathlib.Path(tempfile.mkdtemp(prefix="mapmycells_test_"))
+LEVELS = ["class", "subclass", "cluster"]
+MARKERS_PER_CLUSTER = 5
 print(f"Working directory: {WORK_DIR}")
 
 # ============================================================
@@ -70,7 +73,6 @@ for i, clu in enumerate(all_clusters):
     X[mask, marker_start:marker_end] += rng.poisson(lam=20, size=(sum(mask), 5))
 
 # Build AnnData
-import pandas as pd
 
 obs = pd.DataFrame(
     {"class": class_labels, "subclass": subclass_labels, "cluster": cluster_labels},
@@ -128,8 +130,6 @@ if result.returncode != 0:
     sys.exit(1)
 print(f"  Reference markers saved to: {ref_markers_dir}")
 
-# Find the reference markers file (output_dir creates files inside it)
-import glob
 ref_marker_files = list(ref_markers_dir.glob("*.h5"))
 if not ref_marker_files:
     print(f"  ERROR: No .h5 files found in {ref_markers_dir}")

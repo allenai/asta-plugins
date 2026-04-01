@@ -129,7 +129,7 @@ These parameters may be written into a config file that looks like
 ```
 {
 "query_path": "path/to/file.h5ad",
-"extended_result_path" "path/to/output.json",
+"extended_result_path": "path/to/output.json",
 ...
 "precomputed_stats": {
     "path": "path/to/stats.h5"
@@ -139,7 +139,7 @@ These parameters may be written into a config file that looks like
 },
 "type_assignment": {
     "normalization": "raw",
-    "flatten": False,
+    "flatten": false,
     ...
 }
 ```
@@ -182,7 +182,7 @@ to manage configuration parameters. If you want to run this mapping tool
 from within a python script, run
 
 ```
-from hierarchical_mapping.cli.from_specified_markers import (
+from cell_type_mapper.cli.from_specified_markers import (
     FromSpecifiedMarkersRunner)
 
 runner = FromSpecifiedMarkersRunner(

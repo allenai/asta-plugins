@@ -56,47 +56,9 @@ See `reference/running_online_taxonomies_locally.md` for S3 download URLs and pe
 | **Correlation** | Same-platform data mapped to same-platform reference. Simplest. | Fast |
 | **Flat** | Skip hierarchy traversal. Single-pass to leaf level. | Fastest |
 
-## Pipeline Overview
+## Mapping Cells (Stage 4)
 
-The full pipeline has 4 stages. For pre-built Allen taxonomies, **only Stage 4 is needed** (reference files already available on S3).
-
-### Stage 1: Precompute Reference Statistics
-
-From labeled reference data (H5AD), compute mean expression profiles per cell type.
-
-```bash
-python -m cell_type_mapper.cli.precompute_stats_scrattch \
-  --hierarchy '["class", "subclass", "cluster"]' \
-  --h5ad_path training_data.h5ad \
-  --normalization raw \
-  --output_path precomputed_stats.h5
-```
-
-### Stage 2: Reference Marker Selection
-
-Identify all possible marker genes that discriminate between cell types at each taxonomy level.
-
-```bash
-python -m cell_type_mapper.cli.reference_markers \
-  --precomputed_path_list '["precomputed_stats.h5"]' \
-  --output_dir reference_markers/ \
-  --n_valid 20
-```
-
-### Stage 3: Query Marker Selection
-
-Downsample reference markers to an optimal subset using a greedy combinatorial algorithm.
-
-```bash
-python -m cell_type_mapper.cli.query_markers \
-  --reference_marker_path_list '["reference_markers/reference_markers.h5"]' \
-  --output_path query_markers.json \
-  --n_per_utility 10
-```
-
-### Stage 4: Map Cells
-
-Map unlabeled cells onto the taxonomy. This is the main command most users need.
+For pre-built Allen taxonomies, reference files are already on S3. Only this command is needed:
 
 ```bash
 python -m cell_type_mapper.cli.from_specified_markers \
@@ -112,9 +74,11 @@ python -m cell_type_mapper.cli.from_specified_markers \
   --cloud_safe False
 ```
 
+For custom taxonomies (Stages 1–3) or on-the-fly markers, see `reference/mapping_cells.md`.
+
 ### Data Validation
 
-Validate and normalize input H5AD files (ensures Ensembl gene IDs, integer counts):
+Validate input H5AD files before mapping:
 
 ```bash
 python -m cell_type_mapper.cli.validate_h5ad \
@@ -122,35 +86,10 @@ python -m cell_type_mapper.cli.validate_h5ad \
   --valid_h5ad_path validated.h5ad
 ```
 
-### On-the-fly Markers (Small Taxonomies)
-
-For small taxonomies where precomputed markers are unavailable, compute markers at runtime:
-
-```bash
-python -m cell_type_mapper.cli.map_to_on_the_fly_markers \
-  --query_path unlabeled_data.h5ad \
-  --precomputed_stats.path precomputed_stats.h5 \
-  --extended_result_path result.json \
-  --csv_result_path result.csv \
-  --type_assignment.normalization raw \
-  --query_markers.n_per_utility 15
-```
-
 ## Output Format
 
-**CSV output** contains one row per cell with columns for each taxonomy level:
-- `{level}_label` — machine-readable node identifier
-- `{level}_name` — human-readable name
-- `{level}_bootstrapping_probability` — confidence (fraction of 100 bootstrap iterations that chose this assignment)
-
-**JSON output** contains extended results per cell including:
-- `assignment` — selected node at each level
-- `bootstrapping_probability` — confidence metric
-- `avg_correlation` — mean Pearson correlation with assigned type
-- `runner_up_assignment` / `runner_up_probability` — next-best candidates
-- `directly_assigned` — whether assignment was direct or inferred from hierarchy
-
-See `reference/output.md` for complete field documentation.
+**CSV:** One row per cell with `{level}_label`, `{level}_name`, `{level}_bootstrapping_probability` columns.
+**JSON:** Extended results with `assignment`, `bootstrapping_probability`, `avg_correlation`, `runner_up_assignment`, `directly_assigned`. See `reference/output.md` for full spec.
 
 ## Interpreting Confidence
 
@@ -167,37 +106,11 @@ See `reference/output.md` for complete field documentation.
 - **Normalization:** Specify `raw` (integer counts) or `log2CPM` depending on your data
 - **Size:** No inherent limit for local runs. Web app has 2 GB file limit.
 
-## Example: Full Pipeline (Synthetic Data)
+## Testing
 
-A complete test script is available at `reference/test_pipeline.py`. It creates synthetic reference data with a 3-level taxonomy (3 classes → 5 subclasses → 8 clusters), runs all 4 pipeline stages, and maps 8 test cells with 100% accuracy. Run it to verify your installation:
+Verify installation with the synthetic test pipeline: `python reference/test_pipeline.py`
 
-```bash
-python reference/test_pipeline.py
-```
-
-Expected output: 8/8 cells correctly mapped with bootstrap probabilities > 0.80 at all taxonomy levels.
-
-## Example: Mapping to Whole Mouse Brain (Pre-built)
-
-Download reference files from S3 (one-time), then map:
-
-```bash
-# Download reference files (see reference/running_online_taxonomies_locally.md for URLs)
-wget -P ~/.mapmycells/ <s3_url>/mouse_markers_230821.json
-wget -P ~/.mapmycells/ <s3_url>/precomputed_stats_ABC_revision_230821.h5
-
-# Map cells
-python -m cell_type_mapper.cli.from_specified_markers \
-  --query_path my_data.h5ad \
-  --extended_result_path result.json \
-  --csv_result_path result.csv \
-  --drop_level CCN20230722_SUPT \
-  --cloud_safe False \
-  --query_markers.serialized_lookup ~/.mapmycells/mouse_markers_230821.json \
-  --precomputed_stats.path ~/.mapmycells/precomputed_stats_ABC_revision_230821.h5 \
-  --type_assignment.normalization raw \
-  --type_assignment.n_processors 4
-```
+For per-taxonomy S3 download URLs and CLI invocations, see `reference/running_online_taxonomies_locally.md`.
 
 ## Reference Materials
 
