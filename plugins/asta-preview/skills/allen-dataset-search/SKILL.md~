@@ -1,0 +1,124 @@
+---
+name: allen-dataset-search
+description: Search for papers that reference Allen Institute neuroscience datasets (ABC Atlas, MERFISH, SEA-AD, etc.)
+---
+
+# Allen Institute Dataset Reference Search
+
+Use this skill when the user asks about papers that reference, cite, or use a specific Allen Institute dataset — e.g., "find papers about the ABC Atlas", "what papers reference SEA-AD", "search for MERFISH mouse brain papers".
+
+## How It Works
+
+Papers referencing each Allen Institute dataset are indexed in separate directories under `.asta/dataset-documents/`. Use the `asta-documents` CLI with the `--root` flag to search the correct index.
+
+## Bootstrapping Indexes
+
+Before searching, the dataset indexes must be downloaded. This skill includes a `bootstrap-datasets.sh` script that fetches pre-built indexes from S3.
+
+```bash
+# Download all dataset indexes
+bash "$(dirname "$0")/bootstrap-datasets.sh"
+
+# Download a specific dataset only
+bash "$(dirname "$0")/bootstrap-datasets.sh" --dataset abc-atlas
+
+# Also download full-text files (much larger)
+bash "$(dirname "$0")/bootstrap-datasets.sh" --full-text
+
+# Download to a custom directory
+bash "$(dirname "$0")/bootstrap-datasets.sh" /path/to/dest
+```
+
+**After downloading**, run a sample search against each freshly-downloaded index to initialize the search cache. The first query builds the BM25/embedding index and is slower; subsequent queries are fast.
+
+```bash
+# Warm the cache for each downloaded dataset
+for dataset in abc-atlas cell-mol-charac hmba-basal-ganglia human-cellular-diversity merfish-whole-mouse-brain sea-ad; do
+    echo "Initializing cache for ${dataset}..."
+    asta-documents --root .asta/dataset-documents/${dataset} search "brain" >/dev/null 2>&1
+done
+```
+
+If a search command fails with "No index found", the indexes have not been bootstrapped yet — run the bootstrap script first.
+
+## Dataset Index
+
+| Dataset | Directory | Description |
+|---------|-----------|-------------|
+| **ABC Atlas - Whole Mouse Brain** | `abc-atlas` | Mouse whole brain transcriptomics & spatial transcriptomics (10x scRNAseq, MERFISH). Key paper: [Yao et al. 2023](https://www.nature.com/articles/s41586-023-06812-z) |
+| **MERFISH Whole Mouse Brain (Zhuang)** | `merfish-whole-mouse-brain` | Zhuang lab MERFISH spatial transcriptomics of whole mouse brain (Zhuang-ABCA-1 through 4). Uses same cell type taxonomy as ABC Atlas. Key paper: [Zhang et al. 2023](https://www.nature.com/articles/s41586-023-06808-9) |
+| **Cell-Mol Charac Aged Mouse** | `cell-mol-charac` | Aging mouse brain transcriptomics (10x-scRNAseq-aged-adult). Modified version of ABC Atlas cell type taxonomy. Key paper: [Jin et al. 2024](https://www.nature.com/articles/s41586-024-08350-8) |
+| **Human Brain Cellular Diversity** | `human-cellular-diversity` | Human brain neuron and non-neuronal cell transcriptomics (~375 clusters). Key paper: [Siletti et al. 2023](https://doi.org/10.1126/science.add7046) |
+| **SEA-AD** | `sea-ad` | Seattle Alzheimer's Disease Brain Cell Atlas — snRNAseq and MERFISH of human MTG and DLPFC. Key paper: [Gabitto et al. 2024](https://www.nature.com/articles/s41593-024-01774-5) |
+| **HMBA Basal Ganglia** | `hmba-basal-ganglia` | Cross-species (human, macaque, marmoset) basal ganglia transcriptomics and spatial atlas. Key paper: [biorxiv preprint](https://www.biorxiv.org/content/10.64898/2025.12.15.694496v1) |
+
+## Searching a Dataset Index
+
+Use the `--root` flag to point `asta-documents` at the correct dataset index. The root path is relative to the working directory:
+
+```bash
+# Search by summary (default — uses semantic + keyword search)
+asta-documents --root .asta/dataset-documents/<dataset-dir> search "<query>"
+
+# Search by paper title
+asta-documents --root .asta/dataset-documents/<dataset-dir> search "<title>" --name
+
+# Search by tags
+asta-documents --root .asta/dataset-documents/<dataset-dir> search "<tag>" --tags
+
+# Search extra metadata (e.g., year, author)
+asta-documents --root .asta/dataset-documents/<dataset-dir> search ".year > 2023" --extra
+
+# List all papers in a dataset index
+asta-documents --root .asta/dataset-documents/<dataset-dir> list
+
+# Show index stats
+asta-documents --root .asta/dataset-documents/<dataset-dir> show
+
+# Get a specific paper's metadata
+asta-documents --root .asta/dataset-documents/<dataset-dir> get <uuid>
+
+# JSON output for scripting
+asta-documents --root .asta/dataset-documents/<dataset-dir> search "<query>" --json
+```
+
+## Examples
+
+```bash
+# Find SEA-AD papers about tau pathology
+asta-documents --root .asta/dataset-documents/sea-ad search "tau pathology"
+
+# Find ABC Atlas papers about cortical glutamatergic neurons
+asta-documents --root .asta/dataset-documents/abc-atlas search "cortical glutamatergic neurons"
+
+# Find MERFISH papers about spatial gene expression
+asta-documents --root .asta/dataset-documents/merfish-whole-mouse-brain search "spatial gene expression"
+
+# Find aging mouse brain papers from after 2023
+asta-documents --root .asta/dataset-documents/cell-mol-charac search ".year > 2023" --extra
+
+# List all papers in the HMBA basal ganglia index
+asta-documents --root .asta/dataset-documents/hmba-basal-ganglia list
+
+# Search across human cellular diversity papers by author
+asta-documents --root .asta/dataset-documents/human-cellular-diversity search ".author contains Siletti" --extra
+```
+
+## Matching User Queries to Datasets
+
+When the user asks about a dataset, match their query to the correct directory:
+
+- "ABC Atlas", "whole mouse brain", "mouse brain transcriptomics", "10x scRNAseq whole brain" → `abc-atlas`
+- "MERFISH mouse brain", "Zhuang", "Zhuang-ABCA", "spatial transcriptomics mouse" → `merfish-whole-mouse-brain`
+- "aged mouse", "aging brain", "cell molecular characterization" → `cell-mol-charac`
+- "human brain cellular diversity", "human neuron types", "Siletti" → `human-cellular-diversity`
+- "SEA-AD", "Alzheimer", "Seattle Alzheimer", "MTG", "DLPFC" → `sea-ad`
+- "HMBA", "basal ganglia", "cross-species basal ganglia" → `hmba-basal-ganglia`
+
+If the user's query is ambiguous, search multiple dataset indices and combine results.
+
+## Notes
+
+- The ABC Atlas and MERFISH Whole Mouse Brain (Zhuang) datasets share the same cell type taxonomy. Papers found in either index may be relevant to both.
+- The Cell-Mol Charac dataset uses a modified version of the ABC Atlas taxonomy — cell types with the same name refer to the same cell type.
+- All HMBA consortium papers at https://brain-map.org/consortia/hmba share the same cell type taxonomy as the HMBA Basal Ganglia dataset.

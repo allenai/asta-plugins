@@ -40,7 +40,6 @@ build_plugin() {
   echo "Built $name with ${#skill_dirs[@]} skills"
 }
 
-build_plugin "asta" "${DEFAULT_SKILLS[@]}"
 build_plugin "asta-preview" "${ALL_SKILLS[@]}"
 
 echo "Done. Plugins written to plugins/"

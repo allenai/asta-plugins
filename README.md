@@ -1,63 +1,57 @@
-# Asta
+# Asta — Nautilex 2026
 
-Asta is a set of skills for scientific research, usable by local coding agents.
+Skills for searching papers that reference Allen Institute neuroscience datasets.
 
-## Skill Installation
+## Skills
+
+- **Allen Dataset Search** — Search for papers referencing ABC Atlas, MERFISH, SEA-AD, and other Allen Institute datasets
+- **Document Management** — Local document metadata index for tracking and searching papers
+
+## Quick Start
+
+### 1. Install the plugin
 
 ```commandline
-# Any agent (Claude Code, Cursor, Copilot, etc.)
-npx skills add allenai/asta-plugins -g
-
 # Claude Code only
-> /plugin marketplace add allenai/asta-plugins
-> /plugin install asta
-```
-
-### Skills
-
-- **Semantic Scholar Lookup** - Quick paper/author lookups and metadata queries
-- **Document Management** - Local document metadata index for tracking and searching papers
-- **PDF Text Extraction** - Extract text from PDFs using olmOCR (cloud-based, no GPU required)
-
-### Preview Skills
-
-Install all with `--all`, or pick specific ones with `--skill "Name"`:
-
-```commandline
-# Any agent
-npx skills add allenai/asta-plugins --all -g
-
-# Claude Code only (auto-updates)
+> /plugin marketplace add allenai/asta-plugins@abc-atlas-search
 > /plugin install asta-preview
+
+# Any agent (Claude Code, Cursor, Copilot, etc.)
+> Install skills from allenai/asta-plugins@abc-atlas-search
 ```
 
-- **Find Literature** - General paper searching and citation finding
-- **Literature Report Generation** - Comprehensive report writing with synthesis
-- **Run Experiment** - Computational experiments with automated report generation
-- **research step** - Autonomous research loop with iterative state tracking
+### 2. Bootstrap dataset indexes
 
-Example user requests:
-- "Find papers on RLHF"
-- "Generate a literature review on transformers"
-- "Get details for arXiv:2005.14165"
-- "What papers cite the GPT-3 paper?"
-- "Store this paper in Asta" / "Search my Asta documents for transformers"
-- "Extract text from this PDF" / "OCR this document"
-- "Run an experiment to test GPT-4 translation quality"
+Before searching, ask your agent:
+
+> Bootstrap the Allen Institute search indexes
+
+This downloads the pre-built indexes from S3 and warms the search cache. It will take 1-2 minutes for each dataset, but only needs to be done once per project directory.
+
+### 3. Search
+
+Ask your agent naturally — the skill activates automatically:
+
+- "Find papers about cortical glutamatergic neurons in the ABC Atlas"
+- "What SEA-AD papers discuss tau pathology in DLPFC?"
+- "Search for MERFISH papers on spatial gene expression in mouse hippocampus"
+- "Are there papers comparing cell types across the human cellular diversity and HMBA basal ganglia datasets?"
+- "Find aging mouse brain papers published after 2023"
+
+## Datasets
+
+| Dataset | Description |
+|---------|-------------|
+| **ABC Atlas** | Mouse whole brain transcriptomics & spatial transcriptomics (10x scRNAseq, MERFISH) |
+| **MERFISH Whole Mouse Brain** | Zhuang lab MERFISH spatial transcriptomics of whole mouse brain |
+| **Cell-Mol Charac Aged Mouse** | Aging mouse brain transcriptomics |
+| **Human Brain Cellular Diversity** | Human brain neuron and non-neuronal cell types (~375 clusters) |
+| **SEA-AD** | Seattle Alzheimer's Disease Brain Cell Atlas |
+| **HMBA Basal Ganglia** | Cross-species basal ganglia transcriptomics and spatial atlas |
 
 ## Implementation
 
-The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
-The CLI can be used directly from the command line or invoked by agents via Bash commands.
-
-Some skills are pass-through commands to CLIs hosted in other repos. These are installed automatically
-on first invocation.
-
-Some skills are implemented by calling external APIs hosted by Ai2. For these, the CLI will prompt you to authenticate on first use.
-
-## Development
-
-See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.
+The skills use the `asta` CLI, which wraps the `asta-documents` tool for indexed search over pre-built YAML indexes. Indexes are downloaded from S3 and cached locally. The CLI can be used directly or invoked by agents via Bash commands.
 
 ## License
 
