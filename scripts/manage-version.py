@@ -44,10 +44,10 @@ def get_pyproject_version() -> str:
     return match.group(1)
 
 
-def get_marketplace_version() -> str:
-    """Read version from .claude-plugin/marketplace.json."""
+def get_marketplace_versions() -> dict[str, str]:
+    """Read versions for all plugins from .claude-plugin/marketplace.json."""
     data = json.loads(MARKETPLACE_FILE.read_text())
-    return data["plugins"][0]["version"]
+    return {p["name"]: p["version"] for p in data["plugins"]}
 
 
 def get_skills_versions() -> list[str]:
@@ -77,15 +77,20 @@ def check_version_consistency() -> bool:
     """
     init_version = get_init_version()
     pyproject_version = get_pyproject_version()
-    marketplace_version = get_marketplace_version()
+    marketplace_versions = get_marketplace_versions()
     skills_versions = get_skills_versions()
     hook_version = get_hook_version()
 
     mismatch = False
 
     # Check core files
-    if init_version != pyproject_version or init_version != marketplace_version:
+    if init_version != pyproject_version:
         mismatch = True
+
+    # Check all marketplace plugins
+    for name, version in marketplace_versions.items():
+        if version != init_version:
+            mismatch = True
 
     # Check skills files
     if len(skills_versions) != 1 or skills_versions[0] != init_version:
@@ -99,7 +104,9 @@ def check_version_consistency() -> bool:
         print(f"{RED}Error: Version mismatch detected:{NC}")
         print(f"  src/asta/__init__.py:            {init_version}")
         print(f"  pyproject.toml:                  {pyproject_version}")
-        print(f"  .claude-plugin/marketplace.json: {marketplace_version}")
+        for name, version in marketplace_versions.items():
+            label = f"  marketplace.json ({name}):"
+            print(f"{label:<39}{version}")
         print(f"  skills/*/SKILL.md:               {', '.join(skills_versions)}")
         print(f"  hooks/sync-cli-version.sh:       {hook_version}")
         print()
@@ -156,7 +163,8 @@ def set_version(new_version: str) -> bool:
     # Update .claude-plugin/marketplace.json
     print("Updating .claude-plugin/marketplace.json...")
     data = json.loads(MARKETPLACE_FILE.read_text())
-    data["plugins"][0]["version"] = new_version
+    for plugin in data["plugins"]:
+        plugin["version"] = new_version
     MARKETPLACE_FILE.write_text(json.dumps(data, indent=2) + "\n")
 
     # Update skill installation sections
