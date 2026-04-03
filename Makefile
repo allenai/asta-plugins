@@ -1,4 +1,4 @@
-.PHONY: help install test test-unit test-integration test-coverage lint format format-check clean build build-plugins publish publish-test push-version-tag version set-version check-plugins
+.PHONY: help install test test-unit test-integration test-coverage lint format format-check clean build build-plugins publish publish-test push-version-tag version set-version check-plugins docker docker-test docker-test-skills docker-claude-asta docker-claude-asta-preview docker-codex-asta docker-codex-asta-preview
 
 # Default target
 help:
@@ -18,6 +18,15 @@ help:
 	@echo "Claude Code marketplace:"
 	@echo "  build-plugins    Regenerate plugins/ from skills/"
 	@echo "  check-plugins    Verify plugins/ is up to date"
+	@echo ""
+	@echo "Docker:"
+	@echo "  docker           Build Docker image"
+	@echo "  docker-test         Build and smoke-test Docker image"
+	@echo "  docker-test-skills     Test skill discovery in Docker image"
+	@echo "  docker-claude-asta          Start container with Claude Code + asta skills"
+	@echo "  docker-claude-asta-preview  Start container with Claude Code + asta-preview skills"
+	@echo "  docker-codex-asta           Start container with Codex CLI + asta skills"
+	@echo "  docker-codex-asta-preview   Start container with Codex CLI + asta-preview skills"
 	@echo ""
 	@echo "Release:"
 	@echo "  set-version      Set version in all files (requires VERSION=x.y.z)"
@@ -119,6 +128,71 @@ push-version-tag:
 # Show current version
 version:
 	@uv run python scripts/manage-version.py show
+
+# Build Docker image
+docker:
+	docker build -t asta:latest .
+
+# Build and smoke-test Docker image
+docker-test: docker
+	docker run --rm asta:latest sh -c '\
+		set -e; \
+		asta --version; \
+		asta --help >/dev/null; \
+		asta literature --help >/dev/null; \
+		asta literature find --help >/dev/null; \
+		asta auth login --help >/dev/null; \
+		asta auth print-token --help >/dev/null; \
+		quarto --version; \
+		test -d /opt/asta-plugins/skills; \
+		count=$$(find /opt/asta-plugins/skills -mindepth 1 -maxdepth 1 -type d | wc -l); \
+		test "$$count" -ge 2; \
+		for d in /opt/asta-plugins/skills/*/; do \
+			test -f "$$d/SKILL.md" || { echo "Missing SKILL.md in $$d"; exit 1; }; \
+		done; \
+		test -f /opt/asta-plugins/.claude-plugin/marketplace.json; \
+		echo "All smoke tests passed"'
+
+# Test skill discovery in Docker image (npx skills add)
+docker-test-skills: docker
+	docker run --rm asta:latest sh -c '\
+		set -e; \
+		npx --yes skills@latest add /opt/asta-plugins --list; \
+		npx --yes skills@latest add /opt/asta-plugins --list --all'
+
+# Start container with Claude Code + asta skills
+docker-claude-asta: docker
+	docker run --rm -it -e ASTA_TOKEN -e ANTHROPIC_API_KEY asta:latest sh -c '\
+		curl -fsSL https://claude.ai/install.sh | bash && \
+		claude plugin marketplace add /opt/asta-plugins --scope user && \
+		claude plugin install asta && \
+		echo "Ready. Run: claude" && \
+		exec bash'
+
+# Start container with Claude Code + asta-preview skills
+docker-claude-asta-preview: docker
+	docker run --rm -it -e ASTA_TOKEN -e ANTHROPIC_API_KEY asta:latest sh -c '\
+		curl -fsSL https://claude.ai/install.sh | bash && \
+		claude plugin marketplace add /opt/asta-plugins --scope user && \
+		claude plugin install asta-preview && \
+		echo "Ready. Run: claude" && \
+		exec bash'
+
+# Start container with Codex CLI + asta skills
+docker-codex-asta: docker
+	docker run --rm -it -e ASTA_TOKEN -e OPENAI_API_KEY asta:latest sh -c '\
+		npm install -g @openai/codex && \
+		npx --yes skills@latest add /opt/asta-plugins -g --yes && \
+		echo "Ready. Run: codex" && \
+		exec bash'
+
+# Start container with Codex CLI + asta-preview skills
+docker-codex-asta-preview: docker
+	docker run --rm -it -e ASTA_TOKEN -e OPENAI_API_KEY asta:latest sh -c '\
+		npm install -g @openai/codex && \
+		npx --yes skills@latest add /opt/asta-plugins -g --all --yes && \
+		echo "Ready. Run: codex" && \
+		exec bash'
 
 # Quick check before commit
 check: format-check lint test-unit

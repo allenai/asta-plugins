@@ -55,6 +55,37 @@ on first invocation.
 
 Some skills are implemented by calling external APIs hosted by Ai2. For these, the CLI will prompt you to authenticate on first use.
 
+## Docker Image
+
+A Docker image with the `asta` CLI, skills, and Quarto pre-installed. Published to `ghcr.io/allenai/asta` on each release.
+
+```bash
+docker pull ghcr.io/allenai/asta:v0.10.0
+```
+
+Generate an `ASTA_TOKEN` on the host (one-time, expires after 30 days):
+
+```bash
+asta auth login
+export ASTA_TOKEN=$(asta auth print-token --raw --refresh)
+```
+
+The source repo is at `/opt/asta-plugins` inside the image. Pass your
+tokens, install your agent, and register skills:
+
+```bash
+docker run --rm -it -e ASTA_TOKEN -e ANTHROPIC_API_KEY \
+  ghcr.io/allenai/asta:latest bash
+
+# Install Claude Code and register skills:
+curl -fsSL https://claude.ai/install.sh | bash
+claude plugin marketplace add /opt/asta-plugins --scope user
+claude plugin install asta-preview
+
+# Or install any other agent and use npx:
+npx skills add /opt/asta-plugins -g --all --yes
+```
+
 ## Development
 
 See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.
