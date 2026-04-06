@@ -420,6 +420,44 @@ build-backend = "hatchling.build"
 packages = ["src/asta"]
 ```
 
+## Docker Image
+
+The Docker image provides a complete environment with the `asta` CLI, skills,
+and Quarto pre-installed. Useful for development without setting up local
+dependencies, and for testing the production image.
+
+```bash
+# No auth needed:
+make docker              # Build the image from local source
+make docker-test         # Build and run smoke tests
+make docker-test-skills  # Test skill discovery with npx
+
+# Require ASTA_TOKEN (and ANTHROPIC_API_KEY or OPENAI_API_KEY):
+make docker-claude-asta          # Start container with Claude Code + asta skills
+make docker-claude-asta-preview  # Start container with Claude Code + asta-preview skills
+make docker-codex-asta           # Start container with Codex CLI + asta skills
+make docker-codex-asta-preview   # Start container with Codex CLI + asta-preview skills
+```
+
+### Manual testing
+
+Set up tokens on the host first (see [README](README.md#docker-image)),
+then test the full Docker flow:
+
+```bash
+make docker-claude-asta-preview   # drops into container with Claude Code + skills
+
+# Inside the container:
+claude                            # start Claude with asta-preview skills
+```
+
+To test skill or CLI changes, rebuild with `make docker` then re-run
+`make docker-claude-asta-preview`. Docker layer caching makes rebuilds
+fast when only source files change.
+
+The `docker.yml` workflow publishes `ghcr.io/allenai/asta:<tag>` automatically
+when a version tag is pushed (via `make push-version-tag`).
+
 ## Release Process
 
 The version number is stored in three source locations:

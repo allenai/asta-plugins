@@ -615,7 +615,7 @@ class TestDocumentsCommand:
         assert config["tool_name"] == "asta-documents"
         assert config["install_type"] == "pypi"
         assert config["install_source"] == "asta-resource-repository"
-        assert config["minimum_version"] == "0.3.0"
+        assert config["minimum_version"] == "0.3.1"
         assert validate_semver(config["minimum_version"])
         assert config["command_name"] == "documents"
 
@@ -685,8 +685,16 @@ class TestPDFExtractionCommand:
         assert "install_source" in config
         assert config["command_name"] == "pdf-extraction"
 
-    def test_pdf_extraction_help_requires_installation(self, runner):
-        """Test pdf-extraction command behavior when olmocr not installed."""
+    def test_pdf_extraction_help_shows_subcommands(self, runner):
+        """Test that pdf-extraction --help lists the available sub-commands."""
+        result = runner.invoke(cli, ["pdf-extraction", "--help"])
+
+        assert result.exit_code == 0
+        assert "olmocr" in result.output
+        assert "remote" in result.output
+
+    def test_pdf_extraction_olmocr_help_requires_installation(self, runner):
+        """Test olmocr sub-command behavior when olmocr not installed."""
         with patch("asta.utils.passthrough.shutil.which") as mock_which:
             mock_which.return_value = None
 
@@ -694,7 +702,7 @@ class TestPDFExtractionCommand:
                 # Mock installation failure
                 mock_subprocess.side_effect = FileNotFoundError("uv not found")
 
-                result = runner.invoke(cli, ["pdf-extraction", "--help"])
+                result = runner.invoke(cli, ["pdf-extraction", "olmocr", "--help"])
 
         assert result.exit_code != 0
 
