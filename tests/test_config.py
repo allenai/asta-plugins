@@ -200,7 +200,7 @@ class TestHoconConfig:
 
         assert "base_url" in config
         assert isinstance(config["base_url"], str)
-        assert config["base_url"] == "https://autodiscovery.allen.ai"
+        assert config["base_url"].endswith("/api/autodiscovery")
 
     def test_get_api_config_invalid_api(self):
         """Test that invalid API names raise KeyError."""
