@@ -7,7 +7,6 @@ import click
 
 from asta.autodiscovery.client import AutoDiscoveryClient
 
-
 # -- Formatters ---------------------------------------------------------------
 
 
@@ -122,7 +121,7 @@ def run(runid, output_format):
         click.echo(f"  Execution:  {details['execution_id']}")
 
     if stats:
-        click.echo(f"\n  Experiments:")
+        click.echo("\n  Experiments:")
         click.echo(f"    Requested:  {stats.get('requested_experiments', '?')}")
         click.echo(f"    Completed:  {stats.get('completed_experiments', '?')}")
         click.echo(f"    Pending:    {stats.get('pending_experiments', '?')}")
@@ -133,7 +132,7 @@ def run(runid, output_format):
     if metadata.get("domain"):
         click.echo(f"  Domain:      {metadata['domain']}")
     if datasets := metadata.get("datasets"):
-        click.echo(f"  Datasets:")
+        click.echo("  Datasets:")
         for ds in datasets:
             desc = f" ({ds['description']})" if ds.get("description") else ""
             click.echo(f"    - {ds.get('name', 'unnamed')}{desc}")
