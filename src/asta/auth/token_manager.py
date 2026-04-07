@@ -92,7 +92,8 @@ class TokenManager:
                 for key, value in {
                     "refresh_token": token_response.refresh_token
                     or existing_session.get("refresh_token"),
-                    "id_token": token_response.id_token or existing_session.get("id_token"),
+                    "id_token": token_response.id_token
+                    or existing_session.get("id_token"),
                 }.items()
                 if value
             },

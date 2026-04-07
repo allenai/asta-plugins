@@ -252,9 +252,7 @@ def experiment(runid, experiment_id, output_format):
     click.echo(f"  Created:     {_fmt_time(exp.get('created_at'))}")
     if exp.get("runtime_ms") is not None:
         click.echo(f"  Runtime:     {exp['runtime_ms'] / 1000:.1f}s")
-    click.echo(
-        f"  Surprising:  {'yes' if exp.get('is_surprising') else 'no'}"
-    )
+    click.echo(f"  Surprising:  {'yes' if exp.get('is_surprising') else 'no'}")
     if exp.get("surprise") is not None:
         click.echo(f"  Surprise:    {exp['surprise']:.4f}")
     if exp.get("prior") is not None:

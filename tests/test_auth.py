@@ -73,8 +73,7 @@ class TestTokenStorage:
 
         assert storage.get_access_token(service="asta") == "asta-token"
         assert (
-            storage.get_access_token(service="autodiscovery")
-            == "autodiscovery-token"
+            storage.get_access_token(service="autodiscovery") == "autodiscovery-token"
         )
 
 

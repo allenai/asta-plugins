@@ -37,7 +37,9 @@ class TokenStorage:
         if not data:
             return {"session": {}, "services": {}}
 
-        if isinstance(data.get("services"), dict) or isinstance(data.get("session"), dict):
+        if isinstance(data.get("services"), dict) or isinstance(
+            data.get("session"), dict
+        ):
             services = data.get("services", {})
             session = data.get("session", {})
             if not session and isinstance(services.get("asta"), dict):
@@ -50,9 +52,7 @@ class TokenStorage:
             return {"session": session, "services": services}
 
         session = {
-            key: data[key]
-            for key in ("refresh_token", "id_token")
-            if data.get(key)
+            key: data[key] for key in ("refresh_token", "id_token") if data.get(key)
         }
         return {"session": session, "services": {"asta": data}}
 
