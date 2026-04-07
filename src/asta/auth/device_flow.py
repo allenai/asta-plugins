@@ -149,7 +149,12 @@ class DeviceAuthFlow:
 
         raise AuthenticationTimeout("Authentication timeout")
 
-    async def refresh_token(self, refresh_token: str) -> TokenResponse:
+    async def refresh_token(
+        self,
+        refresh_token: str,
+        audience: str | None = None,
+        scope: str | None = None,
+    ) -> TokenResponse:
         """
         Refresh an expired access token.
 
@@ -160,14 +165,17 @@ class DeviceAuthFlow:
             New token response
         """
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.token_url,
-                data={  # Use form data for better OAuth compatibility
-                    "grant_type": "refresh_token",
-                    "client_id": self.client_id,
-                    "refresh_token": refresh_token,
-                },
-            )
+            data = {
+                "grant_type": "refresh_token",
+                "client_id": self.client_id,
+                "refresh_token": refresh_token,
+            }
+            if audience:
+                data["audience"] = audience
+            if scope:
+                data["scope"] = scope
+
+            response = await client.post(self.token_url, data=data)
 
             if response.status_code != 200:
                 error_data = response.json()

@@ -115,12 +115,20 @@ class TestHoconConfig:
         assert "auth0_domain" in config
         assert "auth0_client_id" in config
         assert "auth0_audience" in config
+        assert "auth0_scopes" in config
+        assert "auth0_callback_host" in config
+        assert "auth0_callback_port" in config
+        assert "auth0_callback_path" in config
         assert "gateway_url" in config
 
         # Verify types
         assert isinstance(config["auth0_domain"], str)
         assert isinstance(config["auth0_client_id"], str)
         assert isinstance(config["auth0_audience"], str)
+        assert isinstance(config["auth0_scopes"], str)
+        assert isinstance(config["auth0_callback_host"], str)
+        assert isinstance(config["auth0_callback_port"], int)
+        assert isinstance(config["auth0_callback_path"], str)
         assert isinstance(config["gateway_url"], str)
 
     def test_get_auth_settings(self):
@@ -133,13 +141,32 @@ class TestHoconConfig:
         assert hasattr(settings, "auth0_domain")
         assert hasattr(settings, "auth0_client_id")
         assert hasattr(settings, "auth0_audience")
+        assert hasattr(settings, "auth0_scopes")
+        assert hasattr(settings, "auth0_callback_host")
+        assert hasattr(settings, "auth0_callback_port")
+        assert hasattr(settings, "auth0_callback_path")
         assert hasattr(settings, "gateway_url")
 
         # Verify values are strings
         assert isinstance(settings.auth0_domain, str)
         assert isinstance(settings.auth0_client_id, str)
         assert isinstance(settings.auth0_audience, str)
+        assert isinstance(settings.auth0_scopes, str)
+        assert isinstance(settings.auth0_callback_host, str)
+        assert isinstance(settings.auth0_callback_port, int)
+        assert isinstance(settings.auth0_callback_path, str)
         assert isinstance(settings.gateway_url, str)
+
+    def test_get_auth_settings_autodiscovery(self):
+        """Test loading auth settings for autodiscovery."""
+        from asta.utils.auth_config import get_auth_settings
+
+        settings = get_auth_settings("autodiscovery")
+        default_settings = get_auth_settings()
+
+        assert settings.service_name == "autodiscovery"
+        assert settings.auth0_client_id == default_settings.auth0_client_id
+        assert settings.auth0_audience == "https://ai2-autodiscovery.allen.ai"
 
     def test_get_api_config_semantic_scholar(self):
         """Test loading semantic_scholar API configuration."""
@@ -165,6 +192,16 @@ class TestHoconConfig:
         # Accept both http and https (for local development configs)
         assert config["base_url"].startswith(("http://", "https://"))
 
+    def test_get_api_config_autodiscovery(self):
+        """Test loading autodiscovery API configuration."""
+        from asta.utils.config import get_api_config
+
+        config = get_api_config("autodiscovery")
+
+        assert "base_url" in config
+        assert isinstance(config["base_url"], str)
+        assert config["base_url"] == "https://autodiscovery.allen.ai"
+
     def test_get_api_config_invalid_api(self):
         """Test that invalid API names raise KeyError."""
         from asta.utils.config import get_api_config
@@ -183,6 +220,7 @@ class TestHoconConfig:
         # Should have semantic_scholar and paper_finder
         assert "semantic_scholar" in apis
         assert "paper_finder" in apis
+        assert "autodiscovery" in apis
 
     def test_custom_config_file_path(self, tmp_path, monkeypatch):
         """Test that ASTA_CONFIG_FILE environment variable works."""

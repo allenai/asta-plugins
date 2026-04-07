@@ -25,6 +25,30 @@ class TestCLIBasics:
         assert runner.invoke(cli, ["--version"]).exit_code == 0
         assert runner.invoke(cli, ["--help"]).exit_code == 0
 
+    def test_autodiscovery_help(self, runner):
+        """Test that autodiscovery commands are registered."""
+        result = runner.invoke(cli, ["autodiscovery", "--help"])
+
+        assert result.exit_code == 0
+        assert "runs" in result.output
+        assert "experiments" in result.output
+
+
+class TestAutodiscoveryCommand:
+    """Test autodiscovery command behavior."""
+
+    def test_runs_json_output(self, runner):
+        """Test autodiscovery runs command emits JSON."""
+        with patch("asta.autodiscovery.commands.AutoDiscoveryClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.list_runs.return_value = {"runs": []}
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(cli, ["autodiscovery", "runs"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == {"runs": []}
+
 
 class TestFindCommand:
     """Test 'asta literature find' command."""

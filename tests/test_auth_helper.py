@@ -16,9 +16,14 @@ class TestAuthHelper:
             with patch("asta.utils.auth_helper.TokenManager") as MockManager:
                 # Mock settings
                 mock_settings.return_value = MagicMock(
+                    service_name="asta",
                     auth0_domain="test.auth0.com",
                     auth0_client_id="test-client",
                     auth0_audience="test-audience",
+                    auth0_scopes="openid profile email offline_access access:all",
+                    auth0_callback_host="127.0.0.1",
+                    auth0_callback_port=53147,
+                    auth0_callback_path="/callback",
                     gateway_url="https://test.gateway",
                 )
 
@@ -41,9 +46,14 @@ class TestAuthHelper:
             with patch("asta.utils.auth_helper.TokenManager") as MockManager:
                 # Mock settings
                 mock_settings.return_value = MagicMock(
+                    service_name="asta",
                     auth0_domain="test.auth0.com",
                     auth0_client_id="test-client",
                     auth0_audience="test-audience",
+                    auth0_scopes="openid profile email offline_access access:all",
+                    auth0_callback_host="127.0.0.1",
+                    auth0_callback_port=53147,
+                    auth0_callback_path="/callback",
                     gateway_url="https://test.gateway",
                 )
 
@@ -66,9 +76,14 @@ class TestAuthHelper:
             with patch("asta.utils.auth_helper.TokenManager") as MockManager:
                 # Mock settings
                 mock_settings.return_value = MagicMock(
+                    service_name="asta",
                     auth0_domain="test.auth0.com",
                     auth0_client_id="test-client",
                     auth0_audience="test-audience",
+                    auth0_scopes="openid profile email offline_access access:all",
+                    auth0_callback_host="127.0.0.1",
+                    auth0_callback_port=53147,
+                    auth0_callback_path="/callback",
                     gateway_url="https://test.gateway",
                 )
 

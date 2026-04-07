@@ -8,7 +8,13 @@ from asta.auth.token_manager import TokenManager
 from asta.utils.auth_config import get_auth_settings
 
 
-def get_access_token() -> str:
+def _token_env_var_name(service_name: str) -> str:
+    if service_name == "asta":
+        return "ASTA_TOKEN"
+    return f"ASTA_TOKEN_{service_name.upper().replace('-', '_')}"
+
+
+def get_access_token(service_name: str = "asta") -> str:
     """
     Get a valid access token, automatically refreshing if necessary.
 
@@ -23,23 +29,24 @@ def get_access_token() -> str:
         This function handles token refresh automatically. If the token
         is expired and a refresh token is available, it will be refreshed.
     """
-    if token := os.environ.get("ASTA_TOKEN"):
+    if token := os.environ.get(_token_env_var_name(service_name)):
         return token
 
     try:
-        # Get auth settings from config
-        settings = get_auth_settings()
+        settings = get_auth_settings(service_name=service_name)
 
-        # Create token manager
         manager = TokenManager(
             auth0_domain=settings.auth0_domain,
             client_id=settings.auth0_client_id,
             audience=settings.auth0_audience,
+            scopes=settings.auth0_scopes,
+            callback_host=settings.auth0_callback_host,
+            callback_port=settings.auth0_callback_port,
+            callback_path=settings.auth0_callback_path,
             gateway_url=settings.gateway_url,
+            service_name=service_name,
         )
 
-        # Get valid access token (handles refresh automatically)
-        # Run async function in sync context
         return asyncio.run(manager.get_valid_access_token())
 
     except AuthenticationError:

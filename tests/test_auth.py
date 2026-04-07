@@ -60,6 +60,23 @@ class TestTokenStorage:
 
         assert storage.load_tokens() is None
 
+    def test_save_and_load_tokens_per_service(self, tmp_path):
+        """Test storing tokens for multiple services in one file."""
+        storage = TokenStorage(use_keyring=False)
+        storage.token_file = tmp_path / "tokens.json"
+
+        storage.save_tokens({"access_token": "asta-token"}, service="asta")
+        storage.save_tokens(
+            {"access_token": "autodiscovery-token"},
+            service="autodiscovery",
+        )
+
+        assert storage.get_access_token(service="asta") == "asta-token"
+        assert (
+            storage.get_access_token(service="autodiscovery")
+            == "autodiscovery-token"
+        )
+
 
 class TestAuthCommands:
     """Tests for auth CLI commands."""
@@ -68,8 +85,10 @@ class TestAuthCommands:
         """Test auth status when not authenticated."""
         runner = CliRunner()
 
-        # Mock TokenStorage.load_tokens to return None (no tokens)
-        with patch.object(TokenStorage, "load_tokens", return_value=None):
+        with (
+            patch.object(TokenStorage, "load_tokens", return_value=None),
+            patch.object(TokenStorage, "load_session", return_value=None),
+        ):
             result = runner.invoke(cli, ["auth", "status"])
             assert result.exit_code == 0
             assert "Not authenticated" in result.output

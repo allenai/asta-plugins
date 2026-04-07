@@ -3,6 +3,7 @@
 import click
 
 from asta import __version__
+from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
@@ -38,6 +39,9 @@ def papers():
 
 # Register auth commands
 cli.add_command(auth)
+
+# Register autodiscovery commands
+cli.add_command(autodiscovery)
 
 # Register passthrough commands
 cli.add_command(documents)
