@@ -1,6 +1,7 @@
 """Main CLI entry point for asta"""
 
 import click
+from asta_artifact.cli import main as artifacts
 
 from asta import __version__
 from asta.commands.auth import auth
@@ -12,6 +13,7 @@ from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
 from asta.pdf_extraction import pdf_extraction
+from asta.theorizer import generate_theories
 
 
 @click.group()
@@ -38,6 +40,12 @@ def papers():
 
 # Register auth commands
 cli.add_command(auth)
+
+# Register generate-theories commands
+cli.add_command(generate_theories)
+
+# Register artifacts command
+cli.add_command(artifacts, name="artifacts")
 
 # Register passthrough commands
 cli.add_command(documents)

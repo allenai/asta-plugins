@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asta"
-version = "0.10.1"
+version = "0.11.0"
 description = "Asta CLI for scientific literature review"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,8 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "keyring>=24.3.0",
     "platformdirs>=4.1.0",
+    "asta-agent[a2a-client]>=1.0.3",
+    "asta-artifact>=1.0.3",
 ]
 
 [project.scripts]
