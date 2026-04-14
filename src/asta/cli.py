@@ -4,6 +4,7 @@ import click
 from asta_artifact.cli import main as artifacts
 
 from asta import __version__
+from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
@@ -12,7 +13,6 @@ from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
-from asta.autodiscovery.commands import autodiscovery
 from asta.pdf_extraction import pdf_extraction
 from asta.theorizer import generate_theories
 
