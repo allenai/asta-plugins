@@ -1,6 +1,7 @@
 """AutoDiscovery CLI commands."""
 
 import json
+import os
 from datetime import datetime
 
 import click
@@ -275,3 +276,154 @@ def experiment(runid, experiment_id, output_format):
         click.echo(f"\n  Parent: {exp['parent_id']}")
     if exp.get("child_ids"):
         click.echo(f"  Children: {', '.join(exp['child_ids'])}")
+
+
+# -- Run creation commands -----------------------------------------------------
+
+
+@autodiscovery.command()
+def create():
+    """Create a new empty run. Prints the run ID."""
+    try:
+        data = AutoDiscoveryClient().create_run()
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    click.echo(data["runid"])
+
+
+@autodiscovery.command()
+@click.argument("runid")
+@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
+def upload(runid, files):
+    """Upload one or more dataset files to a run."""
+    try:
+        client = AutoDiscoveryClient()
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    for filepath in files:
+        filename = os.path.basename(filepath)
+        click.echo(f"Uploading {filename}...", nl=False)
+        try:
+            result = client.upload_file(runid, filepath)
+            click.echo(f" done ({result['file_size_bytes']} bytes)")
+        except Exception as e:
+            click.echo(" FAILED")
+            raise click.ClickException(f"Failed to upload {filename}: {e}")
+
+
+@autodiscovery.command()
+@click.argument("runid")
+@click.option(
+    "--file",
+    "-f",
+    "filepath",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to metadata JSON file",
+)
+def metadata(runid, filepath):
+    """Save metadata for a run from a JSON file."""
+    try:
+        with open(filepath) as f:
+            meta = json.load(f)
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"Invalid JSON in {filepath}: {e}")
+
+    try:
+        data = AutoDiscoveryClient().save_metadata(runid, meta)
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Metadata saved: {data.get('path', 'ok')}")
+
+
+@autodiscovery.command(name="metadata-get")
+@click.argument("runid")
+def metadata_get(runid):
+    """Get metadata for an existing run (JSON output)."""
+    try:
+        data = AutoDiscoveryClient().get_metadata(runid)
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    click.echo(json.dumps(data.get("metadata", data), indent=2))
+
+
+@autodiscovery.command()
+@click.argument("runid")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def submit(runid, yes):
+    """Submit a run for execution."""
+    try:
+        client = AutoDiscoveryClient()
+
+        if not yes:
+            # Show credit info before submitting
+            try:
+                credits = client.get_credits().get("credits", {})
+                meta = client.get_metadata(runid).get("metadata", {})
+                n_exp = meta.get("n_experiments", "?")
+                click.echo(
+                    f"Experiments: {n_exp}  |  "
+                    f"Credits available: {credits.get('available', '?')}"
+                )
+                if not click.confirm("Submit this run?"):
+                    raise SystemExit(0)
+            except click.ClickException:
+                raise
+            except SystemExit:
+                raise
+            except Exception:
+                pass  # proceed without credit info if lookup fails
+
+        data = client.submit_run(runid)
+    except click.ClickException:
+        raise
+    except SystemExit:
+        raise
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    details = data.get("run_details", {})
+    click.echo(f"Submitted. Execution ID: {data.get('execution_id', '?')}")
+    click.echo(f"Status: {details.get('status', '?')}")
+
+
+@autodiscovery.command()
+@click.argument("parent_runid")
+def fork(parent_runid):
+    """Fork an existing run (copies metadata and datasets)."""
+    try:
+        data = AutoDiscoveryClient().fork_run(parent_runid)
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    click.echo(data["runid"])
+
+
+@autodiscovery.command()
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "text"]),
+    default="text",
+    help="Output format",
+)
+def credits(output_format):
+    """Show credit balance for the authenticated user."""
+    try:
+        data = AutoDiscoveryClient().get_credits()
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    c = data.get("credits", {})
+    if output_format == "json":
+        click.echo(json.dumps(c, indent=2))
+        return
+
+    click.echo(f"Granted:   {c.get('granted', '?')}")
+    click.echo(f"Consumed:  {c.get('consumed', '?')}")
+    click.echo(f"Pending:   {c.get('pending', '?')}")
+    click.echo(f"Available: {c.get('available', '?')}")
