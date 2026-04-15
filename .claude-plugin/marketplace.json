@@ -1,7 +1,7 @@
 {
   "name": "asta-plugins",
   "owner": {
-    "name": "AI2 Asta Team"
+    "name": "Ai2 Asta Team"
   },
   "metadata": {
     "description": "Asta science tools for Claude Code"
@@ -10,10 +10,10 @@
     {
       "name": "asta",
       "source": "./plugins/asta",
-      "description": "Paper search, metadata, and document management for scientific research",
-      "version": "0.10.1",
+      "description": "Paper search, metadata, document management, and theory generation for scientific research",
+      "version": "0.11.0",
       "author": {
-        "name": "AI2 Asta Team"
+        "name": "Ai2 Asta Team"
       },
       "repository": "https://github.com/allenai/asta-plugins",
       "license": "Apache-2.0",
@@ -28,10 +28,10 @@
     {
       "name": "asta-preview",
       "source": "./plugins/asta-preview",
-      "description": "Paper search, metadata, document management, literature reports, and experiments for scientific research",
-      "version": "0.10.1",
+      "description": "Paper search, metadata, document management, literature reports, experiments, and theory generation for scientific research",
+      "version": "0.11.0",
       "author": {
-        "name": "AI2 Asta Team"
+        "name": "Ai2 Asta Team"
       },
       "repository": "https://github.com/allenai/asta-plugins",
       "license": "Apache-2.0",
