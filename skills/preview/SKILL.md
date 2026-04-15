@@ -25,11 +25,11 @@ For local preview: `quarto preview` (hot reloads). One-time build: `quarto rende
 
 If the project doesn't have a `_quarto.yml` yet, confirm the plan with the user, then:
 
-1. Check `which quarto`. If not installed, see https://quarto.org/docs/get-started/ (may require sudo).
+1. Check `which quarto`. If not installed locally, see https://quarto.org/docs/get-started/ — or use the Workspace skill to get a devcontainer with Quarto pre-installed.
 2. Copy [assets/_quarto.yml](assets/_quarto.yml) to the project root and adjust the title.
-3. Create an `index.md` with YAML frontmatter (`title:` at minimum).
+3. Create an `index.qmd` with YAML frontmatter (`title:` at minimum). Use `.qmd` for all documents — it's Quarto's canonical format and required for full tooling support.
 4. Add `_site/` and `.quarto/` to `.gitignore`.
-5. Each subdirectory needs an `index.md` or its sidebar link will 404.
+5. Each subdirectory needs an `index.qmd` or its sidebar link will 404.
 
 ## GitHub Pages Setup
 

@@ -86,6 +86,10 @@ claude plugin install asta-preview
 npx skills add /opt/asta-plugins -g --all --yes
 ```
 
+## Workspace (Codespaces / Dev Containers)
+
+For a pre-configured VS Code environment with Asta skills and Quarto, see the [Workspace skill](skills/workspace/SKILL.md).
+
 ## Development
 
 See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.

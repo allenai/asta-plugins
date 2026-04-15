@@ -1,0 +1,18 @@
+{
+  "name": "Asta",
+  "image": "ghcr.io/allenai/asta:latest",
+  "remoteEnv": {
+    "ASTA_TOKEN": "${localEnv:ASTA_TOKEN}"
+  },
+  "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
+  "postAttachCommand": {
+    "preview": "[ -f _quarto.yml ] && quarto preview --no-browser || true"
+  },
+  "forwardPorts": [4848],
+  "portsAttributes": {
+    "4848": {
+      "label": "Quarto Preview",
+      "onAutoForward": "notify"
+    }
+  }
+}

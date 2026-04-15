@@ -1,8 +1,8 @@
 project:
   type: website
   output-dir: _site
-  render:
-    - "!.asta/**"
+  preview:
+    port: 4848
 
 bibliography: references.bib
 
