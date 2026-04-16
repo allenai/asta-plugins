@@ -11,7 +11,7 @@
       "name": "asta",
       "source": "./plugins/asta",
       "description": "Paper search, metadata, document management, and theory generation for scientific research",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
@@ -29,7 +29,7 @@
       "name": "asta-preview",
       "source": "./plugins/asta-preview",
       "description": "Paper search, metadata, document management, literature reports, experiments, and theory generation for scientific research",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
