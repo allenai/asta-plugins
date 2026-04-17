@@ -1,7 +1,7 @@
 #!/bin/bash
 # Check if asta CLI version matches the plugin version and auto-install/update if needed
 
-PLUGIN_VERSION=0.13.0
+PLUGIN_VERSION=0.14.0
 INSTALL_URL="git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION"
 
 # Check if asta is installed
