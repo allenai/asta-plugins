@@ -8,35 +8,61 @@ allowed-tools:
   - Bash(asta auth status)
   - Bash(asta generate-theories *)
   - Bash(asta artifacts *)
+  - Bash(asta documents *)
   - Bash(open *)
 ---
 
 # Generate Theories
 
-Uses the [Theorizer](https://github.com/allenai/asta-theorizer) agent to search papers, extract evidence, form theories, and (optionally) score their novelty. Auth is the standard `asta auth login` flow; gateway URL is overridable via `ASTA_GATEWAY_URL`.
+Uses the [Theorizer](https://github.com/allenai/asta-theorizer) agent (hosted on Cloud Run, accessed via `asta-gateway`) to search papers, extract evidence, form theories, and score their novelty. Auth is `asta auth login`.
 
-## Quick path — skip all elicitation
+## Step 1 — Draft a tightened query
 
-If the user says "skip elicitation" or similar ("just run it", "go", "use defaults"), do NOT call `AskUserQuestion`. Submit their query verbatim plus any parameters they explicitly mentioned; let Theorizer's own defaults fill in the rest. Jump to Step 4.
+**Before asking the user anything**, analyze their request and the surrounding context (current project, conversation history, files they've been working on) to produce a **tightened theory query** that:
 
-## Steps 1–3 — Single interview
+- Has a specific phenomenon and domain
+- Is phrased as a scientific question
+- Reflects what the user is actually trying to understand
 
-Before calling `AskUserQuestion`, silently draft:
-- A *slightly* tighter version of the user's query (same intent, sharper phrasing — skip if near-identical to verbatim)
-- An optional creative reframing (skip unless you have a genuinely different angle)
-- A mission statement: "I want to understand X so that I can Y" (best-effort; the Y part will often be wrong — that's fine)
+Examples:
 
-Then fire **one** `AskUserQuestion` with all of the following questions:
+- User says "generate theories for my project" → inspect the project, infer the research focus, produce a concrete query like "How do induction heads emerge during training in decoder-only transformers?"
+- User says "theories about attention" → tighten to "What mechanisms drive attention head specialization during pretraining?"
+- User gives a well-formed scientific question → echo it verbatim
 
-1. **Query** — options: `<verbatim>` / `<tightened>` (if different) / `<creative>` (if warranted)
-2. **Mission statement** — options: `Skip — no goal frame` / `<your drafted sentence>`
-3. **Papers** — options: `100 papers (~15–25 min)` / `30 papers (~7–12 min)`
-4. **Objective** — options: `accuracy-focused` / `novelty-focused`
-5. **Novelty assessment** — options: `Skip` / `Run novelty assessment (~$5–10, +30–60 min)`
+## Step 2 — Confirm with one chat question
 
-⚠️ Novelty assessment is **~10× more expensive** than the rest of the pipeline (~$1/statement, $5–10 per 8-theory run) and adds **30–60 min** wall-clock. Only enable when the user is fully clear they want it.
+In chat (not `AskUserQuestion`), present:
 
-**Trust user choices.** Don't re-confirm unusual-but-valid values in a second modal (1-paper runs, novelty-focused + novelty-off, etc.). Only re-prompt when input is literally invalid (zero/negative, empty query), and do so in chat.
+> Proposed theory query: **`<tightened>`**
+>
+> I'll run 100 papers, accuracy-focused, with novelty assessment by default.
+>
+> You can:
+> - Reply **yes** / **go** to run as-is
+> - Reply with edits (e.g. *"focus more on training dynamics"*, *"broaden to multimodal"*) and I'll revise the query
+> - *(Only if `AskUserQuestion` is available)* Reply **interview** to pick papers / objective / novelty via a form
+
+Only include the **interview** bullet when the `AskUserQuestion` tool is available in the current environment. If it isn't, drop that bullet entirely — handle any parameter tuning via chat.
+
+Wait for the user's response. Paths:
+
+1. **Affirmative** ("yes", "go", "proceed", "looks good") → Step 4 with defaults.
+2. **Natural-language edit** → update the query, re-show the same prompt.
+3. **"Interview" / "refine parameters" / "ask me"** → Step 3 *(AskUserQuestion required; if unavailable, ask the parameter questions in chat instead)*.
+
+**Novelty-focus shortcut:** If the user's original wording emphasizes novelty ("novel theories", "new theories we haven't seen", "find something surprising"), set `generation_objective: novelty-focused` without asking.
+
+## Step 3 — Full interview (only when requested)
+
+Fire one `AskUserQuestion` with:
+
+1. **Query** — `<tightened>` vs `<creative reframe>` (if you have one)
+2. **Papers** — `100 papers (~15–25 min)` / `30 papers (~7–12 min)` / `10 papers (fast, lower quality)`
+3. **Objective** — `accuracy-focused` / `novelty-focused`
+4. **Novelty assessment** — `Run novelty assessment (~$5–10, +30–60 min)` / `Skip`
+
+⚠️ Novelty assessment is **~10× more expensive** than the rest of the pipeline (~$1/statement, $5–10 per 8-theory run) and adds **30–60 min**. Defaults include it because it's the most valuable output; only skip if the user wants fast iteration.
 
 ## Step 4 — Submit
 
@@ -49,41 +75,66 @@ asta generate-theories send-message '{
 }'
 ```
 
-Add `"mission_statement"` / any power-user overrides (`model_str_primary`, etc.) if the user mentioned them. `asta generate-theories card` enumerates all parameters.
-
 Capture `id` (task ID) and `contextId` from the response.
-
-> Note: bring-your-own paperstore is not yet supported — Theorizer always searches literature from scratch in v1.
 
 ## Step 5 — Poll
 
+Don't foreground-poll in a loop (session blocks) and don't start individual `sleep 60`-then-check turns (harness blocks long leading sleeps, and you'll forget to return). Instead, kick off **one** background polling loop that exits on a terminal state — the harness will notify you when it finishes.
+
 ```bash
-asta generate-theories task "<TASK_ID>"
+TID="<TASK_ID>"
+(
+  while true; do
+    resp=$(asta generate-theories task "$TID" 2>&1)
+    state=$(printf '%s' "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',{}).get('state','unknown'))" 2>/dev/null || echo parse_error)
+    echo "[$(date +%H:%M:%S)] state=$state"
+    case "$state" in
+      completed|failed|input-required) printf '%s' "$resp" > "/tmp/theorizer-$TID.json"; exit 0 ;;
+      parse_error) exit 1 ;;
+    esac
+    sleep 60
+  done
+)
 ```
 
-Poll every ~60s. **Do not use an inline `sleep 60 && …` — it will be blocked.** Either run the poll loop with `run_in_background: true` so the sleep happens in a background shell, or just re-issue the one-shot poll command periodically without an explicit sleep (you can interleave other work between polls).
+Run with `run_in_background: true`. When the completion notification fires, read `/tmp/theorizer-$TID.json` for the final payload.
 
-Surface step transitions to the user (search → extract → form theories → novelty). `status.state`:
-- `submitted` / `working` → keep polling
+While it's running, do not proactively check. Work on other things or wait — the notification is authoritative. If the user asks for a status check before the notification, only then tail the background task's output file.
+
+Terminal states:
+
 - `completed` → Step 6
 - `failed` → report `status.message` and stop
-- `input-required` → relay to user, then `asta generate-theories send-message --task-id <ID> '<reply>'`
+- `input-required` → relay to user, then `asta generate-theories send-message --task-id <ID> '<reply>'` and re-kick the polling loop
 
-Runtime: ~10–30 min without novelty, +30–60 min with. Tasks can occasionally run beyond an hour; don't hard-fail before ~2 hours.
+Runtime: ~10–30 min without novelty, +30–60 min with. Don't hard-fail before ~2 hours. If the background task itself dies (non-terminal exit), restart it once; if it dies again, surface the error.
 
-`artifacts[]` accumulate as the pipeline runs. **On the first poll where `artifacts[]` is non-empty (usually the Extraction Schema in the first minute or two), tell the user once in chat that they can ask at any time to preview what's been generated so far — the Asta Artifacts skill can export partial data mid-run.** Don't repeat this on every subsequent poll.
+## Step 6 — Export and index
 
-## Step 6 — Summarize
+Hand off to the **Asta Artifacts** skill to export the task output and
+register each artifact with asta-documents. Pass `generate-theories` as the
+invoking skill and a slug derived from the theory query; Asta Artifacts
+handles the path convention, manifest, and index.yaml.
 
-Present a markdown table with one row per theory: **name** and a **2–3 sentence description**. Add a headline novelty column if novelty was scored. Don't dump JSON.
+## Step 7 — Summarize for the user
 
-## Step 7 — Export
+Present, in this order:
 
-Ask the user if they want a full report (default yes). If yes, hand off to the **Asta Artifacts** skill — it handles HTML and Markdown export and knows the full workflow.
+1. **Indexing + exploration paths** — one short block naming both ways to browse. Always include BOTH (the skill path for semantic search, the filesystem path for direct reading):
+
+   > Indexed N artifacts in `.asta/generate-theories/<slug>/index.yaml`.
+   > Explore via `asta documents search --summary='<concept>' --root=.asta/generate-theories/<slug>` or open the directory directly: `open <absolute-path-to-slug-dir>`
+
+   Use the **absolute** path (e.g. `/Users/.../project/.asta/generate-theories/2026-04-16-…/`) — the user may not be in this cwd when they click it. Pick `<concept>` from a term that appears across multiple theories (concrete, not generic).
+
+2. **One-paragraph synthesis** — 2–4 sentences written fresh for this run. What do the theories collectively argue? Where do they converge, where do they diverge? What's the headline "so what"? This is discretionary — don't template it, read the theories and synthesize.
+
+3. **Table of theories** — one row per theory: **name** + **2–3 sentence core idea**. Add a **novelty** column (headline degree) if novelty was scored.
+
+Don't dump JSON. Don't repeat theory descriptions outside the table. Don't add a trailing "let me know if you'd like…" summary — the exploration block already tells the user how to keep going.
 
 ## References
 
-- A2A spec: <https://a2a-protocol.org/latest/specification/>
 - Theorizer: <https://github.com/allenai/asta-theorizer>
 - Paper (*Generating Literature-Driven Scientific Theories at Scale*): <https://arxiv.org/abs/2601.16282>
-- asta-gateway: <https://github.com/allenai/asta-gateway>
+- A2A spec: <https://a2a-protocol.org/latest/specification/>
