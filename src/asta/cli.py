@@ -4,6 +4,7 @@ import click
 from asta_artifact.cli import main as artifacts
 
 from asta import __version__
+from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
@@ -51,6 +52,7 @@ cli.add_command(artifacts, name="artifacts")
 cli.add_command(documents)
 cli.add_command(experiment)
 cli.add_command(pdf_extraction)
+cli.add_command(autodiscovery)
 
 # Register literature subcommands
 literature.add_command(find)
