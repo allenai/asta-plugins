@@ -6,6 +6,7 @@ from asta_artifact.cli import main as artifacts
 from asta import __version__
 from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
+from asta.data_analysis import data_analysis
 from asta.documents import documents
 from asta.experiment import experiment
 from asta.literature.find import find
@@ -45,6 +46,9 @@ cli.add_command(auth)
 
 # Register generate-theories commands
 cli.add_command(generate_theories)
+
+# Register data-analysis commands
+cli.add_command(data_analysis)
 
 # Register artifacts command
 cli.add_command(artifacts, name="artifacts")
