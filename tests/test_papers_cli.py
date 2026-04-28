@@ -127,8 +127,8 @@ class TestPapersSearch:
         assert "Paper 1" in result.output
         assert "Paper 2" in result.output
 
-    def test_search_with_year_filter(self, runner):
-        """Test papers search with year filter."""
+    def test_search_with_date_filter(self, runner):
+        """Test papers search with date filter."""
         mock_result = {"total": 0, "data": []}
 
         with patch("asta.papers.search.SemanticScholarClient") as MockClient:
@@ -137,13 +137,159 @@ class TestPapersSearch:
             MockClient.return_value = mock_instance
 
             result = runner.invoke(
-                cli, ["papers", "search", "test query", "--year", "2023-"]
+                cli, ["papers", "search", "test query", "--date", "2023-"]
             )
 
         assert result.exit_code == 0
         mock_instance.search_papers.assert_called_once()
         call_args = mock_instance.search_papers.call_args
-        assert call_args[1]["year"] == "2023-"
+        assert call_args[1]["publication_date_or_year"] == "2023-"
+
+
+
+class TestPapersSnippetSearch:
+    """Test 'asta papers snippet-search' command."""
+
+    def test_snippet_search_help(self, runner):
+        """Test snippet-search command help."""
+        result = runner.invoke(cli, ["papers", "snippet-search", "--help"])
+        assert result.exit_code == 0
+        assert "full-text snippet matching" in result.output
+
+    def test_snippet_search_missing_query(self, runner):
+        """Test snippet-search without query."""
+        result = runner.invoke(cli, ["papers", "snippet-search"])
+        assert result.exit_code != 0
+        assert "Missing argument" in result.output
+
+    def test_snippet_search_json_format(self, runner):
+        """Test snippet-search with JSON output."""
+        mock_result = {
+            "data": [
+                {
+                    "paper": {
+                        "corpusId": "123",
+                        "title": "Snippet Paper",
+                        "authors": [{"name": "Author A"}],
+                    },
+                    "score": 0.95,
+                    "snippet": {
+                        "text": "This is a matching snippet from the paper body.",
+                        "snippetKind": "body",
+                    },
+                },
+            ],
+        }
+
+        with patch("asta.papers.snippet_search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.snippet_search.return_value = mock_result
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli, ["papers", "snippet-search", "test query"]
+            )
+
+        assert result.exit_code == 0
+        mock_instance.snippet_search.assert_called_once()
+        assert "Snippet Paper" in result.output
+        # Default fields should be snippet-appropriate
+        call_args = mock_instance.snippet_search.call_args
+        assert call_args[1]["fields"] == "snippet.text,snippet.snippetKind"
+
+    def test_snippet_search_text_format(self, runner):
+        """Test snippet-search with text output."""
+        mock_result = {
+            "data": [
+                {
+                    "paper": {
+                        "title": "Snippet Paper",
+                        "authors": [{"name": "Author A"}, {"name": "Author B"}],
+                    },
+                    "score": 0.95,
+                    "snippet": {
+                        "text": "This is a matching snippet.",
+                        "snippetKind": "abstract",
+                    },
+                },
+            ],
+        }
+
+        with patch("asta.papers.snippet_search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.snippet_search.return_value = mock_result
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                ["papers", "snippet-search", "test query", "--format", "text"],
+            )
+
+        assert result.exit_code == 0
+        assert "Snippet Paper" in result.output
+        assert "Author A" in result.output
+        assert "This is a matching snippet." in result.output
+        assert "abstract" in result.output
+
+    def test_snippet_search_custom_fields(self, runner):
+        """Test snippet-search with explicit --fields."""
+        mock_result = {"data": []}
+
+        with patch("asta.papers.snippet_search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.snippet_search.return_value = mock_result
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                [
+                    "papers", "snippet-search", "test query",
+                    "--fields", "snippet.text",
+                ],
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_instance.snippet_search.call_args
+        assert call_args[1]["fields"] == "snippet.text"
+
+    def test_snippet_search_inserted_before(self, runner):
+        """Test snippet-search with --inserted-before."""
+        mock_result = {"data": []}
+
+        with patch("asta.papers.snippet_search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.snippet_search.return_value = mock_result
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                [
+                    "papers", "snippet-search", "test query",
+                    "--inserted-before", "2024-01-01",
+                ],
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_instance.snippet_search.call_args
+        assert call_args[1]["inserted_before"] == "2024-01-01"
+
+    def test_snippet_search_date_filter(self, runner):
+        """Test snippet-search with --date filter."""
+        mock_result = {"data": []}
+
+        with patch("asta.papers.snippet_search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.snippet_search.return_value = mock_result
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                ["papers", "snippet-search", "test query", "--date", "2023-"],
+            )
+
+        assert result.exit_code == 0
+        call_args = mock_instance.snippet_search.call_args
+        assert call_args[1]["publication_date_or_year"] == "2023-"
 
 
 class TestPapersCitations:

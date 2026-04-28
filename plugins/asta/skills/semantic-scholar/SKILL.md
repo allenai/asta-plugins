@@ -25,7 +25,7 @@ This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.14.0
+PLUGIN_VERSION=0.15.0
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi
@@ -63,16 +63,46 @@ Common fields: `title,abstract,authors,year,venue,citationCount,publicationDate,
 ```bash
 asta papers search "transformers attention mechanism"
 
-asta papers search "RLHF" --year 2023- --limit 10
+asta papers search "RLHF" --date 2023- --limit 10
 
 asta papers search "neural networks" --fields title,year,abstract,authors
+
+asta papers search "LLM safety" --date 2024-01-01:2024-12-31
 ```
 
 Options:
 - `--fields`: Comma-separated fields to return
 - `--limit`: Number of results (default 20, max 100)
-- `--year`: Year filter (e.g., `2020`, `2020-2024`, `2020-`)
+- `--date`: Publication date or year filter. Accepts years (`2020`, `2020-2024`, `2020-`) or date ranges (`2024-01-01:2024-12-31`). Maps to the S2 `publicationDateOrYear` parameter.
 - `--format`: Output as `json` or `text`
+
+**asta papers search --full-text** - Search over paper full text (title, abstract, and body) via the S2 snippet/search API. Returns matching text excerpts alongside paper metadata.
+
+```bash
+asta papers search --full-text "in-context learning emerges at scale"
+
+asta papers search --full-text "RLHF reward hacking" --date 2023- --limit 10
+
+asta papers search --full-text "sparse mixture of experts" --fields snippet.text,snippet.snippetKind,snippet.section
+
+# Pin results to papers indexed before a date (useful for reproducible benchmarks)
+asta papers search --full-text "chain-of-thought" --inserted-before 2024-01-01
+```
+
+When `--full-text` is used, the `--fields` option accepts **snippet fields** instead of the standard paper metadata fields:
+
+- `snippet.text` - The matched text excerpt (~500 words)
+- `snippet.snippetKind` - Source type (e.g., title, abstract, body)
+- `snippet.section` - Paper section the snippet came from
+- `snippet.snippetOffset` - Character position data (`start`, `end`)
+- `snippet.annotations` - Markup including reference mentions and sentence boundaries
+
+If `--fields` is omitted with `--full-text`, the default is `snippet.text,snippet.snippetKind`. Paper metadata (corpusId, title, authors, openAccessInfo) and relevance score are always returned regardless of `--fields`.
+
+Additional `--full-text` filter options (passed as query parameters):
+- `--date`: Date/year filter, same as standard search
+- `--limit`: Max results (default 20, max 1000 — higher ceiling than standard search)
+- `--inserted-before`: Only include papers indexed before this date (`YYYY-MM-DD`, `YYYY-MM`, or `YYYY`). Typically used for consistency in benchmarking — pinning a cutoff date ensures the same set of papers is returned across repeated runs, even as new papers are continuously indexed.
 
 ### Get Citations
 
@@ -146,14 +176,15 @@ asta papers search "deep learning" --fields title,year,authors,citationCount
 asta papers search "deep learning" --fields title,abstract,authors,year,venue,citations,references
 ```
 
-### Year Filtering
+### Date Filtering
 
 Restrict to recent papers when appropriate:
 
 ```bash
-asta papers search "RLHF" --year 2023-2024  # 2023-2024
-asta papers search "RLHF" --year 2023-      # 2023 onwards
-asta papers search "RLHF" --year -2020      # Before 2020
+asta papers search "RLHF" --date 2023-2024  # 2023-2024
+asta papers search "RLHF" --date 2023-      # 2023 onwards
+asta papers search "RLHF" --date -2020      # Before 2020
+asta papers search "RLHF" --date 2024-06-01:2024-12-31  # Specific date range
 ```
 
 ### Piping to jq
@@ -220,7 +251,7 @@ Show recent/highly-cited papers from the results.
 
 ```bash
 asta papers search "RLHF reinforcement learning from human feedback" \
-  --year 2023- \
+  --date 2023- \
   --limit 20 \
   --fields title,abstract,year,authors,venue,citationCount \
   --format text
@@ -242,7 +273,11 @@ asta papers author papers 1741101 \
 ### "Find evidence of 'chain-of-thought' reasoning"
 
 ```bash
-# Search for papers discussing this
+# Full-text search finds mentions in paper bodies, not just titles/abstracts
+asta papers search --full-text "chain-of-thought reasoning improves performance" \
+  --limit 15
+
+# Or use standard search for paper-level results
 asta papers search "chain-of-thought reasoning" \
   --fields title,abstract,year,authors \
   --limit 15
@@ -275,6 +310,17 @@ Found [N] papers:
 ...
 ```
 
+**For snippet results** (`--full-text`):
+```
+Found [N] snippet results:
+
+1. **Paper Title** - Author et al.
+   Score: 0.95
+   Snippet (abstract): "...matching text excerpt..."
+2. **Another Paper** - ...
+...
+```
+
 **For citations**:
 ```
 Found [N] papers citing this work:
@@ -291,6 +337,8 @@ Recent citations:
 - Use JSON output when you need to process or filter results
 - Start with small limits, increase if needed
 - Only fetch fields you'll actually use
+- Use `--full-text` when searching for specific claims, methods, or evidence within paper bodies
+- Use standard search (without `--full-text`) for topic-level paper discovery
 - For comprehensive research, suggest Literature Report Generation skill instead
 - Provide Semantic Scholar URLs when helpful (`https://semanticscholar.org/paper/{paperId}`)
 
