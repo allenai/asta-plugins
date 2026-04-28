@@ -146,7 +146,6 @@ class TestPapersSearch:
         assert call_args[1]["publication_date_or_year"] == "2023-"
 
 
-
 class TestPapersSnippetSearch:
     """Test 'asta papers snippet-search' command."""
 
@@ -186,9 +185,7 @@ class TestPapersSnippetSearch:
             mock_instance.snippet_search.return_value = mock_result
             MockClient.return_value = mock_instance
 
-            result = runner.invoke(
-                cli, ["papers", "snippet-search", "test query"]
-            )
+            result = runner.invoke(cli, ["papers", "snippet-search", "test query"])
 
         assert result.exit_code == 0
         mock_instance.snippet_search.assert_called_once()
@@ -243,8 +240,11 @@ class TestPapersSnippetSearch:
             result = runner.invoke(
                 cli,
                 [
-                    "papers", "snippet-search", "test query",
-                    "--fields", "snippet.text",
+                    "papers",
+                    "snippet-search",
+                    "test query",
+                    "--fields",
+                    "snippet.text",
                 ],
             )
 
@@ -264,8 +264,11 @@ class TestPapersSnippetSearch:
             result = runner.invoke(
                 cli,
                 [
-                    "papers", "snippet-search", "test query",
-                    "--inserted-before", "2024-01-01",
+                    "papers",
+                    "snippet-search",
+                    "test query",
+                    "--inserted-before",
+                    "2024-01-01",
                 ],
             )
 
