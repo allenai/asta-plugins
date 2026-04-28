@@ -15,6 +15,7 @@ allowed-tools:
 - User wants to see papers citing a given work
 - User asks about an author's papers
 - User wants a quick keyword search (not a comprehensive report)
+- User wants to find specific claims, methods, or evidence within paper full text (use `snippet-search`)
 - Task requires targeted paper metadata or citation graphs
 
 **Not for comprehensive reports** - use the Literature Report Generation skill for that.
@@ -76,20 +77,22 @@ Options:
 - `--date`: Publication date or year filter. Accepts years (`2020`, `2020-2024`, `2020-`) or date ranges (`2024-01-01:2024-12-31`). Maps to the S2 `publicationDateOrYear` parameter.
 - `--format`: Output as `json` or `text`
 
-**asta papers search --full-text** - Search over paper full text (title, abstract, and body) via the S2 snippet/search API. Returns matching text excerpts alongside paper metadata.
+### Snippet Search
+
+**asta papers snippet-search** - Search over paper full text (title, abstract, and body) via the S2 snippet/search API. Returns matching text excerpts alongside paper metadata.
 
 ```bash
-asta papers search --full-text "in-context learning emerges at scale"
+asta papers snippet-search "in-context learning emerges at scale"
 
-asta papers search --full-text "RLHF reward hacking" --date 2023- --limit 10
+asta papers snippet-search "RLHF reward hacking" --date 2023- --limit 10
 
-asta papers search --full-text "sparse mixture of experts" --fields snippet.text,snippet.snippetKind,snippet.section
+asta papers snippet-search "sparse mixture of experts" --fields snippet.text,snippet.snippetKind,snippet.section
 
 # Pin results to papers indexed before a date (useful for reproducible benchmarks)
-asta papers search --full-text "chain-of-thought" --inserted-before 2024-01-01
+asta papers snippet-search "chain-of-thought" --inserted-before 2024-01-01
 ```
 
-When `--full-text` is used, the `--fields` option accepts **snippet fields** instead of the standard paper metadata fields:
+The `--fields` option accepts **snippet fields**:
 
 - `snippet.text` - The matched text excerpt (~500 words)
 - `snippet.snippetKind` - Source type (e.g., title, abstract, body)
@@ -97,12 +100,14 @@ When `--full-text` is used, the `--fields` option accepts **snippet fields** ins
 - `snippet.snippetOffset` - Character position data (`start`, `end`)
 - `snippet.annotations` - Markup including reference mentions and sentence boundaries
 
-If `--fields` is omitted with `--full-text`, the default is `snippet.text,snippet.snippetKind`. Paper metadata (corpusId, title, authors, openAccessInfo) and relevance score are always returned regardless of `--fields`.
+If `--fields` is omitted, the default is `snippet.text,snippet.snippetKind`. Paper metadata (corpusId, title, authors, openAccessInfo) and relevance score are always returned regardless of `--fields`.
 
-Additional `--full-text` filter options (passed as query parameters):
+Options:
+- `--fields`: Comma-separated snippet fields to return
 - `--date`: Date/year filter, same as standard search
 - `--limit`: Max results (default 20, max 1000 — higher ceiling than standard search)
 - `--inserted-before`: Only include papers indexed before this date (`YYYY-MM-DD`, `YYYY-MM`, or `YYYY`). Typically used for consistency in benchmarking — pinning a cutoff date ensures the same set of papers is returned across repeated runs, even as new papers are continuously indexed.
+- `--format`: Output as `json` or `text`
 
 ### Get Citations
 
@@ -273,8 +278,8 @@ asta papers author papers 1741101 \
 ### "Find evidence of 'chain-of-thought' reasoning"
 
 ```bash
-# Full-text search finds mentions in paper bodies, not just titles/abstracts
-asta papers search --full-text "chain-of-thought reasoning improves performance" \
+# Snippet search finds mentions in paper bodies, not just titles/abstracts
+asta papers snippet-search "chain-of-thought reasoning improves performance" \
   --limit 15
 
 # Or use standard search for paper-level results
@@ -310,7 +315,7 @@ Found [N] papers:
 ...
 ```
 
-**For snippet results** (`--full-text`):
+**For snippet results** (`snippet-search`):
 ```
 Found [N] snippet results:
 
@@ -337,8 +342,8 @@ Recent citations:
 - Use JSON output when you need to process or filter results
 - Start with small limits, increase if needed
 - Only fetch fields you'll actually use
-- Use `--full-text` when searching for specific claims, methods, or evidence within paper bodies
-- Use standard search (without `--full-text`) for topic-level paper discovery
+- Use `snippet-search` when searching for specific claims, methods, or evidence within paper bodies
+- Use `search` for topic-level paper discovery
 - For comprehensive research, suggest Literature Report Generation skill instead
 - Provide Semantic Scholar URLs when helpful (`https://semanticscholar.org/paper/{paperId}`)
 
