@@ -22,8 +22,8 @@ from asta.papers.client import SemanticScholarClient
     help="Maximum number of results (max 100)",
 )
 @click.option(
-    "--year",
-    help="Year filter (e.g., 2020, 2020-2024, 2020-)",
+    "--date",
+    help="Date or year filter (e.g., 2020, 2020-2024, 2024-01-01:2024-12-31, 2020-)",
 )
 @click.option(
     "--format",
@@ -32,53 +32,62 @@ from asta.papers.client import SemanticScholarClient
     default="json",
     help="Output format",
 )
-def search(query: str, fields: str, limit: int, year: str | None, output_format: str):
+def search(
+    query: str,
+    fields: str,
+    limit: int,
+    date: str | None,
+    output_format: str,
+):
     """Search for papers by keyword.
 
     Examples:
 
         asta papers search "transformers attention mechanism"
 
-        asta papers search "RLHF" --year 2023- --limit 10
+        asta papers search "RLHF" --date 2023- --limit 10
 
         asta papers search "neural networks" --fields title,year,abstract
     """
     try:
-        # Create client (loads config and auth token automatically)
         client = SemanticScholarClient()
-        publication_date_range = os.environ.get("ASTA_PUBLICATION_DATE_RANGE")
+        publication_date_or_year = date or os.environ.get("ASTA_PUBLICATION_DATE_RANGE")
+
         result = client.search_papers(
             query,
             fields=fields,
             limit=limit,
-            year=year,
-            publication_date_or_year=publication_date_range,
+            publication_date_or_year=publication_date_or_year,
         )
 
         if output_format == "json":
             click.echo(json.dumps(result, indent=2))
         else:
-            # Text format
-            papers = result.get("data", [])
-            click.echo(f"Found {result.get('total', len(papers))} papers\n")
-
-            for i, paper in enumerate(papers, 1):
-                click.echo(f"{i}. {paper.get('title', 'N/A')}")
-                if authors := paper.get("authors"):
-                    author_names = ", ".join(a["name"] for a in authors[:3])
-                    if len(authors) > 3:
-                        author_names += " et al."
-                    click.echo(f"   Authors: {author_names}")
-                year_venue = []
-                if y := paper.get("year"):
-                    year_venue.append(str(y))
-                if v := paper.get("venue"):
-                    year_venue.append(v)
-                if year_venue:
-                    click.echo(f"   {' - '.join(year_venue)}")
-                if cites := paper.get("citationCount"):
-                    click.echo(f"   Citations: {cites}")
-                click.echo()
+            _format_paper_results(result)
 
     except Exception as e:
         raise click.ClickException(str(e))
+
+
+def _format_paper_results(result: dict) -> None:
+    """Format standard paper search results as text."""
+    papers = result.get("data", [])
+    click.echo(f"Found {result.get('total', len(papers))} papers\n")
+
+    for i, paper in enumerate(papers, 1):
+        click.echo(f"{i}. {paper.get('title', 'N/A')}")
+        if authors := paper.get("authors"):
+            author_names = ", ".join(a["name"] for a in authors[:3])
+            if len(authors) > 3:
+                author_names += " et al."
+            click.echo(f"   Authors: {author_names}")
+        year_venue = []
+        if y := paper.get("year"):
+            year_venue.append(str(y))
+        if v := paper.get("venue"):
+            year_venue.append(v)
+        if year_venue:
+            click.echo(f"   {' - '.join(year_venue)}")
+        if cites := paper.get("citationCount"):
+            click.echo(f"   Citations: {cites}")
+        click.echo()

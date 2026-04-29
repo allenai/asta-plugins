@@ -13,6 +13,7 @@ from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
+from asta.papers.snippet_search import snippet_search
 from asta.pdf_extraction import pdf_extraction
 from asta.theorizer import generate_theories
 
@@ -60,6 +61,7 @@ literature.add_command(find)
 # Register papers subcommands
 papers.add_command(get)
 papers.add_command(search)
+papers.add_command(snippet_search)
 papers.add_command(citations)
 papers.add_command(author)
 

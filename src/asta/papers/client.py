@@ -74,7 +74,6 @@ class SemanticScholarClient:
         query: str,
         fields: str | None = None,
         limit: int = 50,
-        year: str | None = None,
         publication_date_or_year: str | None = None,
     ) -> dict[str, Any]:
         """Search papers by keyword
@@ -83,17 +82,43 @@ class SemanticScholarClient:
             query: Search query
             fields: Comma-separated fields to return
             limit: Max results (default 50, max 100)
-            year: Year filter (e.g., "2020", "2020-2024", "2020-")
-            publication_date_or_year: Date range filter (e.g., ":2024-12-31", "2020:2024")
+            publication_date_or_year: Year or date range filter
+                (e.g., "2020", "2020-2024", "2024-01-01:2024-12-31", "2020-")
         """
         params = {
             "query": query,
             "fields": fields,
             "limit": min(limit, 100),
-            "year": year,
             "publicationDateOrYear": publication_date_or_year,
         }
         return self._request("/graph/v1/paper/search", params)
+
+    def snippet_search(
+        self,
+        query: str,
+        fields: str | None = None,
+        limit: int = 10,
+        publication_date_or_year: str | None = None,
+        inserted_before: str | None = None,
+    ) -> dict[str, Any]:
+        """Search papers with full-text snippet matching
+
+        Args:
+            query: Search query
+            fields: Comma-separated snippet fields (e.g., "snippet.text,snippet.snippetKind")
+            limit: Max results (default 10, max 1000)
+            publication_date_or_year: Year or date range filter
+                (e.g., "2020", "2020-2024", "2024-01-01:2024-12-31", "2020-")
+            inserted_before: Only include papers indexed before this date (YYYY-MM-DD, YYYY-MM, or YYYY)
+        """
+        params = {
+            "query": query,
+            "fields": fields,
+            "limit": min(limit, 1000),
+            "publicationDateOrYear": publication_date_or_year,
+            "insertedBefore": inserted_before,
+        }
+        return self._request("/graph/v1/snippet/search", params)
 
     def get_paper_citations(
         self,
