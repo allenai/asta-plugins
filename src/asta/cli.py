@@ -47,7 +47,7 @@ cli.add_command(auth)
 # Register generate-theories commands
 cli.add_command(generate_theories)
 
-# Register data-analysis commands
+# Register analyze-data commands
 cli.add_command(data_analysis)
 
 # Register artifacts command

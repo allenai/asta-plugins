@@ -1,4 +1,4 @@
-"""Tests for the `asta data-analysis` plugin."""
+"""Tests for the `asta analyze-data` plugin."""
 
 import io
 import json
@@ -17,10 +17,10 @@ def runner():
 
 @pytest.fixture(autouse=True)
 def _stub_auth(monkeypatch):
-    # Skip the real token resolution in every test; _get_api_key is imported
-    # into both analyze.py and upload.py.
-    monkeypatch.setattr("asta.data_analysis.analyze._get_api_key", lambda k: "fake-token")
-    monkeypatch.setattr("asta.data_analysis.upload._get_api_key", lambda k: "fake-token")
+    # Skip the real token resolution in every test; get_access_token is
+    # imported into both analyze.py and upload.py.
+    monkeypatch.setattr("asta.data_analysis.analyze.get_access_token", lambda: "fake-token")
+    monkeypatch.setattr("asta.data_analysis.upload.get_access_token", lambda: "fake-token")
 
 
 class TestAnalyze:
@@ -42,7 +42,7 @@ class TestAnalyze:
 
             result = runner.invoke(
                 cli,
-                ["data-analysis", "analyze", str(f), "--query", "What's interesting?"],
+                ["analyze-data", "analyze", str(f), "--query", "What's interesting?"],
             )
 
         assert result.exit_code == 0, result.output
@@ -75,7 +75,7 @@ class TestAnalyze:
 
             result = runner.invoke(
                 cli,
-                ["data-analysis", "analyze", str(a), str(b), "--query", "Compare"],
+                ["analyze-data", "analyze", str(a), str(b), "--query", "Compare"],
             )
 
         assert result.exit_code == 0, result.output
@@ -86,7 +86,7 @@ class TestAnalyze:
         with patch("asta.data_analysis.analyze.upload_local_file") as up:
             result = runner.invoke(
                 cli,
-                ["data-analysis", "analyze", "/no/such/file.csv", "--query", "q"],
+                ["analyze-data", "analyze", "/no/such/file.csv", "--query", "q"],
             )
         assert result.exit_code != 0
         up.assert_not_called()
@@ -103,7 +103,7 @@ class TestAnalyze:
             )
 
             result = runner.invoke(
-                cli, ["data-analysis", "analyze", str(f), "--query", "q"]
+                cli, ["analyze-data", "analyze", str(f), "--query", "q"]
             )
 
         assert result.exit_code != 0
@@ -113,11 +113,11 @@ class TestAnalyze:
     def test_requires_query(self, runner, tmp_path):
         f = tmp_path / "x.csv"
         f.write_text("x")
-        result = runner.invoke(cli, ["data-analysis", "analyze", str(f)])
+        result = runner.invoke(cli, ["analyze-data", "analyze", str(f)])
         assert result.exit_code != 0
 
     def test_requires_dataset(self, runner):
-        result = runner.invoke(cli, ["data-analysis", "analyze", "--query", "q"])
+        result = runner.invoke(cli, ["analyze-data", "analyze", "--query", "q"])
         assert result.exit_code != 0
 
 
@@ -133,7 +133,7 @@ class TestUpload:
                 "size": 1,
                 "content_type": "text/csv",
             }
-            result = runner.invoke(cli, ["data-analysis", "upload", str(f)])
+            result = runner.invoke(cli, ["analyze-data", "upload", str(f)])
 
         assert result.exit_code == 0, result.output
         assert "s3_uri: s3://bucket/userdata/u/x.csv" in result.output
@@ -150,7 +150,7 @@ class TestUpload:
                 "size": 1,
                 "content_type": "text/csv",
             }
-            result = runner.invoke(cli, ["data-analysis", "upload", str(f), "--json"])
+            result = runner.invoke(cli, ["analyze-data", "upload", str(f), "--json"])
 
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
@@ -162,8 +162,8 @@ class TestUpload:
 
 
 class TestGroupWiring:
-    def test_data_analysis_help_lists_all_subcommands(self, runner):
-        result = runner.invoke(cli, ["data-analysis", "--help"])
+    def test_analyze_data_help_lists_all_subcommands(self, runner):
+        result = runner.invoke(cli, ["analyze-data", "--help"])
         assert result.exit_code == 0
         for sub in ("card", "send-message", "task", "analyze", "upload"):
             assert sub in result.output
@@ -175,7 +175,7 @@ class TestConfig:
 
         cfg = get_api_config("data_analysis")
         assert "base_url" in cfg
-        assert cfg["base_url"].endswith("/api/data-analysis") or cfg["base_url"].startswith("http")
+        assert cfg["base_url"].endswith("/api/analyze-data") or cfg["base_url"].startswith("http")
 
 
 class TestUploadHelper:

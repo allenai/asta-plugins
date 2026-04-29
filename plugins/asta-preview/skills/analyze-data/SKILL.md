@@ -6,7 +6,7 @@ metadata:
 allowed-tools:
   - Bash(asta auth login)
   - Bash(asta auth status)
-  - Bash(asta data-analysis *)
+  - Bash(asta analyze-data *)
   - Bash(asta artifacts *)
   - Bash(asta documents *)
   - Bash(open *)
@@ -66,13 +66,13 @@ Fold the answers back into the query string.
 ## Step 4 — Submit
 
 ```bash
-asta data-analysis analyze <local-path-or-paths> --query "<confirmed question>"
+asta analyze-data analyze <local-path-or-paths> --query "<confirmed question>"
 ```
 
 Multiple datasets are fine — pass each as a positional arg:
 
 ```bash
-asta data-analysis analyze ./sales.csv ./regions.csv \
+asta analyze-data analyze ./sales.csv ./regions.csv \
   --query "How do regional demographics correlate with sales performance?"
 ```
 
@@ -86,11 +86,11 @@ Don't foreground-poll in a loop (session blocks) and don't start individual `sle
 TID="<TASK_ID>"
 (
   while true; do
-    resp=$(asta data-analysis task "$TID" 2>&1)
+    resp=$(asta analyze-data task "$TID" 2>&1)
     state=$(printf '%s' "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',{}).get('state','unknown'))" 2>/dev/null || echo parse_error)
     echo "[$(date +%H:%M:%S)] state=$state"
     case "$state" in
-      completed|failed|input-required) printf '%s' "$resp" > "/tmp/data-analysis-$TID.json"; exit 0 ;;
+      completed|failed|input-required) printf '%s' "$resp" > "/tmp/analyze-data-$TID.json"; exit 0 ;;
       parse_error) exit 1 ;;
     esac
     sleep 60
@@ -98,7 +98,7 @@ TID="<TASK_ID>"
 )
 ```
 
-Run with `run_in_background: true`. When the completion notification fires, read `/tmp/data-analysis-$TID.json` for the final payload.
+Run with `run_in_background: true`. When the completion notification fires, read `/tmp/analyze-data-$TID.json` for the final payload.
 
 While it's running, do not proactively check. Work on other things or wait — the notification is authoritative. If the user asks for a status check before the notification, only then tail the background task's output file.
 
@@ -106,13 +106,13 @@ Terminal states:
 
 - `completed` → Step 6
 - `failed` → report `status.message` and stop
-- `input-required` → relay to user, then `asta data-analysis send-message --task-id <ID> '<reply>'` and re-kick the polling loop
+- `input-required` → relay to user, then `asta analyze-data send-message --task-id <ID> '<reply>'` and re-kick the polling loop
 
 Runtime: highly variable (simple EDAs finish in a few minutes; multi-step modeling runs can take 20–40 min). Don't hard-fail before ~2 hours.
 
 ## Step 6 — Export and index
 
-Hand off to the **Asta Artifacts** skill to export the task output (tables, plots, the notebook, any written analysis) and register each artifact with asta-documents. Pass `data-analysis` as the invoking skill and a slug derived from the analytical question; Asta Artifacts handles the path convention, manifest, and `index.yaml`.
+Hand off to the **Asta Artifacts** skill to export the task output (tables, plots, the notebook, any written analysis) and register each artifact with asta-documents. Pass `analyze-data` as the invoking skill and a slug derived from the analytical question; Asta Artifacts handles the path convention, manifest, and `index.yaml`.
 
 ## Step 7 — Summarize for the user
 
@@ -120,10 +120,10 @@ Present, in this order:
 
 1. **Indexing + exploration paths** — one short block naming both ways to browse. Always include BOTH (the skill path for semantic search, the filesystem path for direct reading):
 
-   > Indexed N artifacts in `.asta/data-analysis/<slug>/index.yaml`.
-   > Explore via `asta documents search --summary='<concept>' --root=.asta/data-analysis/<slug>` or open the directory directly: `open <absolute-path-to-slug-dir>`
+   > Indexed N artifacts in `.asta/analyze-data/<slug>/index.yaml`.
+   > Explore via `asta documents search --summary='<concept>' --root=.asta/analyze-data/<slug>` or open the directory directly: `open <absolute-path-to-slug-dir>`
 
-   Use the **absolute** path (e.g. `/Users/.../project/.asta/data-analysis/2026-04-23-…/`). Pick `<concept>` from a term central to the analysis (concrete, not generic — e.g. a column name, a model type).
+   Use the **absolute** path (e.g. `/Users/.../project/.asta/analyze-data/2026-04-23-…/`). Pick `<concept>` from a term central to the analysis (concrete, not generic — e.g. a column name, a model type).
 
 2. **One-paragraph synthesis** — 2–4 sentences written fresh for this run. What's the headline finding? What did the data say vs. what did the user expect? Surface surprises, caveats, and whether the analysis answered the original question. This is discretionary — don't template it, read the output and synthesize.
 

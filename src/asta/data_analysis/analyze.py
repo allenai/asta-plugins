@@ -1,4 +1,4 @@
-"""`asta data-analysis analyze` — one-step upload + submit."""
+"""`asta analyze-data analyze` — one-step upload + submit."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import sys
 
 import click
 from asta_agent.a2a.client import A2AClient, A2AError
-from asta_agent.a2a.commands import _get_api_key
 
 from asta.data_analysis._client import upload_local_file
+from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config
 
 
@@ -27,11 +27,6 @@ def _dv_url() -> str:
 )
 @click.option("--query", required=True, help="The research question to analyze.")
 @click.option(
-    "--api-key",
-    default=None,
-    help="Bearer token (falls back to ASTA_A2A_API_KEY or `asta auth`).",
-)
-@click.option(
     "--json",
     "as_json",
     is_flag=True,
@@ -41,7 +36,6 @@ def _dv_url() -> str:
 def analyze(
     datasets: tuple[str, ...],
     query: str,
-    api_key: str | None,
     as_json: bool,
 ) -> None:
     """Upload DATASETS and run a DataVoyager analysis.
@@ -50,12 +44,14 @@ def analyze(
     workspace and then referenced by the analysis. The CLI handles the S3
     hand-off — you never need to mint attachment tags manually.
 
+    Auth: run `asta auth login` first; the gateway authorizes the request.
+
     Example:
 
-        asta data-analysis analyze ./titanic.csv \\
+        asta analyze-data analyze ./titanic.csv \\
             --query "What differs between survivors and non-survivors?"
     """
-    token = _get_api_key(api_key)
+    token = get_access_token()
     base_url = _dv_url()
 
     s3_uris: list[str] = []
@@ -101,4 +97,4 @@ def analyze(
     click.echo(f"task_id: {task_id}")
     if state:
         click.echo(f"state:   {state}")
-    click.echo("poll with: asta data-analysis task " + str(task_id))
+    click.echo("poll with: asta analyze-data task " + str(task_id))

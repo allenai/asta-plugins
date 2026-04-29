@@ -1,4 +1,4 @@
-"""`asta data-analysis upload` — standalone upload helper.
+"""`asta analyze-data upload` — standalone upload helper.
 
 Most users should prefer `analyze`, which does the upload implicitly. This
 command exists for scripting (emit a URI without submitting an analysis)
@@ -12,9 +12,9 @@ import json
 import sys
 
 import click
-from asta_agent.a2a.commands import _get_api_key
 
 from asta.data_analysis._client import upload_local_file
+from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config
 
 
@@ -27,11 +27,6 @@ def _dv_url() -> str:
     "file",
     type=click.Path(exists=True, dir_okay=False, readable=True),
 )
-@click.option(
-    "--api-key",
-    default=None,
-    help="Bearer token (falls back to ASTA_A2A_API_KEY or `asta auth`).",
-)
 @click.option("--filename", default=None, help="Override the uploaded object's name.")
 @click.option(
     "--json",
@@ -42,12 +37,14 @@ def _dv_url() -> str:
 )
 def upload(
     file: str,
-    api_key: str | None,
     filename: str | None,
     as_json: bool,
 ) -> None:
-    """Upload a local FILE into your DataVoyager workspace."""
-    token = _get_api_key(api_key)
+    """Upload a local FILE into your DataVoyager workspace.
+
+    Auth: run `asta auth login` first; the gateway authorizes the request.
+    """
+    token = get_access_token()
     base_url = _dv_url()
 
     try:
