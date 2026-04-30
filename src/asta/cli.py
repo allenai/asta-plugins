@@ -4,6 +4,7 @@ import click
 from asta_artifact.cli import main as artifacts
 
 from asta import __version__
+from asta.auto_exp_designer import auto_exp_designer
 from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
 from asta.documents import documents
@@ -45,6 +46,9 @@ cli.add_command(auth)
 
 # Register generate-theories commands
 cli.add_command(generate_theories)
+
+# Register auto-exp-designer commands
+cli.add_command(auto_exp_designer)
 
 # Register artifacts command
 cli.add_command(artifacts, name="artifacts")
