@@ -17,3 +17,5 @@ skills-lock.json
 # IDEs
 .idea/
 *.iml
+
+.asta
