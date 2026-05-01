@@ -19,7 +19,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "keyring>=24.3.0",
     "platformdirs>=4.1.0",
-    "asta-agent[a2a-client]==1.0.6",
+    "asta-agent[a2a-client]>=1.0.7",
     "asta-artifact>=1.0.6",
 ]
 
@@ -32,8 +32,6 @@ test = [
     "pytest-asyncio>=0.24",
     "requests>=2.31",
 ]
-
-[tool.uv.sources]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asta"]
