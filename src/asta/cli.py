@@ -4,9 +4,9 @@ import click
 from asta_artifact.cli import main as artifacts
 
 from asta import __version__
+from asta.analyze_data import analyze_data
 from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
-from asta.data_analysis import data_analysis
 from asta.documents import documents
 from asta.experiment import experiment
 from asta.literature.find import find
@@ -48,7 +48,7 @@ cli.add_command(auth)
 cli.add_command(generate_theories)
 
 # Register analyze-data commands
-cli.add_command(data_analysis)
+cli.add_command(analyze_data)
 
 # Register artifacts command
 cli.add_command(artifacts, name="artifacts")

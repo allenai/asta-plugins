@@ -51,7 +51,7 @@ Wait for the user's response. Paths:
 2. **Natural-language edit** → update the question, re-show the same prompt.
 3. **"Interview" / "refine"** → Step 3 *(AskUserQuestion required; if unavailable, ask in chat instead)*.
 
-**Never** ask the user to pre-upload the dataset or paste an `<astaattachment>` tag. The `analyze` command handles the upload automatically — just pass the local path.
+**Never** ask the user to pre-upload the dataset. The skill handles the upload — see Step 4 — and the user just supplies the local file path.
 
 ## Step 3 — Optional interview (only when requested)
 
@@ -65,18 +65,42 @@ Fold the answers back into the query string.
 
 ## Step 4 — Submit
 
-```bash
-asta analyze-data analyze <local-path-or-paths> --query "<confirmed question>"
-```
-
-Multiple datasets are fine — pass each as a positional arg:
+The flow is two CLI calls under one **session UUID** (`$CTX`): `upload` writes the files to S3 under `context/$CTX/` and prints a structured JSON manifest; `send-message` submits the analysis with `--context-id $CTX` so the agent and any later resumption land in the same workspace.
 
 ```bash
-asta analyze-data analyze ./sales.csv ./regions.csv \
-  --query "How do regional demographics correlate with sales performance?"
+CTX=$(python3 -c "import uuid; print(uuid.uuid4())")
+
+# Upload — emits {"context_id": ..., "datasets": [{s3_uri, filename, ...}, ...]}
+asta analyze-data upload --context-id "$CTX" ./sales.csv ./regions.csv \
+  > "/tmp/analyze-data-$CTX-uploads.json"
+
+# Build the agent payload from the upload manifest, then submit.
+S3_URIS=$(python3 -c "
+import json,sys
+m=json.load(open(sys.argv[1]))
+print(json.dumps([d['s3_uri'] for d in m['datasets']]))
+" "/tmp/analyze-data-$CTX-uploads.json")
+
+asta analyze-data send-message --context-id "$CTX" "$(python3 -c "
+import json, os, sys
+tool_request = {
+    'query': sys.argv[1],
+    'datasets': json.loads(sys.argv[2]),
+}
+# Pick the downstream modal app. Single dv-a2a-server fans out per-request to
+# multiple modal envs (dv-core.rc, dv-core.prod, dv-core.<user>, ...). When
+# unset, dv-core's ToolRequest field default applies (currently dv-core.rc).
+if app := os.environ.get('ASTA_DV_MODAL_APP'):
+    tool_request['modal_app_name'] = app
+print(json.dumps({'kind': 'analyze-data', 'data': {'tool_request': tool_request}}))
+" "<confirmed question>" "$S3_URIS")"
 ```
 
-The CLI uploads each local file into the caller's workspace (via presigned S3 PUT), then submits the analysis. Capture the printed `task_id`.
+Capture `id` (task ID) and the echoed `contextId` from the response. The response's `contextId` will equal `$CTX` — keep both for resumption (Step 5 input-required, or follow-up runs that attach more files to the same session).
+
+**Modal-app routing.** A single dv-a2a-server fans out per-request to one of several deployed DataVoyager modal apps (`dv-core.rc`, `dv-core.prod`, personal envs like `dv-core.<user>`). The skill omits `modal_app_name` unless `ASTA_DV_MODAL_APP` is set, so the field default in dv-core's `ToolRequest` schema applies (currently `dv-core.rc`). Set `ASTA_DV_MODAL_APP=dv-core.<user>` in your shell rc for personal-env testing, or `ASTA_DV_MODAL_APP=dv-core.prod` to route this skill against the prod backend.
+
+**Resumability.** `$CTX` identifies the DataVoyager session. To attach more files later, run `upload --context-id $CTX <new-files>` (the new objects land alongside the existing ones under `context/$CTX/`) and then `send-message --context-id $CTX --task-id <existing> '<reply>'`. The user can also start a fresh session for the same datasets by minting a new `$CTX`; that gives a clean workspace and avoids cross-session collisions because S3 keys are namespaced per context.
 
 ## Step 5 — Poll
 
@@ -106,7 +130,7 @@ Terminal states:
 
 - `completed` → Step 6
 - `failed` → report `status.message` and stop
-- `input-required` → relay to user, then `asta analyze-data send-message --task-id <ID> '<reply>'` and re-kick the polling loop
+- `input-required` → relay to user, then `asta analyze-data send-message --task-id <ID> --context-id "$CTX" '<reply>'` and re-kick the polling loop
 
 Runtime: highly variable (simple EDAs finish in a few minutes; multi-step modeling runs can take 20–40 min). Don't hard-fail before ~2 hours.
 
