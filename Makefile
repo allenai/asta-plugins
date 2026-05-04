@@ -135,30 +135,11 @@ docker:
 
 # Build and smoke-test Docker image
 docker-test: docker
-	docker run --rm asta:latest sh -c '\
-		set -e; \
-		asta --version; \
-		asta --help >/dev/null; \
-		asta literature --help >/dev/null; \
-		asta literature find --help >/dev/null; \
-		asta auth login --help >/dev/null; \
-		asta auth print-token --help >/dev/null; \
-		quarto --version; \
-		test -d /opt/asta-plugins/skills; \
-		count=$$(find /opt/asta-plugins/skills -mindepth 1 -maxdepth 1 -type d | wc -l); \
-		test "$$count" -ge 2; \
-		for d in /opt/asta-plugins/skills/*/; do \
-			test -f "$$d/SKILL.md" || { echo "Missing SKILL.md in $$d"; exit 1; }; \
-		done; \
-		test -f /opt/asta-plugins/.claude-plugin/marketplace.json; \
-		echo "All smoke tests passed"'
+	docker run --rm --entrypoint bash asta:latest /opt/asta-plugins/scripts/docker-smoke-test.sh
 
 # Test skill discovery in Docker image (npx skills add)
 docker-test-skills: docker
-	docker run --rm asta:latest sh -c '\
-		set -e; \
-		npx --yes skills@latest add /opt/asta-plugins --list; \
-		npx --yes skills@latest add /opt/asta-plugins --list --all'
+	docker run --rm --entrypoint bash asta:latest /opt/asta-plugins/scripts/docker-skill-discovery-test.sh
 
 # Start container with Claude Code + asta skills
 docker-claude-asta: docker
