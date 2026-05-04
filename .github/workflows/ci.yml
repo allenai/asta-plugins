@@ -26,10 +26,8 @@ jobs:
         with:
           scandir: './scripts ./hooks'
 
-      - name: Verify generated plugins are up to date
-        run: |
-          ./scripts/build-plugins.sh
-          git diff --exit-code plugins/ || { echo "plugins/ is out of date. Run 'make build-plugins' and commit."; exit 1; }
+      - name: Check plugins
+        run: make check-plugins
 
   test:
     runs-on: ubuntu-latest
@@ -56,7 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build and smoke-test image
+
+      - name: Smoke-test image
         run: make docker-test
+
       - name: Test skill discovery
         run: make docker-test-skills
