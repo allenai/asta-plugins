@@ -86,19 +86,14 @@ import json, os, sys
 tool_request = {
     'query': sys.argv[1],
     'datasets': json.loads(sys.argv[2]),
+    # ASTA_DV_MODAL_APP overrides for personal-env / rc testing.
+    'modal_app_name': os.environ.get('ASTA_DV_MODAL_APP', 'dv-core.prod'),
 }
-# Pick the downstream modal app. Single dv-a2a-server fans out per-request to
-# multiple modal envs (dv-core.rc, dv-core.prod, dv-core.<user>, ...). When
-# unset, dv-core's ToolRequest field default applies (currently dv-core.rc).
-if app := os.environ.get('ASTA_DV_MODAL_APP'):
-    tool_request['modal_app_name'] = app
 print(json.dumps({'kind': 'analyze-data', 'data': {'tool_request': tool_request}}))
 " "<confirmed question>" "$S3_URIS")"
 ```
 
 Capture `id` (task ID) and the echoed `contextId` from the response. The response's `contextId` will equal `$CTX` — keep both for resumption (Step 5 input-required, or follow-up runs that attach more files to the same session).
-
-**Modal-app routing.** A single dv-a2a-server fans out per-request to one of several deployed DataVoyager modal apps (`dv-core.rc`, `dv-core.prod`, personal envs like `dv-core.<user>`). The skill omits `modal_app_name` unless `ASTA_DV_MODAL_APP` is set, so the field default in dv-core's `ToolRequest` schema applies (currently `dv-core.rc`). Set `ASTA_DV_MODAL_APP=dv-core.<user>` in your shell rc for personal-env testing, or `ASTA_DV_MODAL_APP=dv-core.prod` to route this skill against the prod backend.
 
 **Resumability.** `$CTX` identifies the DataVoyager session. To attach more files later, run `upload --context-id $CTX <new-files>` (the new objects land alongside the existing ones under `context/$CTX/`) and then `send-message --context-id $CTX --task-id <existing> '<reply>'`. The user can also start a fresh session for the same datasets by minting a new `$CTX`; that gives a clean workspace and avoids cross-session collisions because S3 keys are namespaced per context.
 
