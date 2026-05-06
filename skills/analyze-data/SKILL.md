@@ -104,27 +104,15 @@ Capture `id` (task ID) and the echoed `contextId` from the response. The respons
 
 ## Step 5 — Poll
 
-Don't foreground-poll in a loop (session blocks) and don't start individual `sleep 60`-then-check turns (harness blocks long leading sleeps). Instead, kick off **one** background polling loop that exits on a terminal state — the harness will notify you when it finishes.
+Don't foreground-poll in a loop (session blocks) and don't start individual `sleep 60`-then-check turns (harness blocks long leading sleeps). Instead, run the `poll` subcommand backgrounded — it exits on a terminal state and the harness will notify you when it finishes.
 
 ```bash
-TID="<TASK_ID>"
-(
-  while true; do
-    resp=$(asta analyze-data task "$TID" 2>&1)
-    state=$(printf '%s' "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',{}).get('state','unknown'))" 2>/dev/null || echo parse_error)
-    echo "[$(date +%H:%M:%S)] state=$state"
-    case "$state" in
-      completed|failed|input-required) printf '%s' "$resp" > "/tmp/analyze-data-$TID.json"; exit 0 ;;
-      parse_error) exit 1 ;;
-    esac
-    sleep 60
-  done
-)
+asta analyze-data poll "$TID" --output "/tmp/analyze-data-$TID.json"
 ```
 
-Run with `run_in_background: true`. When the completion notification fires, read `/tmp/analyze-data-$TID.json` for the final payload.
+Run with `run_in_background: true`. Status ticks go to stderr; the final Task JSON is written to `--output`. When the completion notification fires, read `/tmp/analyze-data-$TID.json` for the final payload.
 
-While it's running, do not proactively check. Work on other things or wait — the notification is authoritative. If the user asks for a status check before the notification, only then tail the background task's output file.
+While it's running, do not proactively check. Work on other things or wait — the notification is authoritative. If the user asks for a status check before the notification, only then tail the background task's stderr.
 
 Terminal states:
 
