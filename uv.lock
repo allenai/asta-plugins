@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "asta"
-version = "0.15.0"
+version = "0.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "asta-agent", extra = ["a2a-client"] },
@@ -87,7 +87,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asta-agent", extras = ["a2a-client"], specifier = ">=1.0.3" },
+    { name = "asta-agent", extras = ["a2a-client"], specifier = ">=1.0.7" },
     { name = "asta-artifact", specifier = ">=1.0.6" },
     { name = "click", specifier = ">=8.0" },
     { name = "httpx", specifier = ">=0.26.0" },
@@ -106,7 +106,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "asta-agent"
-version = "1.0.5"
+version = "1.0.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
@@ -114,9 +114,9 @@ dependencies = [
     { name = "boto3" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/8b/728962ef39b7ed1500cd68cef78210b257a190fc1623267e5f70f5a607da/asta_agent-1.0.5.tar.gz", hash = "sha256:e78ef1bd00c3e53ad5eab328630edd8d8c854fd6f3b6886a74528d8d3fea2782", size = 21678, upload-time = "2026-04-24T21:04:29.036Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/44/670edfdf3bcdce50ffecd0da918797bc868e7ff7f170a11b692e8db2d77a/asta_agent-1.0.8.tar.gz", hash = "sha256:b31b5802fefa0d6f5e666ff95749ce73a6d8c631ae6d232d04d582136410bd11", size = 24007, upload-time = "2026-05-05T22:27:03.203Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/53/9cafb295392bc81ab5f31ded4a7cf0837813964e3753ad3e7851cebd4fdc/asta_agent-1.0.5-py3-none-any.whl", hash = "sha256:9afc485732ddf39b92bae8efb87a820f58043f4a916aea764424e664fa8445e5", size = 21982, upload-time = "2026-04-24T21:04:28.14Z" },
+    { url = "https://files.pythonhosted.org/packages/09/00/88f905daf1cddb92ea7126ec755d1370d98acdc65081611b3ecb91243b0c/asta_agent-1.0.8-py3-none-any.whl", hash = "sha256:d5c414fb1fe7c2828a973d1196a6dacafca06fd668ea27de46a66e717ea10255", size = 24550, upload-time = "2026-05-05T22:27:02.007Z" },
 ]
 
 [package.optional-dependencies]
