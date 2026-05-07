@@ -43,22 +43,23 @@ not by the complexity of any single query:
   literature-centered, prefer `interactive`.
 
 **Continuing a conversation — recommended pattern (`--thread-dir`):** for any
-multi-turn search session, pick a directory like `.asta/literature/threads/<topic>/`
-and pass it on every turn. The CLI auto-resumes the conversation, writes one
-artifact per turn with a `.NNN` index suffix, and maintains a `DIR/index.json`
-that records turn order, queries, narratives, paper counts, and the `thread_id`.
-Use a meaningful `-o` basename per turn — the CLI inserts the turn index for you.
+multi-turn search session, pick a directory named `.asta/literature/threads/<YYYY-MM-DD>-<slug>/`
+(date-prefixed slug, matching the convention used by other agents) and pass it
+on every turn. The CLI auto-resumes the conversation, writes one artifact per
+turn with a `.NNN` index suffix, and maintains a `DIR/index.json` that records
+turn order, queries, narratives, paper counts, and the `thread_id`. Use a
+meaningful `-o` basename per turn — the CLI inserts the turn index for you.
 
 ```bash
 # Turn 1 — picks a thread dir; CLI creates DIR/index.json and DIR/transformer-survey.001.json
 asta literature interactive "transformer architecture survey" \
-  --thread-dir .asta/literature/threads/transformers \
+  --thread-dir .asta/literature/threads/2026-05-04-transformer-architectures \
   -o transformer-survey.json
 
-# Turn 2 — same dir, no --thread-id needed (resumed from index.json).
+# Turn 2 — same dir; thread_id auto-resumes from index.json.
 # Writes DIR/narrow-2023.002.json and appends a turn entry to DIR/index.json.
 asta literature interactive "narrow to 2023+ long-context surveys" \
-  --thread-dir .asta/literature/threads/transformers \
+  --thread-dir .asta/literature/threads/2026-05-04-transformer-architectures \
   -o narrow-2023.json
 ```
 
@@ -67,10 +68,9 @@ Start a fresh conversation when the topic shifts substantially: pick a new
 `DIR/index.json` for the turn list, then open the per-turn JSON files referenced
 by `turns[].file`.
 
-**Lower-level alternative (`--thread-id`):** if you don't want a thread dir, the
-first `interactive` call prints `thread_id: <id>` to stderr (also embedded in
-the JSON output's top-level `thread_id` field). Pass that id back as
-`--thread-id <id>` on the next call to continue.
+Without `--thread-dir`, an invocation is a one-shot turn that doesn't continue
+any prior conversation. Use that for ad-hoc single queries; for any multi-turn
+session, always pass `--thread-dir`.
 
 Output deltas vs `find`: the `interactive` JSON adds `thread_id` and `narrative`
 (the agent's terminal response text). It does not currently populate
