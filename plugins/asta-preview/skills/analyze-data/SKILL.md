@@ -65,37 +65,18 @@ Fold the answers back into the query string.
 
 ## Step 4 — Submit
 
-The flow is two CLI calls under one **session UUID** (`$CTX`): `upload` writes the files to S3 under `context/$CTX/` and prints a structured JSON manifest; `send-message` submits the analysis with `--context-id $CTX` so the agent and any later resumption land in the same workspace.
+A single `submit` call mints a session UUID, uploads the file(s) under `context/<uuid>/`, and starts the analysis. The response carries the task ID (`id`) and the session UUID (`contextId`); capture both for polling and any follow-ups.
 
 ```bash
-CTX=$(python3 -c "import uuid; print(uuid.uuid4())")
+asta analyze-data submit \
+  --output "/tmp/analyze-data-$$.json" \
+  "<confirmed question>" ./sales.csv ./regions.csv
 
-# Upload — emits {"context_id": ..., "datasets": [{s3_uri, filename, ...}, ...]}
-asta analyze-data upload --context-id "$CTX" ./sales.csv ./regions.csv \
-  > "/tmp/analyze-data-$CTX-uploads.json"
-
-# Build the agent payload from the upload manifest, then submit.
-S3_URIS=$(python3 -c "
-import json,sys
-m=json.load(open(sys.argv[1]))
-print(json.dumps([d['s3_uri'] for d in m['datasets']]))
-" "/tmp/analyze-data-$CTX-uploads.json")
-
-asta analyze-data send-message --context-id "$CTX" "$(python3 -c "
-import json, os, sys
-tool_request = {
-    'query': sys.argv[1],
-    'datasets': json.loads(sys.argv[2]),
-    # ASTA_DV_MODAL_APP overrides for personal-env / rc testing.
-    'modal_app_name': os.environ.get('ASTA_DV_MODAL_APP', 'dv-core.prod'),
-}
-print(json.dumps({'kind': 'analyze-data', 'data': {'tool_request': tool_request}}))
-" "<confirmed question>" "$S3_URIS")"
+TID=$(jq -r .id /tmp/analyze-data-$$.json)
+CTX=$(jq -r .contextId /tmp/analyze-data-$$.json)
 ```
 
-Capture `id` (task ID) and the echoed `contextId` from the response. The response's `contextId` will equal `$CTX` — keep both for resumption (Step 5 input-required, or follow-up runs that attach more files to the same session).
-
-**Resumability.** `$CTX` identifies the DataVoyager session. To attach more files later, run `upload --context-id $CTX <new-files>` (the new objects land alongside the existing ones under `context/$CTX/`) and then `send-message --context-id $CTX --task-id <existing> '<reply>'`. The user can also start a fresh session for the same datasets by minting a new `$CTX`; that gives a clean workspace and avoids cross-session collisions because S3 keys are namespaced per context.
+**Resumability.** `$CTX` identifies the DataVoyager session. To ask a follow-up against the same workspace, run `asta analyze-data submit --context-id "$CTX" '<follow-up question>' [<new-files>...]`. New files (if any) attach to the existing context; if no files are passed, the agent reuses what's already there. To start a clean session over the same datasets, omit `--context-id` and pass the files again.
 
 ## Step 5 — Poll
 

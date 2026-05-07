@@ -1,4 +1,4 @@
-"""`asta analyze-data upload` — push local files into the workspace.
+"""Internal helpers for staging local files into the DataVoyager workspace.
 
 Two-step presigned-URL flow, stdlib only (no new deps). Pattern reference:
 asta/autodiscovery/client.py:102-142.
@@ -8,8 +8,8 @@ The server is authoritative for the final S3 key — it constructs
 caller's JWT and the supplied ``context_id``. We forward whatever ``s3_uri``
 the presign response contains rather than recomputing it client-side.
 
-Emits structured JSON describing the uploaded objects so the calling skill
-can fold the resulting ``s3_uri`` list into a ``send-message`` payload.
+Called by ``submit`` to upload caller-supplied files before issuing the
+analysis request; not exposed as a standalone Click command.
 """
 
 from __future__ import annotations
@@ -21,54 +21,9 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-import click
-
-from asta.analyze_data._url import dv_url
-from asta.utils.auth_helper import get_access_token
-
 _MAX_BYTES = 5 * 1024 * 1024 * 1024  # 5 GiB — single-PUT limit
 _PUT_TIMEOUT = 600  # seconds, matches autodiscovery/client.py
 _GET_TIMEOUT = 30
-
-
-@click.command()
-@click.argument(
-    "files",
-    nargs=-1,
-    required=True,
-    type=click.Path(exists=True, dir_okay=False, readable=True),
-)
-@click.option(
-    "--context-id",
-    required=True,
-    help="Session UUID. Files are stored under context/<context-id>/ and "
-    "can be referenced by passing the same --context-id to send-message.",
-)
-def upload(
-    files: tuple[str, ...],
-    context_id: str,
-) -> None:
-    """Upload one or more local FILES into the caller's DataVoyager workspace.
-
-    Auth: run `asta auth login` first; the gateway authorizes the request.
-
-    Output is a JSON object: {"context_id": ..., "datasets": [
-    {"s3_uri": ..., "filename": ..., "size": ..., "content_type": ...}, ...
-    ]}, suitable for piping into a ``send-message`` payload builder.
-    """
-    token = get_access_token()
-    base_url = dv_url()
-
-    datasets: list[dict[str, object]] = []
-    for path in files:
-        try:
-            result = upload_local_file(base_url, token, path, context_id=context_id)
-        except Exception as e:
-            raise click.ClickException(f"Failed to upload {path}: {e}") from e
-        datasets.append(result)
-        click.echo(f"uploaded: {path} -> {result['s3_uri']}", err=True)
-
-    click.echo(json.dumps({"context_id": context_id, "datasets": datasets}, indent=2))
 
 
 def upload_local_file(

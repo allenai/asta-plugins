@@ -13,10 +13,10 @@ from datetime import datetime
 
 import click
 from a2a.types import Task, TaskState
+from asta_agent.a2a.client import A2AClient, A2AError
 
 from asta.analyze_data._url import dv_url
 from asta.utils.auth_helper import get_access_token
-from asta_agent.a2a.client import A2AClient, A2AError
 
 _TERMINAL_STATES = {
     TaskState.completed,

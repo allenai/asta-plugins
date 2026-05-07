@@ -19,124 +19,233 @@ def runner():
 @pytest.fixture(autouse=True)
 def _stub_auth(monkeypatch):
     monkeypatch.setattr(
-        "asta.analyze_data.upload.get_access_token", lambda: "fake-token"
+        "asta.analyze_data.submit.get_access_token", lambda: "fake-token"
     )
 
 
-class TestUpload:
-    def test_single_file_emits_structured_json(self, runner, tmp_path):
-        f = tmp_path / "titanic.csv"
-        f.write_text("a,b\n1,2\n")
+def _stub_uploaded(filename: str, ctx: str = CTX) -> dict:
+    return {
+        "s3_uri": f"s3://bucket/userdata/u/context/{ctx}/{filename}",
+        "filename": filename,
+        "size": 10,
+        "content_type": "text/csv",
+    }
 
-        with patch("asta.analyze_data.upload.upload_local_file") as up:
-            up.return_value = {
-                "s3_uri": f"s3://bucket/userdata/u/context/{CTX}/titanic.csv",
-                "filename": "titanic.csv",
-                "size": 10,
-                "content_type": "text/csv",
-            }
-            result = runner.invoke(
-                cli,
-                ["analyze-data", "upload", "--context-id", CTX, str(f)],
-            )
 
-        assert result.exit_code == 0, result.output
-        up.assert_called_once()
-        # Helper should receive the context_id by keyword.
-        assert up.call_args.kwargs["context_id"] == CTX
+def _stub_send_response(ctx: str = CTX, task_id: str = "task-abc") -> dict:
+    return {"id": task_id, "contextId": ctx, "status": {"state": "submitted"}}
 
-        payload = json.loads(result.stdout)
-        assert payload["context_id"] == CTX
-        assert payload["datasets"] == [
-            {
-                "s3_uri": f"s3://bucket/userdata/u/context/{CTX}/titanic.csv",
-                "filename": "titanic.csv",
-                "size": 10,
-                "content_type": "text/csv",
-            }
-        ]
-        # Old <astaattachment> tag should be gone — the structured JSON
-        # is now the only contract.
-        assert "astaattachment" not in result.output
 
-    def test_multiple_files_preserve_order(self, runner, tmp_path):
-        a = tmp_path / "a.csv"
-        b = tmp_path / "b.csv"
-        a.write_text("x")
-        b.write_text("y")
+class TestSubmitNewSession:
+    """`submit` without --context-id mints a UUID and requires ≥1 file."""
 
-        with patch("asta.analyze_data.upload.upload_local_file") as up:
+    def test_uploads_files_and_sends_envelope(self, runner, tmp_path, monkeypatch):
+        monkeypatch.delenv("ASTA_DV_MODAL_APP", raising=False)
+        f1 = tmp_path / "sales.csv"
+        f2 = tmp_path / "regions.csv"
+        f1.write_text("a,b\n1,2\n")
+        f2.write_text("x,y\n3,4\n")
+
+        with (
+            patch("asta.analyze_data.submit.upload_local_file") as up,
+            patch("asta.analyze_data.submit.A2AClient") as Client,
+        ):
             up.side_effect = [
-                {
-                    "s3_uri": f"s3://b/u/context/{CTX}/a.csv",
-                    "filename": "a.csv",
-                    "size": 1,
-                    "content_type": "text/csv",
-                },
-                {
-                    "s3_uri": f"s3://b/u/context/{CTX}/b.csv",
-                    "filename": "b.csv",
-                    "size": 1,
-                    "content_type": "text/csv",
-                },
+                _stub_uploaded("sales.csv"),
+                _stub_uploaded("regions.csv"),
             ]
+            client = MagicMock()
+            client.send_message.return_value = _stub_send_response()
+            Client.return_value = client
+
             result = runner.invoke(
-                cli,
-                ["analyze-data", "upload", "--context-id", CTX, str(a), str(b)],
+                cli, ["analyze-data", "submit", "the question", str(f1), str(f2)]
             )
 
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.stdout)
-        assert [d["s3_uri"] for d in payload["datasets"]] == [
-            f"s3://b/u/context/{CTX}/a.csv",
-            f"s3://b/u/context/{CTX}/b.csv",
-        ]
 
-    def test_requires_context_id(self, runner, tmp_path):
-        f = tmp_path / "x.csv"
-        f.write_text("x")
-        result = runner.invoke(cli, ["analyze-data", "upload", str(f)])
+        # Both uploads happened against the *same* minted context_id.
+        assert up.call_count == 2
+        ctx_used = up.call_args_list[0].kwargs["context_id"]
+        assert up.call_args_list[1].kwargs["context_id"] == ctx_used
+        assert ctx_used != CTX  # newly minted, not the test's fixed UUID
+
+        # send_message receives the envelope JSON + the same context_id.
+        client.send_message.assert_called_once()
+        sent_json, sent_kwargs = client.send_message.call_args
+        envelope = json.loads(sent_json[0])
+        assert envelope["kind"] == "analyze-data"
+        tool_req = envelope["data"]["tool_request"]
+        assert tool_req["query"] == "the question"
+        assert tool_req["datasets"] == [
+            f"s3://bucket/userdata/u/context/{CTX}/sales.csv",
+            f"s3://bucket/userdata/u/context/{CTX}/regions.csv",
+        ]
+        assert tool_req["modal_app_name"] == "dv-core.prod"
+        assert sent_kwargs["context_id"] == ctx_used
+
+        # Stdout is the A2A response JSON.
+        payload = json.loads(result.stdout)
+        assert payload["id"] == "task-abc"
+
+    def test_no_files_fails_without_context_id(self, runner):
+        result = runner.invoke(cli, ["analyze-data", "submit", "the question"])
         assert result.exit_code != 0
         assert "context-id" in result.output.lower()
 
-    def test_requires_at_least_one_file(self, runner):
-        result = runner.invoke(cli, ["analyze-data", "upload", "--context-id", CTX])
-        assert result.exit_code != 0
-
     def test_missing_file_fails_before_upload(self, runner):
-        with patch("asta.analyze_data.upload.upload_local_file") as up:
+        with patch("asta.analyze_data.submit.upload_local_file") as up:
             result = runner.invoke(
                 cli,
-                ["analyze-data", "upload", "--context-id", CTX, "/no/such/file.csv"],
+                ["analyze-data", "submit", "the question", "/no/such/file.csv"],
             )
         assert result.exit_code != 0
         up.assert_not_called()
 
-    def test_over_5gb_fails_fast(self, runner, tmp_path):
-        f = tmp_path / "huge.csv"
-        f.write_text("x")
 
-        with patch("asta.analyze_data.upload.upload_local_file") as up:
-            up.side_effect = ValueError(
-                "File is 6.00 GiB; single-PUT uploads are limited to 5 GiB."
-            )
+class TestSubmitContinuingSession:
+    """`submit --context-id` reuses the session; files become optional."""
+
+    def test_no_files_skips_upload(self, runner):
+        with (
+            patch("asta.analyze_data.submit.upload_local_file") as up,
+            patch("asta.analyze_data.submit.A2AClient") as Client,
+        ):
+            client = MagicMock()
+            client.send_message.return_value = _stub_send_response()
+            Client.return_value = client
+
             result = runner.invoke(
                 cli,
-                ["analyze-data", "upload", "--context-id", CTX, str(f)],
+                [
+                    "analyze-data",
+                    "submit",
+                    "--context-id",
+                    CTX,
+                    "follow-up question",
+                ],
             )
 
-        assert result.exit_code != 0
-        assert "5 GiB" in result.output
+        assert result.exit_code == 0, result.output
+        up.assert_not_called()
+
+        envelope = json.loads(client.send_message.call_args[0][0])
+        tool_req = envelope["data"]["tool_request"]
+        assert tool_req["query"] == "follow-up question"
+        # Empty datasets are omitted so the dv-core schema default applies.
+        assert "datasets" not in tool_req
+        assert client.send_message.call_args.kwargs["context_id"] == CTX
+
+    def test_files_attach_to_provided_context(self, runner, tmp_path):
+        f = tmp_path / "extra.csv"
+        f.write_text("p,q\n5,6\n")
+
+        with (
+            patch("asta.analyze_data.submit.upload_local_file") as up,
+            patch("asta.analyze_data.submit.A2AClient") as Client,
+        ):
+            up.return_value = _stub_uploaded("extra.csv")
+            client = MagicMock()
+            client.send_message.return_value = _stub_send_response()
+            Client.return_value = client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "analyze-data",
+                    "submit",
+                    "--context-id",
+                    CTX,
+                    "follow-up with new file",
+                    str(f),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert up.call_args.kwargs["context_id"] == CTX
+
+        envelope = json.loads(client.send_message.call_args[0][0])
+        assert envelope["data"]["tool_request"]["datasets"] == [
+            f"s3://bucket/userdata/u/context/{CTX}/extra.csv"
+        ]
+
+
+class TestModalAppRouting:
+    def test_default_routes_to_prod(self, runner, tmp_path, monkeypatch):
+        monkeypatch.delenv("ASTA_DV_MODAL_APP", raising=False)
+        f = tmp_path / "x.csv"
+        f.write_text("x")
+
+        with (
+            patch("asta.analyze_data.submit.upload_local_file") as up,
+            patch("asta.analyze_data.submit.A2AClient") as Client,
+        ):
+            up.return_value = _stub_uploaded("x.csv")
+            client = MagicMock()
+            client.send_message.return_value = _stub_send_response()
+            Client.return_value = client
+
+            result = runner.invoke(cli, ["analyze-data", "submit", "q", str(f)])
+
+        assert result.exit_code == 0, result.output
+        envelope = json.loads(client.send_message.call_args[0][0])
+        assert envelope["data"]["tool_request"]["modal_app_name"] == "dv-core.prod"
+
+    def test_env_var_overrides(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("ASTA_DV_MODAL_APP", "dv-core.regan")
+        f = tmp_path / "x.csv"
+        f.write_text("x")
+
+        with (
+            patch("asta.analyze_data.submit.upload_local_file") as up,
+            patch("asta.analyze_data.submit.A2AClient") as Client,
+        ):
+            up.return_value = _stub_uploaded("x.csv")
+            client = MagicMock()
+            client.send_message.return_value = _stub_send_response()
+            Client.return_value = client
+
+            result = runner.invoke(cli, ["analyze-data", "submit", "q", str(f)])
+
+        assert result.exit_code == 0, result.output
+        envelope = json.loads(client.send_message.call_args[0][0])
+        assert envelope["data"]["tool_request"]["modal_app_name"] == "dv-core.regan"
+
+
+class TestSubmitOutput:
+    def test_output_path_writes_file(self, runner, tmp_path, monkeypatch):
+        monkeypatch.delenv("ASTA_DV_MODAL_APP", raising=False)
+        f = tmp_path / "x.csv"
+        f.write_text("x")
+        out = tmp_path / "response.json"
+
+        with (
+            patch("asta.analyze_data.submit.upload_local_file") as up,
+            patch("asta.analyze_data.submit.A2AClient") as Client,
+        ):
+            up.return_value = _stub_uploaded("x.csv")
+            client = MagicMock()
+            client.send_message.return_value = _stub_send_response()
+            Client.return_value = client
+
+            result = runner.invoke(
+                cli,
+                ["analyze-data", "submit", "--output", str(out), "q", str(f)],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert out.exists()
+        assert json.loads(out.read_text())["id"] == "task-abc"
 
 
 class TestGroupWiring:
-    def test_analyze_data_help_lists_inherited_subcommands(self, runner):
-        # `analyze` is gone — the skill orchestrates upload + send-message.
+    def test_analyze_data_help_lists_subcommands(self, runner):
         result = runner.invoke(cli, ["analyze-data", "--help"])
         assert result.exit_code == 0
-        for sub in ("card", "send-message", "task", "upload"):
+        for sub in ("card", "send-message", "task", "submit", "poll"):
             assert sub in result.output
-        assert "analyze " not in result.output  # no bespoke analyze command
+        # `upload` was folded into `submit` and is no longer exposed.
+        assert "  upload" not in result.output
 
 
 class TestConfig:
@@ -154,7 +263,7 @@ class TestUploadHelper:
     """Exercise the shared helper directly — verifies the GET + PUT shape."""
 
     def test_upload_local_file_emits_presign_get_and_put(self, tmp_path):
-        from asta.analyze_data import upload as upload_mod
+        from asta.analyze_data import _upload as upload_mod
 
         f = tmp_path / "hello.csv"
         f.write_text("x,y\n1,2\n")
@@ -188,7 +297,7 @@ class TestUploadHelper:
             return resp
 
         with patch(
-            "asta.analyze_data.upload.urllib.request.urlopen",
+            "asta.analyze_data._upload.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             result = upload_mod.upload_local_file(
@@ -211,7 +320,7 @@ class TestUploadHelper:
         assert put_call["headers"].get("Content-type") == "text/csv"
 
     def test_upload_local_file_rejects_missing(self, tmp_path):
-        from asta.analyze_data import upload as upload_mod
+        from asta.analyze_data import _upload as upload_mod
 
         with pytest.raises(FileNotFoundError):
             upload_mod.upload_local_file(
@@ -219,7 +328,7 @@ class TestUploadHelper:
             )
 
     def test_upload_local_file_rejects_path_traversal(self, tmp_path):
-        from asta.analyze_data import upload as upload_mod
+        from asta.analyze_data import _upload as upload_mod
 
         # The os.path.basename of a traversal-style path on the *server side*
         # is what dv-core enforces, but we still defensively reject `..` in
