@@ -18,10 +18,10 @@ from asta.utils.thread_state import (
 @pytest.mark.parametrize(
     "basename,turn,expected",
     [
-        ("foo.json", 1, "foo.001.json"),                # happy path
-        ("foo", 1, "foo.001"),                          # no extension
-        ("foo.tar.gz", 3, "foo.tar.003.gz"),            # only the trailing extension
-        ("a.json", 999, "a.999.json"),                  # zero-padded width
+        ("foo.json", 1, "foo.001.json"),  # happy path
+        ("foo", 1, "foo.001"),  # no extension
+        ("foo.tar.gz", 3, "foo.tar.003.gz"),  # only the trailing extension
+        ("a.json", 999, "a.999.json"),  # zero-padded width
     ],
 )
 def test_turn_filename(basename, turn, expected):

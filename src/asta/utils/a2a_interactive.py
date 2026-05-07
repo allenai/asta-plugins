@@ -179,9 +179,7 @@ def run_a2a_session(
 
         # 5. Echo completion.
         thread_suffix = (
-            f" (thread_id={stream_result.thread_id})"
-            if stream_result.thread_id
-            else ""
+            f" (thread_id={stream_result.thread_id})" if stream_result.thread_id else ""
         )
         click.echo(f"Results saved to: {output_path}{thread_suffix}", err=True)
 
@@ -287,11 +285,7 @@ async def _run_streaming_turn(
                     terminal_state = terminal.state
                     narrative = terminal.text or narrative
                 elif (progress := step_progress_of(event)) is not None:
-                    desc = (
-                        progress.get("short_desc")
-                        or progress.get("long_desc")
-                        or ""
-                    )
+                    desc = progress.get("short_desc") or progress.get("long_desc") or ""
                     marker = "  ✗" if progress.get("run_state") == "failed" else "  •"
                     print(f"{marker} {desc}", file=sys.stderr, flush=True)
             elif event.kind == "artifact_update":

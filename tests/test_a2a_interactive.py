@@ -115,7 +115,9 @@ def test_e2e_multi_turn_thread_dir_resumes_via_context_id(tmp_path):
 def test_e2e_failed_terminal_raises_click_exception(tmp_path):
     out = tmp_path / "result.json"
     with FakeA2AServer(events=failed_events("Something exploded")):
-        with pytest.raises(click.ClickException, match="TASK_STATE_FAILED.*Something exploded"):
+        with pytest.raises(
+            click.ClickException, match="TASK_STATE_FAILED.*Something exploded"
+        ):
             run_a2a_session(
                 SPEC,
                 output=str(out),
@@ -151,7 +153,13 @@ def test_e2e_http_error_raises_click_exception(tmp_path):
     "explicit,env,a2a_url,base_url,expected",
     [
         # Explicit flag wins; trailing slash is trimmed.
-        ("http://explicit/", "http://env", "http://a2a", "http://base", "http://explicit"),
+        (
+            "http://explicit/",
+            "http://env",
+            "http://a2a",
+            "http://base",
+            "http://explicit",
+        ),
         # Env var beats config.
         (None, "http://env/", "http://a2a", "http://base", "http://env"),
         # ``a2a_url`` config beats ``base_url``.
@@ -182,16 +190,12 @@ def test_resolve_api_key_precedence(monkeypatch):
     # Explicit beats env.
     assert _resolve_api_key("explicit-key") == "explicit-key"
     # Env beats fallback.
-    with patch(
-        "asta.utils.auth_helper.get_access_token", return_value="auth-token"
-    ):
+    with patch("asta.utils.auth_helper.get_access_token", return_value="auth-token"):
         assert _resolve_api_key(None) == "env-key"
     # Asta-auth fallback when no explicit / no env.
     monkeypatch.delenv("ASTA_A2A_API_KEY", raising=False)
     monkeypatch.delenv("API_KEY", raising=False)
-    with patch(
-        "asta.utils.auth_helper.get_access_token", return_value="auth-token"
-    ):
+    with patch("asta.utils.auth_helper.get_access_token", return_value="auth-token"):
         assert _resolve_api_key(None) == "auth-token"
     # No source available: returns None rather than raising.
     with patch(

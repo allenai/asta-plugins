@@ -182,5 +182,7 @@ def _parse_result(result: dict[str, Any]) -> A2AEvent | None:
         return A2AEvent(kind="status_update", context_id=upd.get("contextId"), raw=upd)
     if "artifactUpdate" in result:
         upd = result["artifactUpdate"]
-        return A2AEvent(kind="artifact_update", context_id=upd.get("contextId"), raw=upd)
+        return A2AEvent(
+            kind="artifact_update", context_id=upd.get("contextId"), raw=upd
+        )
     return None

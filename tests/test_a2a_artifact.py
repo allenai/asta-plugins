@@ -106,9 +106,7 @@ def test_translates_paper_entities():
 
 def test_translates_renamed_relevance_judgement_fields():
     artifact = _sample_artifact()
-    result = parse_artifact(
-        artifact, query="q", thread_id=None, narrative=None
-    )
+    result = parse_artifact(artifact, query="q", thread_id=None, narrative=None)
     p1 = next(p for p in result.results if p.title.startswith("Attention"))
     rj = p1.relevanceJudgement
     assert rj is not None
