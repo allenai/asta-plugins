@@ -19,7 +19,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "keyring>=24.3.0",
     "platformdirs>=4.1.0",
-    "asta-agent[a2a-client]==1.0.6",
+    "asta-agent[a2a-client]>=1.0.9",
     "asta-artifact>=1.0.6",
 ]
 
