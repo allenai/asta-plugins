@@ -1,0 +1,3361 @@
+{
+  "query": "LLM agent observability, distributed tracing of multi-step agent reasoning, evaluation harnesses for long-horizon agent workflows, OpenTelemetry semantic conventions for GenAI agents, and offline replay or simulation of recorded agent traces for analysis and debugging.",
+  "results": [
+    {
+      "corpusId": 276903015,
+      "title": "Beyond Black-Box Benchmarking: Observability, Analytics, and Optimization of Agentic Systems",
+      "abstract": "The rise of agentic AI systems, where agents collaborate to perform diverse tasks, poses new challenges with observing, analyzing and optimizing their behavior. Traditional evaluation and benchmarking approaches struggle to handle the non-deterministic, context-sensitive, and dynamic nature of these systems. This paper explores key challenges and opportunities in analyzing and optimizing agentic systems across development, testing, and maintenance. We explore critical issues such as natural language variability and unpredictable execution flows, which hinder predictability and control, demanding adaptive strategies to manage input variability and evolving behaviors. Through our user study, we supported these hypotheses. In particular, we showed a 79% agreement that non deterministic flow of agentic systems acts as a major challenge. Finally, we validated our statements empirically advocating the need for moving beyond classical benchmarking. To bridge these gaps, we introduce taxonomies to present expected analytics outcomes and the ways to collect them by extending standard observability frameworks. Building on these foundations, we introduce and demonstrate novel approach for benchmarking of agent evaluation systems. Unlike traditional\"black box\"performance evaluation approaches, our benchmark is built from agent runtime logs as input, and analytics outcome including discovered flows and issues. By addressing key limitations in existing methodologies, we aim to set the stage for more advanced and holistic evaluation strategies, which could foster the development of adaptive, interpretable, and robust agentic AI systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Dany Moshkovich",
+          "id": ""
+        },
+        {
+          "name": "Hadar Mulian",
+          "id": ""
+        },
+        {
+          "name": "Sergey Zeltyn",
+          "id": ""
+        },
+        {
+          "name": "Natti Eder",
+          "id": ""
+        },
+        {
+          "name": "Inna Skarbovsky",
+          "id": ""
+        },
+        {
+          "name": "Roy Abitbol",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:276903015",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.9761720357251474,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284475438,
+      "title": "MAESTRO: Multi-Agent Evaluation Suite for Testing, Reliability, and Observability",
+      "abstract": "We present MAESTRO, an evaluation suite for the testing, reliability, and observability of LLM-based MAS. MAESTRO standardizes MAS configuration and execution through a unified interface, supports integrating both native and third-party MAS via a repository of examples and lightweight adapters, and exports framework-agnostic execution traces together with system-level signals (e.g., latency, cost, and failures). We instantiate MAESTRO with 12 representative MAS spanning popular agentic frameworks and interaction patterns, and conduct controlled experiments across repeated runs, backend models, and tool configurations. Our case studies show that MAS executions can be structurally stable yet temporally variable, leading to substantial run-to-run variance in performance and reliability. We further find that MAS architecture is the dominant driver of resource profiles, reproducibility, and cost-latency-accuracy trade-off, often outweighing changes in backend models or tool settings. Overall, MAESTRO enables systematic evaluation and provides empirical guidance for designing and optimizing agentic systems.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Tie Ma",
+          "id": ""
+        },
+        {
+          "name": "Yixi Chen",
+          "id": ""
+        },
+        {
+          "name": "Vaastav Anand",
+          "id": ""
+        },
+        {
+          "name": "Alessandro Cornacchia",
+          "id": ""
+        },
+        {
+          "name": "Am\u00e2ndio Faustino",
+          "id": ""
+        },
+        {
+          "name": "Guanheng Liu",
+          "id": ""
+        },
+        {
+          "name": "Shangtong Zhang",
+          "id": ""
+        },
+        {
+          "name": "Hongbin Luo",
+          "id": ""
+        },
+        {
+          "name": "Suhaib A. Fahmy",
+          "id": ""
+        },
+        {
+          "name": "Z. Qazi",
+          "id": ""
+        },
+        {
+          "name": "Marco Canini",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2601.00481.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.9700767621923886,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277150776,
+      "title": "Survey on Evaluation of LLM-based Agents",
+      "abstract": "LLM-based agents represent a paradigm shift in AI, enabling autonomous systems to plan, reason, and use tools while interacting with dynamic environments. This paper provides the first comprehensive survey of evaluation methods for these increasingly capable agents. We analyze the field of agent evaluation across five perspectives: (1) Core LLM capabilities needed for agentic workflows, like planning, and tool use; (2) Application-specific benchmarks such as web and SWE agents; (3) Evaluation of generalist agents; (4) Analysis of agent benchmarks'core dimensions; and (5) Evaluation frameworks and tools for agent developers. Our analysis reveals current trends, including a shift toward more realistic, challenging evaluations with continuously updated benchmarks. We also identify critical gaps that future research must address, particularly in assessing cost-efficiency, safety, and robustness, and in developing fine-grained, scalable evaluation methods.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Asaf Yehudai",
+          "id": ""
+        },
+        {
+          "name": "Lilach Eden",
+          "id": ""
+        },
+        {
+          "name": "Alan Li",
+          "id": ""
+        },
+        {
+          "name": "Guy Uziel",
+          "id": ""
+        },
+        {
+          "name": "Yilun Zhao",
+          "id": ""
+        },
+        {
+          "name": "Roy Bar-Haim",
+          "id": ""
+        },
+        {
+          "name": "Arman Cohan",
+          "id": ""
+        },
+        {
+          "name": "Michal Shmueli-Scheuer",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277150776",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8594272136779055,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278534696,
+      "title": "TRAIL: Trace Reasoning and Agentic Issue Localization",
+      "abstract": "The increasing adoption of agentic workflows across diverse domains brings a critical need to scalably and systematically evaluate the complex traces these systems generate. Current evaluation methods depend on manual, domain-specific human analysis of lengthy workflow traces - an approach that does not scale with the growing complexity and volume of agentic outputs. Error analysis in these settings is further complicated by the interplay of external tool outputs and language model reasoning, making it more challenging than traditional software debugging. In this work, we (1) articulate the need for robust and dynamic evaluation methods for agentic workflow traces, (2) introduce a formal taxonomy of error types encountered in agentic systems, and (3) present a set of 148 large human-annotated traces (TRAIL) constructed using this taxonomy and grounded in established agentic benchmarks. To ensure ecological validity, we curate traces from both single and multi-agent systems, focusing on real-world applications such as software engineering and open-world information retrieval. Our evaluations reveal that modern long context LLMs perform poorly at trace debugging, with the best Gemini-2.5-pro model scoring a mere 11% on TRAIL. Our dataset and code are made publicly available to support and accelerate future research in scalable evaluation for agentic workflows.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Darshan Deshpande",
+          "id": ""
+        },
+        {
+          "name": "Varun Gangal",
+          "id": ""
+        },
+        {
+          "name": "Hersh Mehta",
+          "id": ""
+        },
+        {
+          "name": "J. Krishnan",
+          "id": ""
+        },
+        {
+          "name": "Anand Kannappan",
+          "id": ""
+        },
+        {
+          "name": "Rebecca Qian",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278534696",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8512869300079722,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285470756,
+      "title": "AgentTrace: A Structured Logging Framework for Agent System Observability",
+      "abstract": "Despite the growing capabilities of autonomous agents powered by large language models (LLMs), their adoption in high-stakes domains remains limited. A key barrier is security: the inherently nondeterministic behavior of LLM agents defies static auditing approaches that have historically underpinned software assurance. Existing security methods, such as proxy-level input filtering and model glassboxing, fail to provide sufficient transparency or traceability into agent reasoning, state changes, or environmental interactions. In this work, we introduce AgentTrace, a dynamic observability and telemetry framework designed to fill this gap. AgentTrace instruments agents at runtime with minimal overhead, capturing a rich stream of structured logs across three surfaces: operational, cognitive, and contextual. Unlike traditional logging systems, AgentTrace emphasizes continuous, introspectable trace capture, designed not just for debugging or benchmarking, but as a foundational layer for agent security, accountability, and real-time monitoring. Our research highlights how AgentTrace can enable more reliable agent deployment, fine-grained risk analysis, and informed trust calibration, thereby addressing critical concerns that have so far limited the use of LLM agents in sensitive environments.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Adam AlSayyad",
+          "id": ""
+        },
+        {
+          "name": "Ke Huang",
+          "id": ""
+        },
+        {
+          "name": "Richik Pal",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285470756",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8496162897848033,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280421141,
+      "title": "A Survey on AgentOps: Categorization, Challenges, and Future Directions",
+      "abstract": "As the reasoning capabilities of Large Language Models (LLMs) continue to advance, LLM-based agent systems offer advantages in flexibility and interpretability over traditional systems, garnering increasing attention. However, despite the widespread research interest and industrial application of agent systems, these systems, like their traditional counterparts, frequently encounter anomalies. These anomalies lead to instability and insecurity, hindering their further development. Therefore, a comprehensive and systematic approach to the operation and maintenance of agent systems is urgently needed. Unfortunately, current research on the operations of agent systems is sparse. To address this gap, we have undertaken a survey on agent system operations with the aim of establishing a clear framework for the field, defining the challenges, and facilitating further development. Specifically, this paper begins by systematically defining anomalies within agent systems, categorizing them into intra-agent anomalies and inter-agent anomalies. Next, we introduce a novel and comprehensive operational framework for agent systems, dubbed Agent System Operations (AgentOps). We provide detailed definitions and explanations of its four key stages: monitoring, anomaly detection, root cause analysis, and resolution.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Zexin Wang",
+          "id": ""
+        },
+        {
+          "name": "Jingjing Li",
+          "id": ""
+        },
+        {
+          "name": "Quan Zhou",
+          "id": ""
+        },
+        {
+          "name": "Haotian Si",
+          "id": ""
+        },
+        {
+          "name": "Yuanhao Liu",
+          "id": ""
+        },
+        {
+          "name": "Jianhui Li",
+          "id": ""
+        },
+        {
+          "name": "Gaogang Xie",
+          "id": ""
+        },
+        {
+          "name": "Fei Sun",
+          "id": ""
+        },
+        {
+          "name": "Dan Pei",
+          "id": ""
+        },
+        {
+          "name": "Changhua Pei",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280421141",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8487455727989606,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 279391492,
+      "title": "Mind the Metrics: Patterns for Telemetry-Aware In-IDE AI Application Development using the Model Context Protocol (MCP)",
+      "abstract": "AI development environments are evolving into observability first platforms that integrate real time telemetry, prompt traces, and evaluation feedback into the developer workflow. This paper introduces telemetry aware integrated development environments (IDEs) enabled by the Model Context Protocol (MCP), a system that connects IDEs with prompt metrics, trace logs, and versioned control for real time refinement. We present design patterns for local prompt iteration, CI based optimization, and autonomous agents that adapt behavior using telemetry. Rather than focusing on a single algorithm, we describe an architecture that supports integration with frameworks like DSPy, PromptWizard, and Prompts as Programs. We demonstrate this through Opik, an open source MCP server for LLM telemetry, and position our approach within the emerging LLMOps ecosystem. This work lays a foundation for future research on prompt optimization, IDE agent tooling, and empirical benchmarking in telemetry rich AI development workflows.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Vincent Koc",
+          "id": ""
+        },
+        {
+          "name": "Jacques Verre",
+          "id": ""
+        },
+        {
+          "name": "D. Blank",
+          "id": ""
+        },
+        {
+          "name": "A. Morgan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:279391492",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8485788755756422,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285401687,
+      "title": "From Features to Actions: Explainability in Traditional and Agentic AI Systems",
+      "abstract": "Over the last decade, explainable AI has primarily focused on interpreting individual model predictions, producing post-hoc explanations that relate inputs to outputs under a fixed decision structure. Recent advances in large language models (LLMs) have enabled agentic AI systems whose behaviour unfolds over multi-step trajectories. In these settings, success and failure are determined by sequences of decisions rather than a single output. While useful, it remains unclear how explanation approaches designed for static predictions translate to agentic settings where behaviour emerges over time. In this work, we bridge the gap between static and agentic explainability by comparing attribution-based explanations with trace-based diagnostics across both settings. To make this distinction explicit, we empirically compare attribution-based explanations used in static classification tasks with trace-based diagnostics used in agentic benchmarks (TAU-bench Airline and AssistantBench). Our results show that while attribution methods achieve stable feature rankings in static settings (Spearman $\\rho = 0.86$), they cannot be applied reliably to diagnose execution-level failures in agentic trajectories. In contrast, trace-grounded rubric evaluation for agentic settings consistently localizes behaviour breakdowns and reveals that state tracking inconsistency is 2.7$\\times$ more prevalent in failed runs and reduces success probability by 49\\%. These findings motivate a shift towards trajectory-level explainability for agentic systems when evaluating and diagnosing autonomous AI behaviour. Resources: https://github.com/VectorInstitute/unified-xai-evaluation-framework https://vectorinstitute.github.io/unified-xai-evaluation-framework",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Sindhuja Chaduvula",
+          "id": ""
+        },
+        {
+          "name": "Jessee Ho",
+          "id": ""
+        },
+        {
+          "name": "Kina Kim",
+          "id": ""
+        },
+        {
+          "name": "Aravind Narayanan",
+          "id": ""
+        },
+        {
+          "name": "M. Alinoori",
+          "id": ""
+        },
+        {
+          "name": "Muskan Garg",
+          "id": ""
+        },
+        {
+          "name": "D. Ramachandram",
+          "id": ""
+        },
+        {
+          "name": "Shaina Raza",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285401687",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8471180183389851,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281394034,
+      "title": "AgentCompass: Towards Reliable Evaluation of Agentic Workflows in Production",
+      "abstract": "With the growing adoption of Large Language Models (LLMs) in automating complex, multi-agent workflows, organizations face mounting risks from errors, emergent behaviors, and systemic failures that current evaluation methods fail to capture. We present AgentCompass, the first evaluation framework designed specifically for post-deployment monitoring and debugging of agentic workflows. AgentCompass models the reasoning process of expert debuggers through a structured, multi-stage analytical pipeline: error identification and categorization, thematic clustering, quantitative scoring, and strategic summarization. The framework is further enhanced with a dual memory system-episodic and semantic-that enables continual learning across executions. Through collaborations with design partners, we demonstrate the framework's practical utility on real-world deployments, before establishing its efficacy against the publicly available TRAIL benchmark. AgentCompass achieves state-of-the-art results on key metrics, while uncovering critical issues missed in human annotations, underscoring its role as a robust, developer-centric tool for reliable monitoring and improvement of agentic systems in production.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Nvjk Kartik",
+          "id": ""
+        },
+        {
+          "name": "Garvit Sapra",
+          "id": ""
+        },
+        {
+          "name": "Rishav Hada",
+          "id": ""
+        },
+        {
+          "name": "Nikhil Pareek",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2509.14647.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8450751473181422,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277740957,
+      "title": "SeaView: Software Engineering Agent Visual Interface for Enhanced Workflow",
+      "abstract": "Auto-regressive LLM-based software engineering (SWE) agents, henceforth SWE agents, have made tremendous progress (>60% on SWE-Bench Verified) on real-world coding challenges including GitHub issue resolution. SWE agents use a combination of reasoning, environment interaction and self-reflection to resolve issues thereby generating\"trajectories\". Analysis of SWE agent trajectories is difficult, not only as they exceed LLM sequence length (sometimes, greater than 128k) but also because it involves a relatively prolonged interaction between an LLM and the environment managed by the agent. In case of an agent error, it can be hard to decipher, locate and understand its scope. Similarly, it can be hard to track improvements or regression over multiple runs or experiments. While a lot of research has gone into making these SWE agents reach state-of-the-art, much less focus has been put into creating tools to help analyze and visualize agent output. We propose a novel tool called SeaView: Software Engineering Agent Visual Interface for Enhanced Workflow, with a vision to assist SWE-agent researchers to visualize and inspect their experiments. SeaView's novel mechanisms help compare experimental runs with varying hyper-parameters or LLMs, and quickly get an understanding of LLM or environment related problems. Based on our user study, experienced researchers spend between 10 and 30 minutes to gather the information provided by SeaView, while researchers with little experience can spend between 30 minutes to 1 hour to diagnose their experiment.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Timothy Bula",
+          "id": ""
+        },
+        {
+          "name": "Saurabh Pujar",
+          "id": ""
+        },
+        {
+          "name": "Luca Buratti",
+          "id": ""
+        },
+        {
+          "name": "Mihaela A. Bornea",
+          "id": ""
+        },
+        {
+          "name": "Avi Sil",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277740957",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.8299801064606309,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277954889,
+      "title": "UFO2: The Desktop AgentOS",
+      "abstract": "Recent Computer-Using Agents (CUAs), powered by multimodal large language models (LLMs), offer a promising direction for automating complex desktop workflows through natural language. However, most existing CUAs remain conceptual prototypes, hindered by shallow OS integration, fragile screenshot-based interaction, and disruptive execution. We present UFO2, a multiagent AgentOS for Windows desktops that elevates CUAs into practical, system-level automation. UFO2 features a centralized HostAgent for task decomposition and coordination, alongside a collection of application-specialized AppAgent equipped with native APIs, domain-specific knowledge, and a unified GUI--API action layer. This architecture enables robust task execution while preserving modularity and extensibility. A hybrid control detection pipeline fuses Windows UI Automation (UIA) with vision-based parsing to support diverse interface styles. Runtime efficiency is further enhanced through speculative multi-action planning, reducing per-step LLM overhead. Finally, a Picture-in-Picture (PiP) interface enables automation within an isolated virtual desktop, allowing agents and users to operate concurrently without interference. We evaluate UFO2 across over 20 real-world Windows applications, demonstrating substantial improvements in robustness and execution accuracy over prior CUAs. Our results show that deep OS integration unlocks a scalable path toward reliable, user-aligned desktop automation.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Chaoyun Zhang",
+          "id": ""
+        },
+        {
+          "name": "He Huang",
+          "id": ""
+        },
+        {
+          "name": "Chiming Ni",
+          "id": ""
+        },
+        {
+          "name": "Jian Mu",
+          "id": ""
+        },
+        {
+          "name": "Si Qin",
+          "id": ""
+        },
+        {
+          "name": "Shilin He",
+          "id": ""
+        },
+        {
+          "name": "Lu Wang",
+          "id": ""
+        },
+        {
+          "name": "Fangkai Yang",
+          "id": ""
+        },
+        {
+          "name": "Pu Zhao",
+          "id": ""
+        },
+        {
+          "name": "Chao Du",
+          "id": ""
+        },
+        {
+          "name": "Liqun Li",
+          "id": ""
+        },
+        {
+          "name": "Yu Kang",
+          "id": ""
+        },
+        {
+          "name": "Zhaodi Jiang",
+          "id": ""
+        },
+        {
+          "name": "Suzhen Zheng",
+          "id": ""
+        },
+        {
+          "name": "Rujia Wang",
+          "id": ""
+        },
+        {
+          "name": "Jiaxu Qian",
+          "id": ""
+        },
+        {
+          "name": "Ming-Jie Ma",
+          "id": ""
+        },
+        {
+          "name": "Jianjun Lou",
+          "id": ""
+        },
+        {
+          "name": "Qingwei Lin",
+          "id": ""
+        },
+        {
+          "name": "S. Rajmohan",
+          "id": ""
+        },
+        {
+          "name": "Dongmei Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277954889",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7885017635573759,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281091991,
+      "title": "AgenTracer: Who Is Inducing Failure in the LLM Agentic Systems?",
+      "abstract": "Large Language Model (LLM)-based agentic systems, often comprising multiple models, complex tool invocations, and orchestration protocols, substantially outperform monolithic agents. Yet this very sophistication amplifies their fragility, making them more prone to system failure. Pinpointing the specific agent or step responsible for an error within long execution traces defines the task of agentic system failure attribution. Current state-of-the-art reasoning LLMs, however, remain strikingly inadequate for this challenge, with accuracy generally below 10%. To address this gap, we propose AgenTracer, the first automated framework for annotating failed multi-agent trajectories via counterfactual replay and programmed fault injection, producing the curated dataset TracerTraj. Leveraging this resource, we develop AgenTracer-8B, a lightweight failure tracer trained with multi-granular reinforcement learning, capable of efficiently diagnosing errors in verbose multi-agent interactions. On the Who&When benchmark, AgenTracer-8B outperforms giant proprietary LLMs like Gemini-2.5-Pro and Claude-4-Sonnet by up to 18.18%, setting a new standard in LLM agentic failure attribution. More importantly, AgenTracer-8B delivers actionable feedback to off-the-shelf multi-agent systems like MetaGPT and MaAS with 4.8-14.2% performance gains, empowering self-correcting and self-evolving agentic AI.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Gui-Min Zhang",
+          "id": ""
+        },
+        {
+          "name": "Junhao Wang",
+          "id": ""
+        },
+        {
+          "name": "Junjie Chen",
+          "id": ""
+        },
+        {
+          "name": "Wangchunshu Zhou",
+          "id": ""
+        },
+        {
+          "name": "Kun Wang",
+          "id": ""
+        },
+        {
+          "name": "Shuicheng Yan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281091991",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7874647627925783,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 276813448,
+      "title": "Watson: A Cognitive Observability Framework for the Reasoning of LLM-Powered Agents",
+      "abstract": "Large language models (LLMs) are increasingly integrated into autonomous systems, giving rise to a new class of software known as Agentware, where LLM-powered agents perform complex, open-ended tasks in domains such as software engineering, customer service, and data analysis. However, their high autonomy and opaque reasoning processes pose significant challenges for traditional software observability methods. To address this, we introduce the concept of cognitive observability\u2014the ability to recover and inspect the implicit reasoning behind agent decisions. We present Watson, a general-purpose framework for observing the reasoning processes of fast-thinking LLM agents without altering their behavior. Watson retroactively infers reasoning traces using prompt attribution techniques. We evaluate Watson in both manual debugging and automated correction scenarios across the MMLU benchmark and the AutoCodeRover and OpenHands agents on the SWE-bench-lite dataset. In both static and dynamic settings, Watson surfaces actionable reasoning insights and supports targeted interventions, demonstrating its practical utility for improving transparency and reliability in Agentware systems.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Benjamin Rombaut",
+          "id": ""
+        },
+        {
+          "name": "Sogol Masoumzadeh",
+          "id": ""
+        },
+        {
+          "name": "Kirill Vasilevski",
+          "id": ""
+        },
+        {
+          "name": "Dayi Lin",
+          "id": ""
+        },
+        {
+          "name": "Ahmed E. Hassan",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Automated Software Engineering",
+      "journal": null,
+      "url": "http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=11334632",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7870013860931212,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278886024,
+      "title": "Get Experience from Practice: LLM Agents with Record & Replay",
+      "abstract": "AI agents, empowered by Large Language Models (LLMs) and communication protocols such as MCP and A2A, have rapidly evolved from simple chatbots to autonomous entities capable of executing complex, multi-step tasks, demonstrating great potential. However, the LLMs' inherent uncertainty and heavy computational resource requirements pose four significant challenges to the development of safe and efficient agents: reliability, privacy, cost and performance. Existing approaches, like model alignment, workflow constraints and on-device model deployment, can partially alleviate some issues but often with limitations, failing to fundamentally resolve these challenges. This paper proposes a new paradigm called AgentRR (Agent Record&Replay), which introduces the classical record-and-replay mechanism into AI agent frameworks. The core idea is to: 1. Record an agent's interaction trace with its environment and internal decision process during task execution, 2. Summarize this trace into a structured\"experience\"encapsulating the workflow and constraints, and 3. Replay these experiences in subsequent similar tasks to guide the agent's behavior. We detail a multi-level experience abstraction method and a check function mechanism in AgentRR: the former balances experience specificity and generality, while the latter serves as a trust anchor to ensure completeness and safety during replay. In addition, we explore multiple application modes of AgentRR, including user-recorded task demonstration, large-small model collaboration and privacy-aware agent execution, and envision an experience repository for sharing and reusing knowledge to further reduce deployment cost.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Erhu Feng",
+          "id": ""
+        },
+        {
+          "name": "Wenbo Zhou",
+          "id": ""
+        },
+        {
+          "name": "Zibin Liu",
+          "id": ""
+        },
+        {
+          "name": "Le Chen",
+          "id": ""
+        },
+        {
+          "name": "Yunpeng Dong",
+          "id": ""
+        },
+        {
+          "name": "Cheng Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yisheng Zhao",
+          "id": ""
+        },
+        {
+          "name": "Dong Du",
+          "id": ""
+        },
+        {
+          "name": "Zhijian Zhou",
+          "id": ""
+        },
+        {
+          "name": "Yubin Xia",
+          "id": ""
+        },
+        {
+          "name": "Haibo Chen",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278886024",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7869157514900973,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280526935,
+      "title": "AgentSight: System-Level Observability for AI Agents Using eBPF",
+      "abstract": "Modern software infrastructure increasingly relies on LLM agents for development and maintenance, such as Claude Code and Gemini-cli. However, these AI agents differ fundamentally from traditional deterministic software, posing a significant challenge to conventional monitoring and debugging. This creates a critical semantic gap: existing tools observe either an agent's high-level intent (via LLM prompts) or its low-level actions (e.g., system calls), but cannot correlate these two views. This blindness makes it difficult to distinguish between benign operations, malicious attacks, and costly failures. We introduce AgentSight, an AgentOps observability framework that bridges this semantic gap using a hybrid approach. Our approach, boundary tracing, monitors agents from outside their application code at stable system interfaces using eBPF. AgentSight intercepts TLS-encrypted LLM traffic to extract semantic intent, monitors kernel events to observe system-wide effects, and causally correlates these two streams across process boundaries using a real-time engine and secondary LLM analysis. This instrumentation-free technique is framework-agnostic, resilient to rapid API changes, and incurs less than 3% performance overhead. Our evaluation shows AgentSight detects prompt injection attacks, identifies resource-wasting reasoning loops, and reveals hidden coordination bottlenecks in multi-agent systems. AgentSight is released as an open-source project at https://github.com/eunomia-bpf/agentsight.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Yusheng Zheng",
+          "id": ""
+        },
+        {
+          "name": "Yanpeng Hu",
+          "id": ""
+        },
+        {
+          "name": "Tong Yu",
+          "id": ""
+        },
+        {
+          "name": "Andi Quinn",
+          "id": ""
+        }
+      ],
+      "venue": "PACMI@SOSP",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280526935",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7230907668693229,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 282056474,
+      "title": "What Is Your Agent's GPA? A Framework for Evaluating Agent Goal-Plan-Action Alignment",
+      "abstract": "We introduce the Agent GPA (Goal-Plan-Action) framework, driven by the fundamental insight that critical agent failures emerge at the intersections of setting goals, devising plans, and executing actions. We operationalize the framework with a factorized suite of LLM judges designed to measure distinct elements of Goal-Plan-Act alignment. To make this methodology scalable and generalizable across diverse agent architectures and datasets, we use state-of-the-art automated prompt optimization techniques to systematically generate domain-specific evaluation criteria. We validate this approach across three benchmarks: a multi-agent research setting (TRAIL/GAIA), a single coding agent setting (TRAIL/SWE-bench), and a private, enterprise data-agent setting (Snowflake Intelligence). Extensive evaluation on TRAIL/GAIA demonstrates the core validity of the framework, which identifies a broad range of agent failures (95% of human-annotated errors), localizes errors to enable targeted debugging (86% of human-annotated errors), and exhibits strong agreement with human evaluators. Crucially, by applying our automated methodology to both public datasets, we demonstrate that our GPA judges generally achieve the highest error coverage (ranging from 76% to 86%) in comparison to manual prompting approaches. We also leverage an evolutionary coding agent to improve judge consistency by up to 38% through iterative refinement of evaluation rubrics. Overall, Agent GPA provides a rigorous and generalizable paradigm for targeted agent evaluation.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "A. Jia",
+          "id": ""
+        },
+        {
+          "name": "Dan Huang",
+          "id": ""
+        },
+        {
+          "name": "Nikhil Vytla",
+          "id": ""
+        },
+        {
+          "name": "Nirvika Choudhury",
+          "id": ""
+        },
+        {
+          "name": "S. Sen",
+          "id": ""
+        },
+        {
+          "name": "John C. Mitchell",
+          "id": ""
+        },
+        {
+          "name": "Anupam Datta",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:282056474",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7170675712718444,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280292423,
+      "title": "Taming Uncertainty via Automation: Observing, Analyzing, and Optimizing Agentic AI Systems",
+      "abstract": "Large Language Models (LLMs) are increasingly deployed within agentic systems\u2014collections of interacting, LLM-powered agents that execute complex, adaptive workflows using memory, tools, and dynamic planning. While enabling powerful new capabilities, these systems also introduce unique forms of uncertainty stemming from probabilistic reasoning, evolving memory states, and fluid execution paths. Traditional software observability and operations practices fall short in addressing these challenges.This paper presents our vision of AgentOps: a comprehensive framework for observing, analyzing, optimizing, and automating operation of agentic AI systems. We identify distinct needs across four key roles\u2014developers, testers, site reliability engineers (SREs), and business users\u2014each of whom engages with the system at different points in its lifecycle. We present the AgentOps Automation Pipeline, a six-stage process encompassing behavior observation, metric collection, issue detection, root cause analysis, optimized recommendations, and runtime automation. Throughout, we emphasize the critical role of automation in managing uncertainty and enabling self-improving AI systems\u2014not by eliminating uncertainty, but by taming it to ensure safe, adaptive, and effective operation.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Dany Moshkovich",
+          "id": ""
+        },
+        {
+          "name": "Sergey Zeltyn",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Automated Software Engineering",
+      "journal": null,
+      "url": "http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=11334254",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7148882680838652,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 282812273,
+      "title": "Detecting Silent Failures in Multi-Agentic AI Trajectories",
+      "abstract": "Multi-Agentic AI systems, powered by large language models (LLMs), are inherently non-deterministic and prone to silent failures such as drift, cycles, and missing details in outputs, which are difficult to detect. We introduce the task of anomaly detection in agentic trajectories to identify these failures and present a dataset curation pipeline that captures user behavior, agent non-determinism, and LLM variation. Using this pipeline, we curate and label two benchmark datasets comprising \\textbf{4,275 and 894} trajectories from Multi-Agentic AI systems. Benchmarking anomaly detection methods on these datasets, we show that supervised (XGBoost) and semi-supervised (SVDD) approaches perform comparably, achieving accuracies up to 98% and 96%, respectively. This work provides the first systematic study of anomaly detection in Multi-Agentic AI systems, offering datasets, benchmarks, and insights to guide future research.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Divya Pathak",
+          "id": ""
+        },
+        {
+          "name": "Harshit Kumar",
+          "id": ""
+        },
+        {
+          "name": "Anuska Roy",
+          "id": ""
+        },
+        {
+          "name": "Felix George",
+          "id": ""
+        },
+        {
+          "name": "Mudit Verma",
+          "id": ""
+        },
+        {
+          "name": "Pratibha Moogi",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:282812273",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7110429788893734,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 286978955,
+      "title": "View-oriented Conversation Compiler for Agent Trace Analysis",
+      "abstract": "Agent traces carry increasing analytical value in agentic systems and context engineering, yet most prior work treats conversation format as a trivial implementation detail. Modern agent conversations, however, contain deeply structured content, including nested tool calls and results, chain-of-thought reasoning blocks, sub-agent invocations, context-window compaction boundaries, and harness-injected system directives, whose complexity far exceeds that of simple user-assistant exchanges. Feeding such traces to a reflector or other analytical mechanism in plain text, JSON, YAML, or via grep can materially degrade analysis quality. This paper presents VCC (View-oriented Conversation Compiler), a compiler (lex, parse, IR, lower, emit) that transforms raw agent JSONL logs into a family of structured views: a full view (lossless transcript serving as the canonical line-number coordinate system), a user-interface (UI) view (reconstructing the interaction as the user actually perceived it), and an adaptive view (a structure-preserving projection governed by a relevance predicate). In a context-engineering experiment on AppWorld, replacing only the reflector's input format, from raw JSONL to VCC-compiled views, leads to higher pass rates across all three model configurations tested, while cutting reflector token consumption by half to two-thirds and producing more concise learned memory. These results suggest that message format functions as infrastructure for context engineering, not as an incidental implementation choice.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Lvmin Zhang",
+          "id": ""
+        },
+        {
+          "name": "Maneesh Agrawala",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2603.29678.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.692308280077375,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284057618,
+      "title": "XAgen: An Explainability Tool for Identifying and Correcting Failures in Multi-Agent Workflows",
+      "abstract": "As multi-agent systems powered by Large Language Models (LLMs) are increasingly adopted in real-world workflows, users with diverse technical backgrounds are now building and refining their own agentic processes. However, these systems can fail in opaque ways, making it difficult for users to observe, understand, and correct errors. We conducted formative interviews with 12 practitioners to identify mismatches between existing debugging tools and users\u2019 needs. Based on these insights, we designed XAgen, an explainability tool that supports users with varying AI expertise through three core capabilities: log visualization for glanceable workflow understanding, human-in-the-loop feedback to capture expert judgment, and automatic error detection via an LLM-as-a-judge. In a user study with 8 participants, XAgen helped users locate failures more easily, attribute to specific agents or steps, and iteratively improve configurations. Our findings surface human-centered design guidelines for explainable agentic AI development and highlight opportunities for more context-aware interactive debugging.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xinru Wang",
+          "id": ""
+        },
+        {
+          "name": "Ming Yin",
+          "id": ""
+        },
+        {
+          "name": "Eunyee Koh",
+          "id": ""
+        },
+        {
+          "name": "Mustafa Doga Dogan",
+          "id": ""
+        }
+      ],
+      "venue": "Proceedings of the Extended Abstracts of the 2026 CHI Conference on Human Factors in Computing Systems",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284057618",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6593936114437792,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 282209078,
+      "title": "ReclAIm: A multi-agent framework for degradation-aware performance tuning of medical imaging AI",
+      "abstract": "Ensuring the long-term reliability of AI models in clinical practice requires continuous performance monitoring and corrective actions when degradation occurs. Addressing this need, this manuscript presents ReclAIm, a multi-agent framework capable of autonomously monitoring, evaluating, and fine-tuning medical image classification models. The system, built on a large language model core, operates entirely through natural language interaction, eliminating the need for programming expertise. ReclAIm successfully trains, evaluates, and maintains consistent performance of models across MRI, CT, and X-ray datasets. Once ReclAIm detects significant performance degradation, it autonomously executes state-of-the-art fine-tuning procedures that substantially reduce the performance gap. In cases with performance drops of up to -41.1% (MRI InceptionV3), ReclAIm managed to readjust performance metrics within 1.5% of the initial model results. ReclAIm enables automated, continuous maintenance of medical imaging AI models in a user-friendly and adaptable manner that facilitates broader adoption in both research and clinical environments.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "E. Tzanis",
+          "id": ""
+        },
+        {
+          "name": "Michail E. Klontzas",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:282209078",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6588638740106445,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 279999825,
+      "title": "Understanding Software Engineering Agents: A Study of Thought-Action-Result Trajectories",
+      "abstract": "Large Language Model (LLM)-based agents are increasingly employed to automate complex software engineering tasks, such as program repair and issue resolution. These agents operate by autonomously generating natural language thoughts, invoking external tools, and iteratively refining their solutions. Despite their widespread adoption, the internal decision-making processes of these agents remain largely unexplored, limiting our understanding of their operational dynamics and failure modes. In this paper, we present a large-scale empirical study of the thought-action-result trajectories of three state-of-the-art LLM-based agents: RepairAgent, AutoCodeRover, and OpenHands. We unify their interaction logs into a common format, capturing 120 trajectories and 2,822 LLM interactions focused on program repair and issue resolution. Our study combines quantitative analyses of structural properties, action patterns, and token usage with qualitative assessments of reasoning coherence and feedback integration. We identify key trajectory characteristics, such as iteration counts and token consumption, recurring action sequences, and the semantic coherence of thoughts, actions, and their results. Our findings reveal behavioral motifs and anti-patterns that distinguish successful from failed executions, providing actionable insights for improving agent design, including prompting strategies, failure diagnosis, and anti-pattern detection. We release our dataset and annotation framework to support further research on transparent and robust autonomous software engineering agents.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Islem Bouzenia",
+          "id": ""
+        },
+        {
+          "name": "Michael Pradel",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Automated Software Engineering",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:279999825",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6575344807040228,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 267657557,
+      "title": "AgentLens: Visual Analysis for Agent Behaviors in LLM-Based Autonomous Systems",
+      "abstract": "Recently, Large Language Model based Autonomous System (LLMAS) has gained great popularity for its potential to simulate complicated behaviors of human societies. One of its main challenges is to present and analyze the dynamic events evolution of LLMAS. In this work, we present a visualization approach to explore the detailed statuses and agents' behavior within LLMAS. Our approach outlines a general pipeline that organizes raw execution events from LLMAS into a structured behavior model. We leverage a behavior summarization algorithm to create a hierarchical summary of these behaviors, arranged according to their sequence over time. Additionally, we design a cause trace method to mine the causal relationship between agent behaviors. We then develop AgentLens, a visual analysis system that leverages a hierarchical temporal visualization for illustrating the evolution of LLMAS, and supports users to interactively investigate details and causes of agents' behaviors. Two usage scenarios and a user study demonstrate the effectiveness and usability of our AgentLens.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Jiaying Lu",
+          "id": ""
+        },
+        {
+          "name": "Bo Pan",
+          "id": ""
+        },
+        {
+          "name": "Jieyi Chen",
+          "id": ""
+        },
+        {
+          "name": "Yingchaojie Feng",
+          "id": ""
+        },
+        {
+          "name": "Jingyuan Hu",
+          "id": ""
+        },
+        {
+          "name": "Yuchen Peng",
+          "id": ""
+        },
+        {
+          "name": "Wei Chen",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE Transactions on Visualization and Computer Graphics",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:267657557",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6551480405302326,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 274165791,
+      "title": "Evaluation-Driven Development and Operations of LLM Agents: A Process Model and Reference Architecture",
+      "abstract": "Large Language Models (LLMs) have enabled the emergence of LLM agents, systems capable of pursuing under-specified goals and adapting after deployment. Evaluating such agents is challenging because their behavior is open ended, probabilistic, and shaped by system-level interactions over time. Traditional evaluation methods, built around fixed benchmarks and static test suites, fail to capture emergent behaviors or support continuous adaptation across the lifecycle. To ground a more systematic approach, we conduct a multivocal literature review (MLR) synthesizing academic and industrial evaluation practices. The findings directly inform two empirically derived artifacts: a process model and a reference architecture that embed evaluation as a continuous, governing function rather than a terminal checkpoint. Together they constitute the evaluation-driven development and operations (EDDOps) approach, which unifies offline (development-time) and online (runtime) evaluation within a closed feedback loop. By making evaluation evidence drive both runtime adaptation and governed redevelopment, EDDOps supports safer, more traceable evolution of LLM agents aligned with changing objectives, user needs, and governance constraints.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Boming Xia",
+          "id": ""
+        },
+        {
+          "name": "Qinghua Lu",
+          "id": ""
+        },
+        {
+          "name": "Liming Zhu",
+          "id": ""
+        },
+        {
+          "name": "Zhenchang Xing",
+          "id": ""
+        },
+        {
+          "name": "Dehai Zhao",
+          "id": ""
+        },
+        {
+          "name": "Hao Zhang",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:274165791",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6539015824330654,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283693195,
+      "title": "DoVer: Intervention-Driven Auto Debugging for LLM Multi-Agent Systems",
+      "abstract": "Large language model (LLM)-based multi-agent systems are challenging to debug because failures often arise from long, branching interaction traces. The prevailing practice is to leverage LLMs for log-based failure localization, attributing errors to a specific agent and step. However, this paradigm has two key limitations: (i) log-only debugging lacks validation, producing untested hypotheses, and (ii) single-step or single-agent attribution is often ill-posed, as we find that multiple distinct interventions can independently repair the failed task. To address the first limitation, we introduce DoVer, an intervention-driven debugging framework, which augments hypothesis generation with active verification through targeted interventions (e.g., editing messages, altering plans). For the second limitation, rather than evaluating on attribution accuracy, we focus on measuring whether the system resolves the failure or makes quantifiable progress toward task success, reflecting a more outcome-oriented view of debugging. Within the Magnetic-One agent framework, on the datasets derived from GAIA and AssistantBench, DoVer flips 18-28% of failed trials into successes, achieves up to 16% milestone progress, and validates or refutes 30-60% of failure hypotheses. DoVer also performs effectively on a different dataset (GSMPlus) and agent framework (AG2), where it recovers 49% of failed trials. These results highlight intervention as a practical mechanism for improving reliability in agentic systems and open opportunities for more robust, scalable debugging methods for LLM-based multi-agent systems. Project website and code will be available at https://aka.ms/DoVer.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Ming-Jie Ma",
+          "id": ""
+        },
+        {
+          "name": "Jue Zhang",
+          "id": ""
+        },
+        {
+          "name": "Fangkai Yang",
+          "id": ""
+        },
+        {
+          "name": "Yu Kang",
+          "id": ""
+        },
+        {
+          "name": "Qingwei Lin",
+          "id": ""
+        },
+        {
+          "name": "S. Rajmohan",
+          "id": ""
+        },
+        {
+          "name": "Dongmei Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2512.06749.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6526468116080826,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280125727,
+      "title": "Towards a Playground to Democratize Experimentation and Benchmarking of AI Agents for Network Troubleshooting",
+      "abstract": "Artificial Intelligence (AI) and Large Language Models (LLMs), are increasingly finding application in network-related tasks, such as network configuration synthesis [22] and dialogue-based interfaces to network measurements [23], among others. In this preliminary work, we restrict our focus to the application of AI agents to network troubleshooting and elaborate on the need for a standardized, reproducible, and open benchmarking platform, where to build and evaluate AI agents with low operational effort. This platform primarily aims at standardize and democratize the experimentation with AI agents, by enabling researchers and practitioners --- including non-domain experts such as ML/AI engineers--- to evaluate AI agents on curated problem sets, without concerns for underlying operational complexities. We present a modular and extensible benchmarking framework that supports widely adopted network emulators [3, 18, 20, 21]. It targets an extensible set of network issues in diverse real-world scenarios - e.g., data centers, access, WAN, etc. - and orchestrates the end-to-end evaluation workflows, including failure injection, telemetry instrumentation and collection, and agent performance evaluation. Agents can be easily connected through a single Application Programming Interface (API) to an emulation platform and rapidly evaluated. The code is publicly available at https://github.com/zhihao1998/LLM4NetLab.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Zhihao Wang",
+          "id": ""
+        },
+        {
+          "name": "Alessandro Cornacchia",
+          "id": ""
+        },
+        {
+          "name": "Franco Galante",
+          "id": ""
+        },
+        {
+          "name": "C. Centofanti",
+          "id": ""
+        },
+        {
+          "name": "Alessio Sacco",
+          "id": ""
+        },
+        {
+          "name": "Dingde Jiang",
+          "id": ""
+        }
+      ],
+      "venue": "NGNO@MM",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280125727",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6495100906481442,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273949919,
+      "title": "AgentOps: Enabling Observability of LLM Agents",
+      "abstract": "Large language model (LLM) agents have demonstrated remarkable capabilities across various domains, gaining extensive attention from academia and industry. However, these agents raise significant concerns on AI safety due to their autonomous and non-deterministic behavior, as well as continuous evolving nature . From a DevOps perspective, enabling observability in agents is necessary to ensuring AI safety, as stakeholders can gain insights into the agents' inner workings, allowing them to proactively understand the agents, detect anomalies, and prevent potential failures. Therefore, in this paper, we present a comprehensive taxonomy of AgentOps, identifying the artifacts and associated data that should be traced throughout the entire lifecycle of agents to achieve effective observability. The taxonomy is developed based on a systematic mapping study of existing AgentOps tools. Our taxonomy serves as a reference template for developers to design and implement AgentOps infrastructure that supports monitoring, logging, and analytics. thereby ensuring AI safety.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Liming Dong",
+          "id": ""
+        },
+        {
+          "name": "Qinghua Lu",
+          "id": ""
+        },
+        {
+          "name": "Liming Zhu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273949919",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5960473652061351,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285071506,
+      "title": "Automated Structural Testing of LLM-Based Agents: Methods, Framework, and Case Studies",
+      "abstract": "LLM-based agents are rapidly being adopted across diverse domains. Since they interact with users without supervision, they must be tested extensively. Current testing approaches focus on acceptance-level evaluation from the user's perspective. While intuitive, these tests require manual evaluation, are difficult to automate, do not facilitate root cause analysis, and incur expensive test environments. In this paper, we present methods to enable structural testing of LLM-based agents. Our approach utilizes traces (based on OpenTelemetry) to capture agent trajectories, employs mocking to enforce reproducible LLM behavior, and adds assertions to automate test verification. This enables testing agent components and interactions at deeper technical level within automated workflows. We demonstrate how structural testing enables the adaptation of software engineering best practices to agents, including the test automation pyramid, regression testing, test-driven development, and multi-language testing. In representative case studies, we demonstrate automated execution and faster root-cause analysis. Collectively, these methods reduce testing costs and improve agent quality through higher coverage, reusability, and earlier defect detection. We provide an open source reference implementation on GitHub.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Jens Kohl",
+          "id": ""
+        },
+        {
+          "name": "Otto Kruse",
+          "id": ""
+        },
+        {
+          "name": "Youssef Mostafa",
+          "id": ""
+        },
+        {
+          "name": "Andr\u00e9 Luckow",
+          "id": ""
+        },
+        {
+          "name": "K. Schroer",
+          "id": ""
+        },
+        {
+          "name": "Thomas Riedl",
+          "id": ""
+        },
+        {
+          "name": "Ryan French",
+          "id": ""
+        },
+        {
+          "name": "David Katz",
+          "id": ""
+        },
+        {
+          "name": "M. Luitz",
+          "id": ""
+        },
+        {
+          "name": "Tanrajbir Takher",
+          "id": ""
+        },
+        {
+          "name": "Ken E. Friedl",
+          "id": ""
+        },
+        {
+          "name": "C'eline Laurent-Winter",
+          "id": ""
+        }
+      ],
+      "venue": "BigData Congress [Services Society]",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285071506",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5911429706812793,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284488661,
+      "title": "Temporal Attack Pattern Detection in Multi-Agent AI Workflows: An Open Framework for Training Trace-Based Security Models",
+      "abstract": "We present an openly documented methodology for fine-tuning language models to detect temporal attack patterns in multi-agent AI workflows using OpenTelemetry trace analysis. We curate a dataset of 80,851 examples from 18 public cybersecurity sources and 35,026 synthetic OpenTelemetry traces. We apply iterative QLoRA fine-tuning on resource-constrained ARM64 hardware (NVIDIA DGX Spark) through three training iterations with strategic augmentation. Our custom benchmark accuracy improves from 42.86% to 74.29%, a statistically significant 31.4-point gain. Targeted examples addressing specific knowledge gaps outperform indiscriminate scaling. Key contributions include: (1) synthetic trace generation methodology for multi-agent coordination attacks and regulatory violations, (2) empirical evidence that training data composition fundamentally determines behavior, and (3) complete open release of datasets, training scripts, and evaluation benchmarks on HuggingFace. While practical deployment requires human oversight due to false positive rates, this work establishes the first reproducible framework enabling practitioners to build custom agentic security models adapted to their threat landscapes.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "R. F. D. Rosario",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284488661",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5910528864562793,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285470110,
+      "title": "From Prompt-Response to Goal-Directed Systems: The Evolution of Agentic AI Software Architecture",
+      "abstract": "Agentic AI denotes an architectural transition from stateless, prompt-driven generative models toward goal-directed systems capable of autonomous perception, planning, action, and adaptation through iterative control loops. This paper examines this transition by connecting foundational intelligent agent theories, including reactive, deliberative, and Belief-Desire-Intention models, with contemporary LLM-centric approaches such as tool invocation, memory-augmented reasoning, and multi-agent coordination. The paper presents three primary contributions: (i) a reference architecture for production-grade LLM agents that separates cognitive reasoning from execution using typed tool interfaces; (ii) a taxonomy of multi-agent topologies, together with their associated failure modes and mitigation approaches; and (iii) an enterprise hardening checklist that incorporates governance, observability, and reproducibility considerations. Through an analysis of emerging industry platforms, including Kore.ai, Salesforce Agentforce, TrueFoundry, ZenML, and LangChain, the study identifies a convergence toward standardized agent loops, registries, and auditable control mechanisms. It is argued that the subsequent phase of agentic AI development will parallel the maturation of web services, relying on shared protocols, typed contracts, and layered governance structures to support scalable and composable autonomy. The persistent challenges related to verifiability, interoperability, and safe autonomy remain key areas for future research and practical deployment.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Mamdouh Alenezi",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285470110",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5907584116639717,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 276812848,
+      "title": "LLM Applications: Current Paradigms and the Next Frontier",
+      "abstract": "The development of large language models (LLMs) has given rise to four major application paradigms: LLM app stores, LLM agents, self-hosted LLM services, and LLM-powered devices. Each has its advantages but also shares common challenges. LLM app stores lower the barrier to development but lead to platform lock-in; LLM agents provide autonomy but lack a unified communication mechanism; self-hosted LLM services enhance control but increase deployment complexity; and LLM-powered devices improve privacy and real-time performance but are limited by hardware. This paper reviews and analyzes these paradigms, covering architecture design, application ecosystem, research progress, as well as the challenges and open problems they face. Based on this, we outline the next frontier of LLM applications, characterizing them through three interconnected layers: infrastructure, protocol, and application. We describe their responsibilities and roles of each layer and demonstrate how to mitigate existing fragmentation limitations and improve security and scalability. Finally, we discuss key future challenges, identify opportunities such as protocol-driven cross-platform collaboration and device integration, and propose a research roadmap for openness, security, and sustainability.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xinyi Hou",
+          "id": ""
+        },
+        {
+          "name": "Yanjie Zhao",
+          "id": ""
+        },
+        {
+          "name": "Haoyu Wang",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:276812848",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5886699800000691,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 282739603,
+      "title": "Understanding Code Agent Behaviour: An Empirical Study of Success and Failure Trajectories",
+      "abstract": "The increasing deployment of Large Language Model (LLM) agents for complex software engineering tasks has created a need to understand their problem-solving behaviours beyond simple success metrics. While these agents demonstrate impressive capabilities in automated issue resolution, their decision-making processes remain largely opaque. This paper presents an empirical study of agent trajectories, namely the execution traces capturing the steps agents take when attempting to resolve software issues. We analyse trajectories from three state-of-the-art code agents (OpenHands, SWE-agent, and Prometheus) on the SWE-Bench benchmark, examining both successful and failed attempts. Our investigation reveals several key insights into agent behaviour. First, we identify how distinct problem-solving strategies, such as defensive programming and context gathering, enable success in different scenarios. Second, we find that failed trajectories are consistently longer and exhibit higher variance than successful ones, with failure patterns differing significantly between agents. Third, our fault localisation analysis shows that while most trajectories correctly identify problematic files (72-81\\% even in failures), success depends more on achieving approximate rather than exact code modifications. These and other findings unveiled by our study, provide a foundation for understanding agent behaviour through trajectory analysis, contributing to the development of more robust and interpretable autonomous software engineering systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Oorja Majgaonkar",
+          "id": ""
+        },
+        {
+          "name": "Zhiwei Fei",
+          "id": ""
+        },
+        {
+          "name": "Xiang Li",
+          "id": ""
+        },
+        {
+          "name": "Federica Sarro",
+          "id": ""
+        },
+        {
+          "name": "He Ye",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2511.00197.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5816095484451671,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 286170884,
+      "title": "From Flat Logs to Causal Graphs: Hierarchical Failure Attribution for LLM-based Multi-Agent Systems",
+      "abstract": "LLM-powered Multi-Agent Systems (MAS) have demonstrated remarkable capabilities in complex domains but suffer from inherent fragility and opaque failure mechanisms. Existing failure attribution methods, whether relying on direct prompting, costly replays, or supervised fine-tuning, typically treat execution logs as flat sequences. This linear perspective fails to disentangle the intricate causal links inherent to MAS, leading to weak observability and ambiguous responsibility boundaries. To address these challenges, we propose CHIEF, a novel framework that transforms chaotic trajectories into a structured hierarchical causal graph. It then employs hierarchical oracle-guided backtracking to efficiently prune the search space via sybthesized virtual oracles. Finally, it implements counterfactual attribution via a progressive causal screening strategy to rigorously distinguish true root causes from propagated symptoms. Experiments on Who&When benchmark show that CHIEF outperforms eight strong and state-of-the-art baselines on both agent- and step-level accuracy. Ablation studies further confirm the critical role of each proposed module.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Yawen Wang",
+          "id": ""
+        },
+        {
+          "name": "Wenjie Wu",
+          "id": ""
+        },
+        {
+          "name": "Junjie Wang",
+          "id": ""
+        },
+        {
+          "name": "Qing Wang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2602.23701.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5783877902967263,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277857435,
+      "title": "MCP Guardian: A Security-First Layer for Safeguarding MCP-Based AI System",
+      "abstract": "As Agentic AI gain mainstream adoption, the industry invests heavily in model capabilities, achieving rapid leaps in reasoning and quality. However, these systems remain largely confined to data silos, and each new integration requires custom logic that is difficult to scale. The Model Context Protocol (MCP) addresses this challenge by defining a universal, open standard for securely connecting AI-based applications (MCP clients) to data sources (MCP servers). However, the flexibility of the MCP introduces new risks, including malicious tool servers and compromised data integrity. We present MCP Guardian, a framework that strengthens MCP-based communication with authentication, rate-limiting, logging, tracing, and Web Application Firewall (WAF) scanning. Through real-world scenarios and empirical testing, we demonstrate how MCP Guardian effectively mitigates attacks and ensures robust oversight with minimal overheads. Our approach fosters secure, scalable data access for AI assistants, underscoring the importance of a defense-in-depth approach that enables safer and more transparent innovation in AI-driven environments.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Sonu Kumar",
+          "id": ""
+        },
+        {
+          "name": "Anubhav Girdhar",
+          "id": ""
+        },
+        {
+          "name": "Ritesh Patil",
+          "id": ""
+        },
+        {
+          "name": "Divyansh Tripathi",
+          "id": ""
+        }
+      ],
+      "venue": "Advanced Natural Language Processing 2025",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277857435",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5364007151826828,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280526917,
+      "title": "Agent Lightning: Train ANY AI Agents with Reinforcement Learning",
+      "abstract": "We present Agent Lightning, a flexible and extensible framework that enables Reinforcement Learning (RL)-based training of Large Language Models (LLMs) for any AI agent. Unlike existing methods that tightly couple RL training with agent or rely on sequence concatenation with masking, Agent Lightning achieves complete decoupling between agent execution and training, allowing seamless integration with existing agents developed via diverse ways (e.g., using frameworks like LangChain, OpenAI Agents SDK, AutoGen, and building from scratch) with almost ZERO code modifications. By formulating agent execution as Markov decision process, we define an unified data interface and propose a hierarchical RL algorithm, LightningRL, which contains a credit assignment module, allowing us to decompose trajectories generated by ANY agents into training transition. This enables RL to handle complex interaction logic, such as multi-agent scenarios and dynamic workflows. For the system design, we introduce a Training-Agent Disaggregation architecture, and brings agent observability frameworks into agent runtime, providing a standardized agent finetuning interface. Experiments across text-to-SQL, retrieval-augmented generation, and math tool-use tasks demonstrate stable, continuous improvements, showcasing the framework's potential for real-world agent training and deployment.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xufang Luo",
+          "id": ""
+        },
+        {
+          "name": "Yuge Zhang",
+          "id": ""
+        },
+        {
+          "name": "Zhiyuan He",
+          "id": ""
+        },
+        {
+          "name": "Zilong Wang",
+          "id": ""
+        },
+        {
+          "name": "Siyun Zhao",
+          "id": ""
+        },
+        {
+          "name": "Dongsheng Li",
+          "id": ""
+        },
+        {
+          "name": "Luna K. Qiu",
+          "id": ""
+        },
+        {
+          "name": "Yuqing Yang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280526917",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5312130409615686,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281950772,
+      "title": "Traceability and Accountability in Role-Specialized Multi-Agent LLM Pipelines",
+      "abstract": "Sequential multi-agent systems built with large language models (LLMs) can automate complex software tasks, but they are hard to trust because errors quietly pass from one stage to the next. We study a traceable and accountable pipeline, meaning a system with clear roles, structured handoffs, and saved records that let us trace who did what at each step and assign blame when things go wrong. Our setting is a Planner \u2192 Executor $\\rightarrow$ Critic pipeline. We evaluate eight configurations of three state-of-the-art LLMs on three benchmarks and analyze where errors start, how they spread, and how they can be fixed. Our results show: (1) adding a structured, accountable handoff between agents markedly improves accuracy and prevents the failures common in simple pipelines; (2) models have clear role-specific strengths and risks (e.g., steady planning vs. high-variance critiquing), which we quantify with repair and harm rates; and (3) accuracy-cost-latency trade-offs are task-dependent, with heterogeneous pipelines often the most efficient. Overall, we provide a practical, data-driven method for designing, tracing, and debugging reliable, predictable, and accountable multi-agent systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Amine Barrak",
+          "id": ""
+        }
+      ],
+      "venue": "2025 40th IEEE/ACM International Conference on Automated Software Engineering Workshops (ASEW)",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281950772",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5269514410397254,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278911483,
+      "title": "Agentic AI Process Observability: Discovering Behavioral Variability",
+      "abstract": "AI agents that leverage Large Language Models (LLMs) are increasingly becoming core building blocks of modern software systems. A wide range of frameworks is now available to support the specification of such applications. These frameworks enable the definition of agent setups using natural language prompting, which specifies the roles, goals, and tools assigned to the various agents involved. Within such setups, agent behavior is non-deterministic for any given input, highlighting the critical need for robust debugging and observability tools. In this work, we explore the use of process and causal discovery applied to agent execution trajectories as a means of enhancing developer observability. This approach aids in monitoring and understanding the emergent variability in agent behavior. Additionally, we complement this with LLM-based static analysis techniques to distinguish between intended and unintended behavioral variability. We argue that such instrumentation is essential for giving developers greater control over evolving specifications and for identifying aspects of functionality that may require more precise and explicit definitions.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Fabiana Fournier",
+          "id": ""
+        },
+        {
+          "name": "Lior Limonad",
+          "id": ""
+        },
+        {
+          "name": "Yuval David",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278911483",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5255258064506139,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273653902,
+      "title": "From Cool Demos to Production-Ready FMware: Core Challenges and a Technology Roadmap",
+      "abstract": "The rapid expansion of foundation models (FMs), such as large language models (LLMs), has given rise to FMware--software systems that integrate FMs as core components. While building demonstration-level FMware is relatively straightforward, transitioning to production-ready systems presents numerous challenges, including reliability, high implementation costs, scalability, and compliance with privacy regulations. This paper provides a thematic analysis of the key obstacles in productionizing FMware, synthesized from industry experience and diverse data sources, including hands-on involvement in the Open Platform for Enterprise AI (OPEA) and FMware lifecycle engineering. We identify critical issues in FM selection, data and model alignment, prompt engineering, agent orchestration, system testing, and deployment, alongside cross-cutting concerns such as memory management, observability, and feedback integration. We discuss needed technologies and strategies to address these challenges and offer guidance on how to enable the transition from demonstration systems to scalable, production-ready FMware solutions. Our findings underscore the importance of continued research and multi-industry collaboration to advance the development of production-ready FMware.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Gopi Krishnan Rajbahadur",
+          "id": ""
+        },
+        {
+          "name": "G. Oliva",
+          "id": ""
+        },
+        {
+          "name": "Dayi Lin",
+          "id": ""
+        },
+        {
+          "name": "Ahmed E. Hassan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273653902",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5128033240050226,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285787697,
+      "title": "Wink: Recovering from Misbehaviors in Coding Agents",
+      "abstract": "Autonomous coding agents, powered by large language models (LLMs), are increasingly being adopted in the software industry to automate complex engineering tasks. However, these agents are prone to a wide range of misbehaviors, such as deviating from the user's instructions, getting stuck in repetitive loops, or failing to use tools correctly. These failures disrupt the development workflow and often require resource-intensive manual intervention. In this paper, we present a system for automatically recovering from agentic misbehaviors at scale. We first introduce a taxonomy of misbehaviors grounded in an analysis of production traffic, identifying three primary categories: Specification Drift, Reasoning Problems, and Tool Call Failures, which we find occur in about 30% of all agent trajectories. To address these issues, we developed a lightweight, asynchronous self-intervention system named Wink. Wink observes agent trajectories and provides targeted course-correction guidance to nudge the agent back to a productive path. We evaluated our system on over 10,000 real world agent trajectories and found that it successfully resolves 90% of the misbehaviors that require a single intervention. Furthermore, a live A/B test in our production environment demonstrated that our system leads to a statistically significant reduction in Tool Call Failures, Tokens per Session and Engineer Interventions per Session. We present our experience designing and deploying this system, offering insights into the challenges of building resilient agentic systems at scale.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Rahul Nanda",
+          "id": ""
+        },
+        {
+          "name": "C. Maddila",
+          "id": ""
+        },
+        {
+          "name": "Smriti Jha",
+          "id": ""
+        },
+        {
+          "name": "Euna Mehnaz Khan",
+          "id": ""
+        },
+        {
+          "name": "Matteo Paltenghi",
+          "id": ""
+        },
+        {
+          "name": "Satish Chandra",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2602.17037.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5118012663154761,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 279155432,
+      "title": "TRiSM for Agentic AI: A Review of Trust, Risk, and Security Management in LLM-based Agentic Multi-Agent Systems",
+      "abstract": "Agentic AI systems, built upon large language models (LLMs) and deployed in multi-agent configurations, are redefining intelligence, autonomy, collaboration, and decision-making across enterprise and societal domains. This review presents a structured analysis of Trust, Risk, and Security Management (TRiSM) in the context of LLM-based Agentic Multi-Agent Systems (AMAS). We begin by examining the conceptual foundations of Agentic AI and highlight its architectural distinctions from traditional AI agents. We then adapt and extend the AI TRiSM framework for Agentic AI, structured around key pillars: \\textit{ Explainability, ModelOps, Security, Privacy} and \\textit{their Lifecycle Governance}, each contextualized to the challenges of AMAS. A risk taxonomy is proposed to capture the unique threats and vulnerabilities of Agentic AI, ranging from coordination failures to prompt-based adversarial manipulation. To support practical assessment in Agentic AI works, we introduce two novel metrics: the Component Synergy Score (CSS), which quantifies the quality of inter-agent collaboration, and the Tool Utilization Efficacy (TUE), which evaluates the efficiency of tool use within agent workflows. We further discuss strategies for improving explainability in Agentic AI, as well as approaches to enhancing security and privacy through encryption, adversarial robustness, and regulatory compliance. The review concludes with a research roadmap for the responsible development and deployment of Agentic AI, highlighting key directions to align emerging systems with TRiSM principles-ensuring safety, transparency, and accountability in their operation.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Shaina Raza",
+          "id": ""
+        },
+        {
+          "name": "Ranjan Sapkota",
+          "id": ""
+        },
+        {
+          "name": "Manoj Karkee",
+          "id": ""
+        },
+        {
+          "name": "Christos Emmanouilidis",
+          "id": ""
+        }
+      ],
+      "venue": "AI Open",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:279155432",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4749806646458514,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273850266,
+      "title": "AI Metropolis: Scaling Large Language Model-based Multi-Agent Simulation with Out-of-order Execution",
+      "abstract": "With more advanced natural language understanding and reasoning capabilities, large language model (LLM)-powered agents are increasingly developed in simulated environments to perform complex tasks, interact with other agents, and exhibit emergent behaviors relevant to social science and gaming. However, current multi-agent simulations frequently suffer from inefficiencies due to the limited parallelism caused by false dependencies, resulting in performance bottlenecks. In this paper, we introduce AI Metropolis, a simulation engine that improves the efficiency of LLM agent simulations by incorporating out-of-order execution scheduling. By dynamically tracking real dependencies between agents, AI Metropolis minimizes false dependencies, enhancing parallelism and enabling efficient hardware utilization. Our evaluations demonstrate that AI Metropolis achieves speedups from 1.3x to 4.15x over standard parallel simulation with global synchronization, approaching optimal performance as the number of agents increases.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Zhiqiang Xie",
+          "id": ""
+        },
+        {
+          "name": "Hao Kang",
+          "id": ""
+        },
+        {
+          "name": "Ying Sheng",
+          "id": ""
+        },
+        {
+          "name": "Tushar Krishna",
+          "id": ""
+        },
+        {
+          "name": "Kayvon Fatahalian",
+          "id": ""
+        },
+        {
+          "name": "Christos Kozyrakis",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273850266",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.468416979887939,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283557110,
+      "title": "Orchestrator Multi-Agent Clinical Decision Support System for Secondary Headache Diagnosis in Primary Care",
+      "abstract": "Unlike most primary headaches, secondary headaches need specialized care and can have devastating consequences if not treated promptly. Clinical guidelines highlight several'red flag'features, such as thunderclap onset, meningismus, papilledema, focal neurologic deficits, signs of temporal arteritis, systemic illness, and the'worst headache of their life'presentation. Despite these guidelines, determining which patients require urgent evaluation remains challenging in primary care settings. Clinicians often work with limited time, incomplete information, and diverse symptom presentations, which can lead to under-recognition and inappropriate care. We present a large language model (LLM)-based multi-agent clinical decision support system built on an orchestrator-specialist architecture, designed to perform explicit and interpretable secondary headache diagnosis from free-text clinical vignettes. The multi-agent system decomposes diagnosis into seven domain-specialized agents, each producing a structured and evidence-grounded rationale, while a central orchestrator performs task decomposition and coordinates agent routing. We evaluated the multi-agent system using 90 expert-validated secondary headache cases and compared its performance with a single-LLM baseline across two prompting strategies: question-based prompting (QPrompt) and clinical practice guideline-based prompting (GPrompt). We tested five open-source LLMs (Qwen-30B, GPT-OSS-20B, Qwen-14B, Qwen-8B, and Llama-3.1-8B), and found that the orchestrated multi-agent system with GPrompt consistently achieved the highest F1 scores, with larger gains in smaller models. These findings demonstrate that structured multi-agent reasoning improves accuracy beyond prompt engineering alone and offers a transparent, clinically aligned approach for explainable decision support in secondary headache diagnosis.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xizhi Wu",
+          "id": ""
+        },
+        {
+          "name": "Nelly-Estefanie Garduno-Rapp",
+          "id": ""
+        },
+        {
+          "name": "Justin F. Rousseau",
+          "id": ""
+        },
+        {
+          "name": "Mounika Thakkallapally",
+          "id": ""
+        },
+        {
+          "name": "Hang Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yuelyu Ji",
+          "id": ""
+        },
+        {
+          "name": "Shyam Visweswaran",
+          "id": ""
+        },
+        {
+          "name": "Yifan Peng",
+          "id": ""
+        },
+        {
+          "name": "Yanshan Wang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283557110",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.46443624986064436,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 271974418,
+      "title": "AUTOGEN STUDIO: A No-Code Developer Tool for Building and Debugging Multi-Agent Systems",
+      "abstract": "Multi-agent systems, where multiple agents (generative AI models + tools) collaborate, are emerging as an effective pattern for solving long-running, complex tasks in numerous do- mains. However, specifying their parameters (such as models, tools, and orchestration mechanisms etc,.) and debugging them remains challenging for most developers. To address this challenge, we present AUTOGEN STUDIO, a no-code developer tool for rapidly prototyping, debugging, and evaluating multi-agent work- flows built upon the AUTOGEN framework. AUTOGEN STUDIO offers a web interface and a Python API for representing LLM-enabled agents using a declarative (JSON-based) specification. It provides an intuitive drag-and-drop UI for agent workflow specification, interactive evaluation and debugging of workflows, and a gallery of reusable agent components. We highlight four design principles for no-code multi-agent developer tools and contribute an open-source implementation. https://github.com/microsoft/autogen/tree/autogenstudio/samples/apps/autogen-studio",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Victor C. Dibia",
+          "id": ""
+        },
+        {
+          "name": "Jingya Chen",
+          "id": ""
+        },
+        {
+          "name": "Gagan Bansal",
+          "id": ""
+        },
+        {
+          "name": "Suff Syed",
+          "id": ""
+        },
+        {
+          "name": "Adam Fourney",
+          "id": ""
+        },
+        {
+          "name": "E. Zhu",
+          "id": ""
+        },
+        {
+          "name": "Chi Wang",
+          "id": ""
+        },
+        {
+          "name": "Saleema Amershi",
+          "id": ""
+        }
+      ],
+      "venue": "Conference on Empirical Methods in Natural Language Processing",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271974418",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4641951272639133,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 276768421,
+      "title": "Interactive Debugging and Steering of Multi-Agent AI Systems",
+      "abstract": "Fully autonomous teams of LLM-powered AI agents are emerging that collaborate to perform complex tasks for users. What challenges do developers face when trying to build and debug these AI agent teams? In formative interviews with five AI agent developers, we identify core challenges: difficulty reviewing long agent conversations to localize errors, lack of support in current tools for interactive debugging, and the need for tool support to iterate on agent configuration. Based on these needs, we developed an interactive multi-agent debugging tool, AGDebugger, with a UI for browsing and sending messages, the ability to edit and reset prior agent messages, and an overview visualization for navigating complex message histories. In a two-part user study with 14 participants, we identify common user strategies for steering agents and highlight the importance of interactive message resets for debugging. Our studies deepen understanding of interfaces for debugging increasingly important agentic workflows.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Will Epperson",
+          "id": ""
+        },
+        {
+          "name": "Gagan Bansal",
+          "id": ""
+        },
+        {
+          "name": "Victor C. Dibia",
+          "id": ""
+        },
+        {
+          "name": "Adam Fourney",
+          "id": ""
+        },
+        {
+          "name": "Jack Gerrits",
+          "id": ""
+        },
+        {
+          "name": "E. Zhu",
+          "id": ""
+        },
+        {
+          "name": "Saleema Amershi",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Human Factors in Computing Systems",
+      "journal": null,
+      "url": "http://dl.acm.org/citation.cfm?id=3713581",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.46257352922653844,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281830069,
+      "title": "Beyond the Final Answer: Evaluating the Reasoning Trajectories of Tool-Augmented Agents",
+      "abstract": "Although recent tool-augmented benchmarks incorporate complex user requests and diverse tools, the evaluation methods for most of them remain limited to answer matching. However, as the number of steps required to resolve a user request increases, a proper evaluation of an agent's performance must go beyond the final answer to also assess the problem-solving trajectory, including previously ignored aspects such as efficiency, hallucination, and adaptivity. The most straightforward method for evaluating these aspects is to compare an agent's trajectory with the ground-truth trajectory, but this approach is fundamentally limited since annotating all valid ground-truth trajectories is prohibitively expensive. However, a simple LLM-based evaluator struggles to assess trajectories in detail without ground truth. To effectively evaluate the agents in this manner, we introduce TRACE, a framework for the multi-dimensional evaluation of tool-augmented LLM agent performance. By incorporating an evidence bank, which accumulates knowledge gathered from preceding reasoning steps, TRACE enables a multi-faceted analysis and evaluation of an agent's reasoning trajectory effectively. To validate our framework, we develop a new meta-evaluation dataset by augmenting existing benchmarks with diverse and flawed trajectories, each labeled with multi-faceted performance scores. Our results confirm that TRACE accurately evaluates these complex behaviors in a scalable and cost-effective manner, even with small open-source LLMs. Furthermore, we apply our method to evaluate the trajectories that agents produce while solving tool-augmented tasks, presenting previously unreported observations and their corresponding insights.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Wonjoong Kim",
+          "id": ""
+        },
+        {
+          "name": "S. Park",
+          "id": ""
+        },
+        {
+          "name": "Yeonjun In",
+          "id": ""
+        },
+        {
+          "name": "Sein Kim",
+          "id": ""
+        },
+        {
+          "name": "Dongha Lee",
+          "id": ""
+        },
+        {
+          "name": "Chanyoung Park",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281830069",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.46167993609714875,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284910278,
+      "title": "AEMA: Verifiable Evaluation Framework for Trustworthy and Controlled Agentic LLM Systems",
+      "abstract": "Evaluating large language model (LLM)-based multi-agent systems remains a critical challenge, as these systems must exhibit reliable coordination, transparent decision-making, and verifiable performance across evolving tasks. Existing evaluation approaches often limit themselves to single-response scoring or narrow benchmarks, which lack stability, extensibility, and automation when deployed in enterprise settings at multi-agent scale. We present AEMA (Adaptive Evaluation Multi-Agent), a process-aware and auditable framework that plans, executes, and aggregates multi-step evaluations across heterogeneous agentic workflows under human oversight. Compared to a single LLM-as-a-Judge, AEMA achieves greater stability, human alignment, and traceable records that support accountable automation. Our results on enterprise-style agent workflows simulated using realistic business scenarios demonstrate that AEMA provides a transparent and reproducible pathway toward responsible evaluation of LLM-based multi-agent systems. Keywords Agentic AI, Multi-Agent Systems, Trustworthy AI, Verifiable Evaluation, Human Oversight",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Yen-Ting Lee",
+          "id": ""
+        },
+        {
+          "name": "Keerthi Koneru",
+          "id": ""
+        },
+        {
+          "name": "Zahra Moslemi",
+          "id": ""
+        },
+        {
+          "name": "Sheethal Kumar",
+          "id": ""
+        },
+        {
+          "name": "Ramesh Radhakrishnan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284910278",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.46165153569240197,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273850560,
+      "title": "Watson: A Cognitive Observability Framework for the Reasoning of Foundation Model-Powered Agents",
+      "abstract": "As foundation models (FMs) play an increasingly prominent role in complex software systems, such as FM-powered agentic software (i.e., Agentware), they introduce significant challenges for developers regarding observability. Unlike traditional software, agents operate autonomously, using extensive data and opaque implicit reasoning, making it difficult to observe and understand their behavior during runtime, especially when they take unexpected actions or encounter errors. In this paper, we highlight the limitations of traditional operational observability in the context of FM-powered software, and introduce cognitive observability as a new type of required observability that has emerged for such innovative systems. We then propose a novel framework that provides cognitive observability into the implicit reasoning processes of agents (a.k.a. reasoning observability), and demonstrate the effectiveness of our framework in boosting the debuggability of Agentware and, in turn, the abilities of an Agentware through a case study on AutoCodeRover, a cuttingedge Agentware for autonomous program improvement.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Benjamin Rombaut",
+          "id": ""
+        },
+        {
+          "name": "Sogol Masoumzadeh",
+          "id": ""
+        },
+        {
+          "name": "Kirill Vasilevski",
+          "id": ""
+        },
+        {
+          "name": "Dayi Lin",
+          "id": ""
+        },
+        {
+          "name": "Ahmed E. Hassan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273850560",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.46083040837200445,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281842991,
+      "title": "Where Did It All Go Wrong? A Hierarchical Look into Multi-Agent Error Attribution",
+      "abstract": "Error attribution in Large Language Model (LLM) multi-agent systems presents a significant challenge in debugging and improving collaborative AI systems. Current approaches to pinpointing agent and step level failures in interaction traces - whether using all-at-once evaluation, step-by-step analysis, or binary search - fall short when analyzing complex patterns, struggling with both accuracy and consistency. We present ECHO (Error attribution through Contextual Hierarchy and Objective consensus analysis), a novel algorithm that combines hierarchical context representation, objective analysis-based evaluation, and consensus voting to improve error attribution accuracy. Our approach leverages a positional-based leveling of contextual understanding while maintaining objective evaluation criteria, ultimately reaching conclusions through a consensus mechanism. Experimental results demonstrate that ECHO outperforms existing methods across various multi-agent interaction scenarios, showing particular strength in cases involving subtle reasoning errors and complex interdependencies. Our findings suggest that leveraging these concepts of structured, hierarchical context representation combined with consensus-based objective decision-making, provides a more robust framework for error attribution in multi-agent systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Adi Banerjee",
+          "id": ""
+        },
+        {
+          "name": "Anirudh Nair",
+          "id": ""
+        },
+        {
+          "name": "Tarik Borogovac",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281842991",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.45113605750371644,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285872260,
+      "title": "WorkflowPerturb: Calibrated Stress Tests for Evaluating Multi-Agent Workflow Metrics",
+      "abstract": "LLM-based systems increasingly generate structured workflows for complex tasks. In practice, automatic evaluation of these workflows is difficult, because metric scores are often not calibrated, and score changes do not directly communicate the severity of workflow degradation. We introduce WorkflowPerturb, a controlled benchmark for studying workflow evaluation metrics. It works by applying realistic, controlled perturbations to golden workflows. WorkflowPerturb contains 4,973 golden workflows and 44,757 perturbed variants across three perturbation types (Missing Steps, Compressed Steps, and Description Changes), each applied at severity levels of 10%, 30%, and 50%. We benchmark multiple metric families and analyze their sensitivity and calibration using expected score trajectories and residuals. Our results characterize systematic differences across metric families and support severity-aware interpretation of workflow evaluation scores. Our dataset will be released upon acceptance.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Madhav Kanda",
+          "id": ""
+        },
+        {
+          "name": "P. Las-Casas",
+          "id": ""
+        },
+        {
+          "name": "A. Kumbhare",
+          "id": ""
+        },
+        {
+          "name": "Rodrigo Fonseca",
+          "id": ""
+        },
+        {
+          "name": "Sharad Agarwal",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285872260",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4472797201654762,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 267034935,
+      "title": "R-Judge: Benchmarking Safety Risk Awareness for LLM Agents",
+      "abstract": "Large language models (LLMs) have exhibited great potential in autonomously completing tasks across real-world applications. Despite this, these LLM agents introduce unexpected safety risks when operating in interactive environments. Instead of centering on the harmlessness of LLM-generated content in most prior studies, this work addresses the imperative need for benchmarking the behavioral safety of LLM agents within diverse environments. We introduce R-Judge, a benchmark crafted to evaluate the proficiency of LLMs in judging and identifying safety risks given agent interaction records. R-Judge comprises 569 records of multi-turn agent interaction, encompassing 27 key risk scenarios among 5 application categories and 10 risk types. It is of high-quality curation with annotated safety labels and risk descriptions. Evaluation of 11 LLMs on R-Judge shows considerable room for enhancing the risk awareness of LLMs: The best-performing model, GPT-4o, achieves 74.42% while no other models significantly exceed the random. Moreover, we reveal that risk awareness in open agent scenarios is a multi-dimensional capability involving knowledge and reasoning, thus challenging for LLMs. With further experiments, we find that fine-tuning on safety judgment significantly improve model performance while straightforward prompting mechanisms fail. R-Judge is publicly available at https://github.com/Lordog/R-Judge.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Tongxin Yuan",
+          "id": ""
+        },
+        {
+          "name": "Zhiwei He",
+          "id": ""
+        },
+        {
+          "name": "Lingzhong Dong",
+          "id": ""
+        },
+        {
+          "name": "Yiming Wang",
+          "id": ""
+        },
+        {
+          "name": "Ruijie Zhao",
+          "id": ""
+        },
+        {
+          "name": "Tian Xia",
+          "id": ""
+        },
+        {
+          "name": "Lizhen Xu",
+          "id": ""
+        },
+        {
+          "name": "Binglin Zhou",
+          "id": ""
+        },
+        {
+          "name": "Fangqi Li",
+          "id": ""
+        },
+        {
+          "name": "Zhuosheng Zhang",
+          "id": ""
+        },
+        {
+          "name": "Rui Wang",
+          "id": ""
+        },
+        {
+          "name": "Gongshen Liu",
+          "id": ""
+        }
+      ],
+      "venue": "Conference on Empirical Methods in Natural Language Processing",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:267034935",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4320638815756659,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281675777,
+      "title": "Demystifying the Lifecycle of Failures in Platform-Orchestrated Agentic Workflows",
+      "abstract": "Agentic workflows built on low-code orchestration platforms enable rapid development of multi-agent systems, but they also introduce new and poorly understood failure modes that hinder reliability and maintainability. Unlike traditional software systems, failures in agentic workflows often propagate across heterogeneous nodes through natural-language interactions, tool invocations, and dynamic control logic, making failure attribution and repair particularly challenging. In this paper, we present an empirical study of platform-orchestrated agentic workflows from a failure lifecycle perspective, with the goal of characterizing failure manifestations, identifying underlying root causes, and examining corresponding repair strategies. We present AgentFail, a dataset of 307 real-world failure cases collected from two representative agentic workflow platforms. Based on this dataset, we analyze failure patterns, root causes, and repair difficulty for various failure root causes and nodes in the workflow. Our findings reveal key failure mechanisms in agentic workflows and provide actionable guidelines for reliable failure repair, and real-world agentic workflow design.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xuyan Ma",
+          "id": ""
+        },
+        {
+          "name": "Xiaofei Xie",
+          "id": ""
+        },
+        {
+          "name": "Yawen Wang",
+          "id": ""
+        },
+        {
+          "name": "Junjie Wang",
+          "id": ""
+        },
+        {
+          "name": "Boyu Wu",
+          "id": ""
+        },
+        {
+          "name": "Mingyang Li",
+          "id": ""
+        },
+        {
+          "name": "Qing Wang",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2509.23735.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.42978218673277463,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277349601,
+      "title": "debug-gym: A Text-Based Environment for Interactive Debugging",
+      "abstract": "Large Language Models (LLMs) are increasingly relied upon for coding tasks, yet in most scenarios it is assumed that all relevant information can be either accessed in context or matches their training data. We posit that LLMs can benefit from the ability to interactively explore a codebase to gather the information relevant to their task. To achieve this, we present a textual environment, namely debug-gym, for developing LLM-based agents in an interactive coding setting. Our environment is lightweight and provides a preset of useful tools, such as a Python debugger (pdb), designed to facilitate an LLM-based agent's interactive debugging. Beyond coding and debugging tasks, this approach can be generalized to other tasks that would benefit from information-seeking behavior by an LLM agent.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xingdi Yuan",
+          "id": ""
+        },
+        {
+          "name": "Morgane M Moss",
+          "id": ""
+        },
+        {
+          "name": "Charbel Feghali",
+          "id": ""
+        },
+        {
+          "name": "Chinmay Singh",
+          "id": ""
+        },
+        {
+          "name": "Darya Moldavskaya",
+          "id": ""
+        },
+        {
+          "name": "Drew MacPhee",
+          "id": ""
+        },
+        {
+          "name": "Lucas Caccia",
+          "id": ""
+        },
+        {
+          "name": "Matheus Pereira",
+          "id": ""
+        },
+        {
+          "name": "Minseon Kim",
+          "id": ""
+        },
+        {
+          "name": "Alessandro Sordoni",
+          "id": ""
+        },
+        {
+          "name": "Marc-Alexandre C\u00f4t\u00e9",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277349601",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.419573208221365,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 271244837,
+      "title": "Building AI Agents for Autonomous Clouds: Challenges and Design Principles",
+      "abstract": "The rapid growth in the use of Large Language Models (LLMs) and AI Agents as part of software development and deployment is revolutionizing the information technology landscape. While code generation receives significant attention, a higher-impact application lies in using AI agents for operational resilience of cloud services, which currently require significant human effort and domain knowledge. There is a growing interest in AI for IT Operations (AIOps) which aims to automate complex operational tasks, like fault localization and root cause analysis, thereby reducing human intervention and customer impact. However, achieving the vision of autonomous and self-healing clouds through AIOps is hampered by the lack of standardized frameworks for building, evaluating, and improving AIOps agents. This vision paper lays the groundwork for such a framework by first framing the requirements and then discussing design decisions that satisfy them. We also propose AIOpsLab, a prototype implementation leveraging agent-cloud-interface that orchestrates an application, injects real-time faults using chaos engineering, and interfaces with an agent to localize and resolve the faults. We report promising results and lay the groundwork to build a modular and robust framework for building, evaluating, and improving agents for autonomous clouds.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Manisha M Shetty",
+          "id": ""
+        },
+        {
+          "name": "Yinfang Chen",
+          "id": ""
+        },
+        {
+          "name": "Gagan Somashekar",
+          "id": ""
+        },
+        {
+          "name": "Ming-Jie Ma",
+          "id": ""
+        },
+        {
+          "name": "Yogesh L. Simmhan",
+          "id": ""
+        },
+        {
+          "name": "Xuchao Zhang",
+          "id": ""
+        },
+        {
+          "name": "Jonathan Mace",
+          "id": ""
+        },
+        {
+          "name": "Dax Vandevoorde",
+          "id": ""
+        },
+        {
+          "name": "P. Las-Casas",
+          "id": ""
+        },
+        {
+          "name": "Shachee Mishra Gupta",
+          "id": ""
+        },
+        {
+          "name": "Suman Nath",
+          "id": ""
+        },
+        {
+          "name": "Chetan Bansal",
+          "id": ""
+        },
+        {
+          "name": "S. Rajmohan",
+          "id": ""
+        }
+      ],
+      "venue": "ACM Symposium on Cloud Computing",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271244837",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4180248953035506,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 274655852,
+      "title": "AgentTrek: Agent Trajectory Synthesis via Guiding Replay with Web Tutorials",
+      "abstract": "Graphical User Interface (GUI) agents can automate complex tasks across digital environments, but their development is hindered by the scarcity of high-quality trajectory data for training. Existing approaches rely on expensive human annotation, making them unsustainable at scale. We propose AgentTrek, a scalable data synthesis pipeline that generates web agent trajectories by leveraging publicly available tutorials. Our three-stage method: (1) automatically harvests and filters tutorial-like texts from the internet using a specialized classification model, (2) transforms these texts into structured task specifications with step-by-step instructions, and (3) employs a visual-language model (VLM) agent to execute these instructions in real environments, while a VLM-based evaluator verifies trajectory correctness. The synthesized trajectories encompass multiple modalities, including text-based HTML observations with function-calling API actions, and vision-based screenshot observations with pixel-level actions. This multimodal data, enriched with chain-of-thought reasoning, enables agents to achieve state-of-the-art performance on both textual web browsing benchmarks (e.g., WebArena) and visual web grounding and browsing benchmarks (e.g., ScreenSpot Web and Multimodal Mind2Web). Furthermore, our fully automated approach significantly reduces data collection costs, achieving a cost of just $0.55 per high-quality trajectory without human annotators. Our work demonstrates that guided replay using web tutorials is a practical and scalable strategy for training advanced GUI agents, paving the way for more capable and autonomous digital assistants.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Yiheng Xu",
+          "id": ""
+        },
+        {
+          "name": "Dunjie Lu",
+          "id": ""
+        },
+        {
+          "name": "Zhennan Shen",
+          "id": ""
+        },
+        {
+          "name": "Junli Wang",
+          "id": ""
+        },
+        {
+          "name": "Zekun Wang",
+          "id": ""
+        },
+        {
+          "name": "Yuchen Mao",
+          "id": ""
+        },
+        {
+          "name": "Caiming Xiong",
+          "id": ""
+        },
+        {
+          "name": "Tao Yu",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Learning Representations",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:274655852",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.41354326752486353,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281842703,
+      "title": "Open Agent Specification (Agent Spec): A Unified Representation for AI Agents",
+      "abstract": "The proliferation of agent frameworks has led to fragmentation in how agents are defined, executed, and evaluated. Existing systems differ in their abstractions, data flow semantics, and tool integrations, making it difficult to share or reproduce workflows. We introduce Open Agent Specification (Agent Spec), a declarative language that defines AI agents and agentic workflows in a way that is compatible across frameworks, promoting reusability, portability and interoperability of AI agents. Agent Spec defines a common set of components, control and data flow semantics, and schemas that allow an agent to be defined once and executed across different runtimes. Agent Spec also introduces a standardized Evaluation harness to assess agent behavior and agentic workflows across runtimes - analogous to how HELM and related harnesses standardized LLM evaluation - so that performance, robustness, and efficiency can be compared consistently across frameworks. We demonstrate this using four distinct runtimes (LangGraph, CrewAI, AutoGen, and WayFlow) evaluated over three different benchmarks (SimpleQA Verified, $\\tau^2$-Bench and BIRD-SQL). We provide accompanying toolsets: a Python SDK (PyAgentSpec), a reference runtime (WayFlow), and adapters for popular frameworks (e.g., LangGraph, AutoGen, CrewAI). Agent Spec bridges the gap between model-centric and agent-centric standardization&evaluation, laying the groundwork for reliable, reusable, and portable agentic systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Yassine Benajiba",
+          "id": ""
+        },
+        {
+          "name": "Cesare Bernardis",
+          "id": ""
+        },
+        {
+          "name": "V. Blinov",
+          "id": ""
+        },
+        {
+          "name": "Paul Cayet",
+          "id": ""
+        },
+        {
+          "name": "Hassan Chafi",
+          "id": ""
+        },
+        {
+          "name": "A. Fathan",
+          "id": ""
+        },
+        {
+          "name": "Louis Faucon",
+          "id": ""
+        },
+        {
+          "name": "Damien Hilloulin",
+          "id": ""
+        },
+        {
+          "name": "Sungpack Hong",
+          "id": ""
+        },
+        {
+          "name": "Ingo Kossyk",
+          "id": ""
+        },
+        {
+          "name": "Rhicheek Patra",
+          "id": ""
+        },
+        {
+          "name": "Sujith Ravi",
+          "id": ""
+        },
+        {
+          "name": "J. Schweizer",
+          "id": ""
+        },
+        {
+          "name": "Jyotika Singh",
+          "id": ""
+        },
+        {
+          "name": "Shailender Singh",
+          "id": ""
+        },
+        {
+          "name": "Xuelin Situ",
+          "id": ""
+        },
+        {
+          "name": "Weiyi Sun",
+          "id": ""
+        },
+        {
+          "name": "Kartik Talamadupula",
+          "id": ""
+        },
+        {
+          "name": "Jerry Xu",
+          "id": ""
+        },
+        {
+          "name": "Ying Xu",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281842703",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.39930621446064435,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281080757,
+      "title": "MobiAgent: A Systematic Framework for Customizable Mobile Agents",
+      "abstract": "With the rapid advancement of Vision-Language Models (VLMs), GUI-based mobile agents have emerged as a key development direction for intelligent mobile systems. However, existing agent models continue to face significant challenges in real-world task execution, particularly in terms of accuracy and efficiency. To address these limitations, we propose MobiAgent, a comprehensive mobile agent system comprising three core components: the MobiMind-series agent models, the AgentRR acceleration framework, and the MobiFlow benchmarking suite. Furthermore, recognizing that the capabilities of current mobile agents are still limited by the availability of high-quality data, we have developed an AI-assisted agile data collection pipeline that significantly reduces the cost of manual annotation. Compared to both general-purpose LLMs and specialized GUI agent models, MobiAgent achieves state-of-the-art performance in real-world mobile scenarios.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Cheng Zhang",
+          "id": ""
+        },
+        {
+          "name": "Erhu Feng",
+          "id": ""
+        },
+        {
+          "name": "Xi Zhao",
+          "id": ""
+        },
+        {
+          "name": "Yisheng Zhao",
+          "id": ""
+        },
+        {
+          "name": "Wangbo Gong",
+          "id": ""
+        },
+        {
+          "name": "Jiahui Sun",
+          "id": ""
+        },
+        {
+          "name": "Dong Du",
+          "id": ""
+        },
+        {
+          "name": "Zhichao Hua",
+          "id": ""
+        },
+        {
+          "name": "Yubin Xia",
+          "id": ""
+        },
+        {
+          "name": "Haibo Chen",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2509.00531.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.39776048479814335,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 271534070,
+      "title": "OfficeBench: Benchmarking Language Agents across Multiple Applications for Office Automation",
+      "abstract": "Office automation significantly enhances human productivity by automatically finishing routine tasks in the workflow. Beyond the basic information extraction studied in much of the prior document AI literature, the office automation research should be extended to more realistic office tasks which require to integrate various information sources in the office system and produce outputs through a series of decision-making processes. We introduce OfficeBench, one of the first office automation benchmarks for evaluating current LLM agents' capability to address office tasks in realistic office workflows. OfficeBench requires LLM agents to perform feasible long-horizon planning, proficiently switch between applications in a timely manner, and accurately ground their actions within a large combined action space, based on the contextual demands of the workflow. Applying our customized evaluation methods on each task, we find that GPT-4 Omni achieves the highest pass rate of 47.00%, demonstrating a decent performance in handling office tasks. However, this is still far below the human performance and accuracy standards required by real-world office workflows. We further observe that most issues are related to operation redundancy and hallucinations, as well as limitations in switching between multiple applications, which may provide valuable insights for developing effective agent frameworks for office automation.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Zilong Wang",
+          "id": ""
+        },
+        {
+          "name": "Yuedong Cui",
+          "id": ""
+        },
+        {
+          "name": "Li Zhong",
+          "id": ""
+        },
+        {
+          "name": "Zimin Zhang",
+          "id": ""
+        },
+        {
+          "name": "Da Yin",
+          "id": ""
+        },
+        {
+          "name": "B. Lin",
+          "id": ""
+        },
+        {
+          "name": "Jingbo Shang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271534070",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3367733101098352,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284486980,
+      "title": "AI Agent Systems: Architectures, Applications, and Evaluation",
+      "abstract": "AI agents -- systems that combine foundation models with reasoning, planning, memory, and tool use -- are rapidly becoming a practical interface between natural-language intent and real-world computation. This survey synthesizes the emerging landscape of AI agent architectures across: (i) deliberation and reasoning (e.g., chain-of-thought-style decomposition, self-reflection and verification, and constraint-aware decision making), (ii) planning and control (from reactive policies to hierarchical and multi-step planners), and (iii) tool calling and environment interaction (retrieval, code execution, APIs, and multimodal perception). We organize prior work into a unified taxonomy spanning agent components (policy/LLM core, memory, world models, planners, tool routers, and critics), orchestration patterns (single-agent vs.\\ multi-agent; centralized vs.\\ decentralized coordination), and deployment settings (offline analysis vs.\\ online interactive assistance; safety-critical vs.\\ open-ended tasks). We discuss key design trade-offs -- latency vs.\\ accuracy, autonomy vs.\\ controllability, and capability vs.\\ reliability -- and highlight how evaluation is complicated by non-determinism, long-horizon credit assignment, tool and environment variability, and hidden costs such as retries and context growth. Finally, we summarize measurement and benchmarking practices (task suites, human preference and utility metrics, success under constraints, robustness and security) and identify open challenges including verification and guardrails for tool actions, scalable memory and context management, interpretability of agent decisions, and reproducible evaluation under realistic workloads.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Bin Xu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2601.01743.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3303769740460483,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 270869659,
+      "title": "Mobile-Bench: An Evaluation Benchmark for LLM-based Mobile Agents",
+      "abstract": "With the remarkable advancements of large language models (LLMs), LLM-based agents have become a research hotspot in human-computer interaction. However, there is a scarcity of benchmarks available for LLM-based mobile agents. Benchmarking these agents generally faces three main challenges: (1) The inefficiency of UI-only operations imposes limitations to task evaluation. (2) Specific instructions within a singular application lack adequacy for assessing the multi-dimensional reasoning and decision-making capacities of LLM mobile agents. (3) Current evaluation metrics are insufficient to accurately assess the process of sequential actions. To this end, we propose Mobile-Bench, a novel benchmark for evaluating the capabilities of LLM-based mobile agents. First, we expand conventional UI operations by incorporating 103 collected APIs to accelerate the efficiency of task completion. Subsequently, we collect evaluation data by combining real user queries with augmentation from LLMs. To better evaluate different levels of planning capabilities for mobile agents, our data is categorized into three distinct groups: SAST, SAMT, and MAMT, reflecting varying levels of task complexity. Mobile-Bench comprises 832 data entries, with more than 200 tasks specifically designed to evaluate multi-APP collaboration scenarios. Furthermore, we introduce a more accurate evaluation metric, named CheckPoint, to assess whether LLM-based mobile agents reach essential points during their planning and reasoning steps.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Shihan Deng",
+          "id": ""
+        },
+        {
+          "name": "Weikai Xu",
+          "id": ""
+        },
+        {
+          "name": "Hongda Sun",
+          "id": ""
+        },
+        {
+          "name": "Wei Liu",
+          "id": ""
+        },
+        {
+          "name": "Tao Tan",
+          "id": ""
+        },
+        {
+          "name": "Jianfeng Liu",
+          "id": ""
+        },
+        {
+          "name": "Ang Li",
+          "id": ""
+        },
+        {
+          "name": "Jian Luan",
+          "id": ""
+        },
+        {
+          "name": "Bin Wang",
+          "id": ""
+        },
+        {
+          "name": "Rui Yan",
+          "id": ""
+        },
+        {
+          "name": "Shuo Shang",
+          "id": ""
+        }
+      ],
+      "venue": "Annual Meeting of the Association for Computational Linguistics",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:270869659",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3152439257184457,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 267211602,
+      "title": "Investigate-Consolidate-Exploit: A General Strategy for Inter-Task Agent Self-Evolution",
+      "abstract": "This paper introduces Investigate-Consolidate-Exploit (ICE), a novel strategy for enhancing the adaptability and flexibility of AI agents through inter-task self-evolution. Unlike existing methods focused on intra-task learning, ICE promotes the transfer of knowledge between tasks for genuine self-evolution, similar to human experience learning. The strategy dynamically investigates planning and execution trajectories, consolidates them into simplified workflows and pipelines, and exploits them for improved task execution. Our experiments on the XAgent framework demonstrate ICE's effectiveness, reducing API calls by as much as 80% and significantly decreasing the demand for the model's capability. Specifically, when combined with GPT-3.5, ICE's performance matches that of raw GPT-4 across various agent tasks. We argue that this self-evolution approach represents a paradigm shift in agent design, contributing to a more robust AI community and ecosystem, and moving a step closer to full autonomy.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Cheng Qian",
+          "id": ""
+        },
+        {
+          "name": "Shihao Liang",
+          "id": ""
+        },
+        {
+          "name": "Yujia Qin",
+          "id": ""
+        },
+        {
+          "name": "Yining Ye",
+          "id": ""
+        },
+        {
+          "name": "X. Cong",
+          "id": ""
+        },
+        {
+          "name": "Yankai Lin",
+          "id": ""
+        },
+        {
+          "name": "Yesai Wu",
+          "id": ""
+        },
+        {
+          "name": "Zhiyuan Liu",
+          "id": ""
+        },
+        {
+          "name": "Maosong Sun",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:267211602",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.30061728583932895,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 265692435,
+      "title": "Generative agent-based modeling with actions grounded in physical, social, or digital space using Concordia",
+      "abstract": "Agent-based modeling has been around for decades, and applied widely across the social and natural sciences. The scope of this research method is now poised to grow dramatically as it absorbs the new affordances provided by Large Language Models (LLM)s. Generative Agent-Based Models (GABM) are not just classic Agent-Based Models (ABM)s where the agents talk to one another. Rather, GABMs are constructed using an LLM to apply common sense to situations, act\"reasonably\", recall common semantic knowledge, produce API calls to control digital technologies like apps, and communicate both within the simulation and to researchers viewing it from the outside. Here we present Concordia, a library to facilitate constructing and working with GABMs. Concordia makes it easy to construct language-mediated simulations of physically- or digitally-grounded environments. Concordia agents produce their behavior using a flexible component system which mediates between two fundamental operations: LLM calls and associative memory retrieval. A special agent called the Game Master (GM), which was inspired by tabletop role-playing games, is responsible for simulating the environment where the agents interact. Agents take actions by describing what they want to do in natural language. The GM then translates their actions into appropriate implementations. In a simulated physical world, the GM checks the physical plausibility of agent actions and describes their effects. In digital environments simulating technologies such as apps and services, the GM may handle API calls to integrate with external tools such as general AI assistants (e.g., Bard, ChatGPT), and digital apps (e.g., Calendar, Email, Search, etc.). Concordia was designed to support a wide array of applications both in scientific research and for evaluating performance of real digital services by simulating users and/or generating synthetic data.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "A. Vezhnevets",
+          "id": ""
+        },
+        {
+          "name": "J. Agapiou",
+          "id": ""
+        },
+        {
+          "name": "Avia Aharon",
+          "id": ""
+        },
+        {
+          "name": "R. Ziv",
+          "id": ""
+        },
+        {
+          "name": "Jayd Matyas",
+          "id": ""
+        },
+        {
+          "name": "Edgar A. Du'enez-Guzm'an",
+          "id": ""
+        },
+        {
+          "name": "William A. Cunningham",
+          "id": ""
+        },
+        {
+          "name": "Simon Osindero",
+          "id": ""
+        },
+        {
+          "name": "Danny Karmon",
+          "id": ""
+        },
+        {
+          "name": "Joel Z. Leibo",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:265692435",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2956805205087243,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 267617061,
+      "title": "Understanding the Weakness of Large Language Model Agents within a Complex Android Environment",
+      "abstract": "Large language models (LLMs) have empowered intelligent agents to execute intricate tasks within domain-specific software such as browsers and games. However, when applied to general-purpose software systems like operating systems, LLM agents face three primary challenges. Firstly, the action space is vast and dynamic, posing difficulties for LLM agents to maintain an up-to-date understanding and deliver accurate responses. Secondly, real-world tasks often require inter-application cooperation}, demanding farsighted planning from LLM agents. Thirdly, agents need to identify optimal solutions aligning with user constraints, such as security concerns and preferences. These challenges motivate AndroidArena, an environment and benchmark designed to evaluate LLM agents on a modern operating system. To address high-cost of manpower, we design a scalable and semi-automated method to construct the benchmark. In the task evaluation, AndroidArena incorporates accurate and adaptive metrics to address the issue of non-unique solutions. Our findings reveal that even state-of-the-art LLM agents struggle in cross-APP scenarios and adhering to specific constraints. Additionally, we identify a lack of four key capabilities, i.e., understanding, reasoning, exploration, and reflection, as primary reasons for the failure of LLM agents. Furthermore, we provide empirical analysis on the failure of reflection, and improve the success rate by 27% with our proposed exploration strategy. This work is the first to present valuable insights in understanding fine-grained weakness of LLM agents, and offers a path forward for future research in this area. Environment, benchmark, and evaluation code for AndroidArena are released at https://github.com/AndroidArenaAgent/AndroidArena.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Mingzhe Xing",
+          "id": ""
+        },
+        {
+          "name": "Rongkai Zhang",
+          "id": ""
+        },
+        {
+          "name": "Hui Xue",
+          "id": ""
+        },
+        {
+          "name": "Qi Chen",
+          "id": ""
+        },
+        {
+          "name": "Fan Yang",
+          "id": ""
+        },
+        {
+          "name": "Zhengjin Xiao",
+          "id": ""
+        }
+      ],
+      "venue": "Knowledge Discovery and Data Mining",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:267617061",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.29434417760993536,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 269449292,
+      "title": "Testing and Understanding Erroneous Planning in LLM Agents through Synthesized User Inputs",
+      "abstract": "Agents based on large language models (LLMs) have demonstrated effectiveness in solving a wide range of tasks by integrating LLMs with key modules such as planning, memory, and tool usage. Increasingly, customers are adopting LLM agents across a variety of commercial applications critical to reliability, including support for mental well-being, chemical synthesis, and software development. Nevertheless, our observations and daily use of LLM agents indicate that they are prone to making erroneous plans, especially when the tasks are complex and require long-term planning. In this paper, we propose PDoctor, a novel and automated approach to testing LLM agents and understanding their erroneous planning. As the first work in this direction, we formulate the detection of erroneous planning as a constraint satisfiability problem: an LLM agent's plan is considered erroneous if its execution violates the constraints derived from the user inputs. To this end, PDoctor first defines a domain-specific language (DSL) for user queries and synthesizes varying inputs with the assistance of the Z3 constraint solver. These synthesized inputs are natural language paragraphs that specify the requirements for completing a series of tasks. Then, PDoctor derives constraints from these requirements to form a testing oracle. We evaluate PDoctor with three mainstream agent frameworks and two powerful LLMs (GPT-3.5 and GPT-4). The results show that PDoctor can effectively detect diverse errors in agent planning and provide insights and error characteristics that are valuable to both agent developers and users. We conclude by discussing potential alternative designs and directions to extend PDoctor.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Zhenlan Ji",
+          "id": ""
+        },
+        {
+          "name": "Daoyuan Wu",
+          "id": ""
+        },
+        {
+          "name": "Pingchuan Ma",
+          "id": ""
+        },
+        {
+          "name": "Zongjie Li",
+          "id": ""
+        },
+        {
+          "name": "Shuai Wang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:269449292",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2939902803554945,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280635600,
+      "title": "Context Engineering for Multi-Agent LLM Code Assistants Using Elicit, NotebookLM, ChatGPT, and Claude Code",
+      "abstract": "Large Language Models (LLMs) have shown promise in automating code generation and software engineering tasks, yet they often struggle with complex, multi-file projects due to context limitations and knowledge gaps. We propose a novel context engineering workflow that combines multiple AI components: an Intent Translator (GPT-5) for clarifying user requirements, an Elicit-powered semantic literature retrieval for injecting domain knowledge, NotebookLM-based document synthesis for contextual understanding, and a Claude Code multi-agent system for code generation and validation. Our integrated approach leverages intent clarification, retrieval-augmented generation, and specialized sub-agents orchestrated via Claude's agent framework. We demonstrate that this method significantly improves the accuracy and reliability of code assistants in real-world repositories, yielding higher single-shot success rates and better adherence to project context than baseline single-agent approaches. Qualitative results on a large Next.js codebase show the multi-agent system effectively plans, edits, and tests complex features with minimal human intervention. We compare our system with recent frameworks like CodePlan, MASAI, and HyperAgent, highlighting how targeted context injection and agent role decomposition lead to state-of-the-art performance. Finally, we discuss the implications for deploying LLM-based coding assistants in production, along with lessons learned on context management and future research directions.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Muhammad Haseeb Bhatti",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2508.08322.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.29237994107871645,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 238353829,
+      "title": "AI Chains: Transparent and Controllable Human-AI Interaction by Chaining Large Language Model Prompts",
+      "abstract": "Although large language models (LLMs) have demonstrated impressive potential on simple tasks, their breadth of scope, lack of transparency, and insufficient controllability can make them less effective when assisting humans on more complex tasks. In response, we introduce the concept of Chaining LLM steps together, where the output of one step becomes the input for the next, thus aggregating the gains per step. We first define a set of LLM primitive operations useful for Chain construction, then present an interactive system where users can modify these Chains, along with their intermediate results, in a modular way. In a 20-person user study, we found that Chaining not only improved the quality of task outcomes, but also significantly enhanced system transparency, controllability, and sense of collaboration. Additionally, we saw that users developed new ways of interacting with LLMs through Chains: they leveraged sub-tasks to calibrate model expectations, compared and contrasted alternative strategies by observing parallel downstream effects, and debugged unexpected model outputs by \u201cunit-testing\u201d sub-components of a Chain. In two case studies, we further explore how LLM Chains may be used in future applications.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Tongshuang Sherry Wu",
+          "id": ""
+        },
+        {
+          "name": "Michael Terry",
+          "id": ""
+        },
+        {
+          "name": "Carrie J. Cai",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Human Factors in Computing Systems",
+      "journal": null,
+      "url": "http://dl.acm.org/citation.cfm?id=3517582",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2884892715992685,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 270357283,
+      "title": "CompeteAI: Understanding the Competition Dynamics of Large Language Model-based Agents",
+      "abstract": "Large language models (LLMs) have been widely used as agents to complete different tasks, such as personal assistance or event planning. While most of the work has focused on cooperation and collaboration between agents, little work explores competition, another important mechanism that promotes the development of society and economy. In this paper, we seek to examine the competition dynamics in LLM-based agents. We first propose a general framework for studying the competition between agents. Then, we implement a practical competitive environment using GPT-4 to simulate a virtual town with two types of agents, restaurant agents and customer agents. Specifically, the restaurant agents compete with each other to attract more customers, where competition encourages them to transform, such as cultivating new operating strategies. Simulation experiments reveal several interesting findings at the micro and macro levels, which align well with existing market and sociological theories. We hope that the framework and environment can be a promising testbed to study competition that fosters understanding of society. Code is available at: https://github.com/microsoft/competeai.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Qinlin Zhao",
+          "id": ""
+        },
+        {
+          "name": "Jindong Wang",
+          "id": ""
+        },
+        {
+          "name": "Yixuan Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yiqiao Jin",
+          "id": ""
+        },
+        {
+          "name": "Kaijie Zhu",
+          "id": ""
+        },
+        {
+          "name": "Hao Chen",
+          "id": ""
+        },
+        {
+          "name": "Xing Xie",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Machine Learning",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:270357283",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.28223127334280673,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273653888,
+      "title": "AutoKaggle: A Multi-Agent Framework for Autonomous Data Science Competitions",
+      "abstract": "Data science tasks involving tabular data present complex challenges that require sophisticated problem-solving approaches. We propose AutoKaggle, a powerful and user-centric framework that assists data scientists in completing daily data pipelines through a collaborative multi-agent system. AutoKaggle implements an iterative development process that combines code execution, debugging, and comprehensive unit testing to ensure code correctness and logic consistency. The framework offers highly customizable workflows, allowing users to intervene at each phase, thus integrating automated intelligence with human expertise. Our universal data science toolkit, comprising validated functions for data cleaning, feature engineering, and modeling, forms the foundation of this solution, enhancing productivity by streamlining common tasks. We selected 8 Kaggle competitions to simulate data processing workflows in real-world application scenarios. Evaluation results demonstrate that AutoKaggle achieves a validation submission rate of 0.85 and a comprehensive score of 0.82 in typical data science pipelines, fully proving its effectiveness and practicality in handling complex data science tasks.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Ziming Li",
+          "id": ""
+        },
+        {
+          "name": "Qianbo Zang",
+          "id": ""
+        },
+        {
+          "name": "David Ma",
+          "id": ""
+        },
+        {
+          "name": "Jiawei Guo",
+          "id": ""
+        },
+        {
+          "name": "T. Zheng",
+          "id": ""
+        },
+        {
+          "name": "Minghao Liu",
+          "id": ""
+        },
+        {
+          "name": "Xinyao Niu",
+          "id": ""
+        },
+        {
+          "name": "Yue Wang",
+          "id": ""
+        },
+        {
+          "name": "Jian Yang",
+          "id": ""
+        },
+        {
+          "name": "Jiaheng Liu",
+          "id": ""
+        },
+        {
+          "name": "Wanjun Zhong",
+          "id": ""
+        },
+        {
+          "name": "Wangchunshu Zhou",
+          "id": ""
+        },
+        {
+          "name": "Wenhao Huang",
+          "id": ""
+        },
+        {
+          "name": "Ge Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273653888",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.27370534015562087,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 256358416,
+      "title": "Polycraft World AI Lab (PAL): An Extensible Platform for Evaluating Artificial Intelligence Agents",
+      "abstract": "As artificial intelligence research advances, the platforms used to evaluate AI agents need to adapt and grow to continue to challenge them. We present the Polycraft World AI Lab (PAL), a task simulator with an API based on the Minecraft mod Polycraft World. Our platform is built to allow AI agents with different architectures to easily interact with the Minecraft world, train and be evaluated in multiple tasks. PAL enables the creation of tasks in a flexible manner as well as having the capability to manipulate any aspect of the task during an evaluation. All actions taken by AI agents and external actors (non-player-characters, NPCs) in the open-world environment are logged to streamline evaluation. Here we present two custom tasks on the PAL platform, one focused on multi-step planning and one focused on navigation, and evaluations of agents solving them. In summary, we report a versatile and extensible AI evaluation platform with a low barrier to entry for AI researchers to utilize.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Stephen A. Goss",
+          "id": ""
+        },
+        {
+          "name": "Robert J. Steininger",
+          "id": ""
+        },
+        {
+          "name": "Dhruv Narayanan",
+          "id": ""
+        },
+        {
+          "name": "Daniel V. Oliven\u00e7a",
+          "id": ""
+        },
+        {
+          "name": "Yutong Sun",
+          "id": ""
+        },
+        {
+          "name": "Peng Qiu",
+          "id": ""
+        },
+        {
+          "name": "Jim Amato",
+          "id": ""
+        },
+        {
+          "name": "E. Voit",
+          "id": ""
+        },
+        {
+          "name": "W. Voit",
+          "id": ""
+        },
+        {
+          "name": "Eric J. Kildebeck",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:256358416",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.26585651032505425,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 266335632,
+      "title": "CERN for AGI: A Theoretical Framework for Autonomous Simulation-Based Artificial Intelligence Testing and Alignment",
+      "abstract": "This paper explores the potential of a multidisciplinary approach to testing and aligning artificial general intelligence (AGI) and LLMs. Due to the rapid development and wide application of LLMs, challenges such as ethical alignment, controllability, and predictability of these models have become important research topics. This study investigates an innovative simulation-based multi-agent system within a virtual reality framework that replicates the real-world environment. The framework is populated by automated 'digital citizens,' simulating complex social structures and interactions to examine and optimize AGI. Application of various theories from the fields of sociology, social psychology, computer science, physics, biology, and economics demonstrates the possibility of a more human-aligned and socially responsible AGI. The purpose of such a digital environment is to provide a dynamic platform where advanced AI agents can interact and make independent decisions, thereby mimicking realistic scenarios. The actors in this digital city, operated by the LLMs, serve as the primary agents, exhibiting high degrees of autonomy. While this approach shows immense potential, there are notable challenges and limitations, most significantly the unpredictable nature of real-world social dynamics. This research endeavors to contribute to the development and refinement of AGI, emphasizing the integration of social, ethical, and theoretical dimensions for future research.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Ljubi\u0161a Boji\u0107",
+          "id": ""
+        },
+        {
+          "name": "Matteo Cinelli",
+          "id": ""
+        },
+        {
+          "name": "Dubravko \u0106ulibrk",
+          "id": ""
+        },
+        {
+          "name": "Boris Delibasic",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:266335632",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2655278109261803,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 235965317,
+      "title": "Agents and Robots for Reliable Engineered Autonomy: A Perspective from the Organisers of AREA 2020",
+      "abstract": "Multi-agent systems, robotics and software engineering are large and active research areas with many applications in academia and industry. The First Workshop on Agents and Robots for reliable Engineered Autonomy (AREA), organised the first time in 2020, aims at encouraging cross-disciplinary collaborations and exchange of ideas among researchers working in these research areas. This paper presents a perspective of the organisers that aims at highlighting the latest research trends, future directions, challenges, and open problems. It also includes feedback from the discussions held during the AREA workshop. The goal of this perspective is to provide a high-level view of current research trends for researchers that aim at working in the intersection of these research areas.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "R. C. Cardoso",
+          "id": ""
+        },
+        {
+          "name": "Angelo Ferrando",
+          "id": ""
+        },
+        {
+          "name": "D. Briola",
+          "id": ""
+        },
+        {
+          "name": "C. Menghi",
+          "id": ""
+        },
+        {
+          "name": "Tobias Ahlbrecht",
+          "id": ""
+        }
+      ],
+      "venue": "J. Sens. Actuator Networks",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:235965317",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.26170398179857174,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 271244503,
+      "title": "IICPilot: An Intelligent Integrated Circuit Backend Design Framework Using Open EDA",
+      "abstract": "Open-source EDA tools are rapidly advancing, fostering collaboration, innovation, and knowledge sharing within the EDA community. However, the growing complexity of these tools, characterized by numerous design parameters and heuristics, poses a significant barrier to their widespread adoption. This complexity is particularly pronounced in integrated circuit (IC) backend designs, which place substantial demands on engineers' expertise in EDA tools. To tackle this challenge, we introduce IICPilot, an intelligent IC backend design system based on LLM technology. IICPilot automates various backend design procedures, including script generation, EDA tool invocation, design space exploration of EDA parameters, container-based computing resource allocation, and exception management. By automating these tasks, IICPilot significantly lowers the barrier to entry for open-source EDA tools. Specifically, IICPilot utilizes LangChain's multi-agent framework to efficiently handle distinct design tasks, enabling flexible enhancements independently. Moreover, IICPilot separates the backend design workflow from specific open-source EDA tools through a unified EDA calling interface. This approach allows seamless integration with different open-source EDA tools like OpenROAD and iEDA, streamlining the backend design and optimization across the EDA tools.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Zesong Jiang",
+          "id": ""
+        },
+        {
+          "name": "Qing Zhang",
+          "id": ""
+        },
+        {
+          "name": "Cheng Liu",
+          "id": ""
+        },
+        {
+          "name": "Huawei Li",
+          "id": ""
+        },
+        {
+          "name": "Xiaowei Li",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271244503",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2593927810547397,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 269188000,
+      "title": "The Path To Autonomous Cyber Defense",
+      "abstract": "Defenders are overwhelmed by the number and scale of attacks against their networks.This problem will only be exacerbated as attackers leverage artificial intelligence to automate their workflows. We propose a path to autonomous cyber agents able to augment defenders by automating critical steps in the cyber defense life cycle.\nT he proliferation of professionalized cyber crime groups combined with the shortage of skilled professionals in cyber defense has left defenders incapable of handling the volume of new attacks targeting their networks.a To avoid being overwhelmed, defenders must automate security policies, detection, and mitigation, yet many of these tasks still require a large time investment from human personnel.The creation of autonomous cyber defense agents is one promising approach to automate operations and prevent cyber defenders from being overwhelmed.This article lays out the steps that researchers and practitioners need to take on the path to practical autonomous cyber defense agents, with a focus on reinforcement learning as a promising approach.b Reinforcement learning (RL) addresses the challenge of \"learning from interaction with an environment in order to achieve long-term goals\", where \"long-term goals\" could include flying a helicopter safely to the intended destination, winning a game of chess, efficiently managing a power station, or protecting a network against cyber attacks.At a high level, reinforcement learning agents map situations (a state) to actions via XXXX-XXX \u00a9 2024 IEEE Digital Object Identifier 10.1109/XXX.0000.0000000 a World Economic Forum, Global Cybersecurity Outlook 2023.https://www.weforum.org/reports/global-cybersecurityoutlook-2023/,July 13, 2023.\nb This work has been submitted to the IEEE for possible publication.Copyright may be transferred without notice, after which this version may no longer be accessible.\na \"policy\" function in order to maximize a numerical reward signal.Rewards may vary in frequency (a single win/loss reward at the end of a game or a repeated \"distance from goal\" reward while a robot is walking) and complexity.\nIn order to handle large state spaces, deep reinforcement learning (deep RL) takes advantage of deep neural nets in order to generalize well across states.By leveraging deep RL, DeepMind has trained reinforcement learning algorithms to defeat expert human players in games such as Go c and StarCraft d .When cybersecurity is modeled as a game between a defender (blue team) and an attacker (red team) it has similarities to games like StarCraft, where the state space and action space are large (10 26 for StarCraft).Because reinforcement learning has demonstrated the ability to defeat human adversaries in complex games with large state spaces, it is a natural choice for creating defensive cyber agents.\nAs a result of this parity between cybersecurity and other areas where RL has proven effective, both cyber defenders and attackers have sought to leverage this potential.Could autonomous RL agents be used to help defenders delay and deny attackers? 2,5,10,9,14,1ould autonomous RL agents be leveraged by defenders to automate pen testing? 3 Could autonomous RL agents be leveraged by attackers to overwhelm or sneak past defenders?In order to help answer these questions, researchers developed simulation 6,9,2,1 and emulation environments in which to train such autonomous RL agents, with some environments 5,10,8 providing both simulation and emulation.\nYet in spite of prior efforts to create autonomous cyber agents, they are still not used in practice.What is preventing the adoption of this new and promising approach to cyber defense?This article seeks to answer this question by highlighting several of the challenges faced by researchers in this field and laying out the path to autonomous cyber defense.We begin by situating the possible roles that autonomous agents can play within the context of the cyber defense life cycle and then discuss the need for a properly defined \"game\" for the agent to play, the need for agent adaptability to changing network environments and evolving adversary behaviors, and the need for better training environments to facilitate future research.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Sean Oesch",
+          "id": ""
+        },
+        {
+          "name": "Phillipe Austria",
+          "id": ""
+        },
+        {
+          "name": "Amul Chaulagain",
+          "id": ""
+        },
+        {
+          "name": "Brian Weber",
+          "id": ""
+        },
+        {
+          "name": "Cory L. Watson",
+          "id": ""
+        },
+        {
+          "name": "Matthew Dixson",
+          "id": ""
+        },
+        {
+          "name": "Amir Sadovnik",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE Security and Privacy",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:269188000",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.25916107006175515,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 286599831,
+      "title": "Towards AI-Enabled Training Needs Analysis Using Dual AI-Agent Collaboration",
+      "abstract": ": A comprehensive Training Needs Analysis is essential for effective HR development and organisational growth. However, traditional approaches often fall short due to limitations in scale, labour intensiveness, or resource and expertise constraints. To address these challenges, we propose an AI-driven automated platform for conducting TNA at scale with unstructured data. Our prototype features a dual-agent system powered by Large Language Models. The Disseminator Agent performs knowledge extraction and deep data analysis, then the Formulator Agent produces novel intellectual ideas, actionable insights, and formatted reports, facilitating final human verification and decision-making. We also outline a pragmatic plan for AI monitoring and platform evaluation \u2013 critical components for successful AI adoption in industry. Our proposed design is currently being implemented for evaluation and deployment in a business setting.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Nikilkumar Patel",
+          "id": ""
+        },
+        {
+          "name": "Peter J. Barclay",
+          "id": ""
+        },
+        {
+          "name": "J. Mcmillan",
+          "id": ""
+        },
+        {
+          "name": "David M McGuire",
+          "id": ""
+        }
+      ],
+      "venue": "Proceedings of the 18th International Conference on Agents and Artificial Intelligence",
+      "journal": null,
+      "url": "https://doi.org/10.5220/0014403000004052",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.24730139121930625,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 13973385,
+      "title": "Space-Time Diagram Generation for Profiling Multi Agent Systems",
+      "abstract": "Advances in Agent Oriented Software Engineering have focused on the provision of frameworks and toolkits to aid in the creation of Multi Agent Systems (MASs). However, despite the need to address the inherent complexity of such systems, little progress has been made in the development of tools to allow for the debugging and understanding of their inner workings. This paper introduces a novel performance analysis system, named AgentSpotter, which facilitates such analysis. AgentSpotter was developed by mapping conventional profiling concepts to the domain of MASs. We outline its integration into the Agent Factory multi agent framework.",
+      "year": 2015,
+      "authors": [
+        {
+          "name": "Dinh Doan Van Bien",
+          "id": ""
+        },
+        {
+          "name": "David Lillis",
+          "id": ""
+        },
+        {
+          "name": "Rem W. Collier",
+          "id": ""
+        }
+      ],
+      "venue": "International Workshop on Programming Multi-Agent Systems",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:13973385",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.23705707306797194,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    }
+  ]
+}

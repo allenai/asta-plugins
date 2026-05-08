@@ -1,0 +1,9 @@
+[
+  {
+    "artifact_id": "3cdc4cbe-ac98-47c5-9ce8-3224dd18f41a",
+    "name": "experiment-design-bundle",
+    "description": "Full experiment design payload: structured JSON, self-contained HTML report, and a plain-language summary.",
+    "filename": "data/experiment-design-bundle.json",
+    "mime_type": "application/json"
+  }
+]

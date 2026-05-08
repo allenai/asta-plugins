@@ -1,0 +1,2197 @@
+{
+  "query": "Experiment tracking and knowledge accumulation across autonomous scientific discovery campaigns, including self-driving labs, Bayesian active learning, MCTS-driven experimentation, and how systems carry hypotheses, surprise, and posterior beliefs across many runs. Looking for techniques to aggregate findings across hundreds of independent discovery runs that share a common research goal.",
+  "results": [
+    {
+      "corpusId": 271909427,
+      "title": "Genesis: Towards the Automation of Systems Biology Research",
+      "abstract": "The cutting edge of applying AI to science is the closed-loop automation of scientific research: robot scientists. We have previously developed two robot scientists: `Adam' (for yeast functional biology), and `Eve' (for early-stage drug design)). We are now developing a next generation robot scientist Genesis. With Genesis we aim to demonstrate that an area of science can be investigated using robot scientists unambiguously faster, and at lower cost, than with human scientists. Here we report progress on the Genesis project. Genesis is designed to automatically improve system biology models with thousands of interacting causal components. When complete Genesis will be able to initiate and execute in parallel one thousand hypothesis-led closed-loop cycles of experiment per-day. Here we describe the core Genesis hardware: the one thousand computer-controlled $\\mu$-bioreactors. For the integrated Mass Spectrometry platform we have developed AutonoMS, a system to automatically run, process, and analyse high-throughput experiments. We have also developed Genesis-DB, a database system designed to enable software agents access to large quantities of structured domain information. We have developed RIMBO (Revisions for Improvements of Models in Biology Ontology) to describe the planned hundreds of thousands of changes to the models. We have demonstrated the utility of this infrastructure by developed two relational learning bioinformatic projects. Finally, we describe LGEM+ a relational learning system for the automated abductive improvement of genome-scale metabolic models.\n1 Background",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Ievgeniia A. Tiukova",
+          "id": ""
+        },
+        {
+          "name": "Daniel Brunns\u00e5ker",
+          "id": ""
+        },
+        {
+          "name": "Erik Y. Bjurstr\u00f6m",
+          "id": ""
+        },
+        {
+          "name": "Alexander H. Gower",
+          "id": ""
+        },
+        {
+          "name": "Filip Kronstr\u00f6m",
+          "id": ""
+        },
+        {
+          "name": "Gabriel K. Reder",
+          "id": ""
+        },
+        {
+          "name": "Ronald S. Reiserer",
+          "id": ""
+        },
+        {
+          "name": "Konstantin Korovin",
+          "id": ""
+        },
+        {
+          "name": "Larisa N. Soldatova",
+          "id": ""
+        },
+        {
+          "name": "J. P. Wikswo",
+          "id": ""
+        },
+        {
+          "name": "Ross D. King",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271909427",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6734337319125233,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 266159049,
+      "title": "A Review of the Applications of Artificial Intelligence in the Process Analysis and Optimization of Chemical Products",
+      "abstract": "Continuous flow chemistry is an enabling technology for automated synthesis. Artificial intelligence (AI) is a powerful tool in various areas of automated synthesis in flow chemistry, including process analysis technology and synthesis reaction optimization. The merger of continuous flow chemistry and AI drives chemical production in a more intelligent, automated, and flexible direction. This review discusses the recent application of AI in analyzing and optimizing chemical products produced by continuous flow chemistry with the most innovative equipment and techniques.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Runqiu Shen",
+          "id": ""
+        },
+        {
+          "name": "Weike Su",
+          "id": ""
+        }
+      ],
+      "venue": "Pharmaceutical Fronts",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:266159049",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5495791653284264,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 260522682,
+      "title": "Genesis-DB: a database for autonomous laboratory systems",
+      "abstract": "Abstract Summary Artificial intelligence (AI)-driven laboratory automation-combining robotic labware and autonomous software agents-is a powerful trend in modern biology. We developed Genesis-DB, a database system designed to support AI-driven autonomous laboratories by providing software agents access to large quantities of structured domain information. In addition, we present a new ontology for modeling data and metadata from autonomously performed yeast microchemostat cultivations in the framework of the Genesis robot scientist system. We show an example of how Genesis-DB enables the research life cycle by modeling yeast gene regulation, guiding future hypotheses generation and design of experiments. Genesis-DB supports AI-driven discovery through automated reasoning and its design is portable, generic, and easily extensible to other AI-driven molecular biology laboratory data and beyond. Availability and implementation Genesis-DB code and installation instructions are available at the GitHub repository https://github.com/TW-Genesis/genesis-database-system.git. The database use case demo code and data are also available through GitHub (https://github.com/TW-Genesis/genesis-database-demo.git). The ontology can be downloaded here: https://github.com/TW-Genesis/genesis-ontology/releases/download/v0.0.23/genesis.owl. The ontology term descriptions (including mappings to existing ontologies) and maintenance standard operating procedures can be found at: https://github.com/TW-Genesis/genesis-ontology.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Gabriel K. Reder",
+          "id": ""
+        },
+        {
+          "name": "Alexander H. Gower",
+          "id": ""
+        },
+        {
+          "name": "Filip Kronstr\u00f6m",
+          "id": ""
+        },
+        {
+          "name": "Rushikesh Halle",
+          "id": ""
+        },
+        {
+          "name": "Vinay Mahamuni",
+          "id": ""
+        },
+        {
+          "name": "Amit Patel",
+          "id": ""
+        },
+        {
+          "name": "Harshal G. Hayatnagarkar",
+          "id": ""
+        },
+        {
+          "name": "L. Soldatova",
+          "id": ""
+        },
+        {
+          "name": "Ross D. King",
+          "id": ""
+        }
+      ],
+      "venue": "Bioinformatics Advances",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:260522682",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5179676126205577,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283450147,
+      "title": "SelfAI: A self-directed framework for long-horizon scientific discovery",
+      "abstract": "Scientific discovery increasingly entails long-horizon exploration of complex hypothesis spaces, yet most existing approaches emphasize final performance while offering limited insight into how scientific exploration unfolds over time, particularly balancing efficiency-diversity trade-offs and supporting reproducible, human-in-the-loop discovery workflows. We introduce SelfAI, a self-directed, multi-agent-enabled discovery system that automates scientific exploration as a strategic, trajectory-driven decision-making process. SelfAI translates high-level research intent into executable experiments, reasons over accumulated experimental trajectories to guide subsequent exploration, and applies adaptive stopping decisions to terminate unproductive search paths within a closed-loop workflow governed by explicit efficiency-diversity trade-offs. Evaluated using real-world experiments spanning domains from machine learning to drug discovery, SelfAI consistently discovers high-quality solutions with substantially fewer redundant trials than classical optimization and recent LLM-based baselines. The proposed methods establish a general framework for organizing long-horizon scientific discovery and adaptive decision-making in complex scientific and engineering systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Xiao Wu",
+          "id": ""
+        },
+        {
+          "name": "Ting-Zhu Huang",
+          "id": ""
+        },
+        {
+          "name": "Liang-Jian Deng",
+          "id": ""
+        },
+        {
+          "name": "Xiaobing Yu",
+          "id": ""
+        },
+        {
+          "name": "Yu Zhong",
+          "id": ""
+        },
+        {
+          "name": "Shangqi Deng",
+          "id": ""
+        },
+        {
+          "name": "Ufaq Khan",
+          "id": ""
+        },
+        {
+          "name": "Jianghao Wu",
+          "id": ""
+        },
+        {
+          "name": "Xiaofeng Liu",
+          "id": ""
+        },
+        {
+          "name": "Imran Razzak",
+          "id": ""
+        },
+        {
+          "name": "X. Chang",
+          "id": ""
+        },
+        {
+          "name": "Yutong Xie",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283450147",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.49480821389347823,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 253447437,
+      "title": "Scalable multi-agent lab framework for lab optimization",
+      "abstract": "Autonomous materials research systems allow scientists to fail smarter, learn faster, and spend less resources in their studies. As these systems grow in number, capability, and complexity, a new challenge arises - how will they work together across large facilities? We explore one solution to this question - a multi-agent laboratory control frame-work. We demonstrate this framework with an autonomous material science lab in mind - where information from diverse research campaigns can be combined to ad-dress the scientific question at hand. This framework can 1) account for realistic resource limits such as equipment use, 2) allow for machine learning agents with diverse learning capabilities and goals capable of running re-search campaigns, and 3) facilitate multi-agent collaborations and teams. The framework is dubbed the MULTI-agent auTonomous fAcilities - a Scalable frameworK aka MULTITASK. MULTITASK makes possible facility-wide simulations, including agent-instrument and agent-agent interactions. Through MULTITASK's modularity, real-world facilities can come on-line in phases, with simulated instruments gradually replaced by real-world instruments. We hope MULTITASK opens new areas of study in large-scale autonomous and semi-autonomous research campaigns and facilities.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "A. Kusne",
+          "id": ""
+        },
+        {
+          "name": "Austin McDannald",
+          "id": ""
+        }
+      ],
+      "venue": "Matter",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:253447437",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4933281808285845,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280150869,
+      "title": "AutoDiscovery: Open-ended Scientific Discovery via Bayesian Surprise",
+      "abstract": "The promise of autonomous scientific discovery (ASD) hinges not only on answering questions, but also on knowing which questions to ask. Most recent works in ASD explore the use of large language models (LLMs) in goal-driven settings, relying on human-specified research questions to guide hypothesis generation. However, scientific discovery may be accelerated further by allowing the AI system to drive exploration by its own criteria. The few existing approaches in open-ended ASD select hypotheses based on diversity heuristics or subjective proxies for human interestingness, but the former struggles to meaningfully navigate the typically vast hypothesis space, and the latter suffers from imprecise definitions. This paper presents AutoDiscovery -- a method for open-ended ASD that instead drives scientific exploration using Bayesian surprise. Here, we quantify the epistemic shift from the LLM's prior beliefs about a hypothesis to its posterior beliefs after gathering experimental results. To efficiently explore the space of nested hypotheses, our method employs a Monte Carlo tree search (MCTS) strategy with progressive widening using surprisal as the reward function. We evaluate AutoDiscovery in the setting of data-driven discovery across 21 real-world datasets spanning domains such as biology, economics, finance, and behavioral science. Our results demonstrate that under a fixed budget, AutoDiscovery substantially outperforms competitors by producing 5-29% more discoveries deemed surprising by the LLM. Our human evaluation further reveals that two-thirds of discoveries made by our system are surprising to domain experts as well, suggesting this is an important step towards building open-ended ASD systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Dhruv Agarwal",
+          "id": ""
+        },
+        {
+          "name": "Bodhisattwa Prasad Majumder",
+          "id": ""
+        },
+        {
+          "name": "Reece Adamson",
+          "id": ""
+        },
+        {
+          "name": "Megha Chakravorty",
+          "id": ""
+        },
+        {
+          "name": "Satvika Reddy Gavireddy",
+          "id": ""
+        },
+        {
+          "name": "Aditya Parashar",
+          "id": ""
+        },
+        {
+          "name": "Harshit Surana",
+          "id": ""
+        },
+        {
+          "name": "Bhavana Dalvi",
+          "id": ""
+        },
+        {
+          "name": "Andrew McCallum",
+          "id": ""
+        },
+        {
+          "name": "Ashish Sabharwal",
+          "id": ""
+        },
+        {
+          "name": "Peter Clark",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280150869",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.48998050247095193,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277271871,
+      "title": "AgentRxiv: Towards Collaborative Autonomous Research",
+      "abstract": "Progress in scientific discovery is rarely the result of a single\"Eureka\"moment, but is rather the product of hundreds of scientists incrementally working together toward a common goal. While existing agent workflows are capable of producing research autonomously, they do so in isolation, without the ability to continuously improve upon prior research results. To address these challenges, we introduce AgentRxiv-a framework that lets LLM agent laboratories upload and retrieve reports from a shared preprint server in order to collaborate, share insights, and iteratively build on each other's research. We task agent laboratories to develop new reasoning and prompting techniques and find that agents with access to their prior research achieve higher performance improvements compared to agents operating in isolation (11.4% relative improvement over baseline on MATH-500). We find that the best performing strategy generalizes to benchmarks in other domains (improving on average by 3.3%). Multiple agent laboratories sharing research through AgentRxiv are able to work together towards a common goal, progressing more rapidly than isolated laboratories, achieving higher overall accuracy (13.7% relative improvement over baseline on MATH-500). These findings suggest that autonomous agents may play a role in designing future AI systems alongside humans. We hope that AgentRxiv allows agents to collaborate toward research goals and enables researchers to accelerate discovery.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "S. Schmidgall",
+          "id": ""
+        },
+        {
+          "name": "Michael Moor",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277271871",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4534414402962759,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 279999534,
+      "title": "A Grassroots Network and Community Roadmap for Interconnected Autonomous Science Laboratories for Accelerated Discovery",
+      "abstract": "Scientific discovery is being revolutionized by AI and autonomous systems, yet current autonomous laboratories remain isolated islands unable to collaborate across institutions. We present the Autonomous Interconnected Science Lab Ecosystem (AISLE), a grassroots network transforming fragmented capabilities into a unified system that shorten the path from ideation to innovation to impact and accelerates discovery from decades to months. AISLE addresses five critical dimensions: (1) cross-institutional equipment orchestration, (2) intelligent data management with FAIR compliance, (3) AI-agent driven orchestration grounded in scientific principles, (4) interoperable agent communication interfaces, and (5) AI/ML-integrated scientific education. By connecting autonomous agents across institutional boundaries, autonomous science can unlock research spaces inaccessible to traditional approaches while democratizing cutting-edge technologies. This paradigm shift toward collaborative autonomous science promises breakthroughs in sustainable energy, materials development, and public health.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "R. Ferreira da Silva",
+          "id": ""
+        },
+        {
+          "name": "M. Abolhasani",
+          "id": ""
+        },
+        {
+          "name": "Dionysios A. Antonopoulos",
+          "id": ""
+        },
+        {
+          "name": "Laura Biven",
+          "id": ""
+        },
+        {
+          "name": "Ryan N. Coffee",
+          "id": ""
+        },
+        {
+          "name": "Ian T. Foster",
+          "id": ""
+        },
+        {
+          "name": "Leslie Hamilton",
+          "id": ""
+        },
+        {
+          "name": "S. Jha",
+          "id": ""
+        },
+        {
+          "name": "Theresa Mayer",
+          "id": ""
+        },
+        {
+          "name": "Benjamin Mintz",
+          "id": ""
+        },
+        {
+          "name": "R. Moore",
+          "id": ""
+        },
+        {
+          "name": "Sal Nimer",
+          "id": ""
+        },
+        {
+          "name": "N. Paulson",
+          "id": ""
+        },
+        {
+          "name": "Woong Shin",
+          "id": ""
+        },
+        {
+          "name": "F. Suter",
+          "id": ""
+        },
+        {
+          "name": "Mitra L. Taheri",
+          "id": ""
+        },
+        {
+          "name": "Michela Taufer",
+          "id": ""
+        },
+        {
+          "name": "N. Washburn",
+          "id": ""
+        }
+      ],
+      "venue": "ICPP Workshops",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:279999534",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.44710130903685136,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 215804205,
+      "title": "ChemOS: An orchestration software to democratize autonomous discovery",
+      "abstract": "The current Edisonian approach to discovery requires up to two decades of fundamental and applied research for materials technologies to reach the market. Such a slow and capital-intensive turnaround calls for disruptive strategies to expedite innovation. Self-driving laboratories have the potential to provide the means to revolutionize experimentation by empowering automation with artificial intelligence to enable autonomous discovery. However, the lack of adequate software solutions significantly impedes the development of self-driving laboratories. In this paper, we make progress towards addressing this challenge, and we propose and develop an implementation of ChemOS; a portable, modular and versatile software package which supplies the structured layers necessary for the deployment and operation of self-driving laboratories. ChemOS facilitates the integration of automated equipment, and it enables remote control of automated laboratories. ChemOS can operate at various degrees of autonomy; from fully unsupervised experimentation to actively including inputs and feedbacks from researchers into the experimentation loop. The flexibility of ChemOS provides a broad range of functionality as demonstrated on five applications, which were executed on different automated equipment, highlighting various aspects of the software package.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "L. Roch",
+          "id": ""
+        },
+        {
+          "name": "F. H\u00e4se",
+          "id": ""
+        },
+        {
+          "name": "C. Kreisbeck",
+          "id": ""
+        },
+        {
+          "name": "Teresa Tamayo-Mendoza",
+          "id": ""
+        },
+        {
+          "name": "L. Yunker",
+          "id": ""
+        },
+        {
+          "name": "J. Hein",
+          "id": ""
+        },
+        {
+          "name": "Al\u00e1n Aspuru-Guzik",
+          "id": ""
+        }
+      ],
+      "venue": "PLoS ONE",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:215804205",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.441746605399107,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 266472605,
+      "title": "Event-Driven Data Management with Cloud Computing for Extensible Materials Acceleration Platforms",
+      "abstract": "The materials research community is increasingly using automation and artificial intelligence (AI) to accelerate research and development. A materials acceleration platform (MAP) typically encompasses several experimental techniques or instruments to...",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Michael J. Statt",
+          "id": ""
+        },
+        {
+          "name": "Brian A. Rohr",
+          "id": ""
+        },
+        {
+          "name": "D. Guevarra",
+          "id": ""
+        },
+        {
+          "name": "S. Suram",
+          "id": ""
+        },
+        {
+          "name": "John M. Gregoire",
+          "id": ""
+        }
+      ],
+      "venue": "Digital Discovery",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:266472605",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4284872511691479,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281310172,
+      "title": "The (R)evolution of Scientific Workflows in the Agentic AI Era: Towards Autonomous Science",
+      "abstract": "Modern scientific discovery increasingly requires coordinating distributed facilities and heterogeneous resources, forcing researchers to act as manual workflow coordinators rather than scientists. Advances in AI leading to AI agents show exciting new opportunities that can accelerate scientific discovery by providing intelligence as a component in the ecosystem. However, it is unclear how this new capability would materialize and integrate in the real world. To address this, we propose a conceptual framework where workflows evolve along two dimensions which are intelligence (from static to intelligent) and composition (from single to swarm) to chart an evolutionary path from current workflow management systems to fully autonomous, distributed scientific laboratories. With these trajectories in mind, we present an architectural blueprint that can help the community take the next steps towards harnessing the opportunities in autonomous science with the potential for 100x discovery acceleration and transformational scientific workflows.CCS Concepts \u2022 Computing methodologies\u2192Distributed computing methodologies; Multi-agent systems; Distributed computing methodologies; Parallel computing methodologies.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Woong Shin",
+          "id": ""
+        },
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "Daniel Rosendo",
+          "id": ""
+        },
+        {
+          "name": "F. Suter",
+          "id": ""
+        },
+        {
+          "name": "Feiyi Wang",
+          "id": ""
+        },
+        {
+          "name": "Prasanna Balaprakash",
+          "id": ""
+        },
+        {
+          "name": "R. Ferreira da Silva",
+          "id": ""
+        }
+      ],
+      "venue": "SC25-W: Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281310172",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.42736117888841335,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 282748827,
+      "title": "Kosmos: An AI Scientist for Autonomous Discovery",
+      "abstract": "Data-driven scientific discovery requires iterative cycles of literature search, hypothesis generation, and data analysis. Substantial progress has been made towards AI agents that can automate scientific research, but all such agents remain limited in the number of actions they can take before losing coherence, thus limiting the depth of their findings. Here we present Kosmos, an AI scientist that automates data-driven discovery. Given an open-ended objective and a dataset, Kosmos runs for up to 12 hours performing cycles of parallel data analysis, literature search, and hypothesis generation before synthesizing discoveries into scientific reports. Unlike prior systems, Kosmos uses a structured world model to share information between a data analysis agent and a literature search agent. The world model enables Kosmos to coherently pursue the specified objective over 200 agent rollouts, collectively executing an average of 42,000 lines of code and reading 1,500 papers per run. Kosmos cites all statements in its reports with code or primary literature, ensuring its reasoning is traceable. Independent scientists found 79.4% of statements in Kosmos reports to be accurate, and collaborators reported that a single 20-cycle Kosmos run performed the equivalent of 6 months of their own research time on average. Furthermore, collaborators reported that the number of valuable scientific findings generated scales linearly with Kosmos cycles (tested up to 20 cycles). We highlight seven discoveries made by Kosmos that span metabolomics, materials science, neuroscience, and statistical genetics. Three discoveries independently reproduce findings from preprinted or unpublished manuscripts that were not accessed by Kosmos at runtime, while four make novel contributions to the scientific literature.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "L. Mitchener",
+          "id": ""
+        },
+        {
+          "name": "Angela Yiu",
+          "id": ""
+        },
+        {
+          "name": "Benjamin Chang",
+          "id": ""
+        },
+        {
+          "name": "M. Bourdenx",
+          "id": ""
+        },
+        {
+          "name": "Tyler Nadolski",
+          "id": ""
+        },
+        {
+          "name": "Arvis Sulovari",
+          "id": ""
+        },
+        {
+          "name": "E. Landsness",
+          "id": ""
+        },
+        {
+          "name": "D\u00e1niel L. Barab\u00e1si",
+          "id": ""
+        },
+        {
+          "name": "Siddharth Narayanan",
+          "id": ""
+        },
+        {
+          "name": "Nicky Evans",
+          "id": ""
+        },
+        {
+          "name": "S. Reddy",
+          "id": ""
+        },
+        {
+          "name": "M. Foiani",
+          "id": ""
+        },
+        {
+          "name": "Aizad Kamal",
+          "id": ""
+        },
+        {
+          "name": "Leah P. Shriver",
+          "id": ""
+        },
+        {
+          "name": "F. Cao",
+          "id": ""
+        },
+        {
+          "name": "A. Wassie",
+          "id": ""
+        },
+        {
+          "name": "Jon M. Laurent",
+          "id": ""
+        },
+        {
+          "name": "Edwin Melville-Green",
+          "id": ""
+        },
+        {
+          "name": "M. C. Ramos",
+          "id": ""
+        },
+        {
+          "name": "Albert Bou",
+          "id": ""
+        },
+        {
+          "name": "Kaleigh F. Roberts",
+          "id": ""
+        },
+        {
+          "name": "Sladjana Zagorac",
+          "id": ""
+        },
+        {
+          "name": "Timothy C. Orr",
+          "id": ""
+        },
+        {
+          "name": "Miranda E. Orr",
+          "id": ""
+        },
+        {
+          "name": "K. Zwezdaryk",
+          "id": ""
+        },
+        {
+          "name": "Ali E. Ghareeb",
+          "id": ""
+        },
+        {
+          "name": "L. McCoy",
+          "id": ""
+        },
+        {
+          "name": "B. Gomes",
+          "id": ""
+        },
+        {
+          "name": "Euan A Ashley",
+          "id": ""
+        },
+        {
+          "name": "K. Duff",
+          "id": ""
+        },
+        {
+          "name": "T. Buonassisi",
+          "id": ""
+        },
+        {
+          "name": "Tom Rainforth",
+          "id": ""
+        },
+        {
+          "name": "Randall J. Bateman",
+          "id": ""
+        },
+        {
+          "name": "Michael Skarlinski",
+          "id": ""
+        },
+        {
+          "name": "S. Rodriques",
+          "id": ""
+        },
+        {
+          "name": "Michaela M. Hinks",
+          "id": ""
+        },
+        {
+          "name": "Andrew D. White",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:282748827",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.39356054513002003,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 247026099,
+      "title": "Enabling Reproducibility and Meta-learning Through a Lifelong Database of Experiments (LDE)",
+      "abstract": "Artificial Intelligence (AI) development is inherently iterative and experimental. Over the course of normal development, especially with the advent of automated AI, hundreds or thousands of experiments are generated and are often lost or never examined again. There is a lost opportunity to document these experiments and learn from them at scale, but the complexity of tracking and reproducing these experiments is often prohibitive to data scientists. We present the Lifelong Database of Experiments (LDE) that automatically extracts and stores linked metadata from experiment artifacts and provides features to reproduce these artifacts and perform meta-learning across them. We store context from multiple stages of the AI development lifecycle including datasets, pipelines, how each is configured, and training runs with information about their runtime environment. The standardized nature of the stored metadata allows for querying and aggregation, especially in terms of ranking artifacts by performance metrics. We exhibit the capabilities of the LDE by reproducing an existing meta-learning study and storing the reproduced metadata in our system. Then, we perform two experiments on this metadata: 1) examining the reproducibility and variability of the performance metrics and 2) implementing a number of meta-learning algorithms on top of the data and examining how variability in experimental results impacts recommendation performance. The experimental results suggest significant variation in performance, especially depending on dataset configurations; this variation carries over when meta-learning is built on top of the results, with performance improving when using aggregated results. This suggests that a system that automatically collects and aggregates results such as the LDE not only assists in implementing meta-learning but may also improve its performance.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "Jason Tsay",
+          "id": ""
+        },
+        {
+          "name": "A. Bartezzaghi",
+          "id": ""
+        },
+        {
+          "name": "Aleke Nolte",
+          "id": ""
+        },
+        {
+          "name": "C. Malossi",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:247026099",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.38706144675347076,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 259203387,
+      "title": "Human-In-the-Loop for Bayesian Autonomous Materials Phase Mapping",
+      "abstract": "Autonomous experimentation (AE) combines machine learning and research hardware automation in a closed loop, guiding subsequent experiments toward user goals. As applied to materials research, AE can accelerate materials exploration, reducing time and cost compared to traditional Edisonian studies. Additionally, integrating knowledge from diverse sources including theory, simulations, literature, and domain experts can boost AE performance. Domain experts may provide unique knowledge addressing tasks that are difficult to automate. Here, we present a set of methods for integrating human input into an autonomous materials exploration campaign for composition-structure phase mapping. The methods are demonstrated on x-ray diffraction data collected from a thin film ternary combinatorial library. At any point during the campaign, the user can choose to provide input by indicating regions-of-interest, likely phase regions, and likely phase boundaries based on their prior knowledge (e.g., knowledge of the phase map of a similar material system), along with quantifying their certainty. The human input is integrated by defining a set of probabilistic priors over the phase map. Algorithm output is a probabilistic distribution over potential phase maps, given the data, model, and human input. We demonstrate a significant improvement in phase mapping performance given appropriate human input.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Felix Adams",
+          "id": ""
+        },
+        {
+          "name": "Austin McDannald",
+          "id": ""
+        },
+        {
+          "name": "I. Takeuchi",
+          "id": ""
+        },
+        {
+          "name": "A. Kusne",
+          "id": ""
+        }
+      ],
+      "venue": "Matter",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:259203387",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3825195702632264,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 258461620,
+      "title": "Automated Scientific Discovery: From Equation Discovery to Autonomous Discovery Systems",
+      "abstract": "The paper surveys automated scientific discovery, from equation discovery and symbolic regression to autonomous discovery systems and agents. It discusses the individual approaches from a\"big picture\"perspective and in context, but also discusses open issues and recent topics like the various roles of deep neural networks in this area, aiding in the discovery of human-interpretable knowledge. Further, we will present closed-loop scientific discovery systems, starting with the pioneering work on the Adam system up to current efforts in fields from material science to astronomy. Finally, we will elaborate on autonomy from a machine learning perspective, but also in analogy to the autonomy levels in autonomous driving. The maximal level, level five, is defined to require no human intervention at all in the production of scientific knowledge. Achieving this is one step towards solving the Nobel Turing Grand Challenge to develop AI Scientists: AI systems capable of making Nobel-quality scientific discoveries highly autonomously at a level comparable, and possibly superior, to the best human scientists by 2050.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Stefan Kramer",
+          "id": ""
+        },
+        {
+          "name": "Mattia Cerrato",
+          "id": ""
+        },
+        {
+          "name": "S. D\u017eeroski",
+          "id": ""
+        },
+        {
+          "name": "R. King",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:258461620",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.37892221755969513,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 272367281,
+      "title": "Collective Predictive Coding as Model of Science: Formalizing Scientific Activities Towards Generative Science",
+      "abstract": "This paper proposes a new conceptual framework called Collective Predictive Coding as a Model of Science (CPC-MS) to formalize and understand scientific activities. Building on the idea of collective predictive coding originally developed to explain symbol emergence, CPC-MS models science as a decentralized Bayesian inference process carried out by a community of agents. The framework describes how individual scientists' partial observations and internal representations are integrated through communication and peer review to produce shared external scientific knowledge. Key aspects of scientific practice like experimentation, hypothesis formation, theory development, and paradigm shifts are mapped onto components of the probabilistic graphical model. This paper discusses how CPC-MS provides insights into issues like social objectivity in science, scientific progress, and the potential impacts of AI on research. The generative view of science offers a unified way to analyze scientific activities and could inform efforts to automate aspects of the scientific process. Overall, CPC-MS aims to provide an intuitive yet formal model of science as a collective cognitive activity.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Tadahiro Taniguchi",
+          "id": ""
+        },
+        {
+          "name": "Shiro Takagi",
+          "id": ""
+        },
+        {
+          "name": "Jun Otsuka",
+          "id": ""
+        },
+        {
+          "name": "Yusuke Hayashi",
+          "id": ""
+        },
+        {
+          "name": "H. Hamada",
+          "id": ""
+        }
+      ],
+      "venue": "Royal Society Open Science",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:272367281",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3759036863987471,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280671306,
+      "title": "Open, Reproducible and Trustworthy Robot-Based Experiments with Virtual Labs and Digital-Twin-Based Execution Tracing",
+      "abstract": "We envision a future in which autonomous robots conduct scientific experiments in ways that are not only precise and repeatable, but also open, trustworthy, and transparent. To realize this vision, we present two key contributions: a semantic execution tracing framework that logs sensor data together with semantically annotated robot belief states, ensuring that automated experimentation is transparent and replicable; and the AICOR Virtual Research Building (VRB), a cloud-based platform for sharing, replicating, and validating robot task executions at scale. Together, these tools enable reproducible, robot-driven science by integrating deterministic execution, semantic memory, and open knowledge representation, laying the foundation for autonomous systems to participate in scientific discovery.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Benjamin Alt",
+          "id": ""
+        },
+        {
+          "name": "Mareike Picklum",
+          "id": ""
+        },
+        {
+          "name": "Sorin Arion",
+          "id": ""
+        },
+        {
+          "name": "Franklin Kenghagho Kenfack",
+          "id": ""
+        },
+        {
+          "name": "Michael Beetz",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280671306",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3669945186459565,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 263842201,
+      "title": "Explainability and human intervention in autonomous scanning probe microscopy",
+      "abstract": "Summary The broad adoption of machine learning (ML)-based autonomous experiments (AEs) in material characterization and synthesis requires strategies development for understanding and intervention in the experimental workflow. Here, we introduce and realize a post-experimental analysis strategy for deep kernel learning-based autonomous scanning probe microscopy. This approach yields real-time and post-experimental indicators for the progression of an active learning process interacting with an experimental system. We further illustrate how this approach can be applied to human-in-the-loop AEs, where human operators make high-level decisions at high latencies setting the policies for AEs, and the ML algorithm performs low-level, fast decisions. The proposed approach is universal and can be extended to other techniques and applications such as combinatorial library analysis.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Yongtao Liu",
+          "id": ""
+        },
+        {
+          "name": "M. Ziatdinov",
+          "id": ""
+        },
+        {
+          "name": "R. Vasudevan",
+          "id": ""
+        },
+        {
+          "name": "S. Kalinin",
+          "id": ""
+        }
+      ],
+      "venue": "Patterns",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:263842201",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.36239891733803276,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 270786925,
+      "title": "Automation and machine learning augmented by large language models in a catalysis study",
+      "abstract": "Recent advancements in artificial intelligence and automation are transforming catalyst discovery and design from traditional trial-and-error manual mode into intelligent, high-throughput digital methodologies. This transformation is driven by four key components, including high-throughput information extraction, automated robotic experimentation, real-time feedback for iterative optimization, and interpretable machine learning for generating new knowledge. These innovations have given rise to the development of self-driving labs and significantly accelerated materials research. Over the past two years, the emergence of large language models (LLMs) has added a new dimension to this field, providing unprecedented flexibility in information integration, decision-making, and interacting with human researchers. This review explores how LLMs are reshaping catalyst design, heralding a revolutionary change in the fields.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Yuming Su",
+          "id": ""
+        },
+        {
+          "name": "Xue Wang",
+          "id": ""
+        },
+        {
+          "name": "Yuanxiang Ye",
+          "id": ""
+        },
+        {
+          "name": "Yibo Xie",
+          "id": ""
+        },
+        {
+          "name": "Yujing Xu",
+          "id": ""
+        },
+        {
+          "name": "Yibin Jiang",
+          "id": ""
+        },
+        {
+          "name": "Cheng Wang",
+          "id": ""
+        }
+      ],
+      "venue": "Chemical Science",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:270786925",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3575870741192394,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 6769973,
+      "title": "Collaborative scientific workflows supporting collaborative science",
+      "abstract": "Collaboration has become a dominant feature of modern science. Many scientific problems are beyond the realm of individual discipline or scientist to solve and hence require collaborative efforts. Meanwhile, today's science becomes increasingly more data- intensive, resulting in a rapid transition from computational science to e-Science (or digital science). Recently, scientific workflows have emerged for scientists to integrate distributed computations, datasets, and analysis tools to enable and accelerate scientific discovery. The convergence of the above two trends naturally leads to the concept of collaborative scientific workflows. This paper presents a disciplinary definition of this term, discusses the opportunities, requirements, and challenges of collaborative scientific workflows for the enablement of scientific collaboration, and concludes with our ongoing work in this direction.",
+      "year": 2011,
+      "authors": [
+        {
+          "name": "Shiyong Lu",
+          "id": ""
+        },
+        {
+          "name": "Jia Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "International Journal of Business Process Integration and Management",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:6769973",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.35084773964936455,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 250334842,
+      "title": "Pre-trained Gaussian Processes for Bayesian Optimization",
+      "abstract": "Bayesian optimization (BO) has become a popular strategy for global optimization of expensive real-world functions. Contrary to a common expectation that BO is suited to optimizing black-box functions, it actually requires domain knowledge about those functions to deploy BO successfully. Such domain knowledge often manifests in Gaussian process (GP) priors that specify initial beliefs on functions. However, even with expert knowledge, it is non-trivial to quantitatively define a prior. This is especially true for hyperparameter tuning problems on complex machine learning models, where landscapes of tuning objectives are often difficult to comprehend. We seek an alternative practice for setting these functional priors. In particular, we consider the scenario where we have data from similar functions that allow us to pre-train a tighter distribution a priori. We detail what pre-training entails for GPs using a KL divergence based loss function, and propose a new pre-training based BO framework named HyperBO. Theoretically, we show bounded posterior predictions and near-zero regrets for HyperBO without assuming the\"ground truth\"GP prior is known. To verify our approach in realistic setups, we collect a large multi-task hyperparameter tuning dataset by training tens of thousands of configurations of near-state-of-the-art deep learning models on popular image and text datasets, as well as a protein sequence dataset. Our results show that on average, HyperBO is able to locate good hyperparameters at least 3 times more efficiently than the best competing methods on both our new tuning dataset and existing multi-task BO benchmarks.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Z. Wang",
+          "id": ""
+        },
+        {
+          "name": "George E. Dahl",
+          "id": ""
+        },
+        {
+          "name": "Kevin Swersky",
+          "id": ""
+        },
+        {
+          "name": "Chansoo Lee",
+          "id": ""
+        },
+        {
+          "name": "Zelda E. Mariet",
+          "id": ""
+        },
+        {
+          "name": "Zachary Nado",
+          "id": ""
+        },
+        {
+          "name": "J. Gilmer",
+          "id": ""
+        },
+        {
+          "name": "Jasper Snoek",
+          "id": ""
+        },
+        {
+          "name": "Z. Ghahramani",
+          "id": ""
+        }
+      ],
+      "venue": "Journal of machine learning research",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:250334842",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3496185859849478,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 269983175,
+      "title": "Illustrating an Effective Workflow for Accelerated Materials Discovery",
+      "abstract": "Algorithmic materials discovery is a multi-disciplinary domain that integrates insights from specialists in alloy design, synthesis, characterization, experimental methodologies, computational modeling, and optimization. Central to this effort is a robust data management system paired with an interactive work platform. This platform should empower users to not only access others data but also integrate their analyses, paving the way for sophisticated data pipelines. To realize this vision, there is a need for an integrative collaboration platform, streamlined data sharing and analysis tools, and efficient communication channels. Such a collaborative mechanism should transcend geographical barriers, facilitating remote interaction and fostering a challenge-response dynamic. In this paper, we present our ongoing efforts in addressing the critical challenges related to an accelerated Materials Discovery Framework as a part of the High-Throughput Materials Discovery for Extreme Conditions Initiative. Our BIRDSHOT Center has successfully harnessed various tools and strategies, including the utilization of cloud-based storage, a standardized sample naming convention, a structured file system, the implementation of sample travelers, a robust sample tracking method, and the incorporation of knowledge graphs for efficient data management. Additionally, we present the development of a data collection platform, reinforcing seamless collaboration among our team members. In summary, this paper provides an illustration and insight into the various elements of an efficient and effective workflow within an accelerated materials discovery framework while highlighting the dynamic and adaptable nature of the data management tools and sharing platforms.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "M. Mulukutla",
+          "id": ""
+        },
+        {
+          "name": "A. Person",
+          "id": ""
+        },
+        {
+          "name": "Sven P. Voigt",
+          "id": ""
+        },
+        {
+          "name": "Lindsey Kuettner",
+          "id": ""
+        },
+        {
+          "name": "Branden Kappes",
+          "id": ""
+        },
+        {
+          "name": "D. Khatamsaz",
+          "id": ""
+        },
+        {
+          "name": "Robert Robinson",
+          "id": ""
+        },
+        {
+          "name": "Daniel Salas Mula",
+          "id": ""
+        },
+        {
+          "name": "Wenle Xu",
+          "id": ""
+        },
+        {
+          "name": "Daniel O. Lewis",
+          "id": ""
+        },
+        {
+          "name": "Hongkyu Eoh",
+          "id": ""
+        },
+        {
+          "name": "Kailu Xiao",
+          "id": ""
+        },
+        {
+          "name": "Haoren Wang",
+          "id": ""
+        },
+        {
+          "name": "J. S. Saini",
+          "id": ""
+        },
+        {
+          "name": "R. Mahat",
+          "id": ""
+        },
+        {
+          "name": "Trevor Hastings",
+          "id": ""
+        },
+        {
+          "name": "M. Skokan",
+          "id": ""
+        },
+        {
+          "name": "V. Attari",
+          "id": ""
+        },
+        {
+          "name": "Michael Elverud",
+          "id": ""
+        },
+        {
+          "name": "James D. Paramore",
+          "id": ""
+        },
+        {
+          "name": "Brady G. Butler",
+          "id": ""
+        },
+        {
+          "name": "Kenneth S. Vecchio",
+          "id": ""
+        },
+        {
+          "name": "S. Kalidindi",
+          "id": ""
+        },
+        {
+          "name": "Douglas L. Allaire",
+          "id": ""
+        },
+        {
+          "name": "I. Karaman",
+          "id": ""
+        },
+        {
+          "name": "Edwin L. Thomas",
+          "id": ""
+        },
+        {
+          "name": "G T Pharr",
+          "id": ""
+        },
+        {
+          "name": "Ankit Srivastava",
+          "id": ""
+        },
+        {
+          "name": "Raymundo Arr'oyave",
+          "id": ""
+        }
+      ],
+      "venue": "Integrating Materials and Manufacturing Innovation",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:269983175",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3494797035133506,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 271710024,
+      "title": "Scientific exploration with expert knowledge (SEEK) in autonomous scanning probe microscopy with active learning",
+      "abstract": "This work introduces a knowledge-informed framework that integrates human expertise and prior interest into active learning-driven autonomous experimentation, which enhances the exploration efficiency through more targeted experimentation.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Utkarsh Pratiush",
+          "id": ""
+        },
+        {
+          "name": "Hiroshi Funakubo",
+          "id": ""
+        },
+        {
+          "name": "Rama K. Vasudevan",
+          "id": ""
+        },
+        {
+          "name": "Sergei V. Kalinin",
+          "id": ""
+        },
+        {
+          "name": "Yongtao Liu",
+          "id": ""
+        }
+      ],
+      "venue": "Digital Discovery",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271710024",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3470288990982069,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 270737876,
+      "title": "Towards a Science Exocortex",
+      "abstract": "We propose a science exocortex-a swarm of artificial intelligence (AI) agents coordinating with each other to accomplish tasks, thereby expanding a researcher's cognitive abilities.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Kevin G. Yager",
+          "id": ""
+        }
+      ],
+      "venue": "Digital Discovery",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:270737876",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.34689814834433946,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 263333922,
+      "title": "Exploring Benchmarks for Self-Driving Labs using Color Matching",
+      "abstract": "Self Driving Labs (SDLs) that combine automation of experimental procedures with autonomous decision making are gaining popularity as a means of increasing the throughput of scientific workflows. The task of identifying quantities of supplied colored pigments that match a target color, the color matching problem, provides a simple and flexible SDL test case, as it requires experiment proposal, sample creation, and sample analysis, three common components in autonomous discovery applications. We present a robotic solution to the color matching problem that allows for fully autonomous execution of a color matching protocol. Our solution leverages the WEI science factory platform to enable portability across different robotic hardware, the use of alternative optimization methods for continuous refinement, and automated publication of results for experiment tracking and post-hoc analysis.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Tobias Ginsburg",
+          "id": ""
+        },
+        {
+          "name": "Kyle Hippe",
+          "id": ""
+        },
+        {
+          "name": "Ryan Lewis",
+          "id": ""
+        },
+        {
+          "name": "Aileen Cleary",
+          "id": ""
+        },
+        {
+          "name": "D. Ozgulbas",
+          "id": ""
+        },
+        {
+          "name": "Rory Butler",
+          "id": ""
+        },
+        {
+          "name": "Casey Stone",
+          "id": ""
+        },
+        {
+          "name": "Abraham Stroka",
+          "id": ""
+        },
+        {
+          "name": "Rafael Vescovi",
+          "id": ""
+        },
+        {
+          "name": "Ian T. Foster",
+          "id": ""
+        }
+      ],
+      "venue": "SC Workshops",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:263333922",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3462731719847832,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 269282598,
+      "title": "Bayesian Co-navigation: Dynamic Designing of the Materials Digital Twins via Active Learning",
+      "abstract": "Scientific advancement is universally based on the dynamic interplay between theoretical insights, modeling, and experimental discoveries. However, this feedback loop is often slow, including delayed community interactions and the gradual integration of experimental data into theoretical frameworks. This challenge is particularly exacerbated in domains dealing with high-dimensional object spaces, such as molecules and complex microstructures. Hence, the integration of theory within automated and autonomous experimental setups, or theory in the loop-automated experiment, is emerging as a crucial objective for accelerating scientific research. The critical aspect is to use not only theory but also on-the-fly theory updates during the experiment. Here, we introduce a method for integrating theory into the loop through Bayesian conavigation of theoretical model space and experimentation. Our approach leverages the concurrent development of surrogate models for both simulation and experimental domains at the rates determined by latencies and costs of experiments and computation, alongside the adjustment of control parameters within theoretical models to minimize epistemic uncertainty over the experimental object spaces. This methodology facilitates the creation of digital twins of material structures, encompassing both the surrogate model of behavior that includes the correlative part and the theoretical model itself. While being demonstrated here within the context of functional responses in ferroelectric materials, our approach holds promise for broader applications, such as the exploration of optical properties in nanoclusters, microstructure-dependent properties in complex materials, and properties of molecular systems.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "B. Slautin",
+          "id": ""
+        },
+        {
+          "name": "Yongtao Liu",
+          "id": ""
+        },
+        {
+          "name": "Hiroshi Funakubo",
+          "id": ""
+        },
+        {
+          "name": "R. Vasudevan",
+          "id": ""
+        },
+        {
+          "name": "M. Ziatdinov",
+          "id": ""
+        },
+        {
+          "name": "Sergei V. Kalinin",
+          "id": ""
+        }
+      ],
+      "venue": "ACS Nano",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:269282598",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3449626320066647,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 221931102,
+      "title": "Autonomous intelligent agents for accelerated materials discovery",
+      "abstract": "We present an end-to-end computational system for autonomous materials discovery. The system aims for cost-effective optimization in large, high-dimensional search spaces of materials by adopting a sequential, agent-based approach to deciding which experiments to carry out. In choosing next experiments, agents can make use of past knowledge, surrogate models, logic, thermodynamic or other physical constructs, heuristic rules, and different exploration\u2013exploitation strategies. We show a series of examples for (i) how the discovery campaigns for finding materials satisfying a relative stability objective can be simulated to design new agents, and (ii) how those agents can be deployed in real discovery campaigns to control experiments run externally, such as the cloud-based density functional theory simulations in this work. In a sample set of 16 campaigns covering a range of binary and ternary chemistries including metal oxides, phosphides, sulfides and alloys, this autonomous platform found 383 new stable or nearly stable materials with no intervention by the researchers.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "Joseph H. Montoya",
+          "id": ""
+        },
+        {
+          "name": "K. Winther",
+          "id": ""
+        },
+        {
+          "name": "Raul A. Flores",
+          "id": ""
+        },
+        {
+          "name": "T. Bligaard",
+          "id": ""
+        },
+        {
+          "name": "J. Hummelsh\u00f8j",
+          "id": ""
+        },
+        {
+          "name": "M. Aykol",
+          "id": ""
+        }
+      ],
+      "venue": "Chemical Science",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:221931102",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3436570874617737,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 244773208,
+      "title": "Towards Futuristic Autonomous Experimentation-A Surprise-Reacting Sequential Experiment Policy",
+      "abstract": "An autonomous experimentation platform in manufacturing is supposedly capable of conducting a sequential search for finding suitable manufacturing conditions by itself or even for discovering new materials with minimal human intervention. The core of the intelligent control of such platforms is a policy to decide where to conduct the next experiment based on what has been done thus far. Such policy inevitably trades off between exploitation and exploration. Currently, the prevailing approach is to use various acquisition functions in the Bayesian optimization framework. We discuss whether it is beneficial to trade off exploitation versus exploration by measuring the element and degree of surprise associated with the immediate past observation. We devise a surprise-reacting policy using two existing surprise metrics, known as the Shannon surprise and Bayesian surprise. Our analysis shows that the surprise-reacting policy appears to be better suited for quickly characterizing the overall landscape of a response surface under resource constraints. We do not claim that we have a fully autonomous experimentation system but believe that the surprise-reacting capability benefits the automation of sequential decisions in autonomous experimentation.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Imtiaz Ahmed",
+          "id": ""
+        },
+        {
+          "name": "S. Bukkapatnam",
+          "id": ""
+        },
+        {
+          "name": "Bhaskar Botcha",
+          "id": ""
+        },
+        {
+          "name": "Yucheng Ding",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:244773208",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3429638822213443,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 265664261,
+      "title": "Search Strategies for Self-driving Laboratories with Pending Experiments",
+      "abstract": "Self-driving laboratories (SDLs) consist of multiple stations that perform material synthesis and characterisation tasks. To minimize station downtime and maximize experimental throughput, it is practical to run experiments in asynchronous parallel, in which multiple experiments are being performed at once in different stages. Asynchronous parallelization of experiments, however, introduces delayed feedback (i.e.\"pending experiments\"), which is known to reduce Bayesian optimiser performance. Here, we build a simulator for a multi-stage SDL and compare optimisation strategies for dealing with delayed feedback and asynchronous parallelized operation. Using data from a real SDL, we build a ground truth Bayesian optimisation simulator from 177 previously run experiments for maximizing the conductivity of functional coatings. We then compare search strategies such as expected improvement, noisy expected improvement, 4-mode exploration and random sampling. We evaluate their performance in terms of amount of delay and problem dimensionality. Our simulation results showcase the trade-off between the asynchronous parallel operation and delayed feedback.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Hao Wen",
+          "id": ""
+        },
+        {
+          "name": "Jakob Zeitler",
+          "id": ""
+        },
+        {
+          "name": "Connor C. Rupnow",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:265664261",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.34198357931618023,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 195820304,
+      "title": "Data-Centric Mixed-Variable Bayesian Optimization For Materials Design",
+      "abstract": "Materials design can be cast as an optimization problem with the goal of achieving desired properties, by varying material composition, microstructure morphology, and processing conditions. Existence of both qualitative and quantitative material design variables leads to disjointed regions in property space, making the search for optimal design challenging. Limited availability of experimental data and the high cost of simulations magnify the challenge. This situation calls for design methodologies that can extract useful information from existing data and guide the search for optimal designs efficiently. To this end, we present a data-centric, mixed-variable Bayesian Optimization framework that integrates data from literature, experiments, and simulations for knowledge discovery and computational materials design. Our framework pivots around the Latent Variable Gaussian Process (LVGP), a novel Gaussian Process technique which projects qualitative variables on a continuous latent space for covariance formulation, as the surrogate model to quantify \"lack of data\" uncertainty. Expected improvement, an acquisition criterion that balances exploration and exploitation, helps navigate a complex, nonlinear design space to locate the optimum design. The proposed framework is tested through a case study which seeks to concurrently identify the optimal composition and morphology for insulating polymer nanocomposites. We also present an extension of mixed-variable Bayesian Optimization for multiple objectives to identify the Pareto Frontier within tens of iterations. These findings project Bayesian Optimization as a powerful tool for design of engineered material systems.",
+      "year": 2019,
+      "authors": [
+        {
+          "name": "Akshay Iyer",
+          "id": ""
+        },
+        {
+          "name": "Yichi Zhang",
+          "id": ""
+        },
+        {
+          "name": "A. Prasad",
+          "id": ""
+        },
+        {
+          "name": "Siyu Tao",
+          "id": ""
+        },
+        {
+          "name": "Yixing Wang",
+          "id": ""
+        },
+        {
+          "name": "L. Schadler",
+          "id": ""
+        },
+        {
+          "name": "L. Brinson",
+          "id": ""
+        }
+      ],
+      "venue": "Design Automation Conference",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:195820304",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.33979309865970414,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 202761005,
+      "title": "Autonomous discovery in the chemical sciences part II: Outlook",
+      "abstract": "This two-part review examines how automation has contributed to different aspects of discovery in the chemical sciences. In this second part, we reflect on a selection of exemplary studies. It is increasingly important to articulate what the role of automation and computation has been in the scientific process and how that has or has not accelerated discovery. One can argue that even the best automated systems have yet to \"discover\" despite being incredibly useful as laboratory assistants. We must carefully consider how they have been and can be applied to future problems of chemical discovery in order to effectively design and interact with future autonomous platforms. The majority of this article defines a large set of open research directions, including improving our ability to work with complex data, build empirical models, automate both physical and computational experiments for validation, select experiments, and evaluate whether we are making progress toward the ultimate goal of autonomous discovery. Addressing these practical and methodological challenges will greatly advance the extent to which autonomous systems can make meaningful discoveries.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "Connor W. Coley",
+          "id": ""
+        },
+        {
+          "name": "Natalie S. Eyke",
+          "id": ""
+        },
+        {
+          "name": "K. Jensen",
+          "id": ""
+        }
+      ],
+      "venue": "Angewandte Chemie",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:202761005",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3309773374477071,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 268875818,
+      "title": "Empowering Biomedical Discovery with AI Agents",
+      "abstract": "We envision \"AI scientists\" as systems capable of skeptical learning and reasoning that empower biomedical research through collaborative agents that integrate AI models and biomedical tools with experimental platforms. Rather than taking humans out of the discovery process, biomedical AI agents combine human creativity and expertise with AI's ability to analyze large datasets, navigate hypothesis spaces, and execute repetitive tasks. AI agents are poised to be proficient in various tasks, planning discovery workflows and performing self-assessment to identify and mitigate gaps in their knowledge. These agents use large language models and generative models to feature structured memory for continual learning and use machine learning tools to incorporate scientific knowledge, biological principles, and theories. AI agents can impact areas ranging from virtual cell simulation, programmable control of phenotypes, and the design of cellular circuits to developing new therapies.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Shanghua Gao",
+          "id": ""
+        },
+        {
+          "name": "Ada Fang",
+          "id": ""
+        },
+        {
+          "name": "Yepeng Huang",
+          "id": ""
+        },
+        {
+          "name": "Valentina Giunchiglia",
+          "id": ""
+        },
+        {
+          "name": "Ayush Noori",
+          "id": ""
+        },
+        {
+          "name": "J. Schwarz",
+          "id": ""
+        },
+        {
+          "name": "Yasha Ektefaie",
+          "id": ""
+        },
+        {
+          "name": "Jovana Kondic",
+          "id": ""
+        },
+        {
+          "name": "M. Zitnik",
+          "id": ""
+        }
+      ],
+      "venue": "Cell",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:268875818",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3264443652303607,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 248426830,
+      "title": "ARChemist: Autonomous Robotic Chemistry System Architecture*",
+      "abstract": "Automated laboratory experiments have the potential to propel new discoveries, while increasing reproducibility and improving scientists' safety when handling dangerous materials. However, many automated laboratory workflows have not fully leveraged the remarkable advancements in robotics and digital lab equipment. As a result, most robotic systems used in the labs are programmed specifically for a single experiment, often relying on proprietary architectures or using unconventional hardware. In this work, we tackle this problem by proposing a novel robotic system architecture specifically designed with and for chemists, which allows the scientist to easily reconfigure their setup for new experiments. Specifically, the system's strength is its ability to combine together heterogeneous robotic platforms with standard laboratory equipment to create different experimental setups. Finally, we show how the architecture can be used for specific laboratory experiments through case studies such as solubility screening and crystallisation.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "Hatem Fakhruldeen",
+          "id": ""
+        },
+        {
+          "name": "Gabriella Pizzuto",
+          "id": ""
+        },
+        {
+          "name": "J. G\u0142owacki",
+          "id": ""
+        },
+        {
+          "name": "Andrew I. Cooper",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE International Conference on Robotics and Automation",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:248426830",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.30921077839906086,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273638438,
+      "title": "O1 Replication Journey: A Strategic Progress Report - Part 1",
+      "abstract": "This paper introduces a pioneering approach to artificial intelligence research, embodied in our O1 Replication Journey. In response to the announcement of OpenAI's groundbreaking O1 model, we embark on a transparent, real-time exploration to replicate its capabilities while reimagining the process of conducting and communicating AI research. Our methodology addresses critical challenges in modern AI research, including the insularity of prolonged team-based projects, delayed information sharing, and the lack of recognition for diverse contributions. By providing comprehensive, real-time documentation of our replication efforts, including both successes and failures, we aim to foster open science, accelerate collective advancement, and lay the groundwork for AI-driven scientific discovery. Our research progress report diverges significantly from traditional research papers, offering continuous updates, full process transparency, and active community engagement throughout the research journey. Technologically, we proposed the journey learning paradigm, which encourages models to learn not just shortcuts, but the complete exploration process, including trial and error, reflection, and backtracking. With only 327 training samples and without any additional tricks, journey learning outperformed conventional supervised learning by over 8\\% on the MATH dataset, demonstrating its extremely powerful potential. We believe this to be the most crucial component of O1 technology that we have successfully decoded. We share valuable resources including technical hypotheses and insights, cognitive exploration maps, custom-developed tools, etc at https://github.com/GAIR-NLP/O1-Journey.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Yiwei Qin",
+          "id": ""
+        },
+        {
+          "name": "Xuefeng Li",
+          "id": ""
+        },
+        {
+          "name": "Haoyang Zou",
+          "id": ""
+        },
+        {
+          "name": "Yixiu Liu",
+          "id": ""
+        },
+        {
+          "name": "Shijie Xia",
+          "id": ""
+        },
+        {
+          "name": "Zhen Huang",
+          "id": ""
+        },
+        {
+          "name": "Yixin Ye",
+          "id": ""
+        },
+        {
+          "name": "Weizhe Yuan",
+          "id": ""
+        },
+        {
+          "name": "Hector Liu",
+          "id": ""
+        },
+        {
+          "name": "Yuanzhi Li",
+          "id": ""
+        },
+        {
+          "name": "Pengfei Liu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273638438",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.307507121795593,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 271217966,
+      "title": "Octopus: Experiences with a Hybrid Event-Driven Architecture for Distributed Scientific Computing",
+      "abstract": "Scientific research increasingly relies on distributed computational resources, storage systems, networks, and instruments, ranging from HPC and cloud systems to edge devices. Event-driven architecture (EDA) benefits applications targeting distributed research infrastructures by enabling the organization, communication, processing, reliability, and security of events generated from many sources. To support the development of scientific EDA, we introduce Octopus, a hybrid, cloud-to-edge event fabric designed to link many local event producers and consumers with cloud-hosted brokers, and to provide a fabric for developing resilient applications. Octopus can be scaled to meet demand, permits the deployment of highly available Triggers for automatic event processing, and enforces fine-grained access control. We identify requirements in self-driving laboratories, scientific data automation, online task scheduling, epidemic modeling, and dynamic workflow management use cases, and present results demonstrating Octopus\u2019 ability to meet those requirements. Octopus supports producing and consuming events at a rate of over 4.2 M and 9.6 M events per second, respectively, from distributed clients.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Haochen Pan",
+          "id": ""
+        },
+        {
+          "name": "Ryan Chard",
+          "id": ""
+        },
+        {
+          "name": "Sicheng Zhou",
+          "id": ""
+        },
+        {
+          "name": "Alok Kamatar",
+          "id": ""
+        },
+        {
+          "name": "Rafael Vescovi",
+          "id": ""
+        },
+        {
+          "name": "Val\u00e9rie Hayot-Sasson",
+          "id": ""
+        },
+        {
+          "name": "Andr\u00e9 Bauer",
+          "id": ""
+        },
+        {
+          "name": "Maxime Gonthier",
+          "id": ""
+        },
+        {
+          "name": "Kyle Chard",
+          "id": ""
+        },
+        {
+          "name": "Ian T. Foster",
+          "id": ""
+        }
+      ],
+      "venue": "SC24-W: Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:271217966",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.30452450578524615,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 244920856,
+      "title": "Campaign Knowledge Network: Building Knowledge for Campaign Efficiency",
+      "abstract": "In the landscape of exascale computing collaborative research campaigns are conducted as co-design activities of loosely coordinated experiments. But the higher level context and the knowledge of individual experimental activity is lost over time. We undertook a knowledge capture and representation aid called Campaign Knowledge Network(CKN), a co-design design and analysis tool. We demonstrate that CKN can satisfy the Hoarde abstraction and can distill campaign context from runtime information thereby creating a knowledge resource upon which analysis tools can run to provide more efficient experimentation",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "S. Withana",
+          "id": ""
+        },
+        {
+          "name": "Kshitij Mehta",
+          "id": ""
+        },
+        {
+          "name": "Matthew Wolf",
+          "id": ""
+        },
+        {
+          "name": "Beth Plale",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:244920856",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3037822676529497,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278788464,
+      "title": "Advancing the Scientific Method with Large Language Models: From Hypothesis to Discovery",
+      "abstract": "With recent Nobel Prizes recognising AI contributions to science, Large Language Models (LLMs) are transforming scientific research by enhancing productivity and reshaping the scientific method. LLMs are now involved in experimental design, data analysis, and workflows, particularly in chemistry and biology. However, challenges such as hallucinations and reliability persist. In this contribution, we review how Large Language Models (LLMs) are redefining the scientific method and explore their potential applications across different stages of the scientific cycle, from hypothesis testing to discovery. We conclude that, for LLMs to serve as relevant and effective creative engines and productivity enhancers, their deep integration into all steps of the scientific process should be pursued in collaboration and alignment with human scientific goals, with clear evaluation metrics. The transition to AI-driven science raises ethical questions about creativity, oversight, and responsibility. With careful guidance, LLMs could evolve into creative engines, driving transformative breakthroughs across scientific disciplines responsibly and effectively. However, the scientific community must also decide how much it leaves to LLMs to drive science, even when associations with 'reasoning', mostly currently undeserved, are made in exchange for the potential to explore hypothesis and solution regions that might otherwise remain unexplored by human exploration alone.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Yanbo Zhang",
+          "id": ""
+        },
+        {
+          "name": "S. Khan",
+          "id": ""
+        },
+        {
+          "name": "Adnan Mahmud",
+          "id": ""
+        },
+        {
+          "name": "Huck Yang",
+          "id": ""
+        },
+        {
+          "name": "Alexander Lavin",
+          "id": ""
+        },
+        {
+          "name": "Michael Levin",
+          "id": ""
+        },
+        {
+          "name": "Jeremy Frey",
+          "id": ""
+        },
+        {
+          "name": "Jared Dunnmon",
+          "id": ""
+        },
+        {
+          "name": "James Evans",
+          "id": ""
+        },
+        {
+          "name": "Alan Bundy",
+          "id": ""
+        },
+        {
+          "name": "S. D\u017eeroski",
+          "id": ""
+        },
+        {
+          "name": "Jesper Tegn\u00e9r",
+          "id": ""
+        },
+        {
+          "name": "H. Zenil",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278788464",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3012101152033191,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 235262754,
+      "title": "Gryffin: An algorithm for Bayesian optimization of categorical variables informed by expert knowledge",
+      "abstract": "Designing functional molecules and advanced materials requires complex design choices: tuning continuous process parameters such as temperatures or flow rates, while simultaneously selecting catalysts or solvents. To date, the development of data-driven experiment planning strategies for autonomous experimentation has largely focused on continuous process parameters despite the urge to devise efficient strategies for the selection of categorical variables. Here, we introduce Gryffin, a general purpose optimization framework for the autonomous selection of categorical variables driven by expert knowledge. Gryffin augments Bayesian optimization based on kernel density estimation with smooth approximations to categorical distributions. Leveraging domain knowledge in the form of physicochemical descriptors, Gryffin can significantly accelerate the search for promising molecules and materials. Gryffin can further highlight relevant correlations between the provided descriptors to inspire physical insights and foster scientific intuition. In addition to comprehensive benchmarks, we demonstrate the capabilities and performance of Gryffin on three examples in materials science and chemistry: (i) the discovery of non-fullerene acceptors for organic solar cells, (ii) the design of hybrid organic-inorganic perovskites for light harvesting, and (iii) the identification of ligands and process parameters for Suzuki-Miyaura reactions. Our results suggest that Gryffin, in its simplest form, is competitive with state-of-the-art categorical optimization algorithms. However, when leveraging domain knowledge provided via descriptors, Gryffin outperforms other approaches while simultaneously refining this domain knowledge to promote scientific understanding.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "Florian Hase",
+          "id": ""
+        },
+        {
+          "name": "Matteo Aldeghi",
+          "id": ""
+        },
+        {
+          "name": "Riley J. Hickman",
+          "id": ""
+        },
+        {
+          "name": "L. Roch",
+          "id": ""
+        },
+        {
+          "name": "Al\u00e1n Aspuru-Guzik",
+          "id": ""
+        }
+      ],
+      "venue": "",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:235262754",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2993189756107189,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 218469582,
+      "title": "QSAR without borders.",
+      "abstract": "Prediction of chemical bioactivity and physical properties has been one of the most important applications of statistical and more recently, machine learning and artificial intelligence methods in chemical sciences. This field of research, broadly known as quantitative structure-activity relationships (QSAR) modeling, has developed many important algorithms and has found a broad range of applications in physical organic and medicinal chemistry in the past 55+ years. This Perspective summarizes recent technological advances in QSAR modeling but it also highlights the applicability of algorithms, modeling methods, and validation practices developed in QSAR to a wide range of research areas outside of traditional QSAR boundaries including synthesis planning, nanotechnology, materials science, biomaterials, and clinical informatics. As modern research methods generate rapidly increasing amounts of data, the knowledge of robust data-driven modelling methods professed within the QSAR field can become essential for scientists working both within and outside of chemical research. We hope that this contribution highlighting the generalizable components of QSAR modeling will serve to address this challenge.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "E. Muratov",
+          "id": ""
+        },
+        {
+          "name": "J. Bajorath",
+          "id": ""
+        },
+        {
+          "name": "R. Sheridan",
+          "id": ""
+        },
+        {
+          "name": "I. Tetko",
+          "id": ""
+        },
+        {
+          "name": "D. Filimonov",
+          "id": ""
+        },
+        {
+          "name": "V. Poroikov",
+          "id": ""
+        },
+        {
+          "name": "Tudor I. Oprea",
+          "id": ""
+        },
+        {
+          "name": "I. Baskin",
+          "id": ""
+        },
+        {
+          "name": "A. Varnek",
+          "id": ""
+        },
+        {
+          "name": "A. Roitberg",
+          "id": ""
+        },
+        {
+          "name": "O. Isayev",
+          "id": ""
+        },
+        {
+          "name": "Stefano Curtalolo",
+          "id": ""
+        },
+        {
+          "name": "D. Fourches",
+          "id": ""
+        },
+        {
+          "name": "Y. Cohen",
+          "id": ""
+        },
+        {
+          "name": "Al\u00e1n Aspuru-Guzik",
+          "id": ""
+        },
+        {
+          "name": "D. Winkler",
+          "id": ""
+        },
+        {
+          "name": "D. Agrafiotis",
+          "id": ""
+        },
+        {
+          "name": "A. Cherkasov",
+          "id": ""
+        },
+        {
+          "name": "A. Tropsha",
+          "id": ""
+        }
+      ],
+      "venue": "Chemical Society Reviews",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:218469582",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.29257951763838114,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 253397827,
+      "title": "Toward Human-AI Co-creation to Accelerate Material Discovery",
+      "abstract": "There is an increasing need in our society to achieve faster advances in Science to tackle urgent problems, such as climate changes, environmental hazards, sustainable energy systems, pandemics, among others. In certain domains like chemistry, scientific discovery carries the extra burden of assessing risks of the proposed novel solutions before moving to the experimental stage. Despite several recent advances in Machine Learning and AI to address some of these challenges, there is still a gap in technologies to support end-to-end discovery applications, integrating the myriad of available technologies into a coherent, orchestrated, yet flexible discovery process. Such applications need to handle complex knowledge management at scale, enabling knowledge consumption and production in a timely and efficient way for subject matter experts (SMEs). Furthermore, the discovery of novel functional materials strongly relies on the development of exploration strategies in the chemical space. For instance, generative models have gained attention within the scientific community due to their ability to generate enormous volumes of novel molecules across material domains. These models exhibit extreme creativity that often translates in low viability of the generated candidates. In this work, we propose a workbench framework that aims at enabling the human-AI co-creation to reduce the time until the first discovery and the opportunity costs involved. This framework relies on a knowledge base with domain and process knowledge, and user-interaction components to acquire knowledge and advise the SMEs. Currently,the framework supports four main activities: generative modeling, dataset triage, molecule adjudication, and risk assessment.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "D. Zubarev",
+          "id": ""
+        },
+        {
+          "name": "C. Mendes",
+          "id": ""
+        },
+        {
+          "name": "E. V. Brazil",
+          "id": ""
+        },
+        {
+          "name": "Renato F. G. Cerqueira",
+          "id": ""
+        },
+        {
+          "name": "Kristin Schmidt",
+          "id": ""
+        },
+        {
+          "name": "Vinicius Segura",
+          "id": ""
+        },
+        {
+          "name": "J. Ferreira",
+          "id": ""
+        },
+        {
+          "name": "Daniel P. Sanders",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:253397827",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2901963521900116,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 267770461,
+      "title": "Towards accelerating physical discovery via non-interactive and interactive multi-fidelity Bayesian Optimization: Current challenges and future opportunities",
+      "abstract": "Both computational and experimental material discovery bring forth the challenge of exploring multidimensional and often non-differentiable parameter spaces, such as phase diagrams of Hamiltonians with multiple interactions, composition spaces of combinatorial libraries, processing spaces, and molecular embedding spaces. Often these systems are expensive or time-consuming to evaluate a single instance, and hence classical approaches based on exhaustive grid or random search are too data intensive. This resulted in strong interest towards active learning methods such as Bayesian optimization (BO) where the adaptive exploration occurs based on human learning (discovery) objective. However, classical BO is based on a predefined optimization target, and policies balancing exploration and exploitation are purely data driven. In practical settings, the domain expert can pose prior knowledge on the system in form of partially known physics laws and often varies exploration policies during the experiment. Here, we explore interactive workflows building on multi-fidelity BO (MFBO), starting with classical (data-driven) MFBO, then structured (physics-driven) sMFBO, and extending it to allow human in the loop interactive iMFBO workflows for adaptive and domain expert aligned exploration. These approaches are demonstrated over highly non-smooth multi-fidelity simulation data generated from an Ising model, considering spin-spin interaction as parameter space, lattice sizes as fidelity spaces, and the objective as maximizing heat capacity. Detailed analysis and comparison show the impact of physics knowledge injection and on-the-fly human decisions for improved exploration, current challenges, and potential opportunities for algorithm development with combining data, physics and real time human decisions.\nThe exploration of expansive parameter spaces stands as a fundamental endeavor in various scientific domains. This exploration is pivotal in fields like statistical physics, particularly in the context of Ising [1][2][3][4] , Potts [5][6][7] , and Heisenberg models [8][9][10] , as well as in the study of quantum Hamiltonians 8,[10][11][12][13][14][15][16][17] and the computational construction of phase diagrams within the CALPHAD approach [18][19][20][21] . Parallel challenges arise in experimental settings, where the comprehensive investigation of combinatorial libraries encompassing oxides, metals, and assorted compounds is crucial [22][23][24][25][26][27] . The automation of material synthesis [28][29][30][31][32] , employing techniques like pipetting and microfluidic robotics, along with the optimization of complex electrolytes and solvents mixtures, further exemplifies the breadth and importance of this task.\nThe classical paradigm for exploring these spaces is associated with forms of grid-based and random sampling 33,34 . However, these studies are associated with time consuming or expensive steps, and necessitate the development of more efficient approaches for the exploration of parameter spaces, typically implemented in the form of active learning. In this approach, the result of the experiment at several initial points in the parameter space are used to establish the location for the next experiment, and the process is repeated iteratively in pursuance of a selected optimization target. These may include the discovery of the target function behavior over the full parameter space, or optimization of the target function. In the context of human-driven optimization, very often the exploration task balances the data driven strategies with discovery of physical laws governing the behavior of the functionality of interest within the search space. When available, this physical knowledge significantly accelerates materials optimization.\nThe classical paradigm for active learning is Bayesian Optimization (BO) based on the Gaussian Processes (GP) model. In this approach, the GP is used to construct the surrogate function representing likely behavior of the target function over the parameter space, along with its uncertainty. The predicted function and its uncertainty can be combined to formulate the acquisition function, balancing the exploration and exploitation. A number of excellent reviews on Bayesian Optimization are available 35,36 , and it is now implemented in a broad range of Python libraries including BOtorch (Pytorch) 37 , Gpax (Jax) 38 .\nHowever, the significant limitation of classical GP is its purely data-driven nature. In other words, the surrogate function is typically constructed only from previous data. While convenient and justified in certain scenarios, in practical settings multiple sources of information about the target function are often available. These can include the availability of a certain proxy measurements that are correlated, but non-equivalent, to the target function. This proxy measurement can be known in advance or be also available dynamically, with lower measurement cost. In the latter case, the exploration of the parameter spaces includes developing strategies for balancing the low-cost (low-fidelity) and high-cost (high-fidelity) measurements. In the former case, the proxy measurement or the low fidelity data can be used to optimize exploration strategy for the expensive (high-fidelity) function. These strategically balanced low and high-fidelity data can be learned jointly through a multi-fidelity GP, to estimate the high-fidelity function of interest (ground truth), thereby reducing the cost/number of high-fidelity measurements needed to accelerate scientific discoveries, unlike in single fidelity GP 39 .\nThe second type of knowledge available is that of partial knowledge of the physics of the system. For statistical physics this will include information on the number and potentially character of phase transitions, asymptotic behavior of the target function, etc. For exploration of phase diagrams, there can be physical models for the concentration dependence of the parameter of interest. These cases are highly domain specific, and incorporation of the physics -based mean function as a probabilistic model has been demonstrated recently for the perovskite discovery 40 and automated experiment in scanning probe microscopy 41 .\nIn many cases multiple types of knowledge are available, necessitating strategies to balance them. In a classical BO workflow, the acquisition function is constructed prior to the optimization campaign. If necessary, the corresponding hyper parameters are optimized using model systems or pre-acquired data. This approach, while valid, is limited in many experimental scenarios and also contrasts the intended goal of automated experiments. At the same time, human-based exploration workflows often switch between different forms of exploration, alternating between data driven and physics-based discovery, and often transitioning from more exploratory policies in the beginning towards greedy optimization policies by the end of the experimental campaign.\nHere, we propose to use the interactive human in the loop workflow for physics discovery based on multi-fidelity Gaussian Process with the structured probabilistic model as a mean function. We explore the limitation of simple multi-fidelity approaches as applied to function optimization. We develop the corresponding workflow and demonstrate it for the model function, and subsequently apply it for the exploration of the model Ising model. The proposed approach is universal and can be extended for exploration of multicomponent parameter spaces both in theoretical and experimental settings.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Arpan Biswas",
+          "id": ""
+        },
+        {
+          "name": "Sai Mani Prudhvi Valleti",
+          "id": ""
+        },
+        {
+          "name": "Rama K. Vasudevan",
+          "id": ""
+        },
+        {
+          "name": "M. Ziatdinov",
+          "id": ""
+        },
+        {
+          "name": "S. Kalinin",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:267770461",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.27163055539109826,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 232233115,
+      "title": "Problem-fluent models for complex decision-making in autonomous materials research",
+      "abstract": "We review our recent work in the area of autonomous materials research, highlighting the coupling of machine learning methods and models and more problem-aware modeling. We review the general Bayesian framework for closed-loop design employed by many autonomous materials platforms. We then provide examples of our work on such platforms. We finally review our approaches to extend current statistical and ML models to better reflect problem-specific structure including the use of physics-based models and incorporation of operational considerations into the decision-making procedure.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Soojung Baek",
+          "id": ""
+        },
+        {
+          "name": "Kristofer G. Reyes",
+          "id": ""
+        }
+      ],
+      "venue": "Computational materials science",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:232233115",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2676302580103531,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277633954,
+      "title": "The Power of the Pareto Front: Balancing Uncertain Rewards for Adaptive Experimentation in scanning probe microscopy",
+      "abstract": "Automated experimentation has the potential to revolutionize scientific discovery, but its effectiveness depends on well-defined optimization targets, which are often uncertain or probabilistic in real-world settings. In this work, we demonstrate the application of Multi-Objective Bayesian Optimization (MOBO) to balance multiple, competing rewards in autonomous experimentation. Using scanning probe microscopy (SPM) imaging, one of the most widely used and foundational SPM modes, we show that MOBO can optimize imaging parameters to enhance measurement quality, reproducibility, and efficiency. A key advantage of this approach is the ability to compute and analyze the Pareto front, which not only guides optimization but also provides physical insights into the trade-offs between different objectives. Additionally, MOBO offers a natural framework for human-in-the-loop decision-making, enabling researchers to fine-tune experimental trade-offs based on domain expertise. By standardizing high-quality, reproducible measurements and integrating human input into AI-driven optimization, this work highlights MOBO as a powerful tool for advancing autonomous scientific discovery.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Yu Liu",
+          "id": ""
+        },
+        {
+          "name": "Sergei V. Kalinin",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277633954",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.26599346745188096,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    }
+  ]
+}

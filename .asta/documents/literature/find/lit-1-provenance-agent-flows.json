@@ -1,0 +1,2901 @@
+{
+  "query": "Provenance, tracking, and observability for multi-step LLM agent workflows and autonomous scientific discovery pipelines, with emphasis on cross-run aggregation across many independent runs that share a common research goal. Includes provenance models for AI-driven research, structured task graphs, and dashboards over agent-produced artifacts.",
+  "results": [
+    {
+      "corpusId": 281332432,
+      "title": "LLM Agents for Interactive Workflow Provenance: Reference Architecture and Evaluation Methodology",
+      "abstract": "Modern scientific discovery increasingly relies on workflows that process data across the Edge, Cloud, and High Performance Computing (HPC) continuum. Comprehensive and in-depth analyses of these data are critical for hypothesis validation, anomaly detection, reproducibility, and impactful findings. Although workflow provenance techniques support such analyses, at large scale, the provenance data become complex and di\ufb03cult to analyze. Existing systems depend on custom scripts, structured queries, or static dashboards, limiting data interaction. In this work, we introduce an evaluation methodology, reference architecture, and open-source implementation that leverages interactive Large Language Model (LLM) agents for runtime data analysis. Our approach uses a lightweight, metadata-driven design that translates natural language into structured provenance queries. Evaluations across LLaMA, GPT, Gemini, and Claude, covering diverse query classes and a real-world chemistry workflow, show that modular design, prompt tuning, and Retrieval-Augmented Generation (RAG) enable accurate and insightful LLM agent responses beyond recorded provenance.CCS Concepts \u2022 Computing methodologies \u2192 Distributed computing methodologies; Parallel computing methodologies; Artificial intelligence.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "Timothy Poteet",
+          "id": ""
+        },
+        {
+          "name": "Brian D. Etz",
+          "id": ""
+        },
+        {
+          "name": "Daniel Rosendo",
+          "id": ""
+        },
+        {
+          "name": "Amal Gueroudji",
+          "id": ""
+        },
+        {
+          "name": "Woong Shin",
+          "id": ""
+        },
+        {
+          "name": "Prasanna Balaprakash",
+          "id": ""
+        },
+        {
+          "name": "R. Ferreira da Silva",
+          "id": ""
+        }
+      ],
+      "venue": "SC25-W: Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281332432",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7184502904086544,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284133057,
+      "title": "Bohrium + SciMaster: Building the Infrastructure and Ecosystem for Agentic Science at Scale",
+      "abstract": "AI agents are emerging as a practical way to run multi-step scientific workflows that interleave reasoning with tool use and verification, pointing to a shift from isolated AI-assisted steps toward \\emph{agentic science at scale}. This shift is increasingly feasible, as scientific tools and models can be invoked through stable interfaces and verified with recorded execution traces, and increasingly necessary, as AI accelerates scientific output and stresses the peer-review and publication pipeline, raising the bar for traceability and credible evaluation. However, scaling agentic science remains difficult: workflows are hard to observe and reproduce; many tools and laboratory systems are not agent-ready; execution is hard to trace and govern; and prototype AI Scientist systems are often bespoke, limiting reuse and systematic improvement from real workflow signals. We argue that scaling agentic science requires an infrastructure-and-ecosystem approach, instantiated in Bohrium+SciMaster. Bohrium acts as a managed, traceable hub for AI4S assets -- akin to a HuggingFace of AI for Science -- that turns diverse scientific data, software, compute, and laboratory systems into agent-ready capabilities. SciMaster orchestrates these capabilities into long-horizon scientific workflows, on which scientific agents can be composed and executed. Between infrastructure and orchestration, a \\emph{scientific intelligence substrate} organizes reusable models, knowledge, and components into executable building blocks for workflow reasoning and action, enabling composition, auditability, and improvement through use. We demonstrate this stack with eleven representative master agents in real workflows, achieving orders-of-magnitude reductions in end-to-end scientific cycle time and generating execution-grounded signals from real workloads at multi-million scale.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Linfeng Zhang",
+          "id": ""
+        },
+        {
+          "name": "Siheng Chen",
+          "id": ""
+        },
+        {
+          "name": "Yuzhu Cai",
+          "id": ""
+        },
+        {
+          "name": "Jingyi Chai",
+          "id": ""
+        },
+        {
+          "name": "Junhan Chang",
+          "id": ""
+        },
+        {
+          "name": "Kun Chen",
+          "id": ""
+        },
+        {
+          "name": "Zhi X. Chen",
+          "id": ""
+        },
+        {
+          "name": "Zhaohan Ding",
+          "id": ""
+        },
+        {
+          "name": "Yuwen Du",
+          "id": ""
+        },
+        {
+          "name": "Yuanpeng Gao",
+          "id": ""
+        },
+        {
+          "name": "Yuanpeng Gao",
+          "id": ""
+        },
+        {
+          "name": "Jing Gao",
+          "id": ""
+        },
+        {
+          "name": "Zhifeng Gao",
+          "id": ""
+        },
+        {
+          "name": "Qiangqiang Gu",
+          "id": ""
+        },
+        {
+          "name": "Yanhui Hong",
+          "id": ""
+        },
+        {
+          "name": "Yuan Huang",
+          "id": ""
+        },
+        {
+          "name": "Xi Fang",
+          "id": ""
+        },
+        {
+          "name": "Xiaohong Ji",
+          "id": ""
+        },
+        {
+          "name": "Guolin Ke",
+          "id": ""
+        },
+        {
+          "name": "Zixing Lei",
+          "id": ""
+        },
+        {
+          "name": "Xinyu Li",
+          "id": ""
+        },
+        {
+          "name": "Yonggen Li",
+          "id": ""
+        },
+        {
+          "name": "Ruo-tong Liao",
+          "id": ""
+        },
+        {
+          "name": "Hang Lin",
+          "id": ""
+        },
+        {
+          "name": "Xiao Lin",
+          "id": ""
+        },
+        {
+          "name": "Yuxiang Liu",
+          "id": ""
+        },
+        {
+          "name": "Xinzijian Liu",
+          "id": ""
+        },
+        {
+          "name": "Zexi Liu",
+          "id": ""
+        },
+        {
+          "name": "Jin Lu",
+          "id": ""
+        },
+        {
+          "name": "Tingjia Miao",
+          "id": ""
+        },
+        {
+          "name": "Haohui Que",
+          "id": ""
+        },
+        {
+          "name": "Weijie Sun",
+          "id": ""
+        },
+        {
+          "name": "Yanfeng Wang",
+          "id": ""
+        },
+        {
+          "name": "Bin Wu",
+          "id": ""
+        },
+        {
+          "name": "Tianju Xue",
+          "id": ""
+        },
+        {
+          "name": "Rui Ye",
+          "id": ""
+        },
+        {
+          "name": "Jinzhe Zeng",
+          "id": ""
+        },
+        {
+          "name": "Duoxiao Zhang",
+          "id": ""
+        },
+        {
+          "name": "Jiahui Zhang",
+          "id": ""
+        },
+        {
+          "name": "Tianhan Zhang",
+          "id": ""
+        },
+        {
+          "name": "Wenchang Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yuzhi Zhang",
+          "id": ""
+        },
+        {
+          "name": "Zezhong Zhang",
+          "id": ""
+        },
+        {
+          "name": "Hang Zheng",
+          "id": ""
+        },
+        {
+          "name": "Hui Zhou",
+          "id": ""
+        },
+        {
+          "name": "Tong Zhu",
+          "id": ""
+        },
+        {
+          "name": "Xinyu Zhu",
+          "id": ""
+        },
+        {
+          "name": "Qin Zhou",
+          "id": ""
+        },
+        {
+          "name": "E. Weinan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284133057",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7182082586945733,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285462860,
+      "title": "SciDataCopilot: An Agentic Data Preparation Framework for AGI-driven Scientific Discovery",
+      "abstract": "The current landscape of AI for Science (AI4S) is predominantly anchored in large-scale textual corpora, where generative AI systems excel at hypothesis generation, literature search, and multi-modal reasoning. However, a critical bottleneck for accelerating closed-loop scientific discovery remains the utilization of raw experimental data. Characterized by extreme heterogeneity, high specificity, and deep domain expertise requirements, raw data possess neither direct semantic alignment with linguistic representations nor structural homogeneity suitable for a unified embedding space. The disconnect prevents the emerging class of Artificial General Intelligence for Science (AGI4S) from effectively interfacing with the physical reality of experimentation. In this work, we extend the text-centric AI-Ready concept to Scientific AI-Ready data paradigm, explicitly formalizing how scientific data is specified, structured, and composed within a computational workflow. To operationalize this idea, we propose SciDataCopilot, an autonomous agentic framework designed to handle data ingestion, scientific intent parsing, and multi-modal integration in a end-to-end manner. By positioning data readiness as a core operational primitive, the framework provides a principled foundation for reusable, transferable systems, enabling the transition toward experiment-driven scientific general intelligence. Extensive evaluations across three heterogeneous scientific domains show that SciDataCopilot improves efficiency, scalability, and consistency over manual pipelines, with up to 30$\\times$ speedup in data preparation.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "J. Rao",
+          "id": ""
+        },
+        {
+          "name": "Y. Qiu",
+          "id": ""
+        },
+        {
+          "name": "Jiahui Zhang",
+          "id": ""
+        },
+        {
+          "name": "Juntao Deng",
+          "id": ""
+        },
+        {
+          "name": "Shangquan Sun",
+          "id": ""
+        },
+        {
+          "name": "Fenghua Ling",
+          "id": ""
+        },
+        {
+          "name": "Hao Chen",
+          "id": ""
+        },
+        {
+          "name": "Na Dong",
+          "id": ""
+        },
+        {
+          "name": "Zhangyang Gao",
+          "id": ""
+        },
+        {
+          "name": "Siqi Sun",
+          "id": ""
+        },
+        {
+          "name": "Yuqiang Li",
+          "id": ""
+        },
+        {
+          "name": "Dongzhan Zhou",
+          "id": ""
+        },
+        {
+          "name": "Guangyu Wang",
+          "id": ""
+        },
+        {
+          "name": "Lijun Wu",
+          "id": ""
+        },
+        {
+          "name": "Conghui He",
+          "id": ""
+        },
+        {
+          "name": "Xuhong Wang",
+          "id": ""
+        },
+        {
+          "name": "Jinghao Shao",
+          "id": ""
+        },
+        {
+          "name": "Xiang Liu",
+          "id": ""
+        },
+        {
+          "name": "Yu Zhu",
+          "id": ""
+        },
+        {
+          "name": "Mianxin Liu",
+          "id": ""
+        },
+        {
+          "name": "Qihao Zheng",
+          "id": ""
+        },
+        {
+          "name": "Yinghui Zhang",
+          "id": ""
+        },
+        {
+          "name": "Jiamin Wu",
+          "id": ""
+        },
+        {
+          "name": "Xiaosong Wang",
+          "id": ""
+        },
+        {
+          "name": "Shixiang Tang",
+          "id": ""
+        },
+        {
+          "name": "Wenlong Zhang",
+          "id": ""
+        },
+        {
+          "name": "Bo Zhang",
+          "id": ""
+        },
+        {
+          "name": "Wanli Ouyang",
+          "id": ""
+        },
+        {
+          "name": "Runkai Zhao",
+          "id": ""
+        },
+        {
+          "name": "Chun-dong Song",
+          "id": ""
+        },
+        {
+          "name": "Lei Bai",
+          "id": ""
+        },
+        {
+          "name": "Chi Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285462860",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7169880295861111,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283226286,
+      "title": "OmniScientist: Toward a Co-evolving Ecosystem of Human and AI Scientists",
+      "abstract": "With the rapid development of Large Language Models (LLMs), AI agents have demonstrated increasing proficiency in scientific tasks, ranging from hypothesis generation and experimental design to manuscript writing. Such agent systems are commonly referred to as\"AI Scientists.\"However, existing AI Scientists predominantly formulate scientific discovery as a standalone search or optimization problem, overlooking the fact that scientific research is inherently a social and collaborative endeavor. Real-world science relies on a complex scientific infrastructure composed of collaborative mechanisms, contribution attribution, peer review, and structured scientific knowledge networks. Due to the lack of modeling for these critical dimensions, current systems struggle to establish a genuine research ecosystem or interact deeply with the human scientific community. To bridge this gap, we introduce OmniScientist, a framework that explicitly encodes the underlying mechanisms of human research into the AI scientific workflow. OmniScientist not only achieves end-to-end automation across data foundation, literature review, research ideation, experiment automation, scientific writing, and peer review, but also provides comprehensive infrastructural support by simulating the human scientific system, comprising: (1) a structured knowledge system built upon citation networks and conceptual correlations; (2) a collaborative research protocol (OSP), which enables seamless multi-agent collaboration and human researcher participation; and (3) an open evaluation platform (ScienceArena) based on blind pairwise user voting and Elo rankings. This infrastructure empowers agents to not only comprehend and leverage human knowledge systems but also to collaborate and co-evolve, fostering a sustainable and scalable innovation ecosystem.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Chenyang Shao",
+          "id": ""
+        },
+        {
+          "name": "D. Huang",
+          "id": ""
+        },
+        {
+          "name": "Yu Li",
+          "id": ""
+        },
+        {
+          "name": "Keyu Zhao",
+          "id": ""
+        },
+        {
+          "name": "Weiquan Lin",
+          "id": ""
+        },
+        {
+          "name": "Yining Zhang",
+          "id": ""
+        },
+        {
+          "name": "Qingbin Zeng",
+          "id": ""
+        },
+        {
+          "name": "Zhiyu Chen",
+          "id": ""
+        },
+        {
+          "name": "Tianxing Li",
+          "id": ""
+        },
+        {
+          "name": "Yifei Huang",
+          "id": ""
+        },
+        {
+          "name": "Tao Wu",
+          "id": ""
+        },
+        {
+          "name": "Xinyang Liu",
+          "id": ""
+        },
+        {
+          "name": "Ruotong Zhao",
+          "id": ""
+        },
+        {
+          "name": "Mengsheng Zhao",
+          "id": ""
+        },
+        {
+          "name": "Jiaoyang Li",
+          "id": ""
+        },
+        {
+          "name": "Xuhua Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yue Wang",
+          "id": ""
+        },
+        {
+          "name": "Yuanyi Zhen",
+          "id": ""
+        },
+        {
+          "name": "Fengli Xu",
+          "id": ""
+        },
+        {
+          "name": "Y. Li",
+          "id": ""
+        },
+        {
+          "name": "Tie-Yan Liu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283226286",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7144526987064747,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 269448624,
+      "title": "Autonomous LLM-driven research from data to human-verifiable research papers",
+      "abstract": "As AI promises to accelerate scientific discovery, it remains unclear whether fully AI-driven research is possible and whether it can adhere to key scientific values, such as transparency, traceability and verifiability. Mimicking human scientific practices, we built data-to-paper, an automation platform that guides interacting LLM agents through a complete stepwise research process, while programmatically back-tracing information flow and allowing human oversight and interactions. In autopilot mode, provided with annotated data alone, data-to-paper raised hypotheses, designed research plans, wrote and debugged analysis codes, generated and interpreted results, and created complete and information-traceable research papers. Even though research novelty was relatively limited, the process demonstrated autonomous generation of de novo quantitative insights from data. For simple research goals, a fully-autonomous cycle can create manuscripts which recapitulate peer-reviewed publications without major errors in about 80-90%, yet as goal complexity increases, human co-piloting becomes critical for assuring accuracy. Beyond the process itself, created manuscripts too are inherently verifiable, as information-tracing allows to programmatically chain results, methods and data. Our work thereby demonstrates a potential for AI-driven acceleration of scientific discovery while enhancing, rather than jeopardizing, traceability, transparency and verifiability.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Tal Ifargan",
+          "id": ""
+        },
+        {
+          "name": "L. Hafner",
+          "id": ""
+        },
+        {
+          "name": "M. Kern",
+          "id": ""
+        },
+        {
+          "name": "Ori Alcalay",
+          "id": ""
+        },
+        {
+          "name": "Roy Kishony",
+          "id": ""
+        }
+      ],
+      "venue": "NEJM AI",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:269448624",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6712418668527397,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284737633,
+      "title": "R-LAM: Reproducibility-Constrained Large Action Models for Scientific Workflow Automation",
+      "abstract": "Large Action Models (LAMs) extend large language models by enabling autonomous decision-making and tool execution, making them promising for automating scientific workflows. However, scientific workflows impose strict requirements on reproducibility, auditability, and deterministic execution, which are not satisfied by generic LLM-based agents. Unconstrained action generation can lead to silent state changes, non-deterministic executions, and irreproducible experimental results, limiting the applicability of LAMs in scientific settings. In this paper, we propose R-LAM, a reproducibility-constrained framework for applying Large Action Models to scientific workflow automation. R-LAM introduces structured action schemas, deterministic execution policies, and explicit provenance tracking to ensure that every action and intermediate artifact is auditable and replayable. The framework supports failure-aware execution loops and controlled workflow forking, enabling iterative experimentation without compromising reproducibility. We implement R-LAM as a lightweight Python framework and release it as an open-source PyPI package to facilitate reproducible research. An experimental evaluation of representative scientific workflows demonstrates that R-LAM improves reproducibility success rates and execution reliability compared to unconstrained LLM-based agents, while retaining adaptive control over workflow execution.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "S. SureshKumar",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284737633",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6583543069861111,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283934551,
+      "title": "HEPTAPOD: Orchestrating High Energy Physics Workflows Towards Autonomous Agency",
+      "abstract": "Many workflows in high-energy-physics (HEP) stand to benefit from recent advances in transformer-based large language models (LLMs). While early applications of LLMs focused on text generation and code completion, modern LLMs now support orchestrated agency: the coordinated execution of complex, multi-step tasks through tool use, structured context, and iterative reasoning. We introduce the HEP Toolkit for Agentic Planning, Orchestration, and Deployment (HEPTAPOD), an orchestration framework designed to bring this emerging paradigm to HEP pipelines. The framework enables LLMs to interface with domain-specific tools, construct and manage simulation workflows, and assist in common utility and data analysis tasks through schema-validated operations and run-card-driven configuration. To demonstrate these capabilities, we consider a representative Beyond the Standard Model (BSM) Monte Carlo validation pipeline that spans model generation, event simulation, and downstream analysis within a unified, reproducible workflow. HEPTAPOD provides a structured and auditable layer between human researchers, LLMs, and computational infrastructure, establishing a foundation for transparent, human-in-the-loop systems.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "T. Menzo",
+          "id": ""
+        },
+        {
+          "name": "Alexander Roman",
+          "id": ""
+        },
+        {
+          "name": "S. Gleyzer",
+          "id": ""
+        },
+        {
+          "name": "Konstantin K. Matchev",
+          "id": ""
+        },
+        {
+          "name": "G. Fleming",
+          "id": ""
+        },
+        {
+          "name": "S. Hoche",
+          "id": ""
+        },
+        {
+          "name": "S. Mrenna",
+          "id": ""
+        },
+        {
+          "name": "P. Shyamsundar",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283934551",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6566198748221487,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280526642,
+      "title": "PROV-AGENT: Unified Provenance for Tracking AI Agent Interactions in Agentic Workflows",
+      "abstract": "Large Language Models (LLMs) and other foundation models are increasingly used as the core of AI agents. In agentic workflows, these agents plan tasks, interact with humans and peers, and influence scientific outcomes across federated and heterogeneous environments. However, agents can hallucinate or reason incorrectly, propagating errors when one agent\u2019s output becomes another\u2019s input. Thus, assuring that agents\u2019 actions are transparent, traceable, reproducible, and reliable is critical to assess hallucination risks and mitigate their workflow impacts. While provenance techniques have long supported these principles, existing methods fail to capture and relate agent-centric metadata such as prompts, responses, and decisions with the broader workflow context and downstream outcomes. In this paper, we introduce PROV-AGENT, a provenance model that extends W3C PROV and leverages the Model Context Protocol (MCP) and data observability to integrate agent interactions into end-to-end workflow provenance. Our contributions include: (1) a provenance model tailored for agentic workflows, (2) a near real-time, open-source system for capturing agentic provenance, and (3) a cross-facility evaluation spanning edge, cloud, and HPC environments, demonstrating support for critical provenance queries and agent reliability analysis.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "Amal Gueroudji",
+          "id": ""
+        },
+        {
+          "name": "Stephen DeWitt",
+          "id": ""
+        },
+        {
+          "name": "Daniel Rosendo",
+          "id": ""
+        },
+        {
+          "name": "Tirthankar Ghosal",
+          "id": ""
+        },
+        {
+          "name": "Robert Ross",
+          "id": ""
+        },
+        {
+          "name": "Prasanna Balaprakash",
+          "id": ""
+        },
+        {
+          "name": "Rafael Ferreira da Silva",
+          "id": ""
+        }
+      ],
+      "venue": "eScience",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280526642",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.6492755789669403,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285615171,
+      "title": "From Fluent to Verifiable: Claim-Level Auditability for Deep Research Agents",
+      "abstract": "A deep research agent produces a fluent scientific report in minutes; a careful reader then tries to verify the main claims and discovers the real cost is not reading, but tracing: which sentence is supported by which passage, what was ignored, and where evidence conflicts. We argue that as research generation becomes cheap, auditability becomes the bottleneck, and the dominant risk shifts from isolated factual errors to scientifically styled outputs whose claim-evidence links are weak, missing, or misleading. This perspective proposes claim-level auditability as a first-class design and evaluation target for deep research agents, distills recurring long-horizon failure modes (objective drift, transient constraints, and unverifiable inference), and introduces the Auditable Autonomous Research (AAR) standard, a compact measurement framework that makes auditability testable via provenance coverage, provenance soundness, contradiction transparency, and audit effort. We then argue for semantic provenance with protocolized validation: persistent, queryable provenance graphs that encode claim--evidence relations (including conflicts) and integrate continuous validation during synthesis rather than after publication, with practical instrumentation patterns to support deployment at scale.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Razeen A Rasheed",
+          "id": ""
+        },
+        {
+          "name": "Somnath Banerjee",
+          "id": ""
+        },
+        {
+          "name": "Animesh Mukherjee",
+          "id": ""
+        },
+        {
+          "name": "Rima Hazra",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285615171",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5892458296034795,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273949919,
+      "title": "AgentOps: Enabling Observability of LLM Agents",
+      "abstract": "Large language model (LLM) agents have demonstrated remarkable capabilities across various domains, gaining extensive attention from academia and industry. However, these agents raise significant concerns on AI safety due to their autonomous and non-deterministic behavior, as well as continuous evolving nature . From a DevOps perspective, enabling observability in agents is necessary to ensuring AI safety, as stakeholders can gain insights into the agents' inner workings, allowing them to proactively understand the agents, detect anomalies, and prevent potential failures. Therefore, in this paper, we present a comprehensive taxonomy of AgentOps, identifying the artifacts and associated data that should be traced throughout the entire lifecycle of agents to achieve effective observability. The taxonomy is developed based on a systematic mapping study of existing AgentOps tools. Our taxonomy serves as a reference template for developers to design and implement AgentOps infrastructure that supports monitoring, logging, and analytics. thereby ensuring AI safety.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Liming Dong",
+          "id": ""
+        },
+        {
+          "name": "Qinghua Lu",
+          "id": ""
+        },
+        {
+          "name": "Liming Zhu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273949919",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.53593252915444,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281310172,
+      "title": "The (R)evolution of Scientific Workflows in the Agentic AI Era: Towards Autonomous Science",
+      "abstract": "Modern scientific discovery increasingly requires coordinating distributed facilities and heterogeneous resources, forcing researchers to act as manual workflow coordinators rather than scientists. Advances in AI leading to AI agents show exciting new opportunities that can accelerate scientific discovery by providing intelligence as a component in the ecosystem. However, it is unclear how this new capability would materialize and integrate in the real world. To address this, we propose a conceptual framework where workflows evolve along two dimensions which are intelligence (from static to intelligent) and composition (from single to swarm) to chart an evolutionary path from current workflow management systems to fully autonomous, distributed scientific laboratories. With these trajectories in mind, we present an architectural blueprint that can help the community take the next steps towards harnessing the opportunities in autonomous science with the potential for 100x discovery acceleration and transformational scientific workflows.CCS Concepts \u2022 Computing methodologies\u2192Distributed computing methodologies; Multi-agent systems; Distributed computing methodologies; Parallel computing methodologies.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Woong Shin",
+          "id": ""
+        },
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "Daniel Rosendo",
+          "id": ""
+        },
+        {
+          "name": "F. Suter",
+          "id": ""
+        },
+        {
+          "name": "Feiyi Wang",
+          "id": ""
+        },
+        {
+          "name": "Prasanna Balaprakash",
+          "id": ""
+        },
+        {
+          "name": "R. Ferreira da Silva",
+          "id": ""
+        }
+      ],
+      "venue": "SC25-W: Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281310172",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5185078082145459,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280265849,
+      "title": "DeepResearchEco: A Recursive Agentic Workflow for Complex Scientific Question Answering in Ecology",
+      "abstract": "We introduce DeepResearchEco, a novel agentic LLM-based system for automated scientific synthesis that supports recursive, depth- and breadth-controlled exploration of original research questions\u2014enhancing search diversity and nuance in the retrieval of relevant scientific literature. Unlike conventional retrieval-augmented generation pipelines, DeepResearch enables user-controllable synthesis with transparent reasoning and parameter-driven configurability, facilitating high-throughput integration of domain-specific evidence while maintaining analytical rigor. Applied to 49 ecological research questions, DeepResearch achieves up to a 21-fold increase in source integration and a 14.9-fold rise in sources integrated per 1,000 words. High-parameter settings yield expert-level analytical depth and contextual diversity. Source code available at: https://github.com/sciknoworg/deep-research.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Jennifer D\u2019Souza",
+          "id": ""
+        },
+        {
+          "name": "Endres Keno Sander",
+          "id": ""
+        },
+        {
+          "name": "Andrei Aioanei",
+          "id": ""
+        }
+      ],
+      "venue": "bioRxiv",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280265849",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5136744083705824,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 288014775,
+      "title": "From Agent Loops to Deterministic Graphs: Execution Lineage for Reproducible AI-Native Work",
+      "abstract": "Large language model systems are increasingly deployed as agentic workflows that interleave reasoning, tool use, memory, and iterative refinement. These systems are effective at producing answers, but they often rely on implicit conversational state, making it difficult to preserve stable work products, isolate irrelevant updates, or propagate changes through intermediate artifacts. We introduce execution lineage: an execution model in which AI-native work is represented as a directed acyclic graph (DAG) of artifact-producing computations with explicit dependencies, stable intermediate boundaries, and identity-based replay. The goal is not to make the model a better one-shot writer, but to make evolving AI-generated work maintainable under change. We compare execution-lineage replay against loop-centric update baselines on two controlled policy-memo update tasks. In an unrelated-branch update, DAG replay preserved the final memo exactly in all runs, with zero churn and zero unrelated-branch contamination, while loop baselines regenerated the memo and frequently imported unrelated context. In an intermediate-artifact edit, all systems reflected the new constraint in the final memo, but only DAG replay achieved perfect upstream preservation, downstream propagation, unaffected-artifact preservation, and cross-artifact consistency. These results show that final answer quality and maintained-state quality are distinct. Strong loop baselines can remain competitive at producing polished final outputs when the task is a bounded synthesis/update problem and all current sources fit in context, but immediate task success can mask partial state inconsistency that may compound over future revisions. Execution lineage provides stronger guarantees about what should change, what should remain stable, and how work evolves across revisions.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Josh Rosen",
+          "id": ""
+        },
+        {
+          "name": "S. Rosen",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2605.06365.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.509087814475,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 257985008,
+      "title": "Tracing and Visualizing Human-ML/AI Collaborative Processes through Artifacts of Data Work",
+      "abstract": "Automated Machine Learning (AutoML) technology can lower barriers in data work yet still requires human intervention to be functional. However, the complex and collaborative process resulting from humans and machines trading off work makes it difficult to trace what was done, by whom (or what), and when. In this research, we construct a taxonomy of data work artifacts that captures AutoML and human processes. We present a rigorous methodology for its creation and discuss its transferability to the visual design process. We operationalize the taxonomy through the development of AutoML Trace a visual interactive sketch showing both the context and temporality of human-ML/AI collaboration in data work. Finally, we demonstrate the utility of our approach via a usage scenario with an enterprise software development team. Collectively, our research process and findings explore challenges and fruitful avenues for developing data visualization tools that interrogate the sociotechnical relationships in automated data work. Availability of Supplemental Materials: https://osf.io/3nmyj/?view_only=19962103d58b45d289b5c83421f48b36",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Jen Rogers",
+          "id": ""
+        },
+        {
+          "name": "Anamaria Crisan",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Human Factors in Computing Systems",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:257985008",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5007763745378533,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 260379204,
+      "title": "PROV-IO<inline-formula><tex-math notation=\"LaTeX\">$^+$</tex-math><alternatives><mml:math><mml:msup><mml:mrow/><mml:mo>+</mml:mo></mml:msup></mml:math><inline-graphic xlink:href=\"zheng-ieq1-3374555.gif\"/></alternatives></inline-formula>: A Cross-Platform Provenance Framework for Scientific Data on HP",
+      "abstract": "Data provenance, or data lineage, describes the life cycle of data. In scientific workflows on HPC systems, scientists often seek diverse provenance (e.g., origins of data products, usage patterns of datasets). Unfortunately, existing provenance solutions cannot address the challenges due to their incompatible provenance models and/or system implementations. In this paper, we analyze four representative scientific workflows in collaboration with the domain scientists to identify concrete provenance needs. Based on the first-hand analysis, we propose a provenance framework called PROV-IO<inline-formula><tex-math notation=\"LaTeX\">$^+$</tex-math><alternatives><mml:math><mml:msup><mml:mrow/><mml:mo>+</mml:mo></mml:msup></mml:math><inline-graphic xlink:href=\"zheng-ieq3-3374555.gif\"/></alternatives></inline-formula>, which includes an I/O-centric provenance model for describing scientific data and the associated I/O operations and environments precisely. Moreover, we build a prototype of PROV-IO<inline-formula><tex-math notation=\"LaTeX\">$^+$</tex-math><alternatives><mml:math><mml:msup><mml:mrow/><mml:mo>+</mml:mo></mml:msup></mml:math><inline-graphic xlink:href=\"zheng-ieq4-3374555.gif\"/></alternatives></inline-formula> to enable end-to-end provenance support on real HPC systems with little manual effort. The PROV-IO<inline-formula><tex-math notation=\"LaTeX\">$^+$</tex-math><alternatives><mml:math><mml:msup><mml:mrow/><mml:mo>+</mml:mo></mml:msup></mml:math><inline-graphic xlink:href=\"zheng-ieq5-3374555.gif\"/></alternatives></inline-formula> framework can support both containerized and non-containerized workflows on different HPC platforms with flexibility in selecting various classes of provenance. Our experiments with realistic workflows show that PROV-IO<inline-formula><tex-math notation=\"LaTeX\">$^+$</tex-math><alternatives><mml:math><mml:msup><mml:mrow/><mml:mo>+</mml:mo></mml:msup></mml:math><inline-graphic xlink:href=\"zheng-ieq6-3374555.gif\"/></alternatives></inline-formula> can address the provenance needs of the domain scientists effectively with reasonable performance (e.g., less than 3.5% tracking overhead for most experiments). Moreover, PROV-IO<inline-formula><tex-math notation=\"LaTeX\">$^+$</tex-math><alternatives><mml:math><mml:msup><mml:mrow/><mml:mo>+</mml:mo></mml:msup></mml:math><inline-graphic xlink:href=\"zheng-ieq7-3374555.gif\"/></alternatives></inline-formula> outperforms a state-of-the-art system (i.e., ProvLake) in our experiments.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Runzhou Han",
+          "id": ""
+        },
+        {
+          "name": "Mai Zheng",
+          "id": ""
+        },
+        {
+          "name": "S. Byna",
+          "id": ""
+        },
+        {
+          "name": "Houjun Tang",
+          "id": ""
+        },
+        {
+          "name": "Bin Dong",
+          "id": ""
+        },
+        {
+          "name": "Dong Dai",
+          "id": ""
+        },
+        {
+          "name": "Yong Chen",
+          "id": ""
+        },
+        {
+          "name": "Dongkyun Kim",
+          "id": ""
+        },
+        {
+          "name": "Joseph Hassoun",
+          "id": ""
+        },
+        {
+          "name": "D. Thorsley",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE Transactions on Parallel and Distributed Systems",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:260379204",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.49798264586518803,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 247026099,
+      "title": "Enabling Reproducibility and Meta-learning Through a Lifelong Database of Experiments (LDE)",
+      "abstract": "Artificial Intelligence (AI) development is inherently iterative and experimental. Over the course of normal development, especially with the advent of automated AI, hundreds or thousands of experiments are generated and are often lost or never examined again. There is a lost opportunity to document these experiments and learn from them at scale, but the complexity of tracking and reproducing these experiments is often prohibitive to data scientists. We present the Lifelong Database of Experiments (LDE) that automatically extracts and stores linked metadata from experiment artifacts and provides features to reproduce these artifacts and perform meta-learning across them. We store context from multiple stages of the AI development lifecycle including datasets, pipelines, how each is configured, and training runs with information about their runtime environment. The standardized nature of the stored metadata allows for querying and aggregation, especially in terms of ranking artifacts by performance metrics. We exhibit the capabilities of the LDE by reproducing an existing meta-learning study and storing the reproduced metadata in our system. Then, we perform two experiments on this metadata: 1) examining the reproducibility and variability of the performance metrics and 2) implementing a number of meta-learning algorithms on top of the data and examining how variability in experimental results impacts recommendation performance. The experimental results suggest significant variation in performance, especially depending on dataset configurations; this variation carries over when meta-learning is built on top of the results, with performance improving when using aggregated results. This suggests that a system that automatically collects and aggregates results such as the LDE not only assists in implementing meta-learning but may also improve its performance.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "Jason Tsay",
+          "id": ""
+        },
+        {
+          "name": "A. Bartezzaghi",
+          "id": ""
+        },
+        {
+          "name": "Aleke Nolte",
+          "id": ""
+        },
+        {
+          "name": "C. Malossi",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:247026099",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.48640843893384583,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 267320267,
+      "title": "Accelerated Cloud for Artificial Intelligence (ACAI)",
+      "abstract": "Training an effective Machine learning (ML) model is an iterative process that requires effort in multiple dimensions. Vertically, a single pipeline typically includes an initial ETL (Extract, Transform, Load) of raw datasets, a model training stage, and an evaluation stage where the practitioners obtain statistics of the model performance. Horizontally, many such pipelines may be required to find the best model within a search space of model configurations. Many practitioners resort to maintaining logs manually and writing simple glue code to automate the workflow. However, carrying out this process on the cloud is not a trivial task in terms of resource provisioning, data management, and bookkeeping of job histories to make sure the results are reproducible. We propose an end-to-end cloud-based machine learning platform, Accelerated Cloud for AI (ACAI), to help improve the productivity of ML practitioners. ACAI achieves this goal by enabling cloud-based storage of indexed, labeled, and searchable data, as well as automatic resource provisioning, job scheduling, and experiment tracking. Specifically, ACAI provides practitioners (1) a data lake for storing versioned datasets and their corresponding metadata, and (2) an execution engine for executing ML jobs on the cloud with automatic resource provisioning (auto-provision), logging and provenance tracking. To evaluate ACAI, we test the efficacy of our auto-provisioner on the MNIST handwritten digit classification task, and we study the usability of our system using experiments and interviews. We show that our auto-provisioner produces a 1.7x speed-up and 39% cost reduction, and our system reduces experiment time for ML scientists by 20% on typical ML use cases.\nWe propose an end-to-end cloud-based machine learning platform, Accelerated Cloud for AI (ACAI), to help improve the productivity of ML practitioners. ACAI achieves this goal by enabling cloud-based storage of indexed, labeled, and searchable data, as well as automatic resource provisioning, job scheduling, and experiment tracking. Specifically, ACAI provides practitioners (1) a data lake for storing versioned datasets and their corresponding metadata, and (2) an execution engine for executing ML jobs on the cloud with automatic resource provisioning (auto-provision), logging and provenance tracking. To evaluate ACAI, we test the efficacy of our auto-provisioner on the MNIST handwritten digit classification task, and we study the usability of our system using experiments and interviews. We show that our auto-provisioner produces a 1.7x speed-up and 39% cost reduction, and our system reduces experiment time for ML scientists by 20% on typical ML use cases.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Dachi Chen",
+          "id": ""
+        },
+        {
+          "name": "Wei Ding",
+          "id": ""
+        },
+        {
+          "name": "Chen Liang",
+          "id": ""
+        },
+        {
+          "name": "Chang Xu",
+          "id": ""
+        },
+        {
+          "name": "Junwei Zhang",
+          "id": ""
+        },
+        {
+          "name": "Majd Sakr",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:267320267",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4571387637431713,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 277271871,
+      "title": "AgentRxiv: Towards Collaborative Autonomous Research",
+      "abstract": "Progress in scientific discovery is rarely the result of a single\"Eureka\"moment, but is rather the product of hundreds of scientists incrementally working together toward a common goal. While existing agent workflows are capable of producing research autonomously, they do so in isolation, without the ability to continuously improve upon prior research results. To address these challenges, we introduce AgentRxiv-a framework that lets LLM agent laboratories upload and retrieve reports from a shared preprint server in order to collaborate, share insights, and iteratively build on each other's research. We task agent laboratories to develop new reasoning and prompting techniques and find that agents with access to their prior research achieve higher performance improvements compared to agents operating in isolation (11.4% relative improvement over baseline on MATH-500). We find that the best performing strategy generalizes to benchmarks in other domains (improving on average by 3.3%). Multiple agent laboratories sharing research through AgentRxiv are able to work together towards a common goal, progressing more rapidly than isolated laboratories, achieving higher overall accuracy (13.7% relative improvement over baseline on MATH-500). These findings suggest that autonomous agents may play a role in designing future AI systems alongside humans. We hope that AgentRxiv allows agents to collaborate toward research goals and enables researchers to accelerate discovery.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "S. Schmidgall",
+          "id": ""
+        },
+        {
+          "name": "Michael Moor",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:277271871",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4486491785501357,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278905351,
+      "title": "Agentic Visualization: Extracting Agent-Based Design Patterns From Visualization Systems",
+      "abstract": "Autonomous agents powered by large language models are transforming artificial intelligence (AI), creating an imperative for the visualization area. However, our field\u2019s focus on a human in the sensemaking loop raises critical questions about autonomy, delegation, and coordination for such agentic visualization that preserve human agency while amplifying analytical capabilities. This article addresses these questions by reinterpreting existing visualization systems with semiautomated or fully automatic AI components through an agentic lens. Based on this analysis, we extract a collection of design patterns for agentic visualization, including agentic roles, communication, and coordination. These patterns provide a foundation for future agentic visualization systems that effectively harness AI agents while maintaining human insight and control.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "V. Dhanoa",
+          "id": ""
+        },
+        {
+          "name": "Anton Wolter",
+          "id": ""
+        },
+        {
+          "name": "Gabriela Molina Le'on",
+          "id": ""
+        },
+        {
+          "name": "Hans-J\u00f6rg Schulz",
+          "id": ""
+        },
+        {
+          "name": "Niklas Elmqvist",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE Computer Graphics and Applications",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278905351",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4438347645620482,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 270370776,
+      "title": "MASSW: A New Dataset and Benchmark Tasks for AI-Assisted Scientific Workflows",
+      "abstract": "Scientific innovation relies on detailed workflows, which include critical steps such as analyzing literature, generating ideas, validating these ideas, interpreting results, and inspiring follow-up research. However, scientific publications that document these workflows are extensive and unstructured. This makes it difficult for both human researchers and AI systems to effectively navigate and explore the space of scientific innovation. To address this issue, we introduce MASSW, a comprehensive text dataset on Multi-Aspect Summarization of Scientific Workflows. MASSW includes more than 152,000 peer-reviewed publications from 17 leading computer science conferences spanning the past 50 years. Using Large Language Models (LLMs), we automatically extract five core aspects from these publications -- context, key idea, method, outcome, and projected impact -- which correspond to five key steps in the research workflow. These structured summaries facilitate a variety of downstream tasks and analyses. The quality of the LLM-extracted summaries is validated by comparing them with human annotations. We demonstrate the utility of MASSW through multiple novel machine-learning tasks that can be benchmarked using this new dataset, which make various types of predictions and recommendations along the scientific workflow. MASSW holds significant potential for researchers to create and benchmark new AI methods for optimizing scientific workflows and fostering scientific innovation in the field. Our dataset is openly available at \\url{https://github.com/xingjian-zhang/massw}.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Xingjian Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yutong Xie",
+          "id": ""
+        },
+        {
+          "name": "Jin Huang",
+          "id": ""
+        },
+        {
+          "name": "Jing Ma",
+          "id": ""
+        },
+        {
+          "name": "Zhaoying Pan",
+          "id": ""
+        },
+        {
+          "name": "Qijia Liu",
+          "id": ""
+        },
+        {
+          "name": "Ziyang Xiong",
+          "id": ""
+        },
+        {
+          "name": "Tolga Ergen",
+          "id": ""
+        },
+        {
+          "name": "Dongsub Shim",
+          "id": ""
+        },
+        {
+          "name": "Honglak Lee",
+          "id": ""
+        },
+        {
+          "name": "Qiaozhu Mei",
+          "id": ""
+        }
+      ],
+      "venue": "North American Chapter of the Association for Computational Linguistics",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:270370776",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4363948195542512,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 226281515,
+      "title": "Provenance-Based Interpretation of Multi-Agent Information Analysis",
+      "abstract": "Analytic software tools and workflows are increasing in capability, complexity, number, and scale, and the integrity of our workflows is as important as ever. Specifically, we must be able to inspect the process of analytic workflows to assess (1) confidence of the conclusions, (2) risks and biases of the operations involved, (3) sensitivity of the conclusions to sources and agents, (4) impact and pertinence of various sources and agents, and (5) diversity of the sources that support the conclusions. We present an approach that tracks agents' provenance with PROV-O in conjunction with agents' appraisals and evidence links (expressed in our novel DIVE ontology). Together, PROV-O and DIVE enable dynamic propagation of confidence and counter-factual refutation to improve human-machine trust and analytic integrity. We demonstrate representative software developed for user interaction with that provenance, and discuss key needs for organizations adopting such approaches. We demonstrate all of these assessments in a multi-agent analysis scenario, using an interactive web-based information validation UI.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "Scott E Friedman",
+          "id": ""
+        },
+        {
+          "name": "J. Rye",
+          "id": ""
+        },
+        {
+          "name": "David Lavergne",
+          "id": ""
+        },
+        {
+          "name": "D. Thomsen",
+          "id": ""
+        },
+        {
+          "name": "M. Allen",
+          "id": ""
+        },
+        {
+          "name": "Kyle Tunis",
+          "id": ""
+        }
+      ],
+      "venue": "Workshop on the Theory and Practice of Provenance",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:226281515",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4359147095175752,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 287834227,
+      "title": "ADEMA: A Knowledge-State Orchestration Architecture for Long-Horizon Knowledge Synthesis with LLMAgents",
+      "abstract": "Long-horizon LLM tasks often fail not because a single answer is unattainable, but because knowledge states drift across rounds, intermediate commitments remain implicit, and interruption fractures the evolving evidence chain. This paper presents ADEMA as a knowledge-state orchestration architecture for long-horizon knowledge synthesis rather than as a generic multi-agent runtime. The architecture combines explicit epistemic bookkeeping, heterogeneous dual-evaluator governance, adaptive task-mode switching, reputation-shaped resource allocation, checkpoint-resumable persistence, segment-level memory condensation, artifact-first assembly, and final-validity checking with safe fallback. Evidence is drawn entirely from existing materials: a four-scenario showcase package, a fixed 60-run mechanism matrix, targeted micro-ablation and artifact-chain supplements, and a repaired protocol-level benchmark in which code-oriented evaluation is the clearest quality-sensitive mechanism block. Across the fixed matrix, removing checkpoint/resume produced the only invalid run, and it did so in the interruption-sensitive resume condition. By contrast, dual evaluation, segment synthesis, and dynamic governance are best interpreted as supporting control mechanisms that shape trajectory discipline, explicit artifact progression, and cost-quality behavior rather than as universal binary prerequisites for completion. The contribution is therefore a knowledge-state orchestration architecture in which explicit epistemic state transition, evidence-bearing artifact progression, and recoverable continuity are the primary design commitments.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Hanlin Zhou",
+          "id": ""
+        },
+        {
+          "name": "C. Yong",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2604.25849.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.43002010843750005,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 268681673,
+      "title": "The HaLLMark Effect: Supporting Provenance and Transparent Use of Large Language Models in Writing with Interactive Visualization",
+      "abstract": "The use of Large Language Models (LLMs) for writing has sparked controversy both among readers and writers. On one hand, writers are concerned that LLMs will deprive them of agency and ownership, and readers are concerned about spending their time on text generated by soulless machines. On the other hand, AI-assistance can improve writing as long as writers can conform to publisher policies, and as long as readers can be assured that a text has been verified by a human. We argue that a system that captures the provenance of interaction with an LLM can help writers retain their agency, conform to policies, and communicate their use of AI to publishers and readers transparently. Thus we propose HaLLMark, a tool for visualizing the writer\u2019s interaction with the LLM. We evaluated HaLLMark with 13 creative writers, and found that it helped them retain a sense of control and ownership of the text.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Md. Naimul Hoque",
+          "id": ""
+        },
+        {
+          "name": "Tasfia Mashiat",
+          "id": ""
+        },
+        {
+          "name": "Bhavya Ghai",
+          "id": ""
+        },
+        {
+          "name": "Cecilia Shelton",
+          "id": ""
+        },
+        {
+          "name": "Fanny Chevalier",
+          "id": ""
+        },
+        {
+          "name": "Kari Kraus",
+          "id": ""
+        },
+        {
+          "name": "Niklas Elmqvist",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Human Factors in Computing Systems",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:268681673",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4279169014722554,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 261031156,
+      "title": "Towards Lightweight Data Integration Using Multi-Workflow Provenance and Data Observability",
+      "abstract": "Modern large-scale scientific discovery requires multidisciplinary collaboration across diverse computing facilities, including High Performance Computing (HPC) machines and the Edge-to-Cloud continuum. Integrated data analysis plays a crucial role in scientific discovery, especially in the current AI era, by enabling Responsible AI development, FAIR, Reproducibility, and User Steering. However, the heterogeneous nature of science poses challenges such as dealing with multiple supporting tools, cross-facility environments, and efficient HPC execution. Building on data observability, adapter system design, and provenance, we propose MIDA: an approach for lightweight runtime Multi-workflow Integrated Data Analysis. MIDA defines data observability strategies and adaptability methods for various parallel systems and machine learning tools. With observability, it intercepts the dataflows in the background without requiring instrumentation while integrating domain, provenance, and telemetry data at runtime into a unified database ready for user steering queries. We conduct experiments showing end-to-end multi-workflow analysis integrating data from Dask and MLFlow in a real distributed deep learning use case for materials science that runs on multiple environments with up to 276 GPUs in parallel. We show near-zero overhead running up to 100,000 tasks on 1,680 CPU cores on the Summit supercomputer.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "Tyler J. Skluzacek",
+          "id": ""
+        },
+        {
+          "name": "Sean R. Wilkinson",
+          "id": ""
+        },
+        {
+          "name": "M. Ziatdinov",
+          "id": ""
+        },
+        {
+          "name": "Rafael Ferreira da Silva",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE International Conference on e-Science",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:261031156",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.41992439466904874,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281248156,
+      "title": "ML-Asset Management: Curation, Discovery, and Utilization",
+      "abstract": "Machine learning (ML) assets, such as models, datasets, and metadata\u2014are central to modern ML workflows. Despite their explosive growth in practice, these assets are often underutilized due to fragmented documentation, siloed storage, inconsistent licensing, and lack of unified discovery mechanisms, making ML-asset management an urgent challenge. This tutorial offers a comprehensive overview of ML-asset management activities across its lifecycle, including curation, discovery, and utilization. We provide a categorization of ML assets, and major management issues, survey state-of-the-art techniques, and identify emerging opportunities at each stage. We further highlight system-level challenges related to scalability, lineage, and unified indexing. Through live demonstrations of systems, this tutorial equips both researchers and practitioners with actionable insights and practical tools for advancing ML-asset management in real-world and domain-specific settings.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Mengying Wang",
+          "id": ""
+        },
+        {
+          "name": "Moming Duan",
+          "id": ""
+        },
+        {
+          "name": "Yicong Huang",
+          "id": ""
+        },
+        {
+          "name": "Chen Li",
+          "id": ""
+        },
+        {
+          "name": "Yinghui Wu",
+          "id": ""
+        }
+      ],
+      "venue": "Proceedings of the VLDB Endowment",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281248156",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.412187128820223,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 199064258,
+      "title": "explAIner: A Visual Analytics Framework for Interactive and Explainable Machine Learning",
+      "abstract": "We propose a framework for interactive and explainable machine learning that enables users to (1) understand machine learning models; (2) diagnose model limitations using different explainable AI methods; as well as (3) refine and optimize the models. Our framework combines an iterative XAI pipeline with eight global monitoring and steering mechanisms, including quality monitoring, provenance tracking, model comparison, and trust building. To operationalize the framework, we present explAIner, a visual analytics system for interactive and explainable machine learning that instantiates all phases of the suggested pipeline within the commonly used TensorBoard environment. We performed a user-study with nine participants across different expertise levels to examine their perception of our workflow and to collect suggestions to fill the gap between our system and framework. The evaluation confirms that our tightly integrated system leads to an informed machine learning process while disclosing opportunities for further extensions.",
+      "year": 2019,
+      "authors": [
+        {
+          "name": "Thilo Spinner",
+          "id": ""
+        },
+        {
+          "name": "U. Schlegel",
+          "id": ""
+        },
+        {
+          "name": "H. Sch\u00e4fer",
+          "id": ""
+        },
+        {
+          "name": "Mennatallah El-Assady",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE Transactions on Visualization and Computer Graphics",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:199064258",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.39396516132345183,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 6769973,
+      "title": "Collaborative scientific workflows supporting collaborative science",
+      "abstract": "Collaboration has become a dominant feature of modern science. Many scientific problems are beyond the realm of individual discipline or scientist to solve and hence require collaborative efforts. Meanwhile, today's science becomes increasingly more data- intensive, resulting in a rapid transition from computational science to e-Science (or digital science). Recently, scientific workflows have emerged for scientists to integrate distributed computations, datasets, and analysis tools to enable and accelerate scientific discovery. The convergence of the above two trends naturally leads to the concept of collaborative scientific workflows. This paper presents a disciplinary definition of this term, discusses the opportunities, requirements, and challenges of collaborative scientific workflows for the enablement of scientific collaboration, and concludes with our ongoing work in this direction.",
+      "year": 2011,
+      "authors": [
+        {
+          "name": "Shiyong Lu",
+          "id": ""
+        },
+        {
+          "name": "Jia Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "International Journal of Business Process Integration and Management",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:6769973",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3898285974251109,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 272689786,
+      "title": "Messy Code Makes Managing ML Pipelines Difficult? Just Let LLMs Rewrite the Code!",
+      "abstract": "Machine learning (ML) applications that learn from data are increasingly used to automate impactful decisions. Unfortunately, these applications often fall short of adequately managing critical data and complying with upcoming regulations. A technical reason for the persistence of these issues is that the data pipelines in common ML libraries and cloud services lack fundamental declarative, data-centric abstractions. Recent research has shown how such abstractions enable techniques like provenance tracking and automatic inspection to help manage ML pipelines. Unfortunately, these approaches lack adoption in the real world because they require clean ML pipeline code written with declarative APIs, instead of the messy imperative Python code that data scientists typically write for data preparation. We argue that it is unrealistic to expect data scientists to change their established development practices. Instead, we propose to circumvent this\"code abstraction gap\"by leveraging the code generation capabilities of large language models (LLMs). Our idea is to rewrite messy data science code to a custom-tailored declarative pipeline abstraction, which we implement as a proof-of-concept in our prototype Lester. We detail its application for a challenging compliance management example involving\"incremental view maintenance\"of deployed ML pipelines. The code rewrites for our running example show the potential of LLMs to make messy data science code declarative, e.g., by identifying hand-coded joins in Python and turning them into joins on dataframes, or by generating declarative feature encoders from NumPy code.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Sebastian Schelter",
+          "id": ""
+        },
+        {
+          "name": "Stefan Grafberger",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:272689786",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3845455736548138,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 269202911,
+      "title": "Pipeline Provenance for Analysis, Evaluation, Trust or Reproducibility",
+      "abstract": "Data volumes and rates of research infrastructures will continue to increase in the upcoming years and impact how we interact with their final data products. Little of the processed data can be directly investigated and most of it will be automatically processed with as little user interaction as possible. Capturing all necessary information of such processing ensures reproducibility of the final results and generates trust in the entire process. We present Pipeline pRovenance for Analysis, Evaluation, Trust Or Reproducibility (PRAETOR), a software suite that enables automated generation, modeling, and analysis of provenance information of Python pipelines. Furthermore, the evaluation of the pipeline performance, based upon a user defined quality matrix in the provenance, enables the first step of machine learning processes, where such information can be fed into dedicated optimization procedures.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Michael A. C. Johnson",
+          "id": ""
+        },
+        {
+          "name": "Hans-Rainer Kl\u00f6ckner",
+          "id": ""
+        },
+        {
+          "name": "Albina Muzafarova",
+          "id": ""
+        },
+        {
+          "name": "K. Lackeos",
+          "id": ""
+        },
+        {
+          "name": "D. Champion",
+          "id": ""
+        },
+        {
+          "name": "Marta Dembska",
+          "id": ""
+        },
+        {
+          "name": "Sirko Schindler",
+          "id": ""
+        },
+        {
+          "name": "Marcus Paradies",
+          "id": ""
+        }
+      ],
+      "venue": "Research Notes of the AAS",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:269202911",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3807920502754213,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283556749,
+      "title": "DataGovBench: Benchmarking LLM Agents for Real-World Data Governance Workflows",
+      "abstract": "Data governance ensures data quality, security, and compliance through policies and standards, a critical foundation for scaling modern AI development. Recently, large language models (LLMs) have emerged as a promising solution for automating data governance by translating user intent into executable transformation code. However, existing benchmarks for automated data science often emphasize snippet-level coding or high-level analytics, failing to capture the unique challenge of data governance: ensuring the correctness and quality of the data itself. To bridge this gap, we introduce DataGovBench, a benchmark featuring 150 diverse tasks grounded in real-world scenarios, built on data from actual cases. DataGovBench employs a novel\"reversed-objective\"methodology to synthesize realistic noise and utilizes rigorous metrics to assess end-to-end pipeline reliability. Our analysis on DataGovBench reveals that current models struggle with complex, multi-step workflows and lack robust error-correction mechanisms. Consequently, we propose DataGovAgent, a framework utilizing a Planner-Executor-Evaluator architecture that integrates constraint-based planning, retrieval-augmented generation, and sandboxed feedback-driven debugging. Experimental results show that DataGovAgent significantly boosts the Average Task Score (ATS) on complex tasks from 39.7 to 54.9 and reduces debugging iterations by over 77.9 percent compared to general-purpose baselines.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Zhou Liu",
+          "id": ""
+        },
+        {
+          "name": "Zhaoyang Han",
+          "id": ""
+        },
+        {
+          "name": "Guochen Yan",
+          "id": ""
+        },
+        {
+          "name": "Hao Liang",
+          "id": ""
+        },
+        {
+          "name": "Bohan Zeng",
+          "id": ""
+        },
+        {
+          "name": "Xing Chen",
+          "id": ""
+        },
+        {
+          "name": "Yuanfeng Song",
+          "id": ""
+        },
+        {
+          "name": "Wentao Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283556749",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.366634801460631,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278165282,
+      "title": "From LLM Reasoning to Autonomous AI Agents: A Comprehensive Review",
+      "abstract": "Large language models and autonomous AI agents have evolved rapidly, resulting in a diverse array of evaluation benchmarks, frameworks, and collaboration protocols. Driven by the growing need for standardized evaluation and integration, we systematically consolidate these fragmented efforts into a unified framework. However, the landscape remains fragmented and lacks a unified taxonomy or comprehensive survey. Therefore, we present a side-by-side comparison of benchmarks developed between 2019 and 2025 that evaluate these models and agents across multiple domains. In addition, we propose a taxonomy of approximately 60 benchmarks that cover general and academic knowledge reasoning, mathematical problem-solving, code generation and software engineering, factual grounding and retrieval, domain-specific evaluations, multimodal and embodied tasks, task orchestration, and interactive assessments. Furthermore, we review AI-agent frameworks introduced between 2023 and 2025 that integrate large language models with modular toolkits to enable autonomous decision-making and multi-step reasoning. Moreover, we present real-world applications of autonomous AI agents in materials science, biomedical research, academic ideation, software engineering, synthetic data generation, chemical reasoning, mathematical problem-solving, geographic information systems, multimedia, healthcare, and finance. We then survey key agent-to-agent collaboration protocols, namely the Agent Communication Protocol (ACP), the Model Context Protocol (MCP), and the Agent-to-Agent Protocol (A2A). Finally, we discuss recommendations for future research, focusing on advanced reasoning strategies, failure modes in multi-agent LLM systems, automated scientific discovery, dynamic tool integration via reinforcement learning, integrated search capabilities, and security vulnerabilities in agent protocols.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "M. Ferrag",
+          "id": ""
+        },
+        {
+          "name": "N. Tihanyi",
+          "id": ""
+        },
+        {
+          "name": "M. Debbah",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278165282",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.36291236194029547,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 232417712,
+      "title": "Production Machine Learning Pipelines: Empirical Analysis and Optimization Opportunities",
+      "abstract": "Machine learning (ML) is now commonplace, powering data-driven applications in various organizations. Unlike the traditional perception of ML in research, ML production pipelines are complex, with many interlocking analytical components beyond training, whose sub-parts are often run multiple times on overlapping subsets of data. However, there is a lack of quantitative evidence regarding the lifespan, architecture, frequency, and complexity of these pipelines to understand how data management research can be used to make them more efficient, effective, robust, and reproducible. To that end, we analyze the provenance graphs of 3000 production ML pipelines at Google, comprising over 450,000 models trained, spanning a period of over four months, in an effort to understand the complexity and challenges underlying production ML. Our analysis reveals the characteristics, components, and topologies of typical industry-strength ML pipelines at various granularities. Along the way, we introduce a specialized data model for representing and reasoning about repeatedly run components in these ML pipelines, which we call model graphlets. We identify several rich opportunities for optimization, leveraging traditional data management ideas. We show how targeting even one of these opportunities, i.e., identifying and pruning wasted computation that does not translate to model deployment, can reduce wasted computation cost by 50% without compromising the model deployment cadence.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Doris Xin",
+          "id": ""
+        },
+        {
+          "name": "Hui Miao",
+          "id": ""
+        },
+        {
+          "name": "Aditya G. Parameswaran",
+          "id": ""
+        },
+        {
+          "name": "N. Polyzotis",
+          "id": ""
+        }
+      ],
+      "venue": "SIGMOD Conference",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:232417712",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3544256242922011,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 222091070,
+      "title": "Workflow provenance in the lifecycle of scientific machine learning",
+      "abstract": "Machine learning (ML) has already fundamentally changed several businesses. More recently, it has also been profoundly impacting the computational science and engineering domains, like geoscience, climate science, and health science. In these domains, users need to perform comprehensive data analyses combining scientific data and ML models to provide for critical requirements, such as reproducibility, model explainability, and experiment data understanding. However, scientific ML is multidisciplinary, heterogeneous, and affected by the physical constraints of the domain, making such analyses even more challenging. In this work, we leverage workflow provenance techniques to build a holistic view to support the lifecycle of scientific ML. We contribute with (i) characterization of the lifecycle and taxonomy for data analyses; (ii) design decisions to build this view, with a W3C PROV compliant data representation and a reference system architecture; and (iii) lessons learned after an evaluation in an Oil & Gas case using an HPC cluster with 393 nodes and 946 GPUs. The experiments show that the decisions enable queries that integrate domain semantics with ML models while keeping low overhead (<1%), high scalability, and an order of magnitude of query acceleration under certain workloads against without our representation.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "L. Azevedo",
+          "id": ""
+        },
+        {
+          "name": "V'itor Lourencco",
+          "id": ""
+        },
+        {
+          "name": "E. Soares",
+          "id": ""
+        },
+        {
+          "name": "R. Thiago",
+          "id": ""
+        },
+        {
+          "name": "R. Brand\u00e3o",
+          "id": ""
+        },
+        {
+          "name": "D. Civitarese",
+          "id": ""
+        },
+        {
+          "name": "E. V. Brazil",
+          "id": ""
+        },
+        {
+          "name": "M. Moreno",
+          "id": ""
+        },
+        {
+          "name": "P. Valduriez",
+          "id": ""
+        },
+        {
+          "name": "Marta Mattoso",
+          "id": ""
+        },
+        {
+          "name": "Renato Cerqueira",
+          "id": ""
+        },
+        {
+          "name": "M. Netto",
+          "id": ""
+        }
+      ],
+      "venue": "Concurrency and Computation",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:222091070",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.35354237747059664,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278905406,
+      "title": "AI-Researcher: Autonomous Scientific Innovation",
+      "abstract": "The powerful reasoning capabilities of Large Language Models (LLMs) in mathematics and coding, combined with their ability to automate complex tasks through agentic frameworks, present unprecedented opportunities for accelerating scientific innovation. In this paper, we introduce AI-Researcher, a fully autonomous research system that transforms how AI-driven scientific discovery is conducted and evaluated. Our framework seamlessly orchestrates the complete research pipeline--from literature review and hypothesis generation to algorithm implementation and publication-ready manuscript preparation--with minimal human intervention. To rigorously assess autonomous research capabilities, we develop Scientist-Bench, a comprehensive benchmark comprising state-of-the-art papers across diverse AI research domains, featuring both guided innovation and open-ended exploration tasks. Through extensive experiments, we demonstrate that AI-Researcher achieves remarkable implementation success rates and produces research papers that approach human-level quality. This work establishes new foundations for autonomous scientific innovation that can complement human researchers by systematically exploring solution spaces beyond cognitive limitations.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Jiabin Tang",
+          "id": ""
+        },
+        {
+          "name": "Lianghao Xia",
+          "id": ""
+        },
+        {
+          "name": "Zhonghang Li",
+          "id": ""
+        },
+        {
+          "name": "Chao Huang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278905406",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.35075745155305654,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 259991133,
+      "title": "ProvLight: Efficient Workflow Provenance Capture on the Edge-to-Cloud Continuum",
+      "abstract": "Modern scientific workflows require hybrid infrastructures combining numerous decentralized resources on the IoT/Edge interconnected to Cloud/HPC systems (aka the Computing Continuum) to enable their optimized execution. Understanding and optimizing the performance of such complex Edge-to-Cloud workflows is challenging. Capturing the provenance of key performance indicators, with their related data and processes, may assist in understanding and optimizing workflow executions. However, the capture overhead can be prohibitive, particularly in resource-constrained devices, such as the ones on the IoT/Edge.To address this challenge, based on a performance analysis of existing systems, we propose ProvLight, a tool to enable efficient provenance capture on the IoT/Edge. We leverage simplified data models, data compression and grouping, and lightweight transmission protocols to reduce overheads. We further integrate ProvLight into the E2Clab framework to enable workflow provenance capture across the Edge-to-Cloud Continuum. This integration makes E2Clab a promising platform for the performance optimization of applications through reproducible experiments.We validate ProvLight at a large scale with synthetic workloads on 64 real-life IoT/Edge devices in the FIT IoT LAB testbed. Evaluations show that ProvLight outperforms state-of-the-art systems like ProvLake and DfAnalyzer in resource-constrained devices. ProvLight is 26-37x faster to capture and transmit provenance data; uses 5-7x less CPU; 2x less memory; transmits 2x less data; and consumes 2-2.5x less energy. ProvLight [1] and E2Clab [2] are available as open-source tools.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Daniel Rosendo",
+          "id": ""
+        },
+        {
+          "name": "Marta Mattoso",
+          "id": ""
+        },
+        {
+          "name": "Alexandru Costan",
+          "id": ""
+        },
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "D\u00e9bora B. Pina",
+          "id": ""
+        },
+        {
+          "name": "P. Valduriez",
+          "id": ""
+        },
+        {
+          "name": "Gabriel Antoniu",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE International Conference on Cluster Computing",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:259991133",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3470763121204536,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 17069007,
+      "title": "ProvDB: A System for Lifecycle Management of Collaborative Analysis Workflows",
+      "abstract": "As data-driven methods are becoming pervasive in a wide variety of disciplines, there is an urgent need to develop scalable and sustainable tools to simplify the process of data science, to make it easier to keep track of the analyses being performed and datasets being generated, and to enable introspection of the workflows. In this paper, we describe our vision of a unified provenance and metadata management system to support lifecycle management of complex collaborative data science workflows. We argue that a large amount of information about the analysis processes and data artifacts can, and should be, captured in a semi-passive manner; and we show that querying and analyzing this information can not only simplify bookkeeping and debugging tasks for data analysts but can also enable a rich new set of capabilities like identifying flaws in the data science process itself. It can also significantly reduce the time spent in fixing post-deployment problems through automated analysis and monitoring. We have implemented an initial prototype of our system, called ProvDB, on top of git (a version control system) and Neo4j (a graph database), and we describe its key features and capabilities.",
+      "year": 2016,
+      "authors": [
+        {
+          "name": "Hui Miao",
+          "id": ""
+        },
+        {
+          "name": "Amit Chavan",
+          "id": ""
+        },
+        {
+          "name": "Amol Deshpande",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:17069007",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3432391170014222,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 278788499,
+      "title": "NovelSeek: When Agent Becomes the Scientist - Building Closed-Loop System from Hypothesis to Verification",
+      "abstract": "Artificial Intelligence (AI) is accelerating the transformation of scientific research paradigms, not only enhancing research efficiency but also driving innovation. We introduce NovelSeek, a unified closed-loop multi-agent framework to conduct Autonomous Scientific Research (ASR) across various scientific research fields, enabling researchers to tackle complicated problems in these fields with unprecedented speed and precision. NovelSeek highlights three key advantages: 1) Scalability: NovelSeek has demonstrated its versatility across 12 scientific research tasks, capable of generating innovative ideas to enhance the performance of baseline code. 2) Interactivity: NovelSeek provides an interface for human expert feedback and multi-agent interaction in automated end-to-end processes, allowing for the seamless integration of domain expert knowledge. 3) Efficiency: NovelSeek has achieved promising performance gains in several scientific fields with significantly less time cost compared to human efforts. For instance, in reaction yield prediction, it increased from 27.6% to 35.4% in just 12 hours; in enhancer activity prediction, accuracy rose from 0.65 to 0.79 with only 4 hours of processing; and in 2D semantic segmentation, precision advanced from 78.8% to 81.0% in a mere 30 hours.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Bo Zhang",
+          "id": ""
+        },
+        {
+          "name": "Shi Feng",
+          "id": ""
+        },
+        {
+          "name": "Xiangchao Yan",
+          "id": ""
+        },
+        {
+          "name": "Jiakang Yuan",
+          "id": ""
+        },
+        {
+          "name": "Zhiyin Yu",
+          "id": ""
+        },
+        {
+          "name": "Xiaohan He",
+          "id": ""
+        },
+        {
+          "name": "Songtao Huang",
+          "id": ""
+        },
+        {
+          "name": "Shaowei Hou",
+          "id": ""
+        },
+        {
+          "name": "Zheng Nie",
+          "id": ""
+        },
+        {
+          "name": "Zhilong Wang",
+          "id": ""
+        },
+        {
+          "name": "Jinyao Liu",
+          "id": ""
+        },
+        {
+          "name": "Runmin Ma",
+          "id": ""
+        },
+        {
+          "name": "Tianshuo Peng",
+          "id": ""
+        },
+        {
+          "name": "Peng Ye",
+          "id": ""
+        },
+        {
+          "name": "Dongzhan Zhou",
+          "id": ""
+        },
+        {
+          "name": "Shufei Zhang",
+          "id": ""
+        },
+        {
+          "name": "Xiaosong Wang",
+          "id": ""
+        },
+        {
+          "name": "Yilan Zhang",
+          "id": ""
+        },
+        {
+          "name": "Meng Li",
+          "id": ""
+        },
+        {
+          "name": "Zhongying Tu",
+          "id": ""
+        },
+        {
+          "name": "Xiangyu Yue",
+          "id": ""
+        },
+        {
+          "name": "Wangli Ouyang",
+          "id": ""
+        },
+        {
+          "name": "Bowen Zhou",
+          "id": ""
+        },
+        {
+          "name": "Lei Bai",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:278788499",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.33632550570022623,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 52956957,
+      "title": "Understanding Data Science Lifecycle Provenance via Graph Segmentation and Summarization",
+      "abstract": "Increasingly modern data science platforms today have non-intrusive and extensible provenance ingestion mechanisms to collect rich provenance and context information, handle modifications to the same file using distinguishable versions, and use graph data models (e.g., property graphs) and query languages (e.g., Cypher) to represent and manipulate the stored provenance/context information. Due to the schema-later nature of the metadata, multiple versions of the same files, and unfamiliar artifacts introduced by team members, the resulting \"provenance graphs\" are quite verbose and evolving; further, it is very difficult for the users to compose queries and utilize this valuable information just using standard graph query model. In this paper, we propose two high-level graph query operators to address the verboseness and evolving nature of such provenance graphs. First, we introduce a graph segmentation operator, which queries the retrospective provenance between a set of source vertices and a set of destination vertices via flexible boundary criteria to help users get insight about the derivation relationships among those vertices. We show the semantics of such a query in terms of a context-free grammar, and develop efficient algorithms that run orders of magnitude faster than state-of-the-art. Second, we propose a graph summarization operator that combines similar segments together to query prospective provenance of the underlying project. The operator allows tuning the summary by ignoring vertex details and characterizing local structures, and ensures the provenance meaning using path constraints. We show the optimal summary problem is PSPACE-complete and develop effective approximation algorithms. We implement the operators on top of Neo4j, evaluate our query techniques extensively, and show the effectiveness and efficiency of the proposed methods.",
+      "year": 2018,
+      "authors": [
+        {
+          "name": "Hui Miao",
+          "id": ""
+        },
+        {
+          "name": "Amol Deshpande",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE International Conference on Data Engineering",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:52956957",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.33284235121540073,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 266191740,
+      "title": "Recording provenance of workflow runs with RO-Crate",
+      "abstract": "Recording the provenance of scientific computation results is key to the support of traceability, reproducibility and quality assessment of data products. Several data models have been explored to address this need, providing representations of workflow plans and their executions as well as means of packaging the resulting information for archiving and sharing. However, existing approaches tend to lack interoperable adoption across workflow management systems. In this work we present Workflow Run RO-Crate, an extension of RO-Crate (Research Object Crate) and Schema.org to capture the provenance of the execution of computational workflows at different levels of granularity and bundle together all their associated objects (inputs, outputs, code, etc.). The model is supported by a diverse, open community that runs regular meetings, discussing development, maintenance and adoption aspects. Workflow Run RO-Crate is already implemented by several workflow management systems, allowing interoperable comparisons between workflow runs from heterogeneous systems. We describe the model, its alignment to standards such as W3C PROV, and its implementation in six workflow systems. Finally, we illustrate the application of Workflow Run RO-Crate in two use cases of machine learning in the digital image analysis domain.\nintegrate workflow provenance traces across WMSs was the Workflow Ecosystems through STandards (WEST) [14], which used WINGS to build workflow templates and different converters. In all of these workflow provenance models, the emphasis is on the workflow execution structure as a directed graph, with only partial references for the data items. The REPRODUCE-ME ontology [21] extended PROV and P-PLAN to explain the overall scientific process with the experimental context including real life objects (e.g. instruments, specimens) and human activities (e.g. lab protocols, screening), demonstrating provenance of individual Jupyter Notebook cells [22] and highlighting the need for provenance also where there is no workflow management system. More recently, interoperability has been partially addressed by Common Workflow Language Prov (CWLProv) [23], which represents workflow enactments as research objects serialised according to the Big Data Bag approach [24]. The resulting format is a folder containing several data and metadata files [25], expanding on the Research Object Bundle approach of Taverna [26]. CWLProv also extends PROV with a representation of executed processes (activities), their inputs and outputs (entities) and their executors (agents), together with their Common Workflow Language (CWL) specification [27] -a standard workflow specification adopted by at least a dozen different workflow systems [28]. Although CWLProv includes prospective provenance as a plan within PROV (based on the wfdesc model), in practice its implementation does not include tool definitions or file formats.Thus, for CWLProv consumers to reconstruct the full prospective provenance for understanding the workflow, they would also need to inspect the separate workflow definition in the native language of the workflow management system. Additionally, the CWLProv RO may include several other metadata files and PROV serialisations conforming to different formats, complicating its generation and consumption.\nAs for granularity, CWLProv proposes multiple levels of provenance [23,Figure 2], from Level 0 (capturing workflow definition) to Level 3 (domain-specific annotations).\nIn practice, the CWL reference implementation cwltool [30] and the corresponding CWLProv specification [25] record provenance details of all task executions together with the intermediate data and any nested workflows (CWLProv level 2). This level of granularity requires substantial support from the workflow management system implementing the CWL specification, resulting appropriate for workflow languages where the execution plan, including its distribution among the various tasks, is well known in advance. However, it can be at odds with other systems where the execution is more dynamic, depending on the verification of specific runtime conditions, such as the size and distribution of the data (e.g., COMPSs [31]). This design makes the implementation of CWLProv challenging, which the authors suspect may be one of the main causes for the low adoption of CWLProv (at the time of writing the format is supported only by cwltool). Finally, being based on the PROV model, CWLProv is highly focused on the interaction between agents, processes and related entities, while support for contextual metadata (such as workflow authors, licence or creation date) in the Research Object Bundle is limited [32] and stored in a separate manifest file, which includes the data identifier mapping to filenames. A project that uses serialised Research Objects similar to those used by CWLProv is Whole Tale [33], a web platform with a focus on the narrative around scientific studies and their reproducibility, where the serialised ROs are used to export data and metadata from the platform. In contrast, our work is primarily focused on the ability to capture the provenance of computational workflow execution including its data and executable workflow definitions. [34] is an approach for packaging research data together with their metadata and associated resources. RO-Crate extends Schema.org [35], a popular vocabulary for describing resources on the Web. In its simplest form, an RO-Crate is a directory structure that contains a single JSON-LD [36] metadata file at the top level. The metadata file describes all entities stored in the RO-Crate along with their relationships, and it is both machine-readable and human-readable. RO-Crate is general enough to be able to describe any dataset, but can also be made as specific as needed through the use of extensions called profiles. Profiles describe \"a set of conventions, types and properties that one minimally can require and expect to be present in that subset of RO-Crates\" [100]. The broad set of types and properties from Schema.org, complemented by a few additional terms from other vocabularies, make the RO-Crate model a candidate for expressing a wide range of contextual information that complements and enriches the core information specified by the profile. This information may include, among others, the workflow authors and their affiliations, associated publications, licensing information, related software, etc. This approach is used by WorkflowHub [37], a workflow-system-agnostic workflow registry which specifies a Workflow RO-Crate profile [38] to gather the workflow definition with such metadata in an archived RO-Crate.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Simone Leo",
+          "id": ""
+        },
+        {
+          "name": "M. Crusoe",
+          "id": ""
+        },
+        {
+          "name": "Laura Rodr\u00edguez-Navas",
+          "id": ""
+        },
+        {
+          "name": "Ra\u00fcl Sirvent",
+          "id": ""
+        },
+        {
+          "name": "Alexander Kanitz",
+          "id": ""
+        },
+        {
+          "name": "Paul De Geest",
+          "id": ""
+        },
+        {
+          "name": "Rudolf Wittner",
+          "id": ""
+        },
+        {
+          "name": "L. Pireddu",
+          "id": ""
+        },
+        {
+          "name": "D. Garijo",
+          "id": ""
+        },
+        {
+          "name": "Jos\u00e9 M. Fern\u00e1ndez",
+          "id": ""
+        },
+        {
+          "name": "Iacopo Colonnelli",
+          "id": ""
+        },
+        {
+          "name": "Matej Gallo",
+          "id": ""
+        },
+        {
+          "name": "Tazro Ohta",
+          "id": ""
+        },
+        {
+          "name": "Hirotaka Suetake",
+          "id": ""
+        },
+        {
+          "name": "Salvador Capella-Guti\u00e9rrez",
+          "id": ""
+        },
+        {
+          "name": "R. D. Wit",
+          "id": ""
+        },
+        {
+          "name": "B. Kinoshita",
+          "id": ""
+        },
+        {
+          "name": "S. Soiland-Reyes",
+          "id": ""
+        }
+      ],
+      "venue": "PLoS ONE",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:266191740",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.32946393250210915,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 279999534,
+      "title": "A Grassroots Network and Community Roadmap for Interconnected Autonomous Science Laboratories for Accelerated Discovery",
+      "abstract": "Scientific discovery is being revolutionized by AI and autonomous systems, yet current autonomous laboratories remain isolated islands unable to collaborate across institutions. We present the Autonomous Interconnected Science Lab Ecosystem (AISLE), a grassroots network transforming fragmented capabilities into a unified system that shorten the path from ideation to innovation to impact and accelerates discovery from decades to months. AISLE addresses five critical dimensions: (1) cross-institutional equipment orchestration, (2) intelligent data management with FAIR compliance, (3) AI-agent driven orchestration grounded in scientific principles, (4) interoperable agent communication interfaces, and (5) AI/ML-integrated scientific education. By connecting autonomous agents across institutional boundaries, autonomous science can unlock research spaces inaccessible to traditional approaches while democratizing cutting-edge technologies. This paradigm shift toward collaborative autonomous science promises breakthroughs in sustainable energy, materials development, and public health.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "R. Ferreira da Silva",
+          "id": ""
+        },
+        {
+          "name": "M. Abolhasani",
+          "id": ""
+        },
+        {
+          "name": "Dionysios A. Antonopoulos",
+          "id": ""
+        },
+        {
+          "name": "Laura Biven",
+          "id": ""
+        },
+        {
+          "name": "Ryan N. Coffee",
+          "id": ""
+        },
+        {
+          "name": "Ian T. Foster",
+          "id": ""
+        },
+        {
+          "name": "Leslie Hamilton",
+          "id": ""
+        },
+        {
+          "name": "S. Jha",
+          "id": ""
+        },
+        {
+          "name": "Theresa Mayer",
+          "id": ""
+        },
+        {
+          "name": "Benjamin Mintz",
+          "id": ""
+        },
+        {
+          "name": "R. Moore",
+          "id": ""
+        },
+        {
+          "name": "Sal Nimer",
+          "id": ""
+        },
+        {
+          "name": "N. Paulson",
+          "id": ""
+        },
+        {
+          "name": "Woong Shin",
+          "id": ""
+        },
+        {
+          "name": "F. Suter",
+          "id": ""
+        },
+        {
+          "name": "Mitra L. Taheri",
+          "id": ""
+        },
+        {
+          "name": "Michela Taufer",
+          "id": ""
+        },
+        {
+          "name": "N. Washburn",
+          "id": ""
+        }
+      ],
+      "venue": "ICPP Workshops",
+      "journal": null,
+      "url": "http://dl.acm.org/citation.cfm?id=3757292",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.32942769679935135,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 5144511,
+      "title": "Research Traceability using Provenance Services for Biomedical Analysis",
+      "abstract": "We outline the approach being developed in the neuGRID project to use provenance management techniques for the purposes of capturing and preserving the provenance data that emerges in the specification and execution of workflows in biomedical analyses. In the neuGRID project a provenance service has been designed and implemented that is intended to capture, store, retrieve and reconstruct the workflow information needed to facilitate users in conducting user analyses. We describe the architecture of the neuGRID provenance service and discuss how the CRISTAL system from CERN is being adapted to address the requirements of the project and then consider how a generalised approach for provenance management could emerge for more generic application to the (Health)Grid community.",
+      "year": 2012,
+      "authors": [
+        {
+          "name": "A. Anjum",
+          "id": ""
+        },
+        {
+          "name": "P. Bloodsworth",
+          "id": ""
+        },
+        {
+          "name": "A. Branson",
+          "id": ""
+        },
+        {
+          "name": "I. Habib",
+          "id": ""
+        },
+        {
+          "name": "R. McClatchey",
+          "id": ""
+        },
+        {
+          "name": "T. Solomonides",
+          "id": ""
+        },
+        {
+          "name": "K. Soomro",
+          "id": ""
+        }
+      ],
+      "venue": "HealthGrid",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:5144511",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.308581671144543,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 16985339,
+      "title": "The Research Object Suite of Ontologies: Sharing and Exchanging Research Data and Methods on the Open Web",
+      "abstract": "Research in life sciences is increasingly being conducted in a digital and online environment. In particular, life scientists have been pioneers in embracing new computational tools to conduct their investigations. To support the sharing of digital objects produced during such research investigations, we have witnessed in the last few years the emergence of specialized repositories, e.g., DataVerse and FigShare. Such repositories provide users with the means to share and publish datasets that were used or generated in research investigations. While these repositories have proven their usefulness, interpreting and reusing evidence for most research results is a challenging task. Additional contextual descriptions are needed to understand how those results were generated and/or the circumstances under which they were concluded. Because of this, scientists are calling for models that go beyond the publication of datasets to systematically capture the life cycle of scientific investigations and provide a single entry point to access the information about the hypothesis investigated, the datasets used, the experiments carried out, the results of the experiments, the people involved in the research, etc. In this paper we present the Research Object (RO) suite of ontologies, which provide a structured container to encapsulate research data and methods along with essential metadata descriptions. Research Objects are portable units that enable the sharing, preservation, interpretation and reuse of research investigation results. The ontologies we present have been designed in the light of requirements that we gathered from life scientists. They have been built upon existing popular vocabularies to facilitate interoperability. Furthermore, we have developed tools to support the creation and sharing of Research Objects, thereby promoting and facilitating their adoption.",
+      "year": 2014,
+      "authors": [
+        {
+          "name": "Khalid Belhajjame",
+          "id": ""
+        },
+        {
+          "name": "Jun Zhao",
+          "id": ""
+        },
+        {
+          "name": "D. Garijo",
+          "id": ""
+        },
+        {
+          "name": "K. Hettne",
+          "id": ""
+        },
+        {
+          "name": "Ra\u00fal Palma",
+          "id": ""
+        },
+        {
+          "name": "\u00d3scar Corcho",
+          "id": ""
+        },
+        {
+          "name": "Jos\u00e9 Manu\u00e9l G\u00f3mez-P\u00e9rez",
+          "id": ""
+        },
+        {
+          "name": "S. Bechhofer",
+          "id": ""
+        },
+        {
+          "name": "G. Klyne",
+          "id": ""
+        },
+        {
+          "name": "C. Goble",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:16985339",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.30302490602709,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 204009015,
+      "title": "Provenance Data in the Machine Learning Lifecycle in Computational Science and Engineering",
+      "abstract": "Machine Learning (ML) has become essential in several industries. In Computational Science and Engineering (CSE), the complexity of the ML lifecycle comes from the large variety of data, scientists' expertise, tools, and workflows. If data are not tracked properly during the lifecycle, it becomes unfeasible to recreate a ML model from scratch or to explain to stackholders how it was created. The main limitation of provenance tracking solutions is that they cannot cope with provenance capture and integration of domain and ML data processed in the multiple workflows in the lifecycle, while keeping the provenance capture overhead low. To handle this problem, in this paper we contribute with a detailed characterization of provenance data in the ML lifecycle in CSE; a new provenance data representation, called PROV-ML, built on top of W3C PROV and ML Schema; and extensions to a system that tracks provenance from multiple workflows to address the characteristics of ML and CSE, and to allow for provenance queries with a standard vocabulary. We show a practical use in a real case in the O&G industry, along with its evaluation using 239,616 CUDA cores in parallel.",
+      "year": 2019,
+      "authors": [
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "L. Azevedo",
+          "id": ""
+        },
+        {
+          "name": "V\u00edtor Louren\u00e7o",
+          "id": ""
+        },
+        {
+          "name": "E. Soares",
+          "id": ""
+        },
+        {
+          "name": "R. Thiago",
+          "id": ""
+        },
+        {
+          "name": "R. Brand\u00e3o",
+          "id": ""
+        },
+        {
+          "name": "D. Civitarese",
+          "id": ""
+        },
+        {
+          "name": "E. V. Brazil",
+          "id": ""
+        },
+        {
+          "name": "M. Moreno",
+          "id": ""
+        },
+        {
+          "name": "P. Valduriez",
+          "id": ""
+        },
+        {
+          "name": "Marta Mattoso",
+          "id": ""
+        },
+        {
+          "name": "Renato Cerqueira",
+          "id": ""
+        },
+        {
+          "name": "M. Netto",
+          "id": ""
+        }
+      ],
+      "venue": "Works",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:204009015",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.30071527147189325,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 237592648,
+      "title": "Astronomical Pipeline Provenance: A Use Case Evaluation",
+      "abstract": "In this decade astronomy is undergoing a paradigm shift to handle data from next generation observatories such as the Square Kilometre Array (SKA) or the Vera C. Rubin Observatory (LSST). Producing real time data streams of up to 10 TB/s and data products of the order of 600 Pbytes/year, the SKA will be the biggest civil data producing machine of the world that demands novel solutions on how these data volumes can be stored and analysed. Through the use of complex, automated pipelines the provenance of this real time data processing is key to establish confidence within the system, its final data products, and ultimately its scientific results. The intention of this paper is to lay the foundation for making an automated provenance generation tool for astronomical/data-processing pipelines. We therefore present a use case analysis, specific to the astronomical needs which addresses the issues of trust and reproducibility as well as other ulterior use cases which are of interest to astronomers. This analysis is subsequently used as the basis to discuss the requirements, challenges, and opportunities involved in designing both the tool and the associated provenance model.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Michael A. C. Johnson",
+          "id": ""
+        },
+        {
+          "name": "M. Paradies",
+          "id": ""
+        },
+        {
+          "name": "M. Dembska",
+          "id": ""
+        },
+        {
+          "name": "K. Lackeos",
+          "id": ""
+        },
+        {
+          "name": "Hans-Rainer Kl\u00f6ckner",
+          "id": ""
+        },
+        {
+          "name": "D. Champion",
+          "id": ""
+        },
+        {
+          "name": "Sirko Schindler",
+          "id": ""
+        }
+      ],
+      "venue": "Workshop on the Theory and Practice of Provenance",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:237592648",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2978474095659452,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 260887405,
+      "title": "Modeling the Dashboard Provenance",
+      "abstract": "Organizations of all kinds, whether public or private, profit-driven or non-profit, and across various industries and sectors, rely on dashboards for effective data visualization. However, the reliability and efficacy of these dashboards rely on the quality of the visuals and data they present. Studies show that fewer than a quarter of dashboards provide information about their sources, which is just one of the expected pieces of metadata when provenance is seriously considered. Provenance is a record that describes people, organizations, entities, and activities that had a role in the production, influence, or delivery of a piece of data or an object. This paper aims to provide a provenance representation model that enables standardization, modeling, generation, capture, and visualization, specifically designed for dashboards and their visual and data components. The proposed model will provide a comprehensive set of provenance metadata, enabling users to evaluate the quality, consistency, and reliability of the information presented on dashboards. This will provide a clear, precise understanding of the context in which a specific dashboard was developed, ultimately leading to better decision-making.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "J. Jarske",
+          "id": ""
+        },
+        {
+          "name": "J. Rady",
+          "id": ""
+        },
+        {
+          "name": "L. V. L. Filgueiras",
+          "id": ""
+        },
+        {
+          "name": "L. Velloso",
+          "id": ""
+        },
+        {
+          "name": "T. L. Santos",
+          "id": ""
+        }
+      ],
+      "venue": "Revista de Geopol\u00edtica",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:260887405",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.29364744300083834,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 218470098,
+      "title": "PipelineProfiler: A Visual Analytics Tool for the Exploration of AutoML Pipelines",
+      "abstract": "In recent years, a wide variety of automated machine learning (AutoML) methods have been proposed to generate end-to-end ML pipelines. While these techniques facilitate the creation of models, given their black-box nature, the complexity of the underlying algorithms, and the large number of pipelines they derive, they are difficult for developers to debug. It is also challenging for machine learning experts to select an AutoML system that is well suited for a given problem. In this paper, we present the Pipeline Profiler, an interactive visualization tool that allows the exploration and comparison of the solution space of machine learning (ML) pipelines produced by AutoML systems. PipelineProfiler is integrated with Jupyter Notebook and can be combined with common data science tools to enable a rich set of analyses of the ML pipelines, providing users a better understanding of the algorithms that generated them as well as insights into how they can be improved. We demonstrate the utility of our tool through use cases where PipelineProfiler is used to better understand and improve a real-world AutoML system. Furthermore, we validate our approach by presenting a detailed analysis of a think-aloud experiment with six data scientists who develop and evaluate AutoML tools.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "J. Ono",
+          "id": ""
+        },
+        {
+          "name": "Sonia Castelo",
+          "id": ""
+        },
+        {
+          "name": "Roque L\u00f3pez",
+          "id": ""
+        },
+        {
+          "name": "E. Bertini",
+          "id": ""
+        },
+        {
+          "name": "J. Freire",
+          "id": ""
+        },
+        {
+          "name": "Cl\u00e1udio T. Silva",
+          "id": ""
+        }
+      ],
+      "venue": "IEEE Transactions on Visualization and Computer Graphics",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:218470098",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2788172997919394,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 17762711,
+      "title": "The ALPS project release 2.0: open source software for strongly correlated systems",
+      "abstract": "We present release 2.0 of the ALPS (Algorithms and Libraries for Physics Simulations) project, an open source software project to develop libraries and application programs for the simulation of strongly correlated quantum lattice models such as quantum magnets, lattice bosons, and strongly correlated fermion systems. The code development is centered on common XML and HDF5 data formats, libraries to simplify and speed up code development, common evaluation and plotting tools, and simulation programs. The programs enable non-experts to start carrying out serial or parallel numerical simulations by providing basic implementations of the important algorithms for quantum lattice models: classical and quantum Monte Carlo (QMC) using non-local updates, extended ensemble simulations, exact and full diagonalization (ED), the density matrix renormalization group (DMRG) both in a static version and a dynamic time-evolving block decimation (TEBD) code, and quantum Monte Carlo solvers for dynamical mean field theory (DMFT). The ALPS libraries provide a powerful framework for programmers to develop their own applications, which, for instance, greatly simplify the steps of porting a serial code onto a parallel, distributed memory machine. Major changes in release 2.0 include the use of HDF5 for binary data, evaluation tools in Python, support for the Windows operating system, the use of CMake as build system and binary installation packages for Mac OS X and Windows, and integration with the VisTrails workflow provenance tool. The software is available from our web server at http://alps.comp-phys.org/.",
+      "year": 2011,
+      "authors": [
+        {
+          "name": "B. Bauer",
+          "id": ""
+        },
+        {
+          "name": "L. Carr",
+          "id": ""
+        },
+        {
+          "name": "H. Evertz",
+          "id": ""
+        },
+        {
+          "name": "A. Feiguin",
+          "id": ""
+        },
+        {
+          "name": "J. Freire",
+          "id": ""
+        },
+        {
+          "name": "S. Fuchs",
+          "id": ""
+        },
+        {
+          "name": "L. Gamper",
+          "id": ""
+        },
+        {
+          "name": "J. Gukelberger",
+          "id": ""
+        },
+        {
+          "name": "E. Gull",
+          "id": ""
+        },
+        {
+          "name": "S. Guertler",
+          "id": ""
+        },
+        {
+          "name": "A. Hehn",
+          "id": ""
+        },
+        {
+          "name": "Ryo Igarashi",
+          "id": ""
+        },
+        {
+          "name": "S. Isakov",
+          "id": ""
+        },
+        {
+          "name": "D. Koop",
+          "id": ""
+        },
+        {
+          "name": "P. Ma",
+          "id": ""
+        },
+        {
+          "name": "P. Mates",
+          "id": ""
+        },
+        {
+          "name": "H. Matsuo",
+          "id": ""
+        },
+        {
+          "name": "O. Parcollet",
+          "id": ""
+        },
+        {
+          "name": "G. Pawlowski",
+          "id": ""
+        },
+        {
+          "name": "J. Picon",
+          "id": ""
+        },
+        {
+          "name": "L. Pollet",
+          "id": ""
+        },
+        {
+          "name": "E. Santos",
+          "id": ""
+        },
+        {
+          "name": "V. Scarola",
+          "id": ""
+        },
+        {
+          "name": "U. Schollw\u00f6ck",
+          "id": ""
+        },
+        {
+          "name": "C. Silva",
+          "id": ""
+        },
+        {
+          "name": "B. Surer",
+          "id": ""
+        },
+        {
+          "name": "S. Todo",
+          "id": ""
+        },
+        {
+          "name": "S. Trebst",
+          "id": ""
+        },
+        {
+          "name": "M. Troyer",
+          "id": ""
+        },
+        {
+          "name": "M. Wall",
+          "id": ""
+        },
+        {
+          "name": "P. Werner",
+          "id": ""
+        },
+        {
+          "name": "S. Wessel",
+          "id": ""
+        }
+      ],
+      "venue": "",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:17762711",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.27591378548228845,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273098657,
+      "title": "Code-Survey: An LLM-Driven Methodology for Analyzing Large-Scale Codebases",
+      "abstract": "Modern software systems like the Linux kernel are among the world's largest and most intricate codebases, continually evolving with new features and increasing complexity. Understanding these systems poses significant challenges due to their scale and the unstructured nature of development artifacts such as commits and mailing list discussions. We introduce Code-Survey, the first LLM-driven methodology designed to systematically explore and analyze large-scale codebases. The central principle behind Code-Survey is to treat LLMs as human participants, acknowledging that software development is also a social activity and thereby enabling the application of established social science techniques. By carefully designing surveys, Code-Survey transforms unstructured data, such as commits, emails, into organized, structured, and analyzable datasets. This enables quantitative analysis of complex software evolution and uncovers valuable insights related to design, implementation, maintenance, reliability, and security. To demonstrate the effectiveness of Code-Survey, we apply it to the Linux kernel's eBPF subsystem. We construct the Linux-bpf dataset, comprising over 670 features and 16,000 commits from the Linux community. Our quantitative analysis uncovers important insights into the evolution of eBPF, such as development patterns, feature interdependencies, and areas requiring attention for reliability and security. The insights have been initially validated by eBPF experts. Furthermore, Code-Survey can be directly applied to other subsystems within Linux and to other large-scale software projects. By providing a versatile tool for systematic analysis, Code-Survey facilitates a deeper understanding of complex software systems, enabling improvements across a variety of domains and supporting a wide range of empirical studies. The code and dataset is open-sourced.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Yusheng Zheng",
+          "id": ""
+        },
+        {
+          "name": "Yiwei Yang",
+          "id": ""
+        },
+        {
+          "name": "Haoqin Tu",
+          "id": ""
+        },
+        {
+          "name": "Yuxi Huang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273098657",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2751488229081655,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 265221206,
+      "title": "Facilitating the Sharing of Electrophysiology Data Analysis Results Through In-Depth Provenance Capture",
+      "abstract": "Scientific research demands reproducibility and transparency, particularly in data-intensive fields like electrophysiology. Electrophysiology data are typically analyzed using scripts that generate output files, including figures. Handling these results poses several challenges due to the complexity and iterative nature of the analysis process. These stem from the difficulty to discern the analysis steps, parameters, and data flow from the results, making knowledge transfer and findability challenging in collaborative settings. Provenance information tracks data lineage and processes applied to it, and provenance capture during the execution of an analysis script can address those challenges. We present Alpaca (Automated Lightweight Provenance Capture), a tool that captures fine-grained provenance information with minimal user intervention when running data analysis pipelines implemented in Python scripts. Alpaca records inputs, outputs, and function parameters and structures information according to the W3C PROV standard. We demonstrate the tool using a realistic use case involving multichannel local field potential recordings of a neurophysiological experiment, highlighting how the tool makes result details known in a standardized manner in order to address the challenges of the analysis process. Ultimately, using Alpaca will help to represent results according to the FAIR principles, which will improve research reproducibility and facilitate sharing the results of data analyses.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "Cristiano A. K\u00f6hler",
+          "id": ""
+        },
+        {
+          "name": "Danylo Ulianych",
+          "id": ""
+        },
+        {
+          "name": "Sonja Gr\u00fcn",
+          "id": ""
+        },
+        {
+          "name": "Stefan Decker",
+          "id": ""
+        },
+        {
+          "name": "M. Denker",
+          "id": ""
+        }
+      ],
+      "venue": "eNeuro",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:265221206",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2747553603012098,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 15942759,
+      "title": "YesWorkflow: A User-Oriented, Language-Independent Tool for Recovering Workflow Information from Scripts",
+      "abstract": "Scientific workflow management systems offer features for composing complex computational pipelines from modular building blocks, executing the resulting automated workflows, and recording the provenance of data products resulting from workflow runs. Despite the advantages such features provide, many automated workflows continue to be implemented and executed outside of scientific workflow systems due to the convenience and familiarity of scripting languages (such as Perl, Python, R, and MATLAB), and to the high productivity many scientists experience when using these languages. YesWorkflow is a set of software tools that aim to provide such users of scripting languages with many of the benefits of scientific workflow systems. YesWorkflow requires neither the use of a workflow engine nor the overhead of adapting code to run effectively in such a system. Instead, YesWorkflow enables scientists to annotate existing scripts with special comments that reveal the computational modules and dataflows otherwise implicit in these scripts. YesWorkflow tools extract and analyze these comments, represent the scripts in terms of entities based on the typical scientific workflow model, and provide graphical renderings of this workflow-like view of the scripts. Future version of YesWorkflow will also allow the prospective provenance of the data products of these scripts to be queried in ways similar to those available to users of scientific workflow systems.",
+      "year": 2015,
+      "authors": [
+        {
+          "name": "T. McPhillips",
+          "id": ""
+        },
+        {
+          "name": "Tianhong Song",
+          "id": ""
+        },
+        {
+          "name": "Tyler Kolisnik",
+          "id": ""
+        },
+        {
+          "name": "S. Aulenbach",
+          "id": ""
+        },
+        {
+          "name": "Khalid Belhajjame",
+          "id": ""
+        },
+        {
+          "name": "K. Bocinsky",
+          "id": ""
+        },
+        {
+          "name": "Yang Cao",
+          "id": ""
+        },
+        {
+          "name": "F. Chirigati",
+          "id": ""
+        },
+        {
+          "name": "Saumen C. Dey",
+          "id": ""
+        },
+        {
+          "name": "J. Freire",
+          "id": ""
+        },
+        {
+          "name": "D. Huntzinger",
+          "id": ""
+        },
+        {
+          "name": "Christopher Jones",
+          "id": ""
+        },
+        {
+          "name": "D. Koop",
+          "id": ""
+        },
+        {
+          "name": "P. Missier",
+          "id": ""
+        },
+        {
+          "name": "M. Schildhauer",
+          "id": ""
+        },
+        {
+          "name": "C. Schwalm",
+          "id": ""
+        },
+        {
+          "name": "Yaxing Wei",
+          "id": ""
+        },
+        {
+          "name": "J. Cheney",
+          "id": ""
+        },
+        {
+          "name": "M. Bieda",
+          "id": ""
+        },
+        {
+          "name": "Bertram Lud\u00e4scher",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:15942759",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.2743621934820904,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 272423975,
+      "title": "Game On: Towards Language Models as RL Experimenters",
+      "abstract": "We propose an agent architecture that automates parts of the common reinforcement learning experiment workflow, to enable automated mastery of control domains for embodied agents. To do so, it leverages a VLM to perform some of the capabilities normally required of a human experimenter, including the monitoring and analysis of experiment progress, the proposition of new tasks based on past successes and failures of the agent, decomposing tasks into a sequence of subtasks (skills), and retrieval of the skill to execute - enabling our system to build automated curricula for learning. We believe this is one of the first proposals for a system that leverages a VLM throughout the full experiment cycle of reinforcement learning. We provide a first prototype of this system, and examine the feasibility of current models and techniques for the desired level of automation. For this, we use a standard Gemini model, without additional fine-tuning, to provide a curriculum of skills to a language-conditioned Actor-Critic algorithm, in order to steer data collection so as to aid learning new skills. Data collected in this way is shown to be useful for learning and iteratively improving control policies in a robotics domain. Additional examination of the ability of the system to build a growing library of skills, and to judge the progress of the training of those skills, also shows promising results, suggesting that the proposed architecture provides a potential recipe for fully automated mastery of tasks and domains for embodied agents.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Jingwei Zhang",
+          "id": ""
+        },
+        {
+          "name": "Thomas Lampe",
+          "id": ""
+        },
+        {
+          "name": "A. Abdolmaleki",
+          "id": ""
+        },
+        {
+          "name": "Jost Tobias Springenberg",
+          "id": ""
+        },
+        {
+          "name": "M. Riedmiller",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:272423975",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.27232821941611807,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 238936106,
+      "title": "Exploring the self-service model to visualize the results of the ATLAS Machine Learning analysis jobs in BigPanDA with Openshift OKD3",
+      "abstract": "A large scientific computing infrastructure must offer versatility to host any kind of experiment that can lead to innovative ideas. The ATLAS experiment offers wide access possibilities to perform intelligent algorithms and analyze the massive amount of data produced in the Large Hadron Collider at CERN. The BigPanDA monitoring is a component of the PanDA (Production ANd Distributed Analysis) system, and its main role is to monitor the entire lifecycle of a job/task running in the ATLAS Distributed Computing infrastructure. Because many scientific experiments now rely upon Machine Learning algorithms, the BigPanDA community desires to expand the platform\u2019s capabilities and fill the gap between Machine Learning processing and data visualization. In this regard, BigPanDA partially adopts the cloud-native paradigm and entrusts the data presentation to MLFlow services running on Openshift OKD. Thus, BigPanDA interacts with the OKD API and instructs the containers orchestrator how to locate and expose the results of the Machine Learning analysis. The proposed architecture also introduces various DevOps-specific patterns, including continuous integration for MLFlow middleware configuration and continuous deployment pipelines that implement rolling upgrades. The Machine Learning data visualization services operate on demand and run for a limited time, thus optimizing the resource consumption.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Ioan Stan",
+          "id": ""
+        },
+        {
+          "name": "S. Padolski",
+          "id": ""
+        },
+        {
+          "name": "C. Lee",
+          "id": ""
+        }
+      ],
+      "venue": "EPJ Web of Conferences",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:238936106",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.260495835736477,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284918819,
+      "title": "Beyond Centralized Labs: Federating the Co-Scientist",
+      "abstract": "AI co-scientists have demonstrated that agentic AI systems can make meaningful contributions to scientific discovery; however, existing designs are largely centralized and tied to a single site or computing environment. This paper introduces a federated co-scientist architecture that extends the concept of co-scientist to a distributed setting. Built on the Academy framework, we present a generic design that can be instantiated as a first generation of federated co-scientists. Instead of a single agent or a cluster of co-located agents, we deploy a network of federated agents that can be placed near instruments for low-latency control, in HPC facilities for large-scale computation, adjacent to large data stores for high-throughput access, and in the cloud for global coordination. A federated setting enables these agents to exchange hypotheses, models, and summaries without centralizing raw data or even control, supporting scalable, policy-aware collaboration across institutions while preserving sovereignty. Crucially, the federated paradigm supports the extension of co-scientists into specialized teams that learn within communities and domains and collectively advance scientific discovery.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Amal Gueroudji",
+          "id": ""
+        },
+        {
+          "name": "Alok Kamatar",
+          "id": ""
+        },
+        {
+          "name": "Sabrina Chaouche",
+          "id": ""
+        },
+        {
+          "name": "Robert B. Ross",
+          "id": ""
+        },
+        {
+          "name": "K. Chard",
+          "id": ""
+        },
+        {
+          "name": "Ian T. Foster",
+          "id": ""
+        }
+      ],
+      "venue": "SCA/HPC Asia Workshops",
+      "journal": null,
+      "url": "http://dl.acm.org/citation.cfm?id=3786262",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.253006482923785,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    }
+  ]
+}

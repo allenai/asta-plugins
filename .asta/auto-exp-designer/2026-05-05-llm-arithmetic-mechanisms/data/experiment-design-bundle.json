@@ -1,0 +1,862 @@
+{
+  "experiment_name": "Integrated Arithmetic Benchmark for LLMs: Operand Size, Operation Type, Prompt Format, Tokenization, and Error-Mechanism Analysis",
+  "experiment_description": "This experiment measures how LLM arithmetic performance changes with operand size, operation type, and prompt format using three complementary benchmark blocks: controlled synthetic symbolic arithmetic, multilingual arithmetic word problems (MGSM), and grouped arithmetic-expression problems (MATH401). The design uses fixed model versions, deterministic decoding, pre-registered parsers, exact canonical answer formats, and paired within-item prompt comparisons so that accuracy differences can be attributed cleanly to experimental factors. In addition to exact-match accuracy, the experiment records digit-level, length-level, relative-error, parse-failure, and taxonomy-based error signals, plus tokenizer-derived representation covariates. A limited open-model mechanistic sub-study connects observed arithmetic behavior to internal components using activation patching and answer probes, but all primary conclusions remain valid without white-box access.",
+  "recipe_to_implement": [
+    {
+      "aspect_name": "Study scope, hypotheses, and global design",
+      "description": "Define the full scientific scope before any dataset generation or model querying. This aspect fixes the benchmark blocks, the main factors, the primary endpoints, and the interpretation boundaries so that the experiment answers the target question directly and avoids post hoc redesign.",
+      "specific_elements": [
+        {
+          "element_name": "Primary research questions and preregistered hypotheses",
+          "element_description": "The experiment addresses four linked questions: how arithmetic accuracy varies with operand size, how it differs by operation, how prompt format changes performance, and what error patterns imply about computation. Preregistering these questions and predictions is essential because arithmetic evaluations are highly sensitive to benchmark composition, parser choice, and prompt wording.",
+          "implementation_details": "Create a preregistration package before any model queries. Save it as both a human-readable Markdown file and a machine-readable JSON file. Include these exact primary hypotheses. H1: on controlled symbolic arithmetic, exact-match accuracy decreases as operand size increases. H2: at matched size, multiplication and division are harder than addition and subtraction. H3: prompt-format effects depend on task family: direct-answer prompting will be strongest or comparable on one-step symbolic arithmetic, while explicit reasoning prompts may help more on multilingual word problems and may help or hurt on expression-calculation tasks. H4: as operands grow, error distributions shift from isolated same-length digit substitutions toward wrong-length outputs, decimal-placement errors, token-boundary or misalignment errors, and catastrophic magnitude failures. H5: tokenizer fragmentation and numeral representation partially mediate length effects. H6: in open-model mechanistic sub-studies, if arithmetic is implemented by sparse heuristics rather than a unified robust algorithm, a relatively small subset of components should explain a large fraction of correct-answer logit mass. Define primary endpoints as follows: Block A exact-match to canonical two-decimal output, Block B exact-match to gold Arabic numeral, Block C correctness under absolute error less than 1e-3 after four-decimal normalization. Define secondary endpoints: digit-match, dlength, non-number rate, absolute error, relative error, per-category error frequencies, tokenization covariates, and paired prompt differences. State explicitly that mechanistic interpretation is triangulated from multiple sources and that behavior alone is insufficient to prove a unique internal algorithm.",
+          "additional_references": [
+            {
+              "paper_title": "Practical guidelines for evaluating language models",
+              "explanation": "Supports preregistration, transparent reporting, paired evaluation, and uncertainty-aware benchmark design.",
+              "paper_relevance": 7
+            },
+            {
+              "paper_title": "Are Emergent Abilities of Large Language Models a Mirage?",
+              "explanation": "Motivates careful uncertainty reporting and caution against overinterpreting threshold-like aggregate effects.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Three-block benchmark structure",
+          "element_description": "No single arithmetic dataset simultaneously provides tight operand-size control, natural-language arithmetic, and complex expression evaluation. Using three blocks provides both internal validity and broader ecological validity while keeping analyses separable.",
+          "implementation_details": "Use exactly three benchmark blocks. Block A: synthetic symbolic arithmetic, 12,000 examples, balanced across operation and operand-size cells. Block B: MGSM, all 250 items in each of 11 languages, with English-source re-annotations propagated to translations. Block C: MATH401, all 401 items with published group structure preserved. Treat these as separate primary analyses. Do not report or optimize a single pooled cross-block score. For each block, run all feasible prompt conditions for each model. If a model cannot support a block because of tokenizer, context, or API limitations, declare the exclusion before analysis and apply the exclusion symmetrically across all prompt conditions in that block for that model. Create one immutable benchmark manifest file listing every item ID, prompt condition, model ID, and whether the trial is scheduled, excluded, missing due to infrastructure, or complete.",
+          "additional_references": [
+            {
+              "paper_title": "Training verifiers to solve math word problems",
+              "explanation": "Grounds MGSM/GSM8K-style arithmetic word-problem evaluation and exact-answer reporting.",
+              "paper_relevance": 8
+            },
+            {
+              "paper_title": "BIG-bench: Beyond the Imitation Game",
+              "explanation": "Supports controlled synthetic arithmetic benchmarking by digit length and operation.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://github.com/openai/grade-school-math",
+              "explanation": "Official GSM8K source repository, needed to trace MGSM provenance and official solutions."
+            },
+            {
+              "link_url": "https://github.com/GanjinZero/math401-llm",
+              "explanation": "Repository associated with MATH401 item definitions and evaluation heuristics."
+            }
+          ]
+        },
+        {
+          "element_name": "Global factor definitions",
+          "element_description": "The study\u2019s explanatory variables must be defined once globally and then implemented consistently within each block. This prevents later ambiguity about what counts as operand size, operation type, or prompt format in different analyses.",
+          "implementation_details": "Define the following global variables in a master schema file. MODEL_ID: exact model identifier. BLOCK: one of synthetic_symbolic, MGSM, MATH401. PROMPT_FORMAT: benchmark-specific categorical label. OPERATION: for Block A exactly one of add, sub, mul, div; for Block B a multi-label annotation from official solution steps; for Block C a published group label plus optional derived dominant-operation tag. OPERAND_SIZE: for Block A the integer-part digit count k in {1,2,3,4,5,6}; for Block B annotated maximum operand magnitude bin and maximum intermediate magnitude bin; for Block C published group plus supplementary numeric-format metadata. TOKENIZATION_COVARIATES: token counts for full prompt and key numeral spans where tokenizer access exists. OUTPUT_STATUS: correct, incorrect_parseable, incorrect_unparseable, infrastructure_missing. Ensure every trial row in downstream tables includes all applicable fields, with null values only where a field is structurally unavailable for that block.",
+          "additional_references": [
+            {
+              "paper_title": "Number Cookbook: Number Understanding of Language Models and How to Improve It",
+              "explanation": "Provides strong precedent for canonical numeric metadata, size variables, and graded metrics across numeric tasks.",
+              "paper_relevance": 9
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect fixes the scientific target of the study and ensures the experiment directly answers how arithmetic varies with operand size, operation, and prompt format while making error patterns interpretable.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Model roster, version locking, and execution environment",
+      "description": "Select a fixed heterogeneous model panel and log every deployment detail needed to reproduce or audit the evaluation. Arithmetic benchmarking is highly sensitive to model version, tokenizer version, instruction tuning, and hidden tool access, so these must be controlled explicitly.",
+      "specific_elements": [
+        {
+          "element_name": "Model panel composition",
+          "element_description": "The panel should span at least three capability tiers and at least two deployment modes so arithmetic trends are not artifacts of one tokenizer family or one provider.",
+          "implementation_details": "Target six models total. Required minimum composition: one small open instruct model in the 7B to 8B range, one large open instruct model in the 70B to 72B range, one strong commercial API model, and three additional models chosen to diversify tokenizers and instruction-tuning styles. Acceptable example roster: Llama-3.1-8B-Instruct, Llama-3.1-70B-Instruct, Qwen2-7B-Instruct, Qwen2-72B-Instruct, Mixtral-8x7B-Instruct, and one frontier API model such as GPT-4o. Freeze the roster before generating Block A. If a model endpoint becomes unavailable after the study starts, either rerun all affected trials under a new model identifier or exclude the model entirely; do not silently substitute a different endpoint under the same name.",
+          "additional_references": [
+            {
+              "paper_title": "Emergent abilities of large language models",
+              "explanation": "Supports including multiple size tiers because arithmetic and reasoning behavior can vary strongly with scale.",
+              "paper_relevance": 8
+            },
+            {
+              "paper_title": "Language Models are Few-Shot Learners",
+              "explanation": "Provides precedent for standardized prompting across multiple model scales and families.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://platform.openai.com/docs/models",
+              "explanation": "Reference source for exact commercial model identifiers and version strings."
+            }
+          ]
+        },
+        {
+          "element_name": "Version locking and metadata logging",
+          "element_description": "Exact version logging is necessary because arithmetic performance can change with silent provider updates, tokenizer revisions, or quantization settings.",
+          "implementation_details": "For API models log provider name, model ID string, provider-specified model version or date stamp if available, API region, SDK version, UTC timestamp of each request, and whether any system message was used. For local models log repository URL, checkpoint name, commit hash, tokenizer version, inference engine, precision dtype, quantization status, hardware type, CUDA version, and context window. Save all this metadata both in a run-level manifest and per-trial records. If using quantized local checkpoints, run a 200-item calibration subset from Block A against a higher-precision variant when feasible. If exact-match differs by more than 1 percentage point on any Block A operation-by-k slice, do not use quantized results for primary claims.",
+          "additional_references": [
+            {
+              "paper_title": "Language Models are Few-Shot Learners",
+              "explanation": "Supports careful logging of model, prompt, and decoding settings for reproducible LLM evaluation.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "External tool exclusion",
+          "element_description": "The experiment is intended to measure unaided text-generation arithmetic, so any provider-side or client-side calculators, code interpreters, retrieval, or tool calls must be disabled except in explicitly separate control studies.",
+          "implementation_details": "For every primary trial, set tool lists to empty and disable search, retrieval, browser, function calling, calculators, and code execution. If a provider does not expose sufficient control to rule out hidden tool use, document that limitation and avoid interpreting exceptional arithmetic performance as pure internal computation. Program-aided or tool-mediated prompting may be added only as a separate exploratory control condition outside the primary benchmark tables.",
+          "additional_references": [
+            {
+              "paper_title": "Program of Thoughts Prompting: Disentangling Computation from Reasoning in Language Models",
+              "explanation": "Clarifies why external execution should be treated as a distinct control rather than mixed with natural-language arithmetic.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect ensures observed arithmetic behavior is attributable to the evaluated LLMs and not to hidden tools, silent version drift, or mismatched deployment settings.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Synthetic symbolic arithmetic dataset generation (Block A)",
+      "description": "Generate a balanced synthetic arithmetic benchmark that isolates operand size and operation under a single clear decimal-number interpretation. This is the main causal benchmark for measuring how arithmetic accuracy changes with operand magnitude and operator.",
+      "specific_elements": [
+        {
+          "element_name": "Operand representation and fixed interpretation",
+          "element_description": "Because prior descriptions of this benchmark style can be ambiguous, the experiment must commit to one exact operand format and never deviate. Fixed-width finite decimals allow exact Decimal arithmetic, consistent prompting, and deterministic scoring.",
+          "implementation_details": "Define k as the number of digits in the integer part. Use k in {1,2,3,4,5,6}. Generate operands with exactly k integer digits and exactly three fractional digits. For k=1, sample the integer part uniformly from 1 through 9 inclusive. For k>1, sample the integer part uniformly from 10^(k-1) through 10^k - 1 inclusive. Sample the fractional part uniformly from 0 through 999 inclusive and format it with exactly three digits using leading zeros. Independently assign each operand a sign with probability 0.5 positive and 0.5 negative. For division, reject and resample any denominator whose full signed decimal value is exactly 0.000. Render each operand as optional minus sign plus integer part plus '.' plus three fractional digits. Use a fixed RNG seed 20250201. Record RNG type and library version in metadata.",
+          "additional_references": [
+            {
+              "paper_title": "How numerical precision affects mathematical reasoning capabilities of LLMs",
+              "explanation": "Supports precise handling of decimal arithmetic, exact backends, and explicit rounding conventions.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Balanced operation-by-size sampling",
+          "element_description": "A balanced factorial design with fixed sample counts per cell is necessary to estimate size and operation effects cleanly and support straightforward paired prompt comparisons.",
+          "implementation_details": "Generate exactly 12,000 unique items: 6 values of k multiplied by 4 operations multiplied by 500 items per cell. Use operations add, sub, mul, div. For each (k, operation) cell, repeatedly sample ordered operand pairs until 500 unique items survive validity checks. Define uniqueness as the ordered tuple (operation, a_display, b_display). Assign each surviving item a stable example_id. Save one master table with columns example_id, rng_seed, k, operation, a_display, b_display, a_decimal_exact, b_decimal_exact, exact_result_unrounded, canonical_result_2dp, and validity flags. Use this exact item table across all Block A prompt conditions so prompt comparisons are paired at the item level.",
+          "additional_references": [
+            {
+              "paper_title": "BIG-bench: Beyond the Imitation Game",
+              "explanation": "Provides precedent for balanced arithmetic evaluation by digit length and operation type.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Ground-truth computation and rounding policy",
+          "element_description": "Ground truth must be computed with exact decimal arithmetic and a single preregistered rounding rule so exact-match scoring is unambiguous.",
+          "implementation_details": "Use Python decimal.Decimal with context precision at least 100. Compute the exact result of each arithmetic operation with Decimal objects only; never use binary float during target generation. Define the canonical answer string as the exact result rounded to exactly two decimal places using round-half-up. Implement this with Decimal.quantize using Decimal('0.01') and ROUND_HALF_UP. Store both the exact unrounded result and the rounded canonical string. Format every canonical answer with exactly two digits after the decimal point, including trailing zeros and a leading minus sign when negative.",
+          "additional_references": [
+            {
+              "paper_title": "Numeracy for language models: Evaluating and improving their ability to predict numbers",
+              "explanation": "Supports exact numeric normalization and strict canonical answer generation.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Auxiliary arithmetic-structure annotations",
+          "element_description": "Mechanistic error analysis benefits from side information about result magnitude, sign, and carry-like structure. These are secondary analysis covariates, not part of the correctness definition.",
+          "implementation_details": "For each Block A item compute and store sign_a, sign_b, sign_result, absolute_result_magnitude_bin, result_integer_digit_count, result_fractional_nonzero_flag before final rounding, and rounding_sensitive_flag indicating whether the exact result changes under two-decimal rounding. For exploratory carry/borrow analyses, multiply each operand by 1000 and convert to signed integers representing thousandths, then compute columnwise carry or borrow structure on these scaled integers for addition and subtraction. Save carry_count_scaled and borrow_count_scaled as exploratory fields. Clearly document that these fields are not used in scoring and do not alter the canonical answer.",
+          "additional_references": [
+            {
+              "paper_title": "Reverse that number! decoding order matters in arithmetic learning",
+              "explanation": "Motivates digitwise analyses and first-error-position summaries on arithmetic outputs.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This is the core high-control benchmark for testing how exact arithmetic performance depends on operand size and operation type.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "MGSM multilingual arithmetic benchmark (Block B)",
+      "description": "Include multilingual arithmetic word problems to test whether arithmetic trends generalize from symbolic expressions to natural language, and whether reasoning language or translation changes arithmetic performance.",
+      "specific_elements": [
+        {
+          "element_name": "MGSM data acquisition and preservation",
+          "element_description": "MGSM provides 250 arithmetic problems in 11 languages. The released wording must be preserved exactly to avoid introducing uncontrolled paraphrase effects.",
+          "implementation_details": "Acquire all MGSM items in English, Bengali, Chinese, French, German, Japanese, Russian, Spanish, Swahili, Telugu, and Thai. Preserve the released wording exactly, including punctuation and numeral formatting. Keep gold answers as Arabic numerals. Assign each unique problem a stable item_id shared across languages, and a separate language code per instance. Store all raw texts as UTF-8 in an immutable benchmark snapshot. Do not normalize or rewrite the benchmark text.",
+          "additional_references": [
+            {
+              "paper_title": "Language Models are Multilingual Chain-of-Thought Reasoners",
+              "explanation": "Provides direct methodological precedent for MGSM language conditions and reasoning-language manipulations.",
+              "paper_relevance": 10
+            },
+            {
+              "paper_title": "XTREME: A Massively Multilingual Multi-task Benchmark",
+              "explanation": "Supports careful multilingual benchmarking practice and language-specific reporting.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://github.com/google-research/url-nlp",
+              "explanation": "Referenced location for MGSM benchmark files."
+            }
+          ]
+        },
+        {
+          "element_name": "Operation and magnitude re-annotation",
+          "element_description": "MGSM does not natively supply labels aligned to the target study, such as operation set, step count, or operand-magnitude bins. These must be derived from official solutions.",
+          "implementation_details": "Using the English source item and official GSM8K solution, have two independent annotators label each item for: primary operation set used in the official solution (one or more of add, sub, mul, div), number of reasoning steps, maximum operand magnitude in the problem statement, maximum intermediate magnitude in the official solution, unit-conversion presence, and whether the final step is arithmetic or answer extraction. Provide a written rubric before annotation. Use a third annotator to adjudicate disagreements. Record confidence scores and final adjudicated labels. Propagate these labels to all language versions via item_id. If using any programmatic pre-annotation, manually verify 100% of items afterward.",
+          "additional_references": [
+            {
+              "paper_title": "Training verifiers to solve math word problems",
+              "explanation": "Provides the official GSM8K solutions needed for reliable operation and step annotations.",
+              "paper_relevance": 9
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Language and translation prompt conditions",
+          "element_description": "The benchmark should isolate whether arithmetic depends on the language of the problem, the language of reasoning, or translation to English.",
+          "implementation_details": "Implement four MGSM prompt conditions: DIRECT, NATIVE_COT, EN_COT, TRANSLATE_EN. DIRECT: ask for the final answer only, phrased in the source language when possible. NATIVE_COT: instruct the model to reason in the same language as the problem and give the final answer as Arabic numerals. EN_COT: keep the original non-English question but instruct the model to reason in English and end with the answer as Arabic numerals. TRANSLATE_EN: for non-English items only, translate the problem to English using one fixed translation service and version for the whole study, store the translated text permanently, and then ask the model to solve it in English. Record translation API version, date, and translated string. Keep answers as Arabic numerals in all four conditions.",
+          "additional_references": [
+            {
+              "paper_title": "Language Models are Multilingual Chain-of-Thought Reasoners",
+              "explanation": "Direct precedent for DIRECT, NATIVE-COT, EN-COT, and translation-based conditions on MGSM.",
+              "paper_relevance": 10
+            },
+            {
+              "paper_title": "Few-shot Learning with Multilingual Language Models",
+              "explanation": "Supports comparing native-language and English-based prompting for multilingual tasks.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://cloud.google.com/translate/docs",
+              "explanation": "Example documentation for a fixed translation API if TRANSLATE_EN is implemented."
+            }
+          ]
+        }
+      ],
+      "relevance_explanation": "This aspect tests whether arithmetic competence and prompt effects observed on symbolic inputs generalize to multilingual natural-language arithmetic.",
+      "relevance": 9
+    },
+    {
+      "aspect_name": "MATH401 grouped arithmetic-expression benchmark (Block C)",
+      "description": "Include structured arithmetic-expression problems to probe long expressions, decimals, exponentiation, and calculator-style computations that are not captured by binary symbolic arithmetic or word problems.",
+      "specific_elements": [
+        {
+          "element_name": "Item set and published grouping",
+          "element_description": "MATH401 is heterogeneous by design, so preserving the original groups is necessary for valid interpretation and comparability to prior work.",
+          "implementation_details": "Use all 401 MATH401 items. Preserve group 0 and groups 1 through 16 exactly as published. Store fields item_id, group_id, item_text, and published group semantics. Also store the easy/hard partition: easy groups 1, 2, 3, 5, 6, 7, 8, 11 and hard groups 4, 9, 10, 12, 13, 14, 15, 16. Do not collapse all items into a single operation label because many items involve multiple operations or non-elementary functions.",
+          "additional_references": [
+            {
+              "paper_title": "Large language models are zero-shot reasoners",
+              "explanation": "Provides context for zero-shot reasoning prompts applied to calculator-style mathematical expressions.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://github.com/GanjinZero/math401-llm",
+              "explanation": "Repository associated with MATH401 items and group metadata."
+            }
+          ]
+        },
+        {
+          "element_name": "Ground-truth evaluation backend",
+          "element_description": "Expression tasks include decimals, powers, irrationals, trigonometric functions, and logarithms, so the evaluator must compute targets independently with exact conventions.",
+          "implementation_details": "Implement ground-truth computation in Python. Use decimal.Decimal where exact decimal arithmetic is appropriate, fractions.Fraction for exact rational calculations where useful, and the math library for trig and log operations exactly as written in the item text. Respect degrees versus radians exactly as specified. For logarithms, use the requested base. Compute a high-precision intermediate value, then normalize the benchmark target to exactly four decimal places. Mark a prediction correct if the parsed numeric value differs from the normalized target by less than 1e-3. Store the raw high-precision value and the four-decimal canonical value.",
+          "additional_references": [
+            {
+              "paper_title": "How well do large language models perform in arithmetic tasks?",
+              "explanation": "Supports careful rounding and normalization conventions for calculator-style numeric tasks.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Prompt conditions for expression solving",
+          "element_description": "Prior work suggests that explicit step-by-step prompting can help some tasks but hurt others in expression evaluation, so this block requires separate prompt manipulations.",
+          "implementation_details": "Run at least three prompt conditions on MATH401: NONE, CALCULATE, ZERO_SHOT_COT. NONE presents the original item text unchanged. CALCULATE prepends 'Calculate:' to the original item text. ZERO_SHOT_COT prepends 'Let us solve this equation step by step.' Optionally add a system message that requires the final answer in decimal form with four digits after the decimal point; if used, keep it constant within that condition for all items. Use deterministic decoding. Save raw outputs because later qualitative analysis should inspect operator confusion, approximation behavior, and expression truncation.",
+          "additional_references": [
+            {
+              "paper_title": "Large language models are zero-shot reasoners",
+              "explanation": "Provides standard zero-shot CoT prompts relevant to expression-solving comparisons.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect tests whether arithmetic trends and prompt sensitivities extend to complex expression evaluation and richer numeric formats.",
+      "relevance": 8
+    },
+    {
+      "aspect_name": "Prompt-format factorial design",
+      "description": "Define benchmark-specific prompt conditions that isolate direct answering, operator wording, explicit reasoning, and selected few-shot manipulations while keeping content matched across conditions.",
+      "specific_elements": [
+        {
+          "element_name": "Block A prompt conditions",
+          "element_description": "The symbolic block needs prompt variants that differ only in the intended surface manipulation so prompt effects can be attributed cleanly.",
+          "implementation_details": "Instantiate every Block A item under exactly four prompt conditions. DIRECT_OPER user prompt: 'Directly return the answer as a decimal number with exactly two digits after the decimal point and no commas. What is the result of {a} {op_symbol} {b}?' DIRECT_CONTEXT user prompt: same as DIRECT_OPER except the operator is a word: plus, minus, times, divided by. PLAIN_COT user prompt: 'Solve step by step, then on the final line write exactly: The answer is XX.XX. What is the result of {a} {op_symbol} {b}?' FORMAT_ONLY_SYSTEM condition: same user prompt as DIRECT_OPER plus a system message that instructs the model to output only a signed fixed-two-decimal number. Choose operator symbols once globally before execution; use either ASCII or Unicode consistently for all items and all models unless a given API rejects a character, in which case switch globally for all models and document the change before the run.",
+          "additional_references": [
+            {
+              "paper_title": "Chain-of-thought prompting elicits reasoning in large language models",
+              "explanation": "Grounds explicit CoT prompting as a primary manipulation against direct answering.",
+              "paper_relevance": 10
+            },
+            {
+              "paper_title": "Large language models are zero-shot reasoners",
+              "explanation": "Supports simple step-by-step trigger phrasing for reasoning prompts.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Few-shot policy",
+          "element_description": "Few-shot prompting can change both arithmetic and formatting behavior, but it also changes prompt length and tokenization. It therefore must be limited, explicit, and logged exactly.",
+          "implementation_details": "Apply few-shot only to predeclared subsets. For Block A, create one 5-shot exemplar set per operation using examples spanning k values 1, 2, 3, 4, and 6 if available. Use only items outside the Block A test set. Keep exemplar order fixed across all models. For MGSM, if full factorial few-shot evaluation is too expensive, apply 6-shot only to one flagship open model and one flagship closed model; otherwise apply it to all models that fit within context limits. For multilingual few-shot on MGSM, define three exemplar-language regimes: NATIVE_EXEMPLARS, ENGLISH_EXEMPLARS, MULTILINGUAL_EXEMPLARS. Before execution, count tokens with each model\u2019s native tokenizer. If a few-shot prompt exceeds 90% of the model context window, reduce shot count by the exact descending rule 6 to 4 to 2 to 1 and log the actual number used. Never truncate prompt text.",
+          "additional_references": [
+            {
+              "paper_title": "Making pre-trained language models better few-shot learners",
+              "explanation": "Supports controlled exemplar selection and highlights sensitivity of few-shot performance to exemplar choice.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Prompt registry and lexical control",
+          "element_description": "Small wording changes can alter arithmetic behavior substantially, so prompt strings must be immutable experimental objects.",
+          "implementation_details": "Create a prompt registry directory with one text file per condition and one machine-readable registry table. Each entry must include prompt_condition, benchmark_block, whether a system message is used, exact literal text with all spaces and line breaks preserved, expected answer marker, and parser branch assumptions. For few-shot prompts, store the exact demonstration texts in order. For chat APIs, save complete message arrays with role labels. For completion-style models, save the final concatenated prompt string. Do not change capitalization, punctuation, or line breaks across examples within a condition. If any micro-ablation is added, such as alternative delimiters or operator symbols, define it as a distinct exploratory condition rather than silently varying the main condition.",
+          "additional_references": [
+            {
+              "paper_title": "Fantastically Ordered Prompts and Where to Find Them",
+              "explanation": "Supports strict control of prompt surface form and exemplar ordering.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect directly manipulates prompt format while preserving paired item comparisons, which is necessary to answer how prompt structure affects arithmetic.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Deterministic decoding, request policy, and failure handling",
+      "description": "Use deterministic generation settings for the primary benchmark, quantify any residual nondeterminism explicitly, and handle infrastructure failures without introducing bias.",
+      "specific_elements": [
+        {
+          "element_name": "Primary decoding settings",
+          "element_description": "Arithmetic exact-match evaluation should use deterministic decoding by default so performance reflects the model's preferred answer rather than sampling variation.",
+          "implementation_details": "For all primary trials set temperature to 0, top_p to 1, frequency penalty to 0, presence penalty to 0, and greedy decoding where the API exposes it. Set max_output_tokens to 64 for Block A, 512 for MGSM chain-of-thought conditions, and 256 for MATH401 unless pilot tests show these values truncate valid outputs. Use no stop sequence by default. If a stop sequence is necessary for a particular API to prevent continuation into a new question, choose one fixed stop sequence per block and verify on pilot items that it does not truncate valid answers.",
+          "additional_references": [
+            {
+              "paper_title": "Show your work: Scratchpads for intermediate computation with language models",
+              "explanation": "Supports preserving deterministic reasoning outputs and full traces for arithmetic analysis.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Residual nondeterminism check",
+          "element_description": "Some hosted APIs produce small output variation even at temperature 0, which must be measured rather than ignored.",
+          "implementation_details": "For every API model, run a 100-item pilot subset sampled across blocks and prompt conditions. Query each prompt three times with identical settings. Compare raw outputs byte-for-byte. If at least 99 of the 100 prompts are identical across all three runs, keep single-run deterministic scoring as the primary analysis and record the pilot result. Otherwise mark the model as nondeterministic. For nondeterministic models, continue to use the first run as the primary score for all items to preserve comparability, but store repeated outputs on a calibration subset and report repeated-query variability separately.",
+          "additional_references": [
+            {
+              "paper_title": "Self-Consistency Improves Chain-of-Thought Reasoning in Language Models",
+              "explanation": "Provides a standard secondary framework for stochastic aggregation, which should remain separate from the deterministic primary benchmark.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Infrastructure failure policy",
+          "element_description": "Infrastructure failures should be retried systematically, but semantic failures such as malformed outputs should never be retried because they are part of model behavior.",
+          "implementation_details": "On rate limit, timeout, or transport failure, retry up to two additional times with exponential backoff of 2 seconds then 8 seconds. If the third attempt also fails and no model output text is returned, mark the trial as infrastructure_missing. Exclude infrastructure_missing only from denominators where absolutely no output text exists. If any partial or truncated output exists, archive it, attempt parsing, and include the trial in denominators. Record the original error code, the number of retries, and whether any partial text was observed.",
+          "additional_references": [],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect eliminates avoidable generation noise and makes missingness transparent, improving the validity of arithmetic accuracy and error-pattern estimates.",
+      "relevance": 9
+    },
+    {
+      "aspect_name": "Tokenizer introspection and numeral-representation diagnostics",
+      "description": "Quantify how each model tokenizes numerals globally and on actual benchmark prompts, then run a controlled auxiliary formatting manipulation to test whether tokenization mediates operand-size effects.",
+      "specific_elements": [
+        {
+          "element_name": "Tokenizer probe dataset",
+          "element_description": "Numeric tokenization must be measured directly rather than inferred from model family because segmentation patterns vary across tokenizers and can strongly affect arithmetic.",
+          "implementation_details": "For each model-tokenizer pair, tokenize the following strings: digits 0 through 9; all two-digit strings 00 through 99; all three-digit strings 000 through 999; all four-digit strings 0000 through 9999; 10,000 uniformly sampled 5- to 20-digit integers; grouped variants such as '1,234', '12,345', '1 234', '123#456'; decimal strings such as '0.1', '12.34', '12345.678'; and signed variants if negatives appear anywhere in the study. Record raw string, token IDs, token strings, token count, whether the string is a single token, and character offsets where available. Summarize by digit length with the fraction of strings that are single tokens, mean tokens per digit, and the most common segmentation patterns.",
+          "additional_references": [
+            {
+              "paper_title": "Byte Pair Encoding is Suboptimal for Language Model Pretraining",
+              "explanation": "Provides background on why subword vocabularies produce irregular numeric segmentation.",
+              "paper_relevance": 7
+            },
+            {
+              "paper_title": "SentencePiece: A simple and language independent subword tokenizer and detokenizer for Neural Text Processing",
+              "explanation": "Relevant for tokenizer families based on SentencePiece or related segmentation schemes.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://github.com/openai/tiktoken",
+              "explanation": "Official tokenizer implementation for OpenAI-family tokenizers."
+            },
+            {
+              "link_url": "https://huggingface.co/docs/tokenizers/",
+              "explanation": "Tokenizer tooling for inspecting segmentation in open-weight models."
+            }
+          ]
+        },
+        {
+          "element_name": "Per-example tokenization covariates",
+          "element_description": "Global tokenizer summaries are not enough because prompt wording and separators change tokenization on actual benchmark items.",
+          "implementation_details": "For every benchmark trial where tokenizer access exists, compute total prompt token count, token count for operand A substring, token count for operand B substring, token count for the gold output string, and tokens_per_digit for each operand. Store these values in a separate tokenization table keyed by trial_id. If an API exposes only total prompt tokens and not exact token boundaries, store the coarse total as an exploratory covariate and mark fine-grained fields as unavailable rather than guessed.",
+          "additional_references": [
+            {
+              "paper_title": "Efficient numeracy in language models through single-token number embeddings",
+              "explanation": "Supports treating numeral tokenization granularity as a mechanistically meaningful predictor of arithmetic ability.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Auxiliary representation-manipulation study",
+          "element_description": "A tightly controlled subset with alternative digit grouping tests whether performance changes are driven by tokenization alignment rather than by arithmetic content itself.",
+          "implementation_details": "Create a separate 1,300-item addition-only subset using ordered addend lengths and answer-length controls modeled on the extracted tokenization literature. Include the 13 triplets of (lenA, lenB, lenSum) among 7, 8, and 9 digits, with 100 unique problems per triplet. Evaluate this subset on one small open model, one large open model, and one strong closed model under at least four representation arms: raw ungrouped digits, right-grouped commas every three digits, right-grouped alternate delimiter '#', and a left-grouped control that roughly matches token count but not least-significant alignment. Keep prompt wording fixed across arms. Score exact-match, digit-match, dlength, parse failures, and token-boundary-localized errors. Treat this as a secondary mechanistic analysis and report it separately from the main three-block benchmark.",
+          "additional_references": [
+            {
+              "paper_title": "Positional description matters for transformers arithmetic",
+              "explanation": "Motivates testing alternative numeral serializations and explicit positional formatting.",
+              "paper_relevance": 8
+            },
+            {
+              "paper_title": "Tokenization counts: the impact of tokenization on arithmetic in frontier LLMs",
+              "explanation": "Directly motivates grouped-digit and token-boundary arithmetic analyses.",
+              "paper_relevance": 10
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect converts tokenization from a hidden confound into an explicit explanatory variable and tests whether numeral representation mediates arithmetic scaling with size.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Output extraction, canonical parsing, and normalization",
+      "description": "Implement fixed benchmark-specific parsers that extract one answer from each raw model output. Parsing must be deterministic, benchmark-aware, and frozen before full scoring.",
+      "specific_elements": [
+        {
+          "element_name": "Block A parser",
+          "element_description": "Block A outputs are fixed-two-decimal numbers, but some prompt conditions allow intermediate reasoning. The parser must therefore handle both answer-only and chain-of-thought outputs without subjective rescue.",
+          "implementation_details": "For DIRECT_OPER, DIRECT_CONTEXT, and FORMAT_ONLY_SYSTEM conditions, search the generated output for the first substring matching the regex -?\\d+\\.\\d{2}. Use the first match only. For PLAIN_COT, first inspect the final non-empty line. If it contains a match to -?\\d+\\.\\d{2}, extract that match. Otherwise search the full output and take the last substring matching -?\\d+\\.\\d{2}. Before matching, do not rewrite text except for preserving raw output and creating a normalized view where commas and thin spaces inside numerals are removed. If no valid match exists, set parse_status to missing. Save raw_output, extracted_substring, normalized_prediction_string, parser_branch, and failure_code.",
+          "additional_references": [
+            {
+              "paper_title": "Show your work: Scratchpads for intermediate computation with language models",
+              "explanation": "Relevant for deterministic parsing of outputs containing multiple intermediate numerals.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "MGSM parser",
+          "element_description": "MGSM outputs often contain explanations plus several numerals, so the final-answer heuristic must be simple, deterministic, and language-agnostic.",
+          "implementation_details": "Inspect the final two non-empty lines of the output. Extract all integer-like tokens matching -?\\d+ from those lines and choose the last one. If none are found, search the entire output and choose the last integer-like token. Remove commas and embedded spaces inside numerals before parsing. Do not attempt to convert spelled-out numerals in the primary analysis. If no parseable integer token exists, set parse_status to missing.",
+          "additional_references": [
+            {
+              "paper_title": "Training verifiers to solve math word problems",
+              "explanation": "Supports deterministic numeric extraction for math-word-problem outputs.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "MATH401 parser",
+          "element_description": "Expression-solving outputs may include fractions, equations, and parenthetical comments. The parser should mirror prior heuristics while staying fully auditable.",
+          "implementation_details": "Create a parser branch that first removes substrings inside parentheses for extraction only, while retaining raw output unchanged in logs. Then scan the remaining text for the last numeric token, allowing signs, decimal points, and simple fractions. If the last token is a fraction and the benchmark item expects a decimal output, convert the fraction to decimal before comparison unless the benchmark repository specifies a contrary rule. Normalize to a numeric value and compare with the four-decimal target under the tolerance rule. If no numeric token is found, set parse_status to missing.",
+          "additional_references": [
+            {
+              "paper_title": "Evaluating transformer language models on arithmetic operations using number decomposition",
+              "explanation": "Relevant for handling multiple numeric forms and decomposition-style arithmetic outputs.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "No hand correction rule",
+          "element_description": "Manual output correction would create evaluator degrees of freedom and invalidate reproducibility.",
+          "implementation_details": "Never hand-edit, reparse by inspection, or otherwise manually rescue outputs. During the pilot phase, if the parser is found to violate its preregistered intent, fix the parser, rerun pilot scoring, and freeze a versioned parser implementation before the full run. After the full run begins, only correct software bugs that contradict the frozen written specification, and if that occurs, rescore the full dataset and publish before/after audit logs.",
+          "additional_references": [],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect ensures that arithmetic scores and error patterns reflect a fixed evaluator rather than subjective post-processing choices.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Primary metrics, secondary metrics, and derived summaries",
+      "description": "Use strict correctness as the primary endpoint and graded digit- and numeric-level metrics as diagnostics. These complementary measures separate exact arithmetic from formatting success, approximate competence, and structural output failure.",
+      "specific_elements": [
+        {
+          "element_name": "Primary exact-correctness metrics",
+          "element_description": "Exact correctness must be defined separately for each benchmark block according to its canonical answer format.",
+          "implementation_details": "For Block A, define exact_match as exact equality between the parsed prediction string and the canonical two-decimal target string. For MGSM, define exact_match as exact equality between the parsed final integer string and the gold Arabic numeral string. For MATH401, define correct as absolute error less than 1e-3 after both prediction and gold are normalized to the benchmark\u2019s four-decimal convention. Compute Wilson 95% confidence intervals for all proportions. Always report denominator n explicitly for every metric cell.",
+          "additional_references": [
+            {
+              "paper_title": "Training verifiers to solve math word problems",
+              "explanation": "Provides precedent for exact solve-rate reporting on arithmetic word problems.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Digit-match and dlength",
+          "element_description": "Digit-match and output-length error distinguish local arithmetic slips from severe structural failures and are especially informative when exact match is low.",
+          "implementation_details": "For integer or decimal outputs, align integer parts right-to-left and decimal parts left-to-right. Compute digit_match as the number of matching ground-truth digit positions divided by the total number of ground-truth digit positions, counting any missing predicted digits as mismatches. Compute dlength as the sum of absolute differences in aligned part lengths. For Block A also compute sign_correct, integer_part_digit_match, and fractional_part_digit_match separately. For MGSM use right-aligned digit_match and integer dlength only. For MATH401, compute digit_match and dlength on the normalized four-decimal string when the output is parseable as a decimal. If a prediction is missing or unparsable, set digit_match to 0 and dlength to the full ground-truth length.",
+          "additional_references": [
+            {
+              "paper_title": "Analysing mathematical reasoning abilities of neural models",
+              "explanation": "Supports digit-level evaluation beyond all-or-nothing exact accuracy.",
+              "paper_relevance": 6
+            },
+            {
+              "paper_title": "Number Cookbook: Number Understanding of Language Models and How to Improve It",
+              "explanation": "Direct precedent for digit-match and dlength metrics in numeric evaluation.",
+              "paper_relevance": 9
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Numeric error and parse-failure metrics",
+          "element_description": "Near-miss errors and missing outputs carry mechanistic information that exact match alone misses.",
+          "implementation_details": "For Block A compute absolute_error, relative_error = |yhat - y| divided by max(|y|,1), non_number_rate, and a rounding_mismatch_only flag when a prediction differs only by plausible alternative rounding. For MGSM compute per-language exact accuracy, macro-average across languages, and optional absolute error on parseable numeric outputs. For MATH401 compute clipped relative error = min(10, |yhat-y| divided by max(|y|,1)) and non_number_ratio. Report these by model and prompt condition and by major item slices such as operation, language, or group.",
+          "additional_references": [
+            {
+              "paper_title": "Numeracy for language models: Evaluating and improving their ability to predict numbers",
+              "explanation": "Supports partial-credit numeric metrics and parse-failure analysis.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Derived size-generalization summaries",
+          "element_description": "Threshold summaries help compare how quickly performance degrades with size even when short-length accuracy is similar.",
+          "implementation_details": "For Block A compute well_learned_size as the largest tested k for which mean digit_match is at least 0.90, and performance_preserving_size as the largest tested k for which mean digit_match is at least 0.50. Do not extrapolate beyond observed k values. Report these summaries separately for each model, operation, and prompt condition.",
+          "additional_references": [
+            {
+              "paper_title": "Length Generalization in Arithmetic Transformers",
+              "explanation": "Provides precedent for threshold-style summaries of arithmetic scaling with length.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "These metrics jointly quantify exact arithmetic, approximate numeric competence, and structural output failure, which is necessary for mechanistic interpretation.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Hierarchical error taxonomy and mechanistic error analysis",
+      "description": "Convert incorrect outputs into structured observations tied to operation, size, prompt format, and tokenizer structure. The taxonomy is deterministic, precedence-ordered, and designed to distinguish local arithmetic slips from formatting collapse, misalignment, and magnitude heuristics.",
+      "specific_elements": [
+        {
+          "element_name": "Primary error taxonomy",
+          "element_description": "A precedence-ordered taxonomy is required because many wrong outputs satisfy multiple heuristics at once. The primary label provides reproducible counting, while secondary flags preserve overlapping structure.",
+          "implementation_details": "Assign one primary category to every incorrect Block A prediction and every parseable incorrect MATH401 arithmetic-style prediction using this exact order: missing_or_non_number; tokenization_or_format_corruption (letters, internal spaces, malformed numeric token); sign_error; decimal_shift_error; rounding_mismatch_only; off_by_one_cent_or_unit; magnitude_catastrophic (ratio error greater than 10 when truth is nonzero or clear order-of-magnitude mismatch); wrong_length_high_overlap (dlength greater than 0 and overlap digit_match relatively high, operationalized as at least 0.60 over overlapping digits); same_length_digit_substitution (dlength equals 0 and one or more digits wrong); suspected_carry_or_borrow_inconsistency; other. In addition, compute nonexclusive secondary flags: off_by_one_integer, off_by_one_cent, operand_echo, prefix_truncation, suffix_truncation, first_error_at_token_boundary, and answer_length_mismatch_due_to_final_carry when definable.",
+          "additional_references": [
+            {
+              "paper_title": "Arithmetic without algorithms: Language models solve math with a bag of heuristics",
+              "explanation": "Supports interpreting heterogeneous arithmetic failures as signatures of multiple heuristics rather than a single coherent algorithm.",
+              "paper_relevance": 8
+            },
+            {
+              "paper_title": "Limitations of language models in arithmetic and symbolic induction",
+              "explanation": "Provides conceptual precedent for structured arithmetic error categories.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Carry and borrow counterfactual diagnostics",
+          "element_description": "Carry- and borrow-related counterfactual outputs can distinguish digitwise arithmetic with faulty propagation from more global or unrelated mistakes.",
+          "implementation_details": "For integer-aligned auxiliary analyses, represent operands as right-aligned digit arrays. For addition compute the true carry structure and generate these counterfactual outputs: no_carry_sum, single_omitted_carry at each carry column, and single_spurious_carry at each non-carry column. For subtraction compute no_borrow_difference, single_omitted_borrow at each borrow column, and single_spurious_borrow analogs. If the predicted output exactly matches one of these counterfactuals, assign the corresponding secondary flag. For Block A decimal problems, run the same diagnostics only on scaled integers after multiplying operands by 1000, and clearly mark the resulting labels exploratory because the primary target is the rounded two-decimal answer.",
+          "additional_references": [
+            {
+              "paper_title": "The lookahead limitation: Why multi-operand addition is hard for LLMs",
+              "explanation": "Supports explicit carry-sensitive analysis and the importance of borderline sum columns.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Misalignment and token-boundary analyses",
+          "element_description": "Some wrong answers are globally shifted or chunk-boundary aligned rather than locally wrong. These patterns can reveal tokenization-sensitive heuristics.",
+          "implementation_details": "For integer-style auxiliary addition analyses, implement an offset-sum detector. For offsets s in -10 through -1 and 1 through 10, compute offsetsum(A,B,s) = A multiplied by 10 to the max of 0 and s plus B multiplied by 10 to the max of 0 and negative s. Convert each offsetsum to a decimal string and compute the longest common prefix with the predicted string. If the maximum prefix length is at least 6 digits and the prediction is not exactly operand A or operand B, assign secondary flag misalignment and store best_offset and max_prefix_length. Separately, locate the first mismatching digit and determine whether it lies at a token boundary under the native tokenizer or under the fixed three-digit grouping in the auxiliary formatting study. Summarize these rates by model and prompt condition.",
+          "additional_references": [
+            {
+              "paper_title": "Tokenization counts: the impact of tokenization on arithmetic in frontier LLMs",
+              "explanation": "Directly motivates token-boundary and misalignment analyses for arithmetic outputs.",
+              "paper_relevance": 10
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Qualitative exemplar archive",
+          "element_description": "Representative raw examples are needed to validate taxonomy labels and make the mechanistic interpretation auditable.",
+          "implementation_details": "For every primary error category with at least 20 examples, randomly sample 20 examples stratified by model and prompt condition. Store prompt text, gold answer, raw output, extracted answer, primary label, all secondary flags, and a short deterministic explanation string generated by the labeling code. Save these examples in JSONL and optionally produce a human-readable appendix table. Do not curate examples manually based on dramatic appearance.",
+          "additional_references": [],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect operationalizes the question of what arithmetic error patterns reveal by turning wrong outputs into structured mechanistic evidence.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Trace elicitation and faithfulness subset",
+      "description": "On a restricted subset of items, compare answer-only and reasoning-trace prompts and test whether explicit traces are causally implicated in arithmetic outputs or are merely post hoc narratives.",
+      "specific_elements": [
+        {
+          "element_name": "Trace subset construction",
+          "element_description": "Full trace-faithfulness evaluation is too expensive for every item, but a stratified subset can test whether explicit reasoning changes arithmetic accuracy and error structure.",
+          "implementation_details": "Create a 1,600-item trace subset. Draw 800 items from Block A and 800 from MGSM. For Block A, sample 50 items from each operation crossed with k in {1,3,6} under two prompt conditions: DIRECT_OPER and PLAIN_COT. For MGSM, sample items balanced over language, step-count bin, and operation-label set under DIRECT and NATIVE_COT. For all selected trials, save the full raw trace, segment it using newline-first segmentation, and record whether an explicit final answer marker appears and how many segmented steps are present.",
+          "additional_references": [
+            {
+              "paper_title": "On the Faithfulness of Chain-of-Thought",
+              "explanation": "Supports distinguishing raw generated traces from faithful computational traces.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Manual trace-quality annotation",
+          "element_description": "Structured human annotation is needed to distinguish a correct plan with arithmetic slips from irrelevant or post hoc rationalization.",
+          "implementation_details": "Randomly sample 480 traced outputs from the trace subset, stratified by block, operation family, and difficulty. Have two independent annotators score each with the following fields: step_exists, step_relevant, decomposition_correct, arithmetic_subcalculation_correct, carry_or_borrow_handled_correctly where applicable, operator_selection_correct, and leads_consistently_to_next_step. Also assign an overall 0 to 4 trace-quality score, where 0 means no useful trace, 1 means no meaningful progress, 2 means partial progress but wrong path, 3 means correct plan with arithmetic execution error, and 4 means correct plan and correct execution. Use a third annotator for adjudication. Compute Cohen's kappa on the overlapping double-annotated subset.",
+          "additional_references": [
+            {
+              "paper_title": "Towards Faithfully Interpretable NLP Systems: How Should We Define and Evaluate Faithfulness?",
+              "explanation": "Provides conceptual guidance for evaluating explanation faithfulness and trace quality.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Trace intervention protocol",
+          "element_description": "Faithfulness should be tested causally by editing intermediate values in a model\u2019s own trace and observing whether the continued solution follows the edit.",
+          "implementation_details": "From traced outputs with manual score 4, select up to 120 examples containing at least one explicit intermediate numeric value before the final answer. For each example identify the first unambiguous intermediate number. Create two edited continuations by truncating the original output at the end of the sentence containing that number, replacing only that numeric substring with one small perturbation and one larger perturbation, then appending 'Continue from here and end with the final answer in the same format.' Query the same model at temperature 0. Compute the oracle final answer implied by propagating the edited intermediate through the remaining arithmetic. Classify outcomes as follows_intervention, ignores_intervention, self_corrects_against_intervention, unrelated_new_chain, or parse_failure. Also run matched input-level interventions that alter a source number in the original problem statement without providing the original trace, to separate problem sensitivity from trace sensitivity.",
+          "additional_references": [
+            {
+              "paper_title": "Evaluating the Faithfulness of Generated Explanations via Interventions",
+              "explanation": "Provides the intervention logic for testing whether generated explanations causally affect predictions.",
+              "paper_relevance": 9
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect tests whether prompt-induced reasoning traces are actually used in arithmetic generation and therefore helps interpret prompt-format effects mechanistically.",
+      "relevance": 8
+    },
+    {
+      "aspect_name": "Open-model mechanistic sub-study",
+      "description": "For selected open-weight models only, connect arithmetic performance to internal heads, MLPs, and neurons using causal patching and layerwise probing on tightly controlled single-token arithmetic prompts.",
+      "specific_elements": [
+        {
+          "element_name": "Model and prompt selection for white-box analysis",
+          "element_description": "White-box analysis requires open models and simple prompt forms where the arithmetic result is a single next token. This restricts the mechanistic analysis to a subset of the full benchmark while keeping it tractable.",
+          "implementation_details": "Select one small open model and one large open model from the main roster that are supported by TransformerLens or an equivalent hook library. Determine the largest integer that remains a single token under each tokenizer by tokenizing increasing integers until tokenization splits. Construct prompts of the form 'op1 operator op2 =' using only cases where op1, op2, and the gold result are all single tokens. Use operators +, -, *, and floor-style or integer-style division only if the result token is single-token and nonnegative. Sample 100 correctly answered prompts per operator for circuit discovery and a disjoint 100 correctly answered prompts per operator for held-out evaluation.",
+          "additional_references": [
+            {
+              "paper_title": "TransformerLens",
+              "explanation": "Provides standard tooling for activation extraction, patching, and intervention analysis in open transformer models.",
+              "paper_relevance": 10
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://github.com/TransformerLensOrg/TransformerLens",
+              "explanation": "Primary library for hooking and patching open transformer models."
+            }
+          ]
+        },
+        {
+          "element_name": "Activation patching and circuit ranking",
+          "element_description": "Activation patching identifies which components causally support arithmetic predictions and whether these components are operator-specific or shared.",
+          "implementation_details": "For each clean prompt with correct answer r, choose a counterfactual prompt with a different correct answer r'. Cache all activations on the counterfactual run. Then rerun the clean prompt while replacing one component activation at a time with the corresponding counterfactual activation. Start with every attention head output and every MLP output at every sequence position. Rank components using a controlled-logit change metric on the correct answer token. Aggregate component effects by operator. Build candidate circuits from top-ranked components and test circuit faithfulness by mean-ablating all non-circuit components using means computed over a broad arithmetic reference set. Report faithfulness as a function of circuit size and separately by operator.",
+          "additional_references": [
+            {
+              "paper_title": "Locating and editing factual associations in GPT",
+              "explanation": "Foundational reference for activation patching and causal tracing methodology.",
+              "paper_relevance": 9
+            },
+            {
+              "paper_title": "A mathematical framework for transformer circuits",
+              "explanation": "Provides conceptual grounding for interpreting transformer computations as circuits of attention and MLP components.",
+              "paper_relevance": 9
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Answer probes and cross-format reuse",
+          "element_description": "Layerwise answer probes and same-instance cross-format patching test whether arithmetic representations are stable across surface prompt formats.",
+          "implementation_details": "Train one linear classifier per layer-position pair to predict the correct single-token answer from residual activations on correctly answered discovery prompts. Use Adam with learning rate 3e-4, batch size 32, and an 80/20 train-test split. Then compare probe accuracy across prompt variants of the same arithmetic instance, for example 'a+b=' versus 'Compute: a+b ='. In a same-instance cross-format patching test, patch candidate arithmetic components between two prompt formats expressing the same arithmetic content. If same-instance cross-format patching is far less disruptive than patching from a different arithmetic instance, interpret this as evidence for format-invariant arithmetic representations at that component.",
+          "additional_references": [
+            {
+              "paper_title": "Probing classifiers: Promises, shortcomings, and advances",
+              "explanation": "Supports disciplined use and interpretation of linear probes on internal model states.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect provides internal causal evidence about how open models produce arithmetic answers and complements the behavioral benchmark with white-box mechanism tests.",
+      "relevance": 8
+    },
+    {
+      "aspect_name": "Statistical analysis plan",
+      "description": "Analyze each benchmark block separately, respect the paired structure induced by reusing the same items across prompt conditions, and use predeclared inferential models and contrasts.",
+      "specific_elements": [
+        {
+          "element_name": "Descriptive tables and uncertainty",
+          "element_description": "Transparent cellwise summaries should be produced before any model-based inference so readers can inspect the raw structure of arithmetic performance.",
+          "implementation_details": "For Block A create tables of exact_match, digit_match, dlength, non_number_rate, absolute_error, and relative_error for each combination of model_id, operation, k, and prompt_condition. For Block B create per-language exact-accuracy tables and macro-average language scores by model and prompt condition, plus sliced analyses by annotated step count, operation set, and maximum operand bin. For Block C create accuracy tables by group, by easy versus hard partition, and by prompt condition. Compute Wilson confidence intervals for proportions and paired bootstrap confidence intervals with 10,000 item-level resamples for prompt-difference estimates.",
+          "additional_references": [
+            {
+              "paper_title": "Practical guidelines for evaluating language models",
+              "explanation": "Supports uncertainty-aware reporting and paired evaluation in LLM benchmarks.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Mixed-effects regression",
+          "element_description": "Mixed-effects models estimate the effects of size, operation, prompt, and model jointly while accounting for repeated prompting of the same items.",
+          "implementation_details": "For Block A fit a mixed-effects logistic regression with exact correctness as the outcome and fixed effects for k, operation, prompt_format, model_id, and tokenization covariates where available, including interactions k by operation, operation by prompt_format, and k by prompt_format. Include a random intercept for example_id because each arithmetic item is queried under multiple prompts. For Block B fit correctness as a function of language, prompt_format, model_id, annotated step_count, max_operand_bin, and operation_labels, with a random intercept for item_id. For Block C fit either logistic or group-level binomial models with predictors prompt_format, easy_hard_flag, group_id, and model_id. Use Benjamini-Hochberg correction within predeclared families of related contrasts.",
+          "additional_references": [
+            {
+              "paper_title": "Fitting linear mixed-effects models using lme4",
+              "explanation": "Practical reference for implementing generalized mixed-effects models for paired benchmark data.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://cran.r-project.org/web/packages/lme4/index.html",
+              "explanation": "Standard implementation resource for generalized mixed-effects models."
+            }
+          ]
+        },
+        {
+          "element_name": "Paired prompt comparisons",
+          "element_description": "Since the same items appear under multiple prompts, paired tests are the correct default for prompt-effect inference.",
+          "implementation_details": "For each within-model prompt comparison on the same item set, use McNemar's test for exact_match and paired bootstrap confidence intervals over items for metrics such as accuracy difference, digit_match difference, and relative_error difference. Always report the number of paired items included after excluding infrastructure_missing with no output. Use independent-sample tests only when prompt conditions are not item-matched, and avoid such designs where possible.",
+          "additional_references": [
+            {
+              "paper_title": "Statistical Tests for Comparing Classifiers",
+              "explanation": "Provides the logic for McNemar-style tests on paired prediction outcomes.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Mechanism-inference interpretation rules",
+          "element_description": "Behavioral signatures must map to mechanistic hypotheses using rules defined before examining results to avoid narrative overfitting.",
+          "implementation_details": "Use the following preregistered interpretation logic. If accuracy declines smoothly with size and errors are mainly localized digit substitutions with low dlength, interpret behavior as partially algorithmic but execution-fragile. If grouped-digit formatting rescues performance, token-boundary errors are elevated, or misalignment labels dominate, infer tokenization-sensitive heuristics. If outputs are often numerically near, rounded, or order-of-magnitude correct but digitwise poor, infer approximate magnitude reasoning rather than exact computation. If nearby perturbations or paraphrase changes produce unstable outputs on simple items, infer brittle case-based or prompt-sensitive pattern matching. If white-box analyses show high faithfulness from sparse head and neuron subsets with operator-specific effects, infer sparse heuristic mixture rather than a single robust arithmetic algorithm.",
+          "additional_references": [
+            {
+              "paper_title": "Case-based or rule-based: how do transformers do the math?",
+              "explanation": "Supports mapping arithmetic behavior to rule-like versus case-based computational interpretations.",
+              "paper_relevance": 8
+            }
+          ],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect specifies how raw benchmark outputs will be converted into quantitative conclusions about arithmetic scaling, prompt effects, and likely computation mechanisms.",
+      "relevance": 10
+    },
+    {
+      "aspect_name": "Logging, audit trail, and artifact release",
+      "description": "Preserve every prompt, response, parser decision, metric, annotation, and software version in machine-readable form. Arithmetic evaluation is unusually sensitive to implementation details, so complete auditability is mandatory.",
+      "specific_elements": [
+        {
+          "element_name": "Per-trial logging schema",
+          "element_description": "Each model call should generate one complete structured record so the full study can be reanalyzed without rerunning inference.",
+          "implementation_details": "Create a long-format results table with one row per trial. Required fields: trial_id, timestamp_utc, model_id, provider_or_local_path, model_version, tokenizer_version, benchmark_block, item_id, prompt_condition, exemplar_condition, full_prompt_text, system_message, decoding_parameters, raw_output_text, parser_version, parser_branch, extracted_answer_string, normalized_numeric_prediction, gold_answer_string, exact_correct, digit_match, dlength, absolute_error, relative_error, non_number_flag, truncation_flag, infrastructure_missing_flag, retry_count, and API error codes if any. Save raw prompts and raw outputs as separate UTF-8 text artifacts as well as in tabular form. For calibration or self-consistency runs, save one row per sampled output plus one aggregation table.",
+          "additional_references": [
+            {
+              "paper_title": "Show your work: Scratchpads for intermediate computation with language models",
+              "explanation": "Supports preserving raw intermediate outputs and audit trails for reasoning analyses.",
+              "paper_relevance": 6
+            }
+          ],
+          "additional_links": []
+        },
+        {
+          "element_name": "Release bundle contents",
+          "element_description": "The final study artifacts must contain everything needed to reconstruct datasets, prompts, parsers, and analyses.",
+          "implementation_details": "Release a versioned artifact bundle containing: Block A generation code and the frozen generated dataset; MGSM annotation tables and scripts to reconstruct the benchmark snapshot where redistribution is restricted; MATH401 item metadata and evaluator code; prompt registry files; tokenizer inspection outputs; parser code with unit tests; error-taxonomy labeling code; statistical analysis scripts; and a manifest listing software versions and file checksums. If benchmark licenses forbid raw data redistribution, release only IDs, metadata, and reconstruction scripts. Archive the bundle with a persistent content hash or DOI.",
+          "additional_references": [
+            {
+              "paper_title": "Towards more rigorous evaluations of language models",
+              "explanation": "Supports complete artifact release and transparent evaluation pipelines for LLM studies.",
+              "paper_relevance": 7
+            }
+          ],
+          "additional_links": [
+            {
+              "link_url": "https://zenodo.org",
+              "explanation": "Suitable archive for code, metadata manifests, and frozen experiment artifacts."
+            }
+          ]
+        },
+        {
+          "element_name": "Pilot validation before full execution",
+          "element_description": "A pilot run is necessary to catch prompt bugs, parser mistakes, and context-length issues before the full benchmark is launched.",
+          "implementation_details": "Run a 200-item pilot before the main experiment. Include 100 Block A items balanced across operations and k values, 50 MGSM items spanning several languages, and 50 MATH401 items spanning easy and hard groups. Evaluate at least one open model and one closed model under all planned primary prompt conditions. Verify context fit, output parseability, target generation correctness, and parser agreement with manual inspection on at least 95% of pilot cases. Freeze prompts, parser version, and benchmark manifests only after the pilot passes. Use the pilot only to fix implementation errors, not to change hypotheses or remove difficult benchmark slices selectively.",
+          "additional_references": [],
+          "additional_links": []
+        }
+      ],
+      "relevance_explanation": "This aspect makes the benchmark fully auditable and reproducible, which is essential for trustworthy claims about arithmetic computation in LLMs.",
+      "relevance": 10
+    }
+  ],
+  "plain_language_description": "This study is designed to answer a focused question: when large language models do arithmetic, how does their accuracy change as the numbers get bigger, as the operation changes, and as the prompt is worded differently, and what do their mistakes suggest about the way they are computing. Before running anything, the researchers preregister the main hypotheses, freeze the model roster and prompt templates, and define exactly how answers will be parsed and scored, so they do not change the rules after seeing the results. The benchmark has three separate parts, each analyzed on its own rather than merged into one score: Block A is a tightly controlled synthetic arithmetic test, Block B is MGSM multilingual arithmetic word problems, and Block C is the MATH401 set of calculator-style expression problems. Block A is the core causal test: it contains exactly 12,000 unique items, balanced across addition, subtraction, multiplication, and division and across operand sizes from 1 to 6 digits before the decimal point, with each operand written as a signed decimal with exactly three digits after the decimal; answers are computed using exact decimal arithmetic, then rounded to exactly two decimal places with standard round-half-up rules. Each Block A item is asked in four matched prompt formats: a direct symbolic question, the same question with operator words such as \"plus\" or \"divided by,\" a step-by-step chain-of-thought version that must end with a fixed answer line, and a version where a system message tells the model to output only a fixed-format number. Block B uses all 250 MGSM items in each of 11 languages, preserving the original wording exactly, and adds carefully annotated labels such as which operations are used, how many reasoning steps are needed, and how large the numbers get; each item is tested with direct answering, reasoning in the source language, reasoning in English, and, for non-English items, solving a fixed English translation. Block C uses all 401 MATH401 items with their published groups kept intact, including easy and hard groupings, and tests prompt variants like leaving the problem unchanged, adding \"Calculate:\", or adding a zero-shot step-by-step instruction, while scoring answers against high-precision computed targets normalized to four decimal places.",
+  "experiment_design_query": "How do LLMs perform arithmetic \u2014 how does accuracy vary with operand size, operation type, and prompt format, and what do the error patterns reveal about how they compute?"
+}

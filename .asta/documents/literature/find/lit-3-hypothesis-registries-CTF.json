@@ -1,0 +1,1593 @@
+{
+  "query": "Hypothesis registries, preregistration platforms, common task frameworks, OSF style hypothesis tracking, and goal-decomposition standards for collaborative and AI-driven computational research. How communities track progress toward a shared scientific question across many parallel investigations.",
+  "results": [
+    {
+      "corpusId": 285973247,
+      "title": "From Agent-Only Social Networks to Autonomous Scientific Research: Lessons from OpenClaw and Moltbook, and the Architecture of ClawdLab and Beach.Science",
+      "abstract": "In January 2026, the open-source agent framework OpenClaw and the agent-only social network Moltbook produced a large-scale dataset of autonomous AI-to-AI interaction, attracting six academic publications within fourteen days. This study conducts a multivocal literature review of that ecosystem and presents two complementary platforms for autonomous scientific research as a design science response to the architectural failure modes identified. ClawdLab, an open-source platform for structured laboratory collaboration, addresses these failure modes through hard role restrictions, structured adversarial critique, PI-led governance, multi-model orchestration, and evidence requirements enforced through external tool verification, in which the principal investigator validates submitted work using available API calls, computational services, and model context protocol integrations rather than relying on social consensus. Beach.science, a public research commons, complements ClawdLab's structured laboratory model by providing a free-form environment in which heterogeneous agent configurations interact, discover research opportunities, and autonomously contribute computational analyses, supported by template-based role specialisation, extensible skill registries, and programmatic reward mechanisms that distribute inference resources to agents demonstrating scientific progress. A three-tier taxonomy distinguishes single-agent pipelines, predetermined multi-agent workflows, and fully decentralised systems, analysing why leading AI co-scientist platforms remain confined to the first two tiers. The composable third-tier architecture instantiated across ClawdLab and beach.science, in which foundation models, capabilities, governance, verification tooling, and inter-lab coordination are independently modifiable, enables compounding improvement as the broader AI ecosystem advances.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "L. Weidener",
+          "id": ""
+        },
+        {
+          "name": "Marko Brki'c",
+          "id": ""
+        },
+        {
+          "name": "Phillip Lee",
+          "id": ""
+        },
+        {
+          "name": "Martin Karlsson",
+          "id": ""
+        },
+        {
+          "name": "Kevin Noessler",
+          "id": ""
+        },
+        {
+          "name": "P. Kohlhaas",
+          "id": ""
+        }
+      ],
+      "venue": null,
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285973247",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.778387463034511,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 227055652,
+      "title": "A decentralized framework for cultivating research lifecycle transparency",
+      "abstract": "Research transparency has been advocated as a key means of addressing the current crisis of reproducibility. This article proposes an enhanced form of research transparency, termed lifecycle transparency. Over the entire lifecycle of a research effort, this approach captures the syntactical contexts of artifacts and stakeholders, such as timestamps, agreements, and/or dependency requirements for completing each research phase. For example, such contexts might include when, where, and from whom patients' consent and institutional review board approvals were received before a clinical trial was carried out. However, as existing open-science tools are often dedicated to certain research phases or disciplines, and thus insufficient to support lifecycle transparency, we propose a novel decentralized framework to serve as a common medium for interaction among open-science tools, and produces irrefutable and immutable proofs of progress that can be verified automatically.",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "Wei Jeng",
+          "id": ""
+        },
+        {
+          "name": "Shih-Hung Wang",
+          "id": ""
+        },
+        {
+          "name": "Hung-Wei Chen",
+          "id": ""
+        },
+        {
+          "name": "Po-Wei Huang",
+          "id": ""
+        },
+        {
+          "name": "Yu-Jen Chen",
+          "id": ""
+        },
+        {
+          "name": "H. Hsiao",
+          "id": ""
+        }
+      ],
+      "venue": "PLoS ONE",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:227055652",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.7241923688971215,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283226286,
+      "title": "OmniScientist: Toward a Co-evolving Ecosystem of Human and AI Scientists",
+      "abstract": "With the rapid development of Large Language Models (LLMs), AI agents have demonstrated increasing proficiency in scientific tasks, ranging from hypothesis generation and experimental design to manuscript writing. Such agent systems are commonly referred to as\"AI Scientists.\"However, existing AI Scientists predominantly formulate scientific discovery as a standalone search or optimization problem, overlooking the fact that scientific research is inherently a social and collaborative endeavor. Real-world science relies on a complex scientific infrastructure composed of collaborative mechanisms, contribution attribution, peer review, and structured scientific knowledge networks. Due to the lack of modeling for these critical dimensions, current systems struggle to establish a genuine research ecosystem or interact deeply with the human scientific community. To bridge this gap, we introduce OmniScientist, a framework that explicitly encodes the underlying mechanisms of human research into the AI scientific workflow. OmniScientist not only achieves end-to-end automation across data foundation, literature review, research ideation, experiment automation, scientific writing, and peer review, but also provides comprehensive infrastructural support by simulating the human scientific system, comprising: (1) a structured knowledge system built upon citation networks and conceptual correlations; (2) a collaborative research protocol (OSP), which enables seamless multi-agent collaboration and human researcher participation; and (3) an open evaluation platform (ScienceArena) based on blind pairwise user voting and Elo rankings. This infrastructure empowers agents to not only comprehend and leverage human knowledge systems but also to collaborate and co-evolve, fostering a sustainable and scalable innovation ecosystem.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Chenyang Shao",
+          "id": ""
+        },
+        {
+          "name": "D. Huang",
+          "id": ""
+        },
+        {
+          "name": "Yu Li",
+          "id": ""
+        },
+        {
+          "name": "Keyu Zhao",
+          "id": ""
+        },
+        {
+          "name": "Weiquan Lin",
+          "id": ""
+        },
+        {
+          "name": "Yining Zhang",
+          "id": ""
+        },
+        {
+          "name": "Qingbin Zeng",
+          "id": ""
+        },
+        {
+          "name": "Zhiyu Chen",
+          "id": ""
+        },
+        {
+          "name": "Tianxing Li",
+          "id": ""
+        },
+        {
+          "name": "Yifei Huang",
+          "id": ""
+        },
+        {
+          "name": "Tao Wu",
+          "id": ""
+        },
+        {
+          "name": "Xinyang Liu",
+          "id": ""
+        },
+        {
+          "name": "Ruotong Zhao",
+          "id": ""
+        },
+        {
+          "name": "Mengsheng Zhao",
+          "id": ""
+        },
+        {
+          "name": "Jiaoyang Li",
+          "id": ""
+        },
+        {
+          "name": "Xuhua Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yue Wang",
+          "id": ""
+        },
+        {
+          "name": "Yuanyi Zhen",
+          "id": ""
+        },
+        {
+          "name": "Fengli Xu",
+          "id": ""
+        },
+        {
+          "name": "Y. Li",
+          "id": ""
+        },
+        {
+          "name": "Tie-Yan Liu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283226286",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5798154228460298,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281310172,
+      "title": "The (R)evolution of Scientific Workflows in the Agentic AI Era: Towards Autonomous Science",
+      "abstract": "Modern scientific discovery increasingly requires coordinating distributed facilities and heterogeneous resources, forcing researchers to act as manual workflow coordinators rather than scientists. Advances in AI leading to AI agents show exciting new opportunities that can accelerate scientific discovery by providing intelligence as a component in the ecosystem. However, it is unclear how this new capability would materialize and integrate in the real world. To address this, we propose a conceptual framework where workflows evolve along two dimensions which are intelligence (from static to intelligent) and composition (from single to swarm) to chart an evolutionary path from current workflow management systems to fully autonomous, distributed scientific laboratories. With these trajectories in mind, we present an architectural blueprint that can help the community take the next steps towards harnessing the opportunities in autonomous science with the potential for 100x discovery acceleration and transformational scientific workflows.CCS Concepts \u2022 Computing methodologies\u2192Distributed computing methodologies; Multi-agent systems; Distributed computing methodologies; Parallel computing methodologies.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Woong Shin",
+          "id": ""
+        },
+        {
+          "name": "Renan Souza",
+          "id": ""
+        },
+        {
+          "name": "Daniel Rosendo",
+          "id": ""
+        },
+        {
+          "name": "F. Suter",
+          "id": ""
+        },
+        {
+          "name": "Feiyi Wang",
+          "id": ""
+        },
+        {
+          "name": "Prasanna Balaprakash",
+          "id": ""
+        },
+        {
+          "name": "R. Ferreira da Silva",
+          "id": ""
+        }
+      ],
+      "venue": "SC25-W: Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:281310172",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5695372554170325,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273638438,
+      "title": "O1 Replication Journey: A Strategic Progress Report - Part 1",
+      "abstract": "This paper introduces a pioneering approach to artificial intelligence research, embodied in our O1 Replication Journey. In response to the announcement of OpenAI's groundbreaking O1 model, we embark on a transparent, real-time exploration to replicate its capabilities while reimagining the process of conducting and communicating AI research. Our methodology addresses critical challenges in modern AI research, including the insularity of prolonged team-based projects, delayed information sharing, and the lack of recognition for diverse contributions. By providing comprehensive, real-time documentation of our replication efforts, including both successes and failures, we aim to foster open science, accelerate collective advancement, and lay the groundwork for AI-driven scientific discovery. Our research progress report diverges significantly from traditional research papers, offering continuous updates, full process transparency, and active community engagement throughout the research journey. Technologically, we proposed the journey learning paradigm, which encourages models to learn not just shortcuts, but the complete exploration process, including trial and error, reflection, and backtracking. With only 327 training samples and without any additional tricks, journey learning outperformed conventional supervised learning by over 8\\% on the MATH dataset, demonstrating its extremely powerful potential. We believe this to be the most crucial component of O1 technology that we have successfully decoded. We share valuable resources including technical hypotheses and insights, cognitive exploration maps, custom-developed tools, etc at https://github.com/GAIR-NLP/O1-Journey.\nInitial Assessment, Multi-path Exploration, Iterative Improvement, and Current Results. The journey culminates in our novel \"journey learning\" approach, which significantly outperforms traditional \"shortcut learning\" methods. With only 327 training samples, our journey learning technique surpassed shortcut learning by 8.4% and 8.0% respectively on the MATH500 (Lightman et al., 2024). denotes our Walnut Plan, which aims to revolutionize AI by developing systems capable of deep scientific thinking, ultimately enabling AI-driven breakthroughs in human knowledge and discovery.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Yiwei Qin",
+          "id": ""
+        },
+        {
+          "name": "Xuefeng Li",
+          "id": ""
+        },
+        {
+          "name": "Haoyang Zou",
+          "id": ""
+        },
+        {
+          "name": "Yixiu Liu",
+          "id": ""
+        },
+        {
+          "name": "Shijie Xia",
+          "id": ""
+        },
+        {
+          "name": "Zhen Huang",
+          "id": ""
+        },
+        {
+          "name": "Yixin Ye",
+          "id": ""
+        },
+        {
+          "name": "Weizhe Yuan",
+          "id": ""
+        },
+        {
+          "name": "Hector Liu",
+          "id": ""
+        },
+        {
+          "name": "Yuanzhi Li",
+          "id": ""
+        },
+        {
+          "name": "Pengfei Liu",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:273638438",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5520786904968379,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 282388608,
+      "title": "A Survey of AI Scientists",
+      "abstract": "Artificial intelligence is undergoing a profound transition from a computational instrument to an autonomous originator of scientific knowledge. This emerging paradigm, the AI scientist, is architected to emulate the complete scientific workflow-from initial hypothesis generation to the final synthesis of publishable findings-thereby promising to fundamentally reshape the pace and scale of discovery. However, the rapid and unstructured proliferation of these systems has created a fragmented research landscape, obscuring overarching methodological principles and developmental trends. This survey provides a systematic and comprehensive synthesis of this domain by introducing a unified, six-stage methodological framework that deconstructs the end-to-end scientific process into: Literature Review, Idea Generation, Experimental Preparation, Experimental Execution, Scientific Writing, and Paper Generation. Through this analytical lens, we chart the field's evolution from early Foundational Modules (2022-2023) to integrated Closed-Loop Systems (2024), and finally to the current frontier of Scalability, Impact, and Human-AI Collaboration (2025-present). By rigorously synthesizing these developments, this survey not only clarifies the current state of autonomous science but also provides a critical roadmap for overcoming remaining challenges in robustness and governance, ultimately guiding the next generation of systems toward becoming trustworthy and indispensable partners in human scientific inquiry.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Guiyao Tie",
+          "id": ""
+        },
+        {
+          "name": "Pan Zhou",
+          "id": ""
+        },
+        {
+          "name": "Lichao Sun",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:282388608",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5479047179710391,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 273811997,
+      "title": "CycleResearcher: Improving Automated Research via Automated Review",
+      "abstract": "The automation of scientific discovery has been a long-standing goal within the research community, driven by the potential to accelerate knowledge creation. While significant progress has been made using commercial large language models (LLMs) as research assistants or idea generators, the possibility of automating the entire research process with open-source LLMs remains largely unexplored. This paper explores the feasibility of using open-source post-trained LLMs as autonomous agents capable of performing the full cycle of automated research and review, from literature review and manuscript preparation to peer review and paper refinement. Our iterative preference training framework consists of CycleResearcher, which conducts research tasks, and CycleReviewer, which simulates the peer review process, providing iterative feedback via reinforcement learning. To train these models, we develop two new datasets, Review-5k and Research-14k, reflecting real-world machine learning research and peer review dynamics. Our results demonstrate that CycleReviewer achieves promising performance with a 26.89\\% reduction in mean absolute error (MAE) compared to individual human reviewers in predicting paper scores, indicating the potential of LLMs to effectively assist expert-level research evaluation. In research, the papers generated by the CycleResearcher model achieved a score of 5.36 in simulated peer reviews, showing some competitiveness in terms of simulated review scores compared to the preprint level of 5.24 from human experts, while still having room for improvement compared to the accepted paper level of 5.69. This work represents a significant step toward fully automated scientific inquiry, providing ethical safeguards and exploring AI-driven research capabilities. The code, dataset and model weight are released at https://wengsyx.github.io/Researcher/.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Yixuan Weng",
+          "id": ""
+        },
+        {
+          "name": "Minjun Zhu",
+          "id": ""
+        },
+        {
+          "name": "Guangsheng Bao",
+          "id": ""
+        },
+        {
+          "name": "Hongbo Zhang",
+          "id": ""
+        },
+        {
+          "name": "Jindong Wang",
+          "id": ""
+        },
+        {
+          "name": "Yue Zhang",
+          "id": ""
+        },
+        {
+          "name": "Linyi Yang",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Learning Representations",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2411.00816.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5474348612242778,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 283712333,
+      "title": "AI Urban Scientist: Multi-Agent Collaborative Automation for Urban Research",
+      "abstract": "Urban research aims to understand how cities operate and evolve as complex adaptive systems. With the rapid growth of urban data and analytical methodologies, the central challenge of the field has shifted from data availability to the integration of heterogeneous data into coherent, verifiable urban knowledge through multidisciplinary approaches. Recent advances in AI, particularly the emergence of large language models (LLMs), have enabled the development of AI scientists capable of autonomous reasoning, hypothesis generation, and data-driven experimentation, demonstrating substantial potential for autonomous urban research. However, most general-purpose AI systems remain misaligned with the domain-specific knowledge, methodological conventions, and inferential standards required in urban studies. Here, we introduce the AI Urban Scientist, a knowledge-driven multi-agent framework designed to support autonomous urban research. Grounded in hypotheses, peer-review feedback, datasets, and research methodologies distilled from large-scale prior studies, the system constructs structured domain knowledge that guides LLM-based agents to automatically generate hypotheses, identify and integrate multi-source urban datasets, conduct empirical analyses and simulations, and iteratively refine analytical methods. Through this process, the framework synthesizes new insights in urban science and accelerates the urban research lifecycle.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Tong Xia",
+          "id": ""
+        },
+        {
+          "name": "Jiankun Zhang",
+          "id": ""
+        },
+        {
+          "name": "Ruiwen You",
+          "id": ""
+        },
+        {
+          "name": "Ao Xu",
+          "id": ""
+        },
+        {
+          "name": "Linghao Zhang",
+          "id": ""
+        },
+        {
+          "name": "Teng-Tsai Tu",
+          "id": ""
+        },
+        {
+          "name": "Jingzhi Wang",
+          "id": ""
+        },
+        {
+          "name": "J. Piao",
+          "id": ""
+        },
+        {
+          "name": "Yunke Zhang",
+          "id": ""
+        },
+        {
+          "name": "Fengli Xu",
+          "id": ""
+        },
+        {
+          "name": "Yong Li",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:283712333",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5417709536437793,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 285463136,
+      "title": "Towards an OSF-based Registered Report Template for Software Engineering Controlled Experiments",
+      "abstract": "Context: The empirical software engineering (ESE) community has contributed to improving experimentation over the years. However, there is still a lack of rigor in describing controlled experiments, hindering reproducibility and transparency. Registered Reports (RR) have been discussed in the ESE community to address these issues. A RR registers a study's hypotheses, methods, and/or analyses before execution, involving peer review and potential acceptance before data collection. This helps mitigate problematic practices such as p-hacking, publication bias, and inappropriate post hoc analysis. Objective: This paper presents initial results toward establishing an RR template for Software Engineering controlled experiments using the Open Science Framework (OSF). Method: We analyzed templates of selected OSF RR types in light of documentation guidelines for controlled experiments. Results: The observed lack of rigor motivated our investigation of OSF-based RR types. Our analysis showed that, although one of the RR types aligned with many of the documentation suggestions contained in the guidelines, none of them covered the guidelines comprehensively. The study also highlights limitations in OSF RR template customization. Conclusion: Despite progress in ESE, planning and documenting experiments still lack rigor, compromising reproducibility. Adopting OSF-based RRs is proposed. However, no currently available RR type fully satisfies the guidelines. Establishing RR-specific guidelines for SE is deemed essential.",
+      "year": 2026,
+      "authors": [
+        {
+          "name": "Ana B. M. Bett",
+          "id": ""
+        },
+        {
+          "name": "Thais S. Nepomuceno",
+          "id": ""
+        },
+        {
+          "name": "Edson OliveiraJr",
+          "id": ""
+        },
+        {
+          "name": "M. T. Baldassarre",
+          "id": ""
+        },
+        {
+          "name": "V. V. G. Neto",
+          "id": ""
+        },
+        {
+          "name": "Marcos Kalinowski",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:285463136",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5390714843049019,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280420957,
+      "title": "Bayes-Entropy Collaborative Driven Agents for Research Hypotheses Generation and Optimization",
+      "abstract": "The exponential growth of scientific knowledge has made the automated generation of scientific hypotheses that combine novelty, feasibility, and research value a core challenge. Existing methods based on large language models fail to systematically model the inherent in hypotheses or incorporate the closed-loop feedback mechanisms crucial for refinement. This paper proposes a multi-agent collaborative framework called HypoAgents, which for the first time integrates Bayesian reasoning with an information entropy-driven search mechanism across three stages-hypotheses generation, evidence validation, and hypotheses Refinement-to construct an iterative closed-loop simulating scientists'cognitive processes. Specifically, the framework first generates an initial set of hypotheses through diversity sampling and establishes prior beliefs based on a composite novelty-relevance-feasibility (N-R-F) score. It then employs etrieval-augmented generation (RAG) to gather external literature evidence, updating the posterior probabilities of hypotheses using Bayes'theorem. Finally, it identifies high-uncertainty hypotheses using information entropy $H = - \\sum {{p_i}\\log {p_i}}$ and actively refines them, guiding the iterative optimization of the hypothesis set toward higher quality and confidence. Experimental results on the ICLR 2025 conference real-world research question dataset (100 research questions) show that after 12 optimization iterations, the average ELO score of generated hypotheses improves by 116.3, surpassing the benchmark of real paper abstracts by 17.8, while the framework's overall uncertainty, as measured by Shannon entropy, decreases significantly by 0.92. This study presents an interpretable probabilistic reasoning framework for automated scientific discovery, substantially improving the quality and reliability of machine-generated research hypotheses.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Shiyang Duan",
+          "id": ""
+        },
+        {
+          "name": "Yuan Tian",
+          "id": ""
+        },
+        {
+          "name": "Qi-Tao Bing",
+          "id": ""
+        },
+        {
+          "name": "Xiaowei Shao",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280420957",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5358148690655824,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284133057,
+      "title": "Bohrium + SciMaster: Building the Infrastructure and Ecosystem for Agentic Science at Scale",
+      "abstract": "AI agents are emerging as a practical way to run multi-step scientific workflows that interleave reasoning with tool use and verification, pointing to a shift from isolated AI-assisted steps toward \\emph{agentic science at scale}. This shift is increasingly feasible, as scientific tools and models can be invoked through stable interfaces and verified with recorded execution traces, and increasingly necessary, as AI accelerates scientific output and stresses the peer-review and publication pipeline, raising the bar for traceability and credible evaluation. However, scaling agentic science remains difficult: workflows are hard to observe and reproduce; many tools and laboratory systems are not agent-ready; execution is hard to trace and govern; and prototype AI Scientist systems are often bespoke, limiting reuse and systematic improvement from real workflow signals. We argue that scaling agentic science requires an infrastructure-and-ecosystem approach, instantiated in Bohrium+SciMaster. Bohrium acts as a managed, traceable hub for AI4S assets -- akin to a HuggingFace of AI for Science -- that turns diverse scientific data, software, compute, and laboratory systems into agent-ready capabilities. SciMaster orchestrates these capabilities into long-horizon scientific workflows, on which scientific agents can be composed and executed. Between infrastructure and orchestration, a \\emph{scientific intelligence substrate} organizes reusable models, knowledge, and components into executable building blocks for workflow reasoning and action, enabling composition, auditability, and improvement through use. We demonstrate this stack with eleven representative master agents in real workflows, achieving orders-of-magnitude reductions in end-to-end scientific cycle time and generating execution-grounded signals from real workloads at multi-million scale.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Linfeng Zhang",
+          "id": ""
+        },
+        {
+          "name": "Siheng Chen",
+          "id": ""
+        },
+        {
+          "name": "Yuzhu Cai",
+          "id": ""
+        },
+        {
+          "name": "Jingyi Chai",
+          "id": ""
+        },
+        {
+          "name": "Junhan Chang",
+          "id": ""
+        },
+        {
+          "name": "Kun Chen",
+          "id": ""
+        },
+        {
+          "name": "Zhi X. Chen",
+          "id": ""
+        },
+        {
+          "name": "Zhaohan Ding",
+          "id": ""
+        },
+        {
+          "name": "Yuwen Du",
+          "id": ""
+        },
+        {
+          "name": "Yuanpeng Gao",
+          "id": ""
+        },
+        {
+          "name": "Yuanpeng Gao",
+          "id": ""
+        },
+        {
+          "name": "Jing Gao",
+          "id": ""
+        },
+        {
+          "name": "Zhifeng Gao",
+          "id": ""
+        },
+        {
+          "name": "Qiangqiang Gu",
+          "id": ""
+        },
+        {
+          "name": "Yanhui Hong",
+          "id": ""
+        },
+        {
+          "name": "Yuan Huang",
+          "id": ""
+        },
+        {
+          "name": "Xi Fang",
+          "id": ""
+        },
+        {
+          "name": "Xiaohong Ji",
+          "id": ""
+        },
+        {
+          "name": "Guolin Ke",
+          "id": ""
+        },
+        {
+          "name": "Zixing Lei",
+          "id": ""
+        },
+        {
+          "name": "Xinyu Li",
+          "id": ""
+        },
+        {
+          "name": "Yonggen Li",
+          "id": ""
+        },
+        {
+          "name": "Ruo-tong Liao",
+          "id": ""
+        },
+        {
+          "name": "Hang Lin",
+          "id": ""
+        },
+        {
+          "name": "Xiao Lin",
+          "id": ""
+        },
+        {
+          "name": "Yuxiang Liu",
+          "id": ""
+        },
+        {
+          "name": "Xinzijian Liu",
+          "id": ""
+        },
+        {
+          "name": "Zexi Liu",
+          "id": ""
+        },
+        {
+          "name": "Jin Lu",
+          "id": ""
+        },
+        {
+          "name": "Tingjia Miao",
+          "id": ""
+        },
+        {
+          "name": "Haohui Que",
+          "id": ""
+        },
+        {
+          "name": "Weijie Sun",
+          "id": ""
+        },
+        {
+          "name": "Yanfeng Wang",
+          "id": ""
+        },
+        {
+          "name": "Bin Wu",
+          "id": ""
+        },
+        {
+          "name": "Tianju Xue",
+          "id": ""
+        },
+        {
+          "name": "Rui Ye",
+          "id": ""
+        },
+        {
+          "name": "Jinzhe Zeng",
+          "id": ""
+        },
+        {
+          "name": "Duoxiao Zhang",
+          "id": ""
+        },
+        {
+          "name": "Jiahui Zhang",
+          "id": ""
+        },
+        {
+          "name": "Tianhan Zhang",
+          "id": ""
+        },
+        {
+          "name": "Wenchang Zhang",
+          "id": ""
+        },
+        {
+          "name": "Yuzhi Zhang",
+          "id": ""
+        },
+        {
+          "name": "Zezhong Zhang",
+          "id": ""
+        },
+        {
+          "name": "Hang Zheng",
+          "id": ""
+        },
+        {
+          "name": "Hui Zhou",
+          "id": ""
+        },
+        {
+          "name": "Tong Zhu",
+          "id": ""
+        },
+        {
+          "name": "Xinyu Zhu",
+          "id": ""
+        },
+        {
+          "name": "Qin Zhou",
+          "id": ""
+        },
+        {
+          "name": "E. Weinan",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284133057",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5342401025655371,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 284540325,
+      "title": "A Process-Centric Survey of AI for Scientific Discovery Through the EXHYTE Framework",
+      "abstract": "Large language models (LLMs) and agent systems are increasingly transforming scientific discovery, driving progress across chemistry, biology, materials science, and physics. Yet most existing work and surveys remain fragmented, focusing on isolated tasks such as idea generation or experiment design without addressing how these components fit within the broader discovery process. To bridge this gap, we introduce the EXHYTE cycle, an iterative framework that formalizes scientific discovery as a sequence of Exploration, Hypothesis generation, and Testing. We assembled a corpus of recent studies, distilled recurring strategies that characterize how AI methods contribute to each EXHYTE substage, and organized the literature accordingly to representative strategies and domain-specific advances. This process-centric perspective unifies diverse methodologies under a single structured workflow, identifies substages that are mature versus underexplored, and reveals complementarities that enable closed-loop discovery systems. It also clarifies the evolving division of labor between human researchers and AI systems, offering a roadmap for developing adaptive, autonomous frameworks for AI-driven scientific discovery. An accompanying website with paper summaries and an LLM-powered interactive survey based on EXHYTE is available at https://webapps.crc.pitt.edu/exhyte/",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "M. Hasib",
+          "id": ""
+        },
+        {
+          "name": "Sumin Jo",
+          "id": ""
+        },
+        {
+          "name": "Harsh Sinha",
+          "id": ""
+        },
+        {
+          "name": "Jifeng Song",
+          "id": ""
+        },
+        {
+          "name": "Arun Das",
+          "id": ""
+        },
+        {
+          "name": "Zhentao Liu",
+          "id": ""
+        },
+        {
+          "name": "Hugh Galloway",
+          "id": ""
+        },
+        {
+          "name": "Huey Huang",
+          "id": ""
+        },
+        {
+          "name": "Kexun Zhang",
+          "id": ""
+        },
+        {
+          "name": "Shou-Jiang Gao",
+          "id": ""
+        },
+        {
+          "name": "Yu-Chiao Chiu",
+          "id": ""
+        },
+        {
+          "name": "Lei Li",
+          "id": ""
+        },
+        {
+          "name": "Yufei Huang",
+          "id": ""
+        }
+      ],
+      "venue": "Research Square",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:284540325",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.5319562273682074,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 248665946,
+      "title": "A self-governing, self-regulating system for assessing scientific predictive power",
+      "abstract": "I propose a method for tracking and assessing scientific progress using a prediction consensus algorithm designed for the purpose. The protocol obviates the need for centralized referees to generate scientific questions, gather predictions, and assess the accuracy or success of those predictions. It relies instead on crowd wisdom and a system of checks and balances for all tasks. It is intended to take the form of a web-based, searchable database. I describe a prototype implementation that I call Ex Quaerum. The main purpose of the present document is to motivate the project, to explain its underlying philosophy, to explain the details of the consensus protocol on which it is based, to describe plans for its future development, and ultimately to attract additional collaborators.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "Ted C. Rogers",
+          "id": ""
+        }
+      ],
+      "venue": "",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:248665946",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.49930967126431486,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 281681196,
+      "title": "DeepScientist: Advancing Frontier-Pushing Scientific Findings Progressively",
+      "abstract": "While previous AI Scientist systems can generate novel findings, they often lack the focus to produce scientifically valuable contributions that address pressing human-defined challenges. We introduce DeepScientist, a system designed to overcome this by conducting goal-oriented, fully autonomous scientific discovery over month-long timelines. It formalizes discovery as a Bayesian Optimization problem, operationalized through a hierarchical evaluation process consisting of\"hypothesize, verify, and analyze\". Leveraging a cumulative Findings Memory, this loop intelligently balances the exploration of novel hypotheses with exploitation, selectively promoting the most promising findings to higher-fidelity levels of validation. Consuming over 20,000 GPU hours, the system generated about 5,000 unique scientific ideas and experimentally validated approximately 1100 of them, ultimately surpassing human-designed state-of-the-art (SOTA) methods on three frontier AI tasks by 183.7\\%, 1.9\\%, and 7.9\\%. This work provides the first large-scale evidence of an AI achieving discoveries that progressively surpass human SOTA on scientific tasks, producing valuable findings that genuinely push the frontier of scientific discovery. To facilitate further research into this process, we will open-source all experimental logs and system code at https://github.com/ResearAI/DeepScientist/.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Yixuan Weng",
+          "id": ""
+        },
+        {
+          "name": "Minjun Zhu",
+          "id": ""
+        },
+        {
+          "name": "Qiujie Xie",
+          "id": ""
+        },
+        {
+          "name": "Qiyao Sun",
+          "id": ""
+        },
+        {
+          "name": "Zhen Lin",
+          "id": ""
+        },
+        {
+          "name": "Sifan Liu",
+          "id": ""
+        },
+        {
+          "name": "Yue Zhang",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://arxiv.org/pdf/2509.26603.pdf",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4400731456955564,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 201844050,
+      "title": "Open Up - the Mission Statement of the Control of Impulsive Action (Ctrl-ImpAct) Lab on Open Science",
+      "abstract": "The present paper is the mission statement of the Control of Impulsive Action (Ctrl-ImpAct) Lab regarding Open Science. As early-career researchers (ECRs) in the lab, we first state our personal motivation to conduct research based on the principles of Open Science. We then describe how we incorporate four specific Open Science practices (i.e., Open Methodology, Open Data, Open Source, and Open Access) into our scientific workflow. In more detail, we explain how Open Science practices are embedded into the so-called 'co-pilot' system in our lab. The 'co-pilot' researcher is involved in all tasks of the 'pilot' researcher, that is designing a study, double-checking experimental and data analysis scripts, as well as writing the manuscript. The lab has set up this co-pilot system to increase transparency, reduce potential errors that could occur during the entire workflow, and to intensify collaborations between lab members. Finally, we discuss potential solutions for general problems that could arise when practicing Open Science.\nWorking in science is fulfilling, but can also be frustrating at times. As early-career researchers (ECRs), we get frustrated when we try to download an interesting paper, but hit a paywall; when we plan to use an existing paradigm, but cannot exactly reproduce it as the methods information is incomplete and the materials and code are unavailable; when we want to try out a new analysis on a data set, but cannot get access to it; and when our paper gets rejected, because the results are not statistically significant and are thus deemed unpublishable. Incidents like these made us reflect on how science should be done and why we want to be scientists. In this paper, we will share our thoughts and answers on these questions that we found within the practices and philosophy of Open Science.\nSince October 2018, we are working together in the Control of Impulsive Action (Ctrl-ImpAct) lab, led by Frederick Verbruggen at Ghent University (https:// fredvbrug.github.io). Our principal investigator (PI) Frederick Verbruggen has been practicing Open Science for some years now, which is why interest and/or experience in Open Science is considered a prerequisite for joining the lab. As a lab, we are all convinced that we should base our research routine on the principles of Open Science, \"the practice of science in such a way that others can collaborate and contribute, where research data, lab notes and other research processes are freely available, under terms that enable reuse, redistribution and reproduction of the research and its underlying data and methods\" (Foster, n.d.).\nOpen Science applies to all research disciplines. Here, we will address the topic from the perspective of a cognitive psychology and neuroscience lab. More specifically, the present paper is our lab's mission statement regarding Open Science. The paper consists of three parts. First, we as ECRs would like to contribute to the discussion on Open Science by outlining our personal motivation for Open Science; second, we will describe how we incorporate Open Science practices into our scientific workflow; and third, we will discuss potential solutions for general problems that could arise when adopting Open Science practices. This mission statement is our lab's public commitment to Open Science. We hope it will also inspire and help other labs and/or researchers to base their research routine on the principles of Open Science, by providing a concrete example of how they can incorporate Open Science practices into their own scientific workflow.\nWe are aware that many paths lead to a common goal, and that the Open Science practices we adopt may not necessarily suit everyone. Furthermore, with the emergence of new ideas and technologies, good research practices of today may be deemed inappropriate tomorrow, and better ways of conducting research may appear. Our mission statement thus reflects what seems most useful to us at the present time, and we are aware that for other researchers or in other times, ideas about what good research practices entail may change. We will therefore continuously reflect on how we do research and how we can further improve our workflow. The specific guidelines that we develop in the lab will be shared on GitHub (see links in the Appendix), and we invite other researchers to participate by for instance providing feedback and sharing experiences. With this paper, we thus also wish to reach out to other researchers and start an ongoing exchange on how we want to do research as a community.",
+      "year": 2019,
+      "authors": [
+        {
+          "name": "C. Reimer",
+          "id": ""
+        },
+        {
+          "name": "Zhang Chen",
+          "id": ""
+        },
+        {
+          "name": "Carsten Bundt",
+          "id": ""
+        },
+        {
+          "name": "Charlotte Eben",
+          "id": ""
+        },
+        {
+          "name": "Raquel E. London",
+          "id": ""
+        },
+        {
+          "name": "Sirarpi Vardanian",
+          "id": ""
+        }
+      ],
+      "venue": "Psychologica Belgica",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:201844050",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4359553321584106,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 260514387,
+      "title": "Overview of BioASQ 2023: The eleventh BioASQ challenge on Large-Scale Biomedical Semantic Indexing and Question Answering",
+      "abstract": "This is an overview of the eleventh edition of the BioASQ challenge in the context of the Conference and Labs of the Evaluation Forum (CLEF) 2023. BioASQ is a series of international challenges promoting advances in large-scale biomedical semantic indexing and question answering. This year, BioASQ consisted of new editions of the two established tasks b and Synergy, and a new task (MedProcNER) on semantic annotation of clinical content in Spanish with medical procedures, which have a critical role in medical practice. In this edition of BioASQ, 28 competing teams submitted the results of more than 150 distinct systems in total for the three different shared tasks of the challenge. Similarly to previous editions, most of the participating systems achieved competitive performance, suggesting the continuous advancement of the state-of-the-art in the field.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "A. Nentidis",
+          "id": ""
+        },
+        {
+          "name": "Georgios Katsimpras",
+          "id": ""
+        },
+        {
+          "name": "Anastasia Krithara",
+          "id": ""
+        },
+        {
+          "name": "Salvador Lima-L\u00f3pez",
+          "id": ""
+        },
+        {
+          "name": "Eul\u00e0lia Farr\u00e9-Maduell",
+          "id": ""
+        },
+        {
+          "name": "Luis Gasco",
+          "id": ""
+        },
+        {
+          "name": "Martin Krallinger",
+          "id": ""
+        },
+        {
+          "name": "G. Paliouras",
+          "id": ""
+        }
+      ],
+      "venue": "Conference and Labs of the Evaluation Forum",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:260514387",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4122537640579547,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 260515226,
+      "title": "Overview of BioASQ 2022: The Tenth BioASQ Challenge on Large-Scale Biomedical Semantic Indexing and Question Answering",
+      "abstract": "This paper presents an overview of the tenth edition of the BioASQ challenge in the context of the Conference and Labs of the Evaluation Forum (CLEF) 2022. BioASQ is an ongoing series of challenges that promotes advances in the domain of large-scale biomedical semantic indexing and question answering. In this edition, the challenge was composed of the three established tasks a, b, and Synergy, and a new task named DisTEMIST for automatic semantic annotation and grounding of diseases from clinical content in Spanish, a key concept for semantic indexing and search engines of literature and clinical records. This year, BioASQ received more than 170 distinct systems from 38 teams in total for the four different tasks of the challenge. As in previous years, the majority of the competing systems outperformed the strong baselines, indicating the continuous advancement of the state-of-the-art in this domain.",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "A. Nentidis",
+          "id": ""
+        },
+        {
+          "name": "Georgios Katsimpras",
+          "id": ""
+        },
+        {
+          "name": "Eirini Vandorou",
+          "id": ""
+        },
+        {
+          "name": "Anastasia Krithara",
+          "id": ""
+        },
+        {
+          "name": "Antonio Miranda-Escalada",
+          "id": ""
+        },
+        {
+          "name": "Luis Gasco",
+          "id": ""
+        },
+        {
+          "name": "Martin Krallinger",
+          "id": ""
+        },
+        {
+          "name": "G. Paliouras",
+          "id": ""
+        }
+      ],
+      "venue": "Conference and Labs of the Evaluation Forum",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:260515226",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.40527359376105454,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 237940724,
+      "title": "Automated Mining of Leaderboards for Empirical AI Research",
+      "abstract": "With the rapid growth of research publications, empowering scientists to keep oversight over the scientific progress is of paramount importance. In this regard, the Leaderboards facet of information organization provides an overview on the state-of-the-art by aggregating empirical results from various studies addressing the same research challenge. Crowdsourcing efforts like PapersWithCode among others are devoted to the construction of Leaderboards predominantly for various subdomains in Artificial Intelligence. Leaderboards provide machine-readable scholarly knowledge that has proven to be directly useful for scientists to keep track of research progress. The construction of Leaderboards could be greatly expedited with automated text mining. This study presents a comprehensive approach for generating Leaderboards for knowledge-graph-based scholarly information organization. Specifically, we investigate the problem of automated Leaderboard construction using state-of-the-art transformer models, viz. Bert, SciBert, and XLNet. Our analysis reveals an optimal approach that significantly outperforms existing baselines for the task with evaluation scores above 90% in F1. This, in turn, offers new state-of-the-art results for Leaderboard extraction. As a result, a vast share of empirical AI research can be organized in the next-generation digital libraries as knowledge graphs.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Salomon Kabongo KABENAMUALU",
+          "id": ""
+        },
+        {
+          "name": "J. D\u2019Souza",
+          "id": ""
+        },
+        {
+          "name": "S. Auer",
+          "id": ""
+        }
+      ],
+      "venue": "International Conference on Asian Digital Libraries",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:237940724",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4038397772095908,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 266163188,
+      "title": "AI Competitions and Benchmarks: The life cycle of challenges and benchmarks",
+      "abstract": "Data Science research is undergoing a revolution fueled by the transformative power of technology, the Internet, and an ever increasing computational capacity. The rate at which sophisticated algorithms can be developed is unprecedented, yet they remain outpaced by the massive amounts of data that are increasingly available to researchers. Here we argue for the need to creatively leverage the scientific research and algorithm development community as an axis of robust innovation. Engaging these communities in the scientific discovery enterprise by critical assessments, community experiments, and/or crowdsourcing will multiply opportunities to develop new data driven, reproducible and well benchmarked algorithmic solutions to fundamental and applied problems of current interest. Coordinated community engagement in the analysis of highly complex and massive data has emerged as one approach to find robust methodologies that best address these challenges. When community engagement is done in the form of competitions, also known as challenges, the validation of the analytical methodology is inherently addressed, establishing performance benchmarks. Finally, challenges foster open innovation across multiple disciplines to create communities that collaborate directly or indirectly to address significant scientific gaps. Together, participants can solve important problems as varied as health research, climate change, and social equity. Ultimately, challenges can catalyze and accelerate the synthesis of complex data into knowledge or actionable information, and should be viewed a powerful tool to make lasting social and research contributions.",
+      "year": 2023,
+      "authors": [
+        {
+          "name": "G. Stolovitzky",
+          "id": ""
+        },
+        {
+          "name": "J. Saez-Rodriguez",
+          "id": ""
+        },
+        {
+          "name": "Julie A. Bletz",
+          "id": ""
+        },
+        {
+          "name": "Jacob Albrecht",
+          "id": ""
+        },
+        {
+          "name": "Gaia Andreoletti",
+          "id": ""
+        },
+        {
+          "name": "James C. Costello",
+          "id": ""
+        },
+        {
+          "name": "P. Boutros",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:266163188",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.4015204498371384,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 219573738,
+      "title": "Report from the NSF Future Directions Workshop, Toward User-Oriented Agents: Research Directions and Challenges",
+      "abstract": "This USER Workshop was convened with the goal of defining future research directions for the burgeoning intelligent agent research community and to communicate them to the National Science Foundation. It took place in Pittsburgh Pennsylvania on October 24 and 25, 2019 and was sponsored by National Science Foundation Grant Number IIS-1934222. Any opinions, findings and conclusions or future directions expressed in this document are those of the authors and do not necessarily reflect the views of the National Science Foundation. The 27 participants presented their individual research interests and their personal research goals. In the breakout sessions that followed, the participants defined the main research areas within the domain of intelligent agents and they discussed the major future directions that the research in each area of this domain should take",
+      "year": 2020,
+      "authors": [
+        {
+          "name": "M. Esk\u00e9nazi",
+          "id": ""
+        },
+        {
+          "name": "Tiancheng Zhao",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:219573738",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3975935768635433,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 4639380,
+      "title": "The preregistration revolution",
+      "abstract": "Progress in science relies in part on generating hypotheses with existing observations and testing hypotheses with new observations. This distinction between postdiction and prediction is appreciated conceptually but is not respected in practice. Mistaking generation of postdictions with testing of predictions reduces the credibility of research findings. However, ordinary biases in human reasoning, such as hindsight bias, make it hard to avoid this mistake. An effective solution is to define the research questions and analysis plan before observing the research outcomes\u2014a process called preregistration. Preregistration distinguishes analyses and outcomes that result from predictions from those that result from postdictions. A variety of practical strategies are available to make the best possible use of preregistration in circumstances that fall short of the ideal application, such as when the data are preexisting. Services are now available for preregistration across all disciplines, facilitating a rapid increase in the practice. Widespread adoption of preregistration will increase distinctiveness between hypothesis generation and hypothesis testing and will improve the credibility of research findings.",
+      "year": 2018,
+      "authors": [
+        {
+          "name": "Brian A. Nosek",
+          "id": ""
+        },
+        {
+          "name": "C. Ebersole",
+          "id": ""
+        },
+        {
+          "name": "A. DeHaven",
+          "id": ""
+        },
+        {
+          "name": "D. Mellor",
+          "id": ""
+        }
+      ],
+      "venue": "Proceedings of the National Academy of Sciences of the United States of America",
+      "journal": null,
+      "url": "https://doi.org/10.1073/pnas.1708274114",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.34400116739461883,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 272367281,
+      "title": "Collective predictive coding as model of science: formalizing scientific activities towards generative science",
+      "abstract": "This article proposes a new conceptual framework called collective predictive coding as a model of science (CPC-MS) to formalize and understand scientific activities. Building on the idea of CPC originally developed to explain symbol emergence, CPC-MS models science as a decentralized Bayesian inference process carried out by a community of agents. The framework describes how individual scientists\u2019 partial observations and internal representations are integrated through communication and peer review to produce shared external scientific knowledge. Key aspects of scientific practice like experimentation, hypothesis formation, theory development and paradigm shifts are mapped onto components of the probabilistic graphical model. This article discusses how CPC-MS provides insights into issues like social objectivity in science, scientific progress and the potential impacts of artificial intelligence on research. The generative view of science offers a unified way to analyse scientific activities and could inform efforts to automate aspects of the scientific process. Overall, CPC-MS aims to provide an intuitive yet formal model of science as a collective cognitive activity.",
+      "year": 2024,
+      "authors": [
+        {
+          "name": "Tadahiro Taniguchi",
+          "id": ""
+        },
+        {
+          "name": "Shiro Takagi",
+          "id": ""
+        },
+        {
+          "name": "Jun Otsuka",
+          "id": ""
+        },
+        {
+          "name": "Yusuke Hayashi",
+          "id": ""
+        },
+        {
+          "name": "H. Hamada",
+          "id": ""
+        }
+      ],
+      "venue": "Royal Society Open Science",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:272367281",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3340549844927909,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 280671306,
+      "title": "Open, Reproducible and Trustworthy Robot-Based Experiments with Virtual Labs and Digital-Twin-Based Execution Tracing",
+      "abstract": "We envision a future in which autonomous robots conduct scientific experiments in ways that are not only precise and repeatable, but also open, trustworthy, and transparent. To realize this vision, we present two key contributions: a semantic execution tracing framework that logs sensor data together with semantically annotated robot belief states, ensuring that automated experimentation is transparent and replicable; and the AICOR Virtual Research Building (VRB), a cloud-based platform for sharing, replicating, and validating robot task executions at scale. Together, these tools enable reproducible, robot-driven science by integrating deterministic execution, semantic memory, and open knowledge representation, laying the foundation for autonomous systems to participate in scientific discovery.",
+      "year": 2025,
+      "authors": [
+        {
+          "name": "Benjamin Alt",
+          "id": ""
+        },
+        {
+          "name": "Mareike Picklum",
+          "id": ""
+        },
+        {
+          "name": "Sorin Arion",
+          "id": ""
+        },
+        {
+          "name": "Franklin Kenghagho Kenfack",
+          "id": ""
+        },
+        {
+          "name": "Michael Beetz",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:280671306",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.33199849326845654,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 248402199,
+      "title": "Crowdsourced RNA design discovers diverse, reversible, efficient, self-contained molecular switches",
+      "abstract": "Significance Our manuscript presents a paradigm for carrying out distributed science. We have harnessed an online RNA design game, Eterna, to challenge a large community of RNA designers to create diverse RNA sensors. RNA is an attractive, biocompatible substrate for the design and implementation of molecular sensors. We tasked the diverse Eterna community, comprising a global network of molecular design enthusiasts, to submit thousands to tens of thousands of \"solutions\" to these RNA sensor design challenges. Crucially, community designs were synthesized and tested experimentally in the real world using high-throughput methods for biochemical assays built on repurposed DNA sequencers. The best player-generated designs for RNA sensors approached the thermodynamic optimum.\nInternet-based scientific communities promise a means to apply distributed, diverse human intelligence toward previously intractable scientific problems. However, current implementations have not allowed communities to propose experiments to test all emerging hypotheses at scale or to modify hypotheses in response to experiments. We report high-throughput methods for molecular characterization of nucleic acids that enable the large-scale video game-based crowdsourcing of RNA sensor design, followed by high-throughput functional characterization. Iterative design testing of thousands of crowdsourced RNA sensor designs produced near-thermodynamically optimal and reversible RNA switches that act as self-contained molecular sensors and couple five distinct small molecule inputs to three distinct protein binding and fluorogenic outputs. This work suggests a paradigm for widely distributed experimental bioscience.\nRNA j crowdsourcing j RNA sensor j high throughput j design Several recent platforms have demonstrated the engagement, via the internet, of vast untapped human cognitive potential, transforming the scale by which scientific questions can be approached with human intelligence. However, previous work has only allowed \"citizen scientists\" to process data already collected (1,2), to interface with purely computational methods to implement solution strategies (3), or to compete for limited slots on a low-throughput experimental synthesis pipeline (4)(5)(6). We reasoned that by enabling a community of RNA design enthusiasts to both generate hypotheses and then acquire large-scale experimental evidence supporting or rejecting these hypotheses, we could \"close the loop\" on crowdsourced science, providing a platform for iterative hypothesis generation and experimental testing. Recent advances in highthroughput functional characterization of nucleic acids on sequencing instruments provide potentially immense capacity for carrying out experiments devised by these scientific communities (7)(8)(9). We hypothesized that with these tools, online communities would be capable of producing RNA sensors with unprecedented performance.\nRNA is an attractive substrate for diagnostics (10), cellular computing (11), \"smart\" imaging tools (12), and targeted therapeutics (13,14) due to its inherent biocompatibility (with sensors often transcribed from DNA due to the lability of RNA itself), capacity for large-scale structural rearrangements via alternative base pairings, and ability to form aptamers that specifically recognize cellular metabolites, signaling molecules, ions, cofactors, and proteins (15,16). Riboswitches, a widely biologically utilized form of RNA sensor, generally sense biomolecules and respond by causing RNA cleavage (17), transcription termination (18), or other altered genetic outputs. We will refer to self-contained (i.e., those that do not rely on the mechanics of the transcription process) and reversible (i.e., those that do not rely on irreversible processes) switches as \"stand-alone\" RNA switches. Such stand-alone RNA switches can be applied to important applications, such as fluorescence-based sensors of rapid, dynamic processes or reversible chemical control of therapeutics (19). To date, all stand-alone RNA switches have exhibited less than 10-fold changes in output signal in the presence vs. absence of ligand-far below the limits allowed by thermodynamics (20)-and a thermodynamically reversible RNA switch has not been demonstrated. Thus, a method to design efficient, stand-alone RNAs capable of conformationally responding to inputs both sensitively and reversibly is needed. This challenge in RNA design provides an ideal test bed for distributed, internet-based science.\nTo implement a platform for hypothesis-based, iterative scientific discovery for RNA sensors, we combined internet-scale crowdsourcing of RNA design using the scientific discovery game Eterna (5) and high-throughput, quantitative RNA characterization using repurposed sequencing chips and instruments (7,8). Eterna puzzles challenge an online player community to design RNA sequences that couple the formation of a",
+      "year": 2022,
+      "authors": [
+        {
+          "name": "Johan O. L. Andreasson",
+          "id": ""
+        },
+        {
+          "name": "Michael Gotrik",
+          "id": ""
+        },
+        {
+          "name": "Michelle J. Wu",
+          "id": ""
+        },
+        {
+          "name": "H. Wayment-Steele",
+          "id": ""
+        },
+        {
+          "name": "W. Kladwang",
+          "id": ""
+        },
+        {
+          "name": "Fernando Portela",
+          "id": ""
+        },
+        {
+          "name": "Roger Wellington-Oguri",
+          "id": ""
+        },
+        {
+          "name": "Rhiju Das",
+          "id": ""
+        },
+        {
+          "name": "W. Greenleaf",
+          "id": ""
+        }
+      ],
+      "venue": "Proceedings of the National Academy of Sciences of the United States of America",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:248402199",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.33179049212073797,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 159274352,
+      "title": "An open toolkit for tracking open science partnership implementation and impact",
+      "abstract": "Serious concerns about the way research is organized collectively are increasingly being raised. They include the escalating costs of research and lower research productivity, low public trust in researchers to report the truth, lack of diversity, poor community engagement, ethical concerns over research practices, and irreproducibility. Open science (OS) collaborations comprise of a subset of open practices including open access publication, open data sharing and the absence of restrictive intellectual property rights with which institutions, firms, governments and communities are experimenting in order to overcome these concerns. We gathered two groups of international representatives from a large variety of stakeholders to construct a toolkit to guide and facilitate data collection about OS and non-OS collaborations. Ultimately, the toolkit will be used to assess and study the impact of OS collaborations on research and innovation. The toolkit contains the following four elements: 1) an annual report form of quantitative data to be completed by OS partnership administrators; 2) a series of semi-structured interview guides of stakeholders; 3) a survey form of participants in OS collaborations; and 4) a set of other quantitative measures best collected by other organizations, such as research foundations and governmental or intergovernmental agencies. We opened our toolkit to community comment and input. We present the resulting toolkit for use by government and philanthropic grantors, institutions, researchers and community organizations with the aim of measuring the implementation and impact of OS partnership across these organizations. We invite these and other stakeholders to not only measure, but to share the resulting data so that social scientists and policy makers can analyse the data across projects.",
+      "year": 2019,
+      "authors": [
+        {
+          "name": "E. Gold",
+          "id": ""
+        },
+        {
+          "name": "S. Ali-Khan",
+          "id": ""
+        },
+        {
+          "name": "L. Allen",
+          "id": ""
+        },
+        {
+          "name": "Lluis Ballell",
+          "id": ""
+        },
+        {
+          "name": "M. Barral-Netto",
+          "id": ""
+        },
+        {
+          "name": "D. Carr",
+          "id": ""
+        },
+        {
+          "name": "Damien Chalaud",
+          "id": ""
+        },
+        {
+          "name": "Simon Chaplin",
+          "id": ""
+        },
+        {
+          "name": "M. Clancy",
+          "id": ""
+        },
+        {
+          "name": "P. Clarke",
+          "id": ""
+        },
+        {
+          "name": "Robert Cook-Deegan",
+          "id": ""
+        },
+        {
+          "name": "A. Dinsmore",
+          "id": ""
+        },
+        {
+          "name": "M. Doerr",
+          "id": ""
+        },
+        {
+          "name": "L. Federer",
+          "id": ""
+        },
+        {
+          "name": "Steven A. Hill",
+          "id": ""
+        },
+        {
+          "name": "N. Jacobs",
+          "id": ""
+        },
+        {
+          "name": "Antoine Jean",
+          "id": ""
+        },
+        {
+          "name": "O. Jefferson",
+          "id": ""
+        },
+        {
+          "name": "Chonnettia Jones",
+          "id": ""
+        },
+        {
+          "name": "Linda Kahl",
+          "id": ""
+        },
+        {
+          "name": "T. Kariuki",
+          "id": ""
+        },
+        {
+          "name": "Sophie N. Kassel",
+          "id": ""
+        },
+        {
+          "name": "R. Kiley",
+          "id": ""
+        },
+        {
+          "name": "Elizabeth Kittrie",
+          "id": ""
+        },
+        {
+          "name": "Bianca Kramer",
+          "id": ""
+        },
+        {
+          "name": "W. H. Lee",
+          "id": ""
+        },
+        {
+          "name": "E. Macdonald",
+          "id": ""
+        },
+        {
+          "name": "L. Mangravite",
+          "id": ""
+        },
+        {
+          "name": "E. Marincola",
+          "id": ""
+        },
+        {
+          "name": "D. Mietchen",
+          "id": ""
+        },
+        {
+          "name": "Jennifer C Molloy",
+          "id": ""
+        },
+        {
+          "name": "M. Namchuk",
+          "id": ""
+        },
+        {
+          "name": "Brian A. Nosek",
+          "id": ""
+        },
+        {
+          "name": "S\u00e9bastien Paquet",
+          "id": ""
+        },
+        {
+          "name": "C. Pirmez",
+          "id": ""
+        },
+        {
+          "name": "Annabel Seyller",
+          "id": ""
+        },
+        {
+          "name": "M. Skingle",
+          "id": ""
+        },
+        {
+          "name": "S. N. Spadotto",
+          "id": ""
+        },
+        {
+          "name": "S. Staniszewska",
+          "id": ""
+        },
+        {
+          "name": "M. Thelwall",
+          "id": ""
+        }
+      ],
+      "venue": "Gates Open Research",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:159274352",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.32498709744005055,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 13540721,
+      "title": "Accelerating Science: A Computing Research Agenda",
+      "abstract": "Author(s): Honavar, Vasant G; Hill, Mark D; Yelick, Katherine | Abstract: The emergence of \"big data\" offers unprecedented opportunities for not only accelerating scientific advances but also enabling new modes of discovery. Scientific progress in many disciplines is increasingly enabled by our ability to examine natural phenomena through the computational lens, i.e., using algorithmic or information processing abstractions of the underlying processes; and our ability to acquire, share, integrate and analyze disparate types of data. However, there is a huge gap between our ability to acquire, store, and process data and our ability to make effective use of the data to advance discovery. Despite successful automation of routine aspects of data management and analytics, most elements of the scientific process currently require considerable human expertise and effort. Accelerating science to keep pace with the rate of data acquisition and data processing calls for the development of algorithmic or information processing abstractions, coupled with formal methods and tools for modeling and simulation of natural processes as well as major innovations in cognitive tools for scientists, i.e., computational tools that leverage and extend the reach of human intellect, and partner with humans on a broad range of tasks in scientific discovery (e.g., identifying, prioritizing formulating questions, designing, prioritizing and executing experiments designed to answer a chosen question, drawing inferences and evaluating the results, and formulating new questions, in a closed-loop fashion). This calls for concerted research agenda aimed at: Development, analysis, integration, sharing, and simulation of algorithmic or information processing abstractions of natural processes, coupled with formal methods and tools for their analyses and simulation; Innovations in cognitive tools that augment and extend human intellect and partner with humans in all aspects of science.",
+      "year": 2016,
+      "authors": [
+        {
+          "name": "Vasant G Honavar",
+          "id": ""
+        },
+        {
+          "name": "M. Hill",
+          "id": ""
+        },
+        {
+          "name": "K. Yelick",
+          "id": ""
+        }
+      ],
+      "venue": "arXiv.org",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:13540721",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3148881054740097,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 264404524,
+      "title": "Preregistration Of Machine Learning Research Design. Against P-Hacking",
+      "abstract": null,
+      "year": 2019,
+      "authors": [
+        {
+          "name": "M. Hildebrandt",
+          "id": ""
+        }
+      ],
+      "venue": "BEING PROFILED",
+      "journal": null,
+      "url": "https://doi.org/10.1515/9789048550180-019",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.31222489082823657,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 244894836,
+      "title": "Reduced, Reused and Recycled: The Life of a Dataset in Machine Learning Research",
+      "abstract": "Benchmark datasets play a central role in the organization of machine learning research. They coordinate researchers around shared research problems and serve as a measure of progress towards shared goals. Despite the foundational role of benchmarking practices in this field, relatively little attention has been paid to the dynamics of benchmark dataset use and reuse, within or across machine learning subcommunities. In this paper, we dig into these dynamics. We study how dataset usage patterns differ across machine learning subcommunities and across time from 2015-2020. We find increasing concentration on fewer and fewer datasets within task communities, significant adoption of datasets from other tasks, and concentration across the field on datasets that have been introduced by researchers situated within a small number of elite institutions. Our results have implications for scientific evaluation, AI ethics, and equity/access within the field.",
+      "year": 2021,
+      "authors": [
+        {
+          "name": "Bernard J. Koch",
+          "id": ""
+        },
+        {
+          "name": "Emily L. Denton",
+          "id": ""
+        },
+        {
+          "name": "A. Hanna",
+          "id": ""
+        },
+        {
+          "name": "J. Foster",
+          "id": ""
+        }
+      ],
+      "venue": "NeurIPS Datasets and Benchmarks",
+      "journal": null,
+      "url": "https://api.semanticscholar.org/CorpusId:244894836",
+      "publicationDate": null,
+      "citationCount": null,
+      "categories": [],
+      "relevanceScore": 0.3115413390565691,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    }
+  ]
+}
