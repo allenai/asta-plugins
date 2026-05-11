@@ -1,24 +1,9 @@
 ---
-name: Local PDF Index Builder
+name: local-paper-index
 description: Build a searchable Asta document index from a collection of local PDF files. Use when the user asks to "index these PDFs", "put these PDFs into an Asta index", "index these PDFs using Asta", "build a local paper index", "make these PDFs searchable", or "create an index from these papers".
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta pdf-extraction *)
-  - Bash(asta documents *)
-  - Bash(python3 *)
-  - Bash(bash *)
-  - Bash(find *)
-  - Bash(ls *)
-  - Bash(wc *)
-  - Bash(du *)
-  - Bash(mv *)
-  - Bash(cp *)
-  - Bash(cat *)
-  - Bash(mkdir *)
-  - Read(*)
-  - Write(*)
-  - Glob(*)
+allowed-tools: Bash(asta pdf-extraction *) Bash(asta documents *) Bash(python3 *) Bash(bash *) Bash(find *) Bash(ls *) Bash(wc *) Bash(du *) Bash(mv *) Bash(cp *) Bash(cat *) Bash(mkdir *) Read(*) Write(*) Glob(*)
 ---
 
 # Local PDF Index Builder

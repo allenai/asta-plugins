@@ -29,6 +29,9 @@ jobs:
       - name: Check plugins
         run: make check-plugins
 
+      - name: Check skill frontmatter against Agent Skills spec
+        run: make check-skills
+
   test:
     runs-on: ubuntu-latest
     strategy:

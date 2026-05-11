@@ -1,14 +1,9 @@
 ---
-name: AutoDiscovery
+name: autodiscovery
 description: Create, configure, and monitor AutoDiscovery runs. Use when the user asks about their runs, experiments, discoveries, wants to check status, or wants to start a new discovery run.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta autodiscovery *)
-  - Bash(asta auth *)
-  - Read(*)
-  - Write(*.json)
-  - TaskOutput
+allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Read(*) Write(*.json) TaskOutput
 ---
 # AutoDiscovery
 

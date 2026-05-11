@@ -1,8 +1,7 @@
 ---
-name: Semantic Scholar Lookup
+name: semantic-scholar
 description: This skill should be used when the user asks to "get paper details", "look up a paper", "find citations", "who cited this paper", "papers by [author]", "search for papers on [topic]", or needs quick lookups of paper metadata, citations, or author information from Semantic Scholar. Use this for fast, targeted queries (not comprehensive reports).
-allowed-tools:
-  - Bash(asta papers *)
+allowed-tools: Bash(asta papers *)
 ---
 
 # Semantic Scholar Lookup

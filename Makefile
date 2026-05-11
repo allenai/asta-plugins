@@ -1,4 +1,4 @@
-.PHONY: help install test test-unit test-integration test-coverage lint format format-check clean build build-plugins publish publish-test push-version-tag version set-version check-plugins docker docker-test docker-test-skills docker-claude-asta docker-claude-asta-preview docker-codex-asta docker-codex-asta-preview
+.PHONY: help install test test-unit test-integration test-coverage lint format format-check clean build build-plugins publish publish-test push-version-tag version set-version check-plugins check-skills docker docker-test docker-test-skills docker-claude-asta docker-claude-asta-preview docker-codex-asta docker-codex-asta-preview
 
 # Default target
 help:
@@ -97,6 +97,10 @@ check-plugins:
 	fi
 	@echo "plugins/ is up to date"
 
+# Validate every SKILL.md against the Agent Skills spec (used in CI)
+check-skills:
+	@uvx --with pyyaml python scripts/validate-skills.py
+
 # Build distribution packages
 build: clean
 	uv build
@@ -180,5 +184,5 @@ check: format-check lint test-unit
 	@echo "All checks passed!"
 
 # Full CI check
-ci: format-check lint test check-plugins
+ci: format-check lint test check-plugins check-skills
 	@echo "Full CI checks passed!"

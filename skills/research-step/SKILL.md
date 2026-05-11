@@ -1,16 +1,7 @@
 ---
 name: research-step
 description: Plan and execute autonomous research as a graph of typed tasks tracked in beads. Use when working from a mission.md to drive multi-step research with explicit dependencies and structured outputs.
-allowed-tools:
-  - Bash(bd:*)
-  - Bash(date:*)
-  - Bash(scripts/*)
-  - Read(assets/**)
-  - Read(workflows/**)
-  - Read(scripts/**)
-  - Skill(asta:*)
-  - Skill(asta-preview:*)
-  - Skill(asta-plugins:*)
+allowed-tools: Bash(bd:*) Bash(date:*) Bash(scripts/*) Read(assets/**) Read(workflows/**) Read(scripts/**) Skill(asta:*) Skill(asta-preview:*) Skill(asta-plugins:*)
 ---
 
 # Research Step

@@ -1,15 +1,9 @@
 ---
-name: Data Analysis
+name: analyze-data
 description: This skill should be used when the user asks to "analyze this dataset", "run datavoyager", "run data voyager", "explore this data", "what's in this CSV", "statistical analysis of", "find patterns in", or wants an AI-driven, code-executing analysis of a tabular dataset that answers a specific research question.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta auth login)
-  - Bash(asta auth status)
-  - Bash(asta analyze-data *)
-  - Bash(asta artifacts *)
-  - Bash(asta documents *)
-  - Bash(open *)
+allowed-tools: Bash(asta auth login) Bash(asta auth status) Bash(asta analyze-data *) Bash(asta artifacts *) Bash(asta documents *) Bash(open *)
 ---
 
 # Data Analysis

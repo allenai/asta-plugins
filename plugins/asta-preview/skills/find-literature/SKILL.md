@@ -1,14 +1,9 @@
 ---
-name: Asta Literature Search
+name: find-literature
 description: This skill should be used when the user asks to "find papers", "search for papers", "what does the literature say", "find research on", "academic papers about", "literature review", "cite papers", or needs to answer questions using academic literature.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta literature find *)
-  - Bash(asta literature interactive *)
-  - Bash(asta papers *)
-  - TaskOutput
-  - Bash(jq *)
+allowed-tools: Bash(asta literature find *) Bash(asta literature interactive *) Bash(asta papers *) TaskOutput Bash(jq *)
 ---
 
 # Find Literature

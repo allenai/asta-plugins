@@ -1,12 +1,8 @@
 ---
-name: Asta Library
+name: asta-documents
 description: Local document metadata index for files used by Asta skills and tools. Use this skill when the user asks to store a document "in Asta" or retrieve "from Asta". Use it when the
   user references an "Asta document" or anything with an `asta://` URI.
-allowed-tools:
-  - Bash(asta documents *)
-  - Read(*)
-  - TaskOutput
-  - Write(.asta/*)
+allowed-tools: Bash(asta documents *) Read(*) TaskOutput Write(.asta/*)
 ---
 
 # Asta Documents Management
