@@ -1,13 +1,9 @@
 ---
-name: Asta Artifacts
+name: artifacts
 description: Use this skill when the user asks to view, export, or open agent output artifacts — "show me the artifacts", "export the results", "open the report", "convert the task output to HTML", "what did the agent produce", or wants to work with structured outputs from an A2A agent task.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta * task *)
-  - Bash(asta artifacts *)
-  - Bash(asta documents *)
-  - Bash(open *)
+allowed-tools: Bash(asta * task *) Bash(asta artifacts *) Bash(asta documents *) Bash(open *)
 ---
 
 # Asta Artifacts

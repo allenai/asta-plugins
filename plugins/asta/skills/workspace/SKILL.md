@@ -1,5 +1,5 @@
 ---
-name: Workspace
+name: workspace
 description: Set up a GitHub Codespaces or Dev Container environment with Asta skills installed in GitHub Copilot and Quarto pre-configured. Use when asked to set up a Codespace or devcontainer for an Asta project.
 ---
 

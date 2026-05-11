@@ -1,12 +1,7 @@
 ---
-name: Preview
+name: preview
 description: Render and deploy project documents, reports, and notebooks. Use when docs need to be shared or when previewing how documents render with citations and formatting.
-allowed-tools:
-  - Bash(quarto render *)
-  - Bash(quarto preview *)
-  - Bash(which quarto)
-  - Bash(gh run list *)
-  - Bash(gh run view *)
+allowed-tools: Bash(quarto render *) Bash(quarto preview *) Bash(which quarto) Bash(gh run list *) Bash(gh run view *)
 ---
 
 # Preview

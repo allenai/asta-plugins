@@ -1,10 +1,7 @@
 ---
-name: Asta Literature Reports
+name: literature-report
 description: Create or update literature reviews/reports. Use whenever you need to research, summarize, or synthesize the literature.
-allowed-tools:
-  - Read(.asta/literature/*)
-  - TaskOutput
-  - Bash(jq *)
+allowed-tools: Read(.asta/literature/*) TaskOutput Bash(jq *)
 ---
 
 # Literature Reports
