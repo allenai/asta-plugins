@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "asta"
-version = "0.16.0"
+version = "0.17.0"
 source = { editable = "." }
 dependencies = [
     { name = "asta-agent", extra = ["a2a-client"] },
@@ -106,7 +106,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "asta-agent"
-version = "1.0.8"
+version = "1.0.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
@@ -114,14 +114,15 @@ dependencies = [
     { name = "boto3" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/44/670edfdf3bcdce50ffecd0da918797bc868e7ff7f170a11b692e8db2d77a/asta_agent-1.0.8.tar.gz", hash = "sha256:b31b5802fefa0d6f5e666ff95749ce73a6d8c631ae6d232d04d582136410bd11", size = 24007, upload-time = "2026-05-05T22:27:03.203Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/fa/de9f80165d37ac645091cf8e630fb099e979cb813e93a44aada8aa813142/asta_agent-1.0.10.tar.gz", hash = "sha256:5a2ebba2ea472549bac406d66e78d22b5035b4b842fd4c5e555752b688b7deb1", size = 45790, upload-time = "2026-05-08T23:32:04.819Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/00/88f905daf1cddb92ea7126ec755d1370d98acdc65081611b3ecb91243b0c/asta_agent-1.0.8-py3-none-any.whl", hash = "sha256:d5c414fb1fe7c2828a973d1196a6dacafca06fd668ea27de46a66e717ea10255", size = 24550, upload-time = "2026-05-05T22:27:02.007Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/e3/f76655e376bacdfd542f8b0f89178d768a966e6773080ec42880a73a8f18/asta_agent-1.0.10-py3-none-any.whl", hash = "sha256:81e0f22ffa8681ffd592b70def01603967dc6725a616c5805123fc4b4bc93757", size = 33046, upload-time = "2026-05-08T23:32:05.697Z" },
 ]
 
 [package.optional-dependencies]
 a2a-client = [
     { name = "click" },
+    { name = "platformdirs" },
 ]
 
 [[package]]
