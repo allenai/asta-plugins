@@ -64,7 +64,8 @@ class Paper(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    # Use validation_alias to accept snake_case from API
+    # Use validation_alias to accept snake_case from API. The A2A artifact path
+    # delivers corpusId as a string under s2Metadata; coerce digit-strings to int.
     corpusId: int = Field(validation_alias="corpus_id")
     title: str
     abstract: str | None = None
@@ -110,6 +111,13 @@ class Paper(BaseModel):
                 result.append(author)
         return result
 
+    @field_validator("corpusId", mode="before")
+    @classmethod
+    def coerce_corpus_id(cls, v):
+        if isinstance(v, str) and v.isdigit():
+            return int(v)
+        return v
+
 
 class LiteratureSearchResult(BaseModel):
     """Complete literature search result"""
@@ -122,3 +130,7 @@ class LiteratureSearchResult(BaseModel):
 
     query: str
     results: list[Paper]
+    # Populated by `asta literature interactive` to identify the conversation
+    # so a follow-up call can resume it. None for one-shot `asta literature find`.
+    thread_id: str | None = None
+    narrative: str | None = None
