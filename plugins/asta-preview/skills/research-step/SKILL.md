@@ -52,7 +52,7 @@ Finally, run a single iteration of the following research loop:
 2. Analyze what has been done and decide the next concrete TASK to perform
 3. Summarize relevant background knowledge / context that is needed to understand TASK and perform it correctly. Create a file background_knowledge.txt and write that summary into it. If background_knowledge.txt already exists, overwrite it.
 4. Select and invoke the most appropriate skill for that subtask. For example:
-    - To code up and run a software experiment, use the run-experiment skill (which invokes the Panda research tool).
+    - To code up and run a software experiment, use the run-experiment skill (which invokes the Panda research tool). See that skill's "Environment Variables" section for how to select the underlying LLM (e.g., via `PANDA_LLM`) and set provider credentials.
     - To survey, summarize, or assess the literature, use the literature-report skill.
 
 When that task has been completed:

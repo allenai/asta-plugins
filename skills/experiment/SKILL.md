@@ -30,6 +30,28 @@ fi
 
 **Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
 
+## Environment Variables
+
+`asta experiment` (Panda) reads its model choice and credentials from the environment. These are not exposed as CLI flags, so set them before invoking the skill if you want to override the defaults.
+
+**Model selection:**
+- `PANDA_LLM` — selects the underlying LLM (e.g., a Claude or GPT model name). If unset, the default defined in `panda_agent/config.py` is used.
+
+**Provider credentials** (set the ones matching the model you select via `PANDA_LLM`):
+- `OPENAI_API_KEY` — required for GPT models; also required for Panda's default configuration.
+- `ANTHROPIC_API_KEY` — required to use Claude models.
+- `TOGETHER_API_KEY` — required to use Mistral or Llama models.
+- `INFERD_TOKEN` — required to use OLMo models.
+
+**Example — run the experiment with Claude:**
+```bash
+export PANDA_LLM="claude-3-5-sonnet-latest"
+export ANTHROPIC_API_KEY="..."
+asta experiment --task "..." --outputs_dir "$OUTPUTS_DIR" --result_file "$OUTPUTS_DIR/result.json"
+```
+
+For the authoritative list of supported models and any additional variables, see `asta experiment --help` and the [Panda README](https://github.com/allenai/panda).
+
 
 ## Workflow
 
