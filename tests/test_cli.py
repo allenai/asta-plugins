@@ -200,6 +200,184 @@ class TestFindCommand:
         )
 
 
+class TestReportCommand:
+    """Test 'asta literature report' command."""
+
+    RESULTS_JSON = {
+        "query": "transformers for NLP",
+        "results": [
+            {
+                "corpus_id": 111,
+                "title": "Attention Is All You Need",
+                "abstract": "We propose a new network architecture, the Transformer.",
+                "year": 2017,
+                "authors": [{"name": "Vaswani, A.", "authorId": "1"}],
+                "relevance_score": 0.95,
+                "snippets": [{"text": "The Transformer follows an encoder-decoder structure."}],
+            },
+            {
+                "corpus_id": 222,
+                "title": "BERT: Pre-training of Deep Bidirectional Transformers",
+                "abstract": "We introduce BERT.",
+                "year": 2019,
+                "authors": [{"name": "Devlin, J.", "authorId": "2"}],
+                "relevance_score": 0.90,
+                "snippets": [],
+            },
+        ],
+    }
+
+    API_RESPONSE = {
+        "report_title": "Transformers for NLP",
+        "sections": [
+            {"title": "Introduction", "text": "Transformers have revolutionized NLP."},
+            {"title": "Key Works", "text": "Vaswani et al. introduced the Transformer."},
+        ],
+        "report_id": "report-abc-123",
+        "cost": 0.01,
+    }
+
+    def test_report_missing_input(self, runner, tmp_path):
+        """Test report command fails without --input."""
+        output_file = tmp_path / "report.md"
+        result = runner.invoke(cli, ["literature", "report", "-o", str(output_file)])
+        assert result.exit_code != 0
+
+    def test_report_missing_output(self, runner, tmp_path):
+        """Test report command fails without --output."""
+        input_file = tmp_path / "results.json"
+        input_file.write_text(json.dumps(self.RESULTS_JSON))
+        result = runner.invoke(cli, ["literature", "report", "-i", str(input_file)])
+        assert result.exit_code != 0
+
+    def test_report_success(self, runner, tmp_path):
+        """Test successful report generation writes markdown file."""
+        input_file = tmp_path / "results.json"
+        input_file.write_text(json.dumps(self.RESULTS_JSON))
+        output_file = tmp_path / "report.md"
+
+        with patch("asta.literature.report.NoraReportClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.generate_report.return_value = self.API_RESPONSE
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                ["literature", "report", "-i", str(input_file), "-o", str(output_file)],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert output_file.exists()
+        content = output_file.read_text()
+        assert "# Transformers for NLP" in content
+        assert "## Introduction" in content
+        assert "Transformers have revolutionized NLP." in content
+
+    def test_report_passes_query_from_results(self, runner, tmp_path):
+        """Test that the query from the results file is passed to the client."""
+        input_file = tmp_path / "results.json"
+        input_file.write_text(json.dumps(self.RESULTS_JSON))
+        output_file = tmp_path / "report.md"
+
+        with patch("asta.literature.report.NoraReportClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.generate_report.return_value = self.API_RESPONSE
+            MockClient.return_value = mock_instance
+
+            runner.invoke(
+                cli,
+                ["literature", "report", "-i", str(input_file), "-o", str(output_file)],
+            )
+
+            mock_instance.generate_report.assert_called_once()
+            call_kwargs = mock_instance.generate_report.call_args[1]
+            assert call_kwargs["query"] == "transformers for NLP"
+
+    def test_report_query_override(self, runner, tmp_path):
+        """Test --query overrides the query from the results file."""
+        input_file = tmp_path / "results.json"
+        input_file.write_text(json.dumps(self.RESULTS_JSON))
+        output_file = tmp_path / "report.md"
+
+        with patch("asta.literature.report.NoraReportClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.generate_report.return_value = self.API_RESPONSE
+            MockClient.return_value = mock_instance
+
+            runner.invoke(
+                cli,
+                [
+                    "literature",
+                    "report",
+                    "-i",
+                    str(input_file),
+                    "-o",
+                    str(output_file),
+                    "--query",
+                    "custom query",
+                ],
+            )
+
+            call_kwargs = mock_instance.generate_report.call_args[1]
+            assert call_kwargs["query"] == "custom query"
+
+    def test_report_max_papers_option(self, runner, tmp_path):
+        """Test --max-papers limits the number of documents sent."""
+        input_file = tmp_path / "results.json"
+        input_file.write_text(json.dumps(self.RESULTS_JSON))
+        output_file = tmp_path / "report.md"
+
+        with patch("asta.literature.report.NoraReportClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.generate_report.return_value = self.API_RESPONSE
+            MockClient.return_value = mock_instance
+
+            runner.invoke(
+                cli,
+                [
+                    "literature",
+                    "report",
+                    "-i",
+                    str(input_file),
+                    "-o",
+                    str(output_file),
+                    "--max-papers",
+                    "1",
+                ],
+            )
+
+            call_kwargs = mock_instance.generate_report.call_args[1]
+            assert len(call_kwargs["documents"]) == 1
+            # Should be the highest-relevance paper
+            assert call_kwargs["documents"][0]["corpus_id"] == "111"
+
+    def test_report_api_error(self, runner, tmp_path):
+        """Test report command exits with code 1 on API error."""
+        input_file = tmp_path / "results.json"
+        input_file.write_text(json.dumps(self.RESULTS_JSON))
+        output_file = tmp_path / "report.md"
+
+        with patch("asta.literature.report.NoraReportClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.generate_report.side_effect = Exception("API error")
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                ["literature", "report", "-i", str(input_file), "-o", str(output_file)],
+            )
+
+        assert result.exit_code == 1
+
+    def test_report_config(self):
+        """Test that the report API is configured in asta.conf."""
+        from asta.utils.config import get_api_config
+
+        config = get_api_config("report")
+        assert "base_url" in config
+        assert "/api/corpus-qa" in config["base_url"]
+
+
 class TestPassthroughUtility:
     """Test generic passthrough utility functions."""
 
