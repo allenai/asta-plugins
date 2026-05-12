@@ -1,7 +1,7 @@
 ---
 name: literature-report
 description: Create or update literature reviews/reports. Use whenever you need to research, summarize, or synthesize the literature.
-allowed-tools: Read(.asta/literature/*) TaskOutput Bash(jq *)
+allowed-tools: Read(.asta/documents/literature/*) TaskOutput Bash(jq *)
 ---
 
 # Literature Reports
@@ -10,7 +10,7 @@ Create or update literature reviews/reports as markdown documents with citations
 
 ## Finding Papers
 
-- Check `.asta/literature/find/` for existing search results before running new searches.
+- Check `.asta/documents/literature/find/` for existing search results before running new searches.
 - Use the **Find Literature** skill for comprehensive searches and for the result schema and jq access patterns.
 - Use the **Semantic Scholar Lookup** skill for targeted queries: specific papers, citations, and author searches.
 
