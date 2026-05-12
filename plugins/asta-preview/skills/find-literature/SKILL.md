@@ -1,13 +1,9 @@
 ---
-name: Asta Literature Search
+name: find-literature
 description: This skill should be used when the user asks to "find papers", "search for papers", "what does the literature say", "find research on", "academic papers about", "literature review", "cite papers", or needs to answer questions using academic literature.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta literature find *)
-  - Bash(asta papers *)
-  - TaskOutput
-  - Bash(jq *)
+allowed-tools: Bash(asta literature find *) Bash(asta literature interactive *) Bash(asta papers *) TaskOutput Bash(jq *)
 ---
 
 # Find Literature
@@ -17,13 +13,72 @@ Search academic literature for papers relevant to a query. The search will retur
 This is an advanced search, so the query can be long and complex. You may ask the user
 questions to clarify the topic and refine the query before running the search.
 
+## Choosing `find` vs `interactive`
+
+Two entry points are available. Both run the same retrieval pipeline (criteria extraction,
+candidate retrieval, re-ranking). The significant difference is what happens around that
+pipeline — and the right choice is mostly driven by **what the session as a whole is about**,
+not by the complexity of any single query:
+
+- **`asta literature interactive`** — default for literature-focused sessions. Use it when the
+  **first interaction** in the session is about literature search or exploration, or when the
+  **entire session** is focused on literature. It runs the full Asta paper-finder agent: better
+  planning for complex or multi-faceted queries (decomposition, iterative search strategies) and
+  a reasoning / results-verification loop that can re-run or refine the search when the initial
+  results don't satisfy the criteria. It also maintains conversation state via a `thread_id`, so
+  follow-ups can build on prior results: filtering ("now narrow to surveys from 2023+"),
+  aggregating ("group by venue"), following relations ("expand on the third paper's citations"),
+  or iterative refinement.
+
+- **`asta literature find`** — one attempt, no agent loop. Use it primarily when literature
+  search is **a sub-step inside some other multi-step flow** (data analysis, code generation,
+  a broader research workflow, etc.) where the same flow may issue many unrelated searches and
+  the latency of the full agent loop is not worth it for each one. Lower quality, much faster.
+  Don't reach for `find` just because a single query "looks simple" — if the session is
+  literature-centered, prefer `interactive`.
+
+**Continuing a conversation — recommended pattern (`--thread-dir`):** for any
+multi-turn search session, pick a directory named `.asta/literature/threads/<YYYY-MM-DD>-<slug>/`
+(date-prefixed slug, matching the convention used by other agents) and pass it
+on every turn. The CLI auto-resumes the conversation, writes one artifact per
+turn with a `.NNN` index suffix, and maintains a `DIR/index.json` that records
+turn order, queries, narratives, paper counts, and the `thread_id`. Use a
+meaningful `-o` basename per turn — the CLI inserts the turn index for you.
+
+```bash
+# Turn 1 — picks a thread dir; CLI creates DIR/index.json and DIR/transformer-survey.001.json
+asta literature interactive "transformer architecture survey" \
+  --thread-dir .asta/literature/threads/2026-05-04-transformer-architectures \
+  -o transformer-survey.json
+
+# Turn 2 — same dir; thread_id auto-resumes from index.json.
+# Writes DIR/narrow-2023.002.json and appends a turn entry to DIR/index.json.
+asta literature interactive "narrow to 2023+ long-context surveys" \
+  --thread-dir .asta/literature/threads/2026-05-04-transformer-architectures \
+  -o narrow-2023.json
+```
+
+Start a fresh conversation when the topic shifts substantially: pick a new
+`--thread-dir`. Reading the conversation back is straightforward — `jq` over
+`DIR/index.json` for the turn list, then open the per-turn JSON files referenced
+by `turns[].file`.
+
+Without `--thread-dir`, an invocation is a one-shot turn that doesn't continue
+any prior conversation. Use that for ad-hoc single queries; for any multi-turn
+session, always pass `--thread-dir`.
+
+Output deltas vs `find`: the `interactive` JSON adds `thread_id` and `narrative`
+(the agent's terminal response text). It does not currently populate
+`citationContexts` or `publicationDate` per paper; for those, use `find` or the
+`asta papers` commands.
+
 ## Installation
 
 This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.16.0
+PLUGIN_VERSION=0.17.0
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi

@@ -1,15 +1,9 @@
 ---
-name: PDF Text Extraction
+name: pdf-extraction
 description: Extract text from PDFs using olmOCR or remote OCR. Use when user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta pdf-extraction *)
-  - Read(.asta/documents/*)
-  - Write(.asta/documents/*)
-  - Read(*/markdown/*)
-  - Bash(mv *)
-  - Bash(cp *)
+allowed-tools: Bash(asta pdf-extraction *) Read(.asta/documents/*) Write(.asta/documents/*) Read(*/markdown/*) Bash(mv *) Bash(cp *)
 ---
 
 # PDF Text Extraction
@@ -25,7 +19,7 @@ This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.16.0
+PLUGIN_VERSION=0.17.0
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi

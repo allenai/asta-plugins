@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "asta"
-version = "0.16.0"
+version = "0.17.0"
 source = { editable = "." }
 dependencies = [
     { name = "asta-agent", extra = ["a2a-client"] },
@@ -87,7 +87,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asta-agent", extras = ["a2a-client"], specifier = "==1.0.6" },
+    { name = "asta-agent", extras = ["a2a-client"], specifier = ">=1.0.7" },
     { name = "asta-artifact", specifier = ">=1.0.6" },
     { name = "click", specifier = ">=8.0" },
     { name = "httpx", specifier = ">=0.26.0" },
@@ -106,7 +106,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "asta-agent"
-version = "1.0.6"
+version = "1.0.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
@@ -114,14 +114,15 @@ dependencies = [
     { name = "boto3" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/7d/6ceeea5693ea6a2abd099716fc9d2b61bb98d2b00b7d7bfa298a4f058c99/asta_agent-1.0.6.tar.gz", hash = "sha256:c66f539f537f6b48a02498dab964c5f89b10fb39a74d72330b0e8820c77a66e0", size = 23765, upload-time = "2026-04-30T03:38:15.398Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/fa/de9f80165d37ac645091cf8e630fb099e979cb813e93a44aada8aa813142/asta_agent-1.0.10.tar.gz", hash = "sha256:5a2ebba2ea472549bac406d66e78d22b5035b4b842fd4c5e555752b688b7deb1", size = 45790, upload-time = "2026-05-08T23:32:04.819Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8e/4d/a9ca2067c64393c36b52a5fde40c916413ebe1f3647487c7a341effd8224/asta_agent-1.0.6-py3-none-any.whl", hash = "sha256:6157846760c023444ba59b105b63e47b3abf8c6235b380944c27945a12e8d7df", size = 24277, upload-time = "2026-04-30T03:38:13.561Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/e3/f76655e376bacdfd542f8b0f89178d768a966e6773080ec42880a73a8f18/asta_agent-1.0.10-py3-none-any.whl", hash = "sha256:81e0f22ffa8681ffd592b70def01603967dc6725a616c5805123fc4b4bc93757", size = 33046, upload-time = "2026-05-08T23:32:05.697Z" },
 ]
 
 [package.optional-dependencies]
 a2a-client = [
     { name = "click" },
+    { name = "platformdirs" },
 ]
 
 [[package]]

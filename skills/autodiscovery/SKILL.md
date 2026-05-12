@@ -1,14 +1,9 @@
 ---
-name: AutoDiscovery
+name: autodiscovery
 description: Create, configure, and monitor AutoDiscovery runs. Use when the user asks about their runs, experiments, discoveries, wants to check status, or wants to start a new discovery run.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta autodiscovery *)
-  - Bash(asta auth *)
-  - Read(*)
-  - Write(*.json)
-  - TaskOutput
+allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Read(*) Write(*.json) TaskOutput
 ---
 # AutoDiscovery
 
@@ -20,7 +15,7 @@ This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.16.0
+PLUGIN_VERSION=0.17.0
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi

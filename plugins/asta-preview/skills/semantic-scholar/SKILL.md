@@ -1,8 +1,7 @@
 ---
-name: Semantic Scholar Lookup
+name: semantic-scholar
 description: This skill should be used when the user asks to "get paper details", "look up a paper", "find citations", "who cited this paper", "papers by [author]", "search for papers on [topic]", or needs quick lookups of paper metadata, citations, or author information from Semantic Scholar. Use this for fast, targeted queries (not comprehensive reports).
-allowed-tools:
-  - Bash(asta papers *)
+allowed-tools: Bash(asta papers *)
 ---
 
 # Semantic Scholar Lookup
@@ -20,13 +19,50 @@ allowed-tools:
 
 **Not for comprehensive reports** - use the Literature Report Generation skill for that.
 
+## Related: Find Literature skill
+
+`asta papers ...` (this skill) is for **mechanical, targeted lookups** against the Semantic
+Scholar API: fetch a known paper, list citations, search by keyword across titles / abstracts /
+bodies, look up an author. There is no agent-mediated reasoning beyond S2's own keyword ranking.
+
+The **Find Literature skill** (`asta literature find` / `asta literature interactive`) is for
+**topic-driven, criterion-based search**, where the system extracts relevance criteria from the
+query, retrieves candidates, and ranks them against those criteria with per-paper relevance
+summaries — closer to "literature search as a graded judgement" than to a keyword match.
+
+Use **this** skill (`asta papers`) when:
+
+- The user names a specific paper, author, ID, or exact phrase to look up
+- You need raw metadata (citations, venue, fields of study, openAccessInfo)
+- You're navigating a citation graph (who cites what, who an author has cited)
+- You want to grep for a specific string in paper bodies (`snippet-search`)
+- You need a fast result and exhaustive coverage isn't required
+
+Use the **Find Literature** skill instead when:
+
+- The user asks "find papers on X", "what does the literature say about Y", "papers that argue Z"
+- The query is a research topic, not a string match — and ranked relevance with explanations matters
+- The work session is exploratory: filtering prior results, aggregating, following relations across
+  multiple turns (use `asta literature interactive --thread-dir <dir>`)
+- A `find`-style one-shot or `interactive`-style multi-turn agent loop with verification will
+  produce a better-ranked result than raw keyword search
+
+The two are complementary. A common flow: use Find Literature to discover relevant papers on a
+topic, then `asta papers get` / `asta papers citations` to drill into specific ones.
+
+**Session-level rule of thumb:** if the session as a whole is about literature
+search/exploration (e.g. the first user turn is "find papers on X"), default to
+`asta literature interactive` for the discovery work, even when individual queries look simple.
+Reach for `asta papers` when the session is about something else and a quick metadata or
+citation lookup is just one step inside it.
+
 ## Installation
 
 This skill requires the `asta` CLI:
 
 ```bash
 # Install/reinstall at the correct version
-PLUGIN_VERSION=0.16.0
+PLUGIN_VERSION=0.17.0
 if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
   uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
 fi

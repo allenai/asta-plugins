@@ -1,15 +1,9 @@
 ---
-name: Generate Theories
+name: generate-theories
 description: This skill should be used when the user asks to "generate theories", "theorize about", "what theories explain", "form scientific theories", "literature-driven theories", "hypothesize", "form hypotheses", "generate hypotheses", "what hypotheses explain", "run the theorizer", or wants AI-generated, literature-grounded scientific theories or hypotheses about a research question.
 metadata:
   internal: true
-allowed-tools:
-  - Bash(asta auth login)
-  - Bash(asta auth status)
-  - Bash(asta generate-theories *)
-  - Bash(asta artifacts *)
-  - Bash(asta documents *)
-  - Bash(open *)
+allowed-tools: Bash(asta auth login) Bash(asta auth status) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(open *)
 ---
 
 # Generate Theories
