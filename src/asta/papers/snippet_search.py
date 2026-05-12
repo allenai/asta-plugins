@@ -61,6 +61,7 @@ def snippet_search(
     try:
         client = SemanticScholarClient()
         publication_date_or_year = date or os.environ.get("ASTA_PUBLICATION_DATE_RANGE")
+        inserted_before = inserted_before or os.environ.get("ASTA_INSERTED_BEFORE")
 
         result = client.snippet_search(
             query,
