@@ -32,7 +32,8 @@ Installing `bd` and `jq`, running `bd init`, and verifying `scripts/summary-chec
 | **brainstorm** | Default. Conversational exploration of current state; drafts/refines `mission.md`; hands off to other workflows when the user is ready to act. | `workflows/brainstorm.md` |
 | **init** | Set up the environment: install `bd`/`jq`, run `bd init`, verify `scripts/summary-check.sh`. Hands off to **plan**. | `workflows/init.md` |
 | **plan** | Create or extend the graph. Bootstraps the epic + initial frontier from `mission.md`, or replans downstream tasks after a closed task. | `workflows/plan.md` |
-| **execute** | Run one ready task end-to-end. Hands off to **plan** when the closed task type unlocks new structure; otherwise to **update-summary**. | `workflows/execute.md` |
+| **execute** | Run one ready task end-to-end. Hands off to **reflect**. | `workflows/execute.md` |
+| **reflect** | After a task closes, run structured reflection for high-signal task types; skip for mechanical ones. Hands off to **plan** or **update-summary**. | `workflows/reflect.md` |
 | **update-summary** | Regenerate `summary.md` from beads. Idempotent — no-op when `scripts/summary-check.sh` reports `status: fresh`. | `workflows/update-summary.md` |
 
 Task-type schemas live in `assets/schemas.yaml`.
@@ -51,7 +52,8 @@ If the user did not name a workflow, run **brainstorm**. It inspects the working
 
 - **init** → always run **plan** afterwards (which then chains to **update-summary**).
 - **plan** → always run **update-summary** afterwards so the digest reflects the new graph.
-- **execute** → if the closed task type is `literature_review`, `hypothesis`, `analysis`, or `synthesis`, chain to **plan** (which chains to **update-summary**); otherwise chain directly to **update-summary**.
+- **execute** → always chain to **reflect**.
+- **reflect** → if the closed task type is `literature_review`, `hypothesis`, `analysis`, or `synthesis`, chain to **plan** (which chains to **update-summary**); otherwise chain directly to **update-summary**.
 - **update-summary** and **brainstorm** → never chain.
 
 ## Boundaries

@@ -25,7 +25,14 @@ If `has_epic`, hand off to **update-summary** before anything else so `summary.m
 Pick the branch that matches; do not run more than one.
 
 - **No `mission.md`** → help the user draft one.
-  Engage in a short Socratic exchange. Useful prompts: the research question, why it matters, what success looks like, what's already known, what's explicitly out of scope. When you have enough, propose a draft, get confirmation, and write `mission.md`. Then offer to run **init**.
+  First, silently scan the working directory for context files (`*.md`, `*.txt`, notebooks); read any that exist and use them to ground your questions — do not re-ask for information already present.
+
+  Ask 1–2 questions at a time, adapting as answers come in. Cover three areas in roughly this order:
+  - **Core question** — what are they trying to build, discover, or understand? If this connects to a larger effort, what does it feed and what can it assume is handled elsewhere?
+  - **Exploratory dimensions** — what are the 2–4 independent lines of inquiry they're opening? These should be parallel angles to explore, not steps to complete in sequence. If priority isn't clear, ask which they'd pursue first and why.
+  - **Framing and scope** — what's their current mental model, even if early or rough? What does success look like — how will they know when the question is answered? What have they already ruled out or decided is out of scope?
+
+  When you have enough, propose a draft following `assets/mission-template.md`. Get confirmation before writing. After writing, offer to run **init**.
 
 - **`mission.md` exists, no epic** → recap the mission, check whether the user wants to refine it, then offer to run **init** to bootstrap the research session.
 
