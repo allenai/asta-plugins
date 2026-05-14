@@ -90,6 +90,14 @@ npx skills add /opt/asta-plugins -g --all --yes
 
 For a pre-configured VS Code environment with Asta skills and Quarto, see the [Workspace skill](skills/workspace/SKILL.md).
 
+## Benchmarking
+
+[`agent-baselines`](https://github.com/allenai/agent-baselines)'s [`inspect-swe`](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe) solver runs Asta skills against any [Inspect](https://inspect.aisi.org.uk/)-compatible eval suite via `-S skills=<path>`.
+
+To run a benchmark, see [Demo](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#demo), which runs the [`astabench`](https://github.com/allenai/asta-bench) science-agent suite with default skills. For your own edits, use [Swapping in local skills](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#swapping-in-local-skills) (run `make build-plugins` first, then point at the regenerated tree).
+
+For measuring the effect of a skill change, run a paired comparison via [Comparing two configurations](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#comparing-two-configurations). See [#60](https://github.com/allenai/asta-plugins/pull/60) for a worked example.
+
 ## Development
 
 See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.
