@@ -85,7 +85,7 @@ make format   # Auto-fix formatting
 make check    # Quick pre-commit check (format + lint + unit tests)
 make ci       # Full CI check (format + lint + all tests + plugins check)
 
-# Claude Code marketplace (run after editing skills/)
+# Claude Code marketplace (run before pushing skill/hook changes, not after each edit)
 make build-plugins  # Regenerate plugins/ from skills/
 make check-plugins  # Verify plugins/ is up to date
 ```
@@ -136,7 +136,7 @@ twice alongside `--plugin-dir`.
 |---|---|
 | Python files (`src/asta/`) | None — editable install |
 | `pyproject.toml` (new deps/scripts) | `make install` |
-| Skills (`skills/`) or hooks (`hooks/`) | `make build-plugins`, then restart `claude-asta` session |
+| Skills (`skills/`) or hooks (`hooks/`) | Restart `claude-asta` session to pick up the change. Run `make build-plugins` only when preparing to push changes to git — not after each edit. |
 
 ### Run Tests
 
@@ -332,10 +332,12 @@ The npx skills CLI reads `metadata.internal` directly from SKILL.md, so filterin
 **Workflow for changing skills:**
 
 ```bash
-# Edit the canonical source
+# Edit the canonical source — iterate as long as you want;
+# restart your claude-asta session to pick up changes.
 vim skills/my-skill/SKILL.md
 
-# Regenerate plugin packages
+# Once you're ready to push, regenerate plugin packages
+# (only at this point, not after each edit).
 make build-plugins
 
 # Commit both
