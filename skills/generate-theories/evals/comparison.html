@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Generate Theories — Old vs New Skill Comparison</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; line-height: 1.5; color: #1a1a1a; max-width: 1400px; margin: 0 auto; padding: 24px; background: #fafafa; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  h2 { font-size: 22px; margin-top: 0; }
+  .subtitle { color: #666; margin-bottom: 32px; font-size: 15px; }
+  .intro { background: white; padding: 20px 24px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #e5e5e5; }
+  .intro p { margin: 8px 0; }
+  .intro code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+  table.scorecard { width: 100%; border-collapse: collapse; background: white; margin-bottom: 32px; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden; }
+  table.scorecard th { background: #f5f5f5; padding: 12px; text-align: left; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+  table.scorecard td { padding: 14px 12px; border-top: 1px solid #f0f0f0; font-size: 15px; }
+  .score-cell { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; color: #444; }
+  .winner-cell { font-weight: 600; }
+  .winner-cell.tie { color: #777; }
+  .winner-cell.old-wins { color: #b8722d; }
+  .winner-cell.new-wins { color: #2a7a4a; }
+  .winner-cell.both-fail { color: #b03030; }
+  section.test { background: white; padding: 24px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #e5e5e5; }
+  .test-num { display: inline-block; background: #2a2a2a; color: white; padding: 2px 10px; border-radius: 4px; font-size: 16px; margin-right: 8px; font-weight: 700; }
+  .prompt { background: #f8f8f8; padding: 14px 16px; border-radius: 6px; border-left: 3px solid #555; margin-bottom: 16px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 4px; }
+  .prompt-text { font-size: 15px; color: #333; font-style: italic; }
+  .verdict { background: #fcfcfc; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #eee; font-size: 14px; }
+  .verdict-label { font-weight: 600; color: #555; margin-right: 6px; }
+  .verdict-winner { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-right: 10px; vertical-align: middle; }
+  .verdict-winner.tie { background: #f0f0f0; color: #555; }
+  .verdict-winner.old { background: #fff3e0; color: #b8722d; }
+  .verdict-winner.new { background: #e8f5e9; color: #2a7a4a; }
+  .verdict-winner.both-fail { background: #ffe5e0; color: #b03030; }
+  .verdict-text { color: #444; }
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .column { padding: 16px; border-radius: 6px; }
+  .old-col { background: #fff8f0; border: 1px solid #f5e0c5; }
+  .new-col { background: #f0f8f3; border: 1px solid #cce5d6; }
+  .col-header { font-weight: 700; font-size: 16px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid; }
+  .old-header { color: #b8722d; border-color: #b8722d; }
+  .new-header { color: #2a7a4a; border-color: #2a7a4a; }
+  .col-meta { margin-bottom: 16px; }
+  .col-meta > div { margin-bottom: 4px; }
+  .meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #888; font-weight: 600; }
+  .query { background: rgba(255,255,255,0.7); padding: 10px 12px; border-radius: 4px; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; color: #333; margin: 4px 0; }
+  code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 3px; }
+  .theory-list { margin: 8px 0 0 0; padding-left: 24px; }
+  .theory-list li { margin-bottom: 12px; }
+  .theory-name { font-weight: 600; font-size: 14px; color: #222; margin-bottom: 2px; }
+  details { margin-top: 2px; }
+  details summary { cursor: pointer; font-size: 13px; color: #555; }
+  details summary:hover { color: #000; }
+  .theory-desc { font-size: 13px; line-height: 1.6; color: #444; margin: 6px 0 0 0; padding: 8px 12px; background: rgba(0,0,0,0.03); border-radius: 4px; }
+  .no-data { color: #999; font-style: italic; padding: 12px; }
+  .chat-response { background: rgba(255,255,255,0.7); padding: 14px 16px; border-radius: 4px; font-size: 14px; line-height: 1.6; color: #222; }
+  .chat-response p { margin: 8px 0; }
+  .chat-response strong { color: #1a1a1a; }
+  .chat-response em { color: #2a7a4a; font-style: italic; font-weight: 500; }
+  .prior-state { margin-top: 16px; padding-top: 12px; border-top: 1px dashed #cce5d6; }
+  .prior-note { font-size: 13px; color: #666; font-style: italic; margin: 4px 0; }
+  .findings { background: white; padding: 24px; border-radius: 8px; margin-top: 24px; border: 1px solid #e5e5e5; }
+  .findings ol { padding-left: 20px; }
+  .findings li { margin-bottom: 12px; }
+  .findings strong { color: #000; }
+  a { color: #2a7a4a; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .iteration-banner { background: #e8f5e9; border-left: 4px solid #2a7a4a; padding: 12px 16px; border-radius: 4px; margin-bottom: 24px; font-size: 14px; color: #1a4a2a; }
+  @media (max-width: 900px) {
+    .comparison { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Generate Theories — Old vs New Skill Comparison</h1>
+<p class="subtitle">Real-Theorizer runs at small settings (5 papers, novelty off, accuracy-focused). 7 test prompts × 2 skill versions = 14 runs.</p>
+
+<div class="iteration-banner">
+  <strong>Iteration 2 updates:</strong> Tests 3 and 4 were re-run against the post-fix skill (find-and-extract no longer triggers query shaping; path 1 silent-when-all-five-pieces-named now fires correctly). Test 5's post-fix behavior (ask-with-candidates) is shown as a dry-run.
+</div>
+
+<div class="intro">
+  <p><strong>Setup:</strong> Each of the 7 prompts in <code>evals/evals.json</code> was processed by two subagents — one loading the original <code>SKILL.md</code>, one loading <code>SKILL-new.md</code>. Both submitted to Theorizer with identical small parameters. Subagents auto-approved any reshape and auto-picked automatic mode for testing simplicity.</p>
+  <p><strong>What this measures:</strong> Submitted query quality, downstream Theorizer output relevance, and behavioral differences in routing. Conversational UX behaviors were assessed separately in <code>evals/results.md</code> and <code>evals/results-real-theorizer.md</code>.</p>
+  <p><strong>Note on Test 3:</strong> The new skill was forced to automatic mode for testing parity. In normal use it would have respected the user's piecemeal phrasing — that side of its behavior is not measured here. The old skill correctly routed Test 3 to <code>find-and-extract</code> per its Flows table. <em>However</em>: Theorizer ran the full pipeline anyway (8 theories + 11 novelty evaluations returned), suggesting the agent does not currently honor stage boundaries.</p>
+  <p><strong>Note on Test 5:</strong> The new column shows the post-fix behavior (dry run, no Theorizer call). The pre-fix narrowed run is preserved in the collapsible "Prior state" section below the live response.</p>
+</div>
+
+<table class="scorecard">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Test</th>
+      <th>Old (query / output)</th>
+      <th>New (query / output)</th>
+      <th>Winner</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+      <tr>
+        <td><a href="#test-1">#1</a></td>
+        <td>fresh-user-no-commitment</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="winner-cell tie">Tie</td>
+      </tr>
+    
+      <tr>
+        <td><a href="#test-2">#2</a></td>
+        <td>user-commits-to-automatic</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="winner-cell tie">Tie</td>
+      </tr>
+    
+      <tr>
+        <td><a href="#test-3">#3</a></td>
+        <td>user-commits-to-piecemeal</td>
+        <td class="score-cell">RIGHT ROUTE / AGENT IGNORED STAGE</td>
+        <td class="score-cell">RIGHT ROUTE / AGENT IGNORED STAGE</td>
+        <td class="winner-cell both-fail">Both fail</td>
+      </tr>
+    
+      <tr>
+        <td><a href="#test-4">#4</a></td>
+        <td>already-good-question</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="score-cell">GOOD/HIGH (no friction)</td>
+        <td class="winner-cell new-wins">New wins</td>
+      </tr>
+    
+      <tr>
+        <td><a href="#test-5">#5</a></td>
+        <td>vague-question-needs-asking</td>
+        <td class="score-cell">BROAD-QUERY/HIGH (by luck)</td>
+        <td class="score-cell">ASKS-CORRECTLY (no submission)</td>
+        <td class="winner-cell new-wins">New wins</td>
+      </tr>
+    
+      <tr>
+        <td><a href="#test-6">#6</a></td>
+        <td>inferrable-question</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="score-cell">GOOD/HIGH</td>
+        <td class="winner-cell tie">Tie</td>
+      </tr>
+    
+      <tr>
+        <td><a href="#test-7">#7</a></td>
+        <td>non-research-question</td>
+        <td class="score-cell">N/A/WRONG-TOOL</td>
+        <td class="score-cell">N/A (correct decline)</td>
+        <td class="winner-cell new-wins">New wins</td>
+      </tr>
+    
+  </tbody>
+</table>
+
+
+    <section class="test" id="test-1">
+      <h2><span class="test-num">#1</span> fresh-user-no-commitment</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">Generate theories about how the design of empty states (in productivity apps shown right after first install, before any user data exists) affects subsequent user re-engagement and retention in the first 7 days.</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner tie">Tie</span>
+        <span class="verdict-text">Both produce strong on-topic theories. New skill adds mechanism hints in the query; old skill submits closer to the user&#x27;s phrasing.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>literature-theory-generation</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">How does the design of empty states in productivity apps (shown right after first install, before any user data exists) affect subsequent user re-engagement and retention in the first 7 days?</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Empty-State as Cold-Start Control System (First-Value + Lifecycle Gating)</div>
+<details><summary>Within the first 7 days after install, empty-state (zero-data, first-run) UI in productivity apps primarily affects re-engagement/retention by acting like a cold-start control system: it (1) ensures an immediately usable initial state that </summary>
+<p class='theory-desc'>Within the first 7 days after install, empty-state (zero-data, first-run) UI in productivity apps primarily affects re-engagement/retention by acting like a cold-start control system: it (1) ensures an immediately usable initial state that delivers “first value” (reducing uncertainty and time-to-first-success), and (2) adapts the amount/type of scaffolding via a low-dimensional lifecycle/activity code (e.g., bucketized action count since install) rather than high-dimensional identity or “all available signals.” Evidence from cold-start personalization shows that compact lifecycle/activity codes outperform high-dimensional identity/all-feature gating for new users, while overly broad signal use can degrade early outcomes. Translated to UI, the theory predicts that empty-state experiences that switch among a small set of onboarding scaffolds using concise lifecycle buckets will outperform both a one-size-fits-all empty state and “hyper-personalized” empty states driven by many weak/inferred signals.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Activation–Retention Coupling with a Two-Stage Bottleneck (Activation is Necessary, Not Sufficient)</div>
+<details><summary>Empty-state design influences first-week retention through a two-stage bottleneck: Stage 1 is activation (first successful action/output), Stage 2 is repeat value realization (the product repeatedly matches the user’s evolving intent).</summary>
+<p class='theory-desc'>Empty-state design influences first-week retention through a two-stage bottleneck: Stage 1 is activation (first successful action/output), Stage 2 is repeat value realization (the product repeatedly matches the user’s evolving intent). Empty-state UI mainly drives Stage 1 by reducing friction and providing clear next actions; however, retention gains require that the initial scaffold/personalization remains aligned as user intent updates. This explains why activation can correlate strongly with retention at aggregate levels while still failing to produce consistent retention improvements when downstream value alignment is weak or drifts (e.g., month-to-month).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Precision–Coverage Tradeoff Theory for Empty-State Seeding and Re-engagement (refined)</div>
+<details><summary>Within the first week after install, empty-state (zero-data) design influences re-engagement primarily by shaping the user’s first-session belief that the app is (a) relevant to their goals and (b) easy to progress in.</summary>
+<p class='theory-desc'>Within the first week after install, empty-state (zero-data) design influences re-engagement primarily by shaping the user’s first-session belief that the app is (a) relevant to their goals and (b) easy to progress in. Any empty-state that seeds content (templates, starter projects, suggested categories, autofilled structure, role-based defaults) induces a precision–coverage tradeoff: broader seeds raise the probability that something matches (coverage) but can also raise perceived irrelevance/noise (error), increasing cognitive load and lowering trust. Retention is maximized by keeping early perceived error bounded while providing enough coverage to yield a successful first action. Evidence from cold-start bootstrapping and gating shows that over-inclusive inputs (peer unions; all-features gating) can be measurably harmful, while compact lifecycle/activity codes or conservative seeds reduce noise and improve early outcomes.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Lifecycle-Partitioned Guidance Theory (from cold-start gating to empty-state UI)</div>
+<details><summary>Early retention is improved when the first-run empty-state UI adapts to the user’s lifecycle/activity stage using a compact, behavior-proximal signal (e.g., ‘impressions/actions completed since install’) rather than using high-dimensional o</summary>
+<p class='theory-desc'>Early retention is improved when the first-run empty-state UI adapts to the user’s lifecycle/activity stage using a compact, behavior-proximal signal (e.g., ‘impressions/actions completed since install’) rather than using high-dimensional or overly rich contextual features. The mechanism is that lifecycle-partitioning allows the system to present stage-appropriate guidance: more scaffolding and clearer next actions for true novices, and less intrusive guidance with more autonomy for returning/active users. Evidence from POSO shows that a bucketized activity count (AVC) is a particularly effective partitioning signal for cold-start personalization, while overly complex ‘all-features’ conditioning can hurt. Translated to productivity apps, this implies empty-state effectiveness depends on correctly detecting lifecycle buckets and serving distinct empty-state variants per bucket to avoid both under-guidance (novices) and over-guidance (experienced users).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>First-Value Scaffolding Theory for Empty-State Retention (D0–D7)</div>
+<details><summary>Within the first 7 days after install, empty-state UI in productivity apps primarily affects re-engagement/retention by determining whether the user experiences &quot;first value&quot; (a credible, relevant output) before they churn.</summary>
+<p class='theory-desc'>Within the first 7 days after install, empty-state UI in productivity apps primarily affects re-engagement/retention by determining whether the user experiences &quot;first value&quot; (a credible, relevant output) before they churn. Empty-state designs that algorithmically or UI-wise scaffold an initial state (templates, seeded content, pre-filled recommendations, or guided next steps) increase early engagement when they are (i) sufficiently relevant to the user and (ii) not overly noisy. The net effect on retention is mediated by early engagement (activation/use) but can fail if scaffolding introduces excessive irrelevance, increasing cognitive load and perceived mismatch.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Concise Lifecycle Signal Theory for Empty-State Personalization (Avoid Feature Submergence)</div>
+<details><summary>Early retention gains from empty-state UI personalization depend less on using many user attributes and more on using a single, robust lifecycle/activity signal to select among a small number of onboarding/empty-state variants.</summary>
+<p class='theory-desc'>Early retention gains from empty-state UI personalization depend less on using many user attributes and more on using a single, robust lifecycle/activity signal to select among a small number of onboarding/empty-state variants. Overly complex routing based on high-dimensional or weakly predictive features yields inconsistent guidance and can underperform due to &#x27;submergence&#x27;—the routing mechanism fails to isolate the relevant cold-start heterogeneity. Bucketized activity counts act as a sufficient statistic for early-stage readiness and should drive progressive empty-state changes.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>First-Week Retention as a Function of Empty-State Information Quality and Friction</div>
+<details><summary>This theory explains 0–7 day re-engagement/retention in productivity apps as primarily determined by how the first-run/empty-state experience converts a user from “no structure + uncertainty” to “some structure + confidence” with minimal co</summary>
+<p class='theory-desc'>This theory explains 0–7 day re-engagement/retention in productivity apps as primarily determined by how the first-run/empty-state experience converts a user from “no structure + uncertainty” to “some structure + confidence” with minimal cost. The core claim is that empty-state interventions work by delivering early perceived value (relevance/fit of suggested actions or content) while controlling cognitive load and irrelevance. Both UI empty-state design and model-side cold-start personalization influence the same downstream variable: early-session success (e.g., task completion, meaningful consumption/creation), which then amplifies the probability of returning within the first week.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Activation–Retention Coupling With a Moderated Funnel (Platform and Stage Effects)</div>
+<details><summary>This theory models first-week retention as a coupled funnel: empty-state design affects activation quality (not just activation occurrence), and activation quality is strongly correlated with short-horizon retention, but the coupling is mod</summary>
+<p class='theory-desc'>This theory models first-week retention as a coupled funnel: empty-state design affects activation quality (not just activation occurrence), and activation quality is strongly correlated with short-horizon retention, but the coupling is moderated by platform constraints (mobile vs desktop), and by user stage (new vs returning/inactive). It predicts that mobile-first empty-state simplification increases activation more reliably than it increases retention; retention gains require that empty-state scaffolding continues to support subsequent sessions or the user will churn despite activating.</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path:</span> shape → mode → submit</div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Build a theory of how the design of first-run empty states in productivity apps affects 7-day re-engagement and retention, via users&#x27; perceived clarity of next action and early sense of personal value, in newly-installed consumer productivity apps.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Dual-Channel First-Run Commitment Theory (Clarity × Early Value) — revised</div>
+<details><summary>First-run empty-state design in newly-installed consumer productivity apps influences 7-day re-engagement and retention by shaping two early psychological channels: (1) perceived clarity of the next action (reducing cognitive friction/uncer</summary>
+<p class='theory-desc'>First-run empty-state design in newly-installed consumer productivity apps influences 7-day re-engagement and retention by shaping two early psychological channels: (1) perceived clarity of the next action (reducing cognitive friction/uncertainty), and (2) an early sense of personal value (increasing expected benefits and affect). The channels interact: clarity raises the probability the user completes a meaningful first task, which converts perceived value into experienced value; early value makes the clarified action feel worth doing. Because the provided evidence is from experienced users and uses continuance intention (not behavioral D7), the theory treats these relationships as mechanistic hypotheses for first-run contexts, anchored in observed associations between value-related constructs and continuance intention and the weaker marginal role of effort/clarity in a high-familiarity sample.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Belief-Stack Anchoring Theory of First-Run Retention</div>
+<details><summary>First-run empty states act as a &#x27;belief stack initializer&#x27;: users infer (a) reliability/quality of the system’s information and guidance, (b) convenience of executing the core workflow, and (c) immediate affect/pleasantness.</summary>
+<p class='theory-desc'>First-run empty states act as a &#x27;belief stack initializer&#x27;: users infer (a) reliability/quality of the system’s information and guidance, (b) convenience of executing the core workflow, and (c) immediate affect/pleasantness. These early inferences anchor later interpretations of friction and outcomes; users are more likely to re-engage within 7 days when the initial stack implies the app will be dependable, convenient, and rewarding. The theory emphasizes that first-run design changes retention primarily by shifting these inferred beliefs (even before deep use), not by teaching features per se.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Value-Weighted Action Clarity Theory (VWAC) for First-Run Empty States</div>
+<details><summary>In newly-installed consumer productivity apps, first-run empty states influence 7-day re-engagement primarily by shaping two early cognitive appraisals: (1) perceived clarity of the next action (the user can confidently take a first step) a</summary>
+<p class='theory-desc'>In newly-installed consumer productivity apps, first-run empty states influence 7-day re-engagement primarily by shaping two early cognitive appraisals: (1) perceived clarity of the next action (the user can confidently take a first step) and (2) an early sense of personal value (the user expects worthwhile outcomes if they return). The strongest early value signals are those that reliably predict continuance propensity across contexts—especially information quality and convenience—rather than generic or context-fragile promises (e.g., vague time-saving). VWAC predicts that empty states that couple a single, explicit next action with credible, concrete value cues (trustworthy outputs + repeatable low-friction workflow) will outperform empty states that are either (a) clear but value-thin, or (b) value-rich but action-ambiguous.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Reinforcement-by-Reliability Theory (RRT) for Early Return</div>
+<details><summary>First-run empty states affect 7-day re-engagement by establishing an expectation of reliable payoff: the app will produce accurate, trustworthy outputs and support the user with enabling conditions (guidance, compatibility, payment/auth opt</summary>
+<p class='theory-desc'>First-run empty states affect 7-day re-engagement by establishing an expectation of reliable payoff: the app will produce accurate, trustworthy outputs and support the user with enabling conditions (guidance, compatibility, payment/auth options, integrations). This reliability expectation reduces perceived risk of &#x27;wasted setup&#x27; and increases willingness to invest in a second session. RRT emphasizes that early perceived value is not only about usefulness, but about credibility: information quality acts as an early proxy for whether future time investment will be rewarded.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Path First-Run Retention Theory (Clarity Path + Value Path)</div>
+<details><summary>In newly-installed consumer productivity apps, first-run empty-state design influences 7-day re-engagement and retention through two partially independent psychological pathways: (1) perceived clarity of the next action (reducing friction/u</summary>
+<p class='theory-desc'>In newly-installed consumer productivity apps, first-run empty-state design influences 7-day re-engagement and retention through two partially independent psychological pathways: (1) perceived clarity of the next action (reducing friction/uncertainty) and (2) early sense of personal value (increasing perceived benefit and affect). The value pathway tends to dominate retention when baseline usability is adequate, while the clarity pathway dominates when users face uncertainty about what to do next or how to start.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Information-Quality Trust-to-Value Theory for First-Run Empty States</div>
+<details><summary>First-run empty states in productivity apps drive early personal value primarily by signaling information quality (accuracy, completeness, relevance) and thereby building trust that effort invested will pay off.</summary>
+<p class='theory-desc'>First-run empty states in productivity apps drive early personal value primarily by signaling information quality (accuracy, completeness, relevance) and thereby building trust that effort invested will pay off. This trust-to-value linkage increases perceived performance expectancy and convenience, which in turn increases short-horizon re-engagement and retention.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Early Value–Clarity Dual Pathway for D7 Re-engagement from First-Run Empty States</div>
+<details><summary>First-run empty states influence 7-day re-engagement by shaping two proximal perceptions in the first session: (1) clarity of the next action (a low-cognitive-friction route to the first meaningful step) and (2) early sense of personal valu</summary>
+<p class='theory-desc'>First-run empty states influence 7-day re-engagement by shaping two proximal perceptions in the first session: (1) clarity of the next action (a low-cognitive-friction route to the first meaningful step) and (2) early sense of personal value (an expectation that taking that step will yield worthwhile outcomes). These two perceptions are separable but interact: value framing can compensate somewhat for minor friction, but unclear next action prevents users from converting perceived value into behavior. Over time, perceived value dominates D7 because it governs whether users expect a future session to be worthwhile, while clarity mainly governs whether users complete the initial activation behavior that creates reasons to return.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Empty-State Information Quality as Trustable Value Preview (IQ→PE/CV→Return)</div>
+<details><summary>First-run empty states can act as an &#x27;information product&#x27; before the app has produced any user-specific outputs.</summary>
+<p class='theory-desc'>First-run empty states can act as an &#x27;information product&#x27; before the app has produced any user-specific outputs. By presenting accurate, concrete, and decision-relevant information (examples, templates, credible claims, constraints, and what will happen next), the empty state increases perceived information quality. High information quality raises performance expectancy (the app will help me accomplish something) and convenience perceptions (this will be easy/efficient to do repeatedly), which increases the probability of returning within 7 days. Conversely, vague empty states reduce IQ and thereby suppress value expectations even if the CTA is clear.</p>
+</details>
+</li>
+</ol>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+    <section class="test" id="test-2">
+      <h2><span class="test-num">#2</span> user-commits-to-automatic</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">Run theorizer end-to-end on &#x27;how loading skeleton screens affect perceived performance and task completion&#x27;. Just run it with defaults — I don&#x27;t need to inspect anything along the way.</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner tie">Tie</span>
+        <span class="verdict-text">Both successfully route to automatic, both produce on-topic theories about loading feedback.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>literature-theory-generation</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">How do loading skeleton screens affect perceived performance and task completion?</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Forecast–Attention Dual-Channel Theory (FADCT) of Skeleton/Progress Feedback</div>
+<details><summary>Loading skeleton screens and progress/proxy-progress feedback influence perceived performance and completion via two coupled channels: (1) a cost-forecast channel that updates expected remaining effort/time (driving quit/continue decisions)</summary>
+<p class='theory-desc'>Loading skeleton screens and progress/proxy-progress feedback influence perceived performance and completion via two coupled channels: (1) a cost-forecast channel that updates expected remaining effort/time (driving quit/continue decisions), and (2) an attentional channel that governs whether users monitor time/progress versus engage with content (driving perceived waiting time and affect). Skeleton screens are hybrid stimuli: depending on their fidelity, motion, and informativeness they can act as (i) implicit forecasts of remaining time/work and/or (ii) attentional diversions toward content. Net outcomes can flip sign when the channels push in opposite directions (e.g., reassurance but increased vigilance).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Expectation-Shaping Kinematics Theory (ESKT) for Loading Feedback</div>
+<details><summary>Perceived performance and completion are driven less by average displayed progress than by the temporal profile (kinematics) of feedback updates, which shapes (i) expectation trajectories about when the end will occur and (ii) affective rea</summary>
+<p class='theory-desc'>Perceived performance and completion are driven less by average displayed progress than by the temporal profile (kinematics) of feedback updates, which shapes (i) expectation trajectories about when the end will occur and (ii) affective reactions to acceleration/deceleration. Skeleton screens and progress bars can be treated as kinematic signals over time: they can accelerate (rapid early filling), decelerate, or end-weight (rapid late filling). ESKT posits that end-weighted acceleration tends to compress perceived duration, while early deceleration increases abandonment by projecting a longer remaining horizon; however, excessive late acceleration can backfire if it increases vigilance or feels deceptive.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Kinematic Credibility Theory (KCT): Dynamics, Trust, and Perceived/Behavioral Outcomes</div>
+<details><summary>Loading-time visuals (progress bars, timers, and by extension skeleton screens) act as a dynamic signal.</summary>
+<p class='theory-desc'>Loading-time visuals (progress bars, timers, and by extension skeleton screens) act as a dynamic signal. Their motion/sequence (kinematics) shapes perceived speed via temporal heuristics (e.g., end-weighting) while simultaneously shaping perceived credibility of the system&#x27;s feedback. Credible dynamics reduce uncertainty and improve affect; dynamics that create discouraging early forecasts, over-explicit time monitoring, or appear misleading/inconsistent increase vigilance and negative affect. When abandonment is possible (e.g., long multi-step tasks), this shifts cost–reward calculations and changes completion/drop-off. Skeleton screens inherit these effects through placeholder fill order, shimmer cadence, and the apparent trajectory of completeness.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Opportunity-Cost Recalibration Theory (OCRT): Load Feedback as a Dynamic Cost–Reward Reappraisal</div>
+<details><summary>Users continually reappraise whether continuing an interactive task is worth it.</summary>
+<p class='theory-desc'>Users continually reappraise whether continuing an interactive task is worth it. Loading and progress visuals (including skeleton screens) act as cost-forecast signals and as opportunity-cost reminders. Designs that (i) reduce uncertainty without over-amplifying time monitoring, and (ii) front-load apparent gains (early progress/early content structure) shift perceived net value upward and increase completion. Designs that make remaining cost salient too early or too explicitly—especially when users were promised incentives or when the task&#x27;s reward is uncertain—trigger abandonment. OCRT treats perceived performance and completion as coupled outcomes driven by the same evolving cost–reward computation.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Channel Wait Appraisal Theory (DC-WAT) for Skeleton Screens and Progress Feedback</div>
+<details><summary>Loading UIs (including skeleton screens, progress bars, and timers) affect outcomes through two partially competing channels: (1) a temporal-attention channel that changes perceived waiting time by modulating how much attention is allocated</summary>
+<p class='theory-desc'>Loading UIs (including skeleton screens, progress bars, and timers) affect outcomes through two partially competing channels: (1) a temporal-attention channel that changes perceived waiting time by modulating how much attention is allocated to time-monitoring, and (2) a cost–commitment channel that changes task completion by changing users’ forecast of remaining cost and the perceived value of continuing. Designs differ in how they trade off attention diversion (often improving felt speed/satisfaction) versus cost salience (which can increase abandonment when early signals are discouraging or when users are making a cost–reward calculation).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Trajectory-Weighted Expectation Theory (TWET) for Loading UI: End-Acceleration, Endpoint Salience, and Trust</div>
+<details><summary>Users infer system performance and remaining effort from the trajectory (speed profile) of progress-like cues (including skeleton completion patterns, progress bar kinematics, and countdown behavior).</summary>
+<p class='theory-desc'>Users infer system performance and remaining effort from the trajectory (speed profile) of progress-like cues (including skeleton completion patterns, progress bar kinematics, and countdown behavior). Perceived performance improves when trajectories create an impression of accelerating completion near the end, but completion behavior in multi-step tasks depends on whether the early trajectory is encouraging and whether endpoint salience induces vigilance. The theory emphasizes that not only the existence of a skeleton/progress indicator matters, but its temporal and semantic trajectory over the wait/session.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Channel Wait Appraisal Theory (DC-WAT): Temporal Perception × Cost Forecasting</div>
+<details><summary>Loading-state UIs (including skeleton screens) affect outcomes through two partially independent channels: (1) temporal perception/affect (how long the wait feels, anxiety/vigilance), and (2) cost–reward forecasting that drives quit/continu</summary>
+<p class='theory-desc'>Loading-state UIs (including skeleton screens) affect outcomes through two partially independent channels: (1) temporal perception/affect (how long the wait feels, anxiety/vigilance), and (2) cost–reward forecasting that drives quit/continue decisions (e.g., survey drop-off). Skeleton screens primarily act on the temporal-perception channel by redirecting attention into content structure, whereas explicit progress indicators primarily act on the cost-forecasting channel by revealing (or implying) remaining work. Designs can improve perceived performance yet still worsen completion when they induce discouraging cost forecasts early (e.g., slow-to-fast progress), and conversely can fail to reduce perceived duration while still improving completion if they improve early expectations.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Perceptual-Truthfulness Contract Theory (PTCT) for Loading Placeholders</div>
+<details><summary>Users implicitly evaluate loading feedback not just for speed, but for epistemic reliability: whether the UI’s visual cues truthfully reflect underlying progress/uncertainty.</summary>
+<p class='theory-desc'>Users implicitly evaluate loading feedback not just for speed, but for epistemic reliability: whether the UI’s visual cues truthfully reflect underlying progress/uncertainty. Skeleton screens and progress bars create a ‘perceptual contract’—they promise that what is shown is predictive of what will appear and when. Violating this contract (e.g., highly specific skeletons that resolve out-of-order; deceptive progress acceleration; countdowns that stall) increases vigilance, sensitivity to irregularities, negative affect, and can increase abandonment, even if average perceived duration sometimes decreases. Conversely, low-specificity placeholders (coarse skeletons) preserve the contract by communicating uncertainty honestly.</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path:</span> shape → mode → submit</div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Build a theory of how loading skeleton screens affect perceived performance and task completion, via perceived progress and reduced uncertainty, in web and mobile user interfaces.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Dual-Path Loading Feedback Theory (Uncertainty vs Vigilance) — revised</div>
+<details><summary>Loading feedback patterns (timers, progress indicators, skeleton previews, spinners) influence perceived performance primarily through two competing pathways: (1) uncertainty reduction (reassurance, interpretability, perceived reliability/c</summary>
+<p class='theory-desc'>Loading feedback patterns (timers, progress indicators, skeleton previews, spinners) influence perceived performance primarily through two competing pathways: (1) uncertainty reduction (reassurance, interpretability, perceived reliability/control) and (2) temporal vigilance/arousal (attention allocated to time and endpoint monitoring). Patterns that reduce uncertainty without making the endpoint continuously salient (e.g., elapsed-time count-up; content-like skeleton previews) tend to yield calmer affect. Patterns that make the endpoint salient and repeatedly updated (e.g., remaining-time countdowns; highly salient determinate progress) can increase anticipatory vigilance and frustration even when uncertainty is low. In forced-wait, auto-advance task structures, these shifts often affect affective and time-perception outcomes but not objective post-wait task accuracy, because no actionable choices, task-relevant information, or abandonment opportunity is present.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Progress-Information Entropy Theory (PIET) for Loading Feedback</div>
+<details><summary>Perceived performance during loading is governed by how much the UI reduces the user&#x27;s uncertainty about system state and completion time per unit attention cost.</summary>
+<p class='theory-desc'>Perceived performance during loading is governed by how much the UI reduces the user&#x27;s uncertainty about system state and completion time per unit attention cost. Loading feedback can be modeled as delivering &#x27;progress information&#x27; that reduces an internal uncertainty distribution over completion while also imposing an &#x27;attention tax&#x27; (time-monitoring, arousal). The optimal design is not maximal information, but maximal net information gain: enough to prevent interpretive ambiguity and maintain trust, while minimizing attention drawn to time. Skeleton screens work by providing high state information (the system is working and what will appear) with low explicit temporal information, often yielding favorable net information gain; countdowns deliver high temporal information but also high attention tax.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Progress-Signal Integrator Theory (PSIT) for Perceived Performance</div>
+<details><summary>Users form a latent estimate of “how well the system is progressing” during waits by integrating multiple observable cues: (i) endpoint informativeness (how predictable the finish is), (ii) activity evidence (whether processing is visibly o</summary>
+<p class='theory-desc'>Users form a latent estimate of “how well the system is progressing” during waits by integrating multiple observable cues: (i) endpoint informativeness (how predictable the finish is), (ii) activity evidence (whether processing is visibly ongoing), and (iii) content continuity (whether the next state is partially present/legible, as with skeleton previews). This integrated estimate shapes perceived performance primarily via two mediators: perceived progress and uncertainty (interpretive ambiguity/trust that the system is functioning). However, increasing the salience or precision of progress signals can also increase temporal vigilance (error-monitoring), which can worsen affect without improving objective task completion.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Uncertainty–Vigilance Tradeoff Theory (UVTT) of Loading Feedback</div>
+<details><summary>Loading indicators regulate two competing user states: uncertainty about whether/when the system will finish, and vigilance/temporal monitoring induced by salient or precise time/progress cues.</summary>
+<p class='theory-desc'>Loading indicators regulate two competing user states: uncertainty about whether/when the system will finish, and vigilance/temporal monitoring induced by salient or precise time/progress cues. Perceived performance and willingness to continue are highest when uncertainty is reduced enough to prevent interpretive ambiguity, but vigilance is kept low enough to prevent anxious anticipation and frustration. Different patterns sit at different points on this tradeoff curve: blank/No Time is high-uncertainty/low-vigilance; countdowns are low-uncertainty/high-vigilance; elapsed-time is moderate-uncertainty/moderate-vigilance; skeletons and subtle indeterminate cues aim to lower uncertainty without provoking continuous countdown monitoring.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Channel Loading Feedback Theory (Progress vs. Uncertainty Channels)</div>
+<details><summary>Loading feedback patterns influence perceived performance and downstream behavior through two partially independent psychological channels: (1) an Uncertainty-Reduction channel (signals that the system is alive, trustworthy, and not stuck),</summary>
+<p class='theory-desc'>Loading feedback patterns influence perceived performance and downstream behavior through two partially independent psychological channels: (1) an Uncertainty-Reduction channel (signals that the system is alive, trustworthy, and not stuck), and (2) a Progress-Model channel (lets users form an internal model of how much work remains and when they can resume). Different patterns (skeletons, spinners, progress bars, elapsed/remaining time) trade off these channels, and their affective vs. behavioral effects can dissociate (e.g., strong affect changes without measurable task accuracy changes) depending on whether the task requires planning or only passive waiting.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Kinematic Expectation Matching Theory (KEMT) for Loading Indicators</div>
+<details><summary>Perceived performance depends less on raw wait time than on how well the temporal dynamics of the indicator match the user’s evolving expectation of progress.</summary>
+<p class='theory-desc'>Perceived performance depends less on raw wait time than on how well the temporal dynamics of the indicator match the user’s evolving expectation of progress. Indicators that create strong, precise expectations (e.g., countdowns, determinate bars) increase sensitivity to irregularities and slowdowns; indicators that keep expectations coarse (elapsed-time, indeterminate motion, low-commitment skeleton previews) can reduce discrepancy detection and thereby lower frustration. Tempo engineering (nonlinear pacing, chunking, early fast ticks) is a control knob that trades perceived speed against discrepancy sensitivity and arousal.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Pathway Loading Feedback Theory (Progress–Uncertainty vs Attention–Arousal)</div>
+<details><summary>Loading feedback changes UX primarily through two competing pathways: (1) an informational pathway that increases perceived progress/predictability and reduces uncertainty (lower interpretive ambiguity, shorter perceived duration), and (2) </summary>
+<p class='theory-desc'>Loading feedback changes UX primarily through two competing pathways: (1) an informational pathway that increases perceived progress/predictability and reduces uncertainty (lower interpretive ambiguity, shorter perceived duration), and (2) an attentional/arousal pathway in which frequent/salient updates increase temporal vigilance (raising frustration/anxiety and sometimes increasing temporal sensitivity). Net effects on perceived performance and task completion depend on which pathway dominates, which is moderated by wait determinacy (known vs unknown duration), wait length, and indicator salience/tempo.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Progress Narrative Theory for Loading States</div>
+<details><summary>Users evaluate loading states as narratives of goal progression.</summary>
+<p class='theory-desc'>Users evaluate loading states as narratives of goal progression. Feedback patterns (skeleton screens, progress bars, timers) work by shaping the user&#x27;s inferred story about what the system is doing: (a) whether the system is alive, (b) whether progress is being made, and (c) whether the end is predictable. Perceived performance and willingness to continue depend on narrative coherence (low contradiction), not merely on informativeness. Tempo engineering and skeletons can improve narrative coherence by providing &#x27;plausible&#x27; intermediate states that reduce surprise and prevent &#x27;stuck&#x27; interpretations.</p>
+</details>
+</li>
+</ol>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+    <section class="test" id="test-3">
+      <h2><span class="test-num">#3</span> user-commits-to-piecemeal</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">I want to find and review the papers on prospect theory in software pricing before deciding what theories to generate from them.</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner both-fail">Both fail</span>
+        <span class="verdict-text">Post-fix: both skills now correctly route to find-and-extract and pass the user&#x27;s literature topic through (no over-restructuring). However, Theorizer still ignores the stage boundary and runs the full pipeline anyway — returning 8 theories + novelty evaluations even though only find-and-extract was requested. So both skills fail to deliver what the user actually wanted (papers + extraction only), but the failure is now firmly an upstream-agent issue, not a skill issue.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>find-and-extract</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">prospect theory in software pricing</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Social-Reference Prospect Pricing (SRPP) — corrected/expanded</div>
+<details><summary>In status-relevant software pricing (notably visible digital goods), buyers evaluate options relative to a social reference point defined by the equilibrium composition of users across tiers (paid vs grinding/free).</summary>
+<p class='theory-desc'>In status-relevant software pricing (notably visible digital goods), buyers evaluate options relative to a social reference point defined by the equilibrium composition of users across tiers (paid vs grinding/free). This is prospect-theory-style reference dependence relocated from a monetary gain/loss reference to a social/status reference: buyers experience a subjective status loss when the paid tier becomes common and a status gain when a salient lower-status alternative makes paid ownership more exclusive. Sellers therefore can change demand and optimal price by engineering the social reference point via tier design (introducing a grind option, choosing grind time t, and quality gap Δ), but the benefit is non-monotone and exists only in regimes where the grind tier is present and meaningfully distinct without fully destroying paid demand.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Endogenous Exclusivity Constraint (EEC) in Software Pricing</div>
+<details><summary>Software sellers of visible, status-relevant digital goods face an endogenous constraint: the act of selling more of the paid tier degrades the very utility (exclusivity) that supports the high price.</summary>
+<p class='theory-desc'>Software sellers of visible, status-relevant digital goods face an endogenous constraint: the act of selling more of the paid tier degrades the very utility (exclusivity) that supports the high price. The seller therefore optimizes not just against conventional price elasticity but against an equilibrium feedback loop where quantity sold reduces perceived value. A second tier (grinding/free) can partially relax this constraint by reallocating some users into a lower-status category, improving exclusivity of the paid tier, but only when the lower tier is sufficiently populated and sufficiently differentiated to create a credible status boundary.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Endogenous Demand Feedback and Regime Switching (EDFRS) in Status-Freemium Markets</div>
+<details><summary>In software/digital-goods markets with status-motivated demand, the seller’s tier structure (paid vs grind/free) endogenously shapes adoption (Q_H, Q_L), which then feeds back into perceived paid-tier value via a social reference term.</summary>
+<p class='theory-desc'>In software/digital-goods markets with status-motivated demand, the seller’s tier structure (paid vs grind/free) endogenously shapes adoption (Q_H, Q_L), which then feeds back into perceived paid-tier value via a social reference term. Because paid-tier desirability depends on equilibrium popularity/exclusivity, optimal pricing and versioning become piecewise with sharp regime changes at design thresholds (notably grind time t, quality gap Δ, and conspicuousness intensity α). This creates interior windows where dual-version dominates and extremes where it collapses back to single-version pricing.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Social-Reference Prospect Valuation (SRPV) for Software Pricing</div>
+<details><summary>Prospect theory’s core idea—reference-dependent valuation—is generalized from monetary anchors to social adoption anchors in software.</summary>
+<p class='theory-desc'>Prospect theory’s core idea—reference-dependent valuation—is generalized from monetary anchors to social adoption anchors in software. Buyers evaluate the paid tier not in absolute terms but relative to a social reference point defined by how many others buy (Q_H) and how many obtain a lower-status alternative (Q_L). Sellers can therefore change perceived value not only by changing p but by manipulating the reference point via tier architecture (adding/removing a grind option, changing quality gap Δ, changing grind time t). Pricing power comes from engineering reference shifts rather than from changing intrinsic product value alone.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Social Reference Prospect Theory for Software Versioning (SRPT-SV)</div>
+<details><summary>A general theory that explains buyer and seller behavior in software pricing when consumers have reference-dependent utility defined over social position (who else owns the paid item) rather than (or in addition to) purely private consumpti</summary>
+<p class='theory-desc'>A general theory that explains buyer and seller behavior in software pricing when consumers have reference-dependent utility defined over social position (who else owns the paid item) rather than (or in addition to) purely private consumption value. In freemium/versioned software, the seller can strategically manipulate the social reference point via tier architecture (paid vs grind/free), thereby shifting willingness-to-pay and sometimes reversing standard demand responses (e.g., enabling higher prices despite more alternatives). This reframes prospect-theory reference dependence as a population-composition (Q_H, Q_L) reference in digital goods where visibility/status dominates.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Threshold-Regime Prospect Theory for Freemium Design (TRPT-FD)</div>
+<details><summary>A general theory that explains discontinuous shifts (regime switches) in optimal software pricing and product design when reference-dependent social utility interacts with versioning constraints.</summary>
+<p class='theory-desc'>A general theory that explains discontinuous shifts (regime switches) in optimal software pricing and product design when reference-dependent social utility interacts with versioning constraints. Small changes in design levers (grind time t, quality gap Δ) can cross analytic thresholds (L_t, L_α, L_Δ), causing abrupt changes in whether a free/grind tier is offered, whether grinders exist (Q_L&gt;0), and whether paid price increases or decreases—mirroring prospect-theory-style kinked preferences around reference points, but with the kink occurring in the social adoption state rather than around a monetary reference.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Social-Reference Prospect Theory for Tiered Software Pricing (SR-PT)</div>
+<details><summary>Buyer and seller behavior in tiered software pricing can be explained by a prospect-theory-like mechanism in which the reference point is social (who else has the paid item vs the free/grind alternative), not purely monetary.</summary>
+<p class='theory-desc'>Buyer and seller behavior in tiered software pricing can be explained by a prospect-theory-like mechanism in which the reference point is social (who else has the paid item vs the free/grind alternative), not purely monetary. Consumers evaluate outcomes as gains/losses in relative status/exclusivity around this social reference; firms strategically manipulate the reference point via tier design (introducing/adjusting a grind tier, quality gap, and time cost) to shift willingness-to-pay and optimal pricing. The result is that optimal price and adoption can move in directions that look paradoxical under classical valuation-only demand (e.g., adding a free option can raise the optimal paid price).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Regime-Threshold Theory of Status-Freemium Strategy (RTSFS)</div>
+<details><summary>Sellers and buyers in status-sensitive software markets operate in distinct behavioral regimes separated by thresholds in grind time (t), conspicuous intensity (α), and quality gap (Δ).</summary>
+<p class='theory-desc'>Sellers and buyers in status-sensitive software markets operate in distinct behavioral regimes separated by thresholds in grind time (t), conspicuous intensity (α), and quality gap (Δ). These thresholds create discontinuous shifts in equilibrium adoption (whether Q_L exists, how large Q_H is) and hence discontinuous shifts in optimal pricing and revenue. The seller’s strategy is thus best understood as selecting which regime to induce (single-version mass vs dual-version exclusivity-preserving) rather than continuously optimizing a single smooth demand curve.</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path:</span> shape → mode → submit</div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Prospect theory in software pricing</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Two-Channel Prospect–Fairness Theory of Software Pricing (PTF)</div>
+<details><summary>Software/digital-product pricing outcomes (stated WTP, intention-to-buy, and bundle uptake) are generated by two partially decoupled channels.</summary>
+<p class='theory-desc'>Software/digital-product pricing outcomes (stated WTP, intention-to-buy, and bundle uptake) are generated by two partially decoupled channels. Channel A is a reference-dependent appraisal channel: buyers transform presented prices into perceived gains/losses relative to salient references (e.g., a paired physical price, a struck-through list price, or a bundle ‘savings’ baseline). This gain/loss appraisal manifests empirically as outcome price fairness (OPF) and, more weakly and presentation-contingently, as procedural price fairness (PPF). Channel B is a value/identity channel: ownership/identity relevance (extended-self, endowment-like motives) can create demand (especially for “ownership-signaling” formats or tiers) even when price references are absent or fairness is improved. A key implication is a systematic ‘fairness–demand decoupling’: modest price moves can increase perceived fairness without reliably increasing demand unless they move the offer across a qualitative acceptability boundary (loss→neutral/gain) or are paired with value-relevant framing (features, identity, risk removal).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Prospect-Weighted Intertemporal Bundle Adoption Theory (PWIBAT)</div>
+<details><summary>In software/game ecosystems, bundle purchase is governed by prospect-theoretic comparison of (a) immediate certain cost differences framed via a reference point (often ‘savings-centered’) and (b) uncertain future need for add-ons/extra item</summary>
+<p class='theory-desc'>In software/game ecosystems, bundle purchase is governed by prospect-theoretic comparison of (a) immediate certain cost differences framed via a reference point (often ‘savings-centered’) and (b) uncertain future need for add-ons/extra items subject to projection bias modeled as non-linear probability weighting. The probability-weighting parameters are user- and item-specific, creating systematic heterogeneity in bundle responsiveness to discount depth, add-on correlation, and add-on price. Platforms that standardize UI around ‘you save $X’ effectively coordinate users onto a savings-centered reference point, improving prediction and (likely) conversion relative to expense-centered framings.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Reference-Dependent Fairness–Demand Theory for Software/Digital Pricing (RFD)</div>
+<details><summary>In software and other digital goods, consumers evaluate price offers relative to salient reference prices (e.g., a physical counterpart, prior list price, market norms).</summary>
+<p class='theory-desc'>In software and other digital goods, consumers evaluate price offers relative to salient reference prices (e.g., a physical counterpart, prior list price, market norms). Prospect-theory-like reference dependence expresses itself behaviorally primarily through perceived outcome price fairness (OPF): price levels and price comparisons shift OPF, which in turn shifts willingness-to-pay (WTP) and intention-to-buy (ITB). Procedural fairness (PPF) can matter but is more presentation-contingent and tends to influence ITB more than WTP. Importantly, certain “framing improvements” (e.g., modest discounts) can raise fairness perceptions without reliably changing WTP/ITB, implying a two-stage process: (1) reference-based fairness updating and (2) translation of fairness into economic commitment, which is moderated by other constraints (e.g., perceived value, identity relevance, or magnitude of gain/loss).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Prospect-Theoretic Intertemporal Bundle Choice Theory for Digital Goods (PT-IB) — corrected</div>
+<details><summary>In software and digital marketplaces with bundles (main item + optional future add-ons), bundle acceptance is driven by (i) prospect-theoretic evaluation of immediate price differences relative to a cognitively adopted reference point (ofte</summary>
+<p class='theory-desc'>In software and digital marketplaces with bundles (main item + optional future add-ons), bundle acceptance is driven by (i) prospect-theoretic evaluation of immediate price differences relative to a cognitively adopted reference point (often savings-centered due to platform discount cues) and (ii) projection-biased probability weighting over uncertain future add-on need. A two-sided power-form weight function w(p)=p^α models systematic over/under-estimation of add-on usage probability, with heterogeneity at the user and item level. These two mechanisms jointly yield testable comparative statics for conversion with respect to discount depth, add-on correlation, and framing; mis-specifying reference framing substantially degrades predictive accuracy.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Reference-Dependent Fairness-to-Demand Theory (RDFD) for Software Pricing</div>
+<details><summary>Software buyers evaluate prices primarily as gains/losses relative to salient reference prices (other tiers, legacy prices, competitor/physical analogs).</summary>
+<p class='theory-desc'>Software buyers evaluate prices primarily as gains/losses relative to salient reference prices (other tiers, legacy prices, competitor/physical analogs). This reference-dependent evaluation is translated into demand mainly through outcome price fairness (OPF: “is this price acceptable relative to what I expected / alternatives?”). Procedural price fairness (PPF: “is the seller setting this price fairly?”) is secondary and highly presentation-dependent. Thus, pricing outcomes depend less on absolute price or small discounts and more on (i) which reference is made salient and (ii) whether that salience moves OPF enough to change willingness-to-pay (WTP) and intention-to-buy (ITB).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Projection-Weighted Bundle Conversion Theory (PWBC) for Digital Add-ons</div>
+<details><summary>In software bundling (base product + add-ons), purchase decisions are governed by prospect-theory gain/loss evaluation over price differences relative to a chosen reference point (often savings-centered) combined with non-linear probability</summary>
+<p class='theory-desc'>In software bundling (base product + add-ons), purchase decisions are governed by prospect-theory gain/loss evaluation over price differences relative to a chosen reference point (often savings-centered) combined with non-linear probability weighting over the perceived likelihood of needing add-ons later (projection bias). Personalized probability-weight parameters predict bundle conversion and determine when changing add-on price or discount rate will increase or decrease bundle take-up, sometimes with non-monotonic responses due to reference dependence and diminishing sensitivity.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Reference-Stack Prospect Theory for Software Price Evaluation (RSPT)</div>
+<details><summary>Software/digital-good pricing decisions are evaluated against a stack of salient reference points (e.g., a physical counterpart price, a list-price anchor, the zero-price boundary, or an alternative option such as a bundle).</summary>
+<p class='theory-desc'>Software/digital-good pricing decisions are evaluated against a stack of salient reference points (e.g., a physical counterpart price, a list-price anchor, the zero-price boundary, or an alternative option such as a bundle). Prospect-theory-style reference dependence implies (i) changing what becomes the active reference point can shift willingness-to-pay (WTP) even without changing intrinsic product utility; (ii) removing anchors (notably via free/zero-price framing) collapses cross-format valuation gaps that were largely anchor-driven; and (iii) framing the same numeric difference as a gain (savings) versus a loss (extra expense) substantially changes choice predictions and out-of-sample model fit in software marketplaces.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Projection-Weighted Intertemporal Value Theory for Software Bundles (PWIV)</div>
+<details><summary>For software bundles (base product + add-ons/DLC/features), consumers behave as if they apply prospect theory twice: (1) reference-dependent valuation of immediate price differences via a value function v(x), and (2) probability weighting o</summary>
+<p class='theory-desc'>For software bundles (base product + add-ons/DLC/features), consumers behave as if they apply prospect theory twice: (1) reference-dependent valuation of immediate price differences via a value function v(x), and (2) probability weighting of future need/usage (projection bias) via a power weight function w(p)=p^α that can be asymmetric for perceived need vs not-need. Bundle conversion and optimal discounting are thus driven not only by objective co-usage probabilities, but by the consumer- and item-specific distortion of these probabilities; this distortion shifts comparative statics (e.g., how sensitive conversion is to add-on prices and discount rates) and improves predictive accuracy over rational (α=1) models.</p>
+</details>
+</li>
+</ol>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+    <section class="test" id="test-4">
+      <h2><span class="test-num">#4</span> already-good-question</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">Source citations in AI chatbot responses affect user trust via perceived transparency, especially for consumer assistants. Use 20 papers, novelty on.</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner new">New wins</span>
+        <span class="verdict-text">Post-fix: new skill correctly takes path 1 (proceed silently) — no reshape moment surfaced for the frame-only change. Old skill submits a near-identical query and produces similar theory output. The UX win is removing the friction beat that was the iteration-1 critique on this test.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>literature-theory-generation</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">How do source citations in AI chatbot responses affect user trust via perceived transparency, particularly for consumer assistants?</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Transparency-as-Justification Mediation (TJM) — revised</div>
+<details><summary>Source citations/provenance indicators affect user trust in consumer-assistant-like chatbots primarily through a cognitive pathway: users treat traceability cues as justifications that increase perceived transparency (sense that the system </summary>
+<p class='theory-desc'>Source citations/provenance indicators affect user trust in consumer-assistant-like chatbots primarily through a cognitive pathway: users treat traceability cues as justifications that increase perceived transparency (sense that the system is grounded/auditable), which then increases cognitive trust (e.g., perceived accuracy/credibility and willingness to rely). The pathway is conditional: transparency only raises trust when it is interpretable and usable as a justification (actionable), and when it aligns with the authority structure users expect for that domain (e.g., official election commission sources for election procedures). If transparency is present but non-actionable (e.g., only vague labels, no claim-to-source mapping, inaccessible for low digital literacy users), it can yield little trust benefit and instead prompts requests for clearer attribution. Additionally, some transparency types (e.g., bot-identity disclosure) can reduce trust in high-criticality services via expectation-violation/stigma mechanisms, implying that “transparency” is not monolithic and citation transparency behaves differently from identity transparency.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency Tradeoff &amp; Expectation-Calibration (TTEC)</div>
+<details><summary>Citations/provenance indicators influence trust by calibrating user expectations about system epistemics (what the system knows, how it knows, and how reliable it is).</summary>
+<p class='theory-desc'>Citations/provenance indicators influence trust by calibrating user expectations about system epistemics (what the system knows, how it knows, and how reliable it is). Transparency operates through two competing channels: (1) an epistemic-calibration benefit (users can better gauge reliability and update trust appropriately) and (2) a friction/expectation-violation cost (transparency can remind users they are dealing with a non-human or a limited system, or can impose cognitive load). Whether citations increase trust depends on which channel dominates, which is jointly determined by service criticality, task success, user capacity to process transparency, and the transparency type (provenance vs identity).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency Tradeoff and Expectation-Violation (TTEV) — revised</div>
+<details><summary>Source citations/provenance cues affect user trust through two competing mechanisms: a justification pathway (increasing perceived transparency/justifiability and supporting cognitive trust) and an expectation-violation pathway (making non-</summary>
+<p class='theory-desc'>Source citations/provenance cues affect user trust through two competing mechanisms: a justification pathway (increasing perceived transparency/justifiability and supporting cognitive trust) and an expectation-violation pathway (making non-human agency, uncertainty, or limited accountability salient, thereby reducing trust/retention in some contexts). The net effect depends on (i) criticality/stakes, (ii) perceived task success, and (iii) whether the transparency cue frames the assistant as accountable and competent versus merely a conduit. This revision tightens scope, adds missing evidence, and corrects overreach by distinguishing what is directly evidenced (transparency can help or hurt trust depending on context) from what is currently only hypothesized for citations (format/framing effects).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Actionable Provenance Calibration (APC)</div>
+<details><summary>In consumer assistant contexts, citations influence trust primarily by enabling calibrated verification: users trust more when provenance is (1) actionable (clickable/inspectable), (2) interpretable (clear mapping from claim to source), and</summary>
+<p class='theory-desc'>In consumer assistant contexts, citations influence trust primarily by enabling calibrated verification: users trust more when provenance is (1) actionable (clickable/inspectable), (2) interpretable (clear mapping from claim to source), and (3) authority-aligned (sources match user expectations for the domain). Non-actionable or overly coarse provenance can fail to raise trust and may even reduce it by highlighting that verification is desired but obstructed. This theory foregrounds perceived transparency as a functional capability (can I check?) rather than a mere disclosure (it says it has sources).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency–Trust Calibration via Verifiability (TTCV)</div>
+<details><summary>Source citations (and other provenance cues) affect user trust mainly by changing perceived transparency, but only insofar as they increase perceived verifiability (the user’s sense they could check the answer).</summary>
+<p class='theory-desc'>Source citations (and other provenance cues) affect user trust mainly by changing perceived transparency, but only insofar as they increase perceived verifiability (the user’s sense they could check the answer). In consumer-assistant contexts, transparency can increase trust when it supports verification and justification; however, some transparency disclosures can decrease trust in high-stakes contexts by heightening salience of automation/uncertainty or shifting users into a more skeptical evaluation mode.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Authority–Accessibility Tradeoff in Citation Displays (AATCD)</div>
+<details><summary>Citations affect trust through two competing channels: (1) perceived authority (officialness/reputability of sources) and (2) perceived accessibility (how easily the user can consume and act on the evidence).</summary>
+<p class='theory-desc'>Citations affect trust through two competing channels: (1) perceived authority (officialness/reputability of sources) and (2) perceived accessibility (how easily the user can consume and act on the evidence). Consumer assistants maximize trust when citations simultaneously signal authority and minimize user effort; when citation displays impose effort or exceed user capability, users revert to alternate trust cues (channel, in-person preference) or disengage.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency-as-Justification Theory (TJT)</div>
+<details><summary>In consumer-assistant contexts, source citations and provenance cues increase user trust primarily by functioning as justifications that make the system’s answer-generation process legible (&quot;why this answer&quot;), rather than by letting users f</summary>
+<p class='theory-desc'>In consumer-assistant contexts, source citations and provenance cues increase user trust primarily by functioning as justifications that make the system’s answer-generation process legible (&quot;why this answer&quot;), rather than by letting users fully verify content. Perceived transparency acts as a proximal cause of cognitive trust (perceived accuracy/credibility), especially when justifications are easy to interpret and align with user expectations for authoritative sources. When justification is missing or hard to use, trust becomes contingent on channel preference (e.g., in-person/government) and task/domain fit.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Trust-Calibration Tradeoff Theory for Citation Transparency (TCTT)</div>
+<details><summary>Citation and provenance cues in chatbot responses do not simply increase trust; they calibrate trust by shifting users toward meta-evaluation of the system (how it knows) rather than content-only evaluation (what it says).</summary>
+<p class='theory-desc'>Citation and provenance cues in chatbot responses do not simply increase trust; they calibrate trust by shifting users toward meta-evaluation of the system (how it knows) rather than content-only evaluation (what it says). This calibration can improve appropriate reliance when the cues align with user expectations and task needs, but it can also reduce trust when transparency highlights uncertainty, non-human agency, or responsibility disclaimers—especially in high-criticality or identity-sensitive service settings. Perceived transparency is thus a mediator with sign that depends on whether transparency signals competence and accountability or risk and limitation.</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path:</span> shape → mode → submit</div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Build a theory of how source citations in AI chatbot responses affect user trust, via perceived transparency, in consumer AI assistants.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Friction–Transparency Tradeoff Theory (FTTT) — revised</div>
+<details><summary>User trust in consumer AI assistants is governed by a tradeoff between (i) interactional friction (time/effort required to verify) and (ii) perceived and functional transparency (availability/salience/actionability of provenance or uncertai</summary>
+<p class='theory-desc'>User trust in consumer AI assistants is governed by a tradeoff between (i) interactional friction (time/effort required to verify) and (ii) perceived and functional transparency (availability/salience/actionability of provenance or uncertainty cues). When citation-like provenance is absent or non-salient, friction is minimized and subjective experience can rise, but verification behavior drops, increasing the chance of overreliance and miscalibration—especially when the model is wrong. When transparency cues are made salient (e.g., uncertainty highlighting), users shift toward verification and improved error detection at a cost in time/effort; however, global single-item trust/reliability ratings may change little because users’ evaluations are dominated by fluency/efficiency and because trust is measured coarsely.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency-as-Calibration (TaC) Theory</div>
+<details><summary>Citations and provenance cues in consumer AI assistants primarily function as calibration infrastructure rather than direct trust amplifiers.</summary>
+<p class='theory-desc'>Citations and provenance cues in consumer AI assistants primarily function as calibration infrastructure rather than direct trust amplifiers. Their main causal pathway is: transparency cue → user initiates diagnostic behavior (re-query, triangulation, source check) → error detection/correction → improved appropriate reliance. Subjective trust changes are secondary and often small because users treat transparency as a local debugging affordance rather than a global indicator of assistant trustworthiness. The theory predicts that the trust benefit of citations appears chiefly in ‘appropriate reliance’ metrics (sensitivity/specificity of acceptance) rather than in mean trust ratings.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Calibration-by-Provenance Theory (CPT) — revised</div>
+<details><summary>Citations and citation-like transparency cues in consumer AI assistants primarily affect trust by improving calibration (appropriate, claim-level reliance) rather than by increasing global self-reported trust.</summary>
+<p class='theory-desc'>Citations and citation-like transparency cues in consumer AI assistants primarily affect trust by improving calibration (appropriate, claim-level reliance) rather than by increasing global self-reported trust. Transparency works as an attention-and-action trigger: when uncertainty/provenance is made salient at the level of specific claims and users have a feasible way to verify (re-query, click links, consult search), users shift from default acceptance to selective verification, improving accuracy especially on the “error tail” (hard or error-prone items). Because many studies measure trust with coarse global single items, the behavioral and performance impacts of transparency often decouple from trust ratings (users behave more cautiously/accurately without reporting lower or higher overall reliability).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Fluency-Transparency Tradeoff Theory (FTTT)</div>
+<details><summary>In consumer AI assistants, user trust (and especially satisfaction/experience ratings that often stand in for trust) results from a tradeoff between interaction fluency (speed, low effort, conversational readability) and transparency afford</summary>
+<p class='theory-desc'>In consumer AI assistants, user trust (and especially satisfaction/experience ratings that often stand in for trust) results from a tradeoff between interaction fluency (speed, low effort, conversational readability) and transparency affordances (citations/links/uncertainty cues). Citations increase perceived transparency and verifiability but introduce friction (extra reading, clicking, cognitive load). Therefore, adding citations can simultaneously (i) improve objective accuracy by encouraging verification and (ii) reduce perceived experience/liking, potentially yielding flat net effects on perceived reliability. This produces an “efficiency-dominant trust heuristic” under time pressure or low stakes: users prefer fluent answers even when they are less verifiable, until errors are made salient or the task stakes rise.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency–Reliance Decoupling (TRD) Theory</div>
+<details><summary>In consumer AI assistants, source citations/provenance cues primarily change user reliance behavior (verification, re-querying, error detection) rather than global self-reported trust.</summary>
+<p class='theory-desc'>In consumer AI assistants, source citations/provenance cues primarily change user reliance behavior (verification, re-querying, error detection) rather than global self-reported trust. As a result, transparency can improve objective outcomes (accuracy, calibration) without reliably lowering or raising subjective trust ratings, because satisfaction/fluency and efficiency dominate affective judgments while transparency operates through a separate, more behavioral channel.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Provenance as a Costly Signal with Verifiability Threshold (PCSVT)</div>
+<details><summary>Source citations affect trust through perceived transparency only when users believe citations are (a) specific enough to verify claims and (b) worth the effort to inspect.</summary>
+<p class='theory-desc'>Source citations affect trust through perceived transparency only when users believe citations are (a) specific enough to verify claims and (b) worth the effort to inspect. Transparency cues operate like costly signals: they increase perceived accountability/verifiability and trigger verification behavior, but impose cognitive/time costs. When verification costs are high or citations are low-quality/ambiguous, users treat citations as decorative and trust does not increase (or even decreases).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Verification-Cost Transparency Theory (VCTT)</div>
+<details><summary>In consumer AI assistants, source citations (and related provenance cues) affect user trust primarily by changing the expected cost and feasibility of verification.</summary>
+<p class='theory-desc'>In consumer AI assistants, source citations (and related provenance cues) affect user trust primarily by changing the expected cost and feasibility of verification. When verification is easy (clear, claim-level links or cues that point to what to check), users allocate more effort to checking, improving calibration (appropriate reliance) and error detection. However, global self-reported trust can remain stable because users’ overall attitude is driven more by interaction fluency/efficiency than by verification behavior; thus transparency can improve correctness without reliably increasing perceived reliability ratings. The theory predicts a fundamental trade-off frontier: transparency mechanisms that increase verifiability tend to increase time/queries, and their effect on reported trust depends on whether the interface preserves the usability benefits of generated answers.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Process Transparency Signaling Theory (DPTST)</div>
+<details><summary>Citations influence trust through two parallel pathways: (1) a heuristic signaling pathway where the mere presence of citations functions as an authority/accountability cue that can increase perceived reliability without being used, and (2)</summary>
+<p class='theory-desc'>Citations influence trust through two parallel pathways: (1) a heuristic signaling pathway where the mere presence of citations functions as an authority/accountability cue that can increase perceived reliability without being used, and (2) an analytic verification pathway where citations (or uncertainty cues) are actually consulted, improving calibration and accuracy. Which pathway dominates depends on salience, friction, and task difficulty. The theory predicts that some transparency features increase perceived trust without improving accuracy (mere signals), while others improve accuracy without raising perceived trust (verification triggers).</p>
+</details>
+</li>
+</ol>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+    <section class="test" id="test-5">
+      <h2><span class="test-num">#5</span> vague-question-needs-asking</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">What makes people trust AI?</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner new">New wins</span>
+        <span class="verdict-text">Post-fix behavior. New skill correctly defers to the user by asking with 2-3 concrete candidate angles instead of silently committing to one. Old skill&#x27;s broad-query submission still produced useful theories, but is essentially lucky — Theorizer just happened to handle the vague phrasing well. The new path is the right design choice: don&#x27;t gamble on the user&#x27;s behalf.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>literature-theory-generation</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">What makes people trust AI?</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Cue-Utility Theory of Trust in AI (CUT-AI) — revised</div>
+<details><summary>People form and regulate trust in AI by converting observable cues (uncertainty/confidence signals, explanations, interface aesthetics, anthropomorphism, governance/fairness signals, and control/recourse affordances) into an internal estima</summary>
+<p class='theory-desc'>People form and regulate trust in AI by converting observable cues (uncertainty/confidence signals, explanations, interface aesthetics, anthropomorphism, governance/fairness signals, and control/recourse affordances) into an internal estimate of the expected utility of relying on the AI for the current case. Trust is calibrated when cues have high diagnostic utility (they track correctness/limits on the current instance) and users can correctly interpret and act on them. Trust becomes miscalibrated when cues are persuasive but non-diagnostic (they increase perceived competence/legitimacy/understandability without improving error discrimination), producing systematic over-reliance (misuse) or under-reliance (disuse). This explains why case-specific confidence can improve reliance calibration, while many post-hoc local explanations and humanizing/aesthetic cues can raise acceptance even when the AI is wrong and thus fail to improve team outcomes. It also explains why improved calibration may still fail to improve team accuracy unless human expertise aligns with the AI’s error boundary (complementarity).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Channel Trust Theory (DCTT): Competence Calibration vs Social-Legitimacy Bonding</div>
+<details><summary>Trust in AI arises from two partially independent channels: (1) a competence-calibration channel driven by reliability, predictability, and uncertainty information that supports case-by-case reliance decisions; and (2) a social-legitimacy c</summary>
+<p class='theory-desc'>Trust in AI arises from two partially independent channels: (1) a competence-calibration channel driven by reliability, predictability, and uncertainty information that supports case-by-case reliance decisions; and (2) a social-legitimacy channel driven by anthropomorphism, empathy, aesthetics/branding, and institutional governance signals that affect baseline willingness to be vulnerable to the AI (or its provider). Channel (1) tends to improve calibration when cues are diagnostic and interpretable. Channel (2) can increase adoption and acceptance even without improving discrimination of AI errors; it can therefore improve engagement but also increase over-reliance unless constrained by strong competence cues and control/recourse mechanisms. The theory predicts that many interventions (explanations, anthropomorphic designs, certification labels) primarily shift channel (2), while calibrated confidence/uncertainty primarily shifts channel (1).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Channel Trust Theory: Cognitive Calibration vs Affective/Legitimacy (DCT-AI) — revised</div>
+<details><summary>Trust in AI is produced by two partially dissociable channels that often move different outcome variables.</summary>
+<p class='theory-desc'>Trust in AI is produced by two partially dissociable channels that often move different outcome variables. (1) A cognitive-calibration channel: users adjust reliance in a case-by-case manner using diagnostic cues about likely correctness (e.g., case-specific confidence, predictability/consistency, uncertainty-aware prompts, monitoring and handover/override mechanisms). This channel primarily affects behavioral calibration (accept/override sensitivity to error-likelihood cues) and improves outcomes only when humans can correct AI errors (error-boundary alignment). (2) An affective/legitimacy channel: users infer benevolence, integrity, and social acceptability from non-diagnostic but salient cues (anthropomorphism, empathy, aesthetics/branding, accountability framing, certification/governance/fairness signals). This channel primarily affects self-reported trust, acceptance intention, and willingness to be vulnerable, and can also increase behavioral acceptance; unless anchored to diagnostic cues, it risks overtrust (accepting wrong advice) and can harm objective team performance. The two channels interact: legitimacy cues can amplify or suppress utilization of cognitive cues; cognitive cues can constrain (or fail to constrain) the behavioral consequences of affective trust.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Cue Diagnosticity–Cost–Utilization Theory (DCUT) of Trust in AI</div>
+<details><summary>People ‘trust’ AI to the extent that they (a) detect available cues, (b) interpret them as diagnostic of correctness/values, and (c) are willing/able to pay the cognitive cost to use them.</summary>
+<p class='theory-desc'>People ‘trust’ AI to the extent that they (a) detect available cues, (b) interpret them as diagnostic of correctness/values, and (c) are willing/able to pay the cognitive cost to use them. Trust outcomes follow from three interacting properties of any trust cue: Diagnosticity (how well it predicts correctness or norm-compliance), Cognitive cost (attention/time/skill needed), and Utilization propensity (driven by workload, literacy, and interface salience). Miscalibration arises when low-diagnostic cues (plausible explanations, aesthetics, anthropomorphism) have low cost/high salience and thus high utilization, crowding out higher-diagnostic but higher-cost cues. Trust interventions succeed when they shift utilization toward high-diagnostic cues without exceeding user cost budgets, or when they ‘compile’ diagnosticity into low-cost signals (e.g., well-communicated confidence bins, effective prompts).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Cue-Weighted Trust and Reliance (CWTR)</div>
+<details><summary>People decide whether to trust and rely on AI by weighting multiple observable cues—performance-related (uncertainty/confidence, predictability, observed errors), interpretability-related (explanations), and socio-institutional cues (anthro</summary>
+<p class='theory-desc'>People decide whether to trust and rely on AI by weighting multiple observable cues—performance-related (uncertainty/confidence, predictability, observed errors), interpretability-related (explanations), and socio-institutional cues (anthropomorphism, branding/GUI, governance/fairness/accountability). Trust becomes calibrated when the highest-weight cues are both (i) informative about true error likelihood and (ii) interpretable and usable under the user’s cognitive constraints. Miscalibration (overtrust/undertrust) emerges when salient but weakly diagnostic cues (e.g., plausible explanations, aesthetics, anthropomorphic warmth) dominate more diagnostic cues (e.g., case-specific uncertainty, observed reliability), or when diagnostic cues are poorly calibrated/poorly understood.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Complementarity-Conditioned Trust (CCT)</div>
+<details><summary>Trust that improves outcomes is conditional on &#x27;error-boundary alignment&#x27; between human and AI: users benefit from trusting AI exactly where AI is strong and distrusting it where humans can correct it.</summary>
+<p class='theory-desc'>Trust that improves outcomes is conditional on &#x27;error-boundary alignment&#x27; between human and AI: users benefit from trusting AI exactly where AI is strong and distrusting it where humans can correct it. Interfaces (confidence, explanations, adaptive prompts) can improve trust calibration, but calibration increases team performance only when there exists complementary human knowledge/skill to exploit AI’s low-reliability regions. Thus, what makes people (appropriately) trust AI is not only cues of reliability, but also cues about when the human’s unique expertise matters and when it does not.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Cue-Integration and Calibration Theory of AI Trust (CICT)</div>
+<details><summary>People form trust in AI by integrating multiple observable cues into an internal estimate of (i) the AI&#x27;s competence/predictability and (ii) the social/institutional risk of relying on it.</summary>
+<p class='theory-desc'>People form trust in AI by integrating multiple observable cues into an internal estimate of (i) the AI&#x27;s competence/predictability and (ii) the social/institutional risk of relying on it. Cues differ in diagnosticity (how well they track real correctness, fairness, or safety) and in salience (how easy they are to notice and use). Trust becomes well-calibrated when highly diagnostic cues are both available and behaviorally usable; trust becomes miscalibrated when low-diagnostic but high-salience cues (e.g., plausible explanations, anthropomorphic presentation, aesthetics/branding) dominate the user&#x27;s inference.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Complementarity-Conditional Trust Theory (CCTT)</div>
+<details><summary>Trust in AI becomes instrumentally valuable (improves outcomes) only when selective reliance can exploit complementary strengths between human and AI.</summary>
+<p class='theory-desc'>Trust in AI becomes instrumentally valuable (improves outcomes) only when selective reliance can exploit complementary strengths between human and AI. Interfaces that increase trust (acceptance) without improving the user&#x27;s ability to detect the AI&#x27;s failure regions will tend to increase over-reliance and may reduce team performance when AI and human competence are comparable. Thus, the same trust intervention can flip sign depending on (i) human–AI error-boundary alignment and (ii) whether cues enable selective reliance rather than global acceptance.</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md (post-fix)</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path taken:</span> <code>ask-with-candidates</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Not submitted — skill correctly asked the user to pick an angle.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Skill response (verbatim)</div>
+            <div class="chat-response"><p><strong>Your question:</strong> What makes people trust AI?</p>
+<p>This is broad enough that Theorizer could go in very different directions depending on what you mean by "trust" and which lever you want to vary. Pick one (or sketch your own):</p>
+<p><strong>A.</strong> Build a theory of how <em>source citations</em> affect user trust via <em>perceived transparency</em>, in <em>consumer AI chatbots</em>.</p>
+<p><strong>B.</strong> Build a theory of how <em>uncertainty disclosure</em> (e.g., "I'm not sure") affects user trust via <em>calibrated reliance</em>, in <em>medical-decision-support AI</em>.</p>
+<p><strong>C.</strong> Build a theory of how <em>anthropomorphic phrasing</em> affects user trust via <em>social presence</em>, in <em>AI personal assistants</em>.</p>
+<p>Tell me A, B, C, or describe your own angle (intervention + scope) and I'll shape from there.</p></div>
+          </div>
+          <div class="prior-state">
+            <div class="meta-label">Prior state (before fix)</div>
+            <p class="prior-note">
+The new skill <em>previously</em> silently inferred <em>citations / transparency / consumer chatbots</em> and submitted that to Theorizer, which then narrowed further to civic-chatbot theories. After tightening the inference threshold and adding the ask-with-candidates template, the skill now correctly defers to the user instead.
+</p>
+            <details>
+              <summary>Show theories Theorizer returned from the pre-fix narrow submission</summary>
+              <ol class='theory-list'>
+<li>
+<div class='theory-name'>Provenance-Substitution Theory (Citations as a surrogate for institutional trust)</div>
+<details><summary>In consumer chatbots for high-stakes civic information, many users (especially older adults) do not primarily evaluate answer correctness directly; instead, they judge whether the chatbot is an extension of a trusted institution.</summary>
+<p class='theory-desc'>In consumer chatbots for high-stakes civic information, many users (especially older adults) do not primarily evaluate answer correctness directly; instead, they judge whether the chatbot is an extension of a trusted institution. Source citations/provenance cues increase trust mainly when they allow users to substitute institutional trust (e.g., trust in an election authority) for technical trust in the chatbot. The proximal psychological mechanism is perceived transparency/auditability: provenance makes institutional anchoring legible (&quot;this came from the election office&quot;), which can increase willingness to rely on the answer. However, the effect is bounded by channel constraints: if users lack access/skills, have disabilities that make the interface hard to use, or strongly prefer in-person channels, added transparency may not translate into higher reliance or behavioral trust.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Cognitive Offloading Transparency Theory (Citations as a verification affordance that is rarely exercised)</div>
+<details><summary>In consumer chatbots, citations primarily act as a perceived verification affordance: their presence signals that verification is possible, which increases perceived transparency and can raise trust even if users do not click or read source</summary>
+<p class='theory-desc'>In consumer chatbots, citations primarily act as a perceived verification affordance: their presence signals that verification is possible, which increases perceived transparency and can raise trust even if users do not click or read sources. Trust gains depend less on actual verification behavior and more on the user&#x27;s mental model that the system is auditable. In older adult civic contexts, users may value the idea of official traceability yet still avoid exercising verification due to access/usability constraints, leading to a divergence between perceived transparency and reliance.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Friction–Transparency Tradeoff Theory (Citation format can raise or lower trust via verification burden)</div>
+<details><summary>In consumer chatbots, source citations/provenance increase trust primarily when they increase perceived transparency without imposing high verification burden.</summary>
+<p class='theory-desc'>In consumer chatbots, source citations/provenance increase trust primarily when they increase perceived transparency without imposing high verification burden. Provenance formats that outsource sensemaking to the user (e.g., link-only answers) can reduce perceived transparency—especially for older adults and accessibility-constrained users—because they increase interaction friction (extra navigation, reading, interpretation). Conversely, grounded answers that are explicitly traceable to authoritative sources can raise perceived transparency and thus trust, provided the answer is readable in the current modality (web/voice) and the traceability is salient.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Institutional Anchoring Transparency Theory (Citations increase trust when they visibly bind the bot to a recognized authority)</div>
+<details><summary>In consumer civic chatbots, citations increase trust through perceived transparency when users interpret them as institutional anchoring: the bot is constrained by, and accountable to, a recognized authoritative institution (e.g., official </summary>
+<p class='theory-desc'>In consumer civic chatbots, citations increase trust through perceived transparency when users interpret them as institutional anchoring: the bot is constrained by, and accountable to, a recognized authoritative institution (e.g., official election offices). Transparency is not only ‘showing sources’ but ‘showing that sources are official and stable’—a social signal that reduces fears of fabrication. Without visible anchoring, users (especially seniors) may default to trusting in-person/government-official channels over digital intermediaries.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency-Conversion Theory (Citations help only when users can operationalize them)</div>
+<details><summary>In consumer chatbots, source citations affect trust primarily via perceived transparency, but only when users (a) notice the citation, (b) interpret it as an actionable path to verification, and (c) have the ability and motivation to use it</summary>
+<p class='theory-desc'>In consumer chatbots, source citations affect trust primarily via perceived transparency, but only when users (a) notice the citation, (b) interpret it as an actionable path to verification, and (c) have the ability and motivation to use it. When any of these preconditions fail—especially in accessibility-constrained or low-digital-confidence groups—citations may raise nominal transparency without converting into increased trust or usage. Thus, the trust effect of citations is conditional on verification usability (not just the presence of provenance).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Institutional Legitimacy Substitution Theory (Citations act as a proxy for official endorsement)</div>
+<details><summary>In civic consumer chatbots, users often seek not only factual correctness but also institutional legitimacy (the sense that the answer is the officially sanctioned rule).</summary>
+<p class='theory-desc'>In civic consumer chatbots, users often seek not only factual correctness but also institutional legitimacy (the sense that the answer is the officially sanctioned rule). Citations influence trust via perceived transparency to the extent that they signal institutional endorsement (e.g., election commission, official FAQ) and reduce fear of being misled. When the chatbot is already perceived as institutionally legitimate (e.g., government-branded, deployed in official channels), marginal trust gains from citations diminish; when legitimacy is uncertain, citations can substitute for missing institutional cues.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Transparency-as-Channel Substitution Theory</div>
+<details><summary>In consumer civic chatbots, source citations function less like optional UI decoration and more like a substitute for the offline trust channel users would otherwise rely on (e.g., in-person election officials, official government communica</summary>
+<p class='theory-desc'>In consumer civic chatbots, source citations function less like optional UI decoration and more like a substitute for the offline trust channel users would otherwise rely on (e.g., in-person election officials, official government communication). When citations are present and legible, they partially replace the need for an in-person channel by providing a verifiable bridge to authoritative institutions, thereby increasing perceived transparency and (via transparency) trust. When citations are absent, many users—especially seniors—default to preferring offline channels even if the chatbot content is sourced from official FAQs, because the system does not visibly instantiate the trusted institution.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Two-Layer Transparency-to-Trust Theory (Cognitive vs Institutional Transparency)</div>
+<details><summary>Citations influence trust through two distinct transparency perceptions: (1) cognitive transparency—users understand why the answer is true (evidence legibility), and (2) institutional transparency—users understand who stands behind the ans</summary>
+<p class='theory-desc'>Citations influence trust through two distinct transparency perceptions: (1) cognitive transparency—users understand why the answer is true (evidence legibility), and (2) institutional transparency—users understand who stands behind the answer (accountability and authority). In civic consumer chatbots, institutional transparency is often the primary trust driver for seniors (preferring official/in-person sources), while cognitive transparency matters more when users are actively comparing answers or troubleshooting. Citation presence increases trust most when it simultaneously increases both layers (e.g., official source name + directly supporting excerpt), and may have weak effects when only one layer is improved.</p>
+</details>
+</li>
+</ol>
+            </details>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+    <section class="test" id="test-6">
+      <h2><span class="test-num">#6</span> inferrable-question</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">How does response latency affect satisfaction in chatbots?</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner tie">Tie</span>
+        <span class="verdict-text">Both produce strong latency/satisfaction theories. New skill&#x27;s query is slightly tighter (adds mechanism), but old skill&#x27;s theories are no worse.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>literature-theory-generation</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">How does response latency affect satisfaction in chatbots?</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Latency-as-Opportunity-Cost (LOC) Theory of Chatbot Satisfaction (revised)</div>
+<details><summary>User satisfaction with chatbots is shaped by the experienced opportunity cost of time during interaction.</summary>
+<p class='theory-desc'>User satisfaction with chatbots is shaped by the experienced opportunity cost of time during interaction. This cost is not only backend model response time, but also interaction overhead (wake-words/activation friction), conversational step-count, and total time-on-task. Lower opportunity cost tends to improve pragmatic satisfaction (ease-of-use, perceived efficiency, utilitarian value) and can increase engagement by lowering marginal effort per action. However, users sometimes prefer slower interactions when the added time purchases compensating value (reduced cognitive workload, better guidance, ability to provide context, higher perceived usefulness). Thus, latency affects satisfaction through a net-value computation: perceived value delivered minus time/effort cost, with perceived quality and workload as key conditioning variables.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Perceived Responsiveness Signaling (PRS) Theory</div>
+<details><summary>User satisfaction responds more to perceived responsiveness than to raw latency.</summary>
+<p class='theory-desc'>User satisfaction responds more to perceived responsiveness than to raw latency. Perceived responsiveness is a composite inference from immediacy cues (fast initial replies, low activation friction), interaction fluency (few repair turns), and the user&#x27;s model of the system&#x27;s attentiveness/helpfulness. Interface or interaction designs that reduce uncertainty about whether the system is listening/working (e.g., effortless activation, context views that make state clearer) increase perceived responsiveness and satisfaction even without changing backend latency. Conversely, when time costs feel ambiguous or caused by breakdowns, satisfaction drops disproportionately.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Two-Channel Latency Perception Theory (Actual Time vs Interpretable Progress)</div>
+<details><summary>User satisfaction with chatbots is governed by two separable latency-relevant channels: (1) objective elapsed time costs (response time, time-on-task, extra turns) and (2) interpretability of progress/interaction state (how clearly the inte</summary>
+<p class='theory-desc'>User satisfaction with chatbots is governed by two separable latency-relevant channels: (1) objective elapsed time costs (response time, time-on-task, extra turns) and (2) interpretability of progress/interaction state (how clearly the interface communicates what is happening, what the system knows, and what the user should do next). Interface changes that increase state transparency, reduce disambiguation burden, or remove initiation friction can increase perceived speed and satisfaction even without reducing backend latency. Conversely, objective speed gains can fail to improve satisfaction if users experience uncertainty, confusion, or failures. The theory explains why some slower conversational systems remain preferred (they reduce cognitive load or add value), while some faster ones still frustrate (they are opaque or failure-prone).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Latency–Value Tradeoff Theory (Satisfaction depends on Time-to-Value, not raw speed)</div>
+<details><summary>User satisfaction is determined by perceived net value per unit time: users tolerate or even prefer slower chatbot interactions when the interaction yields compensating value (reduced workload, easier expression, richer context capture, hed</summary>
+<p class='theory-desc'>User satisfaction is determined by perceived net value per unit time: users tolerate or even prefer slower chatbot interactions when the interaction yields compensating value (reduced workload, easier expression, richer context capture, hedonic appeal), but penalize latency when the chatbot offers no incremental value over alternatives (GUIs, paper forms) or when the extra time is experienced as wasted. This yields a utility model where latency is discounted by (a) marginal task advantage vs baseline and (b) perceived effort/workload reduction.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Two-Channel Latency–Satisfaction Theory (TCLS)</div>
+<details><summary>User satisfaction with chatbots is governed by two partially independent time-related channels: (1) backend reply latency (time-to-first-meaningful-token / time-to-answer) and (2) interaction overhead latency (extra time/effort imposed by t</summary>
+<p class='theory-desc'>User satisfaction with chatbots is governed by two partially independent time-related channels: (1) backend reply latency (time-to-first-meaningful-token / time-to-answer) and (2) interaction overhead latency (extra time/effort imposed by the interface and dialog protocol, e.g., wake-words, disambiguation steps, extra turns). Satisfaction typically increases as either channel is reduced, but the effect is contingent on whether speed improvements preserve (or improve) perceived outcome quality and cognitive workload. This theory unifies field claims that faster replies improve CSAT with lab findings where slower total time can still be preferred if it reduces mental demand or adds valued context, and where conversational UIs can be penalized when they add substantial overhead without compensating value.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Latency–Satisfaction Elasticity and Diminishing Returns (LSE-DR)</div>
+<details><summary>Across deployments, satisfaction gains from latency reduction scale with an elasticity that exhibits diminishing returns: large proportional reductions in response time can yield substantial satisfaction lifts, but the marginal satisfaction</summary>
+<p class='theory-desc'>Across deployments, satisfaction gains from latency reduction scale with an elasticity that exhibits diminishing returns: large proportional reductions in response time can yield substantial satisfaction lifts, but the marginal satisfaction gain per additional unit of speedup decreases as responses approach &#x27;immediate enough&#x27;. The apparent elasticity varies by context and measurement (per-turn CSAT vs post-session usability) and is amplified when latency reductions also reduce failures or increase perceived responsiveness/availability. This theory is grounded in the consistent directional field associations and the observation that other factors (coverage, errors, perceived success) can cap benefits.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Two-Channel Latency–Satisfaction Theory (TCLST)</div>
+<details><summary>Chatbot response latency affects user satisfaction through two partially independent channels: (1) a direct waiting-cost channel (longer waits reduce satisfaction by increasing perceived delay, uncertainty, and interruption), and (2) an int</summary>
+<p class='theory-desc'>Chatbot response latency affects user satisfaction through two partially independent channels: (1) a direct waiting-cost channel (longer waits reduce satisfaction by increasing perceived delay, uncertainty, and interruption), and (2) an interaction-cost channel (UI/interaction design changes that reduce the time/effort to accomplish goals increase satisfaction even if raw model/network latency is unchanged). The net effect on satisfaction is the weighted sum of these channels, with weights determined by task goal (efficiency vs expressivity), user context, and the availability of compensating benefits (e.g., contextual support, reduced workload). This theory explains why many deployments show strong positive associations between faster responses and satisfaction, yet some conversational systems are preferred despite longer completion times when interaction-cost reductions or value-add features dominate.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Elastic Latency Sensitivity Theory (ELST)</div>
+<details><summary>The impact of chatbot latency on satisfaction is elastic: it scales with task urgency and the perceived &#x27;wastedness&#x27; of time.</summary>
+<p class='theory-desc'>The impact of chatbot latency on satisfaction is elastic: it scales with task urgency and the perceived &#x27;wastedness&#x27; of time. Latency harms satisfaction most when delays compound across many turns/commands and when users attribute the delay to system incompetence or conversational breakdown. Conversely, latency sensitivity decreases when users perceive delays as productive (e.g., enabling contextual capture, reducing workload) or when the interaction provides compensating benefits (usefulness, reduced cognitive demand, transparency). ELST predicts stronger latency–satisfaction coupling in transactional customer service and search tasks than in supportive, guided, or context-eliciting interactions (notably some health-intake scenarios).</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path:</span> shape → mode → submit</div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Build a theory of how response latency affects user satisfaction in consumer chatbots, via perceived responsiveness and user frustration.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Dual-Pathway Latency Theory (Responsiveness–Frustration Mediation)</div>
+<details><summary>User satisfaction with consumer chatbots is determined by two parallel, latency-driven psychological pathways: (1) a cognitive/service-quality pathway where shorter experienced response latency increases perceived responsiveness (prompt/att</summary>
+<p class='theory-desc'>User satisfaction with consumer chatbots is determined by two parallel, latency-driven psychological pathways: (1) a cognitive/service-quality pathway where shorter experienced response latency increases perceived responsiveness (prompt/attentive service inference), increasing satisfaction; and (2) an affective pathway where longer experienced response latency increases frustration/irritation due to waiting, decreasing satisfaction. Overall satisfaction reflects the net effect of these pathways, typically as partial mediations between experienced latency and satisfaction/experience.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Expectation-Comparison Theory of Chatbot Latency (Normative Responsiveness and Irritation Trigger)</div>
+<details><summary>Users carry an interaction-norm for how quickly a chatbot &#x27;should&#x27; respond.</summary>
+<p class='theory-desc'>Users carry an interaction-norm for how quickly a chatbot &#x27;should&#x27; respond. Satisfaction is shaped not by absolute latency alone but by the discrepancy between experienced latency and expected latency. When latency meets or beats expectations, users infer high responsiveness and feel little irritation; when latency violates expectations, irritation rises and satisfaction drops. Expectations are set by the chatbot&#x27;s promise (e.g., &#x27;instant help&#x27;), channel norms (chat vs phone), and the perceived role (customer service vs mental-health adjunct).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Expectation-Calibration Theory of Latency (Responsiveness as Expectation Match)</div>
+<details><summary>User satisfaction under chatbot delay is governed primarily by expectation calibration rather than objective latency alone.</summary>
+<p class='theory-desc'>User satisfaction under chatbot delay is governed primarily by expectation calibration rather than objective latency alone. Users carry (or rapidly learn) a norm for how fast the agent should respond in the given context; perceived responsiveness is the experienced-vs-expected match. Frustration/irritation emerges mainly when delay violates that norm, especially when the wait feels unbounded or unexplained. Therefore, satisfaction can be improved either by reducing latency or by shaping expectations and reducing uncertainty during delays (e.g., credible status/progress cues), even if objective latency is unchanged.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Affective-Throughput Theory (Latency Reduces Satisfaction via Frustration Costs)</div>
+<details><summary>Response latency affects satisfaction by imposing an affective cost (irritation/frustration) and by lowering the felt throughput of accomplishing a goal.</summary>
+<p class='theory-desc'>Response latency affects satisfaction by imposing an affective cost (irritation/frustration) and by lowering the felt throughput of accomplishing a goal. Perceived responsiveness is the subjective throughput signal; frustration is the subjective cost signal. Satisfaction reflects a net appraisal combining both. Faster responses raise throughput and reduce affective costs, improving satisfaction. This theory emphasizes a monotonic directional relationship (faster is better) within typical consumer chatbot waits.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Perceived Responsiveness–Frustration Mediation Theory</div>
+<details><summary>Response latency affects user satisfaction in consumer chatbots primarily through two proximate psychological states: (1) perceived responsiveness (a positive appraisal that the system is attentive and available) and (2) frustration/irritat</summary>
+<p class='theory-desc'>Response latency affects user satisfaction in consumer chatbots primarily through two proximate psychological states: (1) perceived responsiveness (a positive appraisal that the system is attentive and available) and (2) frustration/irritation from waiting (a negative affective response). Lower latency increases perceived responsiveness and simultaneously reduces waiting-related irritation; these two pathways jointly increase satisfaction. The theory emphasizes that objective latency matters mainly insofar as it is noticed and interpreted as responsiveness vs. waiting/holding.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Availability Substitution Theory (Chatbots as Hold-Time Eliminators)</div>
+<details><summary>In consumer service contexts, chatbots increase satisfaction partly by substituting for channels with salient waiting/hold times (e.g., phone queues).</summary>
+<p class='theory-desc'>In consumer service contexts, chatbots increase satisfaction partly by substituting for channels with salient waiting/hold times (e.g., phone queues). The satisfaction benefit is not only from absolute speed but from relative immediacy compared to the counterfactual waiting experience the user expects. Perceived responsiveness is therefore comparative and reference-dependent; frustration arises when the chatbot fails to meet the &#x27;instant-access&#x27; promise implied by 24/7 availability and no-hold-time positioning.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Perceived Responsiveness–Frustration Dual-Pathway Theory</div>
+<details><summary>Response latency affects consumer chatbot satisfaction primarily through two coupled psychological pathways: (1) a cognitive appraisal of perceived responsiveness (how &quot;prompt/immediate&quot; the system feels) and (2) an affective reaction of fr</summary>
+<p class='theory-desc'>Response latency affects consumer chatbot satisfaction primarily through two coupled psychological pathways: (1) a cognitive appraisal of perceived responsiveness (how &quot;prompt/immediate&quot; the system feels) and (2) an affective reaction of frustration/irritation to waiting. Shorter latencies increase perceived responsiveness and reduce frustration; higher perceived responsiveness increases satisfaction while frustration decreases it. The two pathways can co-occur but need not be perfectly correlated, allowing cases where users recognize responsiveness yet still feel irritated (e.g., repeated micro-waits) or feel low irritation despite slow responses (e.g., when delays are expected/justified).</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Latency-as-Access-Barrier Reduction Theory (Immediacy as Core Value Proposition)</div>
+<details><summary>In consumer chatbots, the primary satisfaction benefit of low latency is not only faster task completion but the reduction of access barriers: immediate, on-demand responses reduce the psychological and practical costs of seeking help (espe</summary>
+<p class='theory-desc'>In consumer chatbots, the primary satisfaction benefit of low latency is not only faster task completion but the reduction of access barriers: immediate, on-demand responses reduce the psychological and practical costs of seeking help (especially for support contexts like mental-health adjunct use). This increases satisfaction by improving the felt ease of initiating and sustaining the interaction, and by reducing irritation associated with waiting or being placed &#x27;on hold.&#x27;</p>
+</details>
+</li>
+</ol>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+    <section class="test" id="test-7">
+      <h2><span class="test-num">#7</span> non-research-question</h2>
+      <div class="prompt">
+        <div class="label">User prompt</div>
+        <div class="prompt-text">What should I name my AI startup? Give me 5 options.</div>
+      </div>
+      <div class="verdict">
+        <span class="verdict-label">Verdict:</span>
+        <span class="verdict-winner new">New wins</span>
+        <span class="verdict-text">Old skill has no out-of-scope guard. Submitted startup-naming question to Theorizer — got 8 theories about brand-name optimization frameworks instead of the 5 names the user asked for. ~$5 and ~25 min wasted at default settings. New skill declined cleanly and offered alternatives.</span>
+      </div>
+      <div class="comparison">
+        <div class="column old-col">
+          <div class="col-header old-header">Old SKILL.md</div>
+          <div class="col-meta">
+            <div><span class="meta-label">Subcommand:</span> <code>literature-theory-generation</code></div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">What should I name my AI startup? Give me 5 options.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <ol class='theory-list'>
+<li>
+<div class='theory-name'>Dual-Objective Naming: The Brand-Meaning vs Brand-Property Frontier (revised)</div>
+<details><summary>AI startup naming is best modeled as multi-objective optimization between (i) communicative efficiency (how quickly a name helps a target audience infer category/benefit and feel confident) and (ii) brand-property robustness (distinctivenes</summary>
+<p class='theory-desc'>AI startup naming is best modeled as multi-objective optimization between (i) communicative efficiency (how quickly a name helps a target audience infer category/benefit and feel confident) and (ii) brand-property robustness (distinctiveness/uniqueness, low confusion risk, cultural acceptability, and lower regulatory/platform/IP friction). Evidence across two naming ecologies (Polish small-service businesses; Ghanaian herbal/medical products under regulatory constraints) shows systematic trade-offs: increasing semantic transparency and use of standard descriptors tends to improve inferred marketing communication but reduces originality and increases resemblance; similarity and misleadingness are explicitly targeted by regulators due to confusion/safety. The theory predicts better outcomes when the core mark remains distinctive/suggestive while clarity is delivered through separable descriptors (taglines/product-type labels) and when similarity is explicitly screened.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Connotation-as-Signal Theory for AI Startup Names</div>
+<details><summary>Names act as compressed signals of competence, quality, and positioning.</summary>
+<p class='theory-desc'>Names act as compressed signals of competence, quality, and positioning. Instead of maximizing literal descriptiveness, strong names select lexemes and constructions whose connotations efficiently imply professional standards and desirable experience (e.g., &#x27;studio/academy/clinic&#x27; in Polish hairdressing). This signal can outperform owner-name individuality or overused fashionable borrowings whose communicative value saturates. For AI startups, connotative signaling (research-lab seriousness, safety, speed, craft, agency) can be systematically engineered while avoiding explicit performance claims that create regulatory/platform or trust backlash.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Sociolinguistic Fit Theory (Revised): Names Win When They Match Local Phonology While Preserving Global Category Legibility</div>
+<details><summary>AI startup names perform best when they jointly optimize (1) sociolinguistic acceptability in the target speech community (pronounceability, phonotactic/phoneme fit, cultural resonance) and (2) global legibility via recognizable category de</summary>
+<p class='theory-desc'>AI startup names perform best when they jointly optimize (1) sociolinguistic acceptability in the target speech community (pronounceability, phonotactic/phoneme fit, cultural resonance) and (2) global legibility via recognizable category descriptors or prestige-language elements. The evidence base here is largely qualitative and corpus-based (Ghanaian herbal products; Polish service SMEs), but it consistently indicates a structural pattern: local identity carriers (local-language word, locally assimilated stem) plus globally legible descriptors (often English category words) improve perceived accessibility and commercial reach. For AI startups, this implies a deliberate architecture: a stable core mark for identity + optional, market-specific descriptor layer, while managing saturation of fashionable borrowings (e.g., overused English tech tokens) that can erode distinctiveness.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Objective Naming Theory: Optimize the Clarity–Distinctiveness Frontier Under Similarity and Compliance Constraints</div>
+<details><summary>Naming is a constrained optimization problem with two competing objectives: semantic clarity (communicating what the product is/does) and distinctiveness (uniqueness, low similarity, legal protectability, low confusion risk).</summary>
+<p class='theory-desc'>Naming is a constrained optimization problem with two competing objectives: semantic clarity (communicating what the product is/does) and distinctiveness (uniqueness, low similarity, legal protectability, low confusion risk). Evidence across Ghanaian medicines and Polish SMEs shows that markets drift toward clarity-enhancing descriptors (service/category words, &#x27;studio/academy/clinic&#x27;, product-type labels, indication terms), but that this drift reduces originality and can trigger regulatory or safety problems when claims are embedded or when names become look-alike/sound-alike. For AI startups, the theory implies designing a name system with (1) a distinctive core mark, (2) optional descriptive descriptors for clarity, and (3) explicit similarity screening to prevent confusion and brand dilution.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Objective Naming Theory (Distinctiveness–Clarity Frontier) for AI Startups</div>
+<details><summary>AI startup names optimize two partially competing objectives: (1) distinctiveness (low similarity to competitors; trademark/identity strength) and (2) communicative efficiency (semantic cues that quickly signal category, competence, and val</summary>
+<p class='theory-desc'>AI startup names optimize two partially competing objectives: (1) distinctiveness (low similarity to competitors; trademark/identity strength) and (2) communicative efficiency (semantic cues that quickly signal category, competence, and value). The evidence suggests markets drift toward higher communicative efficiency (via service/category descriptors and prestige cues), often at the cost of lexical originality; meanwhile, overly descriptive naming increases regulatory/IP vulnerability and reduces uniqueness. The theory proposes treating naming as moving along a Pareto frontier and selecting an operating point based on domain risk and go-to-market channel.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Cross-Lingual Legibility–Authenticity Theory for Globally Marketed AI Brands</div>
+<details><summary>In multilingual or globally marketed contexts, optimal names often use a two-part architecture: a culturally anchored identity token (local language, founder identity, or culturally resonant term) plus a globally legible classifier (English</summary>
+<p class='theory-desc'>In multilingual or globally marketed contexts, optimal names often use a two-part architecture: a culturally anchored identity token (local language, founder identity, or culturally resonant term) plus a globally legible classifier (English descriptor or category tag). This balances authenticity and local trust with international clarity. The theory treats language choice as a strategic signal rather than only a readability decision, and predicts when bilingual/bi-element naming outperforms monolingual strategies.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Dual-Objective Naming Theory: Distinctiveness–Clarity Pareto Frontier Under Safety/Regulatory Constraints</div>
+<details><summary>AI-startup name performance is governed by a two-objective optimization: (1) distinctiveness (to avoid confusion, enable trademarking, and remain memorable) and (2) communicative clarity (to signal category, competence, and value propositio</summary>
+<p class='theory-desc'>AI-startup name performance is governed by a two-objective optimization: (1) distinctiveness (to avoid confusion, enable trademarking, and remain memorable) and (2) communicative clarity (to signal category, competence, and value proposition quickly). Most naming failures come from optimizing one objective while ignoring the other, or by violating external constraints (look-alike/sound-alike confusion, misleading claims, cultural offense). The theory predicts that best-in-class names sit on a Pareto frontier: they are distinctive in their core mark while achieving clarity through controlled, non-misleading semantic cues (often via descriptors, taglines, or “place-of-service/competence” lexemes) rather than through explicit claims embedded in the trademark string.</p>
+</details>
+</li>
+<li>
+<div class='theory-name'>Audience-Layer Encoding Theory: Names as Multi-Channel Signals (Local Identity + Global Legibility + Competence Cues)</div>
+<details><summary>Names function as compact multi-channel signals whose meaning is decoded differently by different audience layers (local users, global users, regulators/platforms, and peer firms).</summary>
+<p class='theory-desc'>Names function as compact multi-channel signals whose meaning is decoded differently by different audience layers (local users, global users, regulators/platforms, and peer firms). The optimal naming strategy encodes different signals in separable components: (i) an identity/authenticity marker (often language choice or culturally grounded element), (ii) a globally legible category descriptor (often English or standardized terminology), and (iii) competence/quality cues (lexemes like &#x27;studio/academy/clinic&#x27; or their AI analogs) that efficiently communicate professionalism. This compositionality reduces the need to overload the core mark with descriptive claims while maintaining broad accessibility.</p>
+</details>
+</li>
+</ol>
+          </div>
+        </div>
+        <div class="column new-col">
+          <div class="col-header new-header">SKILL-new.md</div>
+          
+          <div class="col-meta">
+            <div><span class="meta-label">Path:</span> shape → mode → submit</div>
+            <div><span class="meta-label">Submitted query:</span></div>
+            <div class="query">Not submitted — skill declined.</div>
+          </div>
+          <div class="theories-section">
+            <div class="meta-label">Theories returned</div>
+            <p class='no-data'>No theories — task was not submitted.</p>
+          </div>
+        
+        </div>
+      </div>
+    </section>
+    
+
+<div class="findings">
+  <h2>Key findings</h2>
+  <ol>
+    <li><strong>Test 5 — fix applied and verified.</strong> The new skill previously inferred a narrow angle silently; Theorizer then narrowed further to civic-chatbot theories. The skill was updated to (a) tighten the inference threshold so the intervention can never be silently inferred, and (b) add an explicit "ask with candidate angles" template. Re-running Test 5 against the updated skill confirms the new behavior: the model offers three concrete candidate angles (A/B/C) and waits for the user. <em>This change can be reverified in the Test 5 section above.</em></li>
+
+    <li><strong>Test 7 — out-of-scope guard pays off.</strong> Old skill submitted "What should I name my AI startup?" to Theorizer because it has no guard. Theorizer produced 8 academic theories about brand-name optimization frontiers — interesting but useless to a user who wanted 5 name suggestions. ~25 min and ~$5 wasted at default settings. The new skill declined cleanly.</li>
+
+    <li><strong>Tests 1, 2, 4, 6 are effectively tied.</strong> Both skills produce strong on-topic theories. The new skill's query reshaping helps marginally for well-described prompts but doesn't significantly improve output. Especially Test 4, where the new skill surfaces a reshape note for adding only the frame — pure UX overhead.</li>
+
+    <li><strong>Test 3 — iteration-2 fix verified; failure is now firmly upstream.</strong> Both skills now correctly route to <code>find-and-extract</code> and submit the user's topic ("prospect theory in software pricing") without restructuring. Theorizer still ignores the stage boundary and runs the full pipeline anyway (extractions + 8 theories + novelty evaluations). The skill-side failure is gone; the failure that remains is on the Theorizer team, not the skill.</li>
+
+    <li><strong>Theorizer is permissive — accepts almost anything.</strong> Vague queries, naming brainstorms, even prompts with no theoretical framing all produce 8 "theories." The agent doesn't refuse based on input quality. The calling skill is the only line of defense.</li>
+  </ol>
+
+  <h2>Remaining iteration-2 items</h2>
+  <ol>
+    <li><del>Tighten the inference threshold + add ask-with-candidates template</del> — <strong>done.</strong></li>
+    <li><del>Don't apply the shape step to find-and-extract</del> — <strong>done.</strong> The skill now passes literature topics through unchanged for find-and-extract (standalone or piecemeal first stage), and shapes the theory question later, before form-theory.</li>
+    <li>Strengthen the silent-frame rule (Test 4) — when only the frame is added, proceed directly to mode question without a reshape moment.</li>
+    <li>Fix the CLI invocation documentation. SKILL-new.md describes a <code>describe &lt;skill-id&gt;</code> command and per-subcommand invocation pattern; the actual CLI only has <code>card</code>, <code>send-message</code>, <code>task</code>.</li>
+    <li>Document the polling reality: <code>send-message</code> auto-polls only on TTY. In scripted/background use, caller polls via <code>asta generate-theories task &lt;task_id&gt;</code>.</li>
+    <li>Add a "retry once on silent failure" instruction for tasks that end <code>state: failed</code> with no message.</li>
+    <li>Resolve the piecemeal mode question (Test 3 finding): either coordinate with the Theorizer team to honor stage boundaries, or temporarily remove piecemeal mode from the skill until the agent supports it.</li>
+    <li>Consider restoring the Flows table as a quick-reference. It made routing decisions cleaner in the old skill.</li>
+  </ol>
+</div>
+
+</body>
+</html>
