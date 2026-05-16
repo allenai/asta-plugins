@@ -86,9 +86,9 @@ claude plugin install asta-preview
 npx skills add /opt/asta-plugins -g --all --yes
 ```
 
-## Workspace (Codespaces / Dev Containers)
+## Research projects (Codespaces / Dev Containers / CI deploy)
 
-For a pre-configured VS Code environment with Asta skills and Quarto, see the [Workspace skill](skills/workspace/SKILL.md).
+The [`workspace`](skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
 
 ## Benchmarking
 
@@ -96,7 +96,7 @@ For a pre-configured VS Code environment with Asta skills and Quarto, see the [W
 
 To run a benchmark, see [Demo](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#demo), which runs the [`astabench`](https://github.com/allenai/asta-bench) science-agent suite with default skills. For your own edits, use [Swapping in local skills](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#swapping-in-local-skills) (run `make build-plugins` first, then point at the regenerated tree).
 
-For measuring the effect of a skill change, run a paired comparison via [Comparing two configurations](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#comparing-two-configurations). See [#60](https://github.com/allenai/asta-plugins/pull/60) for a worked example.
+For measuring the effect of a skill change, run a paired comparison via [Comparing two configurations](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#comparing-two-configurations). See [#60](https://github.com/allenai/asta-plugins/pull/60) for a worked example against existing cases, and [#63](https://github.com/allenai/asta-plugins/pull/63) for a worked example of adding new per-skill cases.
 
 ## Development
 

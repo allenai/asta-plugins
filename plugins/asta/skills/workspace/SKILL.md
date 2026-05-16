@@ -1,16 +1,67 @@
 ---
 name: workspace
-description: Set up a GitHub Codespaces or Dev Container environment with Asta skills installed in GitHub Copilot and Quarto pre-configured. Use when asked to set up a Codespace or devcontainer for an Asta project.
+description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `research-step`).
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit
 ---
 
 # Workspace
 
-Set up a VS Code environment (GitHub Codespaces or Dev Containers) with Asta skills installed in the GitHub Copilot agent. Includes Quarto pre-installed with preview auto-starting on port 4848.
+Manage the writing/docs side of a research project: scaffold infrastructure as needed, show the rendered work, save iterations. For managing the research task graph itself (planning, executing typed tasks), use `research-step`.
 
-## Setup
+`assets/DEVELOPER.md` is a developer-facing template scaffolded into the user's project root (where it becomes `DEVELOPER.md` for humans and agents working with the project). This SKILL.md is the agent-specific procedure.
 
-If the project doesn't have `.devcontainer/devcontainer.json` yet, confirm the plan with the user, then:
+## Show the user the rendered work
 
-1. Copy [assets/devcontainer.json](assets/devcontainer.json) to `.devcontainer/devcontainer.json`.
-2. Open the environment — via Codespaces or VS Code ("Reopen in Container"). If the project has a `_quarto.yml`, preview starts automatically on port 4848 — click "Open in Browser" in the notification to view it. Users with the `quarto.quarto` VS Code extension get additional editor support.
-3. Authenticate with Asta in a terminal inside the container: run `asta auth login`, or set `ASTA_TOKEN` in the environment before starting the container and it will be passed through automatically.
+Give the user a web URL for the rendered work. Two URL sources, pick based on your context:
+
+- **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
+- **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
+
+## Save
+
+`git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
+
+For a headless agent (the user only sees results via deployed URL):
+
+- First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- Subsequent saves: `git push`, `make deployed-url`.
+- After explicit merge approval: `gh pr merge`, `make deployed-url`.
+
+Don't merge a PR without explicit user approval.
+
+## Scaffold components as needed
+
+Add components only when needed; don't proactively offer.
+
+| Component | When to add |
+|---|---|
+| **Quarto build tool** | Always — it's the project structure. |
+| **GitHub Pages deploy** | When you have no user-reachable port, or the user asks for a deployed URL. |
+| **Dev container** | When the user wants to avoid installing Quarto/dependencies on the host — their own machine or anyone else's (e.g., for collaborator access without local setup). |
+
+Before writing any file in the steps below, check whether the target path already exists. If it does, ask the user before overwriting, or merge the asset's contents into the existing file.
+
+### Quarto build tool
+
+1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}`.
+2. Create `index.qmd` with `title:` frontmatter.
+3. Create empty `references.bib`.
+4. Append `_site/` and `.quarto/` to `.gitignore` (don't overwrite).
+5. Copy `assets/Makefile` to project root.
+6. Copy `assets/README.md`; fill `{{TITLE}}` and `{{DESCRIPTION}}` from the user.
+7. Copy `assets/DEVELOPER.md` to project root. User owns it — only update later with explicit user permission.
+
+### GitHub Pages deploy
+
+1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`.
+2. Configure Pages to serve from `gh-pages`:
+   ```bash
+   gh api repos/{owner}/{repo}/pages -X POST --input - <<'EOF'
+   {"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}
+   EOF
+   ```
+
+### Dev container
+
+1. Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`.
+2. Tell the user how to open it (Codespaces or VS Code "Reopen in Container") and authenticate Asta tools — see `DEVELOPER.md`.
