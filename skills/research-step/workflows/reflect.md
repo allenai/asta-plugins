@@ -13,10 +13,10 @@ off to **plan** or **update-summary** at the end.
 
 1. **Decide whether to reflect.** Check the closed task's `task_type`:
 
-   | task_type | Action |
-   |---|---|
-   | `literature_review`, `hypothesis`, `analysis`, `synthesis` | Continue to step 2. |
-   | `scope`, `definitions`, `experiment_design`, `evidence_gathering` | Skip to step 4. |
+   | task_type                                                                       | Action |
+   |---------------------------------------------------------------------------------|---|
+   | `literature_review`, `experiment_design`, `hypothesis`, `analysis`, `synthesis` | Continue to step 2. |
+   | `scope`, `definitions`, `evidence_gathering`                                    | Skip to step 4. |
 
 2. **Load context.** Read `mission.md` for the exploratory dimensions. The
    closed task's output is already in scope from **execute** — do not re-fetch.
@@ -42,17 +42,40 @@ off to **plan** or **update-summary** at the end.
    past decision — which one and how?
 
    **Recommended next steps** — list the next possible research steps. Name
-   contingencies and risks.
+   contingencies and risks. 
 
-   Save to `reflections/YYYY-MM-DD-<bd-id>.md` (create the directory if it does
-   not exist).
+4. **Get researcher feedback.** Summarize your reflections. Point to the reflections file (md)
+   for further details. Then display to the researcher the recommended next steps and allow
+   the researcher to revise the steps as they see fit.
 
-4. **Hand off.**
+   Wait until the researcher is done deciding what should happen next.
+   Once the researcher is satisfied with the next steps, continue to step 5.
 
-   | Closed task_type | Hand off to |
+5. **Label and confirm next steps.** Based on the confirmed next steps, restate them as a short list and label each as either:
+
+   - **(in-plan)** — already represented in the current plan
+   - **(new/changed)** — requires the plan to be updated
+   - **(none)** — no further work proposed
+
+   Show this labeled list to the researcher and ask them to confirm or correct the labels. The researcher may:
+
+   - Accept the labels as-is.
+   - Re-label an item (e.g., "that's actually already in the plan, mark it in-plan").
+   - Revise the next steps themselves and re-label.
+
+   Do not proceed to step 6 until the researcher confirms the labeled list.
+
+6. **Hand off.**
+
+   If the researcher explicitly directed a route during step 4 or 5 (e.g., "just update the summary," "go to plan"), honor that directive and skip the table.
+
+   Otherwise, look at the labeled next steps confirmed in step 5 and route as follows:
+
+   | Situation | Hand off to |
    |---|---|
-   | `literature_review`, `hypothesis`, `analysis`, `synthesis` | **plan** (with this task as the source). |
-   | `scope`, `definitions`, `experiment_design`, `evidence_gathering` | **update-summary** directly. |
+   | Next steps add to, refine, or deviate from the current plan (new tasks needed, plan must be revised) | **plan** (with this task as the source) |
+   | Next steps close out remaining open tasks and no further planning is needed right now (the current plan is effectively complete) | **update-summary** directly |
+   | Next steps are empty / mission-level pause (researcher wants to stop, rescope, or revisit mission) | **update-summary**, then surface to researcher that mission may need revisiting |
 
 ## Out of scope for this workflow
 
