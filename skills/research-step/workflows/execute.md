@@ -9,30 +9,8 @@ Propose ready tasks for researcher approval, then run the confirmed task end-to-
 
 ## Steps
 
-1. **Propose candidates** (skip if a specific task ID was supplied). Read
-   `summary.md` for current session state. Run `bd ready --json`; if empty,
-   report "no ready tasks — graph is blocked or complete" and stop.
-
-   Propose **2–3 candidates** from the ready list. For each, state:
-   - Task ID and `task_type`
-   - Which exploratory dimension(s) from `mission.md` it addresses, and at what priority
-   - The specific question or gap it targets
-   - Any risks (scope creep, rabbit holes, blocked dependencies)
- 
-   End with: "Which would you like to run? Reply with the number, suggest a
-   modification, or say 'go' to proceed with option 1."
-
-   **Stop and wait for researcher input before continuing.**
-
-
-2. **Claim the chosen task.** Use the task ID supplied by the caller
-   (step 0) or selected by the researcher in step 1. Run
-   `bd update <id> --status=in_progress`. Hypothesis tasks are normally
-   auto-resolved at creation by **plan**, so they should not appear as
-   ready. If the researcher picks one, it means the gap text was too
-   thin for plan to fill the output without inventing content — flag
-   this and ask whether to refine the source `literature_review` first.
-
+1. **Pick a task.** If a task ID was supplied, use it. Else `bd ready --json` and pick the oldest issue (tiebreak by `bd-id` ascending). Hypothesis tasks are normally auto-resolved at creation by **plan**, so they should not appear here. If one does, it means the gap text was too thin for plan to fill the output without inventing content — flag this to the user and ask whether to refine the source `literature_review` first.
+2. **Claim it.** `bd update <id> --status=in_progress`.
 3. **Load the schema.** Read the task type with `bd show <id> --json | jq -r '.[0].metadata.research_step.task_type'`. Open `assets/schemas.yaml` and find the matching entry under `task_types`.
 4. **Gather inputs.** For every issue listed in this issue's `inputs` (`bd show <id> --json | jq '.[0].metadata.research_step.inputs'`), read its output with `bd show <input-id> --json | jq '.[0].metadata.research_step.output'`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `summary_path` from a `literature_review`). **This is the only context to use** — do not pull in unrelated repo state.
 5. **Do the work.** Produce a JSON object matching the schema. For schema fields ending in `_path`, write the file to disk first and put the relative path in the JSON.
