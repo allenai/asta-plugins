@@ -18,21 +18,28 @@ Propose ready tasks for researcher approval, then run the confirmed task end-to-
    - Which exploratory dimension(s) from `mission.md` it addresses, and at what priority
    - The specific question or gap it targets
    - Any risks (scope creep, rabbit holes, blocked dependencies)
-
+ 
    End with: "Which would you like to run? Reply with the number, suggest a
    modification, or say 'go' to proceed with option 1."
 
    **Stop and wait for researcher input before continuing.**
 
-2. **Pick a task.** Use the task confirmed in step 1, or the supplied task ID.
-3. **Claim it.** `bd update <id> --status=in_progress`.
-4. **Load the schema.** Read `metadata.research_step.task_type` from the issue. Open `assets/schemas.yaml` and find the matching entry under `task_types`.
-5. **Gather inputs.** Read the `metadata.research_step.output` of every issue listed in this issue's `inputs`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `summary_path` from a `literature_review`). **This is the only context to use** — do not pull in unrelated repo state.
-6. **Do the work.** Produce a JSON object matching the schema. For schema fields ending in `_path`, write the file to disk first and put the relative path in the JSON.
-7. **Validate structurally.** Run `scripts/validate-output.sh <task_type> <metadata-json-file>`. It checks the envelope (`research_step.task_type`, `inputs`, `output_schema_version`, `output`) and every required `output.<key>` for the task_type, plus type spot-checks for the high-leverage cases (e.g., `analysis.verdict` enum, `analysis.confidence` range). Exit 0 ⇒ valid. Any non-zero exit ⇒ fail loudly and **leave the issue `in_progress`** for retry. Do not close.
-8. **Persist the output.** Materialize the metadata JSON via `scripts/write-meta.sh` (reads JSON from stdin, prints a temp file path), then `bd update <id> --metadata @<path>`. Preserve the existing `task_type`, `inputs`, and `output_schema_version`.
-9. **Close.** `bd close <id>`.
-10. **Hand off to reflect.** Pass this task's ID and `task_type` to **reflect**. It decides whether to run the reflection, then chains to **plan** or **update-summary**. Either path ends with `summary.md` rebuilt.
+
+2. **Claim the chosen task.** Use the task ID supplied by the caller
+   (step 0) or selected by the researcher in step 1. Run
+   `bd update <id> --status=in_progress`. Hypothesis tasks are normally
+   auto-resolved at creation by **plan**, so they should not appear as
+   ready. If the researcher picks one, it means the gap text was too
+   thin for plan to fill the output without inventing content — flag
+   this and ask whether to refine the source `literature_review` first.
+
+3. **Load the schema.** Read `metadata.research_step.task_type` from the issue. Open `assets/schemas.yaml` and find the matching entry under `task_types`.
+4. **Gather inputs.** Read the `metadata.research_step.output` of every issue listed in this issue's `inputs`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `summary_path` from a `literature_review`). **This is the only context to use** — do not pull in unrelated repo state.
+5. **Do the work.** Produce a JSON object matching the schema. For schema fields ending in `_path`, write the file to disk first and put the relative path in the JSON.
+6. **Validate structurally.** Run `scripts/validate-output.sh <task_type> <metadata-json-file>`. It checks the envelope (`research_step.task_type`, `inputs`, `output_schema_version`, `output`) and every required `output.<key>` for the task_type, plus type spot-checks for the high-leverage cases (e.g., `analysis.verdict` enum, `analysis.confidence` range). Exit 0 ⇒ valid. Any non-zero exit ⇒ fail loudly and **leave the issue `in_progress`** for retry. Do not close.
+7. **Persist the output.** Materialize the metadata JSON via `scripts/write-meta.sh` (reads JSON from stdin, prints a temp file path), then `bd update <id> --metadata @<path>`. Preserve the existing `task_type`, `inputs`, and `output_schema_version`.
+8. **Close.** `bd close <id>`.
+9. **Hand off to reflect.** Pass this task's ID and `task_type` to **reflect**. It decides whether to run the reflection, then chains to **plan** or **update-summary**. Either path ends with `summary.md` rebuilt.
 
 ## Notes on output files
 
