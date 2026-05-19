@@ -1,8 +1,43 @@
 # Output schemas for research-step task types.
-# Each task issue stores its realized output at metadata.research_step.output,
-# matching the shape under `output:` for its task_type.
+#
+# Each task issue stores its realized output under metadata.research_step:
+#
+#   metadata.research_step:
+#     task_type: <one of the registered types below>
+#     inputs:    [bd_id, ...]                     # concrete upstream task bd ids
+#     work_dir:  ".asta/<task_type>/<slug>/"      # the single directory this task wrote to.
+#                                                 # <slug> is a short kebab-case name the agent
+#                                                 # picks at create time. Asta Flows reads this
+#                                                 # to render the Files tab.
+#     output:    { ...per-type structured fields, schema below... }
+#
+# What's NOT in here anymore (schema_version 3 hard cut):
+#   - `artifacts: []` and `consumes: []` uniform fields (M0.5) — replaced by `work_dir`.
+#   - Per-type `_path` / `_dir` legacy fields (`summary_path`, `experiments_path`,
+#     `report_path`, etc.) — files live under `work_dir`; canonical filenames
+#     are listed in the per-task convention block below so downstream tasks
+#     can find them without metadata pointers.
+#
+# Inline-citation rule for markdown outputs: see SKILL.md §"Markdown convention".
 
-schema_version: 1
+schema_version: 3
+
+# ── Per-task-type file conventions inside `work_dir` ───────────────────────────
+# Agents write predictable filenames under their work_dir so downstream tasks
+# can find them without consulting metadata paths.
+file_conventions:
+  scope:                       ["scope.md"]
+  definitions:                 ["terms.md"]
+  literature_review:           ["summary.md", "thread/"]          # thread/ is the asta-literature interactive workspace
+  hypothesis:                  ["hypothesis.md"]
+  experiment_design:           ["design.md"]
+  evidence_gathering:          ["log.md", "data/", "figures/"]
+  analysis:                    ["analysis.md"]
+  synthesis:                   ["report.md"]
+  autods_run:                  ["experiments.json", "run-metadata.json", "dataset-summary.md"]
+  autods_literature_synthesis: ["per-hypothesis-table.md", "summary.md"]
+  data_reproduction:           ["per-finding-table.md", "<node_id>/"]   # one subdir per surviving node
+  theorize:                    ["task.json", "theories/", "novelty/", "citations.bib", "index.md"]
 
 task_types:
 
@@ -24,14 +59,28 @@ task_types:
   literature_review:
     inputs: [scope, definitions]
     output:
-      summary_path: string               # relative path; long-form context
-      key_findings: [string]             # 3-10 bullets readable without opening summary_path
+      key_findings: [string]             # 3-10 bullets readable without opening summary.md.
+                                         # autods-to-theorizer convention: per-theme lit_reviews include a
+                                         # "CLASSIFICATION: <node_id> = <textbook|construction-artifact|
+                                         # candidate-surprise|novel-extension|inconclusive>" line per
+                                         # AutoDS hypothesis covered by the theme.
       gaps: [string]                     # gaps that motivate hypotheses
       citations:
         - id: string
           title: string
           url: string
           relevance: string
+      # ── optional fields used by autods-to-theorizer; hypothesis-driven leaves absent ──
+      provenance:                        # populated when this lit_review is the provenance phase.
+        source_papers:
+          - corpus_id: string
+            doi: string
+            title: string
+            authors: [string]
+            year: number
+        dataset_lineage: string
+      theme: string                      # populated when this lit_review is a per-theme task
+      corpus_ids: [string]               # harvested by per-theme tasks; theorize unions these into paper_store
 
   hypothesis:
     inputs: [scope, literature_review]
@@ -50,31 +99,161 @@ task_types:
         independent: [string]
         dependent: [string]
         controls: [string]
-      artifacts_expected: [string]       # paths the gathering step will produce
+      artifacts_expected: [string]       # filenames the gathering step is expected to write (under its own work_dir)
 
   evidence_gathering:
     inputs: [experiment_design]
     output:
-      artifacts:
-        - path: string
-          kind: string                   # data | log | figure | code | other
-          description: string
-      log_path: string                   # what was actually run
       deviations: [string]               # ways execution diverged from design
 
   analysis:
     inputs: [hypothesis, evidence_gathering]
     output:
       verdict: enum [supported, refuted, inconclusive]
-      confidence: number                 # 0.0 - 1.0
+      confidence: number                 # 0.0 - 1.0; agent's credence in the verdict
       reasoning: string
       caveats: [string]
 
   synthesis:
-    inputs: [scope, analysis_*]          # all analysis issues in the epic
+    # The universal closing task for every template. Writes report.md as the
+    # run's deliverable. Two flavors:
+    #
+    #   - Hypothesis-driven flow.
+    #       inputs: [scope, analysis_*]      # every analysis task in the epic
+    #       The agent answers scope.question and lists which hypotheses were
+    #       supported / refuted (by bd id).
+    #
+    #   - AutoDS / theorize-driven flow.
+    #       inputs: [autods_run, autods_literature_synthesis, theorize,
+    #                (optional) data_reproduction]
+    #       The agent leads with the theories from the upstream `theorize`
+    #       task, curates them in report.md, references the AutoDS patterns
+    #       and literature grounding that seeded each theory, and notes
+    #       reproduction status when data_reproduction ran. Both
+    #       supporting_hypotheses and refuted_hypotheses may be empty (or
+    #       carry AutoDS node ids as strings if the agent finds that
+    #       useful) — theories are the real centerpiece and live in
+    #       report.md.
+    #
+    # Either way, the run's headline is in `answer` and any follow-up
+    # threads live in `open_questions`.
+    inputs: [scope, analysis_*]          # hypothesis-driven flow;
+                                         # autods flow uses [autods_run, autods_literature_synthesis, theorize, data_reproduction]
     output:
-      answer: string                     # answer to scope.question
-      supporting_hypotheses: [bd_id]
-      refuted_hypotheses: [bd_id]
-      open_questions: [string]           # become discovered-from edges on re-plan
-      report_path: string                # generated markdown report
+      answer: string                     # one-line "so what" — names a theory for theory-driven runs,
+                                         # or the answer to scope.question for hypothesis-driven runs
+      supporting_hypotheses: [bd_id]     # hypothesis-flow: bd ids of supported hypotheses.
+                                         # autods-flow: leave empty (theories live in report.md prose).
+      refuted_hypotheses: [bd_id]        # symmetric counterpart; empty for autods flows
+      open_questions: [string]           # next directions; become discovered-from edges on re-plan
+
+  # ───────────────────────────────────────────────────────────────────────────────
+  # autods-to-theorizer template task types
+  # ───────────────────────────────────────────────────────────────────────────────
+
+  autods_run:
+    inputs: [scope, definitions]
+    # Three sourcing modes, selected by what mission.md describes (no frontmatter needed):
+    #   A1: UUID-shaped run id  → `asta autodiscovery experiments <id> --format json`
+    #   A2: local export dir    → parse <path>/output/mcts_nodes_all.json (the STRUCTURED file;
+    #                             the node_*.json files are autogen conversation logs, don't use those)
+    #   B:  fresh-run intent    → `asta autodiscovery create/upload/metadata/submit`; block until SUCCEEDED.
+    #                             Confirm with user before submitting (uses credits, 30+ min).
+    # If mission.md is ambiguous between modes, ask the user before doing anything expensive.
+    # Field-name gotcha: autodiscovery's records use `surprising` (boolean) and `normalized_surprisal`
+    # (number, can be negative — it's a log-likelihood-ratio, not a 0-1 probability). Map these into
+    # is_surprising and surprise_score below.
+    output:
+      run_id: string                     # A1: from mission; A2: basename of path; B: new ID
+      mode: enum [imported, executed]
+      dataset_summary:
+        datasets:
+          - name: string
+            description: string
+            n_rows: number
+            columns: [string]
+        intent: string
+        domain: string
+      hypotheses:
+        - node_id: string                # e.g., node_2_1
+          statement: string
+          prior_analysis: string         # truncate inline; keep full text on disk
+          is_surprising: boolean         # ← autodiscovery's `surprising` field
+          surprise_score: number         # ← autodiscovery's `normalized_surprisal` field
+      surprising_count: number
+
+  autods_literature_synthesis:
+    inputs: [autods_run, "literature_review_*"]   # 1 provenance + N theme
+    output:
+      themes:
+        - name: string
+          contributing_lit_review_ids: [bd_id]
+          key_findings: [string]
+          gaps: [string]
+      surviving_findings: [string]       # AutoDS node_ids where hypothesis.is_surprising == true AND
+                                         # lit-review CLASSIFICATION ∈ {candidate-surprise, novel-extension}.
+                                         # Drives the post-lit gates in the diagram.
+      contradicted_findings: [string]    # AutoDS node_ids explicitly refuted by lit
+      headline: string                   # one-line: "3 of 10 AutoDS findings remain still-surprising after lit"
+
+  data_reproduction:
+    inputs: [autods_run, autods_literature_synthesis]
+    # Skip if surviving_findings is empty (replan handles).
+    # Faithful-attempt requirement + workflow guidance: see autods-to-theorizer.md.
+    output:
+      candidate_datasets:
+        - name: string
+          source_url: string
+          rationale: string              # why "similar"
+          fetch_status: enum [ok, partial, failed]
+      findings:
+        - node_id: string
+          verdict: enum [reproduced, failed_to_reproduce, partial, inconclusive, unreachable]
+                                         # `reproduced`: same direction + comparable effect size
+                                         # `failed_to_reproduce`: clearly different (opposite sign or null effect)
+                                         # `partial`: directionally consistent but effect differs substantially
+                                         # `inconclusive`: test runs but is underpowered or ambiguous
+                                         # `unreachable`: all candidate datasets failed to fetch
+          confidence: number             # 0.0-1.0; anchors:
+                                         #   0.9+  = clean evidence, well-specified test
+                                         #   0.7+  = solid but one caveat
+                                         #   0.5+  = noisy/marginal
+                                         #   <0.5  = use 'inconclusive' instead of a definitive verdict
+                                         # Post-repro gate fires on (failed_to_reproduce AND confidence > 0.7).
+          datasets_used: [string]
+          reasoning: string
+      deviations: [string]               # fetch failures, fallbacks taken, cross-dataset infeasibility
+
+  theorize:
+    inputs: [autods_run, autods_literature_synthesis, data_reproduction]
+    # data_reproduction is absent if the all-known gate fired.
+    #
+    # ⚠️ Context-window contract: `asta generate-theories` is a remote A2A service. Its only inputs are
+    # the --theory-query string, the --paper-store JSON, and papers its own PaperFinder discovers.
+    # It CANNOT read bd, local files, or IDs not inlined in the query. Inline everything; cite papers
+    # by author/year, not corpus_id.
+    #
+    # Paper-store gateway limitation: `inject_papers` only honors entries with `paper_markdown`;
+    # identifier-only stubs are silently dropped. Best to pass an empty paper store for now.
+    #
+    # Two-shot fallback on PaperFinder failure: retry with simplified query, then close with
+    # theories=[], fallback_used=true.
+    #
+    # After the CLI completes, dump the task JSON and export with `asta artifacts --format md`
+    # rather than parsing the streamed CLI log. Both end up inside work_dir.
+    output:
+      theory_query: string
+      theories:
+        - name: string
+          statement: string              # the theory's mechanistic claim (from artifact description)
+          novelty_rollup: enum [genuinely-new, derivable-but-unstated, already-established]
+                                         # best-of across novelty_claims[].label
+          novelty_claims:
+            - claim_name: string
+              label: enum [genuinely-new, derivable-but-unstated, already-established]
+              judgment_excerpt: string   # first ~200 chars of the agent's novelty judgment
+          falsifiable_prediction: string # concatenation of novelty_claims[].claim_name
+          evidence_grounding: [string]   # paper s2_sha or corpus_ids cited in supporting passages
+      fallback_used: boolean
+      fallback_reason: string
+
