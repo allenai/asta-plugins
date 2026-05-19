@@ -14,7 +14,7 @@ allowed-tools:
 
 # Generate Theories
 
-Uses the [Theorizer](https://github.com/allenai/asta-theorizer) agent (via `asta-gateway`) to find papers, extract evidence, write theories, and score novelty. Auth: `asta auth login`.
+Uses the [Theorizer](https://github.com/allenai/asta-theorizer-internal) agent (via `asta-gateway`) to find papers, extract evidence, write theories, and score novelty. Auth: `asta auth login`.
 
 The CLI is generated from the agent card — every subcommand, flag, and default. Discover the surface yourself:
 - `asta generate-theories --help` — list subcommands.
@@ -38,16 +38,16 @@ Theorizer's literature-driven theory generation is **three composable stages**:
 literature-theory-generation = find-and-extract → form-theory → evaluate-novelty
 ```
 
-- **`find-and-extract`** — searches papers for the research question and extracts evidence from the papers via an extraction schema. Outputs: paper list + extraction findings. No theories yet.
-- **`form-theory`** — takes those findings and writes a set of theories, each with supporting and conflicting paper evidence attached.
-- **`evaluate-novelty`** — scores each theory statement against the retrieved literature.
+- **`find-and-extract`** — searches papers for the research question and pulls theory-relevant findings (entities, variables, results) from each into a structured table via an extraction schema. Outputs: paper list + extraction findings. No theories yet.
+- **`form-theory`** — writes a small set of theories from extraction results. Each theory is a few short laws (e.g. *"X causes Y"*) with supporting and conflicting paper evidence attached. Accepts either a prior run's `task_id` or user-supplied extraction results.
+- **`evaluate-novelty`** — scores each theory's statements against the retrieved literature, marking each claim as already established, derivable from known work, or genuinely new. Accepts either a prior run's `task_id` or user-supplied theories.
 
 `literature-theory-generation` is the **bundled end-to-end version** that runs all three back-to-back without pause. Convenient when the user wants results in one shot; less useful when the user wants to inspect or steer between stages.
 
 Two more standalone subcommands round out the surface:
 
-- **`resume-extraction`** — add more papers to a prior run and extract from them (useful after a partial failure, or to grow the evidence base).
-- **`form-theory`** / **`evaluate-novelty`** also accept a prior run's `task_id`, so a user can re-theorize or re-evaluate without paying to find papers again.
+- **`build-extraction-schema`** — normalizes the research question, drafts a paper search query, and generates the extraction schema that `find-and-extract` uses. Useful when the user wants to inspect or curate the schema before running the pipeline; pass the produced schema via the `extraction_schema` parameter on `find-and-extract` or `literature-theory-generation`.
+- **`resume-extraction`** — add more papers to a prior run and extract findings from them. Useful after failed paper downloads, or to grow the evidence base of a prior run without starting over.
 
 ---
 
@@ -126,6 +126,9 @@ A vague question that fires through the full pipeline can burn 15–25 minutes a
 
 1. **Proceed silently** if all three required dimensions are present. Don't announce the audit result, don't tell the user the question is "well-formed," don't name the dimensions — move directly to the next dispatch step. Add the "Build a theory of how..." framing yourself.
 2. **Poll for what's missing** if any required dimension is missing or ambiguous. In a single message, ask the user about every required gap. Remember that the user does not know about the dimensions. Then reformulate the query as a "Build a theory of how..." statement using their answers and show it for confirmation before submitting.
+
+   **Escape hatch:** End the poll with a one-line note that the user can say *"just send it,"* *"use what I gave you,"* or *"let Theorizer figure it out"* to skip shaping and submit the question as given. Some advanced users prefer under-specifying deliberately. Respect that signal. The user can also opt out in their original message (before any poll happens); if so, skip the poll entirely and submit as given.
+
 3. **Refuse** if the question isn't a causal hypothesis testable against scientific literature (e.g., "what should I name my startup," "summarize this paper"). State plainly that Theorizer's domain is causal scientific theories grounded in published evidence, and offer to reframe the question into that form or hand off to another skill.
 
 #### Route 2 (Poll for what's missing):
@@ -137,6 +140,8 @@ I need a few details to shape this into a good theory question:
 
 - **Intervention** — what variable do you want to vary? (e.g., source citations, response latency, anthropomorphic phrasing)
 - **Scope** — what domain should the theory apply to? (e.g., consumer chatbots, medical AI, search assistants)
+
+Or say "just send it" and Theorizer will work with what you've given me — it can often infer the rest from the literature.
 ```
 
 After they answer, reformulate and confirm:
@@ -218,7 +223,7 @@ No "let me know if you'd like…" tail — the search/open links cover it.
 
 ## References
 
-- Theorizer: <https://github.com/allenai/asta-theorizer>
+- Theorizer: <https://github.com/allenai/asta-theorizer-internal>
 - Agent card / schemas: `asta generate-theories card` / `asta generate-theories describe <skill-id>`
 - A2A spec: <https://a2a-protocol.org/latest/specification/>
 
