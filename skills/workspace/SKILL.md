@@ -37,7 +37,7 @@ Add components only when needed; don't proactively offer.
 |---|---|
 | **Quarto build tool** | Always — it's the project structure. |
 | **GitHub Pages deploy** | When you have no user-reachable port, or the user asks for a deployed URL. |
-| **Dev container** | When the user wants to avoid installing Quarto/dependencies on the host — their own machine or anyone else's (e.g., for collaborator access without local setup). |
+| **Dev container** | User wants to avoid installing host dependencies, or wants browser-only access from another machine. See subsection for the two flows. |
 
 Before writing any file in the steps below, check whether the target path already exists. If it does, ask the user before overwriting, or merge the asset's contents into the existing file.
 
@@ -63,5 +63,7 @@ Before writing any file in the steps below, check whether the target path alread
 
 ### Dev container
 
-1. Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`.
-2. Tell the user how to open it (Codespaces or VS Code "Reopen in Container") and authenticate Asta tools — see `DEVELOPER.md`.
+Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`, then pick the flow that matches the user's intent:
+
+- **Local container** (working on their machine without installs): run `make dev` to open VS Code attached to the local container.
+- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed), then `gh codespace create` and give the user the URL.
