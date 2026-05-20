@@ -90,9 +90,9 @@ build-plugins:
 # Verify plugins/ matches skills/ (used in CI)
 check-plugins:
 	@./scripts/build-plugins.sh > /dev/null
-	@if ! git diff --quiet plugins/; then \
-		echo "Error: plugins/ is out of date. Run 'make build-plugins' and commit."; \
-		git diff --stat plugins/; \
+	@if [ -n "$$(git status --porcelain plugins/)" ]; then \
+		echo "Error: plugins/ is out of date or has untracked files. Run 'make build-plugins' and commit."; \
+		git status --short plugins/; \
 		exit 1; \
 	fi
 	@echo "plugins/ is up to date"

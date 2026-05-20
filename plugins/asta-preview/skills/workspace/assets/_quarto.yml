@@ -7,7 +7,7 @@ project:
 bibliography: references.bib
 
 website:
-  title: "Project Docs"
+  title: "{{TITLE}}"
   sidebar:
     contents: auto
 

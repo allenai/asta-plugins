@@ -6,7 +6,7 @@
   },
   "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
   "postAttachCommand": {
-    "preview": "[ -f _quarto.yml ] && quarto preview --no-browser || true"
+    "preview": "[ -f Makefile ] && make preview || [ -f _quarto.yml ] && quarto preview --no-browser || true"
   },
   "forwardPorts": [4848],
   "portsAttributes": {
