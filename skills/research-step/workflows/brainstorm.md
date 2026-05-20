@@ -1,8 +1,8 @@
 # Workflow: brainstorm
 
-Default workflow when the user opens the skill without naming a specific action. Conversational; reads beads state and `mission.md` to answer questions, surface what's next, and refine the research direction.
+Default workflow when the user opens the skill without naming a specific action. Conversational; reads beads state and `mission.md` to answer questions, surface what's next, and refine the research direction. Also performs **template selection** once a `mission.md` exists but no epic does.
 
-Read-mostly. The only file brainstorm writes directly is `mission.md`, and only after explicit user confirmation. It does invoke **update-summary** at the start (which rewrites `summary.md` only when stale), but it never mutates beads. When the user is ready to act, it hands off to `init`, `plan`, `execute`, or `update-summary`.
+Read-mostly. The only files brainstorm writes directly are `mission.md` (only after explicit user confirmation) and the `template:` field of its frontmatter (after template selection). It does invoke **update-summary** at the start (which rewrites `summary.md` only when stale), but it never mutates beads. When the user is ready to act, it hands off to `init`, `plan`, `execute`, or `update-summary`.
 
 ## Preconditions
 
@@ -15,6 +15,7 @@ None. Brainstorm runs from any state.
 Compute these signals once at the start so the conversation can branch sensibly:
 
 - **`has_mission`** — `mission.md` exists and is non-empty.
+- **`has_template`** — `mission.md` exists and its frontmatter has a non-empty `template:` field.
 - **`has_bd`** — `command -v bd` succeeds and `.beads/` exists.
 - **`has_epic`** — `has_bd` and `scripts/epic-root.sh` prints `status: found` (the `id:` line gives the epic ID for follow-up queries).
 
@@ -25,11 +26,35 @@ If `has_epic`, hand off to **update-summary** before anything else so `summary.m
 Pick the branch that matches; do not run more than one.
 
 - **No `mission.md`** → help the user draft one.
-  Engage in a short Socratic exchange. Useful prompts: the research question, why it matters, what success looks like, what's already known, what's explicitly out of scope. When you have enough, propose a draft, get confirmation, and write `mission.md`. Then offer to run **init**.
+  Engage in a short Socratic exchange. Useful prompts: the research question, why it matters, what success looks like, what's already known, what's explicitly out of scope. When you have enough, propose a draft, get confirmation, and write `mission.md` (without the `template:` field yet). Then proceed to step 2.5 for template selection.
 
-- **`mission.md` exists, no epic** → recap the mission, check whether the user wants to refine it, then offer to run **init** to bootstrap the research session.
+- **`mission.md` exists, no template chosen (`has_mission && !has_template`)** → run step 2.5 (template selection).
+
+- **`mission.md` and template both set, no epic** → recap the mission, confirm the template choice is still right (offer to change it), then offer to run **init** to bootstrap the research session.
 
 - **Active session (`has_epic`)** → answer the user's question, or if they didn't ask one, give a short status report (closed / in-progress / ready counts plus the single most-relevant ready task) and ask what they want to do next.
+
+### 2.5. Template selection
+
+Trigger condition: `has_mission && !has_template && !has_epic`.
+
+Ask via `AskUserQuestion`:
+> "Which plan template should drive this session?"
+> options:
+> - `hypothesis_driven_research` — survey literature → fan out hypotheses from gaps → design / gather / analyze → synthesize a closing report.
+> - `grounded_theory_generation` — drive from an AutoDS run: extract themes & gaps → per-lane literature search + reproduction → cross-cutting parametric theory generation → novelty assessment → final report.
+> - `iterative_theorizer` — user-gated theorizer pipeline: literature_review → build-extraction-schema → find-and-extract → form-theory → evaluate-novelty → closing report, with a proceed / redo / append checkpoint after each step.
+
+After the user picks, update `mission.md`'s frontmatter:
+
+```yaml
+---
+template: <chosen-template-name>
+---
+<existing body>
+```
+
+If the user picks `grounded_theory_generation`, also probe for the AutoDS run pointer: ask whether `mission.md` already references the run path / run ID, and if not, ask for one. Append a `Datasets` / `AutoDS run` section to `mission.md` if needed.
 
 ### 3. Answer questions, preferring `summary.md`
 
@@ -41,13 +66,14 @@ Pick the branch that matches; do not run more than one.
 
 | Need | Query                                                                                                  |
 |---|--------------------------------------------------------------------------------------------------------|
-| Single issue's full `metadata.research_step.output` | `bd show <id> --json`                                                                                  |
-| Full open-issue metadata (rare; usually the digest covers it) | `bd list`                                                                                              |
-| Dependency structure | `bd dep tree <epic-id> --direction up`|
-| Long-form notes from an evidence_gathering task | follow `metadata.research_step.output.summary_path` referenced from the digest                         |
-| Exact `verdict` / `confidence` for a hypothesis | `bd show <analysis-id> --json` (digest reports the verdict, not the confidence number)                 |
+| Single issue's full structured output | `cat .asta/tasks/<id>/output.json`                                                                     |
+| Single issue's full metadata envelope | `bd show <id> --json`                                                                                  |
+| Full open-issue metadata (rare; usually the digest covers it) | `bd list --json`                                                                                       |
+| Dependency structure | `bd dep tree <epic-id> --direction up`                                                                  |
+| Long-form notes from a task | open `.asta/tasks/<id>/output.md`                                                                       |
+| Exact verdict / confidence for a closed analysis | `cat .asta/tasks/<analysis-id>/output.json` (digest reports the verdict, not the confidence number)    |
 
-Rule of thumb: if you can answer from `summary.md`, do. If the user asks for a specific number, file path, or verbatim output that the digest abstracts, then fetch it from `bd`.
+Rule of thumb: if you can answer from `summary.md`, do. If the user asks for a specific number, file path, or verbatim output that the digest abstracts, then fetch from disk or `bd`.
 
 ### 4. Offer to update `mission.md`
 

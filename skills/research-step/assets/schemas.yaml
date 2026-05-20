@@ -1,80 +1,200 @@
-# Output schemas for research-step task types.
-# Each task issue stores its realized output at metadata.research_step.output,
-# matching the shape under `output:` for its task_type.
+# Output schemas for research-step task types — v2.
+#
+# Each task type's `output:` entry describes what `.asta/tasks/<id>/output.json`
+# must contain when the task closes. `validate-output.sh` reads this file.
+#
+# Two output shapes are supported:
+#   1. Inline shape — `output:` is a mapping of field-name -> type/description.
+#      validate-output.sh requires every top-level key to be present.
+#   2. CLI reference — `output:` is `{bash_ref: "<command>"}`. validate-output.sh
+#      runs the command at validate time, expects a JSON Schema on stdout, and
+#      validates output.json against it. Used for theorizer / autodiscovery
+#      derived task types whose shape is owned upstream.
+#
+# `inputs:` documents which upstream task types feed this one. It's
+# informational — the runtime envelope's `inputs[]` (a list of beads IDs) is
+# what's enforced.
+#
+# `config:` documents which flat key/value pairs are recognized on
+# metadata.research_step.config. Templates use these for `when:` branching and
+# loop variable propagation.
+#
+# `execute_ref:` is an optional asta CLI subcommand to invoke for this task.
+# When present, the executing agent uses exactly that subcommand. Absent
+# means there is no canonical CLI surface; the agent does the work itself.
 
-schema_version: 1
+schema_version: 2
 
 task_types:
 
   scope:
     inputs: []
     output:
-      question: string                   # the precise research question
-      boundaries: [string]               # what is in / out of scope
-      success_criteria: [string]         # how we know we have answered it
+      question: string
+      boundaries: array
+      success_criteria: array
 
   definitions:
     inputs: [scope]
     output:
-      terms:
-        - name: string
-          operational_definition: string
-          rationale: string
+      terms: array
 
   literature_review:
+    # Reused in two modes:
+    # (a) v1 / hypothesis_driven_research: scope + definitions → key_findings + gaps + citations.
+    # (b) lane: scope + definitions + auto_discovery + themes_and_gaps_synthesis →
+    #     same shape; gaps[] is typically empty (the theme/gap is already upstream).
     inputs: [scope, definitions]
+    config:
+      lane: "enum [null, theme, gap]"
+      theme: dict
+      gap: dict
+      thread_dir: string
+    execute_ref: "asta literature interactive"
     output:
-      summary_path: string               # relative path; long-form context
-      key_findings: [string]             # 3-10 bullets readable without opening summary_path
-      gaps: [string]                     # gaps that motivate hypotheses
-      citations:
-        - id: string
-          title: string
-          url: string
-          relevance: string
+      key_findings: array
+      gaps: array
+      citations: array
 
   hypothesis:
+    # Theory-shaped (see spec.md §5.1). Used by hypothesis_driven_research
+    # template only.
     inputs: [scope, literature_review]
+    config:
+      mode: "enum [literature_fanout]"
     output:
-      statement: string                  # H_n: ...
+      statement: string
       rationale: string
       falsifiable_prediction: string
-      expected_evidence: [string]
+      expected_evidence: array
 
   experiment_design:
     inputs: [hypothesis]
+    config:
+      lane: "enum [null, theme, gap]"
+      reproduction: boolean
+      theme: dict
+      gap: dict
     output:
       method: string
-      procedure: [string]                # ordered steps
-      variables:
-        independent: [string]
-        dependent: [string]
-        controls: [string]
-      artifacts_expected: [string]       # paths the gathering step will produce
+      procedure: array
+      variables: dict
+      artifacts_expected: array
 
   evidence_gathering:
     inputs: [experiment_design]
+    config:
+      lane: "enum [null, theme, gap]"
+      reproduction: boolean
     output:
-      artifacts:
-        - path: string
-          kind: string                   # data | log | figure | code | other
-          description: string
-      log_path: string                   # what was actually run
-      deviations: [string]               # ways execution diverged from design
+      artifacts: array
+      log_path: string
+      deviations: array
 
   analysis:
+    # Reused for the per-hypothesis-law reproduction step in lane mode.
+    # In lane mode, beads metadata.research_step.config.target_law carries
+    # {node_id, hypothesis, original_analysis}. Reproduction code, figures,
+    # and log files are referenced via markdown links in output.md.
     inputs: [hypothesis, evidence_gathering]
+    config:
+      lane: "enum [null, theme, gap]"
+      target_law: dict
     output:
-      verdict: enum [supported, refuted, inconclusive]
-      confidence: number                 # 0.0 - 1.0
+      verdict: "enum [supported, refuted, inconclusive]"
+      confidence: number
       reasoning: string
-      caveats: [string]
+      caveats: array
 
   synthesis:
-    inputs: [scope, analysis_*]          # all analysis issues in the epic
+    # Multiple run_kinds, distinguished by config.run_kind:
+    #   - themes_and_gaps: after auto_discovery; outputs themes[] + gaps[].
+    #   - per_theme_gap_lane: closes one theme/gap lane.
+    #   - across_lanes: rolls up every per-lane synthesis.
+    #   - lit_fanout: closes the hypothesis_driven_research lit-fanout phase.
+    #   - report: final closing artifact (output.md is the user-facing report).
+    #
+    # NOTE: validate-output.sh only enforces the four base fields below
+    # (answer, supporting_hypotheses, refuted_hypotheses, open_questions).
+    # run_kind-specific output fields (themes/gaps/candidate_papers) are
+    # documented here and required by the template's output_instructions
+    # but are NOT structurally enforced. If you need stricter validation
+    # per run_kind, extend validate-output.sh to read config.run_kind.
+    inputs: [scope, "analysis_*"]
+    config:
+      run_kind: "enum [themes_and_gaps, per_theme_gap_lane, across_lanes, lit_fanout, report]"
+      lane: "enum [null, theme, gap]"
     output:
-      answer: string                     # answer to scope.question
-      supporting_hypotheses: [bd_id]
-      refuted_hypotheses: [bd_id]
-      open_questions: [string]           # become discovered-from edges on re-plan
-      report_path: string                # generated markdown report
+      answer: string
+      supporting_hypotheses: array
+      refuted_hypotheses: array
+      open_questions: array
+      # Optional fields, populated only by specific run_kinds:
+      # - themes: array of {name, description, supporting_laws}    (themes_and_gaps only)
+      # - gaps: array of {summary, why_open, related_laws}          (themes_and_gaps only)
+      # - candidate_papers: array of bd-ids / paper refs            (per_theme_gap_lane, across_lanes)
+
+  auto_discovery:
+    inputs: [scope, definitions]
+    config:
+      run_pointer: string
+    execute_ref: "asta autodiscovery run"
+    output:
+      bash_ref: "asta autodiscovery --help"
+
+  # Theorizer task types. execute_ref names the typed asta subcommand to
+  # invoke; input_schema_ref names the describe subcommand that returns
+  # that skill's resolved input JSON Schema (run it to discover the
+  # flags + types accepted by execute_ref). Both rely on
+  # `asta generate-theories card` having been fetched at least once
+  # (see `asta generate-theories --refresh-card card`).
+
+  extraction_schema_design:
+    inputs: ["synthesis_across_lanes"]
+    config:
+      phase: "enum [theorizer]"
+      theorizer_config: dict
+    execute_ref: "asta generate-theories build-extraction-schema"
+    input_schema_ref: "asta generate-theories describe build-extraction-schema"
+    output:
+      bash_ref: "asta generate-theories card"
+
+  theorizer_extraction:
+    inputs: ["synthesis_across_lanes", "extraction_schema_design"]
+    config:
+      theorizer_config: dict
+    execute_ref: "asta generate-theories find-and-extract"
+    input_schema_ref: "asta generate-theories describe find-and-extract"
+    output:
+      bash_ref: "asta generate-theories card"
+
+  theory_generation:
+    inputs: ["synthesis_across_lanes", "extraction_schema_design", "theorizer_extraction"]
+    config:
+      phase: "enum [theorizer]"
+      theorizer_config: dict
+    execute_ref: "asta generate-theories form-theory"
+    input_schema_ref: "asta generate-theories describe form-theory"
+    output:
+      bash_ref: "asta generate-theories card"
+
+  grounded_theory_generation:
+    inputs: ["auto_discovery", "theory_generation", "synthesis_across_lanes"]
+
+  novelty_assessment:
+    inputs: ["grounded_theory_generation"]
+    config:
+      theorizer_config: dict
+    execute_ref: "asta generate-theories evaluate-novelty"
+    input_schema_ref: "asta generate-theories describe evaluate-novelty"
+    output:
+      bash_ref: "asta generate-theories card"
+
+  resume_extraction:
+    inputs: ["theorizer_extraction"]
+    config:
+      run_id: string
+    execute_ref: "asta generate-theories resume-extraction"
+    input_schema_ref: "asta generate-theories describe resume-extraction"
+    output:
+      bash_ref: "asta generate-theories card"

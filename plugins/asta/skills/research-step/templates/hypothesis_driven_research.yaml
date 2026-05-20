@@ -1,0 +1,157 @@
+name: hypothesis_driven_research
+description: >
+  Hypothesis-driven literature reconciliation without an AutoDS anchor.
+  Survey literature → fan out hypotheses from gaps → design / gather /
+  analyze each → synthesize a closing report.
+
+declares:
+  task_types:
+    - scope
+    - definitions
+    - literature_review
+    - hypothesis
+    - experiment_design
+    - evidence_gathering
+    - analysis
+    - synthesis
+
+bootstrap:
+  - id: scope
+    task_type: scope
+    title: "Scope"
+    inputs: []
+    input_instructions: |
+      Frame the precise research question this run answers. List in-scope
+      and out-of-scope boundaries, plus success criteria the closing
+      report must satisfy.
+    output_instructions: |
+      Populate question, boundaries[], success_criteria[].
+
+  - id: definitions
+    task_type: definitions
+    title: "Definitions"
+    inputs: [scope]
+    blocked_by: [scope]
+    input_instructions: |
+      Operationalize the domain terms used in scope.question. Each term
+      must be testable against data.
+    output_instructions: |
+      Populate terms[] with {name, operational_definition, rationale}.
+
+  - id: literature_review
+    task_type: literature_review
+    title: "Literature review"
+    inputs: [scope, definitions]
+    blocked_by: [scope, definitions]
+    input_instructions: |
+      Survey literature framed by scope and definitions. Produce
+      key_findings, gaps (these seed the next fanout), and ranked
+      citations.
+    output_instructions: |
+      Populate key_findings[] (3-10 bullets), gaps[] (each a one-line
+      gap statement; each will become a hypothesis), citations[]
+      ({id, title, url, relevance}).
+
+replan:
+  literature_review:
+    - foreach: gap in source.output_json.gaps
+      create:
+        task_type: hypothesis
+        inputs: [scope, source]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          mode: literature_fanout
+        input_instructions: |
+          Convert literature_review gap '${gap}' into a falsifiable
+          hypothesis with a concrete prediction.
+        output_instructions: |
+          Populate statement (H_n: …), rationale,
+          falsifiable_prediction, expected_evidence[].
+
+  hypothesis:
+    - when: source.config.mode == "literature_fanout"
+      sequence:
+        - task_type: experiment_design
+          inputs: [hypothesis]
+          input_instructions: |
+            Design an experiment that would falsify the upstream
+            hypothesis.
+          output_instructions: |
+            Populate method, procedure[], variables, artifacts_expected[].
+        - task_type: evidence_gathering
+          inputs: [experiment_design]
+          input_instructions: |
+            Execute the experiment_design. Capture artifacts, log,
+            deviations.
+          output_instructions: |
+            Populate artifacts[] (path/kind/description), log_path,
+            deviations[].
+        - task_type: analysis
+          inputs: [hypothesis, evidence_gathering]
+          input_instructions: |
+            Render a verdict on the hypothesis given the gathered
+            evidence.
+          output_instructions: |
+            Populate verdict (supported/refuted/inconclusive),
+            confidence (0-1), reasoning, caveats[].
+      edges:
+        parent_child: epic
+        blocks: chain
+
+  analysis:
+    - when: all_lit_hypotheses_have_analyses
+      create:
+        task_type: synthesis
+        inputs: [scope, all_lit_analyses]
+        edges:
+          parent_child: epic
+          blocks_from: all_lit_analyses
+        config:
+          run_kind: lit_fanout
+        input_instructions: |
+          Reconcile all closed hypothesis analyses into a single answer
+          to scope.question.
+
+          Voice and structure (style guide for output.md, since this is
+          the closing report for this template):
+          - Audience: college-educated reader who knows the domain but
+            not its jargon. Define terms inline on first use.
+          - Direct prose. No filler ("essentially", "fundamentally",
+            "actually", "interestingly"); no hedge adverbs ("fairly",
+            "quite", "rather"); no throat-clearing windups.
+          - Open with a three-paragraph TL;DR, each labeled in bold:
+            **Key findings** (what we did and what we found),
+            **The hypotheses** (one or two sentences per supported /
+            refuted hypothesis), **Next steps** (open questions or
+            follow-ups, in priority tiers if applicable).
+          - Inline citation convention applies (see SKILL.md). Every
+            quantitative claim and every hypothesis verdict gets a
+            markdown hyperlink to its grounding task's `output.md`.
+        output_instructions: |
+          Populate answer, supporting_hypotheses (bd-ids of supported),
+          refuted_hypotheses, open_questions[]. output.md is the
+          closing report and follows the style guide above.
+
+  synthesis:
+    - when: source.config.run_kind == "lit_fanout"
+      ask_user:
+        prompt: "Synthesis has open questions. Create new hypothesis tasks?"
+        options:
+          yes:
+            description: "Fan out one hypothesis task per open question."
+            foreach: q in source.output_json.open_questions
+            create:
+              task_type: hypothesis
+              inputs: [scope, source]
+              edges:
+                discovered_from: source
+              config:
+                mode: literature_fanout
+              input_instructions: |
+                Convert open question '${q}' into a falsifiable
+                hypothesis.
+          no:
+            description: "Leave open questions for a future run."
+            noop: true

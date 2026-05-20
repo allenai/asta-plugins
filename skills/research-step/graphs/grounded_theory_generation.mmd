@@ -1,0 +1,49 @@
+flowchart TD
+  scope --> definitions --> auto_discovery --> DP[evidence_gathering<br/>data provenance]
+  DP --> STG[synthesis]
+
+  subgraph ThemeLane["per theme · reproduction · 1→N"]
+    direction TB
+    LS_T[literature_review_θ] --> ED_T[experiment_design_θ]
+    ED_T --> EG_T[evidence_gathering_θ]
+    EG_T -.foreach law.-> A_T1[analysis_1_θ]
+    EG_T -.foreach law.-> A_TK[analysis_K_θ]
+    A_T1 --> S_T[synthesis_θ]
+    A_TK --> S_T
+  end
+
+  subgraph GapLane["per gap · reproduction · 1→M"]
+    direction TB
+    LS_G[literature_review_γ] --> ED_G[experiment_design_γ]
+    ED_G --> EG_G[evidence_gathering_γ]
+    EG_G -.foreach law.-> A_G1[analysis_1_γ]
+    EG_G -.foreach law.-> A_GJ[analysis_J_γ]
+    A_G1 --> S_G[synthesis_γ]
+    A_GJ --> S_G
+  end
+
+  STG -.foreach theme.-> LS_T
+  STG -.foreach gap.-> LS_G
+
+  S_T --> SAG[synthesis]
+  S_G --> SAG
+
+  subgraph TheorizerLane["theorizer theory generation"]
+    direction TB
+    DEST[extraction_schema_design] --> UDEST([user check-in])
+    UDEST -.->|re-run| DEST
+    UDEST --> EDT[theorizer_extraction]
+    EDT --> UEDT([user check-in])
+    UEDT -.->|re-run| EDT
+    UEDT --> GT[theory_generation]
+    GT --> UGT([user check-in])
+    UGT -.->|re-run| GT
+  end
+
+  SAG --> DEST
+  UGT --> GTG[grounded_theory_generation]
+  SAG --> GTG
+
+  GTG --> novelty_assessment
+  novelty_assessment --> SR[synthesis]
+  SR --> DONE([done])

@@ -1,0 +1,331 @@
+name: iterative_theorizer
+description: >
+  Iterative, user-gated theorizer pipeline. After each step (literature
+  survey, extraction schema, evidence extraction, theory generation,
+  novelty assessment, closing report) the user picks proceed / redo /
+  append before plan creates the next task. Reuses the Ai2 Theorizer's
+  four A2A skills: build-extraction-schema, find-and-extract,
+  form-theory, evaluate-novelty (plus resume-extraction for append).
+
+declares:
+  task_types:
+    - scope
+    - definitions
+    - literature_review
+    - extraction_schema_design
+    - theorizer_extraction
+    - theory_generation
+    - novelty_assessment
+    - synthesis
+
+bootstrap:
+  - id: scope
+    task_type: scope
+    title: "Scope"
+    inputs: []
+    input_instructions: |
+      Frame the research question the theorizer will work from.
+      scope.question becomes the theorizer's theory_query.
+
+  - id: definitions
+    task_type: definitions
+    title: "Definitions"
+    inputs: [scope]
+    blocked_by: [scope]
+    input_instructions: |
+      Operationalize the domain terms in scope.question so downstream
+      steps share vocabulary.
+
+  - id: literature_review
+    task_type: literature_review
+    title: "Literature review"
+    inputs: [scope, definitions]
+    blocked_by: [scope, definitions]
+    config:
+      iteration: 1
+      thread_dir: ".asta/literature/threads/lit-1"
+    input_instructions: |
+      Seed the theorizer's extraction corpus. citations[] become
+      candidate papers for find-and-extract.
+
+replan:
+  literature_review:
+    - ask_user:
+        prompt: "Literature review done. proceed / redo / append?"
+        options:
+          proceed:
+            description: "Move on to building the extraction schema."
+            create:
+              task_type: extraction_schema_design
+              inputs: [scope, definitions, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: 1
+                phase: theorizer
+              input_instructions: |
+                Build an extraction schema for the theory_query =
+                scope.question, grounded in the upstream literature.
+          redo:
+            description: "Rerun literature review from scratch."
+            followup_prompt: "What should change in the redo?"
+            create:
+              task_type: literature_review
+              inputs: [scope, definitions]
+              edges:
+                parent_child: epic
+                discovered_from: source
+              config:
+                iteration: source.config.iteration + 1
+                thread_dir: ".asta/literature/threads/lit-${iteration}"
+              input_instructions: |
+                Redo iteration ${iteration}. ${user_feedback}.
+          append:
+            description: "Extend the prior corpus with more papers."
+            followup_prompt: "What angle / topics to add?"
+            create:
+              task_type: literature_review
+              inputs: [scope, definitions, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: source.config.iteration + 1
+                mode: append
+                thread_dir: ".asta/literature/threads/lit-${iteration}"
+              input_instructions: |
+                Iteration ${iteration} (append). Extend the prior
+                citations[]. ${user_feedback}.
+
+  extraction_schema_design:
+    - ask_user:
+        prompt: "Extraction schema ready. proceed / redo / append?"
+        options:
+          proceed:
+            description: "Run find-and-extract with this schema."
+            create:
+              task_type: theorizer_extraction
+              inputs: [scope, source, latest_literature_review]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: 1
+              input_instructions: |
+                Run `asta generate-theories find-and-extract` against
+                this schema and the latest literature_review corpus.
+          redo:
+            description: "Rebuild the schema from scratch."
+            followup_prompt: "What should change?"
+            create:
+              task_type: extraction_schema_design
+              inputs: [scope, definitions, latest_literature_review]
+              edges:
+                parent_child: epic
+                discovered_from: source
+              config:
+                iteration: source.config.iteration + 1
+                phase: theorizer
+              input_instructions: |
+                Redo iteration ${iteration}. ${user_feedback}.
+          append:
+            description: "Extend the schema with more fields."
+            followup_prompt: "What fields to add?"
+            create:
+              task_type: extraction_schema_design
+              inputs: [scope, definitions, source, latest_literature_review]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: source.config.iteration + 1
+                mode: append
+                phase: theorizer
+              input_instructions: |
+                Iteration ${iteration} (append). Extend the prior
+                schema. ${user_feedback}.
+
+  theorizer_extraction:
+    - ask_user:
+        prompt: "Extraction complete. proceed / redo / append?"
+        options:
+          proceed:
+            description: "Move to theory_generation."
+            create:
+              task_type: theory_generation
+              inputs: [scope, latest_extraction_schema_design, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: 1
+                phase: theorizer
+              input_instructions: |
+                Run `asta generate-theories form-theory` on the
+                upstream extraction results.
+          redo:
+            description: "Rerun extraction from scratch."
+            followup_prompt: "What should change?"
+            create:
+              task_type: theorizer_extraction
+              inputs: [scope, latest_extraction_schema_design, latest_literature_review]
+              edges:
+                parent_child: epic
+                discovered_from: source
+              config:
+                iteration: source.config.iteration + 1
+              input_instructions: |
+                Redo iteration ${iteration}. ${user_feedback}.
+          append:
+            description: "Add more papers via resume-extraction."
+            followup_prompt: "What papers / topics to add?"
+            create:
+              task_type: theorizer_extraction
+              inputs: [scope, latest_extraction_schema_design, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: source.config.iteration + 1
+                mode: append
+                resume_from: source
+              input_instructions: |
+                Iteration ${iteration} (append) via `asta
+                generate-theories resume-extraction`. ${user_feedback}.
+
+  theory_generation:
+    - ask_user:
+        prompt: "Theories generated. proceed / redo / append?"
+        options:
+          proceed:
+            description: "Move to novelty_assessment."
+            create:
+              task_type: novelty_assessment
+              inputs: [source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: 1
+              input_instructions: |
+                Run `asta generate-theories evaluate-novelty` on the
+                generated theories.
+          redo:
+            description: "Regenerate theories from scratch."
+            followup_prompt: "What should change?"
+            create:
+              task_type: theory_generation
+              inputs: [scope, latest_extraction_schema_design, latest_theorizer_extraction]
+              edges:
+                parent_child: epic
+                discovered_from: source
+              config:
+                iteration: source.config.iteration + 1
+                phase: theorizer
+              input_instructions: |
+                Redo iteration ${iteration}. ${user_feedback}.
+          append:
+            description: "Generate additional theories beyond these."
+            followup_prompt: "What angle for the additions?"
+            create:
+              task_type: theory_generation
+              inputs: [scope, latest_extraction_schema_design, latest_theorizer_extraction, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: source.config.iteration + 1
+                mode: append
+                phase: theorizer
+              input_instructions: |
+                Iteration ${iteration} (append). Generate additional
+                theories beyond the prior set. ${user_feedback}.
+
+  novelty_assessment:
+    - ask_user:
+        prompt: "Novelty evaluated. proceed / redo / append?"
+        options:
+          proceed:
+            description: "Move to the closing report."
+            create:
+              task_type: synthesis
+              inputs: [scope, latest_literature_review, latest_theorizer_extraction, latest_theory_generation, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: 1
+                run_kind: report
+              input_instructions: |
+                Write the closing report.md following the SKILL.md
+                voice (direct prose, college-educated reader, TL;DR
+                with Key findings / The theories / Next steps). Cite
+                grounding tasks inline.
+          redo:
+            description: "Re-evaluate novelty from scratch."
+            followup_prompt: "What should change?"
+            create:
+              task_type: novelty_assessment
+              inputs: [latest_theory_generation]
+              edges:
+                parent_child: epic
+                discovered_from: source
+              config:
+                iteration: source.config.iteration + 1
+              input_instructions: |
+                Redo iteration ${iteration}. ${user_feedback}.
+          append:
+            description: "Evaluate additional theories."
+            followup_prompt: "Which additional theories?"
+            create:
+              task_type: novelty_assessment
+              inputs: [latest_theory_generation, source]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: source.config.iteration + 1
+                mode: append
+              input_instructions: |
+                Iteration ${iteration} (append). Evaluate the
+                additional theories. ${user_feedback}.
+
+  synthesis:
+    - when: source.config.run_kind == "report"
+      ask_user:
+        prompt: "Report drafted. proceed / redo / append?"
+        options:
+          proceed:
+            description: "Done — close the run."
+            noop: true
+          redo:
+            description: "Rewrite the report from scratch."
+            followup_prompt: "What should change?"
+            create:
+              task_type: synthesis
+              inputs: [scope, latest_literature_review, latest_theorizer_extraction, latest_theory_generation, latest_novelty_assessment]
+              edges:
+                parent_child: epic
+                discovered_from: source
+              config:
+                iteration: source.config.iteration + 1
+                run_kind: report
+              input_instructions: |
+                Redo iteration ${iteration}. ${user_feedback}.
+          append:
+            description: "Extend the existing report with more sections."
+            followup_prompt: "What to add?"
+            create:
+              task_type: synthesis
+              inputs: [source, latest_novelty_assessment]
+              edges:
+                parent_child: epic
+                blocks_from: source
+              config:
+                iteration: source.config.iteration + 1
+                run_kind: report
+                mode: append
+              input_instructions: |
+                Iteration ${iteration} (append). Extend the prior
+                report. ${user_feedback}.
