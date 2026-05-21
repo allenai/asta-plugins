@@ -37,6 +37,13 @@ build_plugin() {
     cp -R "$REPO_ROOT/hooks" "$dest/hooks"
   fi
 
+  # Copy shared-patterns (referenced by skills via ../../shared-patterns/<file>)
+  if [ -d "$REPO_ROOT/shared-patterns" ]; then
+    cp -R "$REPO_ROOT/shared-patterns" "$dest/shared-patterns"
+    # SKILL-BOILERPLATE.md is a developer template, not runtime content
+    rm -f "$dest/shared-patterns/SKILL-BOILERPLATE.md"
+  fi
+
   echo "Built $name with ${#skill_dirs[@]} skills"
 }
 

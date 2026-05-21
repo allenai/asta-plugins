@@ -17,6 +17,8 @@ The CLI is generated from the agent card — every subcommand, flag, and default
 
 This skill is in two halves. The **first** describes what Theorizer is — its three composable stages, the bundled end-to-end version, and the standalone subcommands. The **second** describes how to handle a generate-theories request end-to-end — choosing a mode, shaping the question, dispatching, checkpoints, handoff, and error handling.
 
+**Voice and tone:** Follow [`shared-patterns/voice-and-tone.md`](../../shared-patterns/voice-and-tone.md) for all user-facing chat. Applies to every output the user reads.
+
 ## What this skill is good for
 
 - Generating literature-grounded scientific theories about causal questions ("how does X affect Y, via what mechanism, in what domain").
@@ -220,9 +222,5 @@ No "let me know if you'd like…" tail — the search/open links cover it.
 - Theorizer: <https://github.com/allenai/asta-theorizer-internal>
 - Agent card / schemas: `asta generate-theories card` / `asta generate-theories describe <skill-id>`
 - A2A spec: <https://a2a-protocol.org/latest/specification/>
-
-<!-- - Shared patterns:
-  - `shared-patterns/defaults-visibility.md`
-  - `shared-patterns/question-shaping.md`
-  - `shared-patterns/mode-selection.md`
-  - `shared-patterns/stage-checkpoints.md` -->
+- Shared patterns:
+  - `shared-patterns/voice-and-tone.md` *(applies to all user-facing output)*
