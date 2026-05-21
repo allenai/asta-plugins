@@ -121,7 +121,7 @@ A vague question that fires through the full pipeline can burn 15–25 minutes a
 1. **Proceed silently** if all three required dimensions are present. Don't announce the audit result, don't tell the user the question is "well-formed," don't name the dimensions — move directly to the next dispatch step. Add the "Build a theory of how..." framing yourself.
 2. **Poll for what's missing** if any required dimension is missing or ambiguous. In a single message, ask the user about every required gap. Remember that the user does not know about the dimensions. Then reformulate the query as a "Build a theory of how..." statement using their answers and show it for confirmation before submitting.
 
-   **Escape hatch:** End the poll with a one-line note that the user can say *"just send it,"* *"use what I gave you,"* or *"let Theorizer figure it out"* to skip shaping and submit the question as given. Some advanced users prefer under-specifying deliberately. Respect that signal. The user can also opt out in their original message (before any poll happens); if so, skip the poll entirely and submit as given.
+   **Escape hatch:** End the poll with a one-line note that the user can say *"skip that,"* *"use what I gave you,"* or *"let Theorizer figure it out"* to skip shaping and submit the question as given. Some advanced users prefer under-specifying deliberately. Respect that signal. The user can also opt out in their original message (before any poll happens); if so, skip the poll entirely and submit as given.
 
 3. **Refuse** if the question isn't a causal hypothesis testable against scientific literature (e.g., "what should I name my startup," "summarize this paper"). State plainly that Theorizer's domain is causal scientific theories grounded in published evidence, and offer to reframe the question into that form or hand off to another skill.
 
@@ -135,7 +135,7 @@ I need a few details to shape this into a good theory question:
 - **Intervention** — what variable do you want to vary? (e.g., source citations, response latency, anthropomorphic phrasing)
 - **Scope** — what domain should the theory apply to? (e.g., consumer chatbots, medical AI, search assistants)
 
-Or say "just send it" and Theorizer will work with what you've given me — it can often infer the rest from the literature.
+Or I can send your query verbatim, and Theorizer will work with what you've given me. It can often infer the rest from the literature.
 ```
 
 After they answer, reformulate and confirm:
