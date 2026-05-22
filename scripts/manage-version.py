@@ -24,6 +24,7 @@ PYPROJECT_FILE = PROJECT_ROOT / "pyproject.toml"
 MARKETPLACE_FILE = PROJECT_ROOT / ".claude-plugin" / "marketplace.json"
 SKILLS_DIR = PROJECT_ROOT / "skills"
 HOOK_FILE = PROJECT_ROOT / "hooks" / "sync-cli-version.sh"
+SHARED_INSTALL_FILE = PROJECT_ROOT / "shared-patterns" / "installation.md"
 
 
 def get_init_version() -> str:
@@ -69,6 +70,17 @@ def get_hook_version() -> str:
     return match.group(1)
 
 
+def get_shared_install_version() -> str:
+    """Read PLUGIN_VERSION from shared-patterns/installation.md."""
+    content = SHARED_INSTALL_FILE.read_text()
+    match = re.search(r"PLUGIN_VERSION=([0-9.]+)", content)
+    if not match:
+        raise ValueError(
+            "Could not find PLUGIN_VERSION in shared-patterns/installation.md"
+        )
+    return match.group(1)
+
+
 def check_version_consistency() -> bool:
     """Check if all version locations have the same version.
 
@@ -80,6 +92,7 @@ def check_version_consistency() -> bool:
     marketplace_versions = get_marketplace_versions()
     skills_versions = get_skills_versions()
     hook_version = get_hook_version()
+    shared_install_version = get_shared_install_version()
 
     mismatch = False
 
@@ -100,15 +113,20 @@ def check_version_consistency() -> bool:
     if hook_version != init_version:
         mismatch = True
 
+    # Check shared installation block
+    if shared_install_version != init_version:
+        mismatch = True
+
     if mismatch:
         print(f"{RED}Error: Version mismatch detected:{NC}")
-        print(f"  src/asta/__init__.py:            {init_version}")
-        print(f"  pyproject.toml:                  {pyproject_version}")
+        print(f"  src/asta/__init__.py:              {init_version}")
+        print(f"  pyproject.toml:                    {pyproject_version}")
         for name, version in marketplace_versions.items():
             label = f"  marketplace.json ({name}):"
             print(f"{label:<39}{version}")
-        print(f"  skills/*/SKILL.md:               {', '.join(skills_versions)}")
-        print(f"  hooks/sync-cli-version.sh:       {hook_version}")
+        print(f"  skills/*/SKILL.md:                 {', '.join(skills_versions)}")
+        print(f"  hooks/sync-cli-version.sh:         {hook_version}")
+        print(f"  shared-patterns/installation.md:   {shared_install_version}")
         print()
         print("Run 'make set-version VERSION=x.y.z' to sync versions")
         return False
@@ -183,6 +201,14 @@ def set_version(new_version: str) -> bool:
         r"PLUGIN_VERSION=\d+\.\d+\.\d+", f"PLUGIN_VERSION={new_version}", content
     )
     HOOK_FILE.write_text(content)
+
+    # Update shared installation block
+    print("Updating shared-patterns/installation.md...")
+    content = SHARED_INSTALL_FILE.read_text()
+    content = re.sub(
+        r"PLUGIN_VERSION=\d+\.\d+\.\d+", f"PLUGIN_VERSION={new_version}", content
+    )
+    SHARED_INSTALL_FILE.write_text(content)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()

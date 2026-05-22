@@ -25,6 +25,12 @@ allowed-tools:
 
 **Voice and tone:** Follow [`shared-patterns/voice-and-tone.md`](../../shared-patterns/voice-and-tone.md) for all user-facing chat. Applies to every output the user reads.
 
+## Installation
+
+This skill requires the `asta` CLI. If it is missing or out of date, run the install block in [`shared-patterns/installation.md`](../../shared-patterns/installation.md) before invoking any `asta` command.
+
+[If the skill needs extra setup beyond the CLI — auth, credentials, extra deps — describe it here. Otherwise leave this section as just the line above.]
+
 ## What this skill is good for
 
 [2–3 bullet points]
@@ -37,3 +43,4 @@ allowed-tools:
 
 - Shared patterns:
   - `shared-patterns/voice-and-tone.md`
+  - `shared-patterns/installation.md`
