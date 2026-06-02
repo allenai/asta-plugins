@@ -51,7 +51,7 @@ Available templates:
 
 | Name | Purpose |
 |---|---|
-| `data_driven_theory_generation` | See which of an AutoDS run's most surprising findings hold up on independent data, then build theories on the ones that do and test the best with a new experiment. |
+| `data_driven_theory_generation` | See which of an AutoDS run's most surprising findings hold up on independent data, then build theories on the ones that do and test the most promising with new experiments. |
 | `hypothesis_driven_research` | Literature-grounded: survey, raise a hypothesis per gap, test each, synthesize. |
 
 ### Task outputs

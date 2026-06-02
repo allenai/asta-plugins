@@ -5,12 +5,12 @@
 #
 # Verifies that the JSON file:
 #   1. parses
-#   2. carries the metadata wrapper
+#   2. carries the metadata envelope
 #      ({research_step: {task_type, inputs, output_schema_version, output}})
 #   3. has every required `output.<key>` for the given <task_type> per
 #      assets/schemas.yaml (schema_version: 1)
 # If [task-dir] (e.g. .asta/tasks/<id>) is given, also runs document-quality
-# checks on its output.md: present, non-empty, has links, no unlinked entities.
+# checks on its output.md.
 #
 # Exit codes:
 #   0  — valid
@@ -26,9 +26,7 @@
 #           no title-page workflow diagram (11), no TOC (12), <8 sections (13),
 #           <3 embedded figures (14), a required section is missing (15)
 #
-# Structural checks only — required fields, working links, and the report's basic
-# pieces. It can't tell whether the science is sound or the writing is good; that's
-# the agent's job.
+# Structural checks only — required fields, working links, and the report's basic pieces.
 set -euo pipefail
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
@@ -53,7 +51,7 @@ case "$task_type" in
   hypothesis)         required="statement rationale falsifiable_prediction expected_evidence" ;;
   experiment_design)  required="method procedure variables artifacts_expected" ;;
   evidence_gathering) required="artifacts log_path deviations" ;;
-  auto_discovery)     required="runid status experiments_path" ;;
+  auto_discovery)     required="runid status experiments_path surprising_nodes" ;;
   analysis)           required="verdict confidence reasoning caveats" ;;
   synthesis)          required="answer supporting_hypotheses refuted_hypotheses open_questions report_path" ;;
   *)
@@ -63,7 +61,7 @@ case "$task_type" in
     ;;
 esac
 
-# The wrapper must carry the matching task_type so we don't validate scope JSON
+# The envelope must carry the matching task_type so we don't validate scope JSON
 # against an analysis schema by accident.
 envelope_type=$(jq -r '.research_step.task_type // empty' "$file")
 if [[ -z "$envelope_type" ]]; then
@@ -75,7 +73,7 @@ if [[ "$envelope_type" != "$task_type" ]]; then
   exit 5
 fi
 
-# Wrapper shape.
+# Envelope shape.
 for key in inputs output_schema_version output; do
   if ! jq -e ".research_step | has(\"$key\")" "$file" >/dev/null; then
     echo "validate-output: $file missing .research_step.$key" >&2
@@ -145,7 +143,7 @@ if [[ -n "$task_dir" ]]; then
   # check it has what report_example.tex has. Each failure points back to it.
   rpt="$task_dir/artifacts/report.tex"
   if [[ -f "$rpt" ]]; then
-    ref="assets/report_example.tex"
+    ref="templates/examples/report_example.tex"
     rfail() {
       echo "report-gate: $1" >&2
       echo "  -> this is the minimum, not the goal. Re-read $ref in full and match" >&2

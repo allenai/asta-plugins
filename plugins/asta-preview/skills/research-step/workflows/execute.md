@@ -9,7 +9,7 @@ Run one ready task end-to-end. Loads its schema, gathers its inputs, produces th
 
 ## Steps
 
-1. **Pick a task.** If a task ID was supplied, use it. Else `bd ready --json` and pick the oldest issue (tiebreak by `bd-id` ascending). A hypothesis that just restates a gap or finding is auto-resolved by **plan** at creation, so it won't appear here — if one does, the source was too thin for plan to fill without inventing content; flag it to the user. (Hypothesis-typed tasks that run a skill, like the theorizer and novelty scoring, do execute here.)
+1. **Pick a task.** If a task ID was supplied, use it. Else `bd ready --json` and pick the oldest issue (tiebreak by `bd-id` ascending). A hypothesis that restates a gap or finding is filled and closed by **plan** at creation, so it normally won't show up here; if one does, plan couldn't fill it without inventing content — flag it to the user.
 2. **Claim it.** `bd update <id> --status=in_progress`.
 3. **Load the schema.** Read the task type with `bd show <id> --json | jq -r '.[0].metadata.research_step.task_type'`. Open `assets/schemas.yaml` and find the matching entry under `task_types`.
 4. **Gather inputs.** For every issue listed in this issue's `inputs` (`bd show <id> --json | jq '.[0].metadata.research_step.inputs'`), read its output with `bd show <input-id> --json | jq '.[0].metadata.research_step.output'`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `summary_path` from a `literature_review`). **This is the only context to use** — do not pull in unrelated repo state.

@@ -2,12 +2,12 @@
 name: data_driven_theory_generation
 description: |
   See which of an AutoDS run's most surprising findings hold up on independent
-  data, then build theories on the ones that do and test the best with a new experiment.
+  data, then build theories on the ones that do and test the most promising with new experiments.
 ---
 
 # Data-driven theory generation
 
-Take an AutoDS run's most surprising findings, test whether each holds up on data the run didn't use, then build theory on what survives and run a follow-up experiment.
+Take an AutoDS run's most surprising findings, test whether each holds up on data the run didn't use, then build theories on what survives and run follow-up experiments.
 
 ## Flow
 
@@ -67,12 +67,12 @@ flowchart TD
 | `evidence_gathering` | `evidence_gathering` | `experiment_design, data_provenance` | Go get an external dataset to re-test the finding: follow `literature_review`'s leads to the public sources those papers used (repositories, data DOIs, availability statements) and **download** the most relevant one. This is the expected path — a test on the run's own inputs isn't independent, so don't settle for it. Log every attempt (found / downloaded / blocked) in `artifacts/acquisition_ledger.json`. Only once a documented search turns up nothing usable may you fall back to the run's own sources, marked the weakest tier. | — |
 | `analysis` | `analysis` | `hypothesis, experiment_design, evidence_gathering` | Replicate in DataVoyager (`asta analyze-data submit`) against the pre-registered rule. The verdict must come from a run on real data, not the AutoDS export or your own reasoning. Record the tier: replicated on independent data / consistent within the run's own data (fallback) / not testable. No data, no close — leave it blocked. | `asta-preview:analyze-data` |
 | `replication_synthesis` | `synthesis` | `analysis` (all 10) | Report how many of the 10 replicated, which failed, and which couldn't be tested — each with its tier. Group the findings into mechanisms for the report and the theorizer. | — |
-| `theorizer_theories` | `hypothesis` | `scope, replication_synthesis` | Run the theorizer once (the question plus a statement of which findings replicated; see [example](../assets/theorizer_mission_example.md)). No `paper_store`; set `max_papers_to_retrieve: 100`. Keep only theories anchored to at least one replicated finding. Map theory→`statement`, anchoring findings→`rationale`, prediction→`falsifiable_prediction`. | `asta-preview:generate-theories` |
+| `theorizer_theories` | `hypothesis` | `scope, replication_synthesis` | Run the theorizer once (the question plus a statement of which findings replicated; see [example](examples/theorizer_mission_example.md)). No `paper_store`; set `max_papers_to_retrieve: 100`. Keep only theories anchored to at least one replicated finding. Map theory→`statement`, anchoring findings→`rationale`, prediction→`falsifiable_prediction`. | `asta-preview:generate-theories` |
 | `novelty` | `hypothesis` | `theorizer_theories` | Score the theories for novelty and re-emit them ranked. The follow-on tests the top 3 by novelty × feasibility. | `asta-preview:generate-theories` |
 | `followon_exp_design` | `experiment_design` | `novelty` | For each of the top 3 theories: pre-register an experiment for it with the AutoExperimentDesigner (`asta auto-exp-designer design-experiment`), using the 5 most related papers. Not `asta-preview:experiment` — that runs Panda, a different system. | `asta auto-exp-designer` |
 | `followon_evidence` | `evidence_gathering` | `followon_exp_design` | Go get genuinely new data for the experiment — fetch it from the public sources the related papers used, not a re-slice of the replication data. Log attempts in the ledger. If nothing usable exists, the pre-registered design is the deliverable — a proposal for future data. | — |
 | `followon_analysis` | `analysis` | `followon_exp_design, followon_evidence` | If the new data exists, run the experiment in DataVoyager to a verdict and save figures, tables, and logs to `artifacts/`. If it doesn't, close it as untested — `inconclusive`, with a caveat that it's a pre-registered proposal, linking the design — rather than forcing a run or blocking the report. Retry (only when a run failed to actually test the theory) per the table below. | `asta-preview:analyze-data` |
-| `report` | `synthesis` | `replication_synthesis, followon_analysis` (all 3) | Write `artifacts/report.tex` → PDF and a short `output.md`. Report the replication results and all three follow-on outcomes — tested (held or failed) or proposed (untested, no data). Read [`report_example.tex`](../assets/report_example.tex) in full first and match its depth and citation density. Embed every figure. `validate-output.sh` checks the report has the basics before it closes. | — |
+| `report` | `synthesis` | `replication_synthesis, followon_analysis` (all 3) | Write `artifacts/report.tex` → PDF and a short `output.md`. Report the replication results and all three follow-on outcomes — tested (held or failed) or proposed (untested, no data). Read [`report_example.tex`](examples/report_example.tex) in full first and match its depth and citation density. Embed every figure. `validate-output.sh` checks the report has the basics before it closes. | — |
 
 The 10 finding-restatement `hypothesis` tasks are filled and closed at creation — see plan.md. (`theorizer_theories` and `novelty` are `hypothesis`-typed too, but they run a skill, so they execute like any other task.)
 
