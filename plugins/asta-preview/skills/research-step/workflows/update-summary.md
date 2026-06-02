@@ -44,7 +44,7 @@ Regenerate `summary.md` from beads. Idempotent and safe to run anytime. This is 
    <from definitions issue's output>
 
    ## Related Work
-   <literature_review.output.key_findings as bullets; link to summary_path>
+   <literature_review.output.key_findings as bullets; link to the work_dir's summary.md (relative path from run root)>
 
    ## Hypotheses
    <one subsection per hypothesis issue: "H_n: <statement>" plus current verdict from its analysis if closed>
