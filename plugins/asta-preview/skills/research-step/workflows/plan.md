@@ -1,99 +1,61 @@
 # Workflow: plan
 
-Create or extend the research graph. The single home for "design the next set of typed tasks." Two modes, selected from state:
+Create or extend the research graph. Two modes:
 
-- **bootstrap** — no epic exists yet. Create the mission epic and the initial frontier (scope, definitions, literature_review) from `mission.md`.
-- **replan** — an epic exists. Add downstream tasks based on a recently-closed task's output, or on user direction.
+- **bootstrap** — no epic yet. Create the mission epic and the template's first tasks from `mission.md` (default template: `hypothesis_driven_research`).
+- **replan** — an epic exists. Add the next tasks after one closes.
 
-Always chains to **update-summary** afterward so `summary.md` reflects the new graph.
+Always chains to **update-summary** afterward.
 
 ## Preconditions
 
-- `bd` is installed and `.beads/` is initialized. If not, run **init** first.
-- For **bootstrap**: `mission.md` exists and is non-empty, and `scripts/epic-root.sh` reports `status: none` (no epic yet). If `mission.md` is missing, abort and route the user to **brainstorm** to draft one.
-- For **replan**: `scripts/epic-root.sh` reports `status: found` (an epic exists). If a specific source task was supplied (typically by `execute` chaining into this workflow), it is closed and has a populated `metadata.research_step.output`.
+- `bd` installed and `.beads/` initialized — else run **init**.
+- **bootstrap**: `mission.md` is non-empty and `scripts/epic-root.sh` says `status: none`. If `mission.md` is missing, send the user to **brainstorm**.
+- **replan**: `scripts/epic-root.sh` says `status: found`. A source task passed in (usually by **execute**) is closed with a populated output.
 
-## Issue metadata convention
-
-Every task issue carries:
-
-```json
-{
-  "research_step": {
-    "task_type": "<scope|definitions|literature_review|hypothesis|experiment_design|evidence_gathering|analysis|synthesis>",
-    "inputs": ["bd-xxxx", "bd-yyyy"],
-    "output_schema_version": 1,
-    "output": null
-  }
-}
-```
-
-The mission epic additionally carries `epic_root: true`.
+Each task's metadata holds its `task_type`, `inputs` (the bd ids it reads), `output_schema_version`, and `output`. The epic also carries `epic_root: true`.
 
 ## Mode selection
 
-1. Run `scripts/epic-root.sh`. `status: none` → **bootstrap**.
-2. `status: found` (epic ID on the `id:` line) → **replan**. If the caller named a specific closed task (typical when `execute` chains here), use it as the source. Else, ask the user which closed task to plan around or which subgraph to extend, then proceed.
+Run `scripts/epic-root.sh`. `status: none` → bootstrap. `status: found` → replan, around the closed task the caller named; if none was named, ask which closed task to build on.
 
-## Bootstrap mode
+## Bootstrap
 
-1. **Verify mission.** Read `mission.md`. If missing or empty, abort and suggest **brainstorm**.
-2. **Create the epic.**
+1. Read `mission.md` (abort to **brainstorm** if missing).
+2. Create the epic:
    ```
-   bd create --type=epic --title="<one-line summary of mission.md>" --description="$(cat mission.md)"
+   bd create --type=epic --title="<one line from mission.md>" --description="$(cat mission.md)"
    bd update <epic-id> --metadata '{"research_step":{"epic_root":true}}'
    ```
-3. **Create the initial frontier.** Three `task` issues with the metadata convention above:
-   - `scope: <one-line>` — `inputs: []`
-   - `definitions: <one-line>` — `inputs: [<scope-id>]`
-   - `literature_review: <one-line>` — `inputs: [<scope-id>, <definitions-id>]`
-4. **Add edges.**
-   - `parent-child` from each frontier task to the epic
-   - `blocks`: scope → definitions; scope → literature_review; definitions → literature_review
-5. **Report.** Print the epic ID and the three task IDs.
+3. Create the template's first tasks, in order, up to its first "for each", taking each task's `type` / `inputs` / `skills` from its row. (Default template: `scope` → `definitions` → `literature_review`.)
+4. Add edges: `parent-child` to the epic, and `blocks` from each task named in another's `inputs`.
 
-## Replan mode
+## Replan
 
-Read the source task's task_type and output:
+The template (named in `mission.md`; default `hypothesis_driven_research`) is the plan. Find the closed task's node in it and create what comes next, taking each new task's `type` / `inputs` / `skills` from its row:
 
-```
-bd show <source-id> --json | jq '.[0].metadata.research_step.task_type'
-bd show <source-id> --json | jq '.[0].metadata.research_step.output'
-```
+- **Next step:** create the node(s) the diagram points to. Set inputs from the row, block on each, parent to the epic.
+- **For each:** if the closed node is the one a "for each" runs over, create one copy of the block's tasks per item.
+- **After a for-each:** create the task that follows the block only once every copy has closed; block it on those.
+- **Hypotheses** are filled and closed on creation, not executed (see below). Because they close immediately, also create the step that follows each one in the same pass — otherwise nothing is left open for **execute** to pick up. In general, keep creating whatever just came unblocked until the frontier is tasks that need an execute pass.
+- Stop when the next tasks already exist or the node is a leaf. If a closed `synthesis` lists `open_questions`, ask the user before adding follow-up hypotheses. Don't add tasks the template doesn't have.
 
-Apply this table:
+### Filling in hypotheses
 
-| Source task_type | Action |
-|---|---|
-| `literature_review` | For each gap in `output.gaps`, create a `hypothesis` task with `inputs: [<scope-id>, <source-id>]`. Edges: `parent-child` to epic; `blocks` from the source. **Populate `metadata.research_step.output` at creation time** (see below) and close the issue immediately — the gap text already contains the statement, rationale, and prediction in prose, so there is no separate `execute` pass for hypotheses. |
-| `hypothesis` | Create the chain `experiment_design` → `evidence_gathering` → `analysis`, each `blocks` the next. `experiment_design` depends on the hypothesis (via `inputs`); `analysis` depends on both the hypothesis and the new `evidence_gathering`. All three get `parent-child` to the epic. |
-| `analysis` | If every `hypothesis` in the epic now has a closed `analysis`, create one `synthesis` task with `inputs` listing all analysis IDs and the scope ID. `parent-child` to epic; `blocks` from each analysis. Otherwise no-op. |
-| `synthesis` | If `output.open_questions` is non-empty, **stop and ask the user** before creating new `hypothesis` tasks. If approved, create them with a `discovered-from` edge back to the synthesis (in addition to the usual edges). |
-| `scope`, `definitions`, `experiment_design`, `evidence_gathering` | No replan. Report no-op and stop. |
+A hypothesis has no separate work to execute — its source already states the claim — so fill its output and close it on creation. It still gets the same files on disk as any task (`output.json` and `output.md` under `.asta/tasks/<id>/`).
 
-If invoked without a source task and the user has not specified what to plan, do not invent work — ask, or stop.
+1. From its source — a `literature_review` gap, or an `auto_discovery` surprising node — write `statement`, `rationale`, `falsifiable_prediction`, and `expected_evidence`.
+2. Follow the template's hypothesis row. For `data_driven_theory_generation`, the claim is the node's finding and the `rationale` cites that node by id (it's added to `inputs`) — every hypothesis traces to a specific finding.
+3. Write `output.json` and `output.md` (the readable hypothesis; link any law rather than writing a bare `node_x_y`).
+4. Check it: `scripts/validate-output.sh hypothesis <metadata-file> .asta/tasks/<id>`.
+5. Save the metadata (`scripts/write-meta.sh` + `bd update <id> --metadata @<path>`) and `bd close <id>`.
 
-### Auto-resolving hypothesis tasks
-
-When creating a `hypothesis` from a literature_review gap:
-
-1. Derive the four output fields directly from the gap text and surrounding `literature_review` output (`bd show <source-id> --json | jq '.[0].metadata.research_step.output'`):
-   - `statement` — `H_n: <one-sentence claim>`
-   - `rationale` — why this gap implies the claim
-   - `falsifiable_prediction` — what observation would refute it
-   - `expected_evidence` — list of concrete evidence types that would support it
-2. Validate with `scripts/validate-output.sh hypothesis <metadata-json-file>` before persisting.
-3. Persist with `scripts/write-meta.sh` + `bd update <id> --metadata @<path>`, then `bd close <id>`.
-
-If a gap is too thin to fill these fields without inventing content, **do not auto-resolve** — leave the hypothesis open and surface it to the user. Genuine ambiguity is the one case where a separate `execute` pass is warranted.
+If a gap is too thin to fill honestly, leave the hypothesis open for a real `execute` pass instead.
 
 ## After either mode
 
-Hand off to **update-summary** so `summary.md` reflects the new state.
+Hand off to **update-summary**.
 
-## Out of scope
+## Not here
 
-- Running tasks or producing outputs. That belongs to **execute**.
-- Environment setup (installing `bd`/`jq`, `bd init`). That belongs to **init**.
-- Editing `mission.md`. That belongs to **brainstorm**.
-- Validating output quality.
+Running tasks → **execute**. Setup → **init**. Editing `mission.md` → **brainstorm**. Output quality isn't checked here.

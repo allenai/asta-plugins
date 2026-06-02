@@ -1,20 +1,18 @@
-# Output schemas for research-step task types.
-# Each task issue stores its realized output at metadata.research_step.output,
-# matching the shape under `output:` for its task_type.
+# Output shapes for research-step tasks. Each task stores its output at
+# metadata.research_step.output, matching the shape under `output:` for its type.
+# Wiring (which task feeds which) lives in the templates, not here.
 
 schema_version: 1
 
 task_types:
 
   scope:
-    inputs: []
     output:
       question: string                   # the precise research question
       boundaries: [string]               # what is in / out of scope
       success_criteria: [string]         # how we know we have answered it
 
   definitions:
-    inputs: [scope]
     output:
       terms:
         - name: string
@@ -22,7 +20,6 @@ task_types:
           rationale: string
 
   literature_review:
-    inputs: [scope, definitions]
     output:
       summary_path: string               # relative path; long-form context
       key_findings: [string]             # 3-10 bullets readable without opening summary_path
@@ -34,7 +31,6 @@ task_types:
           relevance: string
 
   hypothesis:
-    inputs: [scope, literature_review]
     output:
       statement: string                  # H_n: ...
       rationale: string
@@ -42,7 +38,6 @@ task_types:
       expected_evidence: [string]
 
   experiment_design:
-    inputs: [hypothesis]
     output:
       method: string
       procedure: [string]                # ordered steps
@@ -53,7 +48,6 @@ task_types:
       artifacts_expected: [string]       # paths the gathering step will produce
 
   evidence_gathering:
-    inputs: [experiment_design]
     output:
       artifacts:
         - path: string
@@ -62,8 +56,17 @@ task_types:
       log_path: string                   # what was actually run
       deviations: [string]               # ways execution diverged from design
 
+  auto_discovery:
+    output:
+      runid: string                      # the AutoDS run (created or imported)
+      status: string                     # SUCCEEDED | FAILED | CANCELLED | ...
+      experiments_path: string           # artifacts/experiments_<runid>.json; full node-level export
+      surprising_nodes:
+        - id: string                     # e.g. node_3_0
+          surprise: number
+          finding: string
+
   analysis:
-    inputs: [hypothesis, evidence_gathering]
     output:
       verdict: enum [supported, refuted, inconclusive]
       confidence: number                 # 0.0 - 1.0
@@ -71,7 +74,6 @@ task_types:
       caveats: [string]
 
   synthesis:
-    inputs: [scope, analysis_*]          # all analysis issues in the epic
     output:
       answer: string                     # answer to scope.question
       supporting_hypotheses: [bd_id]

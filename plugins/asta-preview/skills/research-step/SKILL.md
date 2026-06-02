@@ -1,7 +1,7 @@
 ---
 name: research-step
 description: Plan and execute autonomous research as a graph of typed tasks tracked in beads. Use when working from a mission.md to drive multi-step research with explicit dependencies and structured outputs.
-allowed-tools: Bash(bd:*) Bash(date:*) Bash(scripts/*) Read(assets/**) Read(workflows/**) Read(scripts/**) Skill(asta:*) Skill(asta-preview:*) Skill(asta-plugins:*)
+allowed-tools: Bash(bd:*) Bash(date:*) Bash(scripts/*) Read(assets/**) Read(workflows/**) Read(scripts/**) Read(templates/**) Skill(asta:*) Skill(asta-preview:*) Skill(asta-plugins:*)
 ---
 
 # Research Step
@@ -31,11 +31,40 @@ Installing `bd` and `jq`, running `bd init`, and verifying `scripts/summary-chec
 |---|---|---|
 | **brainstorm** | Default. Conversational exploration of current state; drafts/refines `mission.md`; hands off to other workflows when the user is ready to act. | `workflows/brainstorm.md` |
 | **init** | Set up the environment: install `bd`/`jq`, run `bd init`, verify `scripts/summary-check.sh`. Hands off to **plan**. | `workflows/init.md` |
-| **plan** | Create or extend the graph. Bootstraps the epic + initial frontier from `mission.md`, or replans downstream tasks after a closed task. | `workflows/plan.md` |
-| **execute** | Run one ready task end-to-end. Hands off to **plan** when the closed task type unlocks new structure; otherwise to **update-summary**. | `workflows/execute.md` |
+| **plan** | Create or extend the graph. Bootstraps the epic and first tasks from `mission.md`, or adds the next tasks after one closes. | `workflows/plan.md` |
+| **execute** | Run one ready task end-to-end, then hand off to **plan** (which chains to **update-summary**). | `workflows/execute.md` |
 | **update-summary** | Regenerate `summary.md` from beads. Idempotent — no-op when `scripts/summary-check.sh` reports `status: fresh`. | `workflows/update-summary.md` |
 
 Task-type schemas live in `assets/schemas.yaml`.
+
+## Plan templates
+
+A template is the plan for a recurring kind of study. Each lives at `templates/<name>.md`: a diagram plus a table of nodes — `id`, `type`, `inputs`, what to do, and any skill to use. `plan` follows the template and adds no wiring of its own. `mission.md` names the template; with none named, use `hypothesis_driven_research`.
+
+- Create one task per node, in dependency order, using the row's text as the description. Don't run ahead of the diagram: at bootstrap create only the first tasks, up to the first "for each"; create the rest as their inputs close.
+- **For each:** a `for each X in <node>` block makes one copy of its tasks per item, once `<node>` closes.
+- **After a for-each:** a task that follows the block waits for every copy, not for the block's source.
+- A node's `inputs` come from its row (or its arrow in the diagram): set the task's inputs from that and block it on each. (`schemas.yaml` is output shape only — no wiring.)
+- Don't add tasks the template doesn't have.
+
+Available templates:
+
+| Name | Purpose |
+|---|---|
+| `data_driven_theory_generation` | See which of an AutoDS run's most surprising findings hold up on independent data, then build theories on the ones that do and test the best with a new experiment. |
+| `hypothesis_driven_research` | Literature-grounded: survey, raise a hypothesis per gap, test each, synthesize. |
+
+### Task outputs
+
+Task inputs live in the bd issue itself (`bd show <bd-id>` and `metadata.research_step`). Only outputs land on disk, under `.asta/tasks/<bd-id>/`:
+
+| Path | Role |
+|---|---|
+| `.asta/tasks/<bd-id>/output.md` | Human-readable result. **Must link to every file under `artifacts/` it references** using file-relative markdown links (e.g. `[theories](artifacts/theories.json)`, `![figure 1](artifacts/fig1.png)`). |
+| `.asta/tasks/<bd-id>/output.json` | Structured result matching the task type's schema in `assets/schemas.yaml`. Sidecar paths use run-root-relative form (`.asta/tasks/<bd-id>/artifacts/<file>`). |
+| `.asta/tasks/<bd-id>/artifacts/` | Every other file the task produces: sidecar JSON (theory_store, paper_store, novelty_results, extraction_schema, etc.), downloaded data, code, figures, logs, PDF/TEX exports. Templates do not spell out filenames; pick reasonable names inside `artifacts/`. |
+
+Cross-task references in `output.json` use the absolute run-root-relative path; inside `output.md`, use the file-relative link form so the page renders standalone.
 
 ## Routing
 
@@ -51,7 +80,7 @@ If the user did not name a workflow, run **brainstorm**. It inspects the working
 
 - **init** → always run **plan** afterwards (which then chains to **update-summary**).
 - **plan** → always run **update-summary** afterwards so the digest reflects the new graph.
-- **execute** → if the closed task type is `literature_review`, `hypothesis`, `analysis`, or `synthesis`, chain to **plan** (which chains to **update-summary**); otherwise chain directly to **update-summary**.
+- **execute** → always chain to **plan** (which creates the next tasks or no-ops, then chains to **update-summary**).
 - **update-summary** and **brainstorm** → never chain.
 
 ## Boundaries

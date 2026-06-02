@@ -4,28 +4,24 @@ Replaces the inline bash polling loop that previously lived in the
 analyze-data skill body. Status ticks go to stderr; the final Task JSON
 goes to ``--output`` (or stdout) so the harness's background-task log
 shows progress without polluting the captured payload.
+
+Delegates the actual polling + rendering to the shared
+``asta_agent.a2a.commands._poll_until_terminal``, so step-progress
+events, parent/child indent, elapsed times, and artifact lines all
+surface here — the previous bespoke loop only emitted ``state=...``
+ticks (and one per poll, even when nothing changed).
 """
 
 from __future__ import annotations
 
-import time
-from datetime import datetime
+import json
 
 import click
-from a2a.types import Task, TaskState
-from asta_agent.a2a.client import A2AClient, A2AError
+from asta_agent.a2a.client import A2AClient
+from asta_agent.a2a.commands import _poll_until_terminal
 
 from asta.analyze_data._url import dv_url
 from asta.utils.auth_helper import get_access_token
-
-_TERMINAL_STATES = {
-    TaskState.completed,
-    TaskState.failed,
-    TaskState.input_required,
-    TaskState.canceled,
-    TaskState.rejected,
-    TaskState.auth_required,
-}
 
 
 @click.command()
@@ -39,44 +35,23 @@ _TERMINAL_STATES = {
 )
 @click.option(
     "--interval",
-    default=60,
-    show_default=True,
+    default=None,
     type=click.IntRange(min=1),
-    help="Seconds between polls.",
+    help="Seconds between polls. Omit for the SDK's adaptive cadence "
+         "(5×6 then 15×20 then 60s).",
 )
-def poll(task_id: str, output: str | None, interval: int) -> None:
+def poll(task_id: str, output: str | None, interval: int | None) -> None:
     """Poll TASK_ID until it reaches a terminal state, then emit the final Task JSON.
 
     Terminal states: completed, failed, input-required, canceled, rejected, auth-required.
-    Status ticks ([HH:MM:SS] state=...) are written to stderr; transient errors
-    are logged and retried.
+    Progress lines ([HH:MM:SS] state=…, step labels, artifacts) go to stderr;
+    the final Task JSON goes to --output (or stdout).
     """
     client = A2AClient(dv_url(), api_key=get_access_token())
-
-    while True:
-        ts = datetime.now().strftime("%H:%M:%S")
-        try:
-            result = client.get_task(task_id)
-            parsed = Task.model_validate(result)
-        except A2AError as e:
-            click.echo(f"[{ts}] error: {e.code} {e}", err=True)
-            time.sleep(interval)
-            continue
-        except Exception as e:
-            click.echo(f"[{ts}] error: {e}", err=True)
-            time.sleep(interval)
-            continue
-
-        state = parsed.status.state
-        click.echo(f"[{ts}] state={state.value}", err=True)
-
-        if state in _TERMINAL_STATES:
-            payload = parsed.model_dump_json(by_alias=True, indent=2, exclude_none=True)
-            if output:
-                with open(output, "w") as f:
-                    f.write(payload)
-            else:
-                click.echo(payload)
-            return
-
-        time.sleep(interval)
+    final = _poll_until_terminal(client, task_id, interval=interval)
+    payload = json.dumps(final, indent=2)
+    if output:
+        with open(output, "w") as f:
+            f.write(payload)
+    else:
+        click.echo(payload)

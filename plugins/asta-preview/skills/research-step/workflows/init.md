@@ -2,7 +2,7 @@
 
 Bootstrap the environment for a research session: install `bd` and `jq`, run `bd init`, wire beads to the project's git remote for cross-machine sync, and verify the staleness check works. This is the only workflow that may install or configure tools; `plan`, `update-summary`, and `execute` assume the environment is ready.
 
-After environment setup, hand off to **plan** to bootstrap the mission epic and initial frontier.
+After environment setup, hand off to **plan** to bootstrap the mission epic and first tasks.
 
 ## Preconditions
 

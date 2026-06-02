@@ -5,10 +5,12 @@ from asta_artifact.cli import main as artifacts
 
 from asta import __version__
 from asta.analyze_data import analyze_data
+from asta.auto_exp_designer import auto_exp_designer
 from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
+from asta.flows import flows
 from asta.literature.find import find
 from asta.literature.interactive import interactive
 from asta.papers.author import author
@@ -51,6 +53,9 @@ cli.add_command(generate_theories)
 # Register analyze-data commands
 cli.add_command(analyze_data)
 
+# Register auto-exp-designer commands
+cli.add_command(auto_exp_designer)
+
 # Register artifacts command
 cli.add_command(artifacts, name="artifacts")
 
@@ -59,6 +64,7 @@ cli.add_command(documents)
 cli.add_command(experiment)
 cli.add_command(pdf_extraction)
 cli.add_command(autodiscovery)
+cli.add_command(flows)
 
 # Register literature subcommands
 literature.add_command(find)
