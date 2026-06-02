@@ -1,0 +1,14 @@
+flowchart TB
+  user{user}
+
+  subgraph steps [" "]
+    direction LR
+    ESD[extraction_schema_design] --> TE[theorizer_extraction]
+    TE --> TG[theory_generation]
+    TG --> NA[novelty_assessment]
+  end
+
+  user <-.-> ESD
+  user <-.-> TE
+  user <-.-> TG
+  user <-.-> NA

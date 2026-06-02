@@ -1,0 +1,15 @@
+flowchart TD
+  scope --> definitions --> literature_review
+  literature_review -.foreach gap.-> H1[hypothesis_1]
+  literature_review -.foreach gap.-> H2[hypothesis_2]
+  literature_review -.foreach gap.-> HN[hypothesis_N]
+  H1 --> ED1[experiment_design_1] --> EG1[evidence_gathering_1] --> A1[analysis_1]
+  H2 --> ED2[experiment_design_2] --> EG2[evidence_gathering_2] --> A2[analysis_2]
+  HN --> EDN[experiment_design_N] --> EGN[evidence_gathering_N] --> AN[analysis_N]
+  A1 --> S[synthesis]
+  A2 --> S
+  AN --> S
+  S --> DONE([done])
+
+  classDef io fill:#1f2d3d,stroke:#6ee7b7,color:#fff
+  class S io

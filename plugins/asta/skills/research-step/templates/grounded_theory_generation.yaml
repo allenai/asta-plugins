@@ -1,0 +1,414 @@
+name: grounded_theory_generation
+description: >
+  Synthesize literature-grounded and parametric cross-cutting theories
+  anchored on an external AutoDS run, then propose follow-up experiments.
+
+mission_scaffold:
+  goal: "Generate theories and propose concrete next-step experiments."
+  required_sections:
+    - autods_run_pointer
+    - datasets
+    - focus
+
+declares:
+  task_types:
+    - scope
+    - definitions
+    - auto_discovery
+    - literature_review
+    - experiment_design
+    - evidence_gathering
+    - analysis
+    - synthesis
+    - extraction_schema_design
+    - theorizer_extraction
+    - theory_generation
+    - grounded_theory_generation
+    - novelty_assessment
+
+bootstrap:
+  - id: scope
+    task_type: scope
+    title: "Scope"
+    inputs: []
+    input_instructions: |
+      Frame the precise research question this run answers. List in-scope
+      and out-of-scope boundaries, plus success criteria the closing report
+      must satisfy. Anchor the question on the AutoDS run referenced in
+      mission.md.
+    output_instructions: |
+      Populate question (one sentence), boundaries[] (3-7 bullets,
+      explicit in/out lists), success_criteria[] (3-5 bullets — the
+      closing report's mission_satisfied check will reference these).
+
+  - id: definitions
+    task_type: definitions
+    title: "Definitions"
+    inputs: [scope]
+    blocked_by: [scope]
+    input_instructions: |
+      Operationalize the domain terms used in scope.question and
+      scope.boundaries. Each term must be testable against data.
+    output_instructions: |
+      Populate terms[] with {name, operational_definition, rationale}.
+
+  - id: auto_discovery
+    task_type: auto_discovery
+    title: "Import AutoDS run"
+    inputs: [scope, definitions]
+    blocked_by: [definitions]
+    input_instructions: |
+      Import the AutoDS run referenced in mission.md (run_pointer in
+      config). Materialize the export into `.asta/autods-run/` under the
+      run dir so downstream tasks (and the asta-flows web UI) can serve
+      its files:
+        .asta/autods-run/metadata.json
+        .asta/autods-run/mcts_nodes_all.json
+        .asta/autods-run/data/<dataset>.csv
+      Copy small files (<50 MB) and prefer a relative symlink for larger
+      ones (`/api/artifact` follows symlinks within the run dir).
+      Then read mcts_nodes_all.json and emit a curated list of laws —
+      favor surprising / high-normalized_surprisal nodes.
+    output_instructions: |
+      Populate run_id, metadata_path, nodes_path, laws[] (each with
+      node_id, hypothesis, analysis (excerpt), review (excerpt),
+      surprising, normalized_surprisal, supporting_data[]). The JSON
+      path fields (`metadata_path`, `nodes_path`, and every
+      `supporting_data` entry) are **run-root-relative** (e.g.
+      `.asta/autods-run/mcts_nodes_all.json`); machine-read. Record the
+      upstream absolute path in `source_path` for provenance only — do
+      not reference it from output.md. In output.md, link each artifact
+      with a **file-relative** path: from this auto_discovery task's
+      output.md the link is `[label](../../autods-run/...)`.
+
+replan:
+  auto_discovery:
+    - create:
+        task_type: evidence_gathering
+        inputs: [scope, definitions, auto_discovery]
+        edges:
+          parent_child: epic
+          blocks_from: auto_discovery
+        config:
+          lane: source
+        input_instructions: |
+          Data provenance for the AutoDS run. For each input dataset in
+          auto_discovery's metadata.json, find the foundational paper
+          and a public copy of the data. Materialize downloaded data
+          under `.asta/autods-run/data/<name>`. Use kind "dataset_uri"
+          for data and kind "paper" for foundational papers.
+
+  synthesis:
+    - when: source.config.run_kind == "themes_and_gaps"
+      foreach_union:
+        - foreach: theme in source.output_json.themes
+          create:
+            task_type: literature_review
+            inputs: [scope, definitions, auto_discovery, source]
+            edges:
+              parent_child: epic
+              blocks_from: source
+            config:
+              lane: theme
+              theme: theme
+              thread_dir: ".asta/literature/threads/theme-${theme.name}"
+            input_instructions: |
+              Multi-turn paper finder for theme '${theme.name}'
+              (${theme.description}). Use `asta literature interactive`
+              with the thread_dir in config. Find papers that confirm,
+              complicate, or extend the auto_discovery laws under this
+              theme (supporting_laws: ${theme.supporting_laws}).
+            output_instructions: |
+              Populate key_findings[] (3-10 bullets), citations[]
+              ({id, title, url, relevance}). Leave gaps[] empty — the
+              theme already came from upstream.
+        - foreach: gap in source.output_json.gaps
+          create:
+            task_type: literature_review
+            inputs: [scope, definitions, auto_discovery, source]
+            edges:
+              parent_child: epic
+              blocks_from: source
+            config:
+              lane: gap
+              gap: gap
+              thread_dir: ".asta/literature/threads/gap-${gap.summary}"
+            input_instructions: |
+              Multi-turn paper finder for gap '${gap.summary}'
+              (${gap.why_open}). Use `asta literature interactive` with
+              a fresh thread_dir. Find papers that close, complicate, or
+              shed light on this gap (related_laws:
+              ${gap.related_laws}).
+            output_instructions: |
+              Populate key_findings[] and citations[]. Leave gaps[]
+              empty.
+
+    - when: source.config.run_kind == "per_theme_gap_lane" and all_lane_syntheses_closed
+      create:
+        task_type: synthesis
+        inputs: [auto_discovery, all_lane_syntheses]
+        edges:
+          parent_child: epic
+          blocks_from: all_lane_syntheses
+        config:
+          run_kind: across_lanes
+        input_instructions: |
+          Roll up every per-lane synthesis (themes + gaps) into a single
+          cross-lane view. Reconcile contradictions between lanes,
+          identify auto_discovery laws confirmed by multiple lanes, and
+          surface the union of candidate papers that should feed the
+          theorizer pipeline.
+        output_instructions: |
+          Populate answer, supporting_hypotheses (bd-ids of confirmed
+          laws / analyses), refuted_hypotheses, open_questions, and
+          candidate_papers[] (paper refs or bd-ids).
+
+    - when: source.config.run_kind == "across_lanes"
+      create:
+        task_type: extraction_schema_design
+        inputs: [source]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          phase: theorizer
+        input_instructions: |
+          Theorizer pipeline starts here. No additional literature_review
+          is needed — the across_lanes synthesis's candidate_papers
+          already constitute the theorizer corpus.
+
+          Invoke the theorizer's Build-Extraction-Schema A2A skill:
+            asta generate-theories build-extraction-schema \
+              --theory-query "<scope.question or a tightened version of it>"
+          (skill_id: build-extraction-schema; runs only the schema-build
+          step, not the full pipeline.)
+        output_instructions: |
+          Output matches `asta generate-theories card` extraction-schema
+          shape (validated via bash_ref). Write the schema JSON to
+          extraction_schema.json in the task dir; reference it from
+          output.json via schema_path.
+
+    - when: source.config.run_kind == "report"
+      noop: true
+
+  literature_review:
+    - when: source.config.lane in ["theme", "gap"]
+      create:
+        task_type: experiment_design
+        inputs: [source, prior_synthesis]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          lane: source.config.lane
+          reproduction: true
+        input_instructions: |
+          Design a reproduction study for this ${source.config.lane}
+          lane. The lane's literature_review corpus is in hand. The laws
+          to reproduce are listed under the lane's spec (supporting_laws
+          for themes, related_laws for gaps). Specify a method that can
+          be applied to each law independently — evidence_gathering will
+          locate data via the lane's literature; analysis then fans out
+          one task per law to reproduce as many as possible.
+        output_instructions: |
+          Populate method, procedure[] (ordered steps), variables
+          (independent / dependent / controls), and artifacts_expected[].
+
+  experiment_design:
+    - when: source.config.lane in ["theme", "gap"]
+      create:
+        task_type: evidence_gathering
+        inputs: [literature_review, source]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          lane: source.config.lane
+          reproduction: true
+        input_instructions: |
+          Find the data sets required by the lane's experiment_design.
+          Use the lane's literature_review corpus (supplementary tables,
+          linked repositories, dataset DOIs) and follow citations as
+          needed. The AutoDS run already materialized its datasets under
+          `.asta/autods-run/data/` — prefer those when a law's
+          reproduction needs them. Mark complete when every targetable
+          law has at least one candidate dataset or further search is
+          judged unproductive.
+        output_instructions: |
+          Record every located URI in artifacts[] with
+          kind: "dataset_uri"; the `path` JSON field is the URL/URI
+          string (or, for files stored locally, a **run-root-relative**
+          path under `.asta/`); description carries human context. The
+          `log_path` JSON field is also run-root-relative. Markdown
+          links to these artifacts from output.md must be
+          **file-relative** (e.g. `[csv](../../autods-run/data/foo.csv)`
+          from this task's output.md).
+
+  evidence_gathering:
+    - when: source.config.lane == "source"
+      create:
+        task_type: synthesis
+        inputs: [scope, definitions, auto_discovery, source]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          run_kind: themes_and_gaps
+        input_instructions: |
+          Cluster the auto_discovery laws into themes and surface the
+          gaps. Use the upstream data-provenance evidence (foundational
+          papers + dataset URIs) as additional context.
+
+    - when: source.config.lane in ["theme", "gap"]
+      foreach: law in upstream.lane_spec.laws
+      create:
+        task_type: analysis
+        inputs: [source]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          lane: source.config.lane
+          target_law: law
+        input_instructions: |
+          Data reproduction step of the AutoDS run. Reproduce law
+          '${law.node_id}' (${law.hypothesis}) using the datasets
+          located by the lane's evidence_gathering. Execute the
+          reproduction code (fetch URIs, run pandas / sklearn / etc.);
+          mark inconclusive with caveat `data_unavailable` if the data
+          for this law was not located. Original AutoDS analysis for
+          context: ${law.original_analysis}.
+        output_instructions: |
+          Populate verdict, confidence (0-1), reasoning, and caveats[]
+          (vocabulary: data_unavailable, code_failed, …). Include
+          markdown links in output.md to the reproduction code, output
+          figures, and log files so a human can trace what ran — all
+          link targets must be **file-relative** from this task's
+          output.md: `[code](script.py)` or `[fig](fig1.png)` for files
+          the task wrote alongside its own output.md;
+          `[csv](../../autods-run/data/foo.csv)` for AutoDS-materialized
+          sources. Never link to absolute paths under /Users/, /home/,
+          /private/, or to `file://` URLs.
+
+  analysis:
+    - when: source.config.lane in ["theme", "gap"] and all_lane_analyses_closed
+      create:
+        task_type: synthesis
+        inputs: [literature_review, evidence_gathering, all_lane_analyses]
+        edges:
+          parent_child: epic
+          blocks_from: all_lane_analyses
+        config:
+          run_kind: per_theme_gap_lane
+          lane: source.config.lane
+        input_instructions: |
+          Close this ${source.config.lane} lane. Roll up the per-law
+          analysis verdicts: count reproduced / refuted / inconclusive.
+          Surface candidate papers worth re-using in the theorizer
+          pipeline. Note caveats (e.g. data_unavailable laws).
+        output_instructions: |
+          Populate answer, supporting_hypotheses (bd-ids of supported
+          analyses), refuted_hypotheses, open_questions, and
+          candidate_papers[] (paper refs worth re-using).
+
+  extraction_schema_design:
+    - when: source.config.phase == "theorizer"
+      create:
+        task_type: theorizer_extraction
+        inputs: [synthesis_across_lanes, extraction_schema_design]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        input_instructions: |
+          Extract evidence from the candidate_papers corpus using the
+          schema from the upstream extraction_schema_design. Pass the
+          schema so this step does not re-build one.
+        output_instructions: |
+          Write extraction_results.json and paper_store.json sidecars.
+
+  theorizer_extraction:
+    - create:
+        task_type: theory_generation
+        inputs: [synthesis_across_lanes, extraction_schema_design, theorizer_extraction]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          phase: theorizer
+        input_instructions: |
+          Generate 4-8 literature-grounded theories from the upstream
+          extraction results. Re-use theorizer_extraction's run_id so
+          this step does not re-run extraction.
+        output_instructions: |
+          Write theories.json sidecar.
+
+  theory_generation:
+    - when: source.config.phase == "theorizer"
+      create:
+        task_type: grounded_theory_generation
+        inputs: [auto_discovery, source, synthesis_across_lanes]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        input_instructions: |
+          Cross-cut the auto_discovery laws (confirmed/undisputed by
+          per-lane reproduction, summarized in the across_lanes
+          synthesis) and the literature-grounded theories from theorizer.
+          Use parametric memory only — do NOT call theorizer.
+        output_instructions: |
+          Output matches theorizer's Theory shape (validated via
+          bash_ref). Each theory carries theory_statements[],
+          supporting_evidence[] (cite bd-ids and auto_discovery
+          node_ids), negative_experiments[].
+
+  grounded_theory_generation:
+    - create:
+        task_type: novelty_assessment
+        inputs: [source]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        input_instructions: |
+          Score each theory_statement in the upstream
+          grounded_theory_generation output against the retrieved
+          literature, across the seven theorizer dimensions.
+        output_instructions: |
+          Write a results sidecar with per_statement entries.
+
+  novelty_assessment:
+    - create:
+        task_type: synthesis
+        inputs: [auto_discovery, prior_synthesis, novelty_assessment]
+        edges:
+          parent_child: epic
+          blocks_from: source
+        config:
+          run_kind: report
+        input_instructions: |
+          Resolve mission.md. The user-facing deliverable is `report.md`
+          (this task's output.md). Pull surviving cross-cutting theories
+          from grounded_theory_generation, novelty scores from
+          novelty_assessment, and reproduction verdicts from the per-lane
+          syntheses (summarized in the across_lanes synthesis).
+
+          Voice and structure (style guide for output.md):
+          - Audience: college-educated reader who knows the domain but
+            not its jargon. Define terms inline on first use.
+          - Direct prose. No filler ("essentially", "fundamentally",
+            "actually", "interestingly"); no hedge adverbs ("fairly",
+            "quite", "rather"); no throat-clearing windups.
+          - Open with a three-paragraph TL;DR, each labeled in bold:
+            **Key findings** (what we did and what we found),
+            **The theories** (one or two sentences per surviving theory,
+            terms defined as they appear),
+            **Next steps** (the prioritized experiments, in priority tiers).
+          - Inline citation convention applies (see SKILL.md). Every
+            quantitative claim and every theory statement gets a
+            markdown hyperlink to its grounding task's `output.md`.
+        output_instructions: |
+          Populate answer (mission-satisfaction narrative),
+          supporting_hypotheses, refuted_hypotheses, open_questions. The
+          output.md body follows the section order in the style guide
+          above and includes: surviving theories, supporting laws +
+          analyses, proposed experiments, and proposed NEGATIVE
+          experiments derived from each theory's negative_experiments[].

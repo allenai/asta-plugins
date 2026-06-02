@@ -1,6 +1,6 @@
 # Workflow: execute
 
-Run one ready task end-to-end. Loads its schema, gathers its declared inputs, produces a structured output, validates it, and closes the issue. After closing, hands off to **plan** if the closed task type unlocks new graph structure; otherwise hands off to **update-summary**.
+Run one ready task end-to-end. Materialize its `input.md` / `input.json` from the issue's metadata and upstream task outputs, invoke the agent to produce `output.md` / `output.json`, validate the result, persist pointers in beads, and close the issue. After closing, hand off to **plan** if the closed task type unlocks new structure; otherwise hand off to **update-summary**.
 
 ## Preconditions
 
@@ -9,32 +9,66 @@ Run one ready task end-to-end. Loads its schema, gathers its declared inputs, pr
 
 ## Steps
 
-1. **Pick a task.** If a task ID was supplied, use it. Else `bd ready --json` and pick the oldest issue (tiebreak by `bd-id` ascending). Hypothesis tasks are normally auto-resolved at creation by **plan**, so they should not appear here. If one does, it means the gap text was too thin for plan to fill the output without inventing content — flag this to the user and ask whether to refine the source `literature_review` first.
+1. **Pick a task.** If a task ID was supplied, use it. Else `bd ready --json` and pick the oldest issue (tiebreak by `bd-id` ascending).
+
 2. **Claim it.** `bd update <id> --status=in_progress`.
-3. **Load the schema.** Read the task type with `bd show <id> --json | jq -r '.[0].metadata.research_step.task_type'`. Open `assets/schemas.yaml` and find the matching entry under `task_types`.
-4. **Gather inputs.** For every issue listed in this issue's `inputs` (`bd show <id> --json | jq '.[0].metadata.research_step.inputs'`), read its output with `bd show <input-id> --json | jq '.[0].metadata.research_step.output'`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `summary_path` from a `literature_review`). **This is the only context to use** — do not pull in unrelated repo state.
-5. **Do the work.** Produce a JSON object matching the schema. For schema fields ending in `_path`, write the file to disk first and put the relative path in the JSON.
-6. **Validate structurally.** Run `scripts/validate-output.sh <task_type> <metadata-json-file>`. It checks the envelope (`research_step.task_type`, `inputs`, `output_schema_version`, `output`) and every required `output.<key>` for the task_type, plus type spot-checks for the high-leverage cases (e.g., `analysis.verdict` enum, `analysis.confidence` range). Exit 0 ⇒ valid. Any non-zero exit ⇒ fail loudly and **leave the issue `in_progress`** for retry. Do not close.
-7. **Persist the output.** Materialize the metadata JSON via `scripts/write-meta.sh` (reads JSON from stdin, prints a temp file path), then `bd update <id> --metadata @<path>`. Preserve the existing `task_type`, `inputs`, and `output_schema_version`.
+
+3. **Read the issue's metadata.**
+   ```
+   bd show <id> --json | jq '.[0].metadata.research_step'
+   ```
+   Extract `task_type`, `inputs[]`, `input_instructions`, `output_instructions`, `config`.
+
+4. **Read the prepared inputs.** Plan has already written `.asta/tasks/<id>/input.md` (a short task brief with inline citations to upstream sources) and `.asta/tasks/<id>/input.json` (the structured upstream output fragments plus this task's config). Their paths are in `metadata.research_step.input_md` and `metadata.research_step.input_json`. The agent reads:
+   - `input.md` for the human-readable brief.
+   - `input.json` for the structured upstream data.
+   - `metadata.research_step.input_instructions` for the full task prompt.
+   - `metadata.research_step.output_instructions` for what the output must contain.
+
+   If `input.md` or `input.json` is missing (e.g., on a task created by an older plan run), fall back to gathering upstream context inline: read each upstream task's `output.json` and the first few paragraphs of its `output.md`, and proceed.
+
+5. **Do the work.** The agent produces:
+   - `.asta/tasks/<id>/output.md` — the narrative artifact.
+   - `.asta/tasks/<id>/output.json` — the structured output (matches the task type's schema in `assets/schemas.yaml`).
+   - Any task-type-specific sidecar files referenced from `output.json` (e.g., `extraction_schema.json`, `theories.json`).
+
+   If the task type has an `execute_ref` field in `assets/schemas.yaml`, that's the asta CLI subcommand to invoke. Use it directly; do not fall back to `send-message` without setting the right `skill_id` (that routes to the agent's default task, which is usually the wrong granularity).
+
+6. **Validate structurally.** Run:
+   ```
+   scripts/validate-output.sh <task_type> .asta/tasks/<id>/output.json
+   ```
+   Exit 0 ⇒ valid; any non-zero ⇒ fail loudly and **leave the issue `in_progress`** for retry. Do not close.
+
+7. **Persist output pointers.** Build a metadata JSON adding `output_md` and `output_json` fields and `bd update <id> --metadata @<path>`. Preserve all existing fields.
+
 8. **Close.** `bd close <id>`.
-9. **Hand off to plan or update-summary.** Some closed task types unlock new graph structure; others don't. Decide based on the closed task's `task_type`:
 
-   | Closed task_type | Hand off to |
-   |---|---|
-   | `literature_review`, `hypothesis`, `analysis`, `synthesis` | **plan** (with this issue as the source). `plan` then chains to **update-summary**. Note: `hypothesis` only reaches this branch in the rare case it was left open at creation; the normal path is plan→auto-resolve. |
-   | `scope`, `definitions`, `experiment_design`, `evidence_gathering` | **update-summary** directly. |
+9. **Hand off to plan or update-summary.** Decide based on the closed task's `task_type`:
 
-   Either path ends with `summary.md` rebuilt.
+    | Closed task_type | Hand off to |
+    |---|---|
+    | `literature_review`, `hypothesis`, `analysis`, `synthesis` | **plan** (with this issue as the source). `plan` then chains to **update-summary**. |
+    | `auto_discovery`, `extraction_schema_design`, `theorizer_extraction`, `theory_generation`, `grounded_theory_generation`, `novelty_assessment` | **plan** (with this issue as the source). |
+    | `scope`, `definitions`, `experiment_design`, `evidence_gathering` | **update-summary** directly. |
+
+    Either path ends with `summary.md` rebuilt.
+
+## Special case: report-kind synthesis
+
+If the closed task is `synthesis(config.run_kind=report)`, additionally create a project-root `report.md` symlink (or copy on platforms without symlink support) pointing at this task's `output.md`. This surfaces the closing deliverable at the conventional location for the user.
+
+```
+ln -sf .asta/tasks/<id>/output.md report.md
+```
+
+Then proceed to **update-summary** as usual (no further plan replan — `synthesis(run_kind=report)` is the terminal node).
 
 ## Notes on output files
 
-Schema fields ending in `_path` are relative paths. Conventions:
-
-- `summary_path` (from `literature_review`) → `background_knowledge.txt` by convention, but any path works.
-- `log_path` (from `evidence_gathering`) → typically under `logs/`.
-- `report_path` (from `synthesis`) → typically `report.md`.
-
-Write the file before setting the output JSON. If the executor crashes between writing the file and closing the issue, the file is harmless orphan data — re-running `execute` on the same issue will overwrite it.
+- `.asta/tasks/<id>/output.json` is the canonical structured output; `validate-output.sh` runs against it.
+- `.asta/tasks/<id>/output.md` is the human narrative; it may include markdown hyperlinks to code, figures, log files. These are not auto-indexed in this version of the spec — the human is expected to follow them by hand.
+- Sidecar JSON files (`extraction_schema.json`, `theories.json`, `paper_store.json`, `novelty_results.json`) are referenced from `output.json` via `_path` fields. The sidecar contents are themselves loose-typed (their shape is governed by the upstream CLI, not by `validate-output.sh`).
 
 ## Out of scope for this workflow
 
