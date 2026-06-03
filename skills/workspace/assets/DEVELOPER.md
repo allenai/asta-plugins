@@ -11,7 +11,7 @@ With [Quarto](https://quarto.org) on the host: `make preview`, open `http://loca
 Based on `ghcr.io/allenai/asta:latest` — Quarto and [Asta](https://asta.allen.ai) pre-installed.
 
 - **VS Code locally:** `make dev`, or open folder → Command Palette → **Reopen in Container**. Needs [Docker Desktop](https://www.docker.com/products/docker-desktop/) and the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
-- **Codespaces:** green **`<> Code`** button → **Codespaces** tab → **Create codespace on main**. Port 4848 auto-forwards.
+- **Codespaces:** green **`<> Code`** button → **Codespaces** tab → **Create codespace on main**, or `gh codespace create --web` from the CLI. Port 4848 auto-forwards.
 
 Asta auth: set `ASTA_TOKEN` env var locally before launching, or `asta auth login` in the container. For Codespaces: add `ASTA_TOKEN` as a secret.
 
