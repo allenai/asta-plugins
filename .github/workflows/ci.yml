@@ -24,7 +24,7 @@ jobs:
       - name: Lint shell scripts with shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
-          scandir: './scripts ./hooks'
+          scandir: './scripts ./plugins/asta-preview/hooks'
 
       - name: Check plugins
         run: make check-plugins
@@ -63,3 +63,28 @@ jobs:
 
       - name: Test skill discovery
         run: make docker-test-skills
+
+  plugin-install:
+    # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
+    # No API auth required — only checks the installed files land correctly.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Claude Code CLI
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Verify install into Claude Code
+        run: bash scripts/verify-plugin-install.sh claude-code
+
+      - name: Verify install into Codex
+        run: bash scripts/verify-plugin-install.sh codex

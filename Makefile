@@ -16,7 +16,7 @@ help:
 	@echo "  clean            Remove build artifacts and caches"
 	@echo ""
 	@echo "Claude Code marketplace:"
-	@echo "  build-plugins    Regenerate plugins/ from skills/"
+	@echo "  build-plugins    Regenerate plugins/asta (core) from plugins/asta-preview"
 	@echo "  check-plugins    Verify plugins/ is up to date"
 	@echo ""
 	@echo "Docker:"
@@ -83,19 +83,19 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name '*.pyc' -delete
 
-# Generate Claude Code plugin packages from skills/
+# Generate the core `asta` plugin from the canonical `asta-preview` plugin
 build-plugins:
 	./scripts/build-plugins.sh
 
-# Verify plugins/ matches skills/ (used in CI)
+# Verify plugins/asta is up to date with plugins/asta-preview (used in CI)
 check-plugins:
 	@./scripts/build-plugins.sh > /dev/null
-	@if [ -n "$$(git status --porcelain plugins/)" ]; then \
-		echo "Error: plugins/ is out of date or has untracked files. Run 'make build-plugins' and commit."; \
-		git status --short plugins/; \
+	@if [ -n "$$(git status --porcelain plugins/asta)" ]; then \
+		echo "Error: plugins/asta is out of date. Edit plugins/asta-preview, run 'make build-plugins', and commit."; \
+		git status --short plugins/asta; \
 		exit 1; \
 	fi
-	@echo "plugins/ is up to date"
+	@echo "plugins/asta is up to date with plugins/asta-preview"
 
 # Validate every SKILL.md against the Agent Skills spec (used in CI)
 check-skills:

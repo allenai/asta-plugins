@@ -1,46 +1,39 @@
 #!/usr/bin/env bash
-# Generate self-contained Claude Code plugin directories in plugins/.
-# Edit skills/ — never edit plugins/ directly.
+# Generate the `asta` (core) plugin from the canonical `asta-preview` plugin.
+#
+# Layout:
+#   plugins/asta-preview/  -- CANONICAL. All skills + hooks live here; edit here.
+#   plugins/asta/          -- GENERATED. The subset of skills that are NOT
+#                             marked `internal` in their SKILL.md frontmatter.
+#
+# The installers used by Claude Code and Codex (`npx plugins add`) copy a
+# plugin's directory wholesale and do not filter skills by frontmatter, so the
+# core-only `asta` plugin must exist as its own directory. Only that subset is
+# duplicated; `asta-preview` is never a copy.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PLUGINS_DIR="$REPO_ROOT/plugins"
+SRC="$REPO_ROOT/plugins/asta-preview"
+DEST="$REPO_ROOT/plugins/asta"
 
-# Derive default vs preview from SKILL.md frontmatter.
-# A skill is default unless its SKILL.md contains "internal: true".
-DEFAULT_SKILLS=()
-ALL_SKILLS=()
-for d in "$REPO_ROOT"/skills/*/; do
+# Core skills = those whose SKILL.md frontmatter does NOT set `internal: true`.
+core_skills=()
+for d in "$SRC"/skills/*/; do
   name="$(basename "$d")"
-  ALL_SKILLS+=("$name")
   if ! grep -q "internal: true" "$d/SKILL.md" 2>/dev/null; then
-    DEFAULT_SKILLS+=("$name")
+    core_skills+=("$name")
   fi
 done
 
-build_plugin() {
-  local name="$1"
-  shift
-  local skill_dirs=("$@")
-  local dest="$PLUGINS_DIR/$name"
+rm -rf "$DEST"
+mkdir -p "$DEST/skills"
 
-  rm -rf "$dest"
-  mkdir -p "$dest/skills"
+for skill in "${core_skills[@]}"; do
+  cp -R "$SRC/skills/$skill" "$DEST/skills/$skill"
+done
 
-  # Copy skills
-  for skill in "${skill_dirs[@]}"; do
-    cp -R "$REPO_ROOT/skills/$skill" "$dest/skills/$skill"
-  done
+cp -R "$SRC/hooks" "$DEST/hooks"
 
-  # Copy hooks
-  if [ -d "$REPO_ROOT/hooks" ]; then
-    cp -R "$REPO_ROOT/hooks" "$dest/hooks"
-  fi
-
-  echo "Built $name with ${#skill_dirs[@]} skills"
-}
-
-build_plugin "asta" "${DEFAULT_SKILLS[@]}"
-build_plugin "asta-preview" "${ALL_SKILLS[@]}"
-
-echo "Done. Plugins written to plugins/"
+# Plugin name/description/version come from .claude-plugin/marketplace.json
+# (the single metadata source) — no per-plugin plugin.json is generated.
+echo "Generated plugins/asta with ${#core_skills[@]} core skills (from plugins/asta-preview)"
