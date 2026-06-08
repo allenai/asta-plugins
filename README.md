@@ -2,13 +2,17 @@
 
 Asta is a set of skills for scientific research, usable by local coding agents.
 
-## Skill Installation
+## Installation
 
 ```commandline
-# Any agent (Claude Code, Cursor, Copilot, etc.)
+# Whole plugins (skills + hooks) into your agent's native plugin system.
+# Pick `asta` (core) OR `asta-preview` (all; a superset of `asta` — install one).
+npx plugins add allenai/asta-plugins
+
+# Skills only (loose skill files).
 npx skills add allenai/asta-plugins -g
 
-# Claude Code only
+# Claude Code marketplace (alternative to npx plugins)
 > /plugin marketplace add allenai/asta-plugins
 > /plugin install asta
 ```
@@ -88,7 +92,7 @@ npx skills add /opt/asta-plugins -g --all --yes
 
 ## Research projects (Codespaces / Dev Containers / CI deploy)
 
-The [`workspace`](skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
+The [`workspace`](plugins/asta-preview/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
 
 ## Benchmarking
 
@@ -125,7 +129,7 @@ When a comparison includes a configuration that isn't a regular commit on a PR b
 
 ```bash
 git tag -a experiments/PR-123/workspace-ablate-artifacts-tightening \
-  -m "PR #123's workspace branch with skills/artifacts/SKILL.md reverted to main. Used to measure view_agent_output routing dependency on the artifacts tightening."
+  -m "PR #123's workspace branch with plugins/asta-preview/skills/artifacts/SKILL.md reverted to main. Used to measure view_agent_output routing dependency on the artifacts tightening."
 git push origin experiments/PR-123/workspace-ablate-artifacts-tightening
 ```
 

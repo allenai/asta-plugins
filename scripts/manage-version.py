@@ -22,8 +22,8 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 INIT_FILE = PROJECT_ROOT / "src" / "asta" / "__init__.py"
 PYPROJECT_FILE = PROJECT_ROOT / "pyproject.toml"
 MARKETPLACE_FILE = PROJECT_ROOT / ".claude-plugin" / "marketplace.json"
-SKILLS_DIR = PROJECT_ROOT / "skills"
-HOOK_FILE = PROJECT_ROOT / "hooks" / "sync-cli-version.sh"
+SKILLS_DIR = PROJECT_ROOT / "plugins" / "asta-preview" / "skills"
+HOOK_FILE = PROJECT_ROOT / "plugins" / "asta-preview" / "hooks" / "sync-cli-version.sh"
 
 
 def get_init_version() -> str:

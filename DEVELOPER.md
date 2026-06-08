@@ -35,12 +35,14 @@ src/asta/                      # Main CLI package
     ├── citations.py           # `asta papers citations` command
     └── author.py              # `asta papers author` commands
 
-skills/                        # Canonical skill definitions (edit here)
-hooks/                         # Claude Code permission hooks
 scripts/                       # Build and maintenance scripts
 
-# Claude Code marketplace distribution:
-plugins/                       # Generated plugin packages (do not edit)
+# Plugin distribution (via `npx plugins add`):
+plugins/
+  asta-preview/                # CANONICAL — all skills + hooks live here (edit here)
+    skills/                    #   every skill definition
+    hooks/                     #   permission/session hooks (hooks.json)
+  asta/                        # GENERATED — core subset (no metadata.internal); do not edit
 .claude-plugin/
   marketplace.json             # Marketplace listing (asta + asta-preview plugins)
 ```
@@ -86,8 +88,8 @@ make check    # Quick pre-commit check (format + lint + unit tests)
 make ci       # Full CI check (format + lint + all tests + plugins check)
 
 # Claude Code marketplace (run before pushing skill/hook changes, not after each edit)
-make build-plugins  # Regenerate plugins/ from skills/
-make check-plugins  # Verify plugins/ is up to date
+make build-plugins  # Regenerate plugins/asta (core) from plugins/asta-preview
+make check-plugins  # Verify plugins/asta is up to date
 ```
 
 ### Install for Development
@@ -136,7 +138,7 @@ twice alongside `--plugin-dir`.
 |---|---|
 | Python files (`src/asta/`) | None — editable install |
 | `pyproject.toml` (new deps/scripts) | `make install` |
-| Skills (`skills/`) or hooks (`hooks/`) | Restart `claude-asta` session to pick up the change. Run `make build-plugins` only when preparing to push changes to git — not after each edit. |
+| Skills or hooks (`plugins/asta-preview/`) | Restart `claude-asta` session to pick up the change. Run `make build-plugins` only when preparing to push changes to git — not after each edit. |
 
 ### Run Tests
 
@@ -275,7 +277,7 @@ papers = client.get_author_papers("1741101", limit=50)
 
 ### Skill Files
 
-Skills are markdown files in `skills/<skill-name>/SKILL.md`:
+Skills are markdown files in `plugins/asta-preview/skills/<skill-name>/SKILL.md`:
 
 ```markdown
 ---
@@ -293,17 +295,17 @@ Instructions and examples...
 
 #### Skill distribution design
 
-All skills live in `skills/` — this is the **single source of truth**. Whether a skill is included in the default install or requires opt-in is determined by its SKILL.md frontmatter:
+`plugins/asta-preview/skills/` is the **single source of truth** — every skill lives there. Whether a skill is in the core install or is preview-only is determined by its SKILL.md frontmatter:
 
 ```yaml
-# Default skill — no metadata.internal field
+# Core skill — no metadata.internal field
 ---
-name: Semantic Scholar Lookup
+name: semantic-scholar
 ---
 
 # Preview skill — add metadata.internal: true
 ---
-name: Find Literature
+name: find-literature
 metadata:
   internal: true
 ---
@@ -311,48 +313,46 @@ metadata:
 
 This one flag drives all distribution behavior — no lists to maintain elsewhere.
 
-**Two distribution channels, same source:**
+**Distribution channels, same source:**
 
-| Channel | Default install | All skills |
+| Channel | Core install | All skills |
 |---------|----------------|------------|
-| npx skills CLI | `npx skills add allenai/asta-plugins` (default only) | `--all` or `--skill "Name"` |
-| Claude Code plugin | `/plugin install asta` (default only) | `/plugin install asta-preview` |
+| npx **plugins** CLI | `npx plugins add allenai/asta-plugins` → pick `asta` | …or `asta-preview` |
+| npx **skills** CLI (any agent) | `npx skills add allenai/asta-plugins` | `--all` or `--skill "Name"` |
+| Claude Code marketplace | `/plugin install asta` | `/plugin install asta-preview` |
 | Local dev | `claude --plugin-dir plugins/asta-preview` (all skills) | — |
 
-**Why `plugins/` exists:**
+**Why two plugin directories exist:**
 
-The npx skills CLI reads `metadata.internal` directly from SKILL.md, so filtering works automatically. Claude Code plugins, however, auto-discover every skill in the `skills/` directory — they have no per-skill filtering mechanism. The only way to ship a subset of skills via Claude Code is to package separate plugin directories with different skill sets.
+The npx skills CLI reads `metadata.internal` directly from SKILL.md, so filtering works automatically. The npx **plugins** CLI and Claude Code's native marketplace do **not** filter by frontmatter — they copy a plugin's whole directory and load every skill in it. So shipping a core-only plugin requires its own directory. We make `asta-preview` the canonical home of all skills and generate only the small `asta` subset from it — so the core skills are duplicated once (into `asta`) and `asta-preview` is never a copy.
 
-`plugins/` contains these generated packages:
-- `plugins/asta/` — default skills only
-- `plugins/asta-preview/` — all skills (default + preview)
-
-**Never edit `plugins/` directly.** It's generated from `skills/` by `scripts/build-plugins.sh`.
+- `plugins/asta-preview/` — **canonical**, all skills + hooks (edit here)
+- `plugins/asta/` — **generated** core subset (`scripts/build-plugins.sh`); never edit by hand
 
 **Workflow for changing skills:**
 
 ```bash
 # Edit the canonical source — iterate as long as you want;
 # restart your claude-asta session to pick up changes.
-vim skills/my-skill/SKILL.md
+vim plugins/asta-preview/skills/my-skill/SKILL.md
 
-# Once you're ready to push, regenerate plugin packages
+# Once you're ready to push, regenerate the core asta plugin
 # (only at this point, not after each edit).
 make build-plugins
 
-# Commit both
-git add skills/ plugins/
+# Commit the canonical change + regenerated subset
+git add plugins/
 git commit -m "Update my-skill"
 ```
 
-CI enforces that `plugins/` stays in sync — PRs fail if someone edits a skill without rebuilding.
+CI enforces that `plugins/asta` stays in sync — PRs fail if someone edits a skill without rebuilding.
 
 **Adding a new skill:**
 
-1. Create `skills/<name>/SKILL.md`
-2. Add `metadata.internal: true` if it shouldn't be in the default install yet
+1. Create `plugins/asta-preview/skills/<name>/SKILL.md`
+2. Add `metadata.internal: true` if it shouldn't be in the core install yet
 3. Run `make build-plugins`
-4. To promote to default later: remove the `metadata.internal` block and rebuild
+4. To promote to core later: remove the `metadata.internal` block and rebuild
 
 ### Hooks
 
@@ -487,7 +487,7 @@ The version number is stored in three source locations:
    ```bash
    make build-plugins
    ```
-   Rebuilds `plugins/` from `skills/`, `hooks/`, and `marketplace.json`.
+   Regenerates `plugins/asta` (the core subset) from `plugins/asta-preview`.
 
 4. **Run full test suite:**
    ```bash
@@ -694,7 +694,7 @@ To add a new external tool as an `asta` passthrough command:
 
 5. **Create skill (optional):**
    ```markdown
-   # skills/newtool/SKILL.md
+   # plugins/asta-preview/skills/newtool/SKILL.md
    ---
    name: NewTool Skill
    description: When to use this skill
