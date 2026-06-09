@@ -72,21 +72,6 @@ Output deltas vs `find`: the `interactive` JSON adds `thread_id` and `narrative`
 `citationContexts` or `publicationDate` per paper; for those, use `find` or the
 `asta papers` commands.
 
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.18.0
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
-
 ## Tools Available
 
 ### Paper Finder

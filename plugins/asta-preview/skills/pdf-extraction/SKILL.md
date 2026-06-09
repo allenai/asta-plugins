@@ -13,21 +13,6 @@ Extract high-quality text from PDFs using two OCR engines:
 - **`asta pdf-extraction olmocr`** — cloud-based extraction via [olmOCR](https://github.com/allenai/olmOCR) (best for large batches, S3, and complex layouts)
 - **`asta pdf-extraction remote`** — quick single-file extraction via the Asta remote OCR API
 
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.18.0
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
-
 ## Quick Start
 
 ### olmocr (cloud batch extraction)

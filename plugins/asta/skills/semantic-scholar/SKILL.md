@@ -56,20 +56,6 @@ search/exploration (e.g. the first user turn is "find papers on X"), default to
 Reach for `asta papers` when the session is about something else and a quick metadata or
 citation lookup is just one step inside it.
 
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.18.0
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
 ## Available Commands
 
 ### Get Paper Details
