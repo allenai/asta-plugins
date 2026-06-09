@@ -2,20 +2,6 @@
 
 Create, configure, and monitor AutoDiscovery runs via the hosted service using the `asta autodiscovery` commands. Runs execute on Asta infrastructure and consume credits.
 
-## Installation
-
-This workflow requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.17.1
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
 ## Authentication
 
 AutoDiscovery uses the shared Asta authentication. If you get an auth error, run `asta auth login` first.
