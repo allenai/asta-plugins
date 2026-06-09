@@ -186,6 +186,35 @@ asta documents --root "$DATASET_ROOT" search --extra=".source_pdf contains some-
 asta documents --root "$DATASET_ROOT" list --tags="my-papers"
 ```
 
+## Indexing raw markdown (skipping PDF extraction)
+
+If your corpus is **already markdown** (authored `.md` docs, exported notes, an
+investigation record, a wiki), there is nothing to extract — skip Steps 1–2 and
+point the chunker straight at the markdown directory. Pass `--source-ext` so the
+stored source filename and the secondary tag reflect the real format (`md-index`
+instead of `pdf-index`):
+
+```bash
+COLLECTION="my-notes"
+MARKDOWN_DIR="/data/notes"            # a tree of .md files (rglob, nested OK)
+INDEX_PATH="/data/notes/index.yaml"
+
+uv run --with pyyaml python3 /path/to/assets/chunk-and-index.py \
+  "$COLLECTION" "$MARKDOWN_DIR" --index-path "$INDEX_PATH" --source-ext md
+
+bash /path/to/assets/warm-cache.sh "$(dirname "$INDEX_PATH")"
+asta documents --root "$(dirname "$INDEX_PATH")" search \
+  --summary="your query" --tags="$COLLECTION" --show-scores
+```
+
+Notes:
+- `--source-ext` only affects the synthesized `extra.source_file` value and the
+  `<ext>-index` tag; chunking, relative-path URLs, and resumability are identical
+  to the PDF path. The default remains `pdf` for backward compatibility.
+- For non-PDF collections the chunker writes `extra.source_file` (canonical). The
+  legacy `extra.source_pdf` key is still written for `--source-ext pdf` so older
+  consumers and indexes keep working.
+
 ## Storage Estimates
 
 | Collection size | Approx. index size | Approx. markdown size |
