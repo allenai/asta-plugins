@@ -1,6 +1,6 @@
 ---
 name: semantic-scholar
-description: This skill should be used when the user asks to "get paper details", "look up a paper", "find citations", "who cited this paper", "papers by [author]", "search for papers on [topic]", or needs quick lookups of paper metadata, citations, or author information from Semantic Scholar. Use this for fast, targeted queries (not comprehensive reports).
+description: Look up or search papers, authors, citations, and full-text snippets on Semantic Scholar. Use for fast, targeted queries about a paper, author, or specific named research artifact (benchmark, dataset, model, method, etc.) — not comprehensive reports.
 allowed-tools: Bash(asta papers *)
 ---
 
@@ -55,20 +55,6 @@ search/exploration (e.g. the first user turn is "find papers on X"), default to
 `asta literature interactive` for the discovery work, even when individual queries look simple.
 Reach for `asta papers` when the session is about something else and a quick metadata or
 citation lookup is just one step inside it.
-
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.17.1
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
 
 ## Available Commands
 

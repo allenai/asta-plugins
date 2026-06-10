@@ -15,8 +15,7 @@ def test_plugin_structure():
     assert (ROOT / ".claude-plugin" / "marketplace.json").exists()
     assert (ROOT / "plugins" / "asta" / "skills").is_dir()
     assert (ROOT / "plugins" / "asta-preview" / "skills").is_dir()
-    assert (ROOT / "skills").is_dir()
-    assert (ROOT / "hooks").is_dir()
+    assert (ROOT / "plugins" / "asta-preview" / "hooks").is_dir()
     assert (ROOT / "src" / "asta").is_dir()
     # Check key CLI modules exist
     assert (ROOT / "src" / "asta" / "cli.py").exists()
@@ -33,6 +32,25 @@ def test_marketplace_has_plugins():
     assert "asta" in names
     assert "asta-preview" in names
     print("✓ Marketplace lists both plugins")
+
+
+def test_marketplace_sources_resolve():
+    """Every marketplace `source` must resolve to a real plugin dir with skills.
+
+    marketplace.json is the single metadata source consumed by `npx plugins
+    add` and native Claude/Codex; a typo'd or stale `source` would make a
+    listed plugin uninstallable, which discovery alone wouldn't catch.
+    """
+    with open(ROOT / ".claude-plugin" / "marketplace.json") as f:
+        marketplace = json.load(f)
+    for entry in marketplace["plugins"]:
+        source = (ROOT / entry["source"]).resolve()
+        assert source.is_dir(), f"{entry['name']}: source {entry['source']} missing"
+        assert (source / "skills").is_dir(), (
+            f"{entry['name']}: source {entry['source']} has no skills/ "
+            "(installers wouldn't recognise it as a plugin)"
+        )
+    print("✓ Marketplace sources resolve to plugin dirs")
 
 
 def test_asta_cli_installed():
@@ -83,6 +101,7 @@ def test_asta_cli_help():
 if __name__ == "__main__":
     test_plugin_structure()
     test_marketplace_has_plugins()
+    test_marketplace_sources_resolve()
     test_asta_cli_installed()
     test_asta_cli_help()
     print("\n✓ All integration tests passed!")

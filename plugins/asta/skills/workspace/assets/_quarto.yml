@@ -1,0 +1,17 @@
+project:
+  type: website
+  output-dir: _site
+  preview:
+    port: 4848
+
+bibliography: references.bib
+
+website:
+  title: "{{TITLE}}"
+  sidebar:
+    contents: auto
+
+format:
+  html:
+    theme: cosmo
+    toc: true

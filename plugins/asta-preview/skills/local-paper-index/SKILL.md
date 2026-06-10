@@ -10,21 +10,6 @@ allowed-tools: Bash(asta pdf-extraction *) Bash(asta documents *) Bash(python3 *
 
 Build a searchable Asta document index from a collection of local PDF files. Each PDF is converted to markdown, split into ~2000-character chunks, and written as documents to an asta-documents YAML index — enabling semantic search across the full text of the collection.
 
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.17.1
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
-
 ## Assets
 
 This skill includes standalone scripts in the `assets/` directory:

@@ -22,8 +22,10 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 INIT_FILE = PROJECT_ROOT / "src" / "asta" / "__init__.py"
 PYPROJECT_FILE = PROJECT_ROOT / "pyproject.toml"
 MARKETPLACE_FILE = PROJECT_ROOT / ".claude-plugin" / "marketplace.json"
-SKILLS_DIR = PROJECT_ROOT / "skills"
-HOOK_FILE = PROJECT_ROOT / "hooks" / "sync-cli-version.sh"
+HOOK_FILE = PROJECT_ROOT / "plugins" / "asta-preview" / "hooks" / "sync-cli-version.sh"
+ASTA_CLI_SKILL_FILE = (
+    PROJECT_ROOT / "plugins" / "asta-preview" / "skills" / "asta-cli" / "SKILL.md"
+)
 
 
 def get_init_version() -> str:
@@ -50,16 +52,6 @@ def get_marketplace_versions() -> dict[str, str]:
     return {p["name"]: p["version"] for p in data["plugins"]}
 
 
-def get_skills_versions() -> list[str]:
-    """Read all PLUGIN_VERSION values from skills/*/SKILL.md files."""
-    versions = set()
-    for skill_file in SKILLS_DIR.glob("*/SKILL.md"):
-        content = skill_file.read_text()
-        matches = re.findall(r"PLUGIN_VERSION=([0-9.]+)", content)
-        versions.update(matches)
-    return sorted(versions)
-
-
 def get_hook_version() -> str:
     """Read PLUGIN_VERSION from hooks/sync-cli-version.sh."""
     content = HOOK_FILE.read_text()
@@ -67,6 +59,12 @@ def get_hook_version() -> str:
     if not match:
         raise ValueError("Could not find PLUGIN_VERSION in sync-cli-version.sh")
     return match.group(1)
+
+
+def get_asta_cli_skill_versions() -> list[str]:
+    """Read all PLUGIN_VERSION values from the asta-cli skill SKILL.md."""
+    content = ASTA_CLI_SKILL_FILE.read_text()
+    return sorted(set(re.findall(r"PLUGIN_VERSION=([0-9.]+)", content)))
 
 
 def check_version_consistency() -> bool:
@@ -78,8 +76,8 @@ def check_version_consistency() -> bool:
     init_version = get_init_version()
     pyproject_version = get_pyproject_version()
     marketplace_versions = get_marketplace_versions()
-    skills_versions = get_skills_versions()
     hook_version = get_hook_version()
+    asta_cli_skill_versions = get_asta_cli_skill_versions()
 
     mismatch = False
 
@@ -92,12 +90,12 @@ def check_version_consistency() -> bool:
         if version != init_version:
             mismatch = True
 
-    # Check skills files
-    if len(skills_versions) != 1 or skills_versions[0] != init_version:
-        mismatch = True
-
     # Check hook file
     if hook_version != init_version:
+        mismatch = True
+
+    # Check asta-cli skill
+    if len(asta_cli_skill_versions) != 1 or asta_cli_skill_versions[0] != init_version:
         mismatch = True
 
     if mismatch:
@@ -107,8 +105,10 @@ def check_version_consistency() -> bool:
         for name, version in marketplace_versions.items():
             label = f"  marketplace.json ({name}):"
             print(f"{label:<39}{version}")
-        print(f"  skills/*/SKILL.md:               {', '.join(skills_versions)}")
         print(f"  hooks/sync-cli-version.sh:       {hook_version}")
+        print(
+            f"  skills/asta-cli/SKILL.md:        {', '.join(asta_cli_skill_versions)}"
+        )
         print()
         print("Run 'make set-version VERSION=x.y.z' to sync versions")
         return False
@@ -167,15 +167,6 @@ def set_version(new_version: str) -> bool:
         plugin["version"] = new_version
     MARKETPLACE_FILE.write_text(json.dumps(data, indent=2) + "\n")
 
-    # Update skill installation sections
-    print("Updating skill installation sections...")
-    for skill_file in SKILLS_DIR.glob("*/SKILL.md"):
-        content = skill_file.read_text()
-        content = re.sub(
-            r"PLUGIN_VERSION=\d+\.\d+\.\d+", f"PLUGIN_VERSION={new_version}", content
-        )
-        skill_file.write_text(content)
-
     # Update sync-version hook
     print("Updating sync-version hook...")
     content = HOOK_FILE.read_text()
@@ -183,6 +174,14 @@ def set_version(new_version: str) -> bool:
         r"PLUGIN_VERSION=\d+\.\d+\.\d+", f"PLUGIN_VERSION={new_version}", content
     )
     HOOK_FILE.write_text(content)
+
+    # Update asta-cli skill
+    print("Updating asta-cli skill...")
+    content = ASTA_CLI_SKILL_FILE.read_text()
+    content = re.sub(
+        r"PLUGIN_VERSION=\d+\.\d+\.\d+", f"PLUGIN_VERSION={new_version}", content
+    )
+    ASTA_CLI_SKILL_FILE.write_text(content)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()
