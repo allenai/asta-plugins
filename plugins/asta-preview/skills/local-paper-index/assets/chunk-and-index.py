@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chunk extracted markdown files and write an asta-documents YAML index.
+"""Chunk markdown files and write an asta-documents YAML index.
 
 Writes the index YAML directly (no per-chunk CLI calls), following the same
 schema as asta-documents: version 1.0, documents list with uuid/name/url/
@@ -8,8 +8,20 @@ summary/tags/extra/created_at/modified_at.
 Usage:
     python3 chunk-and-index.py <collection-name> <markdown-dir> --index-path <path>
 
-The --index-path is required. The script computes relative URLs for markdown
-files relative to the directory containing the index file. Files outside that
+The input is always a directory of markdown files, and the indexed document
+*is* that markdown: its ``url`` points at the ``.md`` file. The markdown may be
+authored directly (a corpus of notes, a wiki, an investigation record) or it
+may be extraction output from PDFs.
+
+When the markdown was extracted from PDFs, pass ``--pdf-dir`` pointing at the
+directory of source PDFs. The script then iterates that directory to find the
+PDF that actually corresponds to each ``.md`` file and records a pointer to it
+in ``extra.source_pdf``. When ``--pdf-dir`` is omitted (or no matching PDF is
+found), there is no upstream document and ``extra.source_pdf`` is simply absent
+— ``url`` is the original source.
+
+The --index-path is required. The script computes relative URLs for files
+relative to the directory containing the index file. Files outside that
 directory get absolute file:// URLs.
 
 The markdown-dir can contain either:
@@ -18,12 +30,9 @@ The markdown-dir can contain either:
   - Flat .md files:
       markdown/paper1.md, markdown/paper2.md, ...
 
-The source PDF name is derived from the subdirectory name (if nested) or
-the .md file stem (if flat).
-
-Each PDF is represented by multiple documents in the index. They share
-PDF-level metadata (source_pdf, collection) with per-chunk identifiers
-(chunk_index, total_chunks).
+Each markdown file is represented by multiple documents in the index. They
+share file-level metadata (collection, and source_pdf when applicable) with
+per-chunk identifiers (chunk_index, total_chunks).
 """
 
 import argparse
@@ -80,13 +89,13 @@ def chunk_text(text: str, size: int = CHUNK_SIZE) -> list[tuple[str, int]]:
     return chunks
 
 
-def make_url(md_file: Path, index_dir: Path) -> str:
-    """Compute a URL for a markdown file, relative to the index directory.
+def make_url(path: Path, index_dir: Path) -> str:
+    """Compute a URL for a file, relative to the index directory.
 
     If the file is under the index directory, returns a relative path
     (portable, git-friendly). Otherwise returns an absolute file:// URL.
     """
-    resolved = md_file.resolve()
+    resolved = path.resolve()
     try:
         rel = resolved.relative_to(index_dir)
         return str(rel)
@@ -104,16 +113,39 @@ def load_existing_index(index_path: Path) -> dict:
     return {"version": "1.0", "documents": []}
 
 
-def find_existing_pdfs(documents: list[dict], collection: str) -> set[str]:
-    """Find source_pdf values already in the index for this collection."""
+def find_existing_urls(documents: list[dict], collection: str) -> set[str]:
+    """Find the `url`s already indexed for this collection.
+
+    The url (the markdown file itself) is the canonical identity of an indexed
+    document, so resumability keys on it.
+    """
     seen = set()
     for doc in documents:
-        extra = doc.get("extra", {})
-        if extra.get("collection") == collection:
-            pdf = extra.get("source_pdf", "")
-            if pdf:
-                seen.add(pdf)
+        if doc.get("extra", {}).get("collection") == collection:
+            url = doc.get("url")
+            if url:
+                seen.add(url)
     return seen
+
+
+def build_pdf_index(pdf_dir: Path) -> dict[str, Path]:
+    """Map each PDF's stem to its path, for matching markdown files to sources.
+
+    Iterates the actual PDFs under `pdf_dir` (recursively) rather than
+    synthesizing a filename, so the match reflects what is really on disk.
+    """
+    pdf_index: dict[str, Path] = {}
+    for pdf in sorted(pdf_dir.rglob("*.pdf")):
+        # First writer wins; warn on an ambiguous stem collision.
+        if pdf.stem in pdf_index:
+            print(
+                f"WARNING: multiple PDFs share the stem '{pdf.stem}'; "
+                f"using {pdf_index[pdf.stem]}, ignoring {pdf}",
+                file=sys.stderr,
+            )
+            continue
+        pdf_index[pdf.stem] = pdf
+    return pdf_index
 
 
 def main():
@@ -125,13 +157,22 @@ def main():
     )
     parser.add_argument(
         "markdown_dir",
-        help="Directory containing PDF extraction output (subdirectories with .md + images, or flat .md files)",
+        help="Directory of markdown files (per-PDF subdirectories with .md + images, or flat .md files)",
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
         default=CHUNK_SIZE,
         help="Chunk size in characters (default: 2000)",
+    )
+    parser.add_argument(
+        "--pdf-dir",
+        help=(
+            "Directory of upstream source PDFs (when the markdown was extracted "
+            "from PDFs). The script iterates this directory to find the PDF "
+            "matching each .md file and records a pointer to it in "
+            "extra.source_pdf. Omit it when indexing authored markdown."
+        ),
     )
     parser.add_argument(
         "--index-path",
@@ -148,6 +189,15 @@ def main():
     if not md_dir.exists():
         print(f"Error: markdown directory not found: {md_dir}", file=sys.stderr)
         sys.exit(1)
+
+    pdf_index: dict[str, Path] = {}
+    if args.pdf_dir:
+        pdf_dir = Path(args.pdf_dir)
+        if not pdf_dir.exists():
+            print(f"Error: PDF directory not found: {pdf_dir}", file=sys.stderr)
+            sys.exit(1)
+        pdf_index = build_pdf_index(pdf_dir)
+        print(f"Found {len(pdf_index)} source PDF(s) in {pdf_dir}")
 
     # Find .md files: supports both per-PDF subdirectories (with images) and
     # flat .md files directly in markdown_dir.
@@ -169,63 +219,85 @@ def main():
 
     # Load existing index (preserves previously indexed documents)
     index_data = load_existing_index(index_path)
-    existing_pdfs = find_existing_pdfs(index_data["documents"], collection)
+    existing_urls = find_existing_urls(index_data["documents"], collection)
 
     now = datetime.now(UTC).isoformat()
     new_docs = 0
-    pdfs_processed = 0
-    pdfs_skipped_empty = 0
-    pdfs_skipped_existing = 0
+    docs_processed = 0
+    docs_skipped_empty = 0
+    docs_skipped_existing = 0
 
     for md_file in md_files:
         text = md_file.read_text(encoding="utf-8")
-        # Derive the PDF name: if the .md is in a subdirectory of markdown_dir,
-        # use the subdirectory name (e.g. markdown/paper1/paper1.md -> paper1.pdf).
+        # Derive the basename: if the .md is in a subdirectory of markdown_dir,
+        # use the subdirectory name (e.g. markdown/paper1/paper1.md -> paper1).
         # If flat in markdown_dir, use the file stem.
         if md_file.parent != md_dir:
             basename = md_file.parent.name
         else:
             basename = md_file.stem
-        source_pdf = f"{basename}.pdf"
 
         if not text.strip():
             print(f"  [skip] {basename} (empty)")
-            pdfs_skipped_empty += 1
-            continue
-
-        if source_pdf in existing_pdfs:
-            print(f"  [skip] {basename} (already indexed)")
-            pdfs_skipped_existing += 1
+            docs_skipped_empty += 1
             continue
 
         url = make_url(md_file, index_dir)
+
+        if url in existing_urls:
+            print(f"  [skip] {basename} (already indexed)")
+            docs_skipped_existing += 1
+            continue
+
+        # Resolve the upstream PDF, if any, by matching the basename against the
+        # PDFs actually present in --pdf-dir.
+        source_pdf_url = None
+        if args.pdf_dir:
+            pdf = pdf_index.get(basename)
+            if pdf is not None:
+                source_pdf_url = make_url(pdf, index_dir)
+            else:
+                print(
+                    f"  [warn] {basename}: no matching PDF in --pdf-dir; "
+                    "indexing without source_pdf",
+                    file=sys.stderr,
+                )
+
+        # Documents derived from a PDF keep the legacy `pdf-index` tag so
+        # existing consumers that filter on it still work; raw markdown gets
+        # `md-index`.
+        secondary_tag = "pdf-index" if source_pdf_url else "md-index"
+
         file_size = len(text)
         chunks = chunk_text(text, chunk_size)
 
         for i, (chunk, offset) in enumerate(chunks, 1):
+            extra = {
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "chunk_chars": len(chunk),
+                "chunk_offset": offset,
+                "file_chars": file_size,
+                "collection": collection,
+            }
+            # Present only when there is a real upstream PDF for this markdown.
+            if source_pdf_url:
+                extra["source_pdf"] = source_pdf_url
             doc_entry = {
                 "uuid": generate_uuid(),
                 "name": f"{basename} [chunk {i}/{len(chunks)}]",
                 "mime_type": "text/markdown",
                 "url": url,
                 "summary": chunk,
-                "tags": [collection, "pdf-index"],
+                "tags": [collection, secondary_tag],
                 "created_at": now,
                 "modified_at": now,
-                "extra": {
-                    "source_pdf": source_pdf,
-                    "chunk_index": i,
-                    "total_chunks": len(chunks),
-                    "chunk_chars": len(chunk),
-                    "chunk_offset": offset,
-                    "file_chars": file_size,
-                    "collection": collection,
-                },
+                "extra": extra,
             }
             index_data["documents"].append(doc_entry)
             new_docs += 1
 
-        pdfs_processed += 1
+        docs_processed += 1
         print(f"  [index] {basename} ({len(chunks)} chunks) -> {url}")
 
     # Write index
@@ -236,12 +308,12 @@ def main():
         )
 
     print()
-    print(f"PDFs processed:         {pdfs_processed}")
-    print(f"PDFs skipped (empty):   {pdfs_skipped_empty}")
-    print(f"PDFs skipped (exists):  {pdfs_skipped_existing}")
-    print(f"New documents added:    {new_docs}")
-    print(f"Total documents in idx: {len(index_data['documents'])}")
-    print(f"Index written to:       {index_path}")
+    print(f"Sources processed:       {docs_processed}")
+    print(f"Sources skipped (empty): {docs_skipped_empty}")
+    print(f"Sources skipped (exists):{docs_skipped_existing}")
+    print(f"New documents added:     {new_docs}")
+    print(f"Total documents in idx:  {len(index_data['documents'])}")
+    print(f"Index written to:        {index_path}")
 
 
 if __name__ == "__main__":
