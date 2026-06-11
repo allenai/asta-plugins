@@ -354,6 +354,12 @@ CI enforces that `plugins/asta` stays in sync — PRs fail if someone edits a sk
 3. Run `make build-plugins`
 4. To promote to core later: remove the `metadata.internal` block and rebuild
 
+#### Validating a behavior change
+
+When a change affects what an agent *does* — a routing `description:` or a step it follows — validate it before merging: reproduce the target behavior as an eval case and compare baseline vs. change with a paired eval. Where that behavior can't be fully captured in-sandbox, skip the new case and just run the existing cases it could affect, to catch regressions. The [`improve-skills`](plugins/asta-preview/skills/improve-skills/SKILL.md) skill walks this end to end; use it for any skill change you PR.
+
+Worked examples: [#60](https://github.com/allenai/asta-plugins/pull/60) (description rewrite), [#63](https://github.com/allenai/asta-plugins/pull/63) (new skill + cases), [#67](https://github.com/allenai/asta-plugins/pull/67) (multi-skill fix with ablation).
+
 ### Hooks
 
 Hooks in `hooks/` are bash scripts that can auto-approve tool usage:
