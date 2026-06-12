@@ -1,89 +1,92 @@
 # Workflow: plan
 
-Create or extend the research graph. The single home for "design the next set of typed tasks." Two modes, selected from state:
+Create or extend the research graph. The flow chains live in `assets/schemas.yaml` (`flows`) — plan reads them, it does not hardcode the sequence. Two modes:
 
-- **bootstrap** — no epic exists yet. Create the mission epic and the initial frontier from `mission.md`, per the active template (default `hypothesis_driven_research`).
-- **replan** — an epic exists. Add downstream tasks based on a recently-closed task's output, or on user direction.
+- **bootstrap** — no epic yet: pick a flow and lay its first step(s).
+- **replan** — an epic exists: after a step closes, add the next step(s) in its flow chain.
 
-Always chains to **update-summary** afterward so `summary.md` reflects the new graph.
+Always chains to **update-summary** afterward.
 
 ## Preconditions
 
-- `bd` is installed and `.beads/` is initialized. If not, run **init** first.
-- For **bootstrap**: `mission.md` exists and is non-empty, and `scripts/epic-root.sh` reports `status: none` (no epic yet). If `mission.md` is missing, abort and route the user to **brainstorm** to draft one.
-- For **replan**: `scripts/epic-root.sh` reports `status: found` (an epic exists). If a specific source task was supplied (typically by `execute` chaining into this workflow), it is closed and has a populated `metadata.research_step.output`.
+- `bd` installed and `.beads/` initialized (else run **init**).
+- **bootstrap**: `mission.md` exists; no epic yet (`scripts/epic-root.sh` → `none`).
+- **replan**: an epic exists; either `execute` supplied the closed source task, or the user named what to extend.
 
-## Issue metadata convention
+## Task metadata
 
-Every task issue carries:
+Create task leaves with `scripts/create-task.sh <parent> <task_type> <flow> "<title>" "<brief-description>" [input-id ...]`. It sets `metadata.research_step = {flow, task_type, inputs, output_schema_version, output_json: null, output_markdown: null}` and a **brief one-line `description`** (it rejects a missing, multi-line, or over-long description). `execute` later publishes `output_json` (the structured result) and `output_markdown` (the narrative) via `close-task.sh`; the description is not overwritten. The epic carries `epic_root: true`; group nodes (loops, fan-outs, branches) are epics created with `bd create --parent <parent> -t epic` (no task_type, no description rules). A session may run several flows — the flow is per task, not per epic.
 
-```json
-{
-  "research_step": {
-    "task_type": "<scope|definitions|literature_review|hypothesis|experiment_design|evidence_gathering|auto_discovery|analysis|synthesis>",
-    "inputs": ["bd-xxxx", "bd-yyyy"],
-    "output_schema_version": 1,
-    "output": null
-  }
-}
-```
+## Indentation is the tree
 
-The mission epic additionally carries `epic_root: true`.
+The flow in `assets/schemas.yaml` is an indented outline, and the beads graph you build **is that same outline**: each indentation level in the flow becomes one parent-child level in beads. Build it with `bd create --parent`, walking the flow top-down, so hierarchical ids (`wf`, `wf.1`, `wf.1.1`, …) encode the outline position. There are **no `blocks`/`deps` edges** — ordering is the id order, because you create nodes in the order they run.
 
-## Mode selection
+Reading a flow node:
 
-1. Run `scripts/epic-root.sh`. `status: none` → **bootstrap**.
-2. `status: found` (epic ID on the `id:` line) → **replan**. If the caller named a specific closed task (typical when `execute` chains here), use it as the source. Else, ask the user which closed task to plan around or which subgraph to extend, then proceed.
+- A node with a `chain` is a **step** → a `task` issue tagged with its `task_type`.
+- A node without a `chain` (only child nodes and a `mission`) is a **group** → a non-executable `epic` issue (a flow, a loop, or a fan-out). The keys `mission` and `chain` are never nodes.
+- A `chain` item of the form `{workflow: <flow>, mission: <text>}` expands that node into the named sub-flow's own tree.
+- A **fan-out group** (`replication`, `theory_generation`, `verification`) inserts **one branch level per item**: the group node, then one branch epic per item, then the group's steps repeated under each branch. The group `mission` names what to branch on.
 
-## Bootstrap mode
-
-1. **Verify mission.** Read `mission.md`. If missing or empty, abort and suggest **brainstorm**.
-2. **Create the epic.**
-   ```
-   bd create --type=epic --title="<one-line summary of mission.md>" --description="$(cat mission.md)"
-   bd update <epic-id> --metadata '{"research_step":{"epic_root":true}}'
-   ```
-3. **Create the initial frontier.** The active template's first tasks — the nodes up to its first `foreach` — each a `task` issue with the metadata convention above, taking `task_type` and `inputs` from the node's row. (Default template `hypothesis_driven_research`: `scope` → `definitions` → `literature_review`.)
-4. **Add edges.** `parent-child` from each task to the epic, and `blocks` from each node named in another's `inputs`.
-5. **Report.** Print the epic ID and the created task IDs.
-
-## Replan mode
-
-Read the source task's task_type and output:
+The reproduction flow therefore produces this tree (ids illustrative; `[group]` nodes are epics, leaves are tasks):
 
 ```
-bd show <source-id> --json | jq '.[0].metadata.research_step.task_type'
-bd show <source-id> --json | jq '.[0].metadata.research_step.output'
+wf                      [epic]    <mission>
+ wf.1                   [loop]    reproduction
+  wf.1.1                          data_driven_discovery
+  wf.1.2                          law_extraction
+  wf.1.3                          evidence_gathering
+  wf.1.4                [fan-out] replication            one branch per law
+   wf.1.4.1             [branch]  <law>
+    wf.1.4.1.1                    reproduction_design
+    wf.1.4.1.2                    analysis
+    wf.1.4.1.3                    reproduction_audit
+    wf.1.4.1.4                    reproduce
+   wf.1.4.2             [branch]  <law> …
+  wf.1.5                          reproduction_synthesis
 ```
 
-Find the closed task's node in the active template and create what comes next, taking each new task's `task_type` / `inputs` / `skills` from its row:
+The composed flow nests the same way: `wf.1` data_provenance, `wf.2` reproduction, `wf.3` theorizer, `wf.4` verification (one branch per testable theory), `wf.5` verification_synthesis, `wf.6` gap_synthesis, `wf.7` final_synthesis. Each sub-flow ends in its own synthesis step that emits a report (provenance_report, reproduction_report, theory_report, verification_report); gap_synthesis aggregates their gaps into data_gaps_report and final_synthesis writes the theory-led research_report.
 
-- **Next step:** create the node(s) the diagram points to. Set `inputs` from the row, a `blocks` edge from each, and `parent-child` to the epic.
-- **Foreach:** if the closed node is a `foreach` source, create one copy of the block's tasks per item.
-- **Fan-in:** create a node after a `foreach` only once every copy has closed; block it on those.
-- **Hypotheses** are filled and closed at creation (see below), so also create the step that follows each one — otherwise nothing is left for `execute`. Keep creating whatever just unblocked until the frontier needs an `execute` pass.
-- Stop when the next tasks already exist or the node is a leaf. If a closed `synthesis` lists `output.open_questions`, **stop and ask the user** before creating follow-up `hypothesis` tasks (add a `discovered-from` edge if approved).
+## Ordering and closing (no edges)
 
-If invoked without a source task and the user has not specified what to plan, do not invent work — ask, or stop.
+- **Next task = the open issue with a `task_type` and the smallest id.** Groups (no `task_type`) are never executed.
+- Because you create in execution order, sequential steps sort before later ones; parallel branches (`wf.1.4.1`, `wf.1.4.2`, …) are independent so any order is fine; a fan-in step like `reproduction_synthesis` (`wf.1.5`) is created after its branches, so it sorts last.
+- A group closes when its last child closes — `scripts/close-task.sh` does this automatically, walking up and closing each ancestor whose children are all closed. Never close groups by hand.
 
-### Auto-resolving hypothesis tasks
+## Static vs data-dependent fan-outs
 
-When creating a `hypothesis` from a `literature_review` gap or an `auto_discovery` finding — its claim is already stated, so there's no separate `execute` pass, but it still produces `output.json` and `output.md` on disk like any task:
+- **Static** (`theory_generation` by objective): both branches are known up front → create them together.
+- **Data-dependent** (`replication` per law, `verification` per testable theory): the branch set is known only after the upstream step closes (`law_extraction`, `testability_triage`). Lay only what you can; `execute` closes the upstream step; then replan reads its output and creates the branches under the group. Never pre-create data-dependent branches. For any branch the data cannot support, record why rather than dropping it.
 
-1. Derive the four output fields from the source — the gap text and surrounding `literature_review` output, or the finding (`bd show <source-id> --json | jq '.[0].metadata.research_step.output'`):
-   - `statement` — `H_n: <one-sentence claim>`
-   - `rationale` — why the source implies the claim (for a finding, cite its node id)
-   - `falsifiable_prediction` — what observation would refute it
-   - `expected_evidence` — list of concrete evidence types that would support it
-2. Write `output.json` and `output.md` under `.asta/tasks/<id>/`, then validate: `scripts/validate-output.sh hypothesis <metadata-json-file> .asta/tasks/<id>`.
-3. Persist with `scripts/write-meta.sh` + `bd update <id> --metadata @<path>`, then `bd close <id>`.
+## Gates (replan)
 
-If a gap is too thin to fill these fields without inventing content, **do not auto-resolve** — leave the hypothesis open and surface it to the user. Genuine ambiguity is the one case where a separate `execute` pass is warranted.
+- When `reproduction_design` closes: `feasibility` of `feasible`/`proxy_only` → create `analysis`, `reproduction_audit`, `reproduce` under that branch; `data_unavailable`/`construct_mismatch` → create only `reproduce` (it records the law `outcome: n/a`, `testability: untestable`) plus a `data_acquisition` task under the branch holding the gap. No analysis is created.
+- When `testability_triage` closes: create a `verification` branch only per theory in `testable_theory_ids`; the rest become `next_steps` in the final report.
+
+## Bootstrap
+
+1. Read `mission.md`. **Pick a flow** from `flows` that fits it (or compose your own chain of `tasks`); ask the user if it's unclear.
+2. `bd create -t epic` the root from the mission, tagged `epic_root: true` + the flow. Create each loop/group epic with `bd create --parent <its parent>` as you reach it, so the id hierarchy matches the flow's indentation.
+3. **Create the frontier — and only the frontier.** Lay the flow's first step(s) with `scripts/create-task.sh <group> <task_type> <flow> "<title>" "<brief-description>" [input-id ...]` (a brief one-line description is required). **No edges.** Do not pre-create downstream steps or data-dependent branches; replan adds them once their inputs close.
+4. Report the epic id, the flow, the loop/group ids, and the frontier task ids.
+
+## Replan
+
+When a step closes, create the next node(s) under their parent, in flow order:
+
+- Create each step with `create-task.sh` (its `inputs` are the upstream issue ids it reads, for `execute`'s input-gathering — not for scheduling).
+- A fan-out group: `bd create --parent <group> -t epic` one branch epic per item, then the group's steps under each via `create-task.sh` (record why for any branch the data can't support, rather than skipping it).
+- Apply the **Gates** rules above.
+- The closing synthesis of a sub-flow (`provenance_synthesis`, `reproduction_synthesis`, `theory_synthesis`, `verification_synthesis`) is created after its branches, so it sorts last; `gap_synthesis` and `final_synthesis` sort after all sub-flows. These are distinct task types, each with its own report output shape (provenance_report, reproduction_report, theory_report, verification_report, data_gaps_report, research_report).
+
+Stop at the end of the flow. If the closed step has nothing downstream, report no-op.
 
 ## After either mode
 
-Hand off to **update-summary** so `summary.md` reflects the new state.
+Hand off to **update-summary**. There are no edges to verify — the parent-child tree is the whole structure.
 
-## Not here
+## Out of scope
 
-Running tasks → **execute**. Setup → **init**. Editing `mission.md` → **brainstorm**. Output quality isn't checked here.
+- Running tasks or producing outputs (**execute**).
+- Environment setup (**init**); editing `mission.md` (**brainstorm**); judging output quality.

@@ -25,7 +25,7 @@ If `has_epic`, hand off to **update-summary** before anything else so `summary.m
 Pick the branch that matches; do not run more than one.
 
 - **No `mission.md`** → help the user draft one.
-  Engage in a short Socratic exchange. Useful prompts: the research question, why it matters, what success looks like, what's already known, what's explicitly out of scope. When you have enough, propose a draft, get confirmation, and write `mission.md`. Then offer to run **init**.
+  Engage in a short Socratic exchange. Useful prompts: the research question, why it matters, what success looks like, what's already known, what's explicitly out of scope. Also settle the **flow(s)** from `assets/schemas.yaml` (each flow's purpose is in its `mission` field): `theorizer`, `reproduction`, `hypothesis_driven_research`, or a custom chain of tasks. A session may run more than one. Record the chosen flow(s) in `mission.md` so `plan` can read them. When you have enough, propose a draft, get confirmation, and write `mission.md`. Then offer to run **init**.
 
 - **`mission.md` exists, no epic** → recap the mission, check whether the user wants to refine it, then offer to run **init** to bootstrap the research session.
 
@@ -41,10 +41,10 @@ Pick the branch that matches; do not run more than one.
 
 | Need | Query                                                                                                  |
 |---|--------------------------------------------------------------------------------------------------------|
-| Single issue's full `metadata.research_step.output` | `bd show <id> --json`                                                                                  |
-| Full open-issue metadata (rare; usually the digest covers it) | `bd list`                                                                                              |
-| Dependency structure | `bd dep tree <epic-id> --direction up`|
-| Long-form notes from an evidence_gathering task | follow `metadata.research_step.output.summary_path` referenced from the digest                         |
+| Single issue's full output (`output_json` + `output_markdown`) | `bd show <id> --json` |
+| Full open-issue metadata (rare; usually the digest covers it) | `bd list` |
+| Task tree | `bd list --json` — ids encode the parent-child outline |
+| Long-form notes from an evidence_gathering task | follow `metadata.research_step.output_json.summary_path` referenced from the digest |
 | Exact `verdict` / `confidence` for a hypothesis | `bd show <analysis-id> --json` (digest reports the verdict, not the confidence number)                 |
 
 Rule of thumb: if you can answer from `summary.md`, do. If the user asks for a specific number, file path, or verbatim output that the digest abstracts, then fetch it from `bd`.

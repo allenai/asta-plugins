@@ -15,11 +15,10 @@ Regenerate `summary.md` from beads. Idempotent and safe to run anytime. This is 
    - **`status: no-tools`** — `bd` or `jq` is not on PATH. Abort and tell the user to run `init` (which installs both).
 
 2. **Locate the epic.** `epic_id=$(scripts/epic-root.sh | sed -n 's/^id: //p')`.
-3. **Gather state inline.** All you need to fill the template comes from a few `bd` queries:
-   - `bd list --json` for the full tree (issue_count, status partition).
-   - `bd ready --json` for the ready list (also drives the Next Steps section).
-   - `bd blocked --json` for the blocked count.
-   Project each list to `{id, task_type: .metadata.research_step.task_type, title}` with `jq` and partition by `.status`.
+3. **Gather state inline.** Everything comes from `bd list --json`:
+   - the full tree (issue_count, status partition);
+   - the **open issues that have a `task_type`, sorted by id** — the first is the next task, the rest are the queue. This replaces `bd ready`; there are no edges, so id order is the ordering signal.
+   Project to `{id, task_type: .metadata.research_step.task_type, title}` and partition by `.status`.
 4. **Get the timestamp.** `generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 5. **Overwrite `summary.md`** using this template:
 
@@ -61,13 +60,12 @@ Regenerate `summary.md` from beads. Idempotent and safe to run anytime. This is 
    ## Status
    - Closed: <n>
    - In progress: <n> — IDs: <list>
-   - Ready: <n> — IDs: <list>
-   - Blocked: <n>
+   - Open tasks: <n> — next: <smallest-id>; queue: <list of remaining open task ids>
 
    ### Next Steps
-   <from `bd ready --json`: one bullet per ready issue, formatted as
+   <the open task-type issues sorted by id; lead with the next (smallest id), one bullet each:
    "- <bd-id> [<task_type>]: <title> — <one-line summary of the action this task will take>".
-   If `bd ready` is empty, write "No ready tasks — graph is blocked or complete.">
+   If there are no open task issues, write "No open tasks — flow complete.">
    ```
 
 6. **Report.** Print whether the file was rewritten and the snapshot hash. (The "already fresh" case exited at step 1.)
@@ -79,4 +77,4 @@ Any reader (human or agent) checks freshness by running `scripts/summary-check.s
 ## Out of scope for this workflow
 
 - Mutating beads. `update-summary` is read-only against `.beads/`.
-- Re-planning. Even if `bd ready` is empty and the graph is incomplete, `update-summary` does not create issues.
+- Re-planning. Even if no open tasks remain and the graph is incomplete, `update-summary` does not create issues.
