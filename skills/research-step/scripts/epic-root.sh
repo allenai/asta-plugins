@@ -33,7 +33,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 3
 fi
 
-ids=$(bd list --json | jq -r '.[] | select(.metadata.research_step.epic_root == true) | .id')
+ids=$(bd list --json --limit 0 | jq -r '.[] | select(.metadata.research_step.epic_root == true) | .id')
 count=$(printf '%s' "$ids" | grep -c . || true)
 
 case "$count" in

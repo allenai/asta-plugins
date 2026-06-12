@@ -23,10 +23,10 @@ The flow in `assets/schemas.yaml` is an indented outline, and the beads graph yo
 
 Reading a flow node:
 
-- A node with a `chain` is a **step** → a `task` issue tagged with its `task_type`.
-- A node without a `chain` (only child nodes and a `mission`) is a **group** → a non-executable `epic` issue (a flow, a loop, or a fan-out). The keys `mission` and `chain` are never nodes.
+- A node with a `chain` is a **step** → a `task` issue tagged with its `task_type`. Its `input:` names the upstream steps in this session whose issues you wire as the task's `inputs` (the same task type takes different inputs in different flows, so inputs live on the step, not the task).
+- A node without a `chain` (only child nodes and a `mission`) is a **group** → a non-executable `epic` issue (a flow, a loop, or a fan-out). The keys `mission`, `input`, and `chain` are never nodes.
 - A `chain` item of the form `{workflow: <flow>, mission: <text>}` expands that node into the named sub-flow's own tree.
-- A **fan-out group** (`replication`, `theory_generation`, `verification`) inserts **one branch level per item**: the group node, then one branch epic per item, then the group's steps repeated under each branch. The group `mission` names what to branch on.
+- A **fan-out group** (`replication`, `theory_generation`, `verification`, `testing`) inserts **one branch level per item**: the group node, then one branch epic per item, then the group's steps repeated under each branch. The group `mission` names what to branch on.
 
 The reproduction flow therefore produces this tree (ids illustrative; `[group]` nodes are epics, leaves are tasks):
 
@@ -38,10 +38,10 @@ wf                      [epic]    <mission>
   wf.1.3                          evidence_gathering
   wf.1.4                [fan-out] replication            one branch per law
    wf.1.4.1             [branch]  <law>
-    wf.1.4.1.1                    reproduction_design
+    wf.1.4.1.1                    experiment_design
     wf.1.4.1.2                    analysis
-    wf.1.4.1.3                    reproduction_audit
-    wf.1.4.1.4                    reproduce
+    wf.1.4.1.3                    audit
+    wf.1.4.1.4                    adjudicate
    wf.1.4.2             [branch]  <law> …
   wf.1.5                          reproduction_synthesis
 ```
@@ -50,35 +50,37 @@ The composed flow nests the same way: `wf.1` data_provenance, `wf.2` reproductio
 
 ## Ordering and closing (no edges)
 
-- **Next task = the open issue with a `task_type` and the smallest id.** Groups (no `task_type`) are never executed.
+- **Next task = the `next:` line of `scripts/next-task.sh`** (open issues with a `task_type`, **numerically** sorted by hierarchical id — `wf.1.2` before `wf.1.10`). Groups (no `task_type`) are never executed. `execute` and `update-summary` both use this script, so they never disagree about what runs next.
 - Because you create in execution order, sequential steps sort before later ones; parallel branches (`wf.1.4.1`, `wf.1.4.2`, …) are independent so any order is fine; a fan-in step like `reproduction_synthesis` (`wf.1.5`) is created after its branches, so it sorts last.
-- A group closes when its last child closes — `scripts/close-task.sh` does this automatically, walking up and closing each ancestor whose children are all closed. Never close groups by hand.
+- A group closes when its last child closes — `scripts/close-task.sh` does this automatically, walking up and closing each ancestor whose children are all closed. It never closes the **epic root**: "root open, no open tasks" is the session-complete state. Never close groups by hand.
 
 ## Static vs data-dependent fan-outs
 
 - **Static** (`theory_generation` by objective): both branches are known up front → create them together.
-- **Data-dependent** (`replication` per law, `verification` per testable theory): the branch set is known only after the upstream step closes (`law_extraction`, `testability_triage`). Lay only what you can; `execute` closes the upstream step; then replan reads its output and creates the branches under the group. Never pre-create data-dependent branches. For any branch the data cannot support, record why rather than dropping it.
+- **Data-dependent** (`replication` per law, `verification` per testable theory, `testing` per hypothesis): the branch set is known only after the upstream step closes (`law_extraction`, `testability_triage`, `hypothesis_formation`). Lay only what you can; `execute` closes the upstream step; then replan reads its output and creates the branches under the group. Never pre-create data-dependent branches. For any branch the data cannot support, record why rather than dropping it.
 
 ## Gates (replan)
 
-- When `reproduction_design` closes: `feasibility` of `feasible`/`proxy_only` → create `analysis`, `reproduction_audit`, `reproduce` under that branch; `data_unavailable`/`construct_mismatch` → create only `reproduce` (it records the law `outcome: n/a`, `testability: untestable`) plus a `data_acquisition` task under the branch holding the gap. No analysis is created.
+- When `experiment_design` closes (a `replication` or `testing` branch): `feasibility` of `feasible`/`proxy_only` → create the branch's remaining steps — in `testing`, also `data_acquisition` when the design names data not yet in hand — i.e. `[data_acquisition,] analysis`, `audit`, `adjudicate`; `data_unavailable`/`construct_mismatch` → create only `adjudicate` (it records `outcome: n/a`, `testability: untestable`) plus a `data_acquisition` task under the branch holding the gap. No analysis is created.
 - When `testability_triage` closes: create a `verification` branch only per theory in `testable_theory_ids`; the rest become `next_steps` in the final report.
+- When `hypothesis_formation` closes: create one `testing` branch per hypothesis.
 
 ## Bootstrap
 
 1. Read `mission.md`. **Pick a flow** from `flows` that fits it (or compose your own chain of `tasks`); ask the user if it's unclear.
-2. `bd create -t epic` the root from the mission, tagged `epic_root: true` + the flow. Create each loop/group epic with `bd create --parent <its parent>` as you reach it, so the id hierarchy matches the flow's indentation.
-3. **Create the frontier — and only the frontier.** Lay the flow's first step(s) with `scripts/create-task.sh <group> <task_type> <flow> "<title>" "<brief-description>" [input-id ...]` (a brief one-line description is required). **No edges.** Do not pre-create downstream steps or data-dependent branches; replan adds them once their inputs close.
-4. Report the epic id, the flow, the loop/group ids, and the frontier task ids.
+2. **Resolve the session config.** Start from the `config:` defaults in `assets/schemas.yaml`; apply any overrides from a `## Config` section in `mission.md` (one `key: value` line each; unknown keys are an error — surface them). The resolved map is pinned in the next step and never re-resolved mid-session.
+3. `bd create -t epic` the root from the mission, tagged with metadata `{"research_step": {"epic_root": true, "flow": "<flow>", "config": {<resolved config>}}}`. Create each loop/group epic with `bd create --parent <its parent>` as you reach it, so the id hierarchy matches the flow's indentation.
+4. **Create the frontier — and only the frontier.** Lay the flow's first step(s) with `scripts/create-task.sh <group> <task_type> <flow> "<title>" "<brief-description>" [input-id ...]` (a brief one-line description is required). **No edges.** Do not pre-create downstream steps or data-dependent branches; replan adds them once their inputs close.
+5. Report the epic id, the flow, the resolved config, the loop/group ids, and the frontier task ids.
 
 ## Replan
 
 When a step closes, create the next node(s) under their parent, in flow order:
 
-- Create each step with `create-task.sh` (its `inputs` are the upstream issue ids it reads, for `execute`'s input-gathering — not for scheduling).
-- A fan-out group: `bd create --parent <group> -t epic` one branch epic per item, then the group's steps under each via `create-task.sh` (record why for any branch the data can't support, rather than skipping it).
-- Apply the **Gates** rules above.
-- The closing synthesis of a sub-flow (`provenance_synthesis`, `reproduction_synthesis`, `theory_synthesis`, `verification_synthesis`) is created after its branches, so it sorts last; `gap_synthesis` and `final_synthesis` sort after all sub-flows. These are distinct task types, each with its own report output shape (provenance_report, reproduction_report, theory_report, verification_report, data_gaps_report, research_report).
+- Create each step with `create-task.sh`. Its `inputs` are the upstream issue ids it reads, for `execute`'s input-gathering — not for scheduling; the step's `input:` list in `schemas.yaml` names **which** upstream steps to wire.
+- A fan-out group: `bd create --parent <group> -t epic` one branch epic per item, then the branch steps under each via `create-task.sh` — **but a gated group lays only the steps up to its gate**: under a `replication` or `testing` branch create only `experiment_design`; the Gate below creates the rest when it closes. Ungated branches (`verification`: analysis, audit, adjudicate; `theory_generation`: theory_formation) get all their steps at branch creation. Record why for any branch the data can't support, rather than skipping it.
+- Apply the **Gates** rules above — they are the only creator of post-gate steps, so nothing is double-created.
+- The closing synthesis of a sub-flow (`provenance_synthesis`, `reproduction_synthesis`, `theory_synthesis`, `verification_synthesis`, `hypothesis_synthesis`, `discovery_synthesis`) is created after its branches, so it sorts last; `gap_synthesis` and `final_synthesis` sort after all sub-flows. These are distinct task types, each with its own report output shape.
 
 Stop at the end of the flow. If the closed step has nothing downstream, report no-op.
 

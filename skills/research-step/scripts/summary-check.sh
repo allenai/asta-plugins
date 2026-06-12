@@ -30,7 +30,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 3
 fi
 
-current=$(bd list --json \
+current=$(bd list --json --limit 0 \
   | jq -r '.[] | select(.status != "closed") | .id' \
   | sort \
   | shasum -a 256 \

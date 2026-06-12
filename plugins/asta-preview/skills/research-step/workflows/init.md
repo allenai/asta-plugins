@@ -1,6 +1,6 @@
 # Workflow: init
 
-Bootstrap the environment for a research session: install `bd` and `jq`, run `bd init`, wire beads to the project's git remote for cross-machine sync, and verify the staleness check works. This is the only workflow that may install or configure tools; `plan`, `update-summary`, and `execute` assume the environment is ready.
+Bootstrap the environment for a research session: install `bd`, `jq`, PyYAML, and jsonschema, run `bd init`, wire beads to the project's git remote for cross-machine sync, and verify the staleness check works. This is the only workflow that may install or configure tools; `plan`, `update-summary`, and `execute` assume the environment is ready.
 
 After environment setup, hand off to **plan** to bootstrap the mission epic and initial frontier.
 
@@ -32,12 +32,16 @@ Server mode (`bd init --server`) is out of scope: it requires running a Dolt sql
    - If no Dolt refs exist on the remote, surface the situation to the user with three options: (a) `bd import .beads/issues.jsonl` (fast, but discards Dolt history and any state newer than the export), (b) configure a Dolt remote and `bd dolt push` from another machine that has the live DB, then retry, (c) abort.
    - Pick one path only after explicit user confirmation. Never auto-import.
 
-4. **Verify the staleness check works.**
+4. **Ensure `python3` can import `yaml` (PyYAML) and `jsonschema`.** `scripts/task-output-keys.sh` (used by `create-task.sh` and `validate-output.sh`) parses `assets/schemas.yaml` with PyYAML; `validate-output.sh` deep-validates each task's `output_json` against the compiled schemas in `assets/compiled/` with jsonschema, and hard-fails (exit 5) without it.
+   - Probe with `python3 -c 'import yaml, jsonschema'`. If it succeeds, skip.
+   - Otherwise install what's missing: `python3 -m pip install --user pyyaml jsonschema` (or the platform equivalent, e.g. `apt-get install python3-yaml python3-jsonschema`). Re-probe; if it still fails, abort and ask the user.
+
+5. **Verify the staleness check works.**
    - Run `scripts/summary-check.sh`. It hashes the sorted IDs of currently-open issues and compares against `summary.md`'s frontmatter. Backend-agnostic — beads can use whichever storage it likes.
    - Requires `jq` on PATH; if missing, install it (`brew install jq`, `apt-get install jq`, etc.) and retry.
    - At init time `summary.md` does not yet exist, so the script will print `status: missing` and exit 1 — that's fine; **update-summary** will create the file later. `status: no-tools` (exit 3) means abort and ask the user.
 
-5. **Hand off to plan.** Per the router's chaining rule, run the **plan** workflow next. It will detect that no epic exists yet and bootstrap one from `mission.md`. If `mission.md` is missing, **plan** will route the user back to **brainstorm**.
+6. **Hand off to plan.** Per the router's chaining rule, run the **plan** workflow next. It will detect that no epic exists yet and bootstrap one from `mission.md`. If `mission.md` is missing, **plan** will route the user back to **brainstorm**.
 
 ## Cross-machine transfer
 
