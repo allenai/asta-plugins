@@ -17,7 +17,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Read|Write|Edit",
+        "matcher": "Read|Write|Edit|Bash",
         "hooks": [
           {
             "type": "command",
@@ -31,6 +31,10 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/approve-asta-bash.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/approve-bd-bash.sh"
           }
         ]
       }
