@@ -111,22 +111,24 @@ The script:
 ### Step 3: Chunk and build index
 
 ```bash
-uv run --with pyyaml python3 /path/to/assets/chunk-and-index.py "$COLLECTION" "$MARKDOWN_DIR" --index-path "$INDEX_PATH"
+uv run --with pyyaml python3 /path/to/assets/chunk-and-index.py "$COLLECTION" "$MARKDOWN_DIR" --index-path "$INDEX_PATH" --pdf-dir "$PDF_DIR"
 ```
 
 The `--index-path` argument is **required**. The script:
-- Computes paths relative to the index file's directory, storing **relative paths** in the `url` field — making the index portable across machines
+- Computes paths relative to the index file's directory, storing **relative paths** in the `url` field — making the index portable across machines. The indexed document *is* the markdown: its `url` points at the `.md` file.
 - Reads each markdown file, splits into ~2000-char chunks at paragraph/sentence boundaries
 - Writes all documents to the index YAML in a single pass
 - Preserves any existing documents in the index (appends, does not overwrite)
-- Skips PDFs already indexed for this collection (safe to re-run)
+- Skips markdown files already indexed for this collection (resumability keys on `url`; safe to re-run)
+- Resolves the upstream PDF for each `.md` by iterating `--pdf-dir` and matching on basename (the per-PDF subdirectory name, or the flat file stem) — it finds the PDF actually on disk rather than assuming a filename. A `.md` with no matching PDF is indexed without a `source_pdf` and warned about.
 - Each document gets:
-  - **Shared PDF metadata:** `source_pdf`, `collection` (in `extra`)
+  - **Shared metadata (in `extra`):** `collection`, plus `source_pdf` (a relative/`file://` pointer to the upstream PDF) **only when** `--pdf-dir` is given and a matching PDF is found
   - **Per-chunk metadata:** `chunk_index`, `total_chunks`, `chunk_chars`, `chunk_offset`, `file_chars` (in `extra`)
-  - **Tags:** `<collection-name>`, `pdf-index`
+  - **Tags:** `<collection-name>`, plus `pdf-index` for PDF-derived markdown or `md-index` for raw markdown
 
 Options:
 - `--chunk-size 2000` — adjust chunk size (default 2000 chars)
+- `--pdf-dir "$PDF_DIR"` — directory of upstream source PDFs. Omit it when indexing authored markdown (see [Indexing raw markdown](#indexing-raw-markdown-no-pdfs) below).
 
 ### Step 4: Warm the search cache
 
@@ -170,6 +172,31 @@ asta documents --root "$DATASET_ROOT" search --extra=".source_pdf contains some-
 # List all documents in the collection
 asta documents --root "$DATASET_ROOT" list --tags="my-papers"
 ```
+
+## Indexing raw markdown (no PDFs)
+
+If your corpus is **already markdown** (authored `.md` docs, exported notes, an
+investigation record, a wiki), there is nothing to extract — skip Steps 1–2 and
+point the chunker straight at the markdown directory. Just omit `--pdf-dir`:
+
+```bash
+COLLECTION="my-notes"
+MARKDOWN_DIR="/data/notes"            # a tree of .md files (rglob, nested OK)
+INDEX_PATH="/data/notes/index.yaml"
+
+uv run --with pyyaml python3 /path/to/assets/chunk-and-index.py \
+  "$COLLECTION" "$MARKDOWN_DIR" --index-path "$INDEX_PATH"
+
+bash /path/to/assets/warm-cache.sh "$(dirname "$INDEX_PATH")"
+asta documents --root "$(dirname "$INDEX_PATH")" search \
+  --summary="your query" --tags="$COLLECTION" --show-scores
+```
+
+The markdown is the source: each document's `url` points at the `.md`, the
+secondary tag is `md-index`, and `extra.source_pdf` is absent (there is no
+upstream PDF). Chunking, relative-path URLs, and resumability are identical to
+the PDF path — the only difference between the two is whether `extra.source_pdf`
+is present.
 
 ## Storage Estimates
 
