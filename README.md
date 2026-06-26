@@ -2,13 +2,17 @@
 
 Asta is a set of skills for scientific research, usable by local coding agents.
 
-## Skill Installation
+## Installation
 
 ```commandline
-# Any agent (Claude Code, Cursor, Copilot, etc.)
+# Whole plugins (skills + hooks) into your agent's native plugin system.
+# Pick `asta` (core) OR `asta-preview` (all; a superset of `asta` — install one).
+npx plugins add allenai/asta-plugins
+
+# Skills only (loose skill files).
 npx skills add allenai/asta-plugins -g
 
-# Claude Code only
+# Claude Code marketplace (alternative to npx plugins)
 > /plugin marketplace add allenai/asta-plugins
 > /plugin install asta
 ```
@@ -88,15 +92,22 @@ npx skills add /opt/asta-plugins -g --all --yes
 
 ## Research projects (Codespaces / Dev Containers / CI deploy)
 
-The [`workspace`](skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
+The [`workspace`](plugins/asta-preview/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
 
 ## Benchmarking
 
-[`agent-baselines`](https://github.com/allenai/agent-baselines)'s [`inspect-swe`](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe) solver runs Asta skills against any [Inspect](https://inspect.aisi.org.uk/)-compatible eval suite via `-S skills=<path>`.
+[`agent-baselines`](https://github.com/allenai/agent-baselines) solvers (e.g. [`inspect-swe`](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe)) run Asta skills against any [Inspect](https://inspect.aisi.org.uk/)-compatible eval suite via `-S skills=<path>`: [Swapping in local skills](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#swapping-in-local-skills) points it at the canonical `plugins/asta-preview/skills` tree (edit it directly). [Demo](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#demo) is a worked example on [AstaBench](https://github.com/allenai/asta-bench), a scientific research suite for AI agents.
 
-To run a benchmark, see [Demo](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#demo), which runs the [`astabench`](https://github.com/allenai/asta-bench) science-agent suite with default skills. For your own edits, use [Swapping in local skills](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#swapping-in-local-skills) (run `make build-plugins` first, then point at the regenerated tree).
+## Improving skills (or just reporting a problem)
 
-For measuring the effect of a skill change, run a paired comparison via [Comparing two configurations](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#comparing-two-configurations). See [#60](https://github.com/allenai/asta-plugins/pull/60) for a worked example against existing cases, and [#63](https://github.com/allenai/asta-plugins/pull/63) for a worked example of adding new per-skill cases.
+Invoke the [`improve-skills`](plugins/asta-preview/skills/improve-skills/SKILL.md) skill if you:
+
+- Observed an agent doing the wrong thing while using a skill (or not doing what you asked).
+- Want an agent to be able to do something it currently can't (extend a skill, or add a new one).
+
+Hand off at whatever depth you reach: a reported problem, a failing test for a fixer to pick up, or a fix you've validated with a paired eval.
+
+Contributors changing a skill (including regression-checking before merging) follow the same workflow — see [DEVELOPER.md](DEVELOPER.md#validating-a-behavior-change).
 
 ## Development
 

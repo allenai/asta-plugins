@@ -84,6 +84,7 @@ def remote(pdf: str, output: str | None, start_page: int, max_pages: int, images
         headers={"Authorization": f"Bearer {auth_token}"},
         json=request_body,
         timeout=120.0,
+        follow_redirects=True,
     )
 
     if not response.is_success:

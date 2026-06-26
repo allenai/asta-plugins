@@ -1,27 +1,6 @@
----
-name: autodiscovery
-description: Create, configure, and monitor AutoDiscovery runs. Use when the user asks about their runs, experiments, discoveries, wants to check status, or wants to start a new discovery run.
-metadata:
-  internal: true
-allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Read(*) Write(*.json) TaskOutput
----
-# AutoDiscovery
+# Workflow: remote
 
-Create, configure, and monitor AutoDiscovery runs via the `asta autodiscovery` commands. AutoDiscovery is an AI-driven scientific discovery platform that runs iterative experiments guided by Bayesian surprise and MCTS optimization.
-
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.17.1
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
+Create, configure, and monitor AutoDiscovery runs via the hosted service using the `asta autodiscovery` commands. Runs execute on Asta infrastructure and consume credits.
 
 ## Authentication
 
@@ -50,24 +29,8 @@ asta autodiscovery experiments <runid> --format text
 
 Use `--format text` when presenting results directly to the user.
 
-## Interpreting Results
-
-- **Status values**: RUNNING, SUCCEEDED, FAILED, CANCELLED, DELETED, PENDING, UNKNOWN
-- **Surprise**: A normalized surprisal score. Higher = more surprising relative to the prior belief.
-- **Prior/Posterior**: Mean of the prior and posterior belief distributions. A large shift indicates the experiment changed the model's beliefs significantly.
-- **is_surprising**: Boolean flag set when surprise exceeds the configured threshold.
-
-## Presenting Results
-
-When showing results to the user:
-1. Run the appropriate command
-2. Present results in a clean, readable format
-3. Highlight anything notable (surprising experiments, failed runs, etc.)
-4. Offer to drill deeper into specific runs or experiments
-
-When showing experiment details, focus on the hypothesis, analysis, and review fields. Show code and code_output only if specifically asked.
-
----
+## Result Summarization
+See `assets/interpreting-results.md` for instructions on how to report a result back to the uesr
 
 ## Creating Runs
 

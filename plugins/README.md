@@ -1,13 +1,32 @@
-<!-- Generated directory — do not edit directly. Edit skills/ and run: make build-plugins -->
+<!-- asta-preview/ is canonical (edit here). asta/ is generated — do not edit. -->
 
-# Generated Plugin Packages
+# Asta plugins
 
-This directory contains self-contained Claude Code plugin packages generated from `skills/`.
+Two installable plugins, both discoverable via `.claude-plugin/marketplace.json`:
 
-**Do not edit files here.** Edit the canonical skills in `skills/` and rebuild:
+- **`asta-preview/`** — the **canonical source of truth**. Every skill and hook
+  lives here; edit them directly. This is the complete (superset) plugin.
+- **`asta/`** — **generated**. The core subset: skills whose `SKILL.md`
+  frontmatter does *not* set `metadata.internal: true`. Produced from
+  `asta-preview/` by `scripts/build-plugins.sh`. **Do not edit by hand.**
+
+Only the small `asta` subset is duplicated; `asta-preview` is never a copy.
+
+Rebuild `asta/` after editing canonical skills or hooks:
 
 ```bash
 make build-plugins
 ```
 
-CI will fail if these files are out of sync with `skills/`.
+CI fails if `asta/` is out of sync with `asta-preview/`.
+
+## Installing
+
+```bash
+# Claude Code + Codex (whole plugins, native plugin system, auto-updates)
+npx plugins add allenai/asta-plugins        # interactive: pick asta and/or asta-preview
+
+# Any agent (skills only; core vs. all via frontmatter)
+npx skills add allenai/asta-plugins         # core skills
+npx skills add allenai/asta-plugins --all   # all skills incl. preview
+```

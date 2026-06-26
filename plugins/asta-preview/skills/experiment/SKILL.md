@@ -12,20 +12,6 @@ this skill will write and run the necessary software and generate a report on th
 
 This skill can also be used to analyze experimental data and generate a research report from it, even if the experiment itself was not run by Asta. In that case, the user can provide the experimental data as a file input, and Asta will analyze it and generate a report.
 
-## Installation
-
-This skill requires the `asta` CLI:
-
-```bash
-# Install/reinstall at the correct version
-PLUGIN_VERSION=0.17.1
-if [ "$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" != "$PLUGIN_VERSION" ]; then
-  uv tool install --force git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION
-fi
-```
-
-**Prerequisites:** Python 3.11+ and [uv package manager](https://docs.astral.sh/uv/)
-
 ## Environment Variables
 
 `asta experiment` (Panda) reads its model choice and credentials from the environment. These are not exposed as CLI flags, so set them before invoking the skill if you want to override the defaults.
