@@ -42,10 +42,12 @@ plugins/
   asta-tools/                  # Research skills + shared permission hooks
     skills/                    #   every skill definition
     hooks/                     #   permission/session hooks (hooks.json)
+  asta-assistant/              # Autonomous research assistant (research-step)
+    skills/                    #   requires asta-tools to be installed
   asta-dev/                    # Contributor skills (improve-skills, research-challenge)
     skills/                    #   requires asta-tools to be installed
 .claude-plugin/
-  marketplace.json             # Marketplace listing (asta-tools, asta-dev)
+  marketplace.json             # Marketplace listing (asta-tools, asta-assistant, asta-dev)
 ```
 
 ### Design Principles
@@ -135,7 +137,7 @@ twice alongside `--plugin-dir`.
 |---|---|
 | Python files (`src/asta/`) | None — editable install |
 | `pyproject.toml` (new deps/scripts) | `make install` |
-| Skills or hooks (`plugins/asta-tools/`, `plugins/asta-dev/`) | Restart `claude-asta` session to pick up the change. |
+| Skills or hooks (`plugins/asta-tools/`, `plugins/asta-assistant/`, `plugins/asta-dev/`) | Restart `claude-asta` session to pick up the change. |
 
 ### Run Tests
 
@@ -274,10 +276,13 @@ papers = client.get_author_papers("1741101", limit=50)
 
 ### Skill Files
 
-Skills are markdown files in `plugins/<plugin-name>/skills/<skill-name>/SKILL.md`. There are two plugins:
+Skills are markdown files in `plugins/<plugin-name>/skills/<skill-name>/SKILL.md`. There are three plugins:
 
 - **`asta-tools`** — research skills used during normal Asta usage.
-- **`asta-dev`** — contributor skills (`improve-skills`, `research-challenge`). Requires `asta-tools` to be installed first; depends on the `asta` CLI and the hooks shipped in `asta-tools`.
+- **`asta-assistant`** — autonomous research assistant skills (`research-step`). Requires `asta-tools`.
+- **`asta-dev`** — contributor skills (`improve-skills`, `research-challenge`). Requires `asta-tools`.
+
+Plugins beyond `asta-tools` depend on the `asta` CLI and the hooks shipped in `asta-tools`.
 
 ```markdown
 ---
@@ -299,12 +304,12 @@ Instructions and examples...
 |---------|---------|
 | npx **plugins** CLI | `npx plugins add allenai/asta-plugins` |
 | npx **skills** CLI (any agent) | `npx skills add allenai/asta-plugins` |
-| Claude Code marketplace | `/plugin install asta-tools` (and optionally `/plugin install asta-dev`) |
-| Local dev | `claude --plugin-dir plugins/asta-tools --plugin-dir plugins/asta-dev` |
+| Claude Code marketplace | `/plugin install asta-tools` (and optionally `asta-assistant`, `asta-dev`) |
+| Local dev | `claude --plugin-dir plugins/asta-tools --plugin-dir plugins/asta-assistant --plugin-dir plugins/asta-dev` |
 
 **Adding a new skill:**
 
-1. Pick the plugin (`asta-tools` for user-facing research; `asta-dev` for contributor tooling).
+1. Pick the plugin (`asta-tools` for user-facing research; `asta-assistant` for autonomous-research drivers; `asta-dev` for contributor tooling).
 2. Create `plugins/<plugin>/skills/<name>/SKILL.md`
 3. Commit and push.
 

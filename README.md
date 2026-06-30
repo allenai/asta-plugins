@@ -4,10 +4,11 @@ Asta is a set of skills for scientific research, usable by local coding agents.
 
 ## Installation
 
-Two plugins ship from this repo:
+Three plugins ship from this repo:
 
 - **`asta-tools`** — the research skills + permission hooks. Install this one to use Asta.
-- **`asta-dev`** — contributor skills for working on Asta itself (`improve-skills`, `research-challenge`). Requires `asta-tools` to be installed first; its skills depend on the `asta` CLI and the hooks shipped in `asta-tools`.
+- **`asta-assistant`** — autonomous research assistant skills built on top of Asta (`research-step`). Requires `asta-tools`.
+- **`asta-dev`** — contributor skills for working on Asta itself (`improve-skills`, `research-challenge`). Requires `asta-tools`.
 
 ```commandline
 # Whole plugin (skills + hooks) into your agent's native plugin system.
@@ -19,7 +20,8 @@ npx skills add allenai/asta-plugins -g
 # Claude Code marketplace (alternative to npx plugins)
 > /plugin marketplace add allenai/asta-plugins
 > /plugin install asta-tools
-> /plugin install asta-dev      # optional, for contributors
+> /plugin install asta-assistant  # optional, for autonomous research
+> /plugin install asta-dev        # optional, for contributors
 ```
 
 ### Skills (asta-tools)
@@ -30,7 +32,10 @@ npx skills add allenai/asta-plugins -g
 - **Find Literature** - General paper searching and citation finding
 - **Literature Report Generation** - Comprehensive report writing with synthesis
 - **Run Experiment** - Computational experiments with automated report generation
-- **research step** - Autonomous research loop with iterative state tracking
+
+### Skills (asta-assistant)
+
+- **research-step** - Autonomous research loop with iterative state tracking (beads-backed)
 
 ### Skills (asta-dev)
 

@@ -11,7 +11,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 PLUGINS_ROOT = REPO_ROOT / "plugins"
-PLUGIN_NAMES = ("asta-tools", "asta-dev")
+PLUGIN_NAMES = ("asta-tools", "asta-assistant", "asta-dev")
 
 
 def _skill_mds(plugin: str) -> list[Path]:
@@ -64,9 +64,9 @@ class TestSkillSource:
         names = [_skill_name(s) for s in ALL_SKILL_MDS]
         assert len(set(names)) == len(names), "duplicate skill names across plugins"
 
-    def test_at_least_two_skills_per_plugin(self):
+    def test_each_plugin_has_at_least_one_skill(self):
         for plugin, dirs in SKILL_DIRS_BY_PLUGIN.items():
-            assert len(dirs) >= 2, f"{plugin}: only {len(dirs)} skills"
+            assert len(dirs) >= 1, f"{plugin}: no skills"
 
 
 class TestPluginLayout:

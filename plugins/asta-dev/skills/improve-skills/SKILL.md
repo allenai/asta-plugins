@@ -78,7 +78,7 @@ From the baseline transcript, hypothesize why the skill(s) produce the gap and w
 git -C "$DEV_ROOT/asta-plugins" worktree add "$DEV_ROOT/asta-plugins-<pr-branch>" -b <pr-branch>
 ```
 
-Then, in `$DEV_ROOT/asta-plugins-<pr-branch>`, edit existing skill(s) or add a new one under `plugins/asta-tools/skills/<name>/` (user-facing skills) or `plugins/asta-dev/skills/<name>/` (contributor skills) — edit them directly. Fixes may span multiple skills. Commit and push:
+Then, in `$DEV_ROOT/asta-plugins-<pr-branch>`, edit existing skill(s) or add a new one under `plugins/asta-tools/skills/<name>/` (user-facing skills), `plugins/asta-assistant/skills/<name>/` (autonomous-research drivers), or `plugins/asta-dev/skills/<name>/` (contributor skills) — edit them directly. Fixes may span multiple skills. Commit and push:
 
 ```bash
 cd "$DEV_ROOT/asta-plugins-<pr-branch>"
