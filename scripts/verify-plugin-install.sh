@@ -61,7 +61,7 @@ count_installed_skills() {
 }
 
 fail=0
-for plugin in asta-tools; do
+for plugin in asta-tools asta-dev; do
   expect="$(expected_count "$plugin")"
   got="$(count_installed_skills "$plugin")"
   if [ "$got" = "$expect" ]; then
@@ -70,13 +70,15 @@ for plugin in asta-tools; do
     echo "  ✗ $plugin: expected $expect skills, found $got" >&2
     fail=1
   fi
-  # Hooks ship with the plugin — confirm hooks.json landed in the install too.
-  hooks_json="$(find "$CACHE" -type f -path "*/$plugin/*/hooks/hooks.json" -print -quit 2>/dev/null || true)"
-  if [ -n "$hooks_json" ]; then
-    echo "  ✓ $plugin: hooks installed"
-  else
-    echo "  ✗ $plugin: hooks.json missing" >&2
-    fail=1
+  # Only check hooks for plugins that ship them in source.
+  if [ -d "$REPO_ROOT/plugins/$plugin/hooks" ]; then
+    hooks_json="$(find "$CACHE" -type f -path "*/$plugin/*/hooks/hooks.json" -print -quit 2>/dev/null || true)"
+    if [ -n "$hooks_json" ]; then
+      echo "  ✓ $plugin: hooks installed"
+    else
+      echo "  ✗ $plugin: hooks.json missing" >&2
+      fail=1
+    fi
   fi
 done
 
@@ -92,4 +94,4 @@ if [ "$fail" -ne 0 ]; then
   echo "==> FAILED: plugin install verification for '$TARGET'" >&2
   exit 1
 fi
-echo "==> OK: asta-tools installed into '$TARGET'"
+echo "==> OK: asta-tools + asta-dev installed into '$TARGET'"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate SKILL.md frontmatter against the Agent Skills spec.
 
-Checks every plugins/asta-tools/skills/*/SKILL.md for:
+Checks every plugins/*/skills/*/SKILL.md for:
 - `name`: kebab-case (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`), max 64, matches parent dir
 - `description`: 1-1024 chars, non-empty
 - `allowed-tools`: space-separated string (not a YAML list)
@@ -64,16 +64,17 @@ def validate(skill_md: Path) -> list[str]:
 
 
 def main() -> int:
-    skills_root = REPO_ROOT / "plugins" / "asta-tools" / "skills"
+    plugins_root = REPO_ROOT / "plugins"
+    skill_mds = sorted(plugins_root.glob("*/skills/*/SKILL.md"))
     errors: list[str] = []
-    for skill_md in sorted(skills_root.glob("*/SKILL.md")):
+    for skill_md in skill_mds:
         errors.extend(validate(skill_md))
     if errors:
         for e in errors:
             print(e, file=sys.stderr)
         print(f"\n{len(errors)} validation error(s)", file=sys.stderr)
         return 1
-    print(f"All {len(list(skills_root.glob('*/SKILL.md')))} SKILL.md files valid.")
+    print(f"All {len(skill_mds)} SKILL.md files valid.")
     return 0
 
 

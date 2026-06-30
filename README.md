@@ -4,6 +4,11 @@ Asta is a set of skills for scientific research, usable by local coding agents.
 
 ## Installation
 
+Two plugins ship from this repo:
+
+- **`asta-tools`** — the research skills + permission hooks. Install this one to use Asta.
+- **`asta-dev`** — contributor skills for working on Asta itself (`improve-skills`, `research-challenge`). Requires `asta-tools` to be installed first; its skills depend on the `asta` CLI and the hooks shipped in `asta-tools`.
+
 ```commandline
 # Whole plugin (skills + hooks) into your agent's native plugin system.
 npx plugins add allenai/asta-plugins
@@ -14,9 +19,10 @@ npx skills add allenai/asta-plugins -g
 # Claude Code marketplace (alternative to npx plugins)
 > /plugin marketplace add allenai/asta-plugins
 > /plugin install asta-tools
+> /plugin install asta-dev      # optional, for contributors
 ```
 
-### Skills
+### Skills (asta-tools)
 
 - **Semantic Scholar Lookup** - Quick paper/author lookups and metadata queries
 - **Document Management** - Local document metadata index for tracking and searching papers
@@ -25,6 +31,11 @@ npx skills add allenai/asta-plugins -g
 - **Literature Report Generation** - Comprehensive report writing with synthesis
 - **Run Experiment** - Computational experiments with automated report generation
 - **research step** - Autonomous research loop with iterative state tracking
+
+### Skills (asta-dev)
+
+- **improve-skills** - Report or fix a behavior gap in Asta skills (with paired-eval workflow)
+- **research-challenge** - Summarize a research project and submit to `asta-research-challenge`
 
 Example user requests:
 - "Find papers on RLHF"
@@ -86,7 +97,7 @@ The [`workspace`](plugins/asta-tools/skills/workspace/SKILL.md) skill lets users
 
 ## Improving skills (or just reporting a problem)
 
-Invoke the [`improve-skills`](plugins/asta-tools/skills/improve-skills/SKILL.md) skill if you:
+Invoke the [`improve-skills`](plugins/asta-dev/skills/improve-skills/SKILL.md) skill (from the `asta-dev` plugin) if you:
 
 - Observed an agent doing the wrong thing while using a skill (or not doing what you asked).
 - Want an agent to be able to do something it currently can't (extend a skill, or add a new one).

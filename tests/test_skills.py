@@ -10,8 +10,16 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-PLUGIN = REPO_ROOT / "plugins" / "asta-tools"
-ALL_SKILL_MDS = sorted((PLUGIN / "skills").glob("*/SKILL.md"))
+PLUGINS_ROOT = REPO_ROOT / "plugins"
+PLUGIN_NAMES = ("asta-tools", "asta-dev")
+
+
+def _skill_mds(plugin: str) -> list[Path]:
+    return sorted((PLUGINS_ROOT / plugin / "skills").glob("*/SKILL.md"))
+
+
+def _skill_dirs(plugin: str) -> set[str]:
+    return {s.parent.name for s in _skill_mds(plugin)}
 
 
 def _skill_name(skill_md: Path) -> str:
@@ -20,7 +28,9 @@ def _skill_name(skill_md: Path) -> str:
     return match.group(1).strip()
 
 
-ALL_SKILL_DIRS = {s.parent.name for s in ALL_SKILL_MDS}
+SKILL_DIRS_BY_PLUGIN: dict[str, set[str]] = {p: _skill_dirs(p) for p in PLUGIN_NAMES}
+ALL_SKILL_MDS = [md for p in PLUGIN_NAMES for md in _skill_mds(p)]
+ALL_SKILL_DIRS = set().union(*SKILL_DIRS_BY_PLUGIN.values())
 
 
 def strip_ansi(text: str) -> str:
@@ -48,28 +58,30 @@ def run_skills_cli(
 
 
 class TestSkillSource:
-    """Verify skill definitions in plugins/asta-tools/skills/."""
+    """Verify skill definitions across all plugins."""
 
     def test_all_skills_have_unique_names(self):
-        names = {_skill_name(s) for s in ALL_SKILL_MDS}
-        assert len(names) == len(ALL_SKILL_MDS)
+        names = [_skill_name(s) for s in ALL_SKILL_MDS]
+        assert len(set(names)) == len(names), "duplicate skill names across plugins"
 
-    def test_at_least_two_skills(self):
-        assert len(ALL_SKILL_MDS) >= 2, f"Only {len(ALL_SKILL_MDS)} skills"
+    def test_at_least_two_skills_per_plugin(self):
+        for plugin, dirs in SKILL_DIRS_BY_PLUGIN.items():
+            assert len(dirs) >= 2, f"{plugin}: only {len(dirs)} skills"
 
 
 class TestPluginLayout:
-    """Verify the asta-tools plugin layout."""
+    """Verify each plugin's filesystem layout."""
 
-    def test_asta_tools_has_all_skills(self):
-        plugin_skills = PLUGIN / "skills"
-        assert plugin_skills.is_dir()
-        dirs = {
-            d.name
-            for d in plugin_skills.iterdir()
-            if d.is_dir() and (d / "SKILL.md").exists()
-        }
-        assert dirs == ALL_SKILL_DIRS
+    def test_each_plugin_has_expected_skills(self):
+        for plugin, expected in SKILL_DIRS_BY_PLUGIN.items():
+            plugin_skills = PLUGINS_ROOT / plugin / "skills"
+            assert plugin_skills.is_dir(), f"{plugin}: skills dir missing"
+            dirs = {
+                d.name
+                for d in plugin_skills.iterdir()
+                if d.is_dir() and (d / "SKILL.md").exists()
+            }
+            assert dirs == expected
 
     def test_no_per_plugin_manifests(self):
         """No committed per-plugin manifest in any vendor dir.
@@ -79,17 +91,18 @@ class TestPluginLayout:
         `.plugin/`/`.claude-plugin/`/`.codex-plugin/` plugin.json would be a
         second hand-maintained copy that can drift from it.
         """
-        for vendor in (
-            ".plugin",
-            ".claude-plugin",
-            ".codex-plugin",
-            ".cursor-plugin",
-        ):
-            pj = PLUGIN / vendor / "plugin.json"
-            assert not pj.exists(), (
-                f"Unexpected {pj} — marketplace.json is the only metadata "
-                "source (avoids drift)"
-            )
+        for plugin in PLUGIN_NAMES:
+            for vendor in (
+                ".plugin",
+                ".claude-plugin",
+                ".codex-plugin",
+                ".cursor-plugin",
+            ):
+                pj = PLUGINS_ROOT / plugin / vendor / "plugin.json"
+                assert not pj.exists(), (
+                    f"Unexpected {pj} — marketplace.json is the only metadata "
+                    "source (avoids drift)"
+                )
 
 
 @pytest.mark.skipif(shutil.which("claude") is None, reason="claude not available")
@@ -140,14 +153,15 @@ class TestClaudePluginInstall:
             if d.is_dir() and (d / "SKILL.md").exists()
         }
 
-    def test_asta_tools_plugin_installs_all(self, tmp_home):
-        self._install_plugin(tmp_home, "asta-tools")
-        assert self._plugin_skill_dirs(tmp_home, "asta-tools") == ALL_SKILL_DIRS
+    @pytest.mark.parametrize("plugin", PLUGIN_NAMES)
+    def test_plugin_installs_its_skills(self, tmp_home, plugin):
+        self._install_plugin(tmp_home, plugin)
+        assert self._plugin_skill_dirs(tmp_home, plugin) == SKILL_DIRS_BY_PLUGIN[plugin]
 
 
 @pytest.mark.skipif(shutil.which("npx") is None, reason="npx not available")
 class TestNpxSkillInstallation:
-    """End-to-end: `npx skills add` installs every skill from asta-tools."""
+    """End-to-end: `npx skills add` installs every skill from every plugin."""
 
     def _installed_skill_dirs(self, project_dir: Path) -> set[str]:
         agents_skills = project_dir / ".agents" / "skills"

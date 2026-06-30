@@ -24,6 +24,22 @@
         "semantic-scholar",
         "literature"
       ]
+    },
+    {
+      "name": "asta-dev",
+      "source": "./plugins/asta-dev",
+      "description": "Developer skills for working on Asta itself (improve-skills, research-challenge). Requires the asta-tools plugin to be installed.",
+      "version": "0.19.2",
+      "author": {
+        "name": "Ai2 Asta Team"
+      },
+      "repository": "https://github.com/allenai/asta-plugins",
+      "license": "Apache-2.0",
+      "keywords": [
+        "asta",
+        "development",
+        "contributing"
+      ]
     }
   ]
 }
