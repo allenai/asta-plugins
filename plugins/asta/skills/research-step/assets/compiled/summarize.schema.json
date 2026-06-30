@@ -72,16 +72,57 @@
           "type": "string"
         },
         "elaboration": {
-          "type": "string"
+          "items": {
+            "$ref": "#/$defs/statement"
+          },
+          "type": "array"
         },
         "main_finding": {
-          "type": "string"
+          "$ref": "#/$defs/statement"
         }
       },
       "required": [
         "audience",
         "main_finding",
         "elaboration"
+      ],
+      "type": "object"
+    },
+    "citation_ref": {
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "enum": [
+            "autodiscovery_run",
+            "theorizer_artifact",
+            "datavoyager_run"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
+    },
+    "paragraph": {
+      "additionalProperties": true,
+      "properties": {
+        "sentences": {
+          "items": {
+            "$ref": "#/$defs/statement"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sentences"
       ],
       "type": "object"
     },
@@ -100,11 +141,32 @@
       ],
       "type": "object"
     },
+    "statement": {
+      "additionalProperties": true,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/citation_ref"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
     "summary": {
       "additionalProperties": true,
       "properties": {
         "context": {
-          "type": "string"
+          "items": {
+            "$ref": "#/$defs/paragraph"
+          },
+          "type": "array"
         },
         "discipline": {
           "type": "string"

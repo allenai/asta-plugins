@@ -705,6 +705,51 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         a = known.get(i)
         return f"[{i}](#{a})" if a else str(i)
 
+    # summary citations: a statement cites an AutoDiscovery run / Theorizer / DataVoyager artifact
+    # by an id that must exist in this session's artifacts. cite_map holds only those real ids
+    # (run_id, a2a_task_id, artifactId -> deep-link), so an id the agent invents resolves to
+    # nothing and renders as plain text - no fabricated link ever reaches the reader.
+    cite_tmpl = {**LINK_TEMPLATES, **(link_overrides or {})}
+    cite_map = {}
+    for i in sess.tasks:
+        for a in rs(i)["output_json"].get("artifacts") or []:
+            m = a.get("metadata") or {}
+            ag, url = m.get("agent"), m.get("share_url")
+            if not url and ag == "autodiscovery" and m.get("run_id") and cite_tmpl.get("autodiscovery"):
+                url = cite_tmpl["autodiscovery"].format(run_id=m["run_id"])
+            elif not url and ag in ("theorizer", "datavoyager") and m.get("a2a_task_id") and cite_tmpl.get(ag):
+                url = cite_tmpl[ag].format(task_id=m["a2a_task_id"])
+            if not url:
+                continue
+            for key in (a.get("artifactId"), m.get("run_id"), m.get("a2a_task_id")):
+                if key:
+                    cite_map.setdefault(key, url)
+    cite_default = {"autodiscovery_run": "AutoDiscovery run", "theorizer_artifact": "Theorizer", "datavoyager_run": "DataVoyager run"}
+    dropped = []
+
+    def _stmt(st):
+        st = st or {}
+        marks = []
+        for c in st.get("citations") or []:
+            url = cite_map.get(c.get("ref"))
+            label = c.get("label") or cite_default.get(c.get("kind"), "source")
+            if url and clickable:
+                marks.append(f"[{label}]({url})")
+            else:
+                marks.append(label)
+                if not url and c.get("ref"):
+                    dropped.append(c["ref"])
+        return st.get("text", "") + (f" ({', '.join(marks)})" if marks else "")
+
+    def prose(x):
+        if isinstance(x, dict):                       # a single statement
+            return _stmt(x)
+        if isinstance(x, list) and x and isinstance(x[0], dict) and "sentences" in x[0]:
+            return "\n\n".join(" ".join(_stmt(s) for s in (p.get("sentences") or [])) for p in x)
+        if isinstance(x, list):                       # one paragraph: a list of statements
+            return " ".join(_stmt(s) for s in x)
+        return str(x or "")
+
     # the encyclopedia entry (index, context, per-audience executive summaries) is the front matter
     cover = ""
     ctmpl = REPORT_TMPL / "cover.md.j2"
@@ -712,7 +757,10 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         links = build_links(ctx, sess, link_overrides)
         ai2logo = r"\includegraphics[height=16pt]{" + str(LOGO.parent / "logos" / "ai2.pdf").replace("\\", "/") + "}"
         cover = render.render_template_file(ctmpl, ctx=ctx, links=links, flow=flow_diagram(sess, ctx),
-                                            ai2logo=ai2logo, ref=ref, anchor=anchor, clickable=clickable).strip()
+                                            ai2logo=ai2logo, ref=ref, anchor=anchor, prose=prose, clickable=clickable).strip()
+        if dropped:
+            print("compile-report: summary cited ids not found in session (rendered as plain text): "
+                  + ", ".join(sorted(set(dropped))), file=sys.stderr)
 
     body = []
     for name in SECTIONS:

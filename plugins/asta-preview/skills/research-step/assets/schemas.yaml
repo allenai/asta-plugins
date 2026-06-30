@@ -113,7 +113,7 @@ flows:
   summarize:
     mission: Summarize a completed research session as a self-contained encyclopedia entry. It composes onto any flow, reads the whole session, and names no inputs, so it runs last by id order.
     summarize:
-      mission: From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
+      mission: From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
       input: []
       chain: []
 
@@ -412,6 +412,18 @@ types:
         novelty: novelty
         explanation: string
 
+  citation_ref:                      # a typed pointer to the run/artifact a statement rests on; the compiler builds the deep-link
+    kind: cite_kind                  # autodiscovery_run | theorizer_artifact | datavoyager_run
+    ref: string                      # the id copied verbatim from the session (AutoDiscovery run_id; Theorizer / DataVoyager task id; or artifactId)
+    label?: string                   # optional link text; the compiler uses a default per kind when omitted
+
+  statement:                         # one sentence or clause, with the runs/artifacts it rests on
+    text: string
+    citations?: [citation_ref]       # omit for basic background knowledge
+
+  paragraph:
+    sentences: [statement]
+
   summary:                           # the session's encyclopedia entry; mirrors one encyclopedia.md entry
     title: string                    # rendered "# <title>"
     discipline: string               # the five index fields, printed as the cover index block
@@ -419,13 +431,13 @@ types:
     topic: string
     scientific_question: string
     discovery_type: string           # open string; prefer: New phenomenon | Mechanistic explanation | Mechanistic unification | Predictive law | Causal relationship | New measurement or assay | Classification or taxonomy | Theoretical framework | Computational method | Dataset or resource | Negative result / falsification | Translational application
-    context: string                  # the "Scientific Context" section (markdown)
+    context: [paragraph]             # the "Scientific Context" section, as paragraphs of statements
     summaries: [audience_summary]    # one executive summary per audience; extensible
 
   audience_summary:                  # one "Executive Summary (<label>)" block
     audience: string                 # stored general | technical; rendered "Layperson" | "Expert"
-    main_finding: string             # the "Main Finding" (a bold one-liner)
-    elaboration: string              # the "Elaboration" paragraph
+    main_finding: statement          # the "Main Finding" (a bold one-liner)
+    elaboration: [statement]         # the "Elaboration" paragraph
 
   reflection:                        # the executing agent's feedback on how the session ran; the unit a future compaction pass merges
     session_intent: string           # one line restating what this session set out to do (from mission.md), so the record stands alone when read later
@@ -454,6 +466,7 @@ enums:
   signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated]   # the reproduction signal's reason tag
   friction_kind:         [flow, schema, tool, mission, data]   # what got in the agent's way (reflection)
   severity:              [high, medium, low]                   # how much a friction or proposed change matters (reflection)
+  cite_kind:             [autodiscovery_run, theorizer_artifact, datavoyager_run]   # what a summary statement cites
 
 config:
   n_experiments: 10                # auto-ds experiments per discovery run; set in the run-metadata JSON for `asta autodiscovery metadata`

@@ -97,7 +97,7 @@
           "id": "summarize__summarize",
           "inputs": [],
           "kind": "step",
-          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
           "name": "summarize",
           "parent": "summarize",
           "replan": false,
@@ -624,7 +624,7 @@
           "id": "summarize__summarize",
           "inputs": [],
           "kind": "step",
-          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
           "name": "summarize",
           "parent": "summarize",
           "replan": false,
@@ -921,7 +921,7 @@
           "id": "summarize__summarize",
           "inputs": [],
           "kind": "step",
-          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
           "name": "summarize",
           "parent": "summarize",
           "replan": false,
@@ -1159,7 +1159,7 @@
           "id": "summarize",
           "inputs": [],
           "kind": "step",
-          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "mission": "From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
           "name": "summarize",
           "parent": null,
           "replan": false,
@@ -4786,16 +4786,57 @@
                 "type": "string"
               },
               "elaboration": {
-                "type": "string"
+                "items": {
+                  "$ref": "#/$defs/statement"
+                },
+                "type": "array"
               },
               "main_finding": {
-                "type": "string"
+                "$ref": "#/$defs/statement"
               }
             },
             "required": [
               "audience",
               "main_finding",
               "elaboration"
+            ],
+            "type": "object"
+          },
+          "citation_ref": {
+            "additionalProperties": true,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "autodiscovery_run",
+                  "theorizer_artifact",
+                  "datavoyager_run"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "ref"
+            ],
+            "type": "object"
+          },
+          "paragraph": {
+            "additionalProperties": true,
+            "properties": {
+              "sentences": {
+                "items": {
+                  "$ref": "#/$defs/statement"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "sentences"
             ],
             "type": "object"
           },
@@ -4814,11 +4855,32 @@
             ],
             "type": "object"
           },
+          "statement": {
+            "additionalProperties": true,
+            "properties": {
+              "citations": {
+                "items": {
+                  "$ref": "#/$defs/citation_ref"
+                },
+                "type": "array"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
           "summary": {
             "additionalProperties": true,
             "properties": {
               "context": {
-                "type": "string"
+                "items": {
+                  "$ref": "#/$defs/paragraph"
+                },
+                "type": "array"
               },
               "discipline": {
                 "type": "string"
