@@ -505,9 +505,10 @@ def header_includes(short_title):
         r"\fancypagestyle{plain}{\fancyhf{}\fancyhead[L]{\astalogo}"
         r"\fancyfoot[R]{\footnotesize\color{gray}\thepage}"
         r"\renewcommand{\headrule}{\hbox to\headwidth{\color{ai2pink}\leaders\hrule height 1pt\hfill}}}",
-        # fill pages instead of leaving big ragged gaps; gentle widow/orphan control
+        # ragged bottom so spare space falls to the page foot rather than stretching the
+        # gaps around figures/headings (front-matter pages are bounded by \clearpage instead)
         r"\setlength{\parindent}{0pt}\setlength{\parskip}{0.6em}",
-        r"\flushbottom\widowpenalty=1000\clubpenalty=1000",
+        r"\raggedbottom\widowpenalty=1000\clubpenalty=1000",
     ]
     return lines
 
