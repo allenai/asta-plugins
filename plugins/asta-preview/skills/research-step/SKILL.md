@@ -6,7 +6,9 @@ allowed-tools: Bash(bd:*) Bash(date:*) Bash(scripts/*) Bash(asta:*) Read(assets/
 
 # Research Step
 
-Models a research session as a beads epic. A session runs a **flow** — the composed `data_and_literature_grounded_theory_generation` (which begins with `data_provenance`), its sub-flows `reproduction` and `theorizer`, the standalone `hypothesis_driven_research` flow (literature → falsifiable hypotheses → one prespecified test per hypothesis), the standalone `auto_discovery` flow (source a cohort and run a fresh discovery; run it as its own session in a **separate workspace** — own `mission.md` and `.beads` — typically kicked off after a theory-generation run; a second epic root in the same workspace breaks `scripts/epic-root.sh`), or a custom chain (each flow's purpose is in its `mission` field in `assets/schemas.yaml`). `assets/schemas.yaml` defines the reusable `types` (immutable records — verdicts are `adjudication` records referencing their subject), the `tasks` (pure output contracts mapping each output key to its type), and the `flows` (each step carrying its `mission`, its `input` steps, and its asta `chain`). Each unit of work is a typed sub-issue whose `metadata.research_step.output_json` matches its task's output in the schema; the issue envelope carries `flow` and `task_type`.
+This skill defines and executes a research **flow**: a chain of **tasks**, each of which produces a set of outputs with a defined **type**. Flows, tasks, and types are all declared in `assets/schemas.yaml` — see `assets/README.md` for how to read it (the flow/task/type definitions, the immutable-records contract, the artifacts channel, and what lives in beads vs `.asta/`).
+
+A research session is a beads epic. Each unit of work is a typed sub-issue whose `metadata.research_step.output_json` matches its task's output contract; the issue envelope carries `flow` and `task_type`. The agent authors only `output_json`; the whole-session `report.pdf` is rendered deterministically from the closed tasks by `scripts/compile-report.py` (there is no per-task narrative — the compiled report is the only human-facing view). The available flows are `data_and_literature_grounded_theory_generation` (the composed flow, which begins with `data_provenance` and embeds the `reproduction` and `theorizer` sub-flows), the standalone `hypothesis_driven_research` flow (literature → falsifiable hypotheses → one prespecified test per hypothesis), the standalone `auto_discovery` flow (source a cohort and run a fresh discovery — run it as its own session in a **separate workspace**, own `mission.md` and `.beads`, since a second epic root in one workspace breaks `scripts/epic-root.sh`), or a custom chain. Each flow's purpose is in its `mission` field in `assets/schemas.yaml`.
 
 This skill is a **router**. Inspect the working directory and the user's request, pick one workflow, then read its `.md` file in `workflows/` and follow it. Do not execute a workflow from memory — always open the file first.
 
@@ -35,7 +37,7 @@ Installing `bd` and `jq`, running `bd init`, and verifying `scripts/summary-chec
 | **execute** | Run one ready task end-to-end. Hands off to **plan** when the closed task type unlocks new structure; otherwise to **update-summary**. | `workflows/execute.md` |
 | **update-summary** | Regenerate `summary.md` from beads. Idempotent — no-op when `scripts/summary-check.sh` reports `status: fresh`. | `workflows/update-summary.md` |
 
-Task-type schemas live in `assets/schemas.yaml`.
+Flows, tasks, and types live in `assets/schemas.yaml`; `assets/README.md` explains how to read it.
 
 ## Routing
 

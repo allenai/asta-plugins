@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# close-task.sh <issue-id> <output-json> <output-markdown>
-# Publish a task's output and finish it: write output_json + output_markdown into the issue
-# metadata, validate output_json against the schema, close the issue, assert it closed, then
-# close any ancestor group whose last child just closed.
+# close-task.sh <issue-id> <output-json>
+# Publish a task's output and finish it: the agent writes only output_json; this script
+# writes it into the issue metadata, validates it against the schema, closes the issue, asserts
+# it closed, then closes any ancestor group whose last child just closed. There is no
+# output_markdown — the deterministic session report is the only human-facing view.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-[[ $# -eq 3 ]] || { echo "usage: close-task.sh <issue-id> <output-json> <output-markdown>" >&2; exit 1; }
-id="$1"; oj="$2"; om="$3"
+[[ $# -eq 2 ]] || { echo "usage: close-task.sh <issue-id> <output-json>" >&2; exit 1; }
+id="$1"; oj="$2"
 [[ -f "$oj" ]] || { echo "close-task: no output-json $oj" >&2; exit 1; }
-[[ -f "$om" ]] || { echo "close-task: no output-markdown $om" >&2; exit 1; }
 jq -e . "$oj" >/dev/null 2>&1 || { echo "close-task: $oj is not valid JSON" >&2; exit 1; }
 
-# 1. publish: merge output_json + output_markdown into the existing research_step metadata
-cur="$(bd show "$id" --json | jq -c '.[0].metadata')"
-merged="$(jq -c --slurpfile oj "$oj" --rawfile om "$om" \
-  '.research_step.output_json = $oj[0] | .research_step.output_markdown = $om' <<<"$cur")"
+# 1. publish: merge output_json into the existing research_step metadata
 tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+cur="$(bd show "$id" --json | jq -c '.[0].metadata')"
+merged="$(jq -c --slurpfile oj "$oj" '.research_step.output_json = $oj[0]' <<<"$cur")"
 printf '%s' "$merged" > "$tmp"
 bd update "$id" --metadata @"$tmp" >/dev/null
 

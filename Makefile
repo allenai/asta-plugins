@@ -87,19 +87,20 @@ clean:
 build-plugins:
 	./scripts/build-plugins.sh
 
-# Verify plugins/ matches skills/ (used in CI)
+# Verify plugins/ (and the generated research-step compiled schemas) match skills/ (used in CI)
 check-plugins:
 	@./scripts/build-plugins.sh > /dev/null
-	@if [ -n "$$(git status --porcelain plugins/)" ]; then \
-		echo "Error: plugins/ is out of date or has untracked files. Run 'make build-plugins' and commit."; \
-		git status --short plugins/; \
+	@if [ -n "$$(git status --porcelain plugins/ skills/research-step/assets/compiled/)" ]; then \
+		echo "Error: plugins/ or assets/compiled/ is out of date or has untracked files. Run 'make build-plugins' and commit."; \
+		git status --short plugins/ skills/research-step/assets/compiled/; \
 		exit 1; \
 	fi
 	@echo "plugins/ is up to date"
 
-# Validate every SKILL.md against the Agent Skills spec (used in CI)
+# Validate every SKILL.md against the Agent Skills spec, and research-step's schemas.yaml (used in CI)
 check-skills:
 	@uvx --with pyyaml python scripts/validate-skills.py
+	@uvx --with pyyaml python scripts/compile-schemas.py --check
 
 # Build distribution packages
 build: clean

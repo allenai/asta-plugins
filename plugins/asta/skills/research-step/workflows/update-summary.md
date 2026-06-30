@@ -37,17 +37,13 @@ Regenerate `summary.md` from beads. Idempotent and safe to run anytime. This is 
 
    ## Flow
    <one line per flow this session runs (from task metadata `flow`), with where it
-   stands — e.g. "reproduction — replication branches 2/5 closed, synthesis pending">
+   stands — e.g. "reproduction — replication branches 2/5 closed">>
 
    ## Results so far
-   <one subsection per closed `*_synthesis` task: the report's `headline` plus a link
-   to its `report_path`. Before any synthesis has closed, instead give one bullet per
-   closed task: "<bd-id> [<task_type>]: <one-line outcome from output_json>" — e.g.
-   laws extracted, datasets acquired, theories formed, verdicts finalized.>
-
-   ## Gaps
-   <the `gaps` rows from closed report outputs (item — missing_data — severity),
-   or "none recorded">
+   <one bullet per closed task: a one-line digest of its `output_json` —
+   "<bd-id> [<task_type>]: <what it produced>" — e.g. laws grouped, datasets
+   acquired, theories formed, verdicts finalized. When the session is complete, link
+   to the rendered `report.pdf`.>
 
    ## Status
    - Closed: <n>
@@ -60,7 +56,8 @@ Regenerate `summary.md` from beads. Idempotent and safe to run anytime. This is 
    If next-task.sh prints `next: none`, write "No open tasks — flow complete.">
    ```
 
-6. **Report.** Print whether the file was rewritten and the snapshot hash. (The "already fresh" case exited at step 1.)
+6. **Render the session report when complete.** If `scripts/next-task.sh` prints `next: none` (no open tasks — the flow is done), run `scripts/compile-report.py --render` to deterministically render `report.qmd` → `report.pdf` from the closed tasks' typed outputs. This is the session deliverable; it is generated, not written. If `quarto` is unavailable, run `scripts/compile-report.py` (no `--render`) to still write `report.qmd`, and tell the user to install Quarto + tinytex to produce the PDF. Skip this step while open tasks remain.
+7. **Report.** Print whether the file was rewritten and the snapshot hash. (The "already fresh" case exited at step 1.)
 
 ## Staleness check (for callers)
 

@@ -1,0 +1,10 @@
+{% if ctx.experiments %}
+## Appendix A — Experiment catalogue {#sec-experiments}
+
+The {{ ctx.experiments|length }} AutoDiscovery experiments behind the candidate laws.
+
+{% for e in ctx.experiments %}
+**{% if e.link and clickable %}[{{ e.experiment_id }}]({{ e.link }}){% else %}{{ e.experiment_id }}{% endif %}** ({{ e.status }}).  *Hypothesis:* {{ e.hypothesis }}  *Result:* {{ e.analysis }}
+
+{% endfor %}
+{% endif %}

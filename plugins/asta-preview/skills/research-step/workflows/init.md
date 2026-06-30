@@ -32,9 +32,9 @@ Server mode (`bd init --server`) is out of scope: it requires running a Dolt sql
    - If no Dolt refs exist on the remote, surface the situation to the user with three options: (a) `bd import .beads/issues.jsonl` (fast, but discards Dolt history and any state newer than the export), (b) configure a Dolt remote and `bd dolt push` from another machine that has the live DB, then retry, (c) abort.
    - Pick one path only after explicit user confirmation. Never auto-import.
 
-4. **Ensure `python3` can import `yaml` (PyYAML) and `jsonschema`.** `scripts/task-output-keys.sh` (used by `create-task.sh` and `validate-output.sh`) parses `assets/schemas.yaml` with PyYAML; `validate-output.sh` deep-validates each task's `output_json` against the compiled schemas in `assets/compiled/` with jsonschema, and hard-fails (exit 5) without it.
-   - Probe with `python3 -c 'import yaml, jsonschema'`. If it succeeds, skip.
-   - Otherwise install what's missing: `python3 -m pip install --user pyyaml jsonschema` (or the platform equivalent, e.g. `apt-get install python3-yaml python3-jsonschema`). Re-probe; if it still fails, abort and ask the user.
+4. **Ensure `python3` can import `yaml` (PyYAML), `jsonschema`, and `jinja2`.** `scripts/task-output-keys.sh` parses `assets/schemas.yaml` with PyYAML; `validate-output.sh` deep-validates each task's `output_json` against the compiled schemas in `assets/compiled/` with jsonschema (hard-fails exit 5 without it); `close-task.sh` (`render.py`) and `compile-report.py` render the per-task notes and the session report from the Jinja templates in `assets/templates/` with jinja2.
+   - Probe with `python3 -c 'import yaml, jsonschema, jinja2'`. If it succeeds, skip.
+   - Otherwise install what's missing: `python3 -m pip install --user pyyaml jsonschema jinja2` (or the platform equivalent, e.g. `apt-get install python3-yaml python3-jsonschema python3-jinja2`). Re-probe; if it still fails, abort and ask the user.
 
 5. **Verify the staleness check works.**
    - Run `scripts/summary-check.sh`. It hashes the sorted IDs of currently-open issues and compares against `summary.md`'s frontmatter. Backend-agnostic — beads can use whichever storage it likes.

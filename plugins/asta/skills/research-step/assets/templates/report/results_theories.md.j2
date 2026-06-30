@@ -1,0 +1,25 @@
+## Results: theories {#sec-theories}
+
+{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}). {{ ctx.theory_stats.tested }} were testable on the data in hand and taken to verification ({{ ctx.theory_stats.held }} held, {{ ctx.theory_stats.partial }} partial); the remainder are recorded below for completeness.
+
+{% if ctx.overview.theories and exists(ctx.overview.theories.image) %}
+![{{ ctx.overview.theories.caption or 'Cross-cutting mechanism linking the laws.' }}]({{ ctx.overview.theories.image }})
+
+{% endif %}
+{% for t in ctx.theories_ordered %}
+### {{ t.id }} — {{ t.name }} {#{{ anchor(t.id) }}}
+
+*{{ (t.objective or '')|replace('_focused','')|capitalize }}-focused{% if t.eval and t.eval.novelty %}; novelty: {{ t.eval.novelty|replace('_',' ') }}{% endif %}.*{% if t.verdict %} **Verification {{ t.verdict.outcome }}** ({{ t.verdict.testability }}).{% endif %}{% if t.link %} (**{{ link("theory store", t.link if clickable else "") }}**){% endif %}{% if t.grounds_law_ids %}  Grounds: {% for g in t.grounds_law_ids %}{{ ref(g) }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
+
+{% if t.description %}{{ t.description|sent }}
+
+{% endif %}
+{% if t.verdict %}*Result.*  {% if t.verdict.effect_size_observed %}{{ t.verdict.effect_size_observed }}{% endif %}{% if t.audit %}{% set adj = (t.audit.recommended_adjustment or '')|trim %}{% if adj and not (adj.lower().startswith('none') or adj.lower().startswith('n/a')) %}  *Audit:* {{ adj }}{% else %}  *Audit:* {{ 'passes the negative control' if t.audit.verdict_survives else 'fails the negative control' }}.{% endif %}{% endif %}
+
+{% for f in t.figs or [] %}{% if exists(f.image) %}![{{ f.caption }}]({{ f.image }})
+
+{% endif %}{% endfor %}
+{% else %}*Not taken to verification* — not testable on the in-hand data.
+
+{% endif %}
+{% endfor %}

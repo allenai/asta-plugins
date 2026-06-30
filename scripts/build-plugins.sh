@@ -6,6 +6,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLUGINS_DIR="$REPO_ROOT/plugins"
 
+# Regenerate research-step's compiled schemas (assets/compiled/) from schemas.yaml
+# so the plugins ship them — validate-output.sh aborts without them.
+echo "Compiling research-step schemas..."
+python3 "$REPO_ROOT/scripts/compile-schemas.py"
+
 # Derive default vs preview from SKILL.md frontmatter.
 # A skill is default unless its SKILL.md contains "internal: true".
 DEFAULT_SKILLS=()

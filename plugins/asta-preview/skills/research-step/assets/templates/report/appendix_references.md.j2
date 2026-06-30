@@ -1,0 +1,18 @@
+{% if ctx.ref_papers or ctx.ref_datasets %}
+## Appendix C — References {#sec-references}
+
+{% if ctx.ref_papers %}
+### Papers
+
+{% for r in ctx.ref_papers %}
+1. {{ link(r.name, r.url) }}
+{% endfor %}
+{% endif %}
+{% if ctx.ref_datasets %}
+### Datasets
+
+{% for d in ctx.ref_datasets %}
+1. {{ link(d.name, d.url) }}
+{% endfor %}
+{% endif %}
+{% endif %}

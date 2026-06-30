@@ -1,0 +1,21 @@
+## Results: empirical laws {#sec-laws}
+
+The search surfaced {{ ctx.laws|length }} candidate laws; each is reproduced below on the in-hand data. The verdict is the reproduction's, not the original run's.
+
+{% for law in ctx.laws %}
+### {{ law.id }}{% if law.construct %} — {{ law.construct }}{% endif %} {#{{ anchor(law.id) }}}
+
+{{ law.statement }}
+
+{% if law.effect_size_source %}*Source effect.*  {{ law.effect_size_source }}
+
+{% endif %}
+{% if law.verdict %}*Reproduction.*  Outcome **{{ law.verdict.outcome }}** ({{ law.verdict.testability }}){% if law.verdict.effect_size_observed %} — {{ law.verdict.effect_size_observed }}{% endif %}.{% if law.audit %}{% set adj = (law.audit.recommended_adjustment or '')|trim %}{% if adj and not (adj.lower().startswith('none') or adj.lower().startswith('n/a')) %}  *Audit:* {{ adj }}{% else %}  *Audit:* {{ 'passes the negative control (the effect vanishes when the predictor is shuffled)' if law.audit.verdict_survives else 'fails the negative control' }}.{% endif %}{% endif %}{% if law.link %}  (**{{ link("DataVoyager result", law.link if clickable else "") }}**){% endif %}
+
+{% else %}*Reproduction.*  Not adjudicated.
+
+{% endif %}
+{% for f in law.figs or [] %}{% if exists(f.image) %}![{{ f.caption }}]({{ f.image }})
+
+{% endif %}{% endfor %}
+{% endfor %}
