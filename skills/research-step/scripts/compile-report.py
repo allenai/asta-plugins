@@ -379,8 +379,12 @@ def collect(sess, base_url=""):
                     and any(w in (t["audit"].get("recommended_adjustment") or "").lower()
                             for w in ("construction", "definitional"))]
 
+    summary = next((rs(i)["output_json"].get("summary")
+                    for i in sess.tasks if rs(i)["task_type"] == "summarize"), None)
+
     return {
         "flow": sess.flow,
+        "summary": summary,
         "task_types": {rs(i)["task_type"] for i in sess.tasks},
         "laws": laws, "theories": theories, "hypotheses": hypotheses,
         "law_stats": tally(laws), "theory_stats": tally(theories), "hyp_stats": tally(hypotheses),
@@ -618,7 +622,8 @@ def build(sess, base_url="", site=False, clickable=True):
     plain text rather than hyperlinks — a clean, shareable PDF with no links into run files."""
     ctx = collect(sess, base_url)
     ctx["mission"] = mission_intro()
-    title = re.sub(r"^Mission:\s*", "", title_from_mission(sess.epic.get("title", "Research report")))
+    title = (ctx.get("summary") or {}).get("title") \
+        or re.sub(r"^Mission:\s*", "", title_from_mission(sess.epic.get("title", "Research report")))
     subtitle = FLOW_SUBTITLE.get(sess.flow, sess.flow.replace("_", " "))
 
     # in-document anchors for every claim id, so id mentions cross-link to their subsection
@@ -630,6 +635,12 @@ def build(sess, base_url="", site=False, clickable=True):
     def ref(i):
         a = known.get(i)
         return f"[{i}](#{a})" if a else str(i)
+
+    # the encyclopedia entry (index, context, per-audience executive summaries) is the front matter
+    cover = ""
+    ctmpl = REPORT_TMPL / "cover.md.j2"
+    if ctx.get("summary") and ctmpl.is_file():
+        cover = render.render_template_file(ctmpl, ctx=ctx, ref=ref, anchor=anchor, clickable=clickable).strip()
 
     body = []
     for name in SECTIONS:
@@ -643,7 +654,7 @@ def build(sess, base_url="", site=False, clickable=True):
     anchors = compute_anchors(sess, ctx, known)
 
     if site:
-        return sections + "\n", anchors
+        return ((cover + "\n\n") if cover else "") + sections + "\n", anchors
 
     front = [
         "---",
@@ -665,6 +676,7 @@ def build(sess, base_url="", site=False, clickable=True):
         *("    " + ln for ln in header_includes(title)),
         "---",
         "",
+        cover,
         flow_diagram(sess, ctx),
         "```{=latex}",
         "\\vspace{0.5em}\\tableofcontents",

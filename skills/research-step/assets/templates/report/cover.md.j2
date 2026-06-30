@@ -1,0 +1,23 @@
+{% set s = ctx.summary %}
+- **discipline:** {{ s.discipline }}
+- **domain:** {{ s.domain }}
+- **topic:** {{ s.topic }}
+- **scientific_question:** {{ s.scientific_question }}
+- **discovery_type:** {{ s.discovery_type }}
+
+## Scientific Context {#sec-context}
+
+{{ s.context }}
+
+{% for a in s.summaries %}
+## Executive Summary ({{ {'general':'Layperson','technical':'Expert'}.get(a.audience, a.audience|capitalize) }}) {#sec-summary-{{ a.audience }}}
+
+### Main Finding
+
+**{{ a.main_finding }}**
+
+### Elaboration
+
+{{ a.elaboration }}
+
+{% endfor %}
