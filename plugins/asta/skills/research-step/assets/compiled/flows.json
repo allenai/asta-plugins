@@ -82,6 +82,26 @@
           "parent": "replication",
           "replan": false,
           "task": "holdout_replication"
+        },
+        {
+          "id": "summarize",
+          "kind": "embed",
+          "mission": "Capstone - summarize the completed discovery-and-replication session as an encyclopedia entry.",
+          "name": "summarize",
+          "parent": null,
+          "replan": false,
+          "workflow": "summarize"
+        },
+        {
+          "chain": [],
+          "id": "summarize__summarize",
+          "inputs": [],
+          "kind": "step",
+          "mission": "Write the session's encyclopedia entry - a short title, the five index fields (discipline, domain, topic, scientific_question, discovery_type), the scientific context, and one executive summary per audience (general and technical) as a Main Finding plus an Elaboration. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "name": "summarize",
+          "parent": "summarize",
+          "replan": false,
+          "task": "summarize"
         }
       ]
     },
@@ -338,7 +358,7 @@
             "data_driven_discovery"
           ],
           "kind": "step",
-          "mission": "Group the experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records - their verdicts come later, from each branch's adjudication.",
+          "mission": "First select which experiments to ground on - every experiment flagged is_surprising, plus the config theorizer_top_n highest- and theorizer_top_n lowest-posterior-belief experiments (ranked by posterior_belief mean), deduped. Then group the selected experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records - their verdicts come later, from each branch's adjudication.",
           "name": "law_extraction",
           "parent": "reproduction",
           "replan": false,
@@ -380,7 +400,7 @@
             "evidence_gathering"
           ],
           "kind": "step",
-          "mission": "State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility and commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design) - never inline it. What happens next is plan's Gate, not this step's job - feasible/proxy_only branches get analysis, audit, and adjudicate; data_unavailable/construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.",
+          "mission": "State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility from whether evidence_gathering found a secondary (independent) dataset that can test this law - no secondary dataset means feasibility data_unavailable and no DataVoyager run. Commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design) - never inline it. What happens next is plan's Gate, not this step's job - feasible/proxy_only branches get analysis, audit, and adjudicate; data_unavailable/construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.",
           "name": "experiment_design",
           "parent": "reproduction__replication",
           "replan": false,
@@ -428,7 +448,7 @@
             "audit"
           ],
           "kind": "step",
-          "mission": "Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold; or outcome n/a, testability untestable when the branch was infeasible. Emit an adjudication referencing the law id - the law record itself is never re-emitted.",
+          "mission": "Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold; or outcome n/a, testability untestable when the branch was infeasible. Also emit the adjudication's reproduction signal (reward + basis), the thumbs up/down the theorizer reads - reproduced -> positive reward, basis reproduced; the effect did not replicate on the secondary data -> negative reward, basis not_reproduced (keep the law, it is a negative signal not a removal); high confidence the source finding is factually wrong (an AutoDS mistake) -> reward -1, basis refuted_incorrect (dropped from the theorizer); no secondary dataset so DataVoyager never ran -> no reward, basis not_evaluated. Emit an adjudication referencing the law id - the law record itself is never re-emitted.",
           "name": "adjudicate",
           "parent": "reproduction__replication",
           "replan": false,
@@ -454,7 +474,7 @@
             "adjudicate"
           ],
           "kind": "step",
-          "mission": "Shared across both objective branches. Consume the reproduced laws - the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}) - the theorizer and the experiment designer accept the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.",
+          "mission": "Shared across both objective branches. Consume the reproduced laws - the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Drop any law whose adjudication signal.basis is refuted_incorrect - it is a confirmed AutoDS mistake and must not ground a theory. Keep laws with basis not_reproduced, but carry their negative signal as conflicting evidence rather than support. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}) - the theorizer and the experiment designer accept the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.",
           "name": "evidence_extraction",
           "parent": "theorizer",
           "replan": false,
@@ -569,6 +589,26 @@
           "parent": "verification",
           "replan": false,
           "task": "adjudicate"
+        },
+        {
+          "id": "summarize",
+          "kind": "embed",
+          "mission": "Capstone - summarize the completed reproduce-and-theorize session as an encyclopedia entry.",
+          "name": "summarize",
+          "parent": null,
+          "replan": false,
+          "workflow": "summarize"
+        },
+        {
+          "chain": [],
+          "id": "summarize__summarize",
+          "inputs": [],
+          "kind": "step",
+          "mission": "Write the session's encyclopedia entry - a short title, the five index fields (discipline, domain, topic, scientific_question, discovery_type), the scientific context, and one executive summary per audience (general and technical) as a Main Finding plus an Elaboration. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "name": "summarize",
+          "parent": "summarize",
+          "replan": false,
+          "task": "summarize"
         }
       ]
     },
@@ -826,6 +866,26 @@
           "parent": "testing",
           "replan": false,
           "task": "adjudicate"
+        },
+        {
+          "id": "summarize",
+          "kind": "embed",
+          "mission": "Capstone - summarize the completed hypothesis-testing session as an encyclopedia entry.",
+          "name": "summarize",
+          "parent": null,
+          "replan": false,
+          "workflow": "summarize"
+        },
+        {
+          "chain": [],
+          "id": "summarize__summarize",
+          "inputs": [],
+          "kind": "step",
+          "mission": "Write the session's encyclopedia entry - a short title, the five index fields (discipline, domain, topic, scientific_question, discovery_type), the scientific context, and one executive summary per audience (general and technical) as a Main Finding plus an Elaboration. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "name": "summarize",
+          "parent": "summarize",
+          "replan": false,
+          "task": "summarize"
         }
       ]
     },
@@ -915,7 +975,7 @@
             "data_driven_discovery"
           ],
           "kind": "step",
-          "mission": "Group the experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records - their verdicts come later, from each branch's adjudication.",
+          "mission": "First select which experiments to ground on - every experiment flagged is_surprising, plus the config theorizer_top_n highest- and theorizer_top_n lowest-posterior-belief experiments (ranked by posterior_belief mean), deduped. Then group the selected experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records - their verdicts come later, from each branch's adjudication.",
           "name": "law_extraction",
           "parent": null,
           "replan": false,
@@ -957,7 +1017,7 @@
             "evidence_gathering"
           ],
           "kind": "step",
-          "mission": "State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility and commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design) - never inline it. What happens next is plan's Gate, not this step's job - feasible/proxy_only branches get analysis, audit, and adjudicate; data_unavailable/construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.",
+          "mission": "State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility from whether evidence_gathering found a secondary (independent) dataset that can test this law - no secondary dataset means feasibility data_unavailable and no DataVoyager run. Commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design) - never inline it. What happens next is plan's Gate, not this step's job - feasible/proxy_only branches get analysis, audit, and adjudicate; data_unavailable/construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.",
           "name": "experiment_design",
           "parent": "replication",
           "replan": false,
@@ -1005,11 +1065,28 @@
             "audit"
           ],
           "kind": "step",
-          "mission": "Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold; or outcome n/a, testability untestable when the branch was infeasible. Emit an adjudication referencing the law id - the law record itself is never re-emitted.",
+          "mission": "Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold; or outcome n/a, testability untestable when the branch was infeasible. Also emit the adjudication's reproduction signal (reward + basis), the thumbs up/down the theorizer reads - reproduced -> positive reward, basis reproduced; the effect did not replicate on the secondary data -> negative reward, basis not_reproduced (keep the law, it is a negative signal not a removal); high confidence the source finding is factually wrong (an AutoDS mistake) -> reward -1, basis refuted_incorrect (dropped from the theorizer); no secondary dataset so DataVoyager never ran -> no reward, basis not_evaluated. Emit an adjudication referencing the law id - the law record itself is never re-emitted.",
           "name": "adjudicate",
           "parent": "replication",
           "replan": false,
           "task": "adjudicate"
+        }
+      ]
+    },
+    "summarize": {
+      "edges": [],
+      "mission": "Summarize a completed research session as a self-contained encyclopedia entry. A capstone that composes onto any flow - it reads the whole session and names no inputs, so id-order places it last.",
+      "nodes": [
+        {
+          "chain": [],
+          "id": "summarize",
+          "inputs": [],
+          "kind": "step",
+          "mission": "Write the session's encyclopedia entry - a short title, the five index fields (discipline, domain, topic, scientific_question, discovery_type), the scientific context, and one executive summary per audience (general and technical) as a Main Finding plus an Elaboration. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.",
+          "name": "summarize",
+          "parent": null,
+          "replan": false,
+          "task": "summarize"
         }
       ]
     },
@@ -1071,7 +1148,7 @@
             "adjudicate"
           ],
           "kind": "step",
-          "mission": "Shared across both objective branches. Consume the reproduced laws - the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}) - the theorizer and the experiment designer accept the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.",
+          "mission": "Shared across both objective branches. Consume the reproduced laws - the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Drop any law whose adjudication signal.basis is refuted_incorrect - it is a confirmed AutoDS mistake and must not ground a theory. Keep laws with basis not_reproduced, but carry their negative signal as conflicting evidence rather than support. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}) - the theorizer and the experiment designer accept the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.",
           "name": "evidence_extraction",
           "parent": null,
           "replan": false,
@@ -1219,6 +1296,26 @@
               "prespecified_check": {
                 "type": "string"
               },
+              "signal": {
+                "additionalProperties": true,
+                "properties": {
+                  "basis": {
+                    "enum": [
+                      "reproduced",
+                      "not_reproduced",
+                      "refuted_incorrect",
+                      "not_evaluated"
+                    ]
+                  },
+                  "reward": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "basis"
+                ],
+                "type": "object"
+              },
               "subject_id": {
                 "type": "string"
               },
@@ -1268,6 +1365,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -1394,6 +1500,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -1520,6 +1635,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -1677,6 +1801,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -1948,6 +2081,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -2108,6 +2250,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -2292,6 +2443,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -2489,6 +2649,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -2650,6 +2819,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -2798,6 +2976,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -3009,6 +3196,26 @@
               "prespecified_check": {
                 "type": "string"
               },
+              "signal": {
+                "additionalProperties": true,
+                "properties": {
+                  "basis": {
+                    "enum": [
+                      "reproduced",
+                      "not_reproduced",
+                      "refuted_incorrect",
+                      "not_evaluated"
+                    ]
+                  },
+                  "reward": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "basis"
+                ],
+                "type": "object"
+              },
               "subject_id": {
                 "type": "string"
               },
@@ -3058,6 +3265,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -3186,6 +3402,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -3341,6 +3566,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -3507,6 +3741,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -3689,6 +3932,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -3866,6 +4118,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -4058,6 +4319,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -4164,6 +4434,181 @@
         "type": "object"
       }
     },
+    "summarize": {
+      "output": {
+        "artifacts": [
+          "artifact"
+        ],
+        "summary": "summary"
+      },
+      "schema": {
+        "$comment": "generated by scripts/compile-schemas.py from assets/schemas.yaml; do not edit",
+        "$defs": {
+          "artifact": {
+            "additionalProperties": true,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "extensions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "entity_id": {
+                    "type": "string"
+                  },
+                  "run_id": {
+                    "type": "string"
+                  },
+                  "share_url": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "parts": {
+                "items": {
+                  "$ref": "#/$defs/part"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "artifactId",
+              "name",
+              "description",
+              "parts",
+              "metadata"
+            ],
+            "type": "object"
+          },
+          "audience_summary": {
+            "additionalProperties": true,
+            "properties": {
+              "audience": {
+                "type": "string"
+              },
+              "elaboration": {
+                "type": "string"
+              },
+              "main_finding": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "audience",
+              "main_finding",
+              "elaboration"
+            ],
+            "type": "object"
+          },
+          "part": {
+            "additionalProperties": true,
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "properties": {
+              "context": {
+                "type": "string"
+              },
+              "discipline": {
+                "type": "string"
+              },
+              "discovery_type": {
+                "type": "string"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "scientific_question": {
+                "type": "string"
+              },
+              "summaries": {
+                "items": {
+                  "$ref": "#/$defs/audience_summary"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "topic": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "discipline",
+              "domain",
+              "topic",
+              "scientific_question",
+              "discovery_type",
+              "context",
+              "summaries"
+            ],
+            "type": "object"
+          }
+        },
+        "$id": "asta-research-step/summarize.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/$defs/artifact"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/$defs/summary"
+          }
+        },
+        "required": [
+          "summary",
+          "artifacts"
+        ],
+        "title": "summarize",
+        "type": "object"
+      }
+    },
     "testability_triage": {
       "output": {
         "artifacts": [
@@ -4192,6 +4637,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },
@@ -4365,6 +4819,15 @@
               "metadata": {
                 "additionalProperties": true,
                 "properties": {
+                  "a2a_context_id": {
+                    "type": "string"
+                  },
+                  "a2a_task_id": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
                   "entity_id": {
                     "type": "string"
                   },

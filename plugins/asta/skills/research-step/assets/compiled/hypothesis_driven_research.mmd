@@ -14,6 +14,10 @@ flowchart TD
     testing__adjudicate["adjudicate"]
   end
   class testing replan
+  subgraph summarize["summarize [flow: summarize]"]
+    summarize__summarize["summarize"]
+  end
+  class summarize embed
   literature_review --> hypothesis_formation
   hypothesis_formation --> testing__experiment_design
   literature_review --> testing__experiment_design

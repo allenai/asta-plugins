@@ -1,20 +1,6 @@
 version: 2
 
-# A research FLOW is a chain of TASKS; each task emits outputs of a defined TYPE.
-# flows = how tasks are composed · tasks = the reusable output contract per step ·
-# types = the record vocabulary · enums = closed value sets · config = session knobs.
-# See assets/README.md for how to read this file (flow/task/type, immutable
-# records, the artifacts channel, _path, and what lives in beads vs .asta/).
-# Compiled by scripts/compile-schemas.py to assets/compiled/ at build time.
-
 flows:
-
-  # Each flow step carries: mission (what the work is), input (the upstream steps
-  # in this session whose issues plan wires as the task's inputs), and chain (the
-  # asta commands). A node with a chain is a step; a node with only child nodes and
-  # a mission is a group; a chain item {workflow: <flow>, mission: <text>} expands
-  # the named sub-flow inline. A group whose branches are created at replan (one
-  # per law / theory / hypothesis, once the naming step closes) declares replan: true.
 
   data_and_literature_grounded_theory_generation:
     mission: Source the papers and data behind an existing AutoDiscovery run, reproduce its laws on independent data, theorize their cross-cutting mechanism, then verify the testable theories on the data already in hand.
@@ -45,6 +31,10 @@ flows:
         mission: Finalize the theory's outcome (held, partial, failed, underpowered, or n/a) and observed effect size from the analysis and audit, checked against the prespecified success_threshold from triage. Emit an adjudication referencing the theory id.
         input: [testability_triage, analysis, audit]
         chain: []
+    summarize:
+      mission: Capstone - summarize the completed reproduce-and-theorize session as an encyclopedia entry.
+      chain:
+        - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
 
   data_provenance:
     mission: Source the papers and datasets the AutoDiscovery run was built on. Search the literature for the publication(s) behind the run's datasets, extract their data-availability and repository details (reusing the theorizer extraction schema and its returned findings), acquire the open data so it becomes the data in hand, and record what could not be obtained. This runs before reproduction so the underlying data is sourced rather than assumed.
@@ -68,7 +58,7 @@ flows:
       input: []
       chain: [asta autodiscovery run, asta autodiscovery experiments]
     law_extraction:
-      mission: Group the experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records - their verdicts come later, from each branch's adjudication.
+      mission: First select which experiments to ground on - every experiment flagged is_surprising, plus the config theorizer_top_n highest- and theorizer_top_n lowest-posterior-belief experiments (ranked by posterior_belief mean), deduped. Then group the selected experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records - their verdicts come later, from each branch's adjudication.
       input: [data_driven_discovery]
       chain: []
     evidence_gathering:
@@ -79,7 +69,7 @@ flows:
       mission: One branch per law (created at replan, once law_extraction has produced the law set). Reproduce that law on the independent data.
       replan: true
       experiment_design:
-        mission: State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility and commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design) - never inline it. What happens next is plan's Gate, not this step's job - feasible/proxy_only branches get analysis, audit, and adjudicate; data_unavailable/construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.
+        mission: State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility from whether evidence_gathering found a secondary (independent) dataset that can test this law - no secondary dataset means feasibility data_unavailable and no DataVoyager run. Commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design) - never inline it. What happens next is plan's Gate, not this step's job - feasible/proxy_only branches get analysis, audit, and adjudicate; data_unavailable/construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.
         input: [law_extraction, evidence_gathering]
         chain: [asta experiment]
       analysis:
@@ -91,14 +81,14 @@ flows:
         input: [analysis]
         chain: [asta analyze-data submit, asta analyze-data poll]
       adjudicate:
-        mission: Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold; or outcome n/a, testability untestable when the branch was infeasible. Emit an adjudication referencing the law id - the law record itself is never re-emitted.
+        mission: Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold; or outcome n/a, testability untestable when the branch was infeasible. Also emit the adjudication's reproduction signal (reward + basis), the thumbs up/down the theorizer reads - reproduced -> positive reward, basis reproduced; the effect did not replicate on the secondary data -> negative reward, basis not_reproduced (keep the law, it is a negative signal not a removal); high confidence the source finding is factually wrong (an AutoDS mistake) -> reward -1, basis refuted_incorrect (dropped from the theorizer); no secondary dataset so DataVoyager never ran -> no reward, basis not_evaluated. Emit an adjudication referencing the law id - the law record itself is never re-emitted.
         input: [experiment_design, analysis, audit]
         chain: []
 
   theorizer:
     mission: Theories of the reproduced laws, grounded in both the literature and the reproduction's numbers, generated under two objectives and filtered to what the data on hand can actually test.
     evidence_extraction:
-      mission: Shared across both objective branches. Consume the reproduced laws - the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}) - the theorizer and the experiment designer accept the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.
+      mission: Shared across both objective branches. Consume the reproduced laws - the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Drop any law whose adjudication signal.basis is refuted_incorrect - it is a confirmed AutoDS mistake and must not ground a theory. Keep laws with basis not_reproduced, but carry their negative signal as conflicting evidence rather than support. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}) - the theorizer and the experiment designer accept the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.
       input: [law_extraction, adjudicate]
       chain: [asta generate-theories build-extraction-schema, asta generate-theories find-and-extract]
     theory_generation:
@@ -115,6 +105,13 @@ flows:
       mission: Stock novelty scoring against the shared corpus, run only on the testable subset of theories.
       input: [testability_triage]
       chain: [asta generate-theories evaluate-novelty]
+
+  summarize:
+    mission: Summarize a completed research session as a self-contained encyclopedia entry. A capstone that composes onto any flow - it reads the whole session and names no inputs, so id-order places it last.
+    summarize:
+      mission: Write the session's encyclopedia entry - a short title, the five index fields (discipline, domain, topic, scientific_question, discovery_type), the scientific context, and one executive summary per audience (general and technical) as a Main Finding plus an Elaboration. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
+      input: []
+      chain: []
 
   hypothesis_driven_research:
     mission: Answer a research question from mission.md the classic way - survey the literature, form explicit falsifiable hypotheses, and run one prespecified test per hypothesis on acquired data. Review, hypothesize, design, test, adjudicate.
@@ -149,6 +146,10 @@ flows:
         mission: Finalize the hypothesis's outcome (held, partial, failed, underpowered, or n/a) and observed effect size against the design's prespecified success_threshold, from the analysis and audit. Emit an adjudication referencing the hypothesis id.
         input: [experiment_design, analysis, audit]
         chain: []
+    summarize:
+      mission: Capstone - summarize the completed hypothesis-testing session as an encyclopedia entry.
+      chain:
+        - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
 
   auto_discovery:
     mission: Source a cohort from the literature and run a fresh AutoDiscovery against a research question, then replicate each high-surprise candidate law on a held-out subset. Run as its own session in a separate workspace (own mission.md and .beads - a second epic root in one workspace breaks epic-root.sh); the research question (the intent) comes from that mission.md. The intent and the cohort are the most important inputs to a good discovery run, so most of the work is front-loaded into cohort_assembly. This flow is distinct from `reproduction`, which imports an existing run rather than standing up a new one.
@@ -167,13 +168,10 @@ flows:
         mission: Replicate the law on the held-out subset - one DataVoyager run per law, in parallel (at most config max_parallel_dv_runs concurrent submissions). The verdict comes from this replication, not from the discovery run - emit an adjudication referencing the law id (outcome held/partial/failed/underpowered, or n/a when it could not be tested). Emit at least one figure behind the numbers - DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/ and put the path in figure.image (or render your own); list them in `figures` with captions.
         input: [discovery_run, cohort_assembly]
         chain: [asta analyze-data submit, asta analyze-data poll]
-
-# Tasks are pure output contracts: output maps each output_json key to its type,
-# [type] meaning a JSON array of that type. A task is the reusable unit a flow step
-# instantiates - the same task (e.g. analysis, adjudicate) is reused across flows,
-# which is why tasks are factored out of the flow steps. Every task also carries
-# artifacts. A task's inputs are declared per flow step (the same output shape takes
-# different inputs in different flows), under `input:` in the flows above.
+    summarize:
+      mission: Capstone - summarize the completed discovery-and-replication session as an encyclopedia entry.
+      chain:
+        - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
 
 tasks:
   provenance_search:      {output: {data_sources: [data_source], artifacts: [artifact]}}
@@ -190,23 +188,12 @@ tasks:
   theory_formation:       {output: {theories: [theory], artifacts: [artifact]}}
   testability_triage:     {output: {testability_triage: testability_triage, artifacts: [artifact]}}
   novelty_assessment:     {output: {theory_evaluations: [theory_evaluation], artifacts: [artifact]}}
-  # hypothesis_driven_research flow
   literature_review:      {output: {literature_review: literature_review, artifacts: [artifact]}}
   hypothesis_formation:   {output: {hypotheses: [hypothesis], artifacts: [artifact]}}
-  # auto_discovery flow (its own session in a separate workspace: source a cohort, run a fresh discovery, replicate on held-out data)
   cohort_assembly:        {output: {cohort: cohort, datasets: [dataset], artifacts: [artifact]}}
   discovery_run:          {output: {experiments: [experiment], empirical_laws: [empirical_law], artifacts: [artifact]}}
   holdout_replication:    {output: {adjudication: adjudication, figures: [figure], artifacts: [artifact]}}
-
-# Types are the record vocabulary. Records are immutable: a task emits a record
-# once; later stages never re-emit it with new values. Verdicts and enrichments are
-# their own records referencing the original by id (adjudication -> subject_id,
-# source_access/acquisition -> data_source_id). Agent payloads nest VERBATIM under
-# their key (theory.components, experiment rows, mcts_provenance); top-level output
-# keys are closed, nested objects stay open. A field name ending in `?` is optional.
-# Artifacts are A2A 1.0 Artifacts (camelCase wire fields); file parts use the uri
-# form (repo-root-relative path under .asta/), never inline bytes (beads ~64KB cap).
-# See assets/README.md for the full contract.
+  summarize:              {output: {summary: summary, artifacts: [artifact]}}
 
 types:
 
@@ -215,33 +202,32 @@ types:
     name: string
     description: string
     parts: [part]
-    metadata:                        # REQUIRED. Carries the artifact's kind AND its citation/link wiring, so the
-                                     # report can hyperlink each named entity to the file (or Asta run) that backs it.
+    metadata:                        # REQUIRED: artifact kind plus citation/link wiring for the report's hyperlinks
       type: string                   # artifact kind: theory_store | widget_data_voyager | extraction | extraction-schema | data | figure | code | log | paper-finder-search-result
       entity_id?: string             # the law / theory / hypothesis / experiment id this artifact is the citation for (the report links that entity to this artifact)
       run_id?: string                # the producing run/execution id (auto-ds run, DataVoyager / theorizer execution) for Asta-UX deep-linking
       share_url?: string             # the Asta-UX share/run URL when one exists; the report links here, otherwise it links the artifact's local file part
+      agent?: string                 # producing agent: autodiscovery | theorizer | datavoyager - selects the deep-link URL template the report builds
+      a2a_task_id?: string           # A2A task id (theorizer / DataVoyager); the report builds the run deep-link from this when there is no run_id
+      a2a_context_id?: string        # A2A context id, when the deep-link template needs it
     extensions?: [string]            # optional; URIs of relevant A2A extensions
 
-  part:                              # A2A Part union, discriminated by `kind`
+  part:                              # A2A Part union, discriminated by `kind`; file parts use the uri form (no inline bytes)
     kind: string                     # text | file | data
     metadata?: object                # optional, per part
-    # text: {kind: text, text: string}
-    # file: {kind: file, file: {uri: string, mimeType: string, name: string}}     - the only file form allowed in output_json
-    # data: {kind: data, data: object} - structured payloads, stored as received
 
   figure:                            # the report-embedding form: image is a repo-root-relative path
     caption: string                  # (PNG/SVG), embedded via ![caption](path)
     image: string
 
-  experiment:                        # an auto-ds experiments.json record; these four fields are the
-    experiment_id: string            # required projection - paste the full record in unchanged (extras
-    status: string                   # like experiment_plan, code, review, prior/posterior beliefs are
-    hypothesis: string               # permitted and preserved)
+  experiment:                        # an auto-ds experiments.json record; paste the full record in unchanged, extras preserved
+    experiment_id: string
+    status: string
+    hypothesis: string
     analysis: string
 
-  empirical_law:                     # identity of a discovered law; its verdict lives in the
-    id: string                       # adjudication that references it, never here
+  empirical_law:                     # identity of a discovered law; its verdict lives in the adjudication that references it
+    id: string
     statement: string
     construct: string
     source_operationalization: string
@@ -290,8 +276,8 @@ types:
     holdout_subset: {definition: string, n: number, path: string}     # independent, held back for replication
     run_id: string                   # the stood-up auto-ds run (autodiscovery create)
 
-  experiment_design:                 # one test, committed before its analysis runs; used by the
-    subject_kind: subject_kind       # replication (law) and testing (hypothesis) branches
+  experiment_design:                 # one test, committed before its analysis runs (replication law / testing hypothesis branches)
+    subject_kind: subject_kind
     subject_id: string               # the law / theory / hypothesis under test
     experiment_name: string
     plain_language_description: string
@@ -307,8 +293,8 @@ types:
       metric: string                 # the quantity that decides it
       success_threshold: string      # what counts as held, incl. direction; note expected power / min detectable effect if known
 
-  analysis:                          # DataVoyager's TaskSummary, verbatim (figures are hoisted to the
-    final_answer: string             # task's `figures` output key after imageb64 -> PNG conversion)
+  analysis:                          # DataVoyager's TaskSummary, verbatim; figures hoisted to the task's `figures` output key
+    final_answer: string
     assumptions: string              # a single text block, as the agent emits it
     code: string
 
@@ -329,6 +315,9 @@ types:
     independence_axes: [independence_axis]
     data_used: string
     evidence: string
+    signal?:                         # optional reproduction reward, for downstream filtering and RL
+      reward?: number                # [-1, +1]; the sign is the thumbs up/down, the magnitude is strength; omit when basis is not_evaluated
+      basis: signal_basis            # reproduced | not_reproduced | refuted_incorrect | not_evaluated
 
   extracted_data:
     id: string
@@ -403,6 +392,21 @@ types:
         novelty: novelty
         explanation: string
 
+  summary:                           # the session's encyclopedia entry; mirrors one encyclopedia.md entry
+    title: string                    # rendered "# <title>"
+    discipline: string               # the five index fields, printed as the cover index block
+    domain: string
+    topic: string
+    scientific_question: string
+    discovery_type: string           # open string; prefer: New phenomenon | Mechanistic explanation | Mechanistic unification | Predictive law | Causal relationship | New measurement or assay | Classification or taxonomy | Theoretical framework | Computational method | Dataset or resource | Negative result / falsification | Translational application
+    context: string                  # the "Scientific Context" section (markdown)
+    summaries: [audience_summary]    # one executive summary per audience; extensible
+
+  audience_summary:                  # one "Executive Summary (<label>)" block
+    audience: string                 # stored general | technical; rendered "Layperson" | "Expert"
+    main_finding: string             # the "Main Finding" (a bold one-liner)
+    elaboration: string              # the "Elaboration" paragraph
+
 enums:
   outcome:               [held, partial, failed, underpowered, n/a]   # the one verdict vocabulary, for laws, theories, and hypotheses
   testability:           [tested, proxy_only, untestable]
@@ -414,19 +418,10 @@ enums:
   novelty:               [established, derivable, genuinely_new]
   support_level:         [supports, mixed, contradicts, inconclusive]
   access_status:         [acquired, open_unfetched, restricted, not_found]
+  signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated]   # the reproduction signal's reason tag
 
 config:
-  # Session-tunable knobs and their defaults. A mission.md may override any of
-  # them in a `## Config` section (one `key: value` line each). plan's bootstrap
-  # resolves defaults + mission overrides and pins the result on the epic root
-  # (metadata.research_step.config); execute reads the pinned values from the
-  # epic root and passes them into the chain commands. Names match the field the
-  # consuming agent actually takes.
-  n_experiments: 10                # auto-ds: experiments per discovery run; set in the run-metadata
-                                   # JSON given to `asta autodiscovery metadata` (data_driven_discovery
-                                   # fresh runs, cohort_assembly/discovery_run)
-  max_papers_to_retrieve: 30       # generate-theories find-and-extract: papers to extract from
-                                   # (provenance_extraction, evidence_extraction, hypothesis_formation)
-  max_parallel_dv_runs: 5          # cap on concurrent DataVoyager (analyze-data) submissions when a
-                                   # step fans out runs in parallel (holdout_replication, analysis
-                                   # batches); submit up to this many, then wait before submitting more
+  n_experiments: 10                # auto-ds experiments per discovery run; set in the run-metadata JSON for `asta autodiscovery metadata`
+  max_papers_to_retrieve: 100      # generate-theories find-and-extract: papers to extract from (provenance_extraction, evidence_extraction, hypothesis_formation)
+  max_parallel_dv_runs: 5          # cap on concurrent DataVoyager (analyze-data) submissions when a step fans out runs in parallel
+  theorizer_top_n: 10              # law_extraction grounds on every is_surprising experiment plus the top N and bottom N by posterior-belief mean, deduped (e.g. N=10 + 10 surprising = 30 experiments; a 40-experiment run still grounds ~30, not all of them)
