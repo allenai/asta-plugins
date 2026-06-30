@@ -18,7 +18,7 @@ Installs the `asta` CLI for agents that don't install it automatically via a plu
 **Prerequisites:** Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-PLUGIN_VERSION=0.19.2
+PLUGIN_VERSION=0.100.0
 INSTALL_URL="git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION"
 
 if ! command -v asta &> /dev/null; then

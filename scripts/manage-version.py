@@ -6,6 +6,7 @@ Handles setting versions and checking version consistency across all files.
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,10 +23,15 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 INIT_FILE = PROJECT_ROOT / "src" / "asta" / "__init__.py"
 PYPROJECT_FILE = PROJECT_ROOT / "pyproject.toml"
 MARKETPLACE_FILE = PROJECT_ROOT / ".claude-plugin" / "marketplace.json"
+LOCK_FILE = PROJECT_ROOT / "uv.lock"
 HOOK_FILE = PROJECT_ROOT / "plugins" / "asta-tools" / "hooks" / "sync-cli-version.sh"
 ASTA_CLI_SKILL_FILE = (
     PROJECT_ROOT / "plugins" / "asta-tools" / "skills" / "asta-cli" / "SKILL.md"
 )
+
+# Matches the asta package's version line in uv.lock. The asta package is the
+# editable root, so `name = "asta"` is unique within the lockfile.
+LOCK_VERSION_PATTERN = re.compile(r'(name = "asta"\nversion = ")([^"]+)(")')
 
 
 def get_init_version() -> str:
@@ -52,6 +58,14 @@ def get_marketplace_versions() -> dict[str, str]:
     return {p["name"]: p["version"] for p in data["plugins"]}
 
 
+def get_lock_version() -> str:
+    """Read the asta package version from uv.lock."""
+    match = LOCK_VERSION_PATTERN.search(LOCK_FILE.read_text())
+    if not match:
+        raise ValueError("Could not find asta package version in uv.lock")
+    return match.group(2)
+
+
 def get_hook_version() -> str:
     """Read PLUGIN_VERSION from hooks/sync-cli-version.sh."""
     content = HOOK_FILE.read_text()
@@ -76,6 +90,7 @@ def check_version_consistency() -> bool:
     init_version = get_init_version()
     pyproject_version = get_pyproject_version()
     marketplace_versions = get_marketplace_versions()
+    lock_version = get_lock_version()
     hook_version = get_hook_version()
     asta_cli_skill_versions = get_asta_cli_skill_versions()
 
@@ -89,6 +104,10 @@ def check_version_consistency() -> bool:
     for name, version in marketplace_versions.items():
         if version != init_version:
             mismatch = True
+
+    # Check uv.lock
+    if lock_version != init_version:
+        mismatch = True
 
     # Check hook file
     if hook_version != init_version:
@@ -105,6 +124,7 @@ def check_version_consistency() -> bool:
         for name, version in marketplace_versions.items():
             label = f"  marketplace.json ({name}):"
             print(f"{label:<39}{version}")
+        print(f"  uv.lock:                         {lock_version}")
         print(f"  hooks/sync-cli-version.sh:       {hook_version}")
         print(
             f"  skills/asta-cli/SKILL.md:        {', '.join(asta_cli_skill_versions)}"
@@ -166,6 +186,19 @@ def set_version(new_version: str) -> bool:
     for plugin in data["plugins"]:
         plugin["version"] = new_version
     MARKETPLACE_FILE.write_text(json.dumps(data, indent=2) + "\n")
+
+    # Update uv.lock — run `uv lock` so the lockfile is internally consistent
+    # rather than regex-poking a single field.
+    print("Updating uv.lock...")
+    result = subprocess.run(
+        ["uv", "lock"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"{RED}Error: `uv lock` failed:{NC}\n{result.stderr}")
+        return False
 
     # Update sync-version hook
     print("Updating sync-version hook...")
