@@ -491,7 +491,8 @@ def header_includes(short_title):
         # cream Ai2 "Abstract"-style box, used for the Scientific Context
         r"\usepackage[most]{tcolorbox}",
         r"\newtcolorbox{contextbox}{colback=ai2background,colframe=ai2background,boxrule=0pt,"
-        r"arc=3mm,left=5mm,right=5mm,top=4mm,bottom=4mm}",
+        r"arc=3mm,left=5mm,right=5mm,top=4mm,bottom=4mm,"
+        r"before upper={\setlength{\parskip}{0.6em}\setlength{\parindent}{0pt}}}",
         r"\renewcommand{\contentsname}{Contents}",
         r"\usepackage{fancyhdr}",
         r"\newcommand{\astalogo}{\raisebox{-2.5pt}{\includegraphics[height=11pt]{" + logo + r"}}}",
