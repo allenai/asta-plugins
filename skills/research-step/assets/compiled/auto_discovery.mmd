@@ -10,6 +10,10 @@ flowchart TD
     replication__holdout_replication["holdout_replication<br/>asta analyze-data submit · asta analyze-data poll"]
   end
   class replication replan
+  subgraph summarize["summarize [flow: summarize]"]
+    summarize__summarize["summarize"]
+  end
+  class summarize embed
   cohort_assembly --> discovery_run
   discovery_run --> replication__holdout_replication
   cohort_assembly --> replication__holdout_replication

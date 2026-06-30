@@ -38,6 +38,26 @@
         "prespecified_check": {
           "type": "string"
         },
+        "signal": {
+          "additionalProperties": true,
+          "properties": {
+            "basis": {
+              "enum": [
+                "reproduced",
+                "not_reproduced",
+                "refuted_incorrect",
+                "not_evaluated"
+              ]
+            },
+            "reward": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "basis"
+          ],
+          "type": "object"
+        },
         "subject_id": {
           "type": "string"
         },
@@ -87,6 +107,15 @@
         "metadata": {
           "additionalProperties": true,
           "properties": {
+            "a2a_context_id": {
+              "type": "string"
+            },
+            "a2a_task_id": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
             "entity_id": {
               "type": "string"
             },
