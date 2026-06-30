@@ -482,12 +482,16 @@ def header_includes(short_title):
         r"\setlength{\droptitle}{-3em}",
         r"\pretitle{\begin{flushleft}\Huge\sffamily\bfseries\color{ai2pink}}",
         r"\posttitle{\par\end{flushleft}\vskip 0.4em}",
-        r"\preauthor{\begin{flushleft}\normalsize\sffamily\color{ai2foreground}}",
-        r"\postauthor{\par\end{flushleft}}",
+        r"\preauthor{\begin{flushleft}\large\sffamily\bfseries\color{ai2foreground}}",
+        r"\postauthor{\par\vskip 2pt {\normalsize\sffamily\mdseries\color{ai2foreground}Allen Institute for AI}\par\end{flushleft}}",
         r"\predate{}\postdate{}\date{}",
         r"\usepackage{graphicx}",
         r"\usepackage{tikz}",
         r"\usetikzlibrary{arrows.meta,positioning}",
+        # cream Ai2 "Abstract"-style box, used for the Scientific Context
+        r"\usepackage[most]{tcolorbox}",
+        r"\newtcolorbox{contextbox}{colback=ai2background,colframe=ai2background,boxrule=0pt,"
+        r"arc=3mm,left=5mm,right=5mm,top=4mm,bottom=4mm}",
         r"\renewcommand{\contentsname}{Contents}",
         r"\usepackage{fancyhdr}",
         r"\newcommand{\astalogo}{\raisebox{-2.5pt}{\includegraphics[height=11pt]{" + logo + r"}}}",
@@ -676,6 +680,11 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
     title = (ctx.get("summary") or {}).get("title") \
         or re.sub(r"^Mission:\s*", "", title_from_mission(sess.epic.get("title", "Research report")))
     subtitle = FLOW_SUBTITLE.get(sess.flow, sess.flow.replace("_", " "))
+    # the Asta agents that produced the run are the authors; Allen Institute for AI is the affiliation
+    author = " · ".join(ctx.get("agents_used") or []) or "Asta"
+    # the index fields are wiki/atlas metadata: carried in the PDF metadata header, not rendered in the body
+    _idx = ctx.get("summary") or {}
+    keywords = [_idx.get(k) for k in ("discipline", "domain", "topic", "discovery_type") if _idx.get(k)]
 
     # in-document anchors for every claim id, so id mentions cross-link to their subsection
     known = {x["id"]: _slug(x["id"]) for x in ctx["laws"] + ctx["theories"] + ctx["hypotheses"] if x.get("id")}
@@ -692,7 +701,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
     ctmpl = REPORT_TMPL / "cover.md.j2"
     if ctx.get("summary") and ctmpl.is_file():
         links = build_links(ctx, sess, link_overrides)
-        cover = render.render_template_file(ctmpl, ctx=ctx, links=links, ref=ref, anchor=anchor, clickable=clickable).strip()
+        ai2logo = r"\includegraphics[height=16pt]{" + str(LOGO.parent / "logos" / "ai2.pdf").replace("\\", "/") + "}"
+        cover = render.render_template_file(ctmpl, ctx=ctx, links=links, flow=flow_diagram(sess, ctx),
+                                            ai2logo=ai2logo, ref=ref, anchor=anchor, clickable=clickable).strip()
 
     body = []
     for name in SECTIONS:
@@ -711,8 +722,8 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
     front = [
         "---",
         f"title: {json.dumps(title)}",
-        f"subtitle: {json.dumps(subtitle)}",
-        'author: "Asta · Allen Institute for AI"',
+        f"author: {json.dumps(author)}",
+        *([("keywords: [" + ", ".join(json.dumps(k) for k in keywords) + "]")] if keywords else []),
         "format:",
         "  pdf:",
         "    documentclass: article",
@@ -729,9 +740,8 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         "---",
         "",
         cover,
-        flow_diagram(sess, ctx),
         "```{=latex}",
-        "\\vspace{0.5em}\\tableofcontents",
+        "\\clearpage\\tableofcontents\\clearpage",
         "```",
     ]
     return "\n".join(front) + "\n\n" + sections + "\n", anchors
