@@ -1,97 +1,28 @@
 # Developer Guide
 
-This guide is for contributors and developers who want to understand the architecture, add new features, or develop Claude Code plugins.
+This guide covers everyday contributor workflows: setup, the dev loop, and releases.
+For one-off tasks (extending the CLI, adding skills, updating passthrough tools), see
+the linked docs.
 
-## Architecture Overview
+## Overview
 
-Asta uses a CLI-first architecture with Claude Code plugin integration:
+Asta is a CLI-first package (`src/asta/`) with three Claude Code plugins
+(`plugins/asta-tools`, `plugins/asta-assistant`, `plugins/asta-dev`). The CLI is a
+thin Click wrapper around stdlib-only core API clients; the plugins ship the skills
+and hooks that drive agents to call the CLI. Read the source tree directly for the
+current layout — `pyproject.toml` is the source of truth for build config.
 
-```
-src/asta/                      # Main CLI package
-├── __init__.py                # Package metadata (__version__)
-├── cli.py                     # Click command groups
-├── core/
-│   ├── __init__.py
-│   └── client.py              # AstaPaperFinder API client (stdlib only)
-├── utils/
-│   ├── __init__.py
-│   ├── config.py              # Configuration management using HOCON
-│   ├── passthrough.conf       # Passthrough tool configurations (HOCON format)
-│   └── passthrough.py         # Generic passthrough utility for external tools
-├── documents/
-│   ├── __init__.py
-│   └── passthrough.py         # `asta documents` pass-through to asta-documents CLI
-├── experiment/
-│   ├── __init__.py
-│   └── passthrough.py         # `asta experiment` pass-through to panda CLI
-├── literature/
-│   ├── __init__.py
-│   └── find.py                # `asta literature find` command
-└── papers/
-    ├── __init__.py
-    ├── client.py              # SemanticScholarClient (stdlib only)
-    ├── get.py                 # `asta papers get` command
-    ├── search.py              # `asta papers search` command
-    ├── citations.py           # `asta papers citations` command
-    └── author.py              # `asta papers author` commands
+Design rules worth knowing before you change code:
 
-scripts/                       # Build and maintenance scripts
-
-# Plugin distribution (via `npx plugins add`):
-plugins/
-  asta-tools/                  # Research skills + shared permission hooks
-    skills/                    #   every skill definition
-    hooks/                     #   permission/session hooks (hooks.json)
-  asta-assistant/              # Autonomous research assistant (research-step)
-    skills/                    #   requires asta-tools to be installed
-  asta-dev/                    # Contributor skills (improve-skills, research-challenge)
-    skills/                    #   requires asta-tools to be installed
-.claude-plugin/
-  marketplace.json             # Marketplace listing (asta-tools, asta-assistant, asta-dev)
-```
-
-### Design Principles
-
-1. **Core clients are dependency-free**: `asta.literature.client` and `asta.papers.client` use only stdlib (json, urllib, time, etc.)
-2. **CLI layer is thin**: Click commands wrap the core clients
-3. **Generic passthrough architecture**: `asta.utils.passthrough` provides reusable utilities for external tool integration
-   - `ensure_tool_installed()`: Checks for tool, auto-installs if missing
-   - `create_passthrough_command()`: Factory function for creating passthrough commands
-4. **Configuration management**: `asta.utils.config` loads passthrough settings from HOCON
-   - All passthrough configurations centralized in `src/asta/utils/passthrough.conf`
-   - Uses pyhocon for flexible, hierarchical configuration
-   - `get_passthrough_config()`: Retrieves settings for specific commands
-5. **Pass-through commands**: Commands that delegate to external tools, auto-installed on first use
-   - `asta documents` → `asta-documents` CLI (document metadata management)
-   - `asta experiment` → `panda` CLI (computational experiments)
-   - Configuration: Version pinning, install sources, and other settings in `passthrough.conf`
-   - Future: will install from PyPI instead of git
-6. **Claude Code integration**: Uses the CLI via Bash tool for portability
+- Core API clients (`asta.literature.client`, `asta.papers.client`) stay stdlib-only.
+- Click commands stay thin — logic belongs in the client classes.
+- New external-tool integrations go through the passthrough system
+  (`asta.utils.passthrough` + `passthrough.conf`), not bespoke wrappers.
 
 ## Development Setup
 
-### Prerequisites
-
-- Python 3.11+
-- `uv` (for running commands)
-- `make` (for development tasks)
-- Node.js 20+ / `npx` (for skill discovery tests — `make test` skips these if missing)
-
-### Quick Start
-
-A Makefile is provided for all common development tasks:
-
-```bash
-make help     # Show all available targets
-make install  # Install with test dependencies
-make test     # Run all tests
-make lint     # Check code style
-make format   # Auto-fix formatting
-make check    # Quick pre-commit check (format + lint + unit tests)
-make ci       # Full CI check (format + lint + all tests)
-```
-
-### Install for Development
+Prerequisites: Python 3.11+, `uv`, `make`, and Node.js 20+ / `npx`
+(skill-discovery tests are skipped if `npx` is missing).
 
 ```bash
 git clone https://github.com/allenai/asta-plugins.git
@@ -99,685 +30,78 @@ cd asta-plugins
 make install
 ```
 
-`make install` creates `.venv/bin/asta` as an editable install — changes to Python source
-are picked up immediately, no reinstall needed.
+`make install` creates `.venv/bin/asta` as an editable install — Python changes are
+picked up immediately. Run `make help` to see every available target.
 
-#### Using dev asta from other directories
-
-To use the dev `asta` from any directory, either invoke it directly:
-
-```bash
-/path/to/asta-plugins/.venv/bin/asta --help
-```
-
-Or activate the venv:
-
-```bash
-source /path/to/asta-plugins/.venv/bin/activate
-```
-
-If you have a global `asta` installed, it stays unaffected — the venv takes precedence
-only while active.
-
-For coding agents like Claude that invoke bare `asta` from arbitrary working directories,
-add to `~/.zshrc`:
+To use the dev `asta` from other directories, either invoke
+`/path/to/asta-plugins/.venv/bin/asta` directly or activate `.venv`. For coding
+agents that invoke bare `asta`, add a shell alias that prepends the venv to `PATH`:
 
 ```bash
 alias claude-asta='PATH="/path/to/asta-plugins/.venv/bin:$PATH" claude --plugin-dir /path/to/asta-plugins/plugins/asta-tools'
 ```
 
-The PATH prepend ensures skills resolve `asta` to your local source for that session,
-without affecting your global install. If you have the `asta` plugin installed globally,
-disable or uninstall it via Claude Code settings while developing to avoid loading it
-twice alongside `--plugin-dir`.
+If a global `asta` plugin is installed, disable it via Claude Code settings while
+developing with `--plugin-dir` to avoid loading skills twice.
 
-#### Picking up changes
+**What needs a reinstall:**
 
-| Changed | Action needed |
-|---|---|
-| Python files (`src/asta/`) | None — editable install |
-| `pyproject.toml` (new deps/scripts) | `make install` |
-| Skills or hooks (`plugins/asta-tools/`, `plugins/asta-assistant/`, `plugins/asta-dev/`) | Restart `claude-asta` session to pick up the change. |
+| Changed                          | Action                                          |
+|----------------------------------|-------------------------------------------------|
+| Python files under `src/asta/`   | None — editable install                         |
+| `pyproject.toml` (deps, scripts) | `make install`                                  |
+| Skills or hooks under `plugins/` | Restart your `claude-asta` session              |
 
-### Run Tests
+## Dev Loop
 
 ```bash
-make test              # Run all tests
-make test-unit         # Run unit tests only
-make test-integration  # Run integration tests only
-make test-coverage     # Run with HTML coverage report
+make check     # format-check + lint + unit tests — run before every commit
+make ci        # full CI: format-check + lint + all tests + skill validation
+make test      # all tests (also: test-unit, test-integration, test-coverage)
+make format    # auto-fix formatting
 ```
 
-### Test the CLI
+`make ci` is what GitHub Actions runs. Get it green before opening a PR.
 
-```bash
-# Install the package in development mode
-make install
+### PR checklist
 
-# Run directly from source
-uv run python -m asta.cli --version
-uv run python -m asta.cli literature find "test query" --timeout 60
-
-# Test documents pass-through (will auto-install asta-documents on first use)
-uv run python -m asta.cli documents --help
-uv run python -m asta.cli documents list
-```
-
-### Linting and Formatting
-
-```bash
-make lint          # Check code style
-make format        # Auto-fix formatting
-make format-check  # Check formatting without changes
-make check         # Quick pre-commit check (format-check + lint + unit tests)
-```
-
-## Adding New Commands
-
-### 1. Create the command module
-
-Add a new file in `src/asta/literature/` (or create a new subpackage):
-
-```python
-# src/asta/literature/analyze.py
-import click
-from asta.literature.client import AstaPaperFinder
-
-@click.command()
-@click.argument("widget_id")
-@click.option("--format", type=click.Choice(["json", "markdown"]), default="json")
-def analyze(widget_id: str, format: str):
-    """Analyze papers from a previous search."""
-    # Implementation here
-    pass
-```
-
-### 2. Register in cli.py
-
-```python
-# src/asta/cli.py
-from asta.literature.analyze import analyze
-
-literature.add_command(analyze)
-```
-
-### 3. Add tests
-
-```python
-# tests/test_analyze.py
-from click.testing import CliRunner
-from asta.cli import cli
-
-def test_analyze_command():
-    runner = CliRunner()
-    result = runner.invoke(cli, ["literature", "analyze", "widget-123"])
-    assert result.exit_code == 0
-```
-
-### 4. Update documentation
-
-Update README.md and this DEVELOPER.md with the new command.
-
-## Core API Clients
-
-### AstaPaperFinder
-
-The `AstaPaperFinder` client in `src/asta/literature/client.py` handles paper finder API interactions.
-
-```python
-from asta.literature import AstaPaperFinder
-
-client = AstaPaperFinder()
-
-# Simple synchronous search using headless endpoint
-result = client.find_papers("query", timeout=300)
-# Returns: {query, widget, status, timestamp, paper_count}
-
-# With operation mode control
-result = client.find_papers(
-    "query",
-    timeout=300,
-    operation_mode="fast",  # "infer", "fast", or "diligent"
-    include_full_metadata=True
-)
-```
-
-### SemanticScholarClient
-
-The `SemanticScholarClient` in `src/asta/papers/client.py` handles Semantic Scholar API interactions.
-
-```python
-from asta.papers.client import SemanticScholarClient
-
-client = SemanticScholarClient()  # Uses ASTA_TOOL_KEY env var if available
-
-# Get paper details
-paper = client.get_paper("ARXIV:2005.14165", fields="title,abstract,authors")
-
-# Search papers
-results = client.search_papers("transformers", limit=20, year="2023-")
-
-# Get citations
-citations = client.get_paper_citations("ARXIV:2005.14165", limit=50)
-
-# Author search
-authors = client.search_author("Yoav Goldberg")
-papers = client.get_author_papers("1741101", limit=50)
-```
-
-### Adding New API Endpoints
-
-1. Add a method to the appropriate client class
-2. Keep it dependency-free (stdlib only)
-3. Add tests in `tests/test_client.py` or `tests/test_papers_cli.py`
-4. Create CLI commands to expose the functionality
-
-## Claude Code Plugin Development
-
-### Skill Files
-
-Skills are markdown files in `plugins/<plugin-name>/skills/<skill-name>/SKILL.md`. There are three plugins:
-
-- **`asta-tools`** — research skills used during normal Asta usage.
-- **`asta-assistant`** — autonomous research assistant skills (`research-step`). Requires `asta-tools`.
-- **`asta-dev`** — contributor skills (`improve-skills`, `research-challenge`). Requires `asta-tools`.
-
-Plugins beyond `asta-tools` depend on the `asta` CLI and the hooks shipped in `asta-tools`.
-
-```markdown
----
-name: Skill Name
-description: When to use this skill
-allowed-tools:
-  - Bash(asta *)
-  - Read(*)
----
-
-# Skill Name
-
-Instructions and examples...
-```
-
-**Distribution channels:**
-
-| Channel | Command |
-|---------|---------|
-| npx **plugins** CLI | `npx plugins add allenai/asta-plugins` |
-| npx **skills** CLI (any agent) | `npx skills add allenai/asta-plugins` |
-| Claude Code marketplace | `/plugin install asta-tools` (and optionally `asta-assistant`, `asta-dev`) |
-| Local dev | `claude --plugin-dir plugins/asta-tools --plugin-dir plugins/asta-assistant --plugin-dir plugins/asta-dev` |
-
-**Adding a new skill:**
-
-1. Pick the plugin (`asta-tools` for user-facing research; `asta-assistant` for autonomous-research drivers; `asta-dev` for contributor tooling).
-2. Create `plugins/<plugin>/skills/<name>/SKILL.md`
-3. Commit and push.
-
-#### Validating a behavior change
-
-When a change affects what an agent *does* — a routing `description:` or a step it follows — validate it before merging: reproduce the target behavior as an eval case and compare baseline vs. change with a paired eval. Where that behavior can't be fully captured in-sandbox, skip the new case and just run the existing cases it could affect, to catch regressions. The [`improve-skills`](plugins/asta-dev/skills/improve-skills/SKILL.md) skill walks this end to end; use it for any skill change you PR.
-
-Worked examples: [#60](https://github.com/allenai/asta-plugins/pull/60) (description rewrite), [#63](https://github.com/allenai/asta-plugins/pull/63) (new skill + cases), [#67](https://github.com/allenai/asta-plugins/pull/67) (multi-skill fix with ablation).
-
-### Hooks
-
-Hooks in `hooks/` are bash scripts that can auto-approve tool usage:
-
-```bash
-#!/bin/bash
-INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
-
-if [[ "$COMMAND" == asta* ]]; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
-  exit 0
-fi
-
-echo '{}'
-```
-
-Register hooks in `hooks/hooks.json`:
-
-```json
-{
-  "user-prompt-submit-hook": "hooks/session-start.sh",
-  "tool-use-pre-hook": [
-    "hooks/approve-asta-bash.sh",
-    "hooks/approve-asta-files.sh"
-  ]
-}
-```
-
-### Testing Claude Code Integration
-
-```bash
-# Run Claude Code with local plugin
-claude --plugin-dir plugins/asta-tools --debug
-
-# In Claude, test skills naturally
-# Skills activate automatically based on what you ask
-Find papers on machine learning
-Generate a literature report on transformers
-Get details for arXiv:2005.14165
-
-# Check debug logs
-cat ~/.claude/debug/<session-id>.txt
-```
-
-## Project Structure Details
-
-### Source Layout (src/)
-
-Uses PyPA recommended src/ layout:
-
-- Prevents accidental imports during development
-- Better build isolation
-- Clear separation between source and tests
-
-### Build System
-
-Uses `hatchling` as build backend:
-
-```toml
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/asta"]
-```
-
-## Docker Image
-
-The Docker image provides a complete environment with the `asta` CLI, skills,
-and Quarto pre-installed. Useful for development without setting up local
-dependencies, and for testing the production image.
-
-```bash
-# No auth needed:
-make docker              # Build the image from local source
-make docker-test         # Build and run smoke tests
-make docker-test-skills  # Test skill discovery with npx
-
-# Require ASTA_TOKEN (and ANTHROPIC_API_KEY or OPENAI_API_KEY):
-make docker-claude-asta  # Start container with Claude Code + asta-tools skills
-make docker-codex-asta   # Start container with Codex CLI + asta-tools skills
-```
-
-### Manual testing
-
-Set up tokens on the host first (see [README](README.md#docker-image)),
-then test the full Docker flow:
-
-```bash
-make docker-claude-asta   # drops into container with Claude Code + skills
-
-# Inside the container:
-claude                    # start Claude with asta-tools skills
-```
-
-To test skill or CLI changes, rebuild with `make docker` then re-run
-`make docker-claude-asta`. Docker layer caching makes rebuilds
-fast when only source files change.
-
-The `docker.yml` workflow publishes `ghcr.io/allenai/asta:<tag>` automatically
-when a version tag is pushed (via `make push-version-tag`).
+- One feature/fix per PR; include tests.
+- Update `CHANGELOG.md`.
+- Update README.md if user-visible behavior changes.
+- `make ci` passes.
 
 ## Release Process
 
-The version number is stored in three source locations:
-- `src/asta/__init__.py` - `__version__` variable (Python package version)
-- `pyproject.toml` - `version` field (Build system version)
-- `.claude-plugin/marketplace.json` - `plugins[].version` fields (Claude Code auto-updates)
+The version lives in three places:
 
-`make set-version` updates all three.
+- `src/asta/__init__.py` — `__version__`
+- `pyproject.toml` — `version`
+- `.claude-plugin/marketplace.json` — `plugins[].version`
 
-### Complete Release Workflow
+`make set-version` keeps them in sync; `make push-version-tag` enforces it.
 
-1. **Update version in all source files:**
+**Every release:**
+
+1. `make set-version VERSION=x.y.z`
+2. `git diff` — sanity-check the version bump.
+3. `make ci` — must be green.
+4. Commit and push the version bump:
    ```bash
-   make set-version VERSION=0.3.0
+   git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-   Updates `src/asta/__init__.py`, `pyproject.toml`, and `.claude-plugin/marketplace.json`.
-
-2. **Review changes:**
-   ```bash
-   git diff
-   ```
-   Verify the version updated correctly.
-
-3. **Run full test suite:**
-   ```bash
-   make ci
-   ```
-   Ensures all tests pass, linting is clean, and code is formatted.
-
-4. **Commit version bump:**
-   ```bash
-   git add -A
-   git commit -m "chore: bump version to 0.3.0"
-   git push
-   ```
-
-5. **Create and push version tag:**
-   ```bash
-   make push-version-tag
-   ```
-   This command will:
-   - Verify all version files are in sync (fails if they differ)
-   - Check that the git tag doesn't already exist
-   - Create and push the git tag (e.g., `0.3.0`)
-   - Provide a URL to create the GitHub release
-
-6. **Create GitHub release notes:**
-   - Visit the URL provided by `make push-version-tag`
-   - Add release notes describing changes
-   - Publish the release
-
-7. **Publish to PyPI (optional):**
-   ```bash
-   make publish       # Production PyPI
-   make publish-test  # TestPyPI for testing
-   ```
-
-### Version Management Commands
-
-**Check current version:**
-```bash
-make version
-```
-
-**Set version in all files:**
-```bash
-make set-version VERSION=x.y.z
-```
-- Updates all locations where version is referenced
-- Fails with error if VERSION parameter is not provided
-- Provides suggested commit command after success
-
-**Push version tag:**
-```bash
-make push-version-tag
-```
-- Checks that `__init__.py`, `pyproject.toml`, and `marketplace.json` versions match
-- Fails with clear error if they differ
-- Creates and pushes git tag if all checks pass
-- Fails if git tag already exists (prevents accidental overwrites)
-
-### Version Mismatch Example
-
-If you try to push a version tag with mismatched versions:
-
-```bash
-$ make push-version-tag
-Checking version consistency...
-Error: Version mismatch detected:
-  src/asta/__init__.py:            0.3.0
-  pyproject.toml:                  0.2.0
-  .claude-plugin/marketplace.json: 0.2.0
-
-Run 'make set-version VERSION=x.y.z' to sync versions
-```
-
-### Building Distribution
-
-```bash
-make build  # Cleans and builds distribution packages
-```
-
-Creates `dist/asta-VERSION.tar.gz` and `dist/asta-VERSION-*.whl`
-
-## Testing Strategy
-
-### Unit Tests
-
-- `tests/test_client.py`: Core API client tests
-- `tests/test_cli.py`: CLI command tests using Click's CliRunner
-- Mock external API calls
-
-### Integration Tests
-
-- `tests/test_integration.py`: End-to-end CLI tests
-- `tests/test_paper_finder.py`: Backward compatibility tests
-- `tests/test_hooks.py`: Hook script tests
-
-### Claude Code Tests
-
-- `tests/test_config.py`: Plugin manifest validation
-
-### Running Specific Test Categories
-
-```bash
-make test-unit         # Core tests (client, cli)
-make test-integration  # Integration and compatibility tests
-```
-
-## Common Development Tasks
-
-### Adding a New Dependency
-
-Only add dependencies if absolutely necessary:
-
-1. Add to `dependencies` in `pyproject.toml`
-2. Run `make install` to sync dependencies
-3. Update tests to verify it works
-4. Document why it's needed
-
-Core API clients (`asta.literature.client`, `asta.papers.client`) should remain dependency-free.
-
-### Updating API Endpoints
-
-If Asta's API changes:
-
-1. Update `AstaPaperFinder` in `src/asta/literature/client.py`
-2. Add/update tests in `tests/test_client.py`
-3. Update documentation examples
-4. Consider backward compatibility
-
-### Adding a New Passthrough Command
-
-To add a new external tool as an `asta` passthrough command:
-
-1. **Add configuration** to `src/asta/utils/passthrough.conf`:
-   ```hocon
-   passthrough {
-     # ... existing configs ...
-
-     newtool {
-       tool_name = "newtool-cli"
-       install_type = "pypi"  # or "git" or "local"
-       install_source = "newtool-package"  # package name, git URL, or filesystem path
-       minimum_version = "1.0.0"  # Must be x.y.z format
-       command_name = "newtool"
-       docstring = "Description for --help"
-     }
-   }
-   ```
-
-   **Installation source types:**
-   - `pypi`: Install from PyPI (e.g., `install_source = "package-name"`)
-   - `git`: Install from Git repository (e.g., `install_source = "git+https://github.com/user/repo"`)
-   - `local`: Install from local filesystem (e.g., `install_source = "/path/to/package"` or `"~/dev/package"`)
-
-2. **Create the passthrough module:**
-   ```python
-   # src/asta/newtool/__init__.py
-   from asta.newtool.passthrough import newtool
-   __all__ = ["newtool"]
-
-   # src/asta/newtool/passthrough.py
-   from asta.utils.config import get_passthrough_config
-   from asta.utils.passthrough import create_passthrough_command
-
-   # Load configuration from passthrough.conf
-   config = get_passthrough_config("newtool")
-
-   # Create the passthrough command
-   newtool = create_passthrough_command(
-       tool_name=config["tool_name"],
-       install_type=config["install_type"],
-       install_source=config["install_source"],
-       minimum_version=config["minimum_version"],
-       command_name=config["command_name"],
-       docstring=config["docstring"],
-   )
-   ```
-
-3. **Register in CLI:**
-   ```python
-   # src/asta/cli.py
-   from asta.newtool import newtool
-   cli.add_command(newtool)
-   ```
-
-4. **Add tests:**
-   ```python
-   # tests/test_cli.py
-   class TestNewToolCommand:
-       def test_newtool_config(self):
-           from asta.utils.config import get_passthrough_config
-           from asta.utils.passthrough import validate_semver
-
-           config = get_passthrough_config("newtool")
-           assert config["tool_name"] == "newtool-cli"
-           assert config["install_type"] in ("pypi", "git", "local")
-           assert validate_semver(config["minimum_version"])
-
-       def test_newtool_passthrough_when_installed(self, runner, tmp_path):
-           # Test passthrough behavior
-           ...
-   ```
-
-5. **Create skill (optional):**
-   ```markdown
-   # plugins/asta-tools/skills/newtool/SKILL.md
-   ---
-   name: NewTool Skill
-   description: When to use this skill
-   allowed-tools:
-     - Bash(asta newtool *)
-   ---
-
-   Use `asta newtool` to invoke the external tool...
-   ```
-
-5. **Update documentation:**
-   - Add to README.md skill list
-   - Document in DEVELOPER.md
-
-### Updating Passthrough Tool Versions
-
-The passthrough system automatically enforces minimum version requirements for external tools.
-
-**How it works:**
-
-1. When you run a passthrough command (e.g., `asta documents`), the system:
-   - Checks if the tool is installed
-   - If installed, runs `tool --version` to check the version
-   - Compares with the `minimum_version` specified in `passthrough.conf`
-   - Automatically reinstalls **only if the installed version is below the minimum**
-
-2. Version requirements:
-   - Must be in semantic version format: `x.y.z` (e.g., `0.1.0`, `1.2.3`)
-   - The 'v' prefix is optional when parsing installed versions (both `1.0.0` and `v1.0.0` are accepted)
-   - Versions are compared semantically: `1.0.1` > `1.0.0`, `1.1.0` > `1.0.9`, `2.0.0` > `1.99.99`
-   - If the installed version is **greater than or equal** to minimum_version, it will be kept (no downgrade)
-
-3. This allows users to:
-   - Install newer versions manually and have them respected
-   - Get automatic updates only when their version is too old
-   - Avoid unnecessary reinstallations on every run
-
-**To require a newer minimum version:**
-
-1. **Update the configuration** in `src/asta/utils/passthrough.conf`:
-   ```hocon
-   passthrough {
-     documents {
-       minimum_version = "0.2.0"  # Require at least version 0.2.0
-       # ... other settings
-     }
-     experiment {
-       minimum_version = "1.0.0"  # Require at least version 1.0.0
-       # ... other settings
-     }
-   }
-   ```
-
-2. **Next time someone runs the command**, it will automatically update if their version is too old:
-   ```bash
-   # If installed version < 0.2.0, will reinstall
-   # If installed version >= 0.2.0, will use existing installation
-   asta documents --help
-   asta experiment --help
-   ```
-
-3. **Update release notes** mentioning the new minimum version requirement
-
-**Switching installation sources:**
-
-When a tool becomes available on PyPI, update `passthrough.conf`:
-```hocon
-# Change from Git:
-install_type = "git"
-install_source = "git+https://github.com/org/repo"
-
-# To PyPI:
-install_type = "pypi"
-install_source = "package-name"
-```
-
-For local development:
-```hocon
-# Use local installation:
-install_type = "local"
-install_source = "~/dev/my-package"
-```
-
-### Debugging
-
-```bash
-# Run with Python debugger
-uv run python -m pdb -m asta.cli literature find "test"
-
-# Enable Python warnings
-PYTHONWARNINGS=default uv run python -m asta.cli literature find "test"
-```
-
-## Contributing Guidelines
-
-### Before Submitting a PR
-
-Run all checks at once:
-```bash
-make ci  # Runs format-check, lint, and all tests
-```
-
-Or individually:
-1. Run all tests: `make test`
-2. Check formatting: `make format-check`
-3. Check linting: `make lint`
-4. Update documentation if adding features
-5. Add tests for new functionality
-
-### PR Guidelines
-
-- One feature/fix per PR
-- Include tests
-- Update CHANGELOG.md
-- Keep commits focused and well-described
-- Reference any related issues
-
-### Code Style
-
-- Follow PEP 8 (enforced by ruff)
-- Use type hints where helpful
-- Keep functions focused and short
-- Document complex logic with comments
-- Add docstrings to public APIs
-
-## Getting Help
-
-- Open an issue: https://github.com/allenai/asta-plugins/issues
-- Check existing issues and discussions
-- Read the code - it's designed to be understandable
+5. `make push-version-tag` — verifies all three version files match, fails if the
+   tag already exists, then creates and pushes the git tag. Prints a URL for the
+   GitHub release page.
+6. Open the URL, add release notes, publish the release. This triggers
+   `docker.yml`, which publishes `ghcr.io/allenai/asta:<tag>`.
+7. *(Optional)* Publish to PyPI: `make publish` (or `make publish-test` for
+   TestPyPI).
+
+If `push-version-tag` reports a version mismatch, rerun `make set-version` to
+resync — don't hand-edit one file.
+
+## Specific Workflows
+
+- **Extending the CLI** (commands, API endpoints, dependencies, passthrough tools) — [docs/cli-commands.md](docs/cli-commands.md)
+- **Authoring skills and hooks** — [docs/plugins.md](docs/plugins.md)
+- **Docker image (build, manual test, troubleshooting)** — [docs/docker.md](docs/docker.md)
