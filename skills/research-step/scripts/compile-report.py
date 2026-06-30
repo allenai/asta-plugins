@@ -289,6 +289,9 @@ def collect(sess, base_url=""):
                 break
         if run_dir:
             break
+    if not run_id and run_dir:  # recover the AutoDiscovery run id from inputs/<run_id>/ paths
+        m = re.search(r"[0-9a-fA-F-]{8,}", Path(run_dir).name)
+        run_id = m.group(0) if m else run_id
     for e in experiments:
         eid = e.get("experiment_id")
         link = None
@@ -629,7 +632,39 @@ def compute_anchors(sess, ctx, known):
     return {"by_issue": by_issue, "by_task_type": dict(TASK_SECTION)}
 
 
-def build(sess, base_url="", site=False, clickable=True):
+# Deep-link URL templates per producing agent. The host is a placeholder until run
+# publishing lands; override via CLI (--autods-base / --theorizer-base / --datavoyager-base).
+# {run_id} / {task_id} fill deterministically from identifiers in the records.
+LINK_TEMPLATES = {
+    "autodiscovery": "https://asta.allenai.org/autodiscovery/runs/{run_id}",
+    "theorizer": "https://asta.allenai.org/theorizer/tasks/{task_id}",
+    "datavoyager": "https://asta.allenai.org/datavoyager/tasks/{task_id}",
+}
+
+
+def build_links(ctx, sess, overrides=None):
+    """The cover's deep-link header, built deterministically from identifiers in the
+    session: the AutoDiscovery run from run_id, and Theorizer / DataVoyager from their
+    A2A task ids when present. An agent with no id (older runs) yields no badge."""
+    tmpl = dict(LINK_TEMPLATES)
+    tmpl.update(overrides or {})
+    links = []
+    if ctx.get("run_id") and tmpl.get("autodiscovery"):
+        links.append({"label": "AutoDiscovery run", "url": tmpl["autodiscovery"].format(run_id=ctx["run_id"])})
+    a2a = {}
+    for i in sess.tasks:
+        for a in rs(i)["output_json"].get("artifacts") or []:
+            m = a.get("metadata") or {}
+            ag, tid = m.get("agent"), m.get("a2a_task_id")
+            if ag in ("theorizer", "datavoyager") and tid and ag not in a2a and tmpl.get(ag):
+                a2a[ag] = tmpl[ag].format(task_id=tid)
+    for ag, label in (("theorizer", "Theorizer run"), ("datavoyager", "DataVoyager run")):
+        if a2a.get(ag):
+            links.append({"label": label, "url": a2a[ag]})
+    return links
+
+
+def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
     """Returns (report_text, anchors). site=True emits the body only (sections + entity
     anchors, no front-matter / TikZ flow / TOC) for embedding in the auto-ds-community run
     page — the workflow graph is that site's right pane. site=False emits the standalone
@@ -656,7 +691,8 @@ def build(sess, base_url="", site=False, clickable=True):
     cover = ""
     ctmpl = REPORT_TMPL / "cover.md.j2"
     if ctx.get("summary") and ctmpl.is_file():
-        cover = render.render_template_file(ctmpl, ctx=ctx, ref=ref, anchor=anchor, clickable=clickable).strip()
+        links = build_links(ctx, sess, link_overrides)
+        cover = render.render_template_file(ctmpl, ctx=ctx, links=links, ref=ref, anchor=anchor, clickable=clickable).strip()
 
     body = []
     for name in SECTIONS:
@@ -713,10 +749,17 @@ def main(argv=None):
     ap.add_argument("--anchors", help="write the node↔report anchor map here (default: report_anchors.json beside --out)")
     ap.add_argument("--no-links", action="store_true",
                     help="suppress outbound links into the run's files (a clean, shareable PDF)")
+    ap.add_argument("--autods-base", help="URL template for the AutoDiscovery run badge, with {run_id}")
+    ap.add_argument("--theorizer-base", help="URL template for the Theorizer run badge, with {task_id}")
+    ap.add_argument("--datavoyager-base", help="URL template for the DataVoyager run badge, with {task_id}")
     args = ap.parse_args(argv)
 
+    overrides = {k: v for k, v in (("autodiscovery", args.autods_base),
+                                   ("theorizer", args.theorizer_base),
+                                   ("datavoyager", args.datavoyager_base)) if v}
     sess = Session(load_issues(args.issues))
-    text, anchors = build(sess, args.base_url, args.site, clickable=not args.no_links)
+    text, anchors = build(sess, args.base_url, args.site, clickable=not args.no_links,
+                          link_overrides=overrides or None)
     Path(args.out).write_text(text)
     anchors_path = Path(args.anchors) if args.anchors else Path(args.out).with_name("report_anchors.json")
     anchors_path.write_text(json.dumps(anchors, indent=2) + "\n")

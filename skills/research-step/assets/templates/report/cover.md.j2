@@ -1,4 +1,7 @@
 {% set s = ctx.summary %}
+{% if links %}{% for l in links %}[{{ l.label }}]({{ l.url }}){% if not loop.last %} · {% endif %}{% endfor %}
+
+{% endif %}
 - **discipline:** {{ s.discipline }}
 - **domain:** {{ s.domain }}
 - **topic:** {{ s.topic }}
