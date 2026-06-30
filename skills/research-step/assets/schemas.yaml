@@ -28,7 +28,7 @@ flows:
         input: [analysis]
         chain: [asta analyze-data submit, asta analyze-data poll]
       adjudicate:
-        mission: Finalize the theory's outcome (held, partial, failed, underpowered, or n/a) and observed effect size from the analysis and audit, checked against the prespecified success_threshold from triage. Emit an adjudication referencing the theory id.
+        mission: Finalize the theory's outcome and observed effect size from the analysis and audit, checked against the prespecified success_threshold from triage. Emit an adjudication referencing the theory id.
         input: [testability_triage, analysis, audit]
         chain: []
     summarize:
@@ -52,7 +52,7 @@ flows:
       chain: [asta documents, asta autodiscovery upload]
 
   reproduction:
-    mission: Ingest an AutoDiscovery run, group its experiments into laws, find independent data once for all of them, then reproduce each law. The verdict is two-axis - outcome (held/partial/failed/underpowered/n-a) crossed with testability (tested/proxy_only/untestable) - and comes from the branch's adjudication, not the ingested run.
+    mission: Ingest an AutoDiscovery run, group its experiments into laws, find independent data once for all of them, then reproduce each law. The verdict is two-axis - outcome crossed with testability - and comes from the branch's adjudication, not the ingested run.
     data_driven_discovery:
       mission: Ingest the run. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts. Also register the run's own dataset(s) as a dataset entry - this is the "data in hand" that testability_triage and verification later test theories against, so it must be a first-class output, not just the run directory. When data_provenance ran first, prefer the datasets it acquired (with their local paths) as the data in hand, falling back to the run's described datasets where acquisition was restricted.
       input: []
@@ -92,7 +92,7 @@ flows:
       input: [law_extraction, adjudicate]
       chain: [asta generate-theories build-extraction-schema, asta generate-theories find-and-extract]
     theory_generation:
-      mission: Two branches over the same shared extraction store, one per generation objective (accuracy_focused, novelty_focused). Both branches are known up front, so they are created together. Ground theories in the reproduction's effect sizes and verdicts; populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.
+      mission: Two branches over the same shared extraction store, one per generation objective. Both branches are known up front, so they are created together. Ground theories in the reproduction's effect sizes and verdicts; populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.
       theory_formation:
         mission: Form theories from the shared extraction store under this branch's objective.
         input: [evidence_extraction]
@@ -109,7 +109,7 @@ flows:
   summarize:
     mission: Summarize a completed research session as a self-contained encyclopedia entry. A capstone that composes onto any flow - it reads the whole session and names no inputs, so id-order places it last.
     summarize:
-      mission: From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. title - a short, informative title for this discovery. The five index fields - discipline, domain, topic, scientific_question, and discovery_type (prefer one of New phenomenon, Mechanistic explanation, Mechanistic unification, Predictive law, Causal relationship, New measurement or assay, Classification or taxonomy, Theoretical framework, Computational method, Dataset or resource, Negative result / falsification, Translational application unless none fits). context - about half a page orienting the reader to the technical domain; set the scientific context only, do not repeat the research or the discovery. summaries - one executive summary per audience, where main_finding states the finding succinctly and elaboration is one paragraph giving the details and highlighting what is most novel or surprising versus what is already known. Write the general audience for an intelligent layperson outside the field (simplify, avoid jargon) and the technical audience for a scientist working in the field; each must stand alone. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
+      mission: From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only - do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known - one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
       input: []
       chain: []
 
@@ -143,7 +143,7 @@ flows:
         input: [analysis]
         chain: [asta analyze-data submit, asta analyze-data poll]
       adjudicate:
-        mission: Finalize the hypothesis's outcome (held, partial, failed, underpowered, or n/a) and observed effect size against the design's prespecified success_threshold, from the analysis and audit. Emit an adjudication referencing the hypothesis id.
+        mission: Finalize the hypothesis's outcome and observed effect size against the design's prespecified success_threshold, from the analysis and audit. Emit an adjudication referencing the hypothesis id.
         input: [experiment_design, analysis, audit]
         chain: []
     summarize:
@@ -165,7 +165,7 @@ flows:
       mission: One branch per high-surprise candidate law (created at replan, once discovery_run has named them). Replicate that law independently on the held-out subset.
       replan: true
       holdout_replication:
-        mission: Replicate the law on the held-out subset - one DataVoyager run per law, in parallel (at most config max_parallel_dv_runs concurrent submissions). The verdict comes from this replication, not from the discovery run - emit an adjudication referencing the law id (outcome held/partial/failed/underpowered, or n/a when it could not be tested). Emit at least one figure behind the numbers - DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/ and put the path in figure.image (or render your own); list them in `figures` with captions.
+        mission: Replicate the law on the held-out subset - one DataVoyager run per law, in parallel (at most config max_parallel_dv_runs concurrent submissions). The verdict comes from this replication, not from the discovery run - emit an adjudication referencing the law id. Emit at least one figure behind the numbers - DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/ and put the path in figure.image (or render your own); list them in `figures` with captions.
         input: [discovery_run, cohort_assembly]
         chain: [asta analyze-data submit, asta analyze-data poll]
     summarize:
