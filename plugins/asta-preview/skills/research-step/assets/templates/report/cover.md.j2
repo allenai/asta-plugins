@@ -6,15 +6,6 @@
 
 ```{=latex}
 \begin{contextbox}
-{\sffamily\bfseries\Large\color{ai2foreground} Scientific Context}\hfill\raisebox{-4pt}{ {{ ai2logo }} }\par\vskip 6pt
-```
-
-{{ s.context }}
-
-```{=latex}
-\end{contextbox}
-\clearpage
-\begin{contextbox}
 \hfill\raisebox{-4pt}{ {{ ai2logo }} }\par\vspace{-1.6em}
 ```
 
@@ -26,7 +17,12 @@
 
 ```{=latex}
 \end{contextbox}
+\clearpage
 ```
+
+## Scientific Context {#sec-context}
+
+{{ s.context }}
 
 {% for a in s.summaries %}
 ## Summary ({{ a.audience|capitalize }}) {#sec-summary-{{ a.audience }}}
