@@ -18,6 +18,10 @@ flowchart TD
     summarize__summarize["summarize"]
   end
   class summarize embed
+  subgraph reflection["reflection [flow: reflection]"]
+    reflection__reflection["reflection"]
+  end
+  class reflection embed
   literature_review --> hypothesis_formation
   hypothesis_formation --> testing__experiment_design
   literature_review --> testing__experiment_design

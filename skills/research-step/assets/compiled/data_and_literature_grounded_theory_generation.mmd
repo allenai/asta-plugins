@@ -42,6 +42,10 @@ flowchart TD
     summarize__summarize["summarize"]
   end
   class summarize embed
+  subgraph reflection["reflection [flow: reflection]"]
+    reflection__reflection["reflection"]
+  end
+  class reflection embed
   data_provenance__provenance_search --> data_provenance__provenance_extraction
   data_provenance__provenance_search --> data_provenance__data_acquisition
   data_provenance__provenance_extraction --> data_provenance__data_acquisition

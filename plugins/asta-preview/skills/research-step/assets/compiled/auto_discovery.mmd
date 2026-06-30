@@ -14,6 +14,10 @@ flowchart TD
     summarize__summarize["summarize"]
   end
   class summarize embed
+  subgraph reflection["reflection [flow: reflection]"]
+    reflection__reflection["reflection"]
+  end
+  class reflection embed
   cohort_assembly --> discovery_run
   discovery_run --> replication__holdout_replication
   cohort_assembly --> replication__holdout_replication

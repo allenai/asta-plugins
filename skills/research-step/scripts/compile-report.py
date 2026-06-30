@@ -595,7 +595,7 @@ def flow_diagram(sess, ctx):
         "```{=latex}\n"
         "\\hypertarget{workflow}{}%\n"
         "\\begin{center}\n"
-        "{\\small\\itshape\\sffamily\\color{ai2foreground}Executed workflow (click a step to jump to its section)}\\\\[5pt]\n"
+        "{\\small\\itshape\\sffamily\\color{ai2foreground}Click a step to jump to its section.}\\\\[5pt]\n"
         "\\resizebox{\\textwidth}{!}{%\n"
         "\\begin{tikzpicture}[\n"
         "  phase/.style={draw=ai2accent, line width=0.9pt, rounded corners=4pt, fill=white,"

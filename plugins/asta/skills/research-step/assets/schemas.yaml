@@ -35,6 +35,10 @@ flows:
       mission: Summarize the completed reproduce-and-theorize session as an encyclopedia entry.
       chain:
         - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
+    reflection:
+      mission: Record the agent's feedback on how this session ran.
+      chain:
+        - {workflow: reflection, mission: Write the reflection for this session.}
 
   data_provenance:
     mission: Source the papers and datasets the AutoDiscovery run was built on. Search the literature for the publication(s) behind the run's datasets, extract their data-availability and repository details (reusing the theorizer extraction schema and its returned findings), acquire the open data so it becomes the data in hand, and record what could not be obtained. This runs before reproduction so the underlying data is sourced rather than assumed.
@@ -113,6 +117,13 @@ flows:
       input: []
       chain: []
 
+  reflection:
+    mission: Capture the executing agent's feedback on how the session ran. It composes onto any flow, reads the whole session, and names no inputs, so it runs last by id order.
+    reflection:
+      mission: The session is finished. Look back over the run and record how it went, as feedback rather than science. Note where the flow, schema, or tools got in your way or cost you rework, and the concrete changes that would have made the run go better. Point at the real tasks, fields, and tools involved.
+      input: []
+      chain: []
+
   hypothesis_driven_research:
     mission: Answer a research question from mission.md by surveying the literature, forming explicit falsifiable hypotheses, and running one prespecified test per hypothesis on acquired data. Review, hypothesize, design, test, adjudicate.
     literature_review:
@@ -150,6 +161,10 @@ flows:
       mission: Summarize the completed hypothesis-testing session as an encyclopedia entry.
       chain:
         - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
+    reflection:
+      mission: Record the agent's feedback on how this session ran.
+      chain:
+        - {workflow: reflection, mission: Write the reflection for this session.}
 
   auto_discovery:
     mission: Source a cohort from the literature and run a fresh AutoDiscovery against a research question, then replicate each high-surprise candidate law on a held-out subset. Run as its own session in a separate workspace (own mission.md and .beads, since a second epic root in one workspace breaks epic-root.sh); the research question (the intent) comes from that mission.md. The intent and the cohort are the most important inputs to a good discovery run, so most of the work is front-loaded into cohort_assembly. This flow is distinct from `reproduction`, which imports an existing run rather than standing up a new one.
@@ -172,6 +187,10 @@ flows:
       mission: Summarize the completed discovery-and-replication session as an encyclopedia entry.
       chain:
         - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
+    reflection:
+      mission: Record the agent's feedback on how this session ran.
+      chain:
+        - {workflow: reflection, mission: Write the reflection for this session.}
 
 tasks:
   provenance_search:      {output: {data_sources: [data_source], artifacts: [artifact]}}
@@ -194,6 +213,7 @@ tasks:
   discovery_run:          {output: {experiments: [experiment], empirical_laws: [empirical_law], artifacts: [artifact]}}
   holdout_replication:    {output: {adjudication: adjudication, figures: [figure], artifacts: [artifact]}}
   summarize:              {output: {summary: summary, artifacts: [artifact]}}
+  reflection:             {output: {reflection: reflection, artifacts: [artifact]}}
 
 types:
 
@@ -407,6 +427,19 @@ types:
     main_finding: string             # the "Main Finding" (a bold one-liner)
     elaboration: string              # the "Elaboration" paragraph
 
+  reflection:                        # the executing agent's feedback on how the session ran; the unit a future compaction pass merges
+    session_intent: string           # one line restating what this session set out to do (from mission.md), so the record stands alone when read later
+    frictions:                       # where the flow, schema, or tools got in the way
+      - locus: string                # where it surfaced: a task id/type, flow name, tool, or schema field
+        kind: friction_kind          # flow | schema | tool | mission | data
+        observation: string          # what went wrong: dead-end, rework, ambiguity, missing field, tool failure
+        severity: severity           # high | medium | low
+    proposed_changes:                # concrete edits that would have made the run go better
+      - target: string               # what to change: a mission, flow, skill, tool, or schema field (name or path)
+        change: string               # the concrete edit proposed
+        rationale: string            # why it helps; reference the friction it addresses
+        severity: severity           # high | medium | low
+
 enums:
   outcome:               [held, partial, failed, underpowered, n/a]   # the one verdict vocabulary, for laws, theories, and hypotheses
   testability:           [tested, proxy_only, untestable]
@@ -419,6 +452,8 @@ enums:
   support_level:         [supports, mixed, contradicts, inconclusive]
   access_status:         [acquired, open_unfetched, restricted, not_found]
   signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated]   # the reproduction signal's reason tag
+  friction_kind:         [flow, schema, tool, mission, data]   # what got in the agent's way (reflection)
+  severity:              [high, medium, low]                   # how much a friction or proposed change matters (reflection)
 
 config:
   n_experiments: 10                # auto-ds experiments per discovery run; set in the run-metadata JSON for `asta autodiscovery metadata`
