@@ -8,26 +8,8 @@
   },
   "plugins": [
     {
-      "name": "asta",
-      "source": "./plugins/asta",
-      "description": "Paper search, metadata, document management, and theory generation for scientific research",
-      "version": "0.19.2",
-      "author": {
-        "name": "Ai2 Asta Team"
-      },
-      "repository": "https://github.com/allenai/asta-plugins",
-      "license": "Apache-2.0",
-      "keywords": [
-        "academic",
-        "papers",
-        "citations",
-        "semantic-scholar",
-        "literature"
-      ]
-    },
-    {
-      "name": "asta-preview",
-      "source": "./plugins/asta-preview",
+      "name": "asta-tools",
+      "source": "./plugins/asta-tools",
       "description": "Paper search, metadata, document management, literature reports, experiments, and theory generation for scientific research",
       "version": "0.19.2",
       "author": {

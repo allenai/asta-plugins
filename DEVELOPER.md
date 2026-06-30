@@ -39,12 +39,11 @@ scripts/                       # Build and maintenance scripts
 
 # Plugin distribution (via `npx plugins add`):
 plugins/
-  asta-preview/                # CANONICAL — all skills + hooks live here (edit here)
+  asta-tools/                  # All skills + hooks live here
     skills/                    #   every skill definition
     hooks/                     #   permission/session hooks (hooks.json)
-  asta/                        # GENERATED — core subset (no metadata.internal); do not edit
 .claude-plugin/
-  marketplace.json             # Marketplace listing (asta + asta-preview plugins)
+  marketplace.json             # Marketplace listing (asta-tools plugin)
 ```
 
 ### Design Principles
@@ -85,11 +84,7 @@ make test     # Run all tests
 make lint     # Check code style
 make format   # Auto-fix formatting
 make check    # Quick pre-commit check (format + lint + unit tests)
-make ci       # Full CI check (format + lint + all tests + plugins check)
-
-# Claude Code marketplace (run before pushing skill/hook changes, not after each edit)
-make build-plugins  # Regenerate plugins/asta (core) from plugins/asta-preview
-make check-plugins  # Verify plugins/asta is up to date
+make ci       # Full CI check (format + lint + all tests)
 ```
 
 ### Install for Development
@@ -124,7 +119,7 @@ For coding agents like Claude that invoke bare `asta` from arbitrary working dir
 add to `~/.zshrc`:
 
 ```bash
-alias claude-asta='PATH="/path/to/asta-plugins/.venv/bin:$PATH" claude --plugin-dir /path/to/asta-plugins/plugins/asta-preview'
+alias claude-asta='PATH="/path/to/asta-plugins/.venv/bin:$PATH" claude --plugin-dir /path/to/asta-plugins/plugins/asta-tools'
 ```
 
 The PATH prepend ensures skills resolve `asta` to your local source for that session,
@@ -138,7 +133,7 @@ twice alongside `--plugin-dir`.
 |---|---|
 | Python files (`src/asta/`) | None — editable install |
 | `pyproject.toml` (new deps/scripts) | `make install` |
-| Skills or hooks (`plugins/asta-preview/`) | Restart `claude-asta` session to pick up the change. Run `make build-plugins` only when preparing to push changes to git — not after each edit. |
+| Skills or hooks (`plugins/asta-tools/`) | Restart `claude-asta` session to pick up the change. |
 
 ### Run Tests
 
@@ -277,7 +272,7 @@ papers = client.get_author_papers("1741101", limit=50)
 
 ### Skill Files
 
-Skills are markdown files in `plugins/asta-preview/skills/<skill-name>/SKILL.md`:
+Skills are markdown files in `plugins/asta-tools/skills/<skill-name>/SKILL.md`:
 
 ```markdown
 ---
@@ -293,70 +288,23 @@ allowed-tools:
 Instructions and examples...
 ```
 
-#### Skill distribution design
+**Distribution channels:**
 
-`plugins/asta-preview/skills/` is the **single source of truth** — every skill lives there. Whether a skill is in the core install or is preview-only is determined by its SKILL.md frontmatter:
-
-```yaml
-# Core skill — no metadata.internal field
----
-name: semantic-scholar
----
-
-# Preview skill — add metadata.internal: true
----
-name: find-literature
-metadata:
-  internal: true
----
-```
-
-This one flag drives all distribution behavior — no lists to maintain elsewhere.
-
-**Distribution channels, same source:**
-
-| Channel | Core install | All skills |
-|---------|----------------|------------|
-| npx **plugins** CLI | `npx plugins add allenai/asta-plugins` → pick `asta` | …or `asta-preview` |
-| npx **skills** CLI (any agent) | `npx skills add allenai/asta-plugins` | `--all` or `--skill "Name"` |
-| Claude Code marketplace | `/plugin install asta` | `/plugin install asta-preview` |
-| Local dev | `claude --plugin-dir plugins/asta-preview` (all skills) | — |
-
-**Why two plugin directories exist:**
-
-The npx skills CLI reads `metadata.internal` directly from SKILL.md, so filtering works automatically. The npx **plugins** CLI and Claude Code's native marketplace do **not** filter by frontmatter — they copy a plugin's whole directory and load every skill in it. So shipping a core-only plugin requires its own directory. We make `asta-preview` the canonical home of all skills and generate only the small `asta` subset from it — so the core skills are duplicated once (into `asta`) and `asta-preview` is never a copy.
-
-- `plugins/asta-preview/` — **canonical**, all skills + hooks (edit here)
-- `plugins/asta/` — **generated** core subset (`scripts/build-plugins.sh`); never edit by hand
-
-**Workflow for changing skills:**
-
-```bash
-# Edit the canonical source — iterate as long as you want;
-# restart your claude-asta session to pick up changes.
-vim plugins/asta-preview/skills/my-skill/SKILL.md
-
-# Once you're ready to push, regenerate the core asta plugin
-# (only at this point, not after each edit).
-make build-plugins
-
-# Commit the canonical change + regenerated subset
-git add plugins/
-git commit -m "Update my-skill"
-```
-
-CI enforces that `plugins/asta` stays in sync — PRs fail if someone edits a skill without rebuilding.
+| Channel | Command |
+|---------|---------|
+| npx **plugins** CLI | `npx plugins add allenai/asta-plugins` |
+| npx **skills** CLI (any agent) | `npx skills add allenai/asta-plugins` |
+| Claude Code marketplace | `/plugin install asta-tools` |
+| Local dev | `claude --plugin-dir plugins/asta-tools` |
 
 **Adding a new skill:**
 
-1. Create `plugins/asta-preview/skills/<name>/SKILL.md`
-2. Add `metadata.internal: true` if it shouldn't be in the core install yet
-3. Run `make build-plugins`
-4. To promote to core later: remove the `metadata.internal` block and rebuild
+1. Create `plugins/asta-tools/skills/<name>/SKILL.md`
+2. Commit and push.
 
 #### Validating a behavior change
 
-When a change affects what an agent *does* — a routing `description:` or a step it follows — validate it before merging: reproduce the target behavior as an eval case and compare baseline vs. change with a paired eval. Where that behavior can't be fully captured in-sandbox, skip the new case and just run the existing cases it could affect, to catch regressions. The [`improve-skills`](plugins/asta-preview/skills/improve-skills/SKILL.md) skill walks this end to end; use it for any skill change you PR.
+When a change affects what an agent *does* — a routing `description:` or a step it follows — validate it before merging: reproduce the target behavior as an eval case and compare baseline vs. change with a paired eval. Where that behavior can't be fully captured in-sandbox, skip the new case and just run the existing cases it could affect, to catch regressions. The [`improve-skills`](plugins/asta-tools/skills/improve-skills/SKILL.md) skill walks this end to end; use it for any skill change you PR.
 
 Worked examples: [#60](https://github.com/allenai/asta-plugins/pull/60) (description rewrite), [#63](https://github.com/allenai/asta-plugins/pull/63) (new skill + cases), [#67](https://github.com/allenai/asta-plugins/pull/67) (multi-skill fix with ablation).
 
@@ -393,7 +341,7 @@ Register hooks in `hooks/hooks.json`:
 
 ```bash
 # Run Claude Code with local plugin
-claude --plugin-dir plugins/asta-preview --debug
+claude --plugin-dir plugins/asta-tools --debug
 
 # In Claude, test skills naturally
 # Skills activate automatically based on what you ask
@@ -441,10 +389,8 @@ make docker-test         # Build and run smoke tests
 make docker-test-skills  # Test skill discovery with npx
 
 # Require ASTA_TOKEN (and ANTHROPIC_API_KEY or OPENAI_API_KEY):
-make docker-claude-asta          # Start container with Claude Code + asta skills
-make docker-claude-asta-preview  # Start container with Claude Code + asta-preview skills
-make docker-codex-asta           # Start container with Codex CLI + asta skills
-make docker-codex-asta-preview   # Start container with Codex CLI + asta-preview skills
+make docker-claude-asta  # Start container with Claude Code + asta-tools skills
+make docker-codex-asta   # Start container with Codex CLI + asta-tools skills
 ```
 
 ### Manual testing
@@ -453,14 +399,14 @@ Set up tokens on the host first (see [README](README.md#docker-image)),
 then test the full Docker flow:
 
 ```bash
-make docker-claude-asta-preview   # drops into container with Claude Code + skills
+make docker-claude-asta   # drops into container with Claude Code + skills
 
 # Inside the container:
-claude                            # start Claude with asta-preview skills
+claude                    # start Claude with asta-tools skills
 ```
 
 To test skill or CLI changes, rebuild with `make docker` then re-run
-`make docker-claude-asta-preview`. Docker layer caching makes rebuilds
+`make docker-claude-asta`. Docker layer caching makes rebuilds
 fast when only source files change.
 
 The `docker.yml` workflow publishes `ghcr.io/allenai/asta:<tag>` automatically
@@ -489,26 +435,20 @@ The version number is stored in three source locations:
    ```
    Verify the version updated correctly.
 
-3. **Rebuild generated plugin packages:**
-   ```bash
-   make build-plugins
-   ```
-   Regenerates `plugins/asta` (the core subset) from `plugins/asta-preview`.
-
-4. **Run full test suite:**
+3. **Run full test suite:**
    ```bash
    make ci
    ```
-   Ensures all tests pass, linting is clean, code is formatted, and generated files are in sync.
+   Ensures all tests pass, linting is clean, and code is formatted.
 
-5. **Commit version bump:**
+4. **Commit version bump:**
    ```bash
    git add -A
    git commit -m "chore: bump version to 0.3.0"
    git push
    ```
 
-6. **Create and push version tag:**
+5. **Create and push version tag:**
    ```bash
    make push-version-tag
    ```
@@ -518,12 +458,12 @@ The version number is stored in three source locations:
    - Create and push the git tag (e.g., `0.3.0`)
    - Provide a URL to create the GitHub release
 
-7. **Create GitHub release notes:**
+6. **Create GitHub release notes:**
    - Visit the URL provided by `make push-version-tag`
    - Add release notes describing changes
    - Publish the release
 
-8. **Publish to PyPI (optional):**
+7. **Publish to PyPI (optional):**
    ```bash
    make publish       # Production PyPI
    make publish-test  # TestPyPI for testing
@@ -541,7 +481,6 @@ make version
 make set-version VERSION=x.y.z
 ```
 - Updates all locations where version is referenced
-- Run `make build-plugins` after to regenerate plugin packages
 - Fails with error if VERSION parameter is not provided
 - Provides suggested commit command after success
 
@@ -700,7 +639,7 @@ To add a new external tool as an `asta` passthrough command:
 
 5. **Create skill (optional):**
    ```markdown
-   # plugins/asta-preview/skills/newtool/SKILL.md
+   # plugins/asta-tools/skills/newtool/SKILL.md
    ---
    name: NewTool Skill
    description: When to use this skill

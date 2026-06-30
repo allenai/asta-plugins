@@ -22,9 +22,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 INIT_FILE = PROJECT_ROOT / "src" / "asta" / "__init__.py"
 PYPROJECT_FILE = PROJECT_ROOT / "pyproject.toml"
 MARKETPLACE_FILE = PROJECT_ROOT / ".claude-plugin" / "marketplace.json"
-HOOK_FILE = PROJECT_ROOT / "plugins" / "asta-preview" / "hooks" / "sync-cli-version.sh"
+HOOK_FILE = PROJECT_ROOT / "plugins" / "asta-tools" / "hooks" / "sync-cli-version.sh"
 ASTA_CLI_SKILL_FILE = (
-    PROJECT_ROOT / "plugins" / "asta-preview" / "skills" / "asta-cli" / "SKILL.md"
+    PROJECT_ROOT / "plugins" / "asta-tools" / "skills" / "asta-cli" / "SKILL.md"
 )
 
 
@@ -187,9 +187,8 @@ def set_version(new_version: str) -> bool:
     print()
     print(f"{YELLOW}Next steps:{NC}")
     print("  1. Review changes: git diff")
-    print("  2. Rebuild plugins: make build-plugins")
     print(
-        f"  3. Commit changes: git add -A && git commit -m 'chore: bump version to {new_version}'"
+        f"  2. Commit changes: git add -A && git commit -m 'chore: bump version to {new_version}'"
     )
 
     return True

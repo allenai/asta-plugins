@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-HOOKS = ROOT / "plugins" / "asta-preview" / "hooks"
+HOOKS = ROOT / "plugins" / "asta-tools" / "hooks"
 
 
 def test_hooks_json_valid():

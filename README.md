@@ -5,8 +5,7 @@ Asta is a set of skills for scientific research, usable by local coding agents.
 ## Installation
 
 ```commandline
-# Whole plugins (skills + hooks) into your agent's native plugin system.
-# Pick `asta` (core) OR `asta-preview` (all; a superset of `asta` — install one).
+# Whole plugin (skills + hooks) into your agent's native plugin system.
 npx plugins add allenai/asta-plugins
 
 # Skills only (loose skill files).
@@ -14,7 +13,7 @@ npx skills add allenai/asta-plugins -g
 
 # Claude Code marketplace (alternative to npx plugins)
 > /plugin marketplace add allenai/asta-plugins
-> /plugin install asta
+> /plugin install asta-tools
 ```
 
 ### Skills
@@ -22,19 +21,6 @@ npx skills add allenai/asta-plugins -g
 - **Semantic Scholar Lookup** - Quick paper/author lookups and metadata queries
 - **Document Management** - Local document metadata index for tracking and searching papers
 - **PDF Text Extraction** - Extract text from PDFs using olmOCR (cloud-based, no GPU required)
-
-### Preview Skills
-
-Install all with `--all`, or pick specific ones with `--skill "Name"`:
-
-```commandline
-# Any agent
-npx skills add allenai/asta-plugins --all -g
-
-# Claude Code only (auto-updates)
-> /plugin install asta-preview
-```
-
 - **Find Literature** - General paper searching and citation finding
 - **Literature Report Generation** - Comprehensive report writing with synthesis
 - **Run Experiment** - Computational experiments with automated report generation
@@ -84,23 +70,23 @@ docker run --rm -it -e ASTA_TOKEN -e ANTHROPIC_API_KEY \
 # Install Claude Code and register skills:
 curl -fsSL https://claude.ai/install.sh | bash
 claude plugin marketplace add /opt/asta-plugins --scope user
-claude plugin install asta-preview
+claude plugin install asta-tools
 
 # Or install any other agent and use npx:
-npx skills add /opt/asta-plugins -g --all --yes
+npx skills add /opt/asta-plugins -g --yes
 ```
 
 ## Research projects (Codespaces / Dev Containers / CI deploy)
 
-The [`workspace`](plugins/asta-preview/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
+The [`workspace`](plugins/asta-tools/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project: scaffold infrastructure (Quarto, GitHub Pages auto-deploy with PR previews, devcontainer), show rendered work, save iterations.
 
 ## Benchmarking
 
-[`agent-baselines`](https://github.com/allenai/agent-baselines) solvers (e.g. [`inspect-swe`](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe)) run Asta skills against any [Inspect](https://inspect.aisi.org.uk/)-compatible eval suite via `-S skills=<path>`: [Swapping in local skills](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#swapping-in-local-skills) points it at the canonical `plugins/asta-preview/skills` tree (edit it directly). [Demo](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#demo) is a worked example on [AstaBench](https://github.com/allenai/asta-bench), a scientific research suite for AI agents.
+[`agent-baselines`](https://github.com/allenai/agent-baselines) solvers (e.g. [`inspect-swe`](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe)) run Asta skills against any [Inspect](https://inspect.aisi.org.uk/)-compatible eval suite via `-S skills=<path>`: [Swapping in local skills](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#swapping-in-local-skills) points it at the canonical `plugins/asta-tools/skills` tree (edit it directly). [Demo](https://github.com/allenai/agent-baselines/tree/main/solvers/inspect-swe#demo) is a worked example on [AstaBench](https://github.com/allenai/asta-bench), a scientific research suite for AI agents.
 
 ## Improving skills (or just reporting a problem)
 
-Invoke the [`improve-skills`](plugins/asta-preview/skills/improve-skills/SKILL.md) skill if you:
+Invoke the [`improve-skills`](plugins/asta-tools/skills/improve-skills/SKILL.md) skill if you:
 
 - Observed an agent doing the wrong thing while using a skill (or not doing what you asked).
 - Want an agent to be able to do something it currently can't (extend a skill, or add a new one).

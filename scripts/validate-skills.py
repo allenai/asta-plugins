@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate SKILL.md frontmatter against the Agent Skills spec.
 
-Checks every plugins/asta-preview/skills/*/SKILL.md (the canonical skills) for:
+Checks every plugins/asta-tools/skills/*/SKILL.md for:
 - `name`: kebab-case (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`), max 64, matches parent dir
 - `description`: 1-1024 chars, non-empty
 - `allowed-tools`: space-separated string (not a YAML list)
@@ -60,23 +60,11 @@ def validate(skill_md: Path) -> list[str]:
             f"got {type(allowed_tools).__name__}"
         )
 
-    # `metadata.internal` drives the core/preview split (build + skills CLI both
-    # require the YAML boolean `true`); a quoted "true" silently mis-classifies.
-    metadata = fm.get("metadata")
-    if metadata is not None:
-        if not isinstance(metadata, dict):
-            errors.append(f"{skill_md}: `metadata` must be a mapping")
-        elif "internal" in metadata and not isinstance(metadata["internal"], bool):
-            errors.append(
-                f"{skill_md}: `metadata.internal` must be a boolean "
-                f"(got {metadata['internal']!r}) — a quoted string mis-classifies the skill"
-            )
-
     return errors
 
 
 def main() -> int:
-    skills_root = REPO_ROOT / "plugins" / "asta-preview" / "skills"
+    skills_root = REPO_ROOT / "plugins" / "asta-tools" / "skills"
     errors: list[str] = []
     for skill_md in sorted(skills_root.glob("*/SKILL.md")):
         errors.extend(validate(skill_md))

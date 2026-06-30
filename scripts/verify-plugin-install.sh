@@ -19,8 +19,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLUGINS_CLI="${PLUGINS_CLI:-plugins@latest}"
 
 # Expected = the skills actually in the plugin's source dir — single source of
-# truth, auto-adjusts when skills are added/removed/promoted. (The core/all
-# split is verified by the layout tests + check-plugins, not here.)
+# truth, auto-adjusts when skills are added/removed.
 expected_count() {
   find "$REPO_ROOT/plugins/$1/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '
 }
@@ -50,8 +49,7 @@ echo "==> Verifying installation under $CACHE"
 
 # Count skill directories in an installed plugin's cache. The whole plugin dir
 # is copied to <cache>/<marketplace>/<plugin>/<versionKey>/, so match the
-# plugin segment exactly (leading/trailing slashes avoid asta matching
-# asta-preview).
+# plugin segment exactly.
 count_installed_skills() {
   local plugin="$1" skills_dir
   skills_dir="$(find "$CACHE" -type d -path "*/$plugin/*/skills" -print -quit 2>/dev/null || true)"
@@ -63,7 +61,7 @@ count_installed_skills() {
 }
 
 fail=0
-for plugin in asta asta-preview; do
+for plugin in asta-tools; do
   expect="$(expected_count "$plugin")"
   got="$(count_installed_skills "$plugin")"
   if [ "$got" = "$expect" ]; then
@@ -94,4 +92,4 @@ if [ "$fail" -ne 0 ]; then
   echo "==> FAILED: plugin install verification for '$TARGET'" >&2
   exit 1
 fi
-echo "==> OK: asta + asta-preview installed into '$TARGET'"
+echo "==> OK: asta-tools installed into '$TARGET'"
