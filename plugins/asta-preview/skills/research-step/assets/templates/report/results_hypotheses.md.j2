@@ -1,6 +1,10 @@
 {% if ctx.hypotheses %}
 ## Results: hypotheses {#sec-hypotheses}
 
+```{=latex}
+{\small\hyperlink{workflow}{\color{ai2accent}$\uparrow$ Executed workflow}}
+```
+
 {% for h in ctx.hypotheses %}
 ### {{ h.id }} {#{{ anchor(h.id) }}}
 

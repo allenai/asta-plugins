@@ -1,5 +1,9 @@
 ## Results: theories {#sec-theories}
 
+```{=latex}
+{\small\hyperlink{workflow}{\color{ai2accent}$\uparrow$ Executed workflow}}
+```
+
 {{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}). {{ ctx.theory_stats.tested }} were testable on the data in hand and taken to verification ({{ ctx.theory_stats.held }} held, {{ ctx.theory_stats.partial }} partial); the remainder are recorded below for completeness.
 
 {% if ctx.overview.theories and exists(ctx.overview.theories.image) %}

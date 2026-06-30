@@ -545,28 +545,29 @@ def _tex(s):
 
 
 def exec_phases(ctx):
-    """The executed workflow as ordered phases (title, detail, Asta agent), built from
-    what actually ran; counts come from the joined records."""
+    """The executed workflow as ordered phases (title, detail, Asta agent, section anchor),
+    built from what actually ran; counts come from the joined records. The anchor is the
+    report section the node links to (pandoc hypertarget id, no leading #)."""
     tt = ctx["task_types"]
     has = lambda *xs: any(x in tt for x in xs)
     L, T, H = ctx["law_stats"], ctx["theory_stats"], ctx["hyp_stats"]
     ph = []
     if has("literature_review"):
-        ph.append(("Literature review", "survey and gaps", "Paper Finder"))
+        ph.append(("Literature review", "survey and gaps", "Paper Finder", "sec-methods"))
     if has("provenance_search", "provenance_extraction", "data_acquisition", "evidence_gathering", "cohort_assembly"):
-        ph.append(("Data provenance", f"{ctx['acquired']}/{len(ctx['provenance'])} sources", "Paper Finder"))
+        ph.append(("Data provenance", f"{ctx['acquired']}/{len(ctx['provenance'])} sources", "Paper Finder", "sec-methods"))
     if has("data_driven_discovery", "discovery_run"):
-        ph.append(("AutoDiscovery", f"{len(ctx['experiments'])} experiments", "AutoDiscovery"))
+        ph.append(("AutoDiscovery", f"{len(ctx['experiments'])} experiments", "AutoDiscovery", "sec-laws"))
     if L["n"]:
         # "laws" are the high-surprise hypotheses surfaced by discovery and retained —
         # label them as such in the diagram so the framing is explicit (reviewer note).
-        ph.append(("Reproduction", f"{L['n']} high-surprise hypotheses · {L['held']} held", "DataVoyager"))
+        ph.append(("Reproduction", f"{L['n']} high-surprise hypotheses · {L['held']} held", "DataVoyager", "sec-laws"))
     if has("theory_formation"):
-        ph.append(("Theorizing", f"{ctx['n_theories']} theories", "Theorizer"))
+        ph.append(("Theorizing", f"{ctx['n_theories']} theories", "Theorizer", "sec-theories"))
     if T["tested"]:
-        ph.append(("Verification", f"{T['tested']} tested · {T['held']} held", "DataVoyager"))
+        ph.append(("Verification", f"{T['tested']} tested · {T['held']} held", "DataVoyager", "sec-theories"))
     if has("hypothesis_formation"):
-        ph.append(("Hypotheses", f"{H['n']} formed · {H['held']} held", "DataVoyager"))
+        ph.append(("Hypotheses", f"{H['n']} formed · {H['held']} held", "DataVoyager", "sec-hypotheses"))
     return ph
 
 
@@ -577,19 +578,23 @@ def flow_diagram(sess, ctx):
     if not phases:
         return ""
     nodes = []
-    for i, (title, detail, agent) in enumerate(phases):
-        body = r"\textbf{%s}" % _tex(title)
+    for i, (title, detail, agent, anchor) in enumerate(phases):
+        lines = [r"\textbf{\color{ai2accent}%s}" % _tex(title)]
         if detail:
-            body += r"\\[1pt]{\footnotesize %s}" % _tex(detail)
+            lines.append(r"{\footnotesize\color{ai2foreground} %s}" % _tex(detail))
         if agent:
-            body += r"\\[2pt]{\scriptsize\itshape\color{ai2accent}%s}" % _tex(agent)
+            lines.append(r"{\scriptsize\itshape\color{ai2accent}%s}" % _tex(agent))
+        # \shortstack so the line breaks are safe inside the link (TikZ \\ alignment is not);
+        # \hyperref[label] (sections carry \label, not \hypertarget) so the node jumps to its section
+        body = r"\hyperref[%s]{\shortstack{%s}}" % (anchor, r" \\ ".join(lines))
         pos = "" if i == 0 else (", right=0.45cm of n%d" % (i - 1))
         nodes.append(r"\node[phase%s] (n%d) {%s};" % (pos, i, body))
     arrows = [r"\draw[arr] (n%d) -- (n%d);" % (i, i + 1) for i in range(len(phases) - 1)]
     return (
         "```{=latex}\n"
+        "\\hypertarget{workflow}{}%\n"
         "\\begin{center}\n"
-        "{\\small\\itshape\\sffamily\\color{ai2foreground}Executed workflow}\\\\[5pt]\n"
+        "{\\small\\itshape\\sffamily\\color{ai2foreground}Executed workflow (click a step to jump to its section)}\\\\[5pt]\n"
         "\\resizebox{\\textwidth}{!}{%\n"
         "\\begin{tikzpicture}[\n"
         "  phase/.style={draw=ai2accent, line width=0.9pt, rounded corners=4pt, fill=white,"
