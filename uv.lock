@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "asta"
-version = "0.19.2"
+version = "0.100.0"
 source = { editable = "." }
 dependencies = [
     { name = "asta-agent", extra = ["a2a-client"] },

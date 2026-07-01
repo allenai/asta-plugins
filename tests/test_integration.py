@@ -11,11 +11,12 @@ ROOT = Path(__file__).parent.parent
 
 
 def test_plugin_structure():
-    """Verify plugin has correct directory structure."""
+    """Verify plugins have correct directory structure."""
     assert (ROOT / ".claude-plugin" / "marketplace.json").exists()
-    assert (ROOT / "plugins" / "asta" / "skills").is_dir()
-    assert (ROOT / "plugins" / "asta-preview" / "skills").is_dir()
-    assert (ROOT / "plugins" / "asta-preview" / "hooks").is_dir()
+    assert (ROOT / "plugins" / "asta-tools" / "skills").is_dir()
+    assert (ROOT / "plugins" / "asta-tools" / "hooks").is_dir()
+    assert (ROOT / "plugins" / "asta-flows" / "skills").is_dir()
+    assert (ROOT / "plugins" / "asta-dev" / "skills").is_dir()
     assert (ROOT / "src" / "asta").is_dir()
     # Check key CLI modules exist
     assert (ROOT / "src" / "asta" / "cli.py").exists()
@@ -25,13 +26,12 @@ def test_plugin_structure():
 
 
 def test_marketplace_has_plugins():
-    """Verify marketplace.json lists both plugins."""
+    """Verify marketplace.json lists all plugins."""
     with open(ROOT / ".claude-plugin" / "marketplace.json") as f:
         marketplace = json.load(f)
     names = {p["name"] for p in marketplace["plugins"]}
-    assert "asta" in names
-    assert "asta-preview" in names
-    print("✓ Marketplace lists both plugins")
+    assert {"asta-tools", "asta-flows", "asta-dev"} <= names
+    print("✓ Marketplace lists asta-tools, asta-flows, and asta-dev plugins")
 
 
 def test_marketplace_sources_resolve():

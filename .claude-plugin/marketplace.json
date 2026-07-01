@@ -8,10 +8,10 @@
   },
   "plugins": [
     {
-      "name": "asta",
-      "source": "./plugins/asta",
-      "description": "Paper search, metadata, document management, and theory generation for scientific research",
-      "version": "0.20.0",
+      "name": "asta-tools",
+      "source": "./plugins/asta-tools",
+      "description": "Paper search, metadata, document management, literature reports, experiments, and theory generation for scientific research",
+      "version": "0.100.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
@@ -26,21 +26,36 @@
       ]
     },
     {
-      "name": "asta-preview",
-      "source": "./plugins/asta-preview",
-      "description": "Paper search, metadata, document management, literature reports, experiments, and theory generation for scientific research",
-      "version": "0.20.0",
+      "name": "asta-flows",
+      "source": "./plugins/asta-flows",
+      "description": "Executes named, typed chains of research steps using the skills in asta-tools. Requires installation of asta-tools",
+      "version": "0.100.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
       "repository": "https://github.com/allenai/asta-plugins",
       "license": "Apache-2.0",
       "keywords": [
-        "academic",
-        "papers",
-        "citations",
-        "semantic-scholar",
-        "literature"
+        "asta",
+        "research",
+        "autonomous",
+        "beads"
+      ]
+    },
+    {
+      "name": "asta-dev",
+      "source": "./plugins/asta-dev",
+      "description": "Developer skills for working on Asta itself (improve-skills, research-challenge). Requires the asta-tools plugin to be installed.",
+      "version": "0.100.0",
+      "author": {
+        "name": "Ai2 Asta Team"
+      },
+      "repository": "https://github.com/allenai/asta-plugins",
+      "license": "Apache-2.0",
+      "keywords": [
+        "asta",
+        "development",
+        "contributing"
       ]
     }
   ]
