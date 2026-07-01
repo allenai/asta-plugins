@@ -4,7 +4,7 @@
 {\small\hyperlink{workflow}{\color{ai2accent}$\uparrow$ Workflow}}
 ```
 
-{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}). {{ ctx.theory_stats.tested }} were testable on the data in hand and taken to verification ({{ ctx.theory_stats.held }} held, {{ ctx.theory_stats.partial }} partial); the remainder are recorded below for completeness.
+{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) and triaged for testability against the data in hand. {{ ctx.n_testable_theories }} {{ 'was' if ctx.n_testable_theories == 1 else 'were' }} testable now, each committed to a prespecified test; the rest need new data. The theories are proposed here, not verified.
 
 {% if ctx.overview.theories and exists(ctx.overview.theories.image) %}
 ![{{ ctx.overview.theories.caption or 'Cross-cutting mechanism linking the laws.' }}]({{ ctx.overview.theories.image }})
@@ -18,12 +18,9 @@
 {% if t.description %}{{ t.description|sent }}
 
 {% endif %}
-{% if t.verdict %}*Result.*  {% if t.verdict.effect_size_observed %}{{ t.verdict.effect_size_observed }}{% endif %}{% if t.audit %}{% set adj = (t.audit.recommended_adjustment or '')|trim %}{% if adj and not (adj.lower().startswith('none') or adj.lower().startswith('n/a')) %}  *Audit:* {{ adj }}{% else %}  *Audit:* {{ 'passes the negative control' if t.audit.verdict_survives else 'fails the negative control' }}.{% endif %}{% endif %}
-
-{% for f in t.figs or [] %}{% if exists(f.image) %}![{{ f.caption }}]({{ f.image }})
-
-{% endif %}{% endfor %}
-{% else %}*Not taken to verification* — not testable on the in-hand data.
+{% if t.eval %}{% if t.eval.signal and t.eval.signal.basis == 'testable' %}*Proposed test.*  {{ t.eval.proposed_test.test }}{% if t.eval.proposed_test.success_threshold %} — success: {{ t.eval.proposed_test.success_threshold }}{% endif %}
+{% else %}*Not testable on the in-hand data*{% if t.eval.gap %} — {{ t.eval.gap }}{% endif %}.
+{% endif %}
 
 {% endif %}
 {% endfor %}

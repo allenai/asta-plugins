@@ -97,7 +97,7 @@ check-plugins:
 	fi
 	@echo "plugins/ is up to date"
 
-# Validate every SKILL.md against the Agent Skills spec, and research-step's schemas.yaml (used in CI)
+# Validate every SKILL.md against the Agent Skills spec, and research-step's workflows.yaml (used in CI)
 check-skills:
 	@uvx --with pyyaml python scripts/validate-skills.py
 	@uvx --with pyyaml python scripts/compile-schemas.py --check

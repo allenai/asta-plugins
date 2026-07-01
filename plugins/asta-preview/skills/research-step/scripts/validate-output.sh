@@ -2,7 +2,7 @@
 # validate-output.sh <issue-id> — structural check of a task's stored output_json.
 # Reads the issue from beads and deep-validates metadata.research_step.output_json
 # against the compiled JSON Schema (assets/compiled/<task_type>.schema.json,
-# regenerated from schemas.yaml by scripts/compile-schemas.py at build time):
+# regenerated from workflows.yaml by scripts/compile-schemas.py at build time):
 # top-level keys closed, declared nested fields required, extra nested fields
 # permitted (payloads nest verbatim). No style or quality linting.
 # Exit: 0 ok · 1 usage · 2 bad issue/metadata · 3 unknown task

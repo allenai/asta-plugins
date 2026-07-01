@@ -2,10 +2,6 @@
 
 Every reproduced verdict was challenged by a negative-control audit (the predictor shuffled, or an equivalent) before it stood.
 
-{% if ctx.overview.verification and exists(ctx.overview.verification.image) %}
-![{{ ctx.overview.verification.caption or 'Verification panel across the tested theories.' }}]({{ ctx.overview.verification.image }})
-
-{% endif %}
 {% set survived = [] %}
 {% for x in ctx.laws + ctx.theories if x.verdict and x.verdict.outcome == 'held' and x.audit and x.audit.verdict_survives %}{% set _ = survived.append(x) %}{% endfor %}
 {% if survived %}**What holds.**  {% for x in survived %}{{ ref(x.id) }}{% if not loop.last %}, {% endif %}{% endfor %} — held on re-analysis with the effect surviving the negative control.

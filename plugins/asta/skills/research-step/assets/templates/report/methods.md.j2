@@ -10,4 +10,4 @@
 
 **Reproduction protocol.** For every candidate law we committed a prespecified test — statistic, decision metric, and success threshold — *before* analysis, re-ran it on the in-hand dataset, and challenged the result with a negative-control audit (the predictor shuffled, or an equivalent) before the verdict stood. Verdicts are two-axis: an *outcome* (held / partial / failed / n-a) crossed with *testability* (tested / proxy-only / untestable).
 
-**Theory verification.** Generated theories were triaged for testability against the data in hand; only theories with a prespecified, runnable test were verified, under the same analyze-then-audit protocol.
+**Theory triage.** Generated theories were triaged for testability against the data in hand; each theory the data can decide was committed to a prespecified, runnable test recorded for follow-up. Running those tests is out of scope for this flow.

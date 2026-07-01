@@ -1,13 +1,13 @@
-# Reading `schemas.yaml`
+# Reading `workflows.yaml`
 
 This skill defines and executes a research **workflow**: a sequence of **tasks**, each of
 which produces a set of outputs with a defined **type**. Workflows, tasks, and types are
-all declared in `schemas.yaml`. This doc is the reference for how to read that file;
+all declared in `workflows.yaml`. This doc is the reference for how to read that file;
 the workflow `.md` files describe how to plan and execute against it.
 
 ## Key terms
 
-| Term | What it is | In `schemas.yaml` |
+| Term | What it is | In `workflows.yaml` |
 |---|---|---|
 | **type** | A record in the shared vocabulary (a law, an audit, a dataset, an artifact). The unit of data. | `types:` |
 | **task** | A reusable **output contract**: the set of typed output keys one unit of work produces. A task is instantiated by a workflow step. | `tasks:` |
@@ -47,8 +47,8 @@ Reading a workflow node:
   smaller workflows first; compositions reference them by name.
 - A **fan-out group** inserts one branch level per item: the group node, then one branch
   epic per item, then the group's steps repeated under each branch. A group — or a composed
-  workflow's root, e.g. `verification` — whose branches are created only at replan (one per
-  law / theory / hypothesis, once the naming step closes) declares `replan: true`.
+  workflow's root, e.g. `replication` — whose branches are created only at replan (one per
+  law / hypothesis, once the naming step closes) declares `replan: true`.
 
 ## The output contract
 
@@ -66,7 +66,7 @@ Reading a workflow node:
 - A field name ending in `?` (e.g. `mcts_provenance?`) is **optional**; unmarked fields are
   required. `[type]` means a JSON array of that type.
 - `validate-output.sh` deep-validates `output_json` against the compiled per-task JSON
-  Schema in `assets/compiled/` (regenerated from `schemas.yaml` by
+  Schema in `assets/compiled/` (regenerated from `workflows.yaml` by
   `scripts/compile-schemas.py` at build time).
 
 ## Artifacts vs. typed outputs

@@ -29,50 +29,34 @@ workflows:
           input: [provenance_search]
           output: {extracted_data: ref(extracted_data), source_access: [source_access]}
       - data_acquisition:
-          mission: For each openly available source, fetch the data files and register them as a dataset, the data in hand that reproduction, novelty_assessment, and verification later use. Emit one acquisition per data_source with access_status, local_path, and the registered dataset_id. Validate every fetched dataset against its paper before registering it (n, schema/variables, units, missingness), and record the check in validation_note; a dataset that fails validation is a gap, not an input. For restricted or not-found data, record a gap rather than blocking downstream work.
+          mission: For each openly available source, fetch the data files and register them as a dataset, the data in hand that reproduction and novelty_assessment later use. Emit one acquisition per data_source with access_status, local_path, and the registered dataset_id. Validate every fetched dataset against its paper before registering it (n, schema/variables, units, missingness), and record the check in validation_note; a dataset that fails validation is a gap, not an input. For restricted or not-found data, record a gap rather than blocking downstream work.
           cli: [asta documents, asta autodiscovery]
           input: [provenance_search, provenance_extraction]
           output: {acquisitions: [acquisition], datasets: [dataset]}
 
   theorizer:
-    mission: Explain the cross-cutting theories behind the reproduced laws, grounded in both the literature and the reproduction's numbers, then triage them for testability and score their novelty.
+    mission: Explain the cross-cutting theories behind the reproduced laws — anchored to the original AutoDiscovery run's stated intent and dataset context (its intent field and dataset descriptions), grounded in both the literature and the reproduction's numbers, and generated with the novelty-focused objective so the theories are relevant to that intent, novel rather than restatements of established results, and genuinely cross-cutting — then triage them for testability and score their novelty.
     children:
       - theory_formation:
-          mission: Run the managed Theorizer once over the reproduced laws to explain the cross-cutting theories that account for the provided laws from the AutoDiscovery run, grounded in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce, but carry its negative signal as conflicting evidence rather than support. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.
+          mission: First reconstruct the original user's intent for the run from the AutoDiscovery metadata — read the run's intent field and each dataset's name, description, and context (variables, units, how they were derived) as registered by auto_discovery — and distil it into the theory_query and mission_statement you pass to the Theorizer, so the generated theories directly serve what the original user set out to learn. Then run the managed Theorizer over the reproduced laws with the novelty-focused generation objective (asta generate-theories ... --generation-objective novelty-focused) so it surfaces theories that are, together, (1) relevant to that original intent and dataset context, (2) novel and non-obvious rather than restatements of established scaling laws, and (3) genuinely cross-cutting — each accounting for several of the reproduced laws at once and implying new testable predictions. Ground every theory in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce, but carry its negative signal as conflicting evidence rather than support. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.
           cli: [asta generate-theories]
           input: [auto_discovery, audit]
           output: {theories: [theory], run: run}
       - novelty_assessment:
-          mission: First triage each theory for testability, recording the decision as a signal, by comparing its required data against the data in hand (the source dataset registered by auto_discovery plus any datasets evidence_gathering acquired). A theory is testable now only if its prediction is empirically free in that data, meaning a prediction that is definitionally entailed by how those variables were constructed, or that requires transient or time-resolved data, is not testable now even when the variables are present. For each testable theory, commit the prespecified proposed_test (test, metric, success_threshold) that its verification branch will run and audit against; theories needing new data are recorded untestable. Then score the novelty of the testable subset against the literature the Theorizer drew on, and list the testable theory ids.
+          mission: First triage each theory for testability, recording the decision as a signal, by comparing its required data against the data in hand (the source dataset registered by auto_discovery plus any datasets evidence_gathering acquired). A theory is testable now only if its prediction is empirically free in that data, meaning a prediction that is definitionally entailed by how those variables were constructed, or that requires transient or time-resolved data, is not testable now even when the variables are present. For each testable theory, commit a prespecified proposed_test it could be checked against; theories needing new data are recorded untestable. Then score the novelty of the testable subset against the literature the Theorizer drew on, and list the testable theory ids.
           cli: [asta generate-theories]
           input: [theory_formation, auto_discovery, evidence_gathering]
           output: {theory_evaluations: [theory_evaluation], testable_theory_ids: [string], run: run}
 
-  verification:
-    mission: One branch per theory that novelty_assessment marked testable, to validate or disprove each on the data in hand. There is no design step here. The prespecified proposed_test from novelty_assessment (test, metric, success_threshold) is the commitment that analysis runs and the audit checks. The branch count is known only after novelty_assessment closes, so these branches are created at replan.
-    replan: true
-    children:
-      - analysis:
-          mission: Run the theory's prespecified proposed_test on the data in hand, which is the source dataset registered by auto_discovery plus any acquired datasets. When the metric involves variables that are definitionally linked in the data, report only the empirically free part of the relationship, not the identity itself. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
-          cli: [asta analyze-data]
-          input: [novelty_assessment, auto_discovery, evidence_gathering]
-          output: {analysis: analysis, figures: [ref(figure)], "run?": run}
-      - audit:
-          mission: Try to refute the verification analysis or find artifacts, then finalize the verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the theory's outcome and observed effect size, checked against the prespecified success_threshold from novelty_assessment; on large samples judge by effect size, not statistical significance alone, since a difference can be significant yet negligible. A theory is disproved as cleanly as it is validated; record either resolution rather than defaulting to partial. Emit an audit_report referencing the theory id.
-          cli: [asta analyze-data]
-          input: [novelty_assessment, analysis]
-          output: {audit_report: audit_report, "run?": run}
-
-  # provide the same experiment plan as auto ds. Input context.
   reproduction:
     mission: Ingest an AutoDiscovery run, group its experiments into laws, find independent data once for all of them, then reproduce each law. The verdict is two-axis, outcome crossed with testability, and comes from the branch's audit, not the ingested run.
     children:
       - auto_discovery:
-          mission: Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the "data in hand" that novelty_assessment and verification later test theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws — take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Laws are identity records; their verdicts come later, from each branch's audit.
+          mission: Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the "data in hand" that novelty_assessment later triages theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws — take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Laws are identity records; their verdicts come later, from each branch's audit.
           cli: [asta autodiscovery]
           output: {experiments: [ref(experiment)], datasets: [dataset], empirical_laws: [empirical_law], run: run}
       - evidence_gathering:
-          mission: One search across all laws for independent datasets, acquiring what is available. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables (an attribute table over full geometry, a measured subset over a modeled grid). Some quantities a law rests on are model outputs with no independent measurement; do not force a circular re-derivation with the same theory, but register the absence as a gap so the branch is gated honestly. Validate each acquired dataset against its source (n, schema/variables, units, missingness) before registering it; a dataset that fails validation is a gap, not an input. Emit a dataset registry that tags which laws each dataset can test.
+          mission: One search across all laws for independent datasets, acquiring what is available. Exhaust the space of open data before concluding a law cannot be tested — do not give up prematurely. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables (an attribute table over full geometry, a measured subset over a modeled grid). Search broadly and persistently across every open avenue — the source paper's data/code-availability section and its cited products, general and domain data repositories (Zenodo, Figshare, Dryad, PANGAEA, NSIDC/DAACs, GLIMS, WGMS, national archives), community mirrors and model-output servers, per-entity compiled/attribute tables (often far lighter than the raw grids), and measured/observational databases. A product that first appears to be only a massive raster or restricted download is not automatically a gap; look for a per-entity compiled CSV/table, a regional subset, an API, or a mirror, and use browser automation (e.g. Playwright) to reach data that lacks a direct download link. Try multiple product families and query phrasings before concluding nothing exists. Only record a gap when the quantity is genuinely non-public OR is a model output / definitional construct with no independent measurement (do not force a circular re-derivation with the same theory); "large" or "hard to fetch" is never sufficient reason to give up. Validate each acquired dataset against its source (n, schema/variables, units, missingness) before registering it; a dataset that fails validation is a gap, not an input. Emit a dataset registry that tags which laws each dataset can test, and for any law left uncovered state the concrete avenues you exhausted and why each failed.
           cli: [asta literature, asta papers, asta documents, asta autodiscovery]
           input: [auto_discovery]
           output: {datasets: [dataset]}
@@ -97,12 +81,11 @@ workflows:
                 output: {audit_report: audit_report, "run?": run}
 
   data_and_literature_grounded_theory_generation:
-    mission: Source the papers and data behind an existing AutoDiscovery run, then reproduce as many of its findings as possible on independent data and validate or disprove as many of the resulting theories as possible. Ground theories in the reproduced findings and test every theory the data on hand can decide; the aim is to maximize both the number of findings independently checked and the number of theories resolved either way.
+    mission: Source the papers and data behind an existing AutoDiscovery run, reproduce as many of its findings as possible on independent data, then generate literature-grounded theories from the reproduced findings and triage each for testability. The aim is to maximize the number of findings independently checked and to ground and assess the theories they support.
     children:
       - data_provenance
       - reproduction
       - theorizer
-      - verification
       - summarize
       - reflection
 
@@ -365,7 +348,7 @@ outputs:
     signal: signal   # the testability decision; basis testable or untestable
     available_data: string
     required_data: string
-    proposed_test: {test: string, metric: string, success_threshold: string}   # prespecified; the verification branch's audit checks the result against it
+    proposed_test: {test: string, metric: string, success_threshold: string}   # prespecified; how the theory could be checked on the data in hand
     gap: string
     novelty: novelty
     overall_support: support_level

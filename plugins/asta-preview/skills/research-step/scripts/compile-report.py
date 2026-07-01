@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SCHEMAS = HERE.parent / "assets" / "schemas.yaml"
+SCHEMAS = HERE.parent / "assets" / "workflows.yaml"
 REPORT_TMPL = HERE.parent / "assets" / "templates" / "report"
 LOGO = HERE.parent / "assets" / "asta-logo.pdf"  # Asta (Ai2) brand mark
 
@@ -86,7 +86,7 @@ class Session:
         self.epic = next((i for i in issues if rs(i).get("epic_root")), None)
         if not self.epic:
             sys.exit("compile-report: no epic root — not a research session")
-        self.loop = rs(self.epic).get("flow", "")
+        self.loop = self.flow = rs(self.epic).get("flow", "")
         prefix = self.epic["id"] + "."
         self.tasks = sorted(
             (i for i in issues if i["id"].startswith(prefix)
@@ -171,6 +171,21 @@ def _useful_fig(f):
     return bool(f.get("image")) and not _EMPTY_FIG_RE.search(f.get("caption") or "")
 
 
+def _deref(x):
+    """A typed-output list item may be an inline object or a repo-root-relative path to a
+    JSON file (an x-path-ref, per the output schema — e.g. figures: [ref(figure)],
+    experiments: [ref(experiment)]). Load the file when it's a path so the renderer always
+    sees the object, whichever form the task emitted."""
+    if isinstance(x, str):
+        p = Path(x)
+        if p.is_file():
+            try:
+                return json.loads(p.read_text())
+            except Exception:
+                return {}
+    return x
+
+
 # ---------- join records into a render context ----------
 
 def collect(sess, base_url=""):
@@ -225,7 +240,7 @@ def collect(sess, base_url=""):
                 issue_subject[m["id"]] = subj
             for m in members:
                 o = rs(m)["output_json"]
-                for f in o.get("figures") or []:
+                for f in (_deref(x) for x in (o.get("figures") or [])):
                     if _useful_fig(f):
                         figs.setdefault(subj, []).append(f)
                 if rs(m)["task_type"] in ("analysis", "holdout_replication"):  # the test that decided the verdict
@@ -255,7 +270,7 @@ def collect(sess, base_url=""):
         for ds in o.get("datasets") or []:
             if ds.get("id"):
                 datasets.setdefault(ds["id"], ds)
-        experiments += o.get("experiments") or []
+        experiments += [_deref(e) for e in (o.get("experiments") or [])]
         for ds in o.get("data_sources") or []:
             data_sources.append(ds)
         for sa in o.get("source_access") or []:
@@ -352,7 +367,7 @@ def collect(sess, base_url=""):
         if isinstance(o, dict):
             for k, v in o.items():
                 if k == "figures" and isinstance(v, list):
-                    f += [x for x in v if isinstance(x, dict) and _useful_fig(x)]
+                    f += [d for d in (_deref(x) for x in v) if isinstance(d, dict) and _useful_fig(d)]
                 else:
                     f += find_figs(v)
         elif isinstance(o, list):
@@ -362,8 +377,7 @@ def collect(sess, base_url=""):
 
     overview = {}
     # only summary figures worth a section overview; per-law/theory plots carry the laws
-    fig_section = {"theory_synthesis": "theories", "final_synthesis": "theories",
-                   "verification_synthesis": "verification"}
+    fig_section = {"theory_synthesis": "theories", "final_synthesis": "theories"}
     for i in sess.tasks:
         sec = fig_section.get(rs(i)["task_type"])
         if sec and sec not in overview:
@@ -378,6 +392,8 @@ def collect(sess, base_url=""):
     definitional = [t.get("id") for t in verified if t.get("audit")
                     and any(w in (t["audit"].get("recommended_adjustment") or "").lower()
                             for w in ("construction", "definitional"))]
+    testable_theories = [t for t in theories
+                         if (t.get("eval") or {}).get("signal", {}).get("basis") == "testable"]
 
     summary = next((rs(i)["output_json"].get("summary")
                     for i in sess.tasks if rs(i)["task_type"] == "summarize"), None)
@@ -389,6 +405,7 @@ def collect(sess, base_url=""):
         "laws": laws, "theories": theories, "hypotheses": hypotheses,
         "law_stats": tally(laws), "theory_stats": tally(theories), "hyp_stats": tally(hypotheses),
         "n_theories": len(theories),
+        "n_testable_theories": len(testable_theories),
         "objectives": sorted({t.get("objective") for t in theories if t.get("objective")}),
         "verified_theories": verified,
         "theories_ordered": verified + [t for t in theories if not t.get("verdict")],
@@ -459,12 +476,15 @@ def header_includes(short_title):
     lines = [r"\PassOptionsToPackage{dvipsnames,svgnames}{xcolor}", r"\usepackage{newunicodechar}"]
     lines += [r"\newunicodechar{" + ch + "}{" + repl + "}" for ch, repl in _GLYPHS.items()]
     lines += [
-        # Ai2 palette (ai2style/ai2.cls)
-        r"\definecolor{ai2pink}{HTML}{F0529C}",
-        r"\definecolor{ai2accent}{HTML}{407579}",
-        r"\definecolor{ai2foreground}{HTML}{1C2B33}",
-        r"\definecolor{ai2background}{HTML}{FAF2E9}",
-        r"\definecolor{ai2dark}{HTML}{0A2B35}",
+        # Ai2 / Asta palette — official AllenAI Varnish design tokens
+        # (allenai/varnish: packages/varnish-theme/tokens/color/base.cjs)
+        r"\definecolor{ai2pink}{HTML}{F0529C}",       # brand pink (logos, storybook)
+        r"\definecolor{ai2accent}{HTML}{407579}",     # Asta teal accent
+        r"\definecolor{ai2foreground}{HTML}{1C2B33}", # body ink
+        r"\definecolor{ai2background}{HTML}{FAF2E9}", # Asta cream
+        r"\definecolor{ai2dark}{HTML}{0A3235}",       # Varnish dark-teal
+        r"\definecolor{ai2extradark}{HTML}{032629}",  # Varnish extra-dark-teal
+        r"\definecolor{ai2tealtint}{HTML}{E7EEEE}",   # light teal wash for phase containers
         # Manrope for the sans family (title + headings); body stays serif
         r"\usepackage{fontspec}",
         r"\setsansfont{Manrope}[Path=" + manrope + r"/, Extension=.ttf, "
@@ -571,36 +591,90 @@ def exec_phases(ctx):
     return ph
 
 
+def _parse_flow_mmd(flow):
+    """Parse assets/compiled/<flow>.mmd (the generated mermaid for the flow) into ordered
+    phases. Returns ([(phase_label, [(task_id, task_label), ...]), ...], fanout_ids) where
+    top-level mermaid subgraphs are phases, their nodes are tasks, thick (==>) edges between
+    top-level subgraphs give phase order, and tasks inside a nested subgraph (a fan-out) are
+    collected in fanout_ids. The diagram is thus derivable from — and never drifts from — the
+    flow definition."""
+    path = HERE.parent / "assets" / "compiled" / f"{flow}.mmd"
+    if not path.is_file():
+        return [], set()
+    text = path.read_text()
+    node_label = dict(re.findall(r'(\w+)\["([^"]*)"\]', text))
+    phases, order_decl, fanout, stack = {}, [], set(), []
+    for raw in text.splitlines():
+        line = raw.strip()
+        m = re.match(r'subgraph\s+(\w+)\["([^"]*)"\]', line)
+        if m:
+            sid, slabel = m.group(1), m.group(2)
+            if not stack:                       # a top-level subgraph = a phase
+                phases[sid] = {"label": slabel, "tasks": []}
+                order_decl.append(sid)
+            stack.append(sid)
+            continue
+        if line == "end":
+            if stack:
+                stack.pop()
+            continue
+        nm = re.match(r'(\w+)\["[^"]*"\]\s*$', line)   # a leaf task-node declaration
+        if nm and stack:
+            nid, top = nm.group(1), stack[0]
+            if nid != top and nid in node_label:
+                phases[top]["tasks"].append(nid)
+                if len(stack) > 1:              # inside a nested subgraph → fan-out
+                    fanout.add(nid)
+    succ = {a: b for a, b in re.findall(r'(\w+)\s*==>\s*(\w+)', text) if a in phases and b in phases}
+    targets = set(succ.values())
+    ordered, seen = [], set()
+    for s in [p for p in order_decl if p not in targets] or order_decl:
+        cur = s
+        while cur and cur not in seen:
+            ordered.append(cur); seen.add(cur); cur = succ.get(cur)
+    for p in order_decl:
+        if p not in seen:
+            ordered.append(p); seen.add(p)
+    return [(phases[p]["label"], [(t, node_label.get(t, t)) for t in phases[p]["tasks"]]) for p in ordered], fanout
+
+
 def flow_diagram(sess, ctx):
-    """Asta-branded TikZ diagram of the executed workflow (native LaTeX — no headless
-    browser, unlike a {mermaid} block, and fully brand-colorable)."""
-    phases = exec_phases(ctx)
+    """Asta-branded TikZ diagram of the executed workflow, DERIVED from the flow's compiled
+    mermaid (.mmd) so the picture never drifts from the flow definition. Native LaTeX (no
+    headless browser), Ai2/Varnish brand colours, with clickable nodes that jump to the
+    report section each task feeds."""
+    phases, fanout = _parse_flow_mmd(sess.flow)
     if not phases:
         return ""
-    nodes = []
-    for i, (title, detail, agent, anchor) in enumerate(phases):
-        lines = [r"\textbf{\color{ai2accent}%s}" % _tex(title)]
-        if detail:
-            lines.append(r"{\footnotesize\color{ai2foreground} %s}" % _tex(detail))
-        if agent:
-            lines.append(r"{\scriptsize\itshape\color{ai2accent}%s}" % _tex(agent))
-        # \shortstack so the line breaks are safe inside the link (TikZ \\ alignment is not);
-        # \hyperref[label] (sections carry \label, not \hypertarget) so the node jumps to its section
-        body = r"\hyperref[%s]{\shortstack{%s}}" % (anchor, r" \\ ".join(lines))
-        pos = "" if i == 0 else (", right=0.45cm of n%d" % (i - 1))
-        nodes.append(r"\node[phase%s] (n%d) {%s};" % (pos, i, body))
-    arrows = [r"\draw[arr] (n%d) -- (n%d);" % (i, i + 1) for i in range(len(phases) - 1)]
+
+    def sec_anchor(task_label):
+        return (TASK_SECTION.get(task_label) or "#sec-methods").lstrip("#")
+
+    boxes = []
+    for i, (plabel, tasks) in enumerate(phases):
+        lines = [r"{\sffamily\bfseries\color{ai2dark}%s}" % _tex(plabel)]
+        for tid, tlabel in tasks:
+            badge = r"\;{\scriptsize\color{ai2pink}$\circlearrowright$}" if tid in fanout else ""
+            lines.append(r"{\footnotesize\sffamily\color{ai2foreground}"
+                         r"\hyperref[%s]{%s}%s}" % (sec_anchor(tlabel), _tex(tlabel), badge))
+        body = r"\shortstack[l]{%s}" % (r" \\[1pt] ".join(lines))
+        pos = "" if i == 0 else (", right=0.55cm of p%d" % (i - 1))
+        boxes.append(r"\node[phasebox%s] (p%d) {%s};" % (pos, i, body))
+    arrows = [r"\draw[arr] (p%d) -- (p%d);" % (i, i + 1) for i in range(len(phases) - 1)]
     return (
         "```{=latex}\n"
         "\\hypertarget{workflow}{}%\n"
         "\\begin{center}\n"
-        "{\\small\\itshape\\sffamily\\color{ai2foreground}Click a step to jump to its section.}\\\\[5pt]\n"
+        "{\\small\\itshape\\sffamily\\color{ai2foreground}"
+        "Workflow derived from the flow definition — click a step to jump to its section; "
+        "$\\circlearrowright$ marks a fan-out (one branch per item).}\\\\[6pt]\n"
         "\\resizebox{\\textwidth}{!}{%\n"
         "\\begin{tikzpicture}[\n"
-        "  phase/.style={draw=ai2accent, line width=0.9pt, rounded corners=4pt, fill=white,"
-        " text=ai2foreground, align=center, minimum width=2.6cm, inner sep=7pt, minimum height=1.5cm},\n"
-        "  arr/.style={-{Stealth[length=2.4mm]}, draw=ai2pink, line width=1.4pt}]\n"
-        + "\n".join(nodes + arrows) + "\n"
+        "  phasebox/.style={draw=ai2accent, line width=1pt, rounded corners=5pt,"
+        " fill=ai2tealtint, text=ai2foreground, align=left, inner sep=9pt,"
+        " minimum width=3cm, minimum height=1.7cm},\n"
+        "  arr/.style={-{Stealth[length=3mm]}, draw=ai2pink, line width=1.6pt}]\n"
+        + "\n".join(boxes + arrows) + "\n"
         "\\end{tikzpicture}}\n"
         "\\end{center}\n"
         "```\n"
@@ -686,8 +760,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
     title = (ctx.get("summary") or {}).get("title") \
         or re.sub(r"^Mission:\s*", "", title_from_mission(sess.epic.get("title", "Research report")))
     subtitle = FLOW_SUBTITLE.get(sess.flow, sess.flow.replace("_", " "))
-    # the Asta agents that produced the run are the authors; Allen Institute for AI is the affiliation
-    author = " · ".join(ctx.get("agents_used") or []) or "Asta"
+    # Asta is the author; Allen Institute for AI (added by \postauthor) is the affiliation.
+    # The individual agent names are not listed under the title.
+    author = "Asta"
     # the index fields are wiki/atlas metadata: carried in the PDF metadata header, not rendered in the body
     _idx = ctx.get("summary") or {}
     keywords = [_idx.get(k) for k in ("discipline", "domain", "topic", "discovery_type") if _idx.get(k)]
@@ -793,9 +868,12 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         *("    " + ln for ln in header_includes(title)),
         "---",
         "",
+        # front block, directly under the title: the one-line intro + the clickable flow
+        # diagram (unnumbered — not a body section), then the table of contents, then the
+        # numbered body sections. The workflow is thus rendered on the cover/TOC block.
         cover,
         "```{=latex}",
-        "\\clearpage\\tableofcontents\\clearpage",
+        "\\vspace{0.5em}\\tableofcontents",
         "```",
     ]
     return "\n".join(front) + "\n\n" + sections + "\n", anchors

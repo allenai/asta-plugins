@@ -3,13 +3,13 @@
 
 Deterministic, no LLM. Reads every closed task's typed output_json from beads (or a
 jsonl export) and, for each top-level loop under the epic root (data_provenance,
-reproduction, theorizer, verification, summarize, reflection, ...), renders a
+reproduction, theorizer, summarize, reflection, ...), renders a
 self-contained wiki page for that loop from its subtree's records, then writes
 wiki_<loop>.qmd and (with --render) wiki_<loop>.pdf via Quarto. A merged wiki.qmd
 concatenates every loop page into one document.
 
 This is the per-loop companion to compile-report.py (which renders the whole-session
-paper). Loop and step missions come from assets/schemas.yaml; all record wording comes
+paper). Loop and step missions come from assets/workflows.yaml; all record wording comes
 from the typed output_json. Figures referenced by ref(figure) files are embedded.
 
 Exit: 0 ok · 1 no session / bd unavailable · 2 render failed
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SCHEMAS = HERE.parent / "assets" / "schemas.yaml"
+SCHEMAS = HERE.parent / "assets" / "workflows.yaml"
 
 # set in main(): the directory figures are copied into (alongside the .qmd pages),
 # so Quarto resolves them by a simple relative basename regardless of cwd.
@@ -54,7 +54,7 @@ def id_key(i):
 
 
 def load_missions():
-    """workflow_name -> mission, step_name -> mission, from schemas.yaml."""
+    """workflow_name -> mission, step_name -> mission, from workflows.yaml."""
     loops, steps = {}, {}
     try:
         import yaml

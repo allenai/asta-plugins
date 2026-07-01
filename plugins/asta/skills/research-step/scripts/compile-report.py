@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SCHEMAS = HERE.parent / "assets" / "schemas.yaml"
+SCHEMAS = HERE.parent / "assets" / "workflows.yaml"
 REPORT_TMPL = HERE.parent / "assets" / "templates" / "report"
 LOGO = HERE.parent / "assets" / "asta-logo.pdf"  # Asta (Ai2) brand mark
 
@@ -362,8 +362,7 @@ def collect(sess, base_url=""):
 
     overview = {}
     # only summary figures worth a section overview; per-law/theory plots carry the laws
-    fig_section = {"theory_synthesis": "theories", "final_synthesis": "theories",
-                   "verification_synthesis": "verification"}
+    fig_section = {"theory_synthesis": "theories", "final_synthesis": "theories"}
     for i in sess.tasks:
         sec = fig_section.get(rs(i)["task_type"])
         if sec and sec not in overview:
@@ -378,6 +377,8 @@ def collect(sess, base_url=""):
     definitional = [t.get("id") for t in verified if t.get("audit")
                     and any(w in (t["audit"].get("recommended_adjustment") or "").lower()
                             for w in ("construction", "definitional"))]
+    testable_theories = [t for t in theories
+                         if (t.get("eval") or {}).get("signal", {}).get("basis") == "testable"]
 
     summary = next((rs(i)["output_json"].get("summary")
                     for i in sess.tasks if rs(i)["task_type"] == "summarize"), None)
@@ -389,6 +390,7 @@ def collect(sess, base_url=""):
         "laws": laws, "theories": theories, "hypotheses": hypotheses,
         "law_stats": tally(laws), "theory_stats": tally(theories), "hyp_stats": tally(hypotheses),
         "n_theories": len(theories),
+        "n_testable_theories": len(testable_theories),
         "objectives": sorted({t.get("objective") for t in theories if t.get("objective")}),
         "verified_theories": verified,
         "theories_ordered": verified + [t for t in theories if not t.get("verdict")],

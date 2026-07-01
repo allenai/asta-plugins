@@ -9,7 +9,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ $# -ge 5 ]] || { echo "usage: create-task.sh <parent-id> <task_type> <flow> <title> <brief-desc> [input-id ...]" >&2; exit 1; }
 parent="$1"; task_type="$2"; flow="$3"; title="$4"; desc="$5"; shift 5
 
-# Validate the task_type against schemas.yaml. The helper exits 3 for an
+# Validate the task_type against workflows.yaml. The helper exits 3 for an
 # unknown task_type (and prints the known ones) or 5 when the schema cannot
 # be read (e.g. PyYAML missing — run init); set -e propagates either.
 "$here/task-output-keys.sh" "$task_type" >/dev/null
