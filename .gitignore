@@ -18,4 +18,7 @@ skills-lock.json
 .idea/
 *.iml
 
+# macOS
+.DS_Store
+
 .asta

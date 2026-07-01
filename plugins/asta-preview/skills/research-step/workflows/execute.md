@@ -5,36 +5,39 @@ Run one ready task end-to-end. Loads its schema, gathers its declared inputs, pr
 ## Preconditions
 
 - An epic root exists (`scripts/epic-root.sh` prints `status: found`).
-- `bd ready --json` is non-empty, **or** the caller supplied a specific task ID that is currently `open` and unblocked.
+- An open issue with a `task_type` exists, **or** the caller supplied a specific `open` task ID.
 
 ## Steps
 
-1. **Pick a task.** If a task ID was supplied, use it. Else `bd ready --json` and pick the oldest issue (tiebreak by `bd-id` ascending). Hypothesis tasks are normally auto-resolved at creation by **plan**, so they should not appear here. If one does, it means the gap text was too thin for plan to fill the output without inventing content — flag this to the user and ask whether to refine the source `literature_review` first.
-2. **Claim it.** `bd update <id> --status=in_progress`.
-3. **Load the schema.** Read the task type with `bd show <id> --json | jq -r '.[0].metadata.research_step.task_type'`. Open `assets/schemas.yaml` and find the matching entry under `task_types`.
-4. **Gather inputs.** For every issue listed in this issue's `inputs` (`bd show <id> --json | jq '.[0].metadata.research_step.inputs'`), read its output with `bd show <input-id> --json | jq '.[0].metadata.research_step.output'`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `summary_path` from a `literature_review`). **This is the only context to use** — do not pull in unrelated repo state.
-5. **Do the work.** Produce a JSON object matching the schema. For schema fields ending in `_path`, write the file to disk first and put the relative path in the JSON.
-6. **Validate structurally.** Run `scripts/validate-output.sh <task_type> <metadata-json-file>`. It checks the envelope (`research_step.task_type`, `inputs`, `output_schema_version`, `output`) and every required `output.<key>` for the task_type, plus type spot-checks for the high-leverage cases (e.g., `analysis.verdict` enum, `analysis.confidence` range). Exit 0 ⇒ valid. Any non-zero exit ⇒ fail loudly and **leave the issue `in_progress`** for retry. Do not close.
-7. **Persist the output.** Materialize the metadata JSON via `scripts/write-meta.sh` (reads JSON from stdin, prints a temp file path), then `bd update <id> --metadata @<path>`. Preserve the existing `task_type`, `inputs`, and `output_schema_version`.
-8. **Close.** `bd close <id>`.
-9. **Hand off to plan or update-summary.** Some closed task types unlock new graph structure; others don't. Decide based on the closed task's `task_type`:
+1. **Pick a task.** If a task ID was supplied, use it. Else run `scripts/next-task.sh` and take the `next:` id — it is the single definition of ordering (open issues with a `task_type`, numerically sorted by hierarchical id; `update-summary` renders the same order). `next: none` ⇒ report that and stop. Grouping issues (epics, no `task_type`) are never executed; `close-task.sh` closes them when their last child closes. Do not use `bd ready` — there are no dependency edges, so id order is the ordering signal.
+2. **Check readiness.** For every issue id in this task's `inputs` (`bd show <id> --json | jq '.[0].metadata.research_step.inputs'`), verify it is `closed` with a non-null `output_json`. If any input is not ready, **stop and report it** — the graph was built out of order (a task left `in_progress`, or a replan misordering); do not improvise the missing input. This is the readiness check that dependency edges used to provide.
+3. **Claim it.** `bd update <id> --status=in_progress`.
+4. **Load the schema and config.** Read the flow and task type with `bd show <id> --json | jq -r '.[0].metadata.research_step | .flow, .task_type'`. In `assets/schemas.yaml`: the task's output shape is `tasks.<task_type>.output` (a mapping of key → type; `[type]` means a JSON array of that type); find the step inside `flows.<flow>` — it may be nested under a fan-out group (e.g. `flows.reproduction.replication.experiment_design`) — and use its `mission`, `input`, and `chain`. Read the **session config** pinned on the epic root (`bd show <epic-id> --json | jq '.[0].metadata.research_step.config'`) and pass its values into the chain where they apply — `n_experiments` into the run-metadata JSON for `asta autodiscovery metadata`, `max_papers_to_retrieve` on `asta generate-theories find-and-extract`. Do not re-read defaults from schemas.yaml mid-session; the pin is the truth. (Sessions bootstrapped before config pinning exist: an absent pin means use the schemas.yaml defaults.)
+5. **Gather inputs.** For every issue listed in this issue's `inputs`, read its output with `bd show <input-id> --json | jq '.[0].metadata.research_step.output_json'`. Also load `mission.md` and any files referenced from input outputs via `_path` fields (e.g., `report_path` from `reproduction_synthesis`). **This is the only context to use** — do not pull in unrelated repo state.
+6. **Do the work.** Follow the step's `mission` and run its `chain` (the asta commands). Produce two things:
+   - **`output_json`** — a JSON object holding exactly the schema's output keys for this task (`tasks.<task_type>.output`), and nothing else. Fill every typed field the schema declares (including typed verdicts like `adjudication.outcome` or `audit_report.verdict_survives`); only values with **no typed field** (an execution id, intermediate file paths, raw tool output) go in `artifacts`. Artifact rows are **A2A 1.0 Artifacts** — `{artifactId, name, description, parts, metadata}`, where `parts` is an array of text / file / data parts (see `artifact` and `part` in the schema). Artifacts returned by chain commands are stored as received (their kind in `metadata.type`); locally produced byproducts (a figure, a script, a data file) are wrapped as file parts in the uri form — repo-root-relative path plus mimeType — never the bytes form (beads' ~64KB cap). Records are immutable — emit verdicts and enrichments as their own records referencing the original by id (`adjudication.subject_id`, `source_access.data_source_id`); never re-emit an upstream record with changed values. Keep it slim: beads stores metadata inline and rejects large blobs (~64KB+), so put heavy data (raw agent JSON, datasets, full extractions) under `.asta/<agent>/<slug>/` and reference it by repo-root-relative path. `<agent>` is the asta command group (`literature`, `generate-theories`, `autodiscovery`, `analyze-data`); `<slug>` is `YYYY-MM-DD-<short-query-slug>`. Preserve evidence uuids that tie a finding back to its paper. For schema fields ending in `_path`, write the file first and put the path in the JSON.
+   - **`output_markdown`** — a concise write-up of the result, one `## <key>` section per output key, following the **Report conventions** below (entity hyperlinks, tables, figures). This is guidance, not a gate — the scripts do not assert style. Keep it a digest; heavy data stays in the artifact files.
+7. **Finish with `close-task.sh`.** Write the two files — `output.json` (the `output_json` object) and `output.md` (the `output_markdown`) — then run `scripts/close-task.sh <id> <output.json> <output.md>`. It publishes both into the issue metadata, validates `output_json` structurally against the schema (keys must equal the keys of `tasks.<task_type>.output` — which always include `artifacts` — none null; no style checks), closes the issue, confirms it closed, and closes any ancestor group whose last child just closed (it never closes the epic root — the session-complete state is root open with no open tasks). A non-zero exit **before** the `closed <id>` line means the issue is still `in_progress` — fix and re-run. A warning **after** `closed <id>` means the task closed but a group could not be auto-closed; close that group manually. The `description` is untouched; it stays the brief one-liner set at creation.
+8. **Hand off.** If the flow has steps after this one, hand off to **plan** (source = this issue) to create them; plan chains to **update-summary**. If this was the flow's final synthesis, hand off to **update-summary** directly.
 
-   | Closed task_type | Hand off to |
-   |---|---|
-   | `literature_review`, `hypothesis`, `analysis`, `synthesis` | **plan** (with this issue as the source). `plan` then chains to **update-summary**. Note: `hypothesis` only reaches this branch in the rare case it was left open at creation; the normal path is plan→auto-resolve. |
-   | `scope`, `definitions`, `experiment_design`, `evidence_gathering` | **update-summary** directly. |
+## Report conventions
 
-   Either path ends with `summary.md` rebuilt.
+These apply to every `output_markdown` and to every `*_synthesis` report deliverable. Rigorous but not over the top: a report stays roughly 50–100 lines; the detail behind it lives in artifacts it links to.
 
-## Notes on output files
+- **Every named entity is a hyperlink.** Papers → DOI or canonical Semantic Scholar URL; datasets and result files → relative path; runs/experiments → their artifact or metadata file; laws/theories/hypotheses → their ledger row, written with an anchor (`<a id="l1"></a>`) so other reports can deep-link (`reproduction_report.md#l1`). A named thing with no link is a defect.
+- **Tables are the spine.** Any ledger, matrix, or catalog (laws × outcomes, theories × verdicts, sources × access) is a table with one row per record, mirroring the typed rows in `output_json`.
+- **Figures carry the quantitative claims.** Embed each one (`![caption](path)`) where the claim is made and list it in the `figures` output field. Analysis-type tasks must emit at least one figure; synthesis reports embed the figures their headline rests on (effect-size comparisons, verdict panels, discovery-vs-holdout shrinkage).
+- Neutral, third-person register; numbers in the text match the tables they summarize.
 
-Schema fields ending in `_path` are relative paths. Conventions:
+## Notes on output
 
-- `summary_path` (from `literature_review`) → `background_knowledge.txt` by convention, but any path works.
-- `log_path` (from `evidence_gathering`) → typically under `logs/`.
-- `report_path` (from `synthesis`) → typically `report.md`.
+The structured result is `metadata.research_step.output_json`; the narrative is `metadata.research_step.output_markdown`. The issue **`description`** is the brief one-liner set at creation by `create-task.sh` and is not overwritten. Heavy artifacts live under `.asta/<agent>/<slug>/` where `<slug>` is `YYYY-MM-DD-<short-query-slug>`, referenced by repo-root-relative path (`.asta/<agent>/<slug>/<file>`, repo files like the auto-ds inputs as `inputs/<path>`). `output_json.artifacts` holds A2A Artifacts whose file parts reference those paths by uri; heavy payloads (base64 bytes, raw agent JSON) stay on disk, never inline.
 
-Write the file before setting the output JSON. If the executor crashes between writing the file and closing the issue, the file is harmless orphan data — re-running `execute` on the same issue will overwrite it.
+Schema fields ending in `_path` are repo-root-relative paths — write the file before putting the path in `output_json`:
+
+- `report_path` (from every `*_synthesis` report) → the report's `.md` deliverable. The master `final_synthesis` report is typically `report.md` at the repo root; the per-sub-flow reports go under `.asta/<agent>/<slug>/` or alongside it (e.g. `reproduction_report.md`, `theory_report.md`, `verification_report.md`, `hypothesis_report.md`, `data_gaps_report.md`).
+
+If the executor crashes between writing a file and closing the issue, the file is harmless orphan data — re-running `execute` overwrites it.
 
 ## Out of scope for this workflow
 
