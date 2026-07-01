@@ -2,8 +2,8 @@
 """compile-report.py — render a research session into a publication-quality report.
 
 Deterministic, no LLM. Reads every closed task's typed output_json from beads (or a
-jsonl export), joins the primary records by id (laws⨝verdicts⨝audits,
-theories⨝novelty⨝triage⨝verdict, hypotheses⨝verdict, provenance, analyses), and
+jsonl export), joins the primary records by id (laws⨝audits,
+theories⨝novelty⨝audit, hypotheses⨝audit, provenance, analyses), and
 renders an academic paper via Jinja section templates in assets/templates/report/:
 Abstract → Methods → Results (per-law / per-theory, verdicts inline, stats prominent)
 → Trustworthiness → Appendices. All wording lives in the templates; this module joins
@@ -40,14 +40,13 @@ STAGE_LABEL = {
     "cohort_assembly": "Assembled a cohort",
     "provenance_search": "Sourced & acquired data", "provenance_extraction": "Sourced & acquired data",
     "data_acquisition": "Sourced & acquired data", "evidence_gathering": "Sourced & acquired data",
-    "data_driven_discovery": "Generated surprising hypotheses from the data",
+    "auto_discovery": "Ran AutoDiscovery and grouped its candidate laws",
     "discovery_run": "Generated surprising hypotheses from the data",
-    "law_extraction": "Grouped into candidate laws",
     "experiment_design": "Designed prespecified tests", "analysis": "Tested on independent data",
-    "audit": "Tested on independent data", "adjudicate": "Reached verdicts",
+    "audit": "Audited and reached verdicts",
     "holdout_replication": "Replicated on held-out data",
-    "evidence_extraction": "Gathered literature evidence", "theory_formation": "Generated theories",
-    "testability_triage": "Triaged testability", "novelty_assessment": "Scored novelty",
+    "theory_formation": "Generated theories",
+    "novelty_assessment": "Triaged testability and scored novelty",
     "literature_review": "Surveyed the literature", "hypothesis_formation": "Formed hypotheses",
 }
 
@@ -87,7 +86,7 @@ class Session:
         self.epic = next((i for i in issues if rs(i).get("epic_root")), None)
         if not self.epic:
             sys.exit("compile-report: no epic root — not a research session")
-        self.flow = rs(self.epic).get("flow", "")
+        self.loop = rs(self.epic).get("flow", "")
         prefix = self.epic["id"] + "."
         self.tasks = sorted(
             (i for i in issues if i["id"].startswith(prefix)
@@ -179,7 +178,7 @@ def collect(sess, base_url=""):
         return [rs(i)["output_json"] for i in sess.tasks if rs(i)["task_type"] == tt]
 
     laws, theories, hypotheses = [], [], []
-    for tt in ("law_extraction", "discovery_run"):
+    for tt in ("auto_discovery", "discovery_run"):
         for o in out(tt):
             laws += o.get("empirical_laws") or []
     for o in out("theory_formation"):
@@ -190,24 +189,21 @@ def collect(sess, base_url=""):
     for o in out("hypothesis_formation"):
         hypotheses += o.get("hypotheses") or []
 
+    # novelty_assessment now carries the testability triage too (formerly a separate
+    # testability_triage task), so one theory_evaluation serves as both eval and triage.
     evals, triage = {}, {}
     for o in out("novelty_assessment"):
         for e in o.get("theory_evaluations") or []:
-            evals[e.get("theory_id")] = e
-    for o in out("testability_triage"):
-        for a in (o.get("testability_triage") or {}).get("assessments") or []:
-            triage[a.get("theory_id")] = a
+            evals[e.get("theory_id")] = triage[e.get("theory_id")] = e
 
-    verdicts, audits = {}, {}
-    for tt in ("adjudicate", "holdout_replication"):
+    # audit now carries both the refutation and the finalized verdict (formerly a
+    # separate critique), so one audit_report serves as both verdict and audit.
+    audits = {}
+    for tt in ("audit", "holdout_replication"):
         for o in out(tt):
-            a = o.get("adjudication")
-            if a and a.get("subject_id"):
-                verdicts[a["subject_id"]] = a
-    for o in out("audit"):
-        ar = o.get("audit_report")
-        if ar and ar.get("subject_id"):
-            audits[ar["subject_id"]] = ar
+            ar = o.get("audit_report")
+            if ar and ar.get("subject_id"):
+                audits[ar["subject_id"]] = ar
 
     # designs, figures, and the DataVoyager result, associated to a subject via the branch group
     designs, figs, dv, issue_subject = {}, {}, {}, {}
@@ -218,8 +214,8 @@ def collect(sess, base_url=""):
         subj = None
         for m in members:
             o = rs(m)["output_json"]
-            if rs(m)["task_type"] in ("adjudicate", "holdout_replication"):
-                subj = (o.get("adjudication") or {}).get("subject_id") or subj
+            if rs(m)["task_type"] in ("audit", "holdout_replication"):
+                subj = (o.get("audit_report") or {}).get("subject_id") or subj
             if rs(m)["task_type"] == "experiment_design":
                 ed = o.get("experiment_design") or {}
                 if ed.get("subject_id"):
@@ -241,7 +237,7 @@ def collect(sess, base_url=""):
     def enrich(items):
         for x in items:
             i = x.get("id")
-            x["verdict"], x["audit"] = verdicts.get(i), audits.get(i)
+            x["verdict"] = x["audit"] = audits.get(i)
             x["design"], x["figs"] = designs.get(i), figs.get(i, [])
             x["eval"], x["triage"] = evals.get(i), triage.get(i)
             if not x.get("link"):  # theories already carry their theory-store link
@@ -271,14 +267,14 @@ def collect(sess, base_url=""):
             citations.setdefault(c.get("corpus_id") or c.get("id") or c.get("title"), c)
 
     run_id = ""
-    for o in out("cohort_assembly") + out("data_driven_discovery"):
+    for o in out("cohort_assembly") + out("auto_discovery"):
         run_id = (o.get("cohort") or {}).get("run_id", "") or run_id
     datasets = list(datasets.values())
     primary = max(datasets, key=lambda d: d.get("n") or 0) if datasets else None
 
     # experiments cite the AutoDiscovery run: a per-node file when present, else the run's node table
     run_dir = ""
-    for o in out("data_driven_discovery") + out("discovery_run"):
+    for o in out("auto_discovery") + out("discovery_run"):
         for a in o.get("artifacts") or []:
             for p in a.get("parts") or []:
                 uri = (p.get("file") or {}).get("uri", "") if p.get("kind") == "file" else ""
@@ -343,11 +339,12 @@ def collect(sess, base_url=""):
         add_dataset(name[:90], url)
     for ds in data_sources:  # source data-repositories actually available (not a journal, not restricted)
         sa, ac = source_access.get(ds.get("id")), acquisitions.get(ds.get("id"))
-        if not sa or not _is_data_repo(sa.get("repository")):
+        if not sa or (ac and ac.get("access_status") in ("restricted", "not_found")):
             continue
-        if ac and ac.get("access_status") in ("restricted", "not_found"):
-            continue
-        add_dataset(ds.get("paper_title") or sa.get("repository"), _doi_url(sa.get("identifier")))
+        for src in sa.get("sources") or []:  # one entry per underlying data product
+            if not _is_data_repo(src.get("repository")):
+                continue
+            add_dataset(ds.get("paper_title") or src.get("repository"), _doi_url(src.get("identifier")))
 
     # overview/summary figures (recursive scan), mapped to a section by producing task
     def find_figs(o):
@@ -418,11 +415,11 @@ def _agents(sess):
     }
     # infer from task types present (chains aren't in the issue, but task types imply agents)
     tt = {rs(i)["task_type"] for i in sess.tasks}
-    if {"data_driven_discovery", "discovery_run", "cohort_assembly"} & tt:
+    if {"auto_discovery", "discovery_run", "cohort_assembly"} & tt:
         used.add("AutoDiscovery")
     if {"analysis", "holdout_replication"} & tt:
         used.add("DataVoyager")
-    if {"theory_formation", "evidence_extraction", "novelty_assessment"} & tt:
+    if {"theory_formation", "novelty_assessment"} & tt:
         used.add("Theorizer")
     if {"literature_review", "provenance_search"} & tt:
         used.add("Paper Finder")
@@ -559,7 +556,7 @@ def exec_phases(ctx):
         ph.append(("Literature review", "survey and gaps", "Paper Finder", "sec-methods"))
     if has("provenance_search", "provenance_extraction", "data_acquisition", "evidence_gathering", "cohort_assembly"):
         ph.append(("Data provenance", f"{ctx['acquired']}/{len(ctx['provenance'])} sources", "Paper Finder", "sec-methods"))
-    if has("data_driven_discovery", "discovery_run"):
+    if has("auto_discovery", "discovery_run"):
         ph.append(("AutoDiscovery", f"{len(ctx['experiments'])} experiments", "AutoDiscovery", "sec-laws"))
     if L["n"]:
         # "laws" are the high-surprise hypotheses surfaced by discovery and retained —
@@ -619,11 +616,11 @@ TASK_SECTION = {
     "literature_review": "#sec-methods", "provenance_search": "#sec-methods",
     "provenance_extraction": "#sec-methods", "data_acquisition": "#sec-methods",
     "evidence_gathering": "#sec-methods", "cohort_assembly": "#sec-methods",
-    "data_driven_discovery": "#sec-laws", "discovery_run": "#sec-laws", "law_extraction": "#sec-laws",
+    "auto_discovery": "#sec-laws", "discovery_run": "#sec-laws",
     "experiment_design": "#sec-laws", "analysis": "#sec-laws", "audit": "#sec-laws",
-    "adjudicate": "#sec-laws", "holdout_replication": "#sec-laws",
-    "evidence_extraction": "#sec-theories", "theory_formation": "#sec-theories",
-    "testability_triage": "#sec-theories", "novelty_assessment": "#sec-theories",
+    "holdout_replication": "#sec-laws",
+    "theory_formation": "#sec-theories",
+    "novelty_assessment": "#sec-theories",
     "hypothesis_formation": "#sec-hypotheses",
 }
 
@@ -631,7 +628,7 @@ TASK_SECTION = {
 def compute_anchors(sess, ctx, known):
     """The node↔report map the flows-UX uses to scroll the report to a node's section.
     by_issue: a beads issue → its most-specific anchor (per-entity subsection when the
-    branch adjudicates a law/theory/hypothesis, else the section). by_task_type: coarse
+    branch audits a law/theory/hypothesis, else the section). by_task_type: coarse
     fallback for flow nodes with no resolved instance."""
     subj_of = ctx.get("issue_subject", {})
     by_issue = {}

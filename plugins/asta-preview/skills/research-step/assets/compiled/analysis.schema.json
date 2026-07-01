@@ -21,70 +21,6 @@
       ],
       "type": "object"
     },
-    "artifact": {
-      "additionalProperties": true,
-      "properties": {
-        "artifactId": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "extensions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "metadata": {
-          "additionalProperties": true,
-          "properties": {
-            "a2a_context_id": {
-              "type": "string"
-            },
-            "a2a_task_id": {
-              "type": "string"
-            },
-            "agent": {
-              "type": "string"
-            },
-            "entity_id": {
-              "type": "string"
-            },
-            "run_id": {
-              "type": "string"
-            },
-            "share_url": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "type": "object"
-        },
-        "name": {
-          "type": "string"
-        },
-        "parts": {
-          "items": {
-            "$ref": "#/$defs/part"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "artifactId",
-        "name",
-        "description",
-        "parts",
-        "metadata"
-      ],
-      "type": "object"
-    },
     "figure": {
       "additionalProperties": true,
       "properties": {
@@ -101,18 +37,35 @@
       ],
       "type": "object"
     },
-    "part": {
+    "run": {
       "additionalProperties": true,
       "properties": {
-        "kind": {
+        "a2a_context_id": {
           "type": "string"
         },
-        "metadata": {
-          "type": "object"
+        "a2a_task_id": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "autodiscovery_run",
+            "theorizer_artifact",
+            "datavoyager_run"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "share_url": {
+          "type": "string"
         }
       },
       "required": [
-        "kind"
+        "kind",
+        "run_id"
       ],
       "type": "object"
     }
@@ -124,23 +77,20 @@
     "analysis": {
       "$ref": "#/$defs/analysis"
     },
-    "artifacts": {
+    "figures": {
       "items": {
-        "$ref": "#/$defs/artifact"
+        "type": "string",
+        "x-path-ref": "figure"
       },
       "type": "array"
     },
-    "figures": {
-      "items": {
-        "$ref": "#/$defs/figure"
-      },
-      "type": "array"
+    "run": {
+      "$ref": "#/$defs/run"
     }
   },
   "required": [
     "analysis",
-    "figures",
-    "artifacts"
+    "figures"
   ],
   "title": "analysis",
   "type": "object"

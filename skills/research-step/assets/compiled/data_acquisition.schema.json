@@ -34,70 +34,6 @@
       ],
       "type": "object"
     },
-    "artifact": {
-      "additionalProperties": true,
-      "properties": {
-        "artifactId": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "extensions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "metadata": {
-          "additionalProperties": true,
-          "properties": {
-            "a2a_context_id": {
-              "type": "string"
-            },
-            "a2a_task_id": {
-              "type": "string"
-            },
-            "agent": {
-              "type": "string"
-            },
-            "entity_id": {
-              "type": "string"
-            },
-            "run_id": {
-              "type": "string"
-            },
-            "share_url": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "type": "object"
-        },
-        "name": {
-          "type": "string"
-        },
-        "parts": {
-          "items": {
-            "$ref": "#/$defs/part"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "artifactId",
-        "name",
-        "description",
-        "parts",
-        "metadata"
-      ],
-      "type": "object"
-    },
     "dataset": {
       "additionalProperties": true,
       "properties": {
@@ -139,21 +75,6 @@
         "covers_laws"
       ],
       "type": "object"
-    },
-    "part": {
-      "additionalProperties": true,
-      "properties": {
-        "kind": {
-          "type": "string"
-        },
-        "metadata": {
-          "type": "object"
-        }
-      },
-      "required": [
-        "kind"
-      ],
-      "type": "object"
     }
   },
   "$id": "asta-research-step/data_acquisition.schema.json",
@@ -166,12 +87,6 @@
       },
       "type": "array"
     },
-    "artifacts": {
-      "items": {
-        "$ref": "#/$defs/artifact"
-      },
-      "type": "array"
-    },
     "datasets": {
       "items": {
         "$ref": "#/$defs/dataset"
@@ -181,8 +96,7 @@
   },
   "required": [
     "acquisitions",
-    "datasets",
-    "artifacts"
+    "datasets"
   ],
   "title": "data_acquisition",
   "type": "object"

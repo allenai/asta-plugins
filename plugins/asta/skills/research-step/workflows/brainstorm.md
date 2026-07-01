@@ -45,7 +45,7 @@ Pick the branch that matches; do not run more than one.
 | Full issue metadata (rare; usually the digest covers it) | `bd list --all --limit 0` |
 | Task tree | `bd list --json --all --limit 0` — ids encode the parent-child outline |
 | Long-form content / heavy data behind a task | follow any `_path` / `local_path` field (or an artifact uri) from the issue's `output_json` |
-| Exact verdict / effect size for a law, theory, or hypothesis | `bd show <adjudicate-id> --json` (the adjudication record; the digest reports headlines, not the numbers) |
+| Exact verdict / effect size for a law, theory, or hypothesis | `bd show <audit-id> --json` (the audit record; the digest reports headlines, not the numbers) |
 
 Rule of thumb: if you can answer from `summary.md`, do. If the user asks for a specific number, file path, or verbatim output that the digest abstracts, then fetch it from `bd`.
 

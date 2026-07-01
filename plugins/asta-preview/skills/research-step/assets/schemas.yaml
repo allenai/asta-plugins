@@ -1,260 +1,225 @@
 version: 2
 
-flows:
-
-  data_and_literature_grounded_theory_generation:
-    mission: Source the papers and data behind an existing AutoDiscovery run, reproduce its laws on independent data, theorize their cross-cutting mechanism, then verify the testable theories on the data already in hand.
-    data_provenance:
-      mission: Before reproducing, source the papers and datasets the run was built on so the underlying data becomes the data in hand.
-      chain:
-        - {workflow: data_provenance, mission: Source the papers and datasets the run named in the mission was built on; acquire the open data and record what is restricted.}
-    reproduction:
-      mission: Import the provided AutoDiscovery run (do not run a fresh one) and reproduce each law on independent data.
-      chain:
-        - {workflow: reproduction, mission: Import the run named in the mission; reproduce each law on independent data with construct-equivalence and a feasibility gate.}
-    theorizer:
-      mission: Generate literature- and data-grounded theories of the reproduced laws and score their novelty.
-      chain:
-        - {workflow: theorizer, mission: Ground theories in the reproduced laws under two objectives; triage what is testable on hand-data; score novelty on the testable subset.}
-    verification:
-      mission: One branch per theory that testability_triage marked testable. There is no design step here. The prespecified proposed_test from triage (test, metric, success_threshold) is the commitment that analysis runs and adjudicate checks. The branch count is known only after triage closes, so these branches are created at replan.
-      replan: true
-      analysis:
-        mission: Run the theory's prespecified proposed_test on the data in hand, which is the source dataset registered by data_driven_discovery plus any acquired datasets. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
-        input: [testability_triage, data_driven_discovery, evidence_gathering]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-      audit:
-        mission: Try to refute the verification analysis or find artifacts before its verdict stands. Include a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears.
-        input: [analysis]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-      adjudicate:
-        mission: Finalize the theory's outcome and observed effect size from the analysis and audit, checked against the prespecified success_threshold from triage. Emit an adjudication referencing the theory id.
-        input: [testability_triage, analysis, audit]
-        chain: []
-    summarize:
-      mission: Summarize the completed reproduce-and-theorize session as an encyclopedia entry.
-      chain:
-        - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
-    reflection:
-      mission: Record the agent's feedback on how this session ran.
-      chain:
-        - {workflow: reflection, mission: Write the reflection for this session.}
-
-  data_provenance:
-    mission: Source the papers and datasets the AutoDiscovery run was built on. Search the literature for the publication(s) behind the run's datasets, extract their data-availability and repository details (reusing the theorizer extraction schema and its returned findings), acquire the open data so it becomes the data in hand, and record what could not be obtained. This runs before reproduction so the underlying data is sourced rather than assumed.
-    provenance_search:
-      mission: Read the run's dataset descriptions and intent from its metadata, then search the literature for the paper(s) that published or describe each dataset. Emit one data_source per run dataset naming the candidate source paper (paper_id, title, url).
-      input: []
-      chain: [asta literature find, asta papers search]
-    provenance_extraction:
-      mission: Reuse the theorizer extraction (build-extraction-schema, find-and-extract) on the candidate papers, or its already-returned findings if the same papers were extracted there, to pull out each paper's data-availability statement, repository, DOI/accession, and dataset identifiers. Seed `paper_store` with identifier-only entries ({corpus_id}) for the candidate papers and set search_additional_papers false so the corpus is exactly those seeds. Emit one source_access per data_source (keyed by its id); the data_source records themselves are immutable.
-      input: [provenance_search]
-      chain: [asta generate-theories build-extraction-schema, asta generate-theories find-and-extract]
-    data_acquisition:
-      mission: For each openly available source, fetch the data files and register them as a dataset, the data in hand that reproduction, testability_triage, and verification later use. Emit one acquisition per data_source with access_status, local_path, and the registered dataset_id. Validate every fetched dataset against its paper before registering it (n, schema/variables, units, missingness), and record the check in validation_note; a dataset that fails validation is a gap, not an input. For restricted or not-found data, record a gap rather than blocking downstream work.
-      input: [provenance_search, provenance_extraction]
-      chain: [asta documents, asta autodiscovery upload]
-
-  reproduction:
-    mission: Ingest an AutoDiscovery run, group its experiments into laws, find independent data once for all of them, then reproduce each law. The verdict is two-axis, outcome crossed with testability, and comes from the branch's adjudication, not the ingested run.
-    data_driven_discovery:
-      mission: Ingest the run. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts. Also register the run's own dataset(s) as a dataset entry. This is the "data in hand" that testability_triage and verification later test theories against, so it must be a first-class output, not just the run directory. When data_provenance ran first, prefer the datasets it acquired (with their local paths) as the data in hand, falling back to the run's described datasets where acquisition was restricted.
-      input: []
-      chain: [asta autodiscovery run, asta autodiscovery experiments]
-    law_extraction:
-      mission: First select which experiments to ground on. Take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped. Then group the selected experiments into candidate empirical laws, preserving the run's own surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law. Laws are identity records; their verdicts come later, from each branch's adjudication.
-      input: [data_driven_discovery]
-      chain: []
-    evidence_gathering:
-      mission: One search across all laws for independent datasets, acquiring what is available. Validate each acquired dataset against its source (n, schema/variables, units, missingness) before registering it; a dataset that fails validation is a gap, not an input. Emit a dataset registry that tags which laws each dataset can test.
-      input: [law_extraction]
-      chain: [asta literature find, asta papers search, asta documents, asta autodiscovery upload]
-    replication:
-      mission: One branch per law (created at replan, once law_extraction has produced the law set). Reproduce that law on the independent data.
-      replan: true
-      experiment_design:
-        mission: State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Set feasibility from whether evidence_gathering found a secondary (independent) dataset that can test this law. No secondary dataset means feasibility data_unavailable and no DataVoyager run. Commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design), and never inline it. What happens next is plan's Gate, not this step's job. Feasible and proxy_only branches get analysis, audit, and adjudicate; data_unavailable and construct_mismatch branches get only adjudicate (outcome n/a, testability untestable) plus a data_acquisition task holding the gap.
-        input: [law_extraction, evidence_gathering]
-        chain: [asta experiment]
-      analysis:
-        mission: Run the reproduction on the acquired data, per the design's prespecified test. Effect size and outcome come from here. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
-        input: [experiment_design, evidence_gathering]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-      audit:
-        mission: Try to refute the analysis or find artifacts before its verdict stands. Include a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears.
-        input: [analysis]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-      adjudicate:
-        mission: Finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis and audit, checked against the design's prespecified success_threshold, or outcome n/a and testability untestable when the branch was infeasible. Also emit the adjudication's reproduction signal (reward and basis), the signal the theorizer reads. When the law reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the law, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Emit an adjudication referencing the law id. The law record itself is never re-emitted.
-        input: [experiment_design, analysis, audit]
-        chain: []
-
-  theorizer:
-    mission: Theories of the reproduced laws, grounded in both the literature and the reproduction's numbers, generated under two objectives and filtered to what the data on hand can actually test.
-    evidence_extraction:
-      mission: Shared across both objective branches. Consume the reproduced laws, meaning the empirical_law records plus the adjudications the replication branches finalized (outcome and testability filled), not the pre-reproduction candidates alone. Drop any law whose adjudication signal.basis is refuted_incorrect, since it is a confirmed AutoDS mistake and must not ground a theory. Keep laws with basis not_reproduced, but carry their negative signal as conflicting evidence rather than support. Build the extraction schema and find-and-extract evidence for them in one pass; this finds the papers and pulls their findings. When upstream steps already identified papers (e.g. provenance data_sources), seed `paper_store` with identifier-only entries ({corpus_id}), which the theorizer and the experiment designer both accept as the same paper_store payload. Seek disconfirming evidence too, and tag each finding with the law it bears on.
-      input: [law_extraction, adjudicate]
-      chain: [asta generate-theories build-extraction-schema, asta generate-theories find-and-extract]
-    theory_generation:
-      mission: Two branches over the same shared extraction store, one per generation objective. Both branches are known up front, so they are created together. Ground theories in the reproduction's effect sizes and verdicts; populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.
-      theory_formation:
-        mission: Form theories from the shared extraction store under this branch's objective.
-        input: [evidence_extraction]
-        chain: [asta generate-theories form-theory]
-    testability_triage:
-      mission: Fan both branches in. Compare each theory's required data against the data in hand (the source dataset registered by data_driven_discovery plus any datasets evidence_gathering acquired) and decide which theories are testable now. For each testable theory, commit the prespecified proposed_test (test, metric, success_threshold) that its verification branch will run and adjudicate against. Theories needing new data are recorded as untestable now.
-      input: [theory_generation, data_driven_discovery, evidence_gathering]
-      chain: []
-    novelty_assessment:
-      mission: Score novelty against the shared corpus, only on the testable subset of theories.
-      input: [testability_triage]
-      chain: [asta generate-theories evaluate-novelty]
+workflows:
 
   summarize:
     mission: Summarize a completed research session as a self-contained encyclopedia entry. It composes onto any flow, reads the whole session, and names no inputs, so it runs last by id order.
-    summarize:
-      mission: From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
-      input: []
-      chain: []
+    children:
+      - summarize:
+          mission: From the completed session's report, write a stand-alone encyclopedia entry a reader can understand without the original report. Give it a short, informative title and the index fields that place it in the encyclopedia. Write a context passage that orients the reader to the technical domain, setting the scientific context only, and do not repeat the research or the discovery. Then write an executive summary for each audience that states the finding succinctly and elaborates in a paragraph highlighting what is most novel or surprising versus what is already known. Write one for an intelligent layperson outside the field (simplify, avoid jargon) and one for a scientist working in the field, each standing on its own. Write the context, main finding, and elaboration as statements. When a statement rests on an AutoDiscovery run, a Theorizer artifact, or a DataVoyager run from this session, cite it by that run or artifact's own id copied from the session; never invent an id or cite one you cannot find in the session, and leave basic background knowledge uncited. Author output_json only; compile-report.py renders the cover, the deep-link header, and the body.
+          output: {summary: summary}
 
   reflection:
     mission: Capture the executing agent's feedback on how the session ran. It composes onto any flow, reads the whole session, and names no inputs, so it runs last by id order.
-    reflection:
-      mission: The session is finished. Look back over the run and record how it went, as feedback rather than science. Note where the flow, schema, or tools got in your way or cost you rework, and the concrete changes that would have made the run go better. Point at the real tasks, fields, and tools involved.
-      input: []
-      chain: []
+    children:
+      - reflection:
+          mission: The session is finished. Look back over the run and record how it went, as feedback rather than science. Note where the flow, schema, or tools got in your way or cost you rework, and the concrete changes that would have made the run go better. Point at the real tasks, fields, and tools involved.
+          output: {reflection: reflection}
+
+  data_provenance:
+    mission: Source the papers and datasets the AutoDiscovery run was built on. Identify the publication of record behind each run dataset, read its data- and code-availability section directly to learn where the data live and how to obtain them, acquire the open data so it becomes the data in hand, and record what could not be obtained. This runs before reproduction so the underlying data is sourced rather than assumed.
+    children:
+      - provenance_search:
+          mission: Read the run's dataset descriptions and intent from its metadata, then search the literature for the paper(s) that published or describe each dataset. Emit one data_source per run dataset naming the candidate source paper (paper_id, title, url).
+          cli: [asta literature, asta papers]
+          output: {data_sources: [data_source]}
+      - provenance_extraction:
+          mission: Read each candidate paper's data- and code-availability section directly from the publication of record to capture where the data live and how to obtain them, the repository, the accession or DOI, and the underlying products it draws on. Going to the article is more reliable here than a cross-paper extraction, which is heavier and can substitute papers when a recent one is not yet indexed; reserve that for gathering evidence across many papers. When a paper's data come from several underlying products, record each as its own sub-source. Emit one source_access per data_source (keyed by its id); the data_source records themselves are immutable.
+          cli: [asta papers, asta pdf-extraction]
+          input: [provenance_search]
+          output: {extracted_data: ref(extracted_data), source_access: [source_access]}
+      - data_acquisition:
+          mission: For each openly available source, fetch the data files and register them as a dataset, the data in hand that reproduction, novelty_assessment, and verification later use. Emit one acquisition per data_source with access_status, local_path, and the registered dataset_id. Validate every fetched dataset against its paper before registering it (n, schema/variables, units, missingness), and record the check in validation_note; a dataset that fails validation is a gap, not an input. For restricted or not-found data, record a gap rather than blocking downstream work.
+          cli: [asta documents, asta autodiscovery]
+          input: [provenance_search, provenance_extraction]
+          output: {acquisitions: [acquisition], datasets: [dataset]}
+
+  theorizer:
+    mission: Explain the cross-cutting theories behind the reproduced laws, grounded in both the literature and the reproduction's numbers, then triage them for testability and score their novelty.
+    children:
+      - theory_formation:
+          mission: Run the managed Theorizer once over the reproduced laws to explain the cross-cutting theories that account for the provided laws from the AutoDiscovery run, grounded in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce, but carry its negative signal as conflicting evidence rather than support. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.
+          cli: [asta generate-theories]
+          input: [auto_discovery, audit]
+          output: {theories: [theory], run: run}
+      - novelty_assessment:
+          mission: First triage each theory for testability, recording the decision as a signal, by comparing its required data against the data in hand (the source dataset registered by auto_discovery plus any datasets evidence_gathering acquired). A theory is testable now only if its prediction is empirically free in that data, meaning a prediction that is definitionally entailed by how those variables were constructed, or that requires transient or time-resolved data, is not testable now even when the variables are present. For each testable theory, commit the prespecified proposed_test (test, metric, success_threshold) that its verification branch will run and audit against; theories needing new data are recorded untestable. Then score the novelty of the testable subset against the literature the Theorizer drew on, and list the testable theory ids.
+          cli: [asta generate-theories]
+          input: [theory_formation, auto_discovery, evidence_gathering]
+          output: {theory_evaluations: [theory_evaluation], testable_theory_ids: [string], run: run}
+
+  verification:
+    mission: One branch per theory that novelty_assessment marked testable, to validate or disprove each on the data in hand. There is no design step here. The prespecified proposed_test from novelty_assessment (test, metric, success_threshold) is the commitment that analysis runs and the audit checks. The branch count is known only after novelty_assessment closes, so these branches are created at replan.
+    replan: true
+    children:
+      - analysis:
+          mission: Run the theory's prespecified proposed_test on the data in hand, which is the source dataset registered by auto_discovery plus any acquired datasets. When the metric involves variables that are definitionally linked in the data, report only the empirically free part of the relationship, not the identity itself. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
+          cli: [asta analyze-data]
+          input: [novelty_assessment, auto_discovery, evidence_gathering]
+          output: {analysis: analysis, figures: [ref(figure)], "run?": run}
+      - audit:
+          mission: Try to refute the verification analysis or find artifacts, then finalize the verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the theory's outcome and observed effect size, checked against the prespecified success_threshold from novelty_assessment; on large samples judge by effect size, not statistical significance alone, since a difference can be significant yet negligible. A theory is disproved as cleanly as it is validated; record either resolution rather than defaulting to partial. Emit an audit_report referencing the theory id.
+          cli: [asta analyze-data]
+          input: [novelty_assessment, analysis]
+          output: {audit_report: audit_report, "run?": run}
+
+  # provide the same experiment plan as auto ds. Input context.
+  reproduction:
+    mission: Ingest an AutoDiscovery run, group its experiments into laws, find independent data once for all of them, then reproduce each law. The verdict is two-axis, outcome crossed with testability, and comes from the branch's audit, not the ingested run.
+    children:
+      - auto_discovery:
+          mission: Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the "data in hand" that novelty_assessment and verification later test theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws — take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Laws are identity records; their verdicts come later, from each branch's audit.
+          cli: [asta autodiscovery]
+          output: {experiments: [ref(experiment)], datasets: [dataset], empirical_laws: [empirical_law], run: run}
+      - evidence_gathering:
+          mission: One search across all laws for independent datasets, acquiring what is available. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables (an attribute table over full geometry, a measured subset over a modeled grid). Some quantities a law rests on are model outputs with no independent measurement; do not force a circular re-derivation with the same theory, but register the absence as a gap so the branch is gated honestly. Validate each acquired dataset against its source (n, schema/variables, units, missingness) before registering it; a dataset that fails validation is a gap, not an input. Emit a dataset registry that tags which laws each dataset can test.
+          cli: [asta literature, asta papers, asta documents, asta autodiscovery]
+          input: [auto_discovery]
+          output: {datasets: [dataset]}
+      - replication:
+          mission: One branch per law (created at replan, once auto_discovery has produced the law set). Reproduce that law on the independent data.
+          replan: true
+          children:
+            - experiment_design:
+                mission: State the original operationalization, the independent one, and whether they are equivalent or only a proxy. Before committing, check whether the source law is an empirical relationship or an artifact of how the dataset was built, since a quantity defined from others is true by construction, a construct_mismatch to flag rather than a result to reproduce. Set feasibility from whether evidence_gathering found a secondary (independent) dataset that can test this law. No secondary dataset means feasibility data_unavailable and no DataVoyager run. Commit the prespecified test (test, metric, success_threshold) before any analysis runs. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design), and never inline it. What happens next is plan's Gate, not this step's job. Feasible and proxy_only branches get analysis and audit; data_unavailable and construct_mismatch branches get only audit, wired to this design alone, recording outcome n/a and testability untestable.
+                cli: [asta experiment]
+                input: [auto_discovery, evidence_gathering]
+                output: {experiment_design: experiment_design, "run?": run}
+            - analysis:
+                mission: Run the reproduction on the acquired data, per the design's prespecified test. Effect size and outcome come from here. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
+                cli: [asta analyze-data]
+                input: [experiment_design, evidence_gathering]
+                output: {analysis: analysis, figures: [ref(figure)], "run?": run}
+            - audit:
+                mission: Try to refute the analysis or find artifacts, then finalize the law's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the law reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the law, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Emit an audit_report referencing the law id. The law record itself is never re-emitted.
+                cli: [asta analyze-data]
+                input: [experiment_design, analysis]
+                output: {audit_report: audit_report, "run?": run}
+
+  data_and_literature_grounded_theory_generation:
+    mission: Source the papers and data behind an existing AutoDiscovery run, then reproduce as many of its findings as possible on independent data and validate or disprove as many of the resulting theories as possible. Ground theories in the reproduced findings and test every theory the data on hand can decide; the aim is to maximize both the number of findings independently checked and the number of theories resolved either way.
+    children:
+      - data_provenance
+      - reproduction
+      - theorizer
+      - verification
+      - summarize
+      - reflection
 
   hypothesis_driven_research:
-    mission: Answer a research question from mission.md by surveying the literature, forming explicit falsifiable hypotheses, and running one prespecified test per hypothesis on acquired data. Review, hypothesize, design, test, adjudicate.
-    literature_review:
-      mission: Survey the literature for the mission's question, covering what is known, what is contested, and which open gaps could be settled by an analysis on obtainable data. Emit key findings (with evidence uuids), the open gaps, and citations.
-      input: []
-      chain: [asta literature find, asta papers search]
-    hypothesis_formation:
-      mission: Form a small set (typically 2-5) of falsifiable hypotheses from the review's open gaps, each a slim claim with its rationale, its falsifiable prediction, and the evidence it rests on. Prefer hypotheses testable on data the literature names. The theory machinery can help here, since a hypothesis is a slim theory committed to one prediction; seed its `paper_store` with identifier-only entries ({corpus_id}) from the literature_review citations, with search_additional_papers false when the corpus should be exactly those seeds.
-      input: [literature_review]
-      chain: [asta generate-theories build-extraction-schema, asta generate-theories find-and-extract]
-    testing:
-      mission: One branch per hypothesis (created at replan, once hypothesis_formation has named them). Test that hypothesis end to end.
-      replan: true
-      experiment_design:
-        mission: Design the test (operationalization, required data, feasibility) and commit the prespecified test (test, metric, success_threshold) before any data is analyzed. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design), and never inline it. What happens next is plan's Gate, not this step's job. Feasible and proxy_only branches get data_acquisition (when the design names data not yet in hand), analysis, audit, and adjudicate; data_unavailable and construct_mismatch branches get only adjudicate (outcome n/a) plus a data_acquisition task holding the gap.
-        input: [hypothesis_formation, literature_review]
-        chain: [asta experiment]
-      data_acquisition:
-        mission: Fetch the datasets the design requires. Validate each against its source (n, schema/variables, units, missingness) and record the check in validation_note; a dataset that fails validation is a gap, not an input.
-        input: [experiment_design]
-        chain: [asta documents, asta autodiscovery upload]
-      analysis:
-        mission: Run the prespecified test on the validated data. Effect size and outcome come from here. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
-        input: [experiment_design, data_acquisition]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-      audit:
-        mission: Try to refute the analysis or find artifacts before its verdict stands. Include a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears.
-        input: [analysis]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-      adjudicate:
-        mission: Finalize the hypothesis's outcome and observed effect size against the design's prespecified success_threshold, from the analysis and audit. Emit an adjudication referencing the hypothesis id.
-        input: [experiment_design, analysis, audit]
-        chain: []
-    summarize:
-      mission: Summarize the completed hypothesis-testing session as an encyclopedia entry.
-      chain:
-        - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
-    reflection:
-      mission: Record the agent's feedback on how this session ran.
-      chain:
-        - {workflow: reflection, mission: Write the reflection for this session.}
+    mission: Answer a research question from mission.md by surveying the literature, forming explicit falsifiable hypotheses, and running one prespecified test per hypothesis on acquired data. Review, hypothesize, design, test, audit.
+    children:
+      - literature_review:
+          mission: Survey the literature for the mission's question, covering what is known, what is contested, and which open gaps could be settled by an analysis on obtainable data. Emit key findings (with evidence uuids), the open gaps, and citations.
+          cli: [asta literature, asta papers]
+          output: {literature_review: literature_review}
+      - hypothesis_formation:
+          mission: Form a small set (typically 2-5) of falsifiable hypotheses from the review's open gaps, each a slim claim with its rationale, its falsifiable prediction, and the evidence it rests on. Prefer hypotheses testable on data the literature names. The theory machinery can help here, since a hypothesis is a slim theory committed to one prediction; seed its `paper_store` with identifier-only entries ({corpus_id}) from the literature_review citations, with search_additional_papers false when the corpus should be exactly those seeds.
+          cli: [asta generate-theories]
+          input: [literature_review]
+          output: {hypotheses: [hypothesis], run: run}
+      - testing:
+          mission: One branch per hypothesis (created at replan, once hypothesis_formation has named them). Test that hypothesis end to end.
+          replan: true
+          children:
+            - experiment_design:
+                mission: Design the test (operationalization, required data, feasibility) and commit the prespecified test (test, metric, success_threshold) before any data is analyzed. When an experiment-designer run informs the design, record its query in experiment_design_query and reference its full recipe_to_implement as an artifact (subtype experiment-design), and never inline it. What happens next is plan's Gate, not this step's job. Feasible and proxy_only branches get data_acquisition (when the design names data not yet in hand), analysis, and audit; data_unavailable and construct_mismatch branches get only audit, wired to this design alone, recording outcome n/a.
+                cli: [asta experiment]
+                input: [hypothesis_formation, literature_review]
+                output: {experiment_design: experiment_design, "run?": run}
+            - data_acquisition:
+                mission: Fetch the datasets the design requires. Validate each against its source (n, schema/variables, units, missingness) and record the check in validation_note; a dataset that fails validation is a gap, not an input.
+                cli: [asta documents, asta autodiscovery]
+                input: [experiment_design]
+                output: {acquisitions: [acquisition], datasets: [dataset]}
+            - analysis:
+                mission: Run the prespecified test on the validated data. Effect size and outcome come from here. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
+                cli: [asta analyze-data]
+                input: [experiment_design, data_acquisition]
+                output: {analysis: analysis, figures: [ref(figure)], "run?": run}
+            - audit:
+                mission: Try to refute the analysis or find artifacts, then finalize the verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the hypothesis's outcome and observed effect size against the design's prespecified success_threshold, or from the experiment_design alone as outcome n/a when the branch was infeasible; on large samples judge by effect size, not statistical significance alone, and record a disproved hypothesis as cleanly as a supported one. Emit an audit_report referencing the hypothesis id.
+                cli: [asta analyze-data]
+                input: [experiment_design, analysis]
+                output: {audit_report: audit_report, "run?": run}
+      - summarize
+      - reflection
 
   auto_discovery:
     mission: Source a cohort from the literature and run a fresh AutoDiscovery against a research question, then replicate each high-surprise candidate law on a held-out subset. Run as its own session in a separate workspace (own mission.md and .beads, since a second epic root in one workspace breaks epic-root.sh); the research question (the intent) comes from that mission.md. The intent and the cohort are the most important inputs to a good discovery run, so most of the work is front-loaded into cohort_assembly. This flow is distinct from `reproduction`, which imports an existing run rather than standing up a new one.
-    cohort_assembly:
-      mission: Gather and cohort the data for discovery. Find the relevant papers, extract the numbers and the datasets they used, then source a cohort by fixing inclusion/exclusion and sampling, and hold an independent subset back for replication. Validate the assembled data against its source papers (n, schema/variables, units, missingness); a dataset that fails validation is a gap, not an input. Stand up and upload the discovery run (autodiscovery create, upload, metadata). Emit the cohort, with its discovery_subset, its held-out holdout_subset, and the stood-up run_id, alongside the registered datasets.
-      input: []
-      chain: [asta literature find, asta documents, asta generate-theories find-and-extract, asta autodiscovery create, asta autodiscovery upload, asta autodiscovery metadata]
-    discovery_run:
-      mission: Run discovery against the original question with the cohort as data (config n_experiments, set in the run metadata). Fetch the experiments; the highest-surprise nodes are the candidate laws worth replicating. Emit those candidate laws (empirical_law identity records, grounded in the run's surprise signal) alongside the raw experiments. No separate law_extraction step; the high-surprise nodes are the laws.
-      input: [cohort_assembly]
-      chain: [asta autodiscovery submit, asta autodiscovery experiments]
-    replication:
-      mission: One branch per high-surprise candidate law (created at replan, once discovery_run has named them). Replicate that law independently on the held-out subset.
-      replan: true
-      holdout_replication:
-        mission: Replicate the law on the held-out subset, one DataVoyager run per law, in parallel (at most config max_parallel_dv_runs concurrent submissions). The verdict comes from this replication, not from the discovery run, so emit an adjudication referencing the law id. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
-        input: [discovery_run, cohort_assembly]
-        chain: [asta analyze-data submit, asta analyze-data poll]
-    summarize:
-      mission: Summarize the completed discovery-and-replication session as an encyclopedia entry.
-      chain:
-        - {workflow: summarize, mission: Write the encyclopedia entry for this session.}
-    reflection:
-      mission: Record the agent's feedback on how this session ran.
-      chain:
-        - {workflow: reflection, mission: Write the reflection for this session.}
+    children:
+      - cohort_assembly:
+          mission: Gather and cohort the data for discovery. Find the relevant papers, extract the numbers and the datasets they used, then source a cohort by fixing inclusion/exclusion and sampling, and hold an independent subset back for replication. Validate the assembled data against its source papers (n, schema/variables, units, missingness); a dataset that fails validation is a gap, not an input. Stand up and upload the discovery run (autodiscovery create, upload, metadata). Emit the cohort, with its discovery_subset, its held-out holdout_subset, and the stood-up run_id, alongside the registered datasets.
+          cli: [asta literature, asta documents, asta generate-theories, asta autodiscovery]
+          output: {cohort: cohort, datasets: [dataset], run: run}
+      - discovery_run:
+          mission: Run discovery against the original question with the cohort as data (config n_experiments, set in the run metadata). Fetch the experiments; the highest-surprise nodes are the candidate laws worth replicating. Emit those candidate laws (empirical_law identity records, grounded in the run's surprise signal) alongside the raw experiments. No separate law-grouping step; the high-surprise nodes are the laws.
+          cli: [asta autodiscovery]
+          input: [cohort_assembly]
+          output: {experiments: [ref(experiment)], empirical_laws: [empirical_law], run: run}
+      - replication:
+          mission: One branch per high-surprise candidate law (created at replan, once discovery_run has named them). Replicate that law independently on the held-out subset.
+          replan: true
+          children:
+            - holdout_replication:
+                mission: Replicate the law on the held-out subset, one DataVoyager run per law, in parallel (at most config max_parallel_dv_runs concurrent submissions). The verdict comes from this replication, not from the discovery run, so emit an audit_report referencing the law id. Emit at least one figure behind the numbers. DataVoyager returns figures as imageb64, so decode each to a PNG under .asta/analyze-data/<slug>/figures/, put the path in figure.image (or render your own), and list them in `figures` with captions.
+                cli: [asta analyze-data]
+                input: [discovery_run, cohort_assembly]
+                output: {audit_report: audit_report, figures: [ref(figure)], run: run}
+      - summarize
+      - reflection
 
-tasks:
-  provenance_search:      {output: {data_sources: [data_source], artifacts: [artifact]}}
-  provenance_extraction:  {output: {extracted_data: extracted_data, source_access: [source_access], artifacts: [artifact]}}
-  data_acquisition:       {output: {acquisitions: [acquisition], datasets: [dataset], artifacts: [artifact]}}
-  data_driven_discovery:  {output: {experiments: [experiment], datasets: [dataset], artifacts: [artifact]}}
-  law_extraction:         {output: {empirical_laws: [empirical_law], artifacts: [artifact]}}
-  evidence_gathering:     {output: {datasets: [dataset], artifacts: [artifact]}}
-  experiment_design:      {output: {experiment_design: experiment_design, artifacts: [artifact]}}
-  analysis:               {output: {analysis: analysis, figures: [figure], artifacts: [artifact]}}
-  audit:                  {output: {audit_report: audit_report, artifacts: [artifact]}}
-  adjudicate:             {output: {adjudication: adjudication, artifacts: [artifact]}}
-  evidence_extraction:    {output: {extracted_data: extracted_data, artifacts: [artifact]}}
-  theory_formation:       {output: {theories: [theory], artifacts: [artifact]}}
-  testability_triage:     {output: {testability_triage: testability_triage, artifacts: [artifact]}}
-  novelty_assessment:     {output: {theory_evaluations: [theory_evaluation], artifacts: [artifact]}}
-  literature_review:      {output: {literature_review: literature_review, artifacts: [artifact]}}
-  hypothesis_formation:   {output: {hypotheses: [hypothesis], artifacts: [artifact]}}
-  cohort_assembly:        {output: {cohort: cohort, datasets: [dataset], artifacts: [artifact]}}
-  discovery_run:          {output: {experiments: [experiment], empirical_laws: [empirical_law], artifacts: [artifact]}}
-  holdout_replication:    {output: {adjudication: adjudication, figures: [figure], artifacts: [artifact]}}
-  summarize:              {output: {summary: summary, artifacts: [artifact]}}
-  reflection:             {output: {reflection: reflection, artifacts: [artifact]}}
+config:
+  n_experiments: 10                # auto-ds experiments per discovery run
+  max_papers_to_retrieve: 100      # papers find-and-extract pulls from
+  max_parallel_dv_runs: 5          # concurrent analyze-data submissions allowed at once
+  theorizer_top_n: 10              # auto_discovery also grounds on the top and bottom N experiments by posterior belief
 
-types:
+vocabulary:
+  outcome:               [held, partial, failed, underpowered, n/a]
+  testability:           [tested, proxy_only, untestable]
+  construct_equivalence: [equivalent, proxy, mismatch]
+  feasibility:           [feasible, proxy_only, data_unavailable, construct_mismatch]
+  independence_axis:     [region, instrument, method, construct, temporal, population]
+  generation_objective:  [accuracy_focused, novelty_focused]
+  subject_kind:          [empirical_law, theory, hypothesis]
+  novelty:               [established, derivable, genuinely_new]
+  support_level:         [supports, mixed, contradicts, inconclusive]
+  access_status:         [acquired, open_unfetched, restricted, not_found]
+  signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated, testable, untestable]
+  friction_kind:         [flow, schema, tool, mission, data]
+  severity:              [high, medium, low]
+  cite_kind:             [autodiscovery_run, theorizer_artifact, datavoyager_run]
 
-  artifact:                          # A2A 1.0 Artifact, verbatim
-    artifactId: string               # unique within the task (e.g. UUID, or <issue-id>-<n> for local byproducts)
-    name: string
-    description: string
-    parts: [part]
-    metadata:                        # REQUIRED: artifact kind plus citation/link wiring for the report's hyperlinks
-      type: string                   # artifact kind: theory_store | widget_data_voyager | extraction | extraction-schema | data | figure | code | log | paper-finder-search-result
-      entity_id?: string             # the law / theory / hypothesis / experiment id this artifact is the citation for (the report links that entity to this artifact)
-      run_id?: string                # the producing run/execution id (auto-ds run, DataVoyager / theorizer execution) for Asta-UX deep-linking
-      share_url?: string             # the Asta-UX share/run URL when one exists; the report links here, otherwise it links the artifact's local file part
-      agent?: string                 # producing agent: autodiscovery | theorizer | datavoyager; selects the deep-link URL template the report builds
-      a2a_task_id?: string           # A2A task id (theorizer / DataVoyager); the report builds the run deep-link from this when there is no run_id
-      a2a_context_id?: string        # A2A context id, when the deep-link template needs it
-    extensions?: [string]            # optional; URIs of relevant A2A extensions
+outputs:
 
-  part:                              # A2A Part union, discriminated by `kind`; file parts use the uri form (no inline bytes)
-    kind: string                     # text | file | data
-    metadata?: object                # optional, per part
+  run:                             # a producing run/artifact; carries the wiki's deep links
+    kind: cite_kind
+    run_id: string
+    share_url?: string
+    agent?: string
+    a2a_task_id?: string
+    a2a_context_id?: string
 
-  figure:                            # the report-embedding form: image is a repo-root-relative path
-    caption: string                  # (PNG/SVG), embedded via ![caption](path)
+  figure:
+    caption: string
     image: string
 
-  experiment:                        # an auto-ds experiments.json record; paste the full record in unchanged, extras preserved
+  experiment:  # an auto-ds experiment node; paste the full record, extras preserved
     experiment_id: string
     status: string
     hypothesis: string
     analysis: string
 
-  empirical_law:                     # identity of a discovered law; its verdict lives in the adjudication that references it
+  empirical_law:
     id: string
     statement: string
     construct: string
     source_operationalization: string
     source_node: string
-    effect_size_source: string       # the effect size as the source run/paper claims it
+    effect_size_source: string
     grouping_rationale: string
-    mcts_provenance?: {surprise: number, is_surprising: boolean, prior_belief: object, posterior_belief: object}   # optional; the auto-ds experiment record's search-signal fields, verbatim
+    mcts_provenance?: {surprise: number, is_surprising: boolean, prior_belief: object, posterior_belief: object}   # the auto-ds search-signal fields, verbatim
 
   dataset:
     id: string
@@ -265,79 +230,81 @@ types:
     variables: [string]
     covers_laws: [string]
 
-  data_source:                       # the paper behind a run dataset; emitted once by provenance_search
+  data_source:
     id: string
-    dataset_id: string               # which run dataset this sources (e.g. ds_alaska_elas)
-    paper_id: string                 # source paper (Semantic Scholar sha / corpus id)
+    dataset_id: string
+    paper_id: string
     paper_title: string
     paper_url: string
 
-  source_access:                     # provenance_extraction's enrichment, keyed by data_source id
+  source_access:
     data_source_id: string
-    data_availability: string        # the paper's data-availability statement, verbatim or summarized
-    repository: string               # e.g. RGI, Zenodo, USGS ScienceBase, PANGAEA
-    identifier: string               # DOI / accession / direct URL for the data
+    data_availability: string
+    sources: [source_ref]
 
-  acquisition:                       # data_acquisition's result, keyed by data_source id
+  source_ref:
+    repository: string
+    identifier: string
+
+  acquisition:
     data_source_id: string
-    access_status: access_status     # acquired | open_unfetched | restricted | not_found
-    local_path: string               # repo-root-relative path once acquired (else empty)
-    dataset_id: string               # the dataset registered from this source (empty if not acquired)
-    validation_note: string          # QC against the paper (n, schema/variables, units, missingness), or why not validated
+    access_status: access_status
+    local_path: string
+    dataset_id: string
+    validation_note: string
 
-  cohort:                            # the data a fresh auto-ds discovery runs against (auto_discovery flow)
+  cohort:
     id: string
-    research_question: string        # the intent the discovery runs against (from mission.md)
+    research_question: string
     inclusion_criteria: string
     exclusion_criteria: string
     sampling: string
-    source_data_sources: [string]    # data_source ids the cohort was assembled from
-    discovery_subset: {definition: string, n: number, path: string}   # what discovery sees
-    holdout_subset: {definition: string, n: number, path: string}     # independent, held back for replication
-    run_id: string                   # the stood-up auto-ds run (autodiscovery create)
+    source_data_sources: [string]
+    discovery_subset: {definition: string, n: number, path: string}
+    holdout_subset: {definition: string, n: number, path: string}
+    run_id: string
 
-  experiment_design:                 # one test, committed before its analysis runs (replication law / testing hypothesis branches)
+  experiment_design:
     subject_kind: subject_kind
-    subject_id: string               # the law / theory / hypothesis under test
+    subject_id: string
     experiment_name: string
     plain_language_description: string
-    source_operationalization: string      # how the source measured it (empty for a novel hypothesis)
+    source_operationalization: string
     independent_operationalization: string
     construct_equivalence: construct_equivalence
     feasibility: feasibility
     required_data: string
     data_gap: string
-    experiment_design_query: string  # the natural-language query sent to the experiment designer (input provenance; empty when no designer ran)
-    prespecified:                    # the commitment adjudicate checks the result against
-      test: string                   # the statistical test / model
-      metric: string                 # the quantity that decides it
-      success_threshold: string      # what counts as held, incl. direction; note expected power / min detectable effect if known
+    experiment_design_query: string
+    prespecified:
+      test: string
+      metric: string
+      success_threshold: string
 
-  analysis:                          # DataVoyager's TaskSummary, verbatim; figures hoisted to the task's `figures` output key
+  analysis:
     final_answer: string
-    assumptions: string              # a single text block, as the agent emits it
+    assumptions: string
     code: string
 
-  audit_report:
-    subject_id: string               # the law / theory / hypothesis whose analysis was audited
-    challenges: [{concern: string, check: string, outcome: string}]   # include one negative-control check (e.g. shuffled predictor)
+  audit_report:                      # the refutation work plus the finalized verdict (formerly a separate critique)
+    subject_kind: subject_kind
+    subject_id: string
+    challenges: [{concern: string, check: string, outcome: string}]
     artifacts_found: [string]
     verdict_survives: boolean
     recommended_adjustment: string
-
-  adjudication:                      # the verdict record; references its subject, never mutates it
-    subject_kind: subject_kind
-    subject_id: string
-    outcome: outcome                 # held | partial | failed | underpowered | n/a
+    outcome: outcome
     testability: testability
     effect_size_observed: string
-    prespecified_check: string       # the observed metric vs the committed success_threshold
+    prespecified_check: string
     independence_axes: [independence_axis]
     data_used: string
     evidence: string
-    signal?:                         # optional reproduction reward, for downstream filtering and RL
-      reward?: number                # [-1, +1]; the sign gives the direction, the magnitude the strength; omit when basis is not_evaluated
-      basis: signal_basis            # reproduced | not_reproduced | refuted_incorrect | not_evaluated
+    signal?: signal
+
+  signal:                            # a reward/basis signal; reproduction (audit) or testability (triage)
+    reward?: number   # [-1, +1]; omit when not applicable
+    basis: signal_basis
 
   extracted_data:
     id: string
@@ -351,125 +318,100 @@ types:
         citation_title: string
         uuid: string
 
-  citation:                          # a cited paper; corpus_id = canonical S2 corpusId (rows convert mechanically to PaperEntry seeds)
+  citation:
     id: string
     corpus_id: number
     title: string
     url: string
     relevance: string
 
-  literature_review:                 # hypothesis_driven_research's survey output
+  literature_review:
     summary: string
     key_findings: [{text: string, uuids: [string]}]
-    open_gaps: [string]              # gaps that motivate hypotheses
+    open_gaps: [string]
     citations: [citation]
 
-  hypothesis:                        # a slim, directly testable claim (hypothesis_driven_research)
+  hypothesis:
     id: string
     statement: string
-    rationale: string                # why the literature implies it
+    rationale: string
     falsifiable_prediction: string
-    grounds: [{text: string, uuids: [string]}]   # the evidence the rationale rests on
+    grounds: [{text: string, uuids: [string]}]
 
   theory:
     id: string
     name: string
     description: string
     theory_query: string
-    objective: generation_objective  # orchestrator annotation (the generation branch); the agent's own copy is components.generation_objective
-    grounds_law_ids: [string]        # orchestrator annotation; which laws ground this theory (no agent equivalent)
-    supporting_evidence_ids: [string]   # orchestrator annotation
-    components:                      # the theorizer's theory record, carried verbatim; never flatten or edit
-      generation_objective: string   # the agent's value as emitted (e.g. accuracy-focused)
-      theory_statements:
-        - statement_name: string
-          theory_statement: string
-          supporting_evidence: [{text: string, uuids: [string]}]
-          conflicting_evidence: [{text: string, uuids: [string]}]
-      new_predictions_likely: [string]
-      new_predictions_unknown: [string]
-      unaccounted_for: [{text: string, uuids: [string]}]
+    objective: generation_objective  # orchestrator annotation; the agent's own copy lives in theory_components
+    grounds_law_ids: [string]
+    supporting_evidence_ids: [string]
+    components_path: ref(theory_components)
 
-  testability_triage:
-    assessments:
-      - theory_id: string
-        testable_now: boolean
-        available_data: string
-        required_data: string
-        proposed_test: {test: string, metric: string, success_threshold: string}   # prespecified; the verification branch's adjudicate checks against it
-        gap: string
-    testable_theory_ids: [string]
+  theory_components:  # the theorizer's record, carried verbatim; never flatten or edit
+    generation_objective: string
+    theory_statements:
+      - statement_name: string
+        theory_statement: string
+        supporting_evidence: [{text: string, uuids: [string]}]
+        conflicting_evidence: [{text: string, uuids: [string]}]
+    new_predictions_likely: [string]
+    new_predictions_unknown: [string]
+    unaccounted_for: [{text: string, uuids: [string]}]
 
-  theory_evaluation:
+  theory_evaluation:                 # novelty score plus the testability triage (formerly a separate testability_triage)
     id: string
     theory_id: string
-    novelty: novelty                 # rollup across statement_evaluations; the most novel statement wins
+    signal: signal   # the testability decision; basis testable or untestable
+    available_data: string
+    required_data: string
+    proposed_test: {test: string, metric: string, success_threshold: string}   # prespecified; the verification branch's audit checks the result against it
+    gap: string
+    novelty: novelty
     overall_support: support_level
-    overall_support_raw?: string     # the agent's untyped judgment, verbatim (optional)
+    overall_support_raw?: string
     explanation: string
-    statement_evaluations:           # the agent's real granularity; novelty is scored per statement
+    statement_evaluations:
       - statement_index: number
         novelty: novelty
         explanation: string
 
-  citation_ref:                      # a typed pointer to the run/artifact a statement rests on; the compiler builds the deep-link
-    kind: cite_kind                  # autodiscovery_run | theorizer_artifact | datavoyager_run
-    ref: string                      # the id copied verbatim from the session (AutoDiscovery run_id; Theorizer / DataVoyager task id; or artifactId)
-    label?: string                   # optional link text; the compiler uses a default per kind when omitted
+  citation_ref:
+    kind: cite_kind
+    ref: string
+    label?: string
 
-  statement:                         # one sentence or clause, with the runs/artifacts it rests on
+  statement:
     text: string
-    citations?: [citation_ref]       # omit for basic background knowledge
+    citations?: [citation_ref]   # omit for basic background knowledge
 
   paragraph:
     sentences: [statement]
 
-  summary:                           # the session's encyclopedia entry; mirrors one encyclopedia.md entry
-    title: string                    # rendered "# <title>"
-    discipline: string               # the five index fields, printed as the cover index block
+  summary:
+    title: string
+    discipline: string
     domain: string
     topic: string
     scientific_question: string
-    discovery_type: string           # open string; prefer: New phenomenon | Mechanistic explanation | Mechanistic unification | Predictive law | Causal relationship | New measurement or assay | Classification or taxonomy | Theoretical framework | Computational method | Dataset or resource | Negative result / falsification | Translational application
-    context: [paragraph]             # the "Scientific Context" section, as paragraphs of statements
-    summaries: [audience_summary]    # one executive summary per audience; extensible
+    discovery_type: string   # open vocabulary; e.g. Predictive law, Mechanistic explanation, Negative result
+    context: [paragraph]
+    summaries: [audience_summary]
 
-  audience_summary:                  # one "Executive Summary (<label>)" block
-    audience: string                 # stored general | technical; rendered "Layperson" | "Expert"
-    main_finding: statement          # the "Main Finding" (a bold one-liner)
-    elaboration: [statement]         # the "Elaboration" paragraph
+  audience_summary:
+    audience: string
+    main_finding: statement
+    elaboration: [statement]
 
-  reflection:                        # the executing agent's feedback on how the session ran; the unit a future compaction pass merges
-    session_intent: string           # one line restating what this session set out to do (from mission.md), so the record stands alone when read later
-    frictions:                       # where the flow, schema, or tools got in the way
-      - locus: string                # where it surfaced: a task id/type, flow name, tool, or schema field
-        kind: friction_kind          # flow | schema | tool | mission | data
-        observation: string          # what went wrong: dead-end, rework, ambiguity, missing field, tool failure
-        severity: severity           # high | medium | low
-    proposed_changes:                # concrete edits that would have made the run go better
-      - target: string               # what to change: a mission, flow, skill, tool, or schema field (name or path)
-        change: string               # the concrete edit proposed
-        rationale: string            # why it helps; reference the friction it addresses
-        severity: severity           # high | medium | low
-
-enums:
-  outcome:               [held, partial, failed, underpowered, n/a]   # the one verdict vocabulary, for laws, theories, and hypotheses
-  testability:           [tested, proxy_only, untestable]
-  construct_equivalence: [equivalent, proxy, mismatch]
-  feasibility:           [feasible, proxy_only, data_unavailable, construct_mismatch]
-  independence_axis:     [region, instrument, method, construct, temporal, population]
-  generation_objective:  [accuracy_focused, novelty_focused]
-  subject_kind:          [empirical_law, theory, hypothesis]
-  novelty:               [established, derivable, genuinely_new]
-  support_level:         [supports, mixed, contradicts, inconclusive]
-  access_status:         [acquired, open_unfetched, restricted, not_found]
-  signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated]   # the reproduction signal's reason tag
-  friction_kind:         [flow, schema, tool, mission, data]   # what got in the agent's way (reflection)
-  severity:              [high, medium, low]                   # how much a friction or proposed change matters (reflection)
-  cite_kind:             [autodiscovery_run, theorizer_artifact, datavoyager_run]   # what a summary statement cites
-
-config:
-  n_experiments: 10                # auto-ds experiments per discovery run; set in the run-metadata JSON for `asta autodiscovery metadata`
-  max_papers_to_retrieve: 100      # generate-theories find-and-extract: papers to extract from (provenance_extraction, evidence_extraction, hypothesis_formation)
-  max_parallel_dv_runs: 5          # cap on concurrent DataVoyager (analyze-data) submissions when a step fans out runs in parallel
-  theorizer_top_n: 10              # law_extraction grounds on every is_surprising experiment plus the top N and bottom N by posterior-belief mean, deduped (e.g. N=10 + 10 surprising = 30 experiments; a 40-experiment run still grounds ~30, not all of them)
+  reflection:
+    session_intent: string
+    frictions:
+      - where: string
+        kind: friction_kind
+        observation: string
+        severity: severity
+    proposed_changes:
+      - target: string
+        change: string
+        rationale: string
+        severity: severity

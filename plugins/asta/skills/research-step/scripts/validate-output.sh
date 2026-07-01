@@ -60,6 +60,84 @@ if errors:
         print(f"validate-output: ... and {len(errors) - 5} more schema violation(s)", file=sys.stderr)
     print(f"validate-output: output_json does not satisfy the '{sys.argv[2]}' schema", file=sys.stderr)
     sys.exit(4)
+
+# Reference validation: a ref(<type>) field holds a repo-root-relative path to a
+# record kept off-metadata (because it would blow the beads cap). The compiler
+# marks such properties with an x-path-ref annotation naming the type; we read
+# that annotation straight from the compiled schema (single source of truth) and
+# deep-validate the referenced file, so type safety survives going off-metadata.
+defs = schema.get("$defs", {})
+
+def collect_path_refs(node, acc):
+    # field name -> (type, is_list): a scalar ref(type) property, or an array whose
+    # items are ref(type) (e.g. figures: [ref(figure)]).
+    if isinstance(node, dict):
+        props = node.get("properties")
+        if isinstance(props, dict):
+            for pname, pschema in props.items():
+                if not isinstance(pschema, dict):
+                    continue
+                if "x-path-ref" in pschema:
+                    acc[pname] = (pschema["x-path-ref"], False)
+                elif pschema.get("type") == "array" and isinstance(pschema.get("items"), dict) \
+                        and "x-path-ref" in pschema["items"]:
+                    acc[pname] = (pschema["items"]["x-path-ref"], True)
+        for v in node.values():
+            collect_path_refs(v, acc)
+    elif isinstance(node, list):
+        for v in node:
+            collect_path_refs(v, acc)
+
+path_ref_types = {}
+collect_path_refs(schema, path_ref_types)
+
+def iter_path_refs(node):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in path_ref_types:
+                type_name, is_list = path_ref_types[k]
+                if is_list and isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, str):
+                            yield item, type_name
+                elif not is_list and isinstance(v, str):
+                    yield v, type_name
+                else:
+                    yield from iter_path_refs(v)
+            else:
+                yield from iter_path_refs(v)
+    elif isinstance(node, list):
+        for item in node:
+            yield from iter_path_refs(item)
+
+ref_errors = []
+for rel_path, type_name in iter_path_refs(data):
+    if type_name not in defs:
+        ref_errors.append(f"{rel_path}: schema has no '{type_name}' definition to validate against")
+        continue
+    try:
+        with open(rel_path) as rf:
+            referenced = json.load(rf)
+    except FileNotFoundError:
+        ref_errors.append(f"{rel_path}: referenced file does not exist")
+        continue
+    except (OSError, json.JSONDecodeError) as ex:
+        ref_errors.append(f"{rel_path}: cannot read referenced JSON ({ex})")
+        continue
+    sub_schema = {"$defs": defs, "$ref": f"#/$defs/{type_name}"}
+    sub_validator = jsonschema.Draft202012Validator(sub_schema)
+    for e in sorted(sub_validator.iter_errors(referenced), key=lambda e: list(map(str, e.absolute_path)))[:5]:
+        path = ".".join(str(p) for p in e.absolute_path)
+        where = f"{rel_path}:{path}" if path else rel_path
+        ref_errors.append(f"{where}: {e.message}")
+
+if ref_errors:
+    for m in ref_errors[:5]:
+        print(f"validate-output: {m}", file=sys.stderr)
+    if len(ref_errors) > 5:
+        print(f"validate-output: ... and {len(ref_errors) - 5} more reference violation(s)", file=sys.stderr)
+    print("validate-output: a referenced record does not satisfy its type schema", file=sys.stderr)
+    sys.exit(4)
 PY
 
 echo "ok"
