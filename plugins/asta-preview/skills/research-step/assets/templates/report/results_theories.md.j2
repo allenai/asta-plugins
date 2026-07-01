@@ -4,8 +4,15 @@
 {\small\hyperlink{workflow}{\color{ai2accent}$\uparrow$ Workflow}}
 ```
 
-{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) and triaged for testability against the data in hand. {{ ctx.n_testable_theories }} {{ 'was' if ctx.n_testable_theories == 1 else 'were' }} testable now, each committed to a prespecified test; the rest need new data. The theories are proposed here, not verified.
+{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) and triaged for testability against the data in hand. {{ ctx.n_testable_theories }} {{ 'was' if ctx.n_testable_theories == 1 else 'were' }} testable now, each committed to a prespecified test; the rest need new data. Theories testable now are listed first. The theories are proposed here, not verified.
 
+{% if ctx.theories_ordered %}
+| Theory | Status | Novelty |
+|-----------------------------------------------|------------------------|------------|
+{% for t in ctx.theories_ordered %}| [{{ t.id }}](#{{ anchor(t.id) }}) — {{ t.name|md }} | {% if t.eval and t.eval.signal %}{{ tbadge(t.eval.signal.basis) }}{% else %}—{% endif %} | {{ t.eval.novelty|replace('_',' ')|md if t.eval and t.eval.novelty else '—' }} |
+{% endfor %}
+
+{% endif %}
 {% if ctx.overview.theories and exists(ctx.overview.theories.image) %}
 ![{{ ctx.overview.theories.caption or 'Cross-cutting mechanism linking the laws.' }}]({{ ctx.overview.theories.image }})
 
@@ -13,13 +20,13 @@
 {% for t in ctx.theories_ordered %}
 ### {{ t.id }} — {{ t.name }} {#{{ anchor(t.id) }}}
 
-*{{ (t.objective or '')|replace('_focused','')|capitalize }}-focused{% if t.eval and t.eval.novelty %}; novelty: {{ t.eval.novelty|replace('_',' ') }}{% endif %}.*{% if t.verdict %} **Verification {{ t.verdict.outcome }}** ({{ t.verdict.testability }}).{% endif %}{% if t.link %} (**{{ link("theory store", t.link if clickable else "") }}**){% endif %}{% if t.grounds_law_ids %}  Grounds: {% for g in t.grounds_law_ids %}{{ ref(g) }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
+{% if t.eval and t.eval.signal %}{{ tbadge(t.eval.signal.basis) }} {% endif %}*{{ (t.objective or '')|replace('_focused','')|capitalize }}-focused{% if t.eval and t.eval.novelty %}; novelty: {{ t.eval.novelty|replace('_',' ') }}{% endif %}.*{% if t.verdict %} **Verification {{ t.verdict.outcome }}** ({{ t.verdict.testability }}).{% endif %}{% if t.link %} (**{{ link("theory store", t.link if clickable else "") }}**){% endif %}{% if t.grounds_law_ids %}  Grounds: {% for g in t.grounds_law_ids %}{{ ref(g) }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
 
-{% if t.description %}{{ t.description|sent }}
+{% if t.description %}{{ t.description|sent|mathify }}
 
 {% endif %}
-{% if t.eval %}{% if t.eval.signal and t.eval.signal.basis == 'testable' %}*Proposed test.*  {{ t.eval.proposed_test.test }}{% if t.eval.proposed_test.success_threshold %} — success: {{ t.eval.proposed_test.success_threshold }}{% endif %}
-{% else %}*Not testable on the in-hand data*{% if t.eval.gap %} — {{ t.eval.gap }}{% endif %}.
+{% if t.eval %}{% if t.eval.signal and t.eval.signal.basis == 'testable' %}*Proposed test.*  {{ t.eval.proposed_test.test|mathify }}{% if t.eval.proposed_test.success_threshold %} — success: {{ t.eval.proposed_test.success_threshold|mathify }}{% endif %}
+{% else %}*Not testable on the in-hand data*{% if t.eval.gap %} — {{ t.eval.gap|mathify }}{% endif %}.
 {% endif %}
 
 {% endif %}

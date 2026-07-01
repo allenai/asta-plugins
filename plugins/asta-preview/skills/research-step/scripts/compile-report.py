@@ -31,8 +31,8 @@ import render  # noqa: E402
 
 # ordered paper sections (template stem in assets/templates/report/); blank renders skipped
 SECTIONS = [
-    "mission", "abstract", "methods", "results_laws", "results_theories",
-    "results_hypotheses", "trustworthiness", "conclusions",
+    "mission", "abstract", "methods", "glossary", "results_laws", "results_theories",
+    "results_hypotheses", "conclusions",
     "appendix_experiments", "appendix_datasets", "appendix_references",
 ]
 
@@ -171,6 +171,20 @@ def _useful_fig(f):
     return bool(f.get("image")) and not _EMPTY_FIG_RE.search(f.get("caption") or "")
 
 
+def _fig_id(f):
+    """Content identity for figure dedup: the image bytes' hash when the file is readable,
+    else the image path. Two branches that emit the exact same plot show it once."""
+    img = f.get("image") or ""
+    p = Path(img)
+    if p.is_file():
+        try:
+            import hashlib
+            return hashlib.md5(p.read_bytes()).hexdigest()
+        except Exception:
+            pass
+    return img
+
+
 def _deref(x):
     """A typed-output list item may be an inline object or a repo-root-relative path to a
     JSON file (an x-path-ref, per the output schema — e.g. figures: [ref(figure)],
@@ -184,6 +198,66 @@ def _deref(x):
             except Exception:
                 return {}
     return x
+
+
+# ---------- verdict ordering & badges (generic; keyed off the workflows.yaml vocabulary) ----------
+#
+# All of the following read only the vocabulary enums (outcome / testability / novelty /
+# signal_basis) defined in assets/workflows.yaml. No subject ids, dataset names, or domain
+# terms appear here, so the ordering and badges behave identically for any flow's records.
+
+# rank so the strongest, most-tested, most-novel items lead their section; unknowns sort last
+_OUTCOME_RANK = {"held": 0, "partial": 1, "underpowered": 2, "failed": 3, "n/a": 4}
+_TEST_RANK = {"tested": 0, "proxy_only": 1, "untestable": 2}
+_NOVELTY_RANK = {"genuinely_new": 0, "derivable": 1, "established": 2}
+
+# outcome → (colour token defined in header_includes, short label)
+_BADGE = {
+    "held": ("ai2accent", "held"), "partial": ("ai2amber", "partial"),
+    "underpowered": ("ai2amber", "underpowered"), "failed": ("ai2red", "failed"),
+    "n/a": ("ai2gray", "untestable"),
+}
+
+
+def _law_sort_key(x):
+    v = x.get("verdict") or {}
+    return (_OUTCOME_RANK.get(v.get("outcome"), 5), _TEST_RANK.get(v.get("testability"), 3))
+
+
+def _theory_sort_key(t):
+    e = t.get("eval") or {}
+    testable = 0 if (e.get("signal") or {}).get("basis") == "testable" else 1
+    return (testable, _NOVELTY_RANK.get(e.get("novelty"), 3))
+
+
+def verdict_badge(outcome=None, testability=None):
+    """A \\vbadge[colour]{LABEL} LaTeX call for a two-axis verdict; untestable overrides the
+    outcome colour. Empty string when there is no verdict, so templates may call it freely."""
+    if not outcome:
+        return ""
+    if testability == "untestable" or outcome == "n/a":
+        color, label = "ai2gray", "untestable"
+    else:
+        color, label = _BADGE.get(outcome, ("ai2gray", outcome))
+    return r"\vbadge[%s]{%s}" % (color, label.upper())
+
+
+def triage_badge(basis=None):
+    """Badge for a theory's testability triage (signal.basis ∈ testable / untestable)."""
+    if basis == "testable":
+        return r"\vbadge[ai2accent]{TESTABLE NOW}"
+    if basis == "untestable":
+        return r"\vbadge[ai2gray]{NEEDS NEW DATA}"
+    return ""
+
+
+def short(text, n=140):
+    """Word-boundary truncation that strips trailing punctuation before the ellipsis, so a
+    clause already ending in '.' never renders a dot-run (replaces a fragile split+truncate)."""
+    s = re.sub(r"\s+", " ", (text or "").strip())
+    if len(s) <= n:
+        return s
+    return s[:n].rsplit(" ", 1)[0].rstrip(" ,;:.-([") + "…"
 
 
 # ---------- join records into a render context ----------
@@ -222,6 +296,7 @@ def collect(sess, base_url=""):
 
     # designs, figures, and the DataVoyager result, associated to a subject via the branch group
     designs, figs, dv, issue_subject = {}, {}, {}, {}
+    seen_fig = set()  # global figure dedup: an identical image (by content) is shown once
     groups = {}
     for i in sess.tasks:
         groups.setdefault(i["id"].rsplit(".", 1)[0], []).append(i)
@@ -241,7 +316,8 @@ def collect(sess, base_url=""):
             for m in members:
                 o = rs(m)["output_json"]
                 for f in (_deref(x) for x in (o.get("figures") or [])):
-                    if _useful_fig(f):
+                    if _useful_fig(f) and _fig_id(f) not in seen_fig:
+                        seen_fig.add(_fig_id(f))
                         figs.setdefault(subj, []).append(f)
                 if rs(m)["task_type"] in ("analysis", "holdout_replication"):  # the test that decided the verdict
                     link = art_link(_art_of_type(o, "widget_data_voyager"), base_url,
@@ -286,6 +362,36 @@ def collect(sess, base_url=""):
         run_id = (o.get("cohort") or {}).get("run_id", "") or run_id
     datasets = list(datasets.values())
     primary = max(datasets, key=lambda d: d.get("n") or 0) if datasets else None
+
+    # per-law independent datasets, from the structured covers_laws map (dataset → law ids).
+    # Surfaced as a column so the reader sees which independent data decided each law.
+    law_ds = {}
+    for d in datasets:
+        for lid in d.get("covers_laws") or []:
+            law_ds.setdefault(lid, []).append(d.get("id") or (d.get("source") or "").split(",")[0])
+    for x in laws:
+        x["datasets"] = law_ds.get(x.get("id"), [])
+
+    # lead each section with the strongest results (held/tested, then testable-now theories)
+    laws.sort(key=_law_sort_key)
+
+    # symbol glossary, from provenance_extraction's extracted_data rows (name_short/full/desc).
+    # Generic: any flow that extracts a variable dictionary populates it; filtered to the symbols
+    # that actually appear in the assembled records so it stays relevant (empty when none do).
+    glossary, seen_sym = [], set()
+    corpus = " ".join(filter(None,
+        [(l.get("statement") or "") + " " + (l.get("construct") or "") + " "
+         + (l.get("effect_size_source") or "") + " "
+         + ((l.get("verdict") or {}).get("effect_size_observed") or "") for l in laws]
+        + [(t.get("description") or "") + " " + (t.get("name") or "") for t in theories]
+        + [(d.get("definition") or "") for d in datasets]))
+    for i in sess.tasks:
+        ed = _deref(rs(i)["output_json"].get("extracted_data"))
+        for r in ((ed.get("rows") if isinstance(ed, dict) else None) or []):
+            sym = (r.get("name_short") or "").strip()
+            if sym and sym not in seen_sym and re.search(r"\b" + re.escape(sym) + r"\b", corpus):
+                seen_sym.add(sym)
+                glossary.append(r)
 
     # experiments cite the AutoDiscovery run: a per-node file when present, else the run's node table
     run_dir = ""
@@ -343,9 +449,19 @@ def collect(sess, base_url=""):
         if c.get("url") and c.get("title"):
             ref_papers.setdefault(_key(c["url"]), {"name": c["title"], "url": c["url"]})
 
+    _paper_names = {(p["name"] or "").strip().lower() for p in ref_papers.values()}
+
     def add_dataset(name, url):  # only archives with their OWN identifier (not a paper already listed)
-        if url and name and _key(url) not in ref_papers:
-            ref_datasets.setdefault(_key(url), {"name": name, "url": url})
+        if not (url and name) or _key(url) in ref_papers:
+            return
+        nm = name.strip()
+        # never list a source paper as a dataset, and never list the same-named archive twice
+        # (multiple data_sources can carry the same paper_title with different product DOIs)
+        if nm.lower() in _paper_names:
+            return
+        if any(d["name"].strip().lower() == nm.lower() for d in ref_datasets.values()):
+            return
+        ref_datasets.setdefault(_key(url), {"name": nm, "url": url})
 
     for d in datasets:  # registered datasets with a resolvable identifier
         url = _doi_url(d.get("source"))
@@ -408,7 +524,8 @@ def collect(sess, base_url=""):
         "n_testable_theories": len(testable_theories),
         "objectives": sorted({t.get("objective") for t in theories if t.get("objective")}),
         "verified_theories": verified,
-        "theories_ordered": verified + [t for t in theories if not t.get("verdict")],
+        "theories_ordered": sorted(theories, key=_theory_sort_key),
+        "glossary": glossary,
         "held_law_ids": ids_where(laws, lambda v: v.get("outcome") == "held"),
         "held_theory_ids": ids_where(theories, lambda v: v.get("outcome") == "held"),
         "definitional_ids": definitional,
@@ -485,6 +602,9 @@ def header_includes(short_title):
         r"\definecolor{ai2dark}{HTML}{0A3235}",       # Varnish dark-teal
         r"\definecolor{ai2extradark}{HTML}{032629}",  # Varnish extra-dark-teal
         r"\definecolor{ai2tealtint}{HTML}{E7EEEE}",   # light teal wash for phase containers
+        r"\definecolor{ai2amber}{HTML}{B8860B}",      # verdict badge: partial / underpowered
+        r"\definecolor{ai2red}{HTML}{B03A2E}",        # verdict badge: failed
+        r"\definecolor{ai2gray}{HTML}{6B7280}",       # verdict badge: untestable / needs data
         # Manrope for the sans family (title + headings); body stays serif
         r"\usepackage{fontspec}",
         r"\setsansfont{Manrope}[Path=" + manrope + r"/, Extension=.ttf, "
@@ -510,6 +630,12 @@ def header_includes(short_title):
         r"\newtcolorbox{contextbox}{colback=ai2background,colframe=ai2background,boxrule=0pt,"
         r"arc=3mm,left=5mm,right=5mm,top=2.5mm,bottom=2.5mm,"
         r"before upper={\setlength{\parskip}{0.5em}\setlength{\parindent}{0pt}}}",
+        # inline verdict badge (\vbadge[colour]{LABEL}); colour defaults to the teal accent
+        r"\newtcbox{\vbadge}[1][ai2accent]{on line, colframe=#1, colback=#1!12, "
+        r"boxrule=0.4pt, arc=2pt, boxsep=0pt, left=3pt, right=3pt, top=1pt, bottom=0.5pt, "
+        r"fontupper=\scriptsize\sffamily\bfseries\color{#1}}",
+        # keep figures in the subsection that owns them (no spill into the next result)
+        r"\usepackage{float}",
         r"\renewcommand{\contentsname}{Contents}",
         r"\usepackage{fancyhdr}",
         r"\newcommand{\astalogo}{\raisebox{-2.5pt}{\includegraphics[height=11pt]{" + logo + r"}}}",
@@ -835,7 +961,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         links = build_links(ctx, sess, link_overrides)
         ai2logo = r"\includegraphics[height=16pt]{" + str(LOGO.parent / "logos" / "ai2.pdf").replace("\\", "/") + "}"
         cover = render.render_template_file(ctmpl, ctx=ctx, links=links, flow=flow_diagram(sess, ctx),
-                                            ai2logo=ai2logo, ref=ref, anchor=anchor, prose=prose, clickable=clickable).strip()
+                                            ai2logo=ai2logo, ref=ref, anchor=anchor, prose=prose,
+                                            badge=verdict_badge, tbadge=triage_badge, short=short,
+                                            clickable=clickable).strip()
         if dropped:
             print("compile-report: summary cited ids not found in session (rendered as plain text): "
                   + ", ".join(sorted(set(dropped))), file=sys.stderr)
@@ -845,7 +973,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         tmpl = REPORT_TMPL / f"{name}.md.j2"
         if not tmpl.is_file():
             continue
-        txt = render.render_template_file(tmpl, ctx=ctx, ref=ref, anchor=anchor, clickable=clickable).strip()
+        txt = render.render_template_file(tmpl, ctx=ctx, ref=ref, anchor=anchor,
+                                          badge=verdict_badge, tbadge=triage_badge, short=short,
+                                          clickable=clickable).strip()
         if txt:
             body.append(txt)
     sections = "\n\n".join(body)
@@ -866,6 +996,7 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         "    geometry: margin=1in",
         "    toc: false",
         "    number-sections: true",
+        "    fig-pos: 'H'",
         "  html:",
         "    toc: true",
         "    theme: cosmo",

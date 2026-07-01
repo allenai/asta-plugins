@@ -1,0 +1,10 @@
+{% if ctx.glossary %}
+## Symbols and terms {#sec-glossary}
+
+Variables referenced in the results, as defined in the source dataset's documentation.
+
+| Symbol | Meaning |
+|---|---|
+{% for r in ctx.glossary %}| {{ r.name_short|md }} | {% if r.name_full %}{{ r.name_full|mathify|md }}{% endif %}{% if r.brief_description %} — {{ r.brief_description|mathify|md }}{% endif %} |
+{% endfor %}
+{% endif %}

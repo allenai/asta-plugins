@@ -99,6 +99,43 @@ def _env(trim=True):
         return (s.rstrip(" ,;:-(") + "…") if s else s
 
     env.filters["sent"] = _sent
+
+    _SUP = {"0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵",
+            "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻", "+": "⁺"}
+
+    def _sup(tok):
+        """Unicode superscript for a token when every char maps (integers, signed);
+        else None so the caller can fall back to pandoc superscript (^…^) for decimals/letters."""
+        return "".join(_SUP[c] for c in tok) if tok and all(c in _SUP for c in tok) else None
+
+    def _mathify(s):
+        """Typeset the ASCII statistics agents emit as plain text, using the Unicode glyphs
+        the report preamble already maps (×, ≤, ≥, ≠, ±, superscripts) plus pandoc superscript.
+        Presentation-only and schema-free — pattern-based, and deliberately conservative:
+        it never rewrites bare hyphens (region codes 01-06, years, DOIs) or identifiers.
+          7.6e-5 → 7.6×10⁻⁵ · R^2 → R² · yr^-1 → yr⁻¹ · <= → ≤ · +/- → ± · a * b → a × b · ~30 → ≈30
+        """
+        s = "" if s is None else str(s)
+
+        # scientific notation: digit-e-digit only (not inside words, versions, or DOIs)
+        def _sci(m):
+            exp = _sup((m.group(2) or "") + (m.group(3).lstrip("0") or "0"))
+            return f"{m.group(1)}×10{exp}" if exp else m.group(0)
+        s = re.sub(r"(?<![\w.])(\d+(?:\.\d+)?)[eE]([+-]?)(\d+)(?![\w.])", _sci, s)
+
+        # caret powers: R^2, yr^-1, A^0.55, Area^alpha (braced or bare token)
+        def _pow(m):
+            tok = m.group(1) or m.group(2)
+            return _sup(tok) or f"^{tok}^"      # unicode if integer, else pandoc superscript
+        s = re.sub(r"\^\{([^}]+)\}|\^(-?\d+(?:\.\d+)?|[A-Za-z]\w*)", _pow, s)
+
+        s = s.replace("<=", "≤").replace(">=", "≥").replace("!=", "≠").replace("+/-", "±")
+        s = re.sub(r"(?<=\S) \* (?=\S)", " × ", s)          # a * b → a × b (also avoids stray emphasis)
+        s = re.sub(r"(?<=\d)\s*[x]\s*(?=\d)", " × ", s)     # 5 x 2 → 5 × 2
+        s = re.sub(r"(?<![\w])~(?=\d)", "≈", s)             # ~30 → ≈30 (approximately)
+        return s
+
+    env.filters["mathify"] = _mathify
     return env
 
 

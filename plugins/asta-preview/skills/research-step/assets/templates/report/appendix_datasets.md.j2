@@ -1,8 +1,8 @@
 {% if ctx.datasets %}
-## Appendix B — Datasets {#sec-datasets}
+## Datasets {#sec-datasets}
 
 {% for ds in ctx.datasets %}
-**{{ ds.id }}**{% if ds.n %} (n = {{ ds.n|comma }}){% endif %}.  {{ ds.definition|clean }}{% if ds.source %}  *Source:* {{ ds.source|clean }}{% endif %}
+**{{ ds.id }}**{% if ds.n %} (n = {{ ds.n|comma }}){% endif %}.  {{ ds.definition|clean|mathify }}{% if ds.source %}  *Source:* {{ ds.source|clean|mathify }}{% endif %}
 
 {% endfor %}
 {% endif %}

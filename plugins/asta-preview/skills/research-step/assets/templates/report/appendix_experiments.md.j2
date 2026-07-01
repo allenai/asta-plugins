@@ -1,10 +1,24 @@
-{% if ctx.experiments %}
-## Appendix A — Experiment catalogue {#sec-experiments}
+{=# Render the raw experiment catalogue only when it adds information beyond the laws:
+     when several experiments were grouped into each law (experiments > laws). At 1:1 the
+     per-experiment hypotheses merely restate the law statements already in Results, so the
+     appendix is omitted to avoid duplication. #=}
+{% if ctx.experiments and (not ctx.laws or ctx.experiments|length > ctx.laws|length) %}
+## Experiment catalogue {#sec-experiments}
 
-The {{ ctx.experiments|length }} AutoDiscovery experiments behind the candidate laws.
+The {{ ctx.experiments|length }} AutoDiscovery experiments grouped into the {{ ctx.laws|length }} candidate laws. Each law's reproduction verdict is in [Results: empirical laws](#sec-laws).
 
-{% for e in ctx.experiments %}
-**{% if e.link and clickable %}[{{ e.experiment_id }}]({{ e.link }}){% else %}{{ e.experiment_id }}{% endif %}** ({{ e.status }}).  *Hypothesis:* {{ e.hypothesis }}  *Result:* {{ e.analysis }}
-
+{=# Show the execution-status column only when it varies; when every experiment shares the
+     same status (typically all "success") it is noise, so the id↔hypothesis pair is enough. #=}
+{% set statuses = ctx.experiments|map(attribute='status')|select|unique|list %}
+{% if statuses|length > 1 %}
+| Experiment | Status | Hypothesis |
+|--------|--------|----------------------------------------------|
+{% for e in ctx.experiments %}| {% if e.link and clickable %}[{{ e.experiment_id }}]({{ e.link }}){% else %}{{ e.experiment_id|md }}{% endif %} | {{ e.status|md }} | {{ e.hypothesis|mathify|md }} |
 {% endfor %}
+{% else %}
+| Experiment | Hypothesis |
+|--------|--------------------------------------------------------|
+{% for e in ctx.experiments %}| {% if e.link and clickable %}[{{ e.experiment_id }}]({{ e.link }}){% else %}{{ e.experiment_id|md }}{% endif %} | {{ e.hypothesis|mathify|md }} |
+{% endfor %}
+{% endif %}
 {% endif %}

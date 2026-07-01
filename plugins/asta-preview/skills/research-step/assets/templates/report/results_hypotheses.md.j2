@@ -8,12 +8,12 @@
 {% for h in ctx.hypotheses %}
 ### {{ h.id }} {#{{ anchor(h.id) }}}
 
-{{ h.statement }}
+{{ h.statement|mathify }}
 
-{% if h.falsifiable_prediction %}*Prediction.*  {{ h.falsifiable_prediction }}
+{% if h.falsifiable_prediction %}*Prediction.*  {{ h.falsifiable_prediction|mathify }}
 
 {% endif %}
-{% if h.verdict %}*Outcome.*  **{{ h.verdict.outcome }}**{% if h.verdict.effect_size_observed %} — {{ h.verdict.effect_size_observed }}{% endif %}.{% if h.link %}  (**{{ link("DataVoyager result", h.link if clickable else "") }}**){% endif %}
+{% if h.verdict %}*Outcome.*  **{{ h.verdict.outcome }}**{% if h.verdict.effect_size_observed %} — {{ h.verdict.effect_size_observed|mathify }}{% endif %}.{% if h.link %}  (**{{ link("DataVoyager result", h.link if clickable else "") }}**){% endif %}
 {% endif %}
 {% endfor %}
 {% endif %}

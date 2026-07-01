@@ -116,8 +116,8 @@ adding it. Conventions:
 ### Rendering (templates)
 
 All human-facing wording lives in `assets/templates/report/`, not in Python. Each report section is
-a `<section>.md.j2` Jinja template (`mission`, `abstract`, `methods`, `results_laws`,
-`results_theories`, `results_hypotheses`, `trustworthiness`, `conclusions`, and the
+a `<section>.md.j2` Jinja template (`mission`, `abstract`, `methods`, `glossary`, `results_laws`,
+`results_theories`, `results_hypotheses`, `conclusions`, and the
 `appendix_*` aggregates) whose headings carry stable `{#sec-…}` anchors and whose per-entity
 subsections carry `{#ent-…}` anchors (these are what `report_anchors.json` maps graph nodes to).
 `scripts/render.py` is the generic engine (no task-specific logic); `compile-report.py` supplies
