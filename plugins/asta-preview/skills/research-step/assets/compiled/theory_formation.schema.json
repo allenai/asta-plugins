@@ -203,8 +203,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "run": {
-      "$ref": "#/$defs/run"
+    "runs": {
+      "items": {
+        "$ref": "#/$defs/run"
+      },
+      "type": "array"
     },
     "theories": {
       "items": {
@@ -215,7 +218,7 @@
   },
   "required": [
     "theories",
-    "run"
+    "runs"
   ],
   "title": "theory_formation",
   "type": "object"

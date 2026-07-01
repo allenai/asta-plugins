@@ -46,6 +46,14 @@
         "source_operationalization": {
           "type": "string"
         },
+        "source_outcome": {
+          "enum": [
+            "supported",
+            "rejected",
+            "mixed",
+            "unclear"
+          ]
+        },
         "statement": {
           "type": "string"
         }
@@ -57,7 +65,8 @@
         "source_operationalization",
         "source_node",
         "effect_size_source",
-        "grouping_rationale"
+        "grouping_rationale",
+        "source_outcome"
       ],
       "type": "object"
     },

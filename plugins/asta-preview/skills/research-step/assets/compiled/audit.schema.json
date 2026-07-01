@@ -73,6 +73,13 @@
         "signal": {
           "$ref": "#/$defs/signal"
         },
+        "source_agreement": {
+          "enum": [
+            "agrees",
+            "discordant",
+            "not_applicable"
+          ]
+        },
         "subject_id": {
           "type": "string"
         },
@@ -103,6 +110,7 @@
         "recommended_adjustment",
         "outcome",
         "testability",
+        "source_agreement",
         "effect_size_observed",
         "prespecified_check",
         "independence_axes",

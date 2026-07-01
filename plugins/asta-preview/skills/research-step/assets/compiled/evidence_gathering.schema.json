@@ -42,6 +42,38 @@
         "covers_laws"
       ],
       "type": "object"
+    },
+    "gap": {
+      "additionalProperties": true,
+      "properties": {
+        "avenues_tried": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "gap_kind": {
+          "enum": [
+            "not_public",
+            "model_output",
+            "definitional",
+            "transient_needed"
+          ]
+        },
+        "law_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "law_id",
+        "avenues_tried",
+        "gap_kind",
+        "explanation"
+      ],
+      "type": "object"
     }
   },
   "$id": "asta-research-step/evidence_gathering.schema.json",
@@ -53,10 +85,17 @@
         "$ref": "#/$defs/dataset"
       },
       "type": "array"
+    },
+    "gaps": {
+      "items": {
+        "$ref": "#/$defs/gap"
+      },
+      "type": "array"
     }
   },
   "required": [
-    "datasets"
+    "datasets",
+    "gaps"
   ],
   "title": "evidence_gathering",
   "type": "object"

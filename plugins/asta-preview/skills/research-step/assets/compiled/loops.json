@@ -189,6 +189,13 @@
               "signal": {
                 "$ref": "#/$defs/signal"
               },
+              "source_agreement": {
+                "enum": [
+                  "agrees",
+                  "discordant",
+                  "not_applicable"
+                ]
+              },
               "subject_id": {
                 "type": "string"
               },
@@ -219,6 +226,7 @@
               "recommended_adjustment",
               "outcome",
               "testability",
+              "source_agreement",
               "effect_size_observed",
               "prespecified_check",
               "independence_axes",
@@ -403,6 +411,14 @@
               "source_operationalization": {
                 "type": "string"
               },
+              "source_outcome": {
+                "enum": [
+                  "supported",
+                  "rejected",
+                  "mixed",
+                  "unclear"
+                ]
+              },
               "statement": {
                 "type": "string"
               }
@@ -414,7 +430,8 @@
               "source_operationalization",
               "source_node",
               "effect_size_source",
-              "grouping_rationale"
+              "grouping_rationale",
+              "source_outcome"
             ],
             "type": "object"
           },
@@ -876,6 +893,14 @@
               "source_operationalization": {
                 "type": "string"
               },
+              "source_outcome": {
+                "enum": [
+                  "supported",
+                  "rejected",
+                  "mixed",
+                  "unclear"
+                ]
+              },
               "statement": {
                 "type": "string"
               }
@@ -887,7 +912,8 @@
               "source_operationalization",
               "source_node",
               "effect_size_source",
-              "grouping_rationale"
+              "grouping_rationale",
+              "source_outcome"
             ],
             "type": "object"
           },
@@ -982,6 +1008,9 @@
       "output": {
         "datasets": [
           "dataset"
+        ],
+        "gaps": [
+          "gap"
         ]
       },
       "schema": {
@@ -1028,6 +1057,38 @@
               "covers_laws"
             ],
             "type": "object"
+          },
+          "gap": {
+            "additionalProperties": true,
+            "properties": {
+              "avenues_tried": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "gap_kind": {
+                "enum": [
+                  "not_public",
+                  "model_output",
+                  "definitional",
+                  "transient_needed"
+                ]
+              },
+              "law_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "law_id",
+              "avenues_tried",
+              "gap_kind",
+              "explanation"
+            ],
+            "type": "object"
           }
         },
         "$id": "asta-research-step/evidence_gathering.schema.json",
@@ -1039,10 +1100,17 @@
               "$ref": "#/$defs/dataset"
             },
             "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/$defs/gap"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "datasets"
+          "datasets",
+          "gaps"
         ],
         "title": "evidence_gathering",
         "type": "object"
@@ -1276,6 +1344,13 @@
               "signal": {
                 "$ref": "#/$defs/signal"
               },
+              "source_agreement": {
+                "enum": [
+                  "agrees",
+                  "discordant",
+                  "not_applicable"
+                ]
+              },
               "subject_id": {
                 "type": "string"
               },
@@ -1306,6 +1381,7 @@
               "recommended_adjustment",
               "outcome",
               "testability",
+              "source_agreement",
               "effect_size_observed",
               "prespecified_check",
               "independence_axes",
@@ -2266,7 +2342,9 @@
     },
     "theory_formation": {
       "output": {
-        "run": "run",
+        "runs": [
+          "run"
+        ],
         "theories": [
           "theory"
         ]
@@ -2476,8 +2554,11 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "run": {
-            "$ref": "#/$defs/run"
+          "runs": {
+            "items": {
+              "$ref": "#/$defs/run"
+            },
+            "type": "array"
           },
           "theories": {
             "items": {
@@ -2488,7 +2569,7 @@
         },
         "required": [
           "theories",
-          "run"
+          "runs"
         ],
         "title": "theory_formation",
         "type": "object"
@@ -2783,7 +2864,7 @@
           "id": "reproduction__auto_discovery",
           "inputs": [],
           "kind": "step",
-          "mission": "Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the \"data in hand\" that novelty_assessment later triages theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws \u2014 take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Laws are identity records; their verdicts come later, from each branch's audit.",
+          "mission": "Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the \"data in hand\" that novelty_assessment later triages theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws \u2014 take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Also record each law's source_outcome, the run's own verdict on the law inferred from how its belief shifted during discovery. Laws are identity records; their reproduction verdicts come later, from each branch's audit.",
           "name": "auto_discovery",
           "parent": "reproduction",
           "replan": false,
@@ -2801,7 +2882,7 @@
             "auto_discovery"
           ],
           "kind": "step",
-          "mission": "One search across all laws for independent datasets, acquiring what is available. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables (an attribute table over full geometry, a measured subset over a modeled grid). Some quantities a law rests on are model outputs with no independent measurement; do not force a circular re-derivation with the same theory, but register the absence as a gap so the branch is gated honestly. Validate each acquired dataset against its source (n, schema/variables, units, missingness) before registering it; a dataset that fails validation is a gap, not an input. Emit a dataset registry that tags which laws each dataset can test.",
+          "mission": "One search across all laws for independent datasets. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables. Exhaust the openly available options \u2014 repositories, products the source cites, lighter per-entity or subset extracts, APIs, mirrors, and data reachable only through browser automation \u2014 before deciding a law cannot be tested; a dataset being large or awkward to obtain is never a reason to stop. Validate each acquired dataset against its source before registering it; one that fails validation is a gap, not an input. Register which laws each dataset can test, and for every law left uncovered record a gap with the avenues actually tried, reserving gaps for quantities that are genuinely non-public or have no independent measurement. Every law appears in a dataset's covers_laws or in gaps.",
           "name": "evidence_gathering",
           "parent": "reproduction",
           "replan": false,
@@ -2857,7 +2938,7 @@
             "analysis"
           ],
           "kind": "step",
-          "mission": "Try to refute the analysis or find artifacts, then finalize the law's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the law reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the law, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Emit an audit_report referencing the law id. The law record itself is never re-emitted.",
+          "mission": "Try to refute the analysis or find artifacts, then finalize the law's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the law reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the law, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Record in source_agreement whether this independent verdict agrees with or contradicts the law's own source_outcome, flagging a contradiction prominently. Emit an audit_report referencing the law id. The law record itself is never re-emitted.",
           "name": "audit",
           "parent": "reproduction__replication",
           "replan": false,
@@ -2866,7 +2947,7 @@
         {
           "id": "theorizer",
           "kind": "embed",
-          "mission": "Explain the cross-cutting theories behind the reproduced laws, grounded in both the literature and the reproduction's numbers, then triage them for testability and score their novelty.",
+          "mission": "Explain the cross-cutting theories behind the reproduced laws \u2014 anchored to the run's own stated intent and dataset context, grounded in the literature and the reproduction's numbers, and generated by running the Theorizer in parallel under both a literature focus and a novelty focus \u2014 then triage them for testability and score their novelty.",
           "name": "theorizer",
           "parent": null,
           "replan": false,
@@ -2882,7 +2963,7 @@
             "audit"
           ],
           "kind": "step",
-          "mission": "Run the managed Theorizer once over the reproduced laws to explain the cross-cutting theories that account for the provided laws from the AutoDiscovery run, grounded in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce, but carry its negative signal as conflicting evidence rather than support. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.",
+          "mission": "Reconstruct the original user's intent from the run's own metadata \u2014 its stated intent and the descriptions of its datasets \u2014 and distil it into the query and framing you give the Theorizer, so the theories serve what the user set out to learn. On the same reproduced laws, run the managed Theorizer twice and in parallel \u2014 one literature-focused pass grounded in established results and one novelty-focused pass surfacing non-obvious mechanisms and new predictions \u2014 submitting both concurrently and collecting both. Emit the union of theories, each tagged with the objective that produced it, all relevant to the user's intent and cross-cutting (each explaining several reproduced laws), grounded in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce but carry its negative signal as conflicting evidence. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.",
           "name": "theory_formation",
           "parent": "theorizer",
           "replan": false,
@@ -3286,7 +3367,7 @@
           "id": "auto_discovery",
           "inputs": [],
           "kind": "step",
-          "mission": "Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the \"data in hand\" that novelty_assessment later triages theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws \u2014 take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Laws are identity records; their verdicts come later, from each branch's audit.",
+          "mission": "Ingest the AutoDiscovery run and read off its candidate laws. If the mission names a provided run directory, import it and run no fresh discovery (skip `asta autodiscovery run`); otherwise run a fresh one (config n_experiments). Keep the raw experiment nodes as artifacts and register the run's own dataset(s) as a dataset entry, the \"data in hand\" that novelty_assessment later triages theories against; when data_provenance ran first, prefer the datasets it acquired (with their local paths), falling back to the run's described datasets where acquisition was restricted. Then group the run's experiments into candidate empirical laws \u2014 take every experiment flagged is_surprising, plus the config theorizer_top_n highest and theorizer_top_n lowest posterior_belief experiments (ranked by posterior_belief mean), deduped, and group them preserving the run's surprise ranking. For each law record the construct it claims, how the run measured it, and why these experiments form one law; keep each law to a single testable relationship, splitting a group that spans more than one distinct construct or claim. Also record each law's source_outcome, the run's own verdict on the law inferred from how its belief shifted during discovery. Laws are identity records; their reproduction verdicts come later, from each branch's audit.",
           "name": "auto_discovery",
           "parent": null,
           "replan": false,
@@ -3304,7 +3385,7 @@
             "auto_discovery"
           ],
           "kind": "step",
-          "mission": "One search across all laws for independent datasets, acquiring what is available. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables (an attribute table over full geometry, a measured subset over a modeled grid). Some quantities a law rests on are model outputs with no independent measurement; do not force a circular re-derivation with the same theory, but register the absence as a gap so the branch is gated honestly. Validate each acquired dataset against its source (n, schema/variables, units, missingness) before registering it; a dataset that fails validation is a gap, not an input. Emit a dataset registry that tags which laws each dataset can test.",
+          "mission": "One search across all laws for independent datasets. Independent means a different instrument, inventory, region, or method than the source; prefer the lightest product that carries the needed variables. Exhaust the openly available options \u2014 repositories, products the source cites, lighter per-entity or subset extracts, APIs, mirrors, and data reachable only through browser automation \u2014 before deciding a law cannot be tested; a dataset being large or awkward to obtain is never a reason to stop. Validate each acquired dataset against its source before registering it; one that fails validation is a gap, not an input. Register which laws each dataset can test, and for every law left uncovered record a gap with the avenues actually tried, reserving gaps for quantities that are genuinely non-public or have no independent measurement. Every law appears in a dataset's covers_laws or in gaps.",
           "name": "evidence_gathering",
           "parent": null,
           "replan": false,
@@ -3360,7 +3441,7 @@
             "analysis"
           ],
           "kind": "step",
-          "mission": "Try to refute the analysis or find artifacts, then finalize the law's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the law reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the law, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Emit an audit_report referencing the law id. The law record itself is never re-emitted.",
+          "mission": "Try to refute the analysis or find artifacts, then finalize the law's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Then finalize the law's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the law reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the law, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Record in source_agreement whether this independent verdict agrees with or contradicts the law's own source_outcome, flagging a contradiction prominently. Emit an audit_report referencing the law id. The law record itself is never re-emitted.",
           "name": "audit",
           "parent": "replication",
           "replan": false,
@@ -3418,7 +3499,7 @@
           "target": "novelty_assessment"
         }
       ],
-      "mission": "Explain the cross-cutting theories behind the reproduced laws, grounded in both the literature and the reproduction's numbers, then triage them for testability and score their novelty.",
+      "mission": "Explain the cross-cutting theories behind the reproduced laws \u2014 anchored to the run's own stated intent and dataset context, grounded in the literature and the reproduction's numbers, and generated by running the Theorizer in parallel under both a literature focus and a novelty focus \u2014 then triage them for testability and score their novelty.",
       "nodes": [
         {
           "cli": [
@@ -3430,7 +3511,7 @@
             "audit"
           ],
           "kind": "step",
-          "mission": "Run the managed Theorizer once over the reproduced laws to explain the cross-cutting theories that account for the provided laws from the AutoDiscovery run, grounded in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce, but carry its negative signal as conflicting evidence rather than support. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.",
+          "mission": "Reconstruct the original user's intent from the run's own metadata \u2014 its stated intent and the descriptions of its datasets \u2014 and distil it into the query and framing you give the Theorizer, so the theories serve what the user set out to learn. On the same reproduced laws, run the managed Theorizer twice and in parallel \u2014 one literature-focused pass grounded in established results and one novelty-focused pass surfacing non-obvious mechanisms and new predictions \u2014 submitting both concurrently and collecting both. Emit the union of theories, each tagged with the objective that produced it, all relevant to the user's intent and cross-cutting (each explaining several reproduced laws), grounded in both the literature and the reproduction's effect sizes and verdicts. Drop any law the audit confirmed as a mistake; keep a law that did not reproduce but carry its negative signal as conflicting evidence. Populate conflicting_evidence, and make unaccounted_for address the partial and untestable laws.",
           "name": "theory_formation",
           "parent": null,
           "replan": false,
