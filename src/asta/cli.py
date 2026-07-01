@@ -11,6 +11,7 @@ from asta.documents import documents
 from asta.experiment import experiment
 from asta.literature.find import find
 from asta.literature.interactive import interactive
+from asta.literature.snowball import snowball
 from asta.papers.author import author
 from asta.papers.citations import citations
 from asta.papers.get import get
@@ -63,6 +64,7 @@ cli.add_command(autodiscovery)
 # Register literature subcommands
 literature.add_command(find)
 literature.add_command(interactive)
+literature.add_command(snowball)
 
 # Register papers subcommands
 papers.add_command(get)

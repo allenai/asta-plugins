@@ -189,5 +189,86 @@ class TestAstaPaperFinder:
             finder.find_papers("test query")
 
 
+class TestSnowball:
+    """Tests for AstaPaperFinder.snowball using the headless snowball endpoint."""
+
+    def test_snowball_success(self, mock_urlopen):
+        mock_urlopen.return_value = mock_response(
+            {
+                "response_text": "Promoted 2 backward-cited papers",
+                "papers": [
+                    {
+                        "corpus_id": "12345",
+                        "title": "Cited Paper",
+                        "authors": ["Alice", "Bob"],
+                        "venue": "NeurIPS",
+                        "year": 2024,
+                        "relevance_score": 0.9,
+                        "relevant_snippets": [
+                            {"text": "foo", "section_title": "Intro"}
+                        ],
+                    }
+                ],
+                "error": None,
+            }
+        )
+
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        result = finder.snowball(
+            mode="backward",
+            seeds=[{"corpus_id": "280012121", "relevance": 3}],
+            backward_top_k=5,
+        )
+
+        assert result["status"] == "completed"
+        assert result["paper_count"] == 1
+        papers = result["widget"]["results"]
+        assert papers[0]["corpus_id"] == "12345"
+        # relevant_snippets normalized onto snippets for Paper model reuse
+        assert papers[0]["snippets"] == papers[0]["relevant_snippets"]
+
+    def test_snowball_request_body(self, mock_urlopen):
+        """Verify the request body only sends provided optional fields."""
+        mock_urlopen.return_value = mock_response(
+            {"response_text": "", "papers": [], "error": None}
+        )
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        finder.snowball(
+            mode="backward",
+            seeds=[{"corpus_id": "1", "relevance": 3}],
+            backward_top_k=7,
+        )
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url == "https://test.api/api/3/headless/snowball"
+        body = json.loads(req.data.decode())
+        assert body["mode"] == "backward"
+        assert body["seeds"] == [{"corpus_id": "1", "relevance": 3}]
+        assert body["backward_top_k"] == 7
+        # Not provided -> not sent
+        assert "forward_top_k" not in body
+        assert "snippet_top_k" not in body
+        assert "query" not in body
+
+    def test_snowball_citances_requires_query(self):
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with pytest.raises(ValueError, match="query is required"):
+            finder.snowball(mode="citances", seeds=[{"corpus_id": "1", "relevance": 3}])
+
+    def test_snowball_error(self, mock_urlopen):
+        mock_urlopen.return_value = mock_response(
+            {
+                "response_text": "",
+                "papers": [],
+                "error": {"type": "other", "message": "boom"},
+            }
+        )
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with pytest.raises(Exception, match="Snowball failed"):
+            finder.snowball(
+                mode="backward", seeds=[{"corpus_id": "1", "relevance": 3}]
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

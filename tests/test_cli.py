@@ -529,5 +529,122 @@ class TestPDFExtractionCommand:
         assert result.exit_code != 0
 
 
+class TestSnowballCommand:
+    """Test 'asta literature snowball' command."""
+
+    def _mock_raw(self):
+        return {
+            "query": "",
+            "widget": {
+                "results": [
+                    {
+                        "corpus_id": "123",
+                        "title": "Cited Paper",
+                        "relevance_score": 0.9,
+                        "authors": ["Alice"],
+                    }
+                ],
+                "response_text": "Promoted 1 paper",
+            },
+            "status": "completed",
+            "paper_count": 1,
+        }
+
+    def test_snowball_requires_seed(self, runner, tmp_path):
+        """No --seed and no --seeds-file is a usage error."""
+        output_file = tmp_path / "out.json"
+        result = runner.invoke(cli, ["literature", "snowball", "-o", str(output_file)])
+        assert result.exit_code != 0
+        assert "seed is required" in result.output.lower()
+
+    def test_snowball_success(self, runner, tmp_path):
+        with patch("asta.literature.snowball.AstaPaperFinder") as MockFinder:
+            mock_instance = MagicMock()
+            mock_instance.snowball.return_value = self._mock_raw()
+            MockFinder.return_value = mock_instance
+
+            output_file = tmp_path / "out.json"
+            result = runner.invoke(
+                cli,
+                [
+                    "literature",
+                    "snowball",
+                    "--mode",
+                    "backward",
+                    "--seed",
+                    "280012121:3",
+                    "--top-k",
+                    "5",
+                    "-o",
+                    str(output_file),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        kwargs = mock_instance.snowball.call_args.kwargs
+        assert kwargs["mode"] == "backward"
+        assert kwargs["seeds"] == [{"corpus_id": "280012121", "relevance": 3}]
+        assert kwargs["backward_top_k"] == 5
+        assert kwargs["forward_top_k"] is None
+
+        assert output_file.exists()
+        with open(output_file) as f:
+            data = json.load(f)
+        assert len(data["results"]) == 1
+        assert data["results"][0]["corpusId"] == 123
+
+    def test_snowball_seed_default_relevance(self, runner, tmp_path):
+        with patch("asta.literature.snowball.AstaPaperFinder") as MockFinder:
+            mock_instance = MagicMock()
+            mock_instance.snowball.return_value = self._mock_raw()
+            MockFinder.return_value = mock_instance
+
+            output_file = tmp_path / "out.json"
+            result = runner.invoke(
+                cli,
+                ["literature", "snowball", "--seed", "999", "-o", str(output_file)],
+            )
+
+        assert result.exit_code == 0, result.output
+        kwargs = mock_instance.snowball.call_args.kwargs
+        assert kwargs["seeds"] == [{"corpus_id": "999", "relevance": 3}]
+
+    def test_snowball_bad_relevance(self, runner, tmp_path):
+        output_file = tmp_path / "out.json"
+        result = runner.invoke(
+            cli,
+            ["literature", "snowball", "--seed", "999:7", "-o", str(output_file)],
+        )
+        assert result.exit_code != 0
+
+    def test_snowball_seeds_file(self, runner, tmp_path):
+        seeds_file = tmp_path / "seeds.json"
+        seeds_file.write_text(json.dumps([{"corpus_id": "111", "relevance": 2}, "222:1"]))
+        with patch("asta.literature.snowball.AstaPaperFinder") as MockFinder:
+            mock_instance = MagicMock()
+            mock_instance.snowball.return_value = self._mock_raw()
+            MockFinder.return_value = mock_instance
+
+            output_file = tmp_path / "out.json"
+            result = runner.invoke(
+                cli,
+                [
+                    "literature",
+                    "snowball",
+                    "--seeds-file",
+                    str(seeds_file),
+                    "-o",
+                    str(output_file),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        kwargs = mock_instance.snowball.call_args.kwargs
+        assert kwargs["seeds"] == [
+            {"corpus_id": "111", "relevance": 2},
+            {"corpus_id": "222", "relevance": 1},
+        ]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
