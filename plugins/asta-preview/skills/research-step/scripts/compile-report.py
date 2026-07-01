@@ -638,12 +638,18 @@ def _parse_flow_mmd(flow):
     return [(phases[p]["label"], [(t, node_label.get(t, t)) for t in phases[p]["tasks"]]) for p in ordered], fanout
 
 
+# Session-reporting phases that describe the write-up rather than the science;
+# omitted from the workflow diagram so it shows only the research pipeline.
+DIAGRAM_OMIT_PHASES = {"summarize", "reflection"}
+
+
 def flow_diagram(sess, ctx):
     """Asta-branded TikZ diagram of the executed workflow, DERIVED from the flow's compiled
     mermaid (.mmd) so the picture never drifts from the flow definition. Native LaTeX (no
     headless browser), Ai2/Varnish brand colours, with clickable nodes that jump to the
     report section each task feeds."""
     phases, fanout = _parse_flow_mmd(sess.flow)
+    phases = [p for p in phases if p[0] not in DIAGRAM_OMIT_PHASES]
     if not phases:
         return ""
 
