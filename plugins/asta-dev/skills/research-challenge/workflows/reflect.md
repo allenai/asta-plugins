@@ -36,7 +36,7 @@ Keep this exchange short. One or two rounds is usually enough. Come up with a su
 
 ### 3. Identify which Asta skills contributed
 
-From your own conversation memory, list the Asta skills you actually invoked during this project (e.g. `find-literature`, `semantic-scholar`, `experiment`, `research-step`, `pdf-extraction`, etc.). For each, note in one sentence what it was used for and whether it produced a useful result.
+From your own conversation memory, list the Asta skills you actually invoked during this project (e.g. `find-literature`, `semantic-scholar`, `experiment`, `asta-flows`, `pdf-extraction`, etc.). For each, note in one sentence what it was used for and whether it produced a useful result.
 
 If the project pre-dates this conversation, ask the user which skills were used rather than guessing.
 
@@ -45,7 +45,7 @@ If the project pre-dates this conversation, ask the user which skills were used 
 Build the list of paths that will populate the `## Artifacts` section of the report. Include:
 
 - `.beads/issues.jsonl` if it exists in `$PROJECT_DIR`. Do **not** include the rest of `.beads/` — the SQLite DB and other working state should not be submitted.
-- Any files created or modified during this session (e.g. outputs from the **research-step** skill).
+- Any files created or modified during this session (e.g. outputs from the **asta-flows** skill).
 - `mission.md` if it exists, even if it pre-dates this session.
 
 Use `git status` and `git log` (if `$PROJECT_DIR` is a repo) plus your own conversation memory to identify session-created files. If you are unsure whether a file belongs, ask the user rather than guessing. Resolve all paths relative to `$PROJECT_DIR`.

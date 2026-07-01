@@ -7,7 +7,7 @@ the linked docs.
 ## Overview
 
 Asta is a CLI-first package (`src/asta/`) with three Claude Code plugins
-(`plugins/asta-tools`, `plugins/asta-assistant`, `plugins/asta-dev`). The CLI is a
+(`plugins/asta-tools`, `plugins/asta-flows`, `plugins/asta-dev`). The CLI is a
 thin Click wrapper around stdlib-only core API clients; the plugins ship the skills
 and hooks that drive agents to call the CLI. Read the source tree directly for the
 current layout — `pyproject.toml` is the source of truth for build config.

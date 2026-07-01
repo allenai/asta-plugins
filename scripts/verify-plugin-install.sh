@@ -61,7 +61,7 @@ count_installed_skills() {
 }
 
 fail=0
-for plugin in asta-tools asta-assistant asta-dev; do
+for plugin in asta-tools asta-flows asta-assistant asta-dev; do
   expect="$(expected_count "$plugin")"
   got="$(count_installed_skills "$plugin")"
   if [ "$got" = "$expect" ]; then
@@ -94,4 +94,4 @@ if [ "$fail" -ne 0 ]; then
   echo "==> FAILED: plugin install verification for '$TARGET'" >&2
   exit 1
 fi
-echo "==> OK: asta-tools + asta-assistant + asta-dev installed into '$TARGET'"
+echo "==> OK: asta-tools + asta-flows asta-assistant + asta-dev installed into '$TARGET'"

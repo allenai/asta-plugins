@@ -1,12 +1,12 @@
 ---
 name: workspace
-description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `research-step`).
+description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
 allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit
 ---
 
 # Workspace
 
-Manage the writing/docs side of a research project: scaffold infrastructure as needed, show the rendered work, save iterations. For managing the research task graph itself (planning, executing typed tasks), use `research-step`.
+Manage the writing/docs side of a research project: scaffold infrastructure as needed, show the rendered work, save iterations. For managing the research task graph itself (planning, executing typed tasks), use `asta-flows`.
 
 `assets/DEVELOPER.md` is a developer-facing template scaffolded into the user's project root (where it becomes `DEVELOPER.md` for humans and agents working with the project). This SKILL.md is the agent-specific procedure.
 

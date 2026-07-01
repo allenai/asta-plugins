@@ -6,12 +6,13 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-HOOKS = ROOT / "plugins" / "asta-tools" / "hooks"
+TOOLS_HOOKS = ROOT / "plugins" / "asta-tools" / "hooks"
+FLOWS_HOOKS = ROOT / "plugins" / "asta-flows" / "hooks"
 
 
 def test_hooks_json_valid():
     """Verify hooks.json is valid JSON with correct structure."""
-    hooks_path = HOOKS / "hooks.json"
+    hooks_path = TOOLS_HOOKS / "hooks.json"
     assert hooks_path.exists(), "hooks.json not found"
 
     with open(hooks_path) as f:
@@ -26,9 +27,9 @@ def test_hooks_json_valid():
 def test_hook_scripts_executable():
     """Verify hook scripts exist and are executable."""
     scripts = [
-        HOOKS / "approve-asta-files.sh",
-        HOOKS / "approve-asta-bash.sh",
-        HOOKS / "approve-bd-bash.sh",
+        TOOLS_HOOKS / "approve-asta-files.sh",
+        TOOLS_HOOKS / "approve-asta-bash.sh",
+        FLOWS_HOOKS / "approve-bd-bash.sh",
     ]
 
     for script in scripts:
@@ -39,7 +40,7 @@ def test_hook_scripts_executable():
 
 def test_approve_asta_files_allows_asta_path():
     """Test approve-asta-files.sh approves ~/.asta/ paths."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
     home = os.environ.get("HOME", "/home/user")
 
     # Test with absolute path
@@ -62,7 +63,7 @@ def test_approve_asta_files_allows_asta_path():
 
 def test_approve_asta_files_asks_for_other_paths():
     """Test approve-asta-files.sh returns empty for non-asta paths."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
 
     input_json = json.dumps({"tool_input": {"file_path": "/tmp/other/file.md"}})
     result = subprocess.run(
@@ -80,7 +81,7 @@ def test_approve_asta_files_asks_for_other_paths():
 
 def test_approve_asta_files_allows_command_on_asta_path():
     """Test approve-asta-files.sh approves Bash commands targeting ~/.asta/."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
 
     for cmd in [
         "jq '.results' ~/.asta/widgets/test.json",
@@ -106,7 +107,7 @@ def test_approve_asta_files_allows_command_on_asta_path():
 
 def test_approve_asta_files_allows_cwd_asta_path():
     """Test approve-asta-files.sh approves CWD-relative .asta/ file paths."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
 
     for file_path in [
         ".asta/notes.md",
@@ -132,7 +133,7 @@ def test_approve_asta_files_allows_cwd_asta_path():
 
 def test_approve_asta_files_allows_command_on_cwd_asta_path():
     """Test approve-asta-files.sh approves Bash commands targeting CWD .asta/."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
 
     for cmd in [
         "cat .asta/notes.md",
@@ -159,7 +160,7 @@ def test_approve_asta_files_allows_command_on_cwd_asta_path():
 
 def test_approve_asta_files_rejects_arbitrary_dir_asta():
     """Test approve-asta-files.sh rejects .asta/ under arbitrary (non-HOME, non-CWD) dirs."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
 
     for tool_input in [
         {"file_path": "/tmp/proj/.asta/foo"},
@@ -183,7 +184,7 @@ def test_approve_asta_files_rejects_arbitrary_dir_asta():
 
 def test_approve_asta_files_does_not_match_asta_suffix_lookalike():
     """Paths/commands like `foo.asta/` should not be treated as .asta/ dirs."""
-    script = HOOKS / "approve-asta-files.sh"
+    script = TOOLS_HOOKS / "approve-asta-files.sh"
 
     for tool_input in [
         {"file_path": "foo.asta/bar"},
@@ -205,7 +206,7 @@ def test_approve_asta_files_does_not_match_asta_suffix_lookalike():
 
 def test_approve_asta_bash_allows_asta_cli():
     """Test approve-asta-bash.sh approves `asta` CLI invocations."""
-    script = HOOKS / "approve-asta-bash.sh"
+    script = TOOLS_HOOKS / "approve-asta-bash.sh"
 
     input_json = json.dumps({"tool_input": {"command": "asta papers search foo"}})
     result = subprocess.run(
@@ -224,7 +225,7 @@ def test_approve_asta_bash_allows_asta_cli():
 
 def test_approve_asta_bash_asks_for_other_commands():
     """Test approve-asta-bash.sh returns empty for non-asta commands."""
-    script = HOOKS / "approve-asta-bash.sh"
+    script = TOOLS_HOOKS / "approve-asta-bash.sh"
 
     for cmd in [
         "rm -rf /important",
@@ -247,7 +248,7 @@ def test_approve_asta_bash_asks_for_other_commands():
 
 def test_approve_bd_bash_allows_bd():
     """Test approve-bd-bash.sh approves bd (beads) CLI commands."""
-    script = HOOKS / "approve-bd-bash.sh"
+    script = FLOWS_HOOKS / "approve-bd-bash.sh"
 
     for cmd in [
         "bd list",
@@ -274,7 +275,7 @@ def test_approve_bd_bash_allows_bd():
 
 def test_approve_bd_bash_does_not_match_bd_prefix_lookalike():
     """`bdiff` and similar should not be auto-approved by the bd hook."""
-    script = HOOKS / "approve-bd-bash.sh"
+    script = FLOWS_HOOKS / "approve-bd-bash.sh"
 
     input_json = json.dumps({"tool_input": {"command": "bdiff a b"}})
     result = subprocess.run(

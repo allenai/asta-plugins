@@ -15,6 +15,7 @@ def test_plugin_structure():
     assert (ROOT / ".claude-plugin" / "marketplace.json").exists()
     assert (ROOT / "plugins" / "asta-tools" / "skills").is_dir()
     assert (ROOT / "plugins" / "asta-tools" / "hooks").is_dir()
+    assert (ROOT / "plugins" / "asta-flows" / "skills").is_dir()
     assert (ROOT / "plugins" / "asta-assistant" / "skills").is_dir()
     assert (ROOT / "plugins" / "asta-dev" / "skills").is_dir()
     assert (ROOT / "src" / "asta").is_dir()
@@ -30,8 +31,8 @@ def test_marketplace_has_plugins():
     with open(ROOT / ".claude-plugin" / "marketplace.json") as f:
         marketplace = json.load(f)
     names = {p["name"] for p in marketplace["plugins"]}
-    assert {"asta-tools", "asta-assistant", "asta-dev"} <= names
-    print("✓ Marketplace lists asta-tools, asta-assistant, and asta-dev plugins")
+    assert {"asta-tools", "asta-flows", "asta-assistant", "asta-dev"} <= names
+    print("✓ Marketplace lists asta-tools, asta-flows, and asta-dev plugins")
 
 
 def test_marketplace_sources_resolve():
