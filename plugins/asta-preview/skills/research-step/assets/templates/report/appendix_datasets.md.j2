@@ -4,8 +4,11 @@
 {% for ds in ctx.datasets %}
 ### {{ ds.id }}{% if ds.n %} — n = {{ ds.n|comma }}{% endif %} {#{{ anchor(ds.id) }}}
 
-*[↑ Datasets table](#sec-datasets-table){% if ds.tests %} · Tested by: {% for h in ds.tests %}{{ ref(h) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}*
+**[↑ Datasets table](#sec-datasets-table)**
 
+{% if ds.tests %}*Tested by: {% for h in ds.tests %}{{ ref(h) }}{% if not loop.last %}, {% endif %}{% endfor %}*
+
+{% endif %}
 {{ ds.definition|clean|mathify }}{% if ds.source %}  *Source:* {{ ds.source|clean|mathify }}{% endif %}
 
 {% endfor %}

@@ -17,7 +17,7 @@ The run surfaced {{ ctx.laws|length }} candidate hypotheses, reproduced on {{ ct
 \multicolumn{1}{@{}l@{}}{\footnotesize\itshape Datasets (continued)}\\*[2pt]
 \toprule \dsrow{\textbf{Dataset}}{\textbf{Independent data}}{\textbf{n}}{\textbf{Tested}}\\ \midrule
 \endhead
-{% for ds in ctx.datasets %}\dsrow{\hyperref[ {{- anchor(ds.id) -}} ]{ {{- ds.short|texesc -}} }}{ {{- short(ds.definition|clean, 110)|texesc -}} }{ {{- (ds.n|comma) if ds.n else '—' -}} }{ {{- ds.tests|length }} hyp.}\\
+{% for ds in ctx.datasets %}\dsrow{\hyperref[ {{- anchor(ds.id) -}} ]{ {{- ds.short|texesc -}} }}{ {{- short(ds.definition|clean, 220)|texesc -}} }{ {{- (ds.n|comma) if ds.n else '—' -}} }{ {{- ds.tests|length }} hyp.}\\
 \addlinespace[2.5pt]
 {% endfor %}\bottomrule
 \end{longtable}
@@ -29,18 +29,18 @@ The run surfaced {{ ctx.laws|length }} candidate hypotheses, reproduced on {{ ct
 
 {% if ctx.laws %}
 ```{=latex}
-\newcommand{\lrow}[3]{\parbox[t]{1.9cm}{\strut\raggedright #1}\hspace{0.4cm}\parbox[t]{\dimexpr\textwidth-5.6cm\relax}{\strut\raggedright #2}\hspace{0.6cm}\parbox[t]{2.7cm}{\strut\raggedright #3}}
+\newcommand{\lrow}[4]{\parbox[t]{1.7cm}{\strut\raggedright #1}\hspace{0.35cm}\parbox[t]{\dimexpr\textwidth-7.3cm\relax}{\strut\raggedright #2}\hspace{0.35cm}\parbox[t]{1.8cm}{\strut\raggedright #3}\hspace{0.35cm}\parbox[t]{2.6cm}{\strut\raggedright #4}}
 \begingroup
 \setlength{\LTpre}{4pt}\setlength{\LTpost}{10pt}\small
 \begin{longtable}{@{}l@{}}
 \toprule
-\lrow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{Verdict}}\\
+\lrow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{Data}}{\textbf{Verdict}}\\
 \midrule
 \endfirsthead
 \multicolumn{1}{@{}l@{}}{\footnotesize\itshape Hypotheses (continued)}\\*[2pt]
-\toprule \lrow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{Verdict}}\\ \midrule
+\toprule \lrow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{Data}}{\textbf{Verdict}}\\ \midrule
 \endhead
-{% for law in ctx.laws %}\lrow{\hyperref[ {{- anchor(law.id) -}} ]{ {{- law.id|texesc -}} }}{\hyperref[ {{- anchor(law.id) -}} ]{\color{ai2foreground}{{ law.statement|texesc }}}}{ {{- otag(law.verdict.outcome, law.verdict.testability) if law.verdict else '' -}} }\\
+{% for law in ctx.laws %}\lrow{\hyperref[ {{- anchor(law.id) -}} ]{ {{- law.id|texesc -}} }}{\hyperref[ {{- anchor(law.id) -}} ]{\color{ai2foreground}{{ law.statement|texesc }}}}{ {%- if law.dataset_chips -%}{%- for c in law.dataset_chips -%}\hyperref[ {{- anchor(c.id) -}} ]{ {{- c.label|texesc -}} }{%- if not loop.last -%}, {% endif %}{%- endfor -%}{%- else -%}{\color{ai2gray}—}{%- endif -%} }{ {{- otag(law.verdict.outcome, law.verdict.testability) if law.verdict else '' -}} }\\
 \addlinespace[2.5pt]
 {% endfor %}\bottomrule
 \end{longtable}
