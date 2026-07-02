@@ -5,6 +5,8 @@ Full entry for each candidate hypothesis — the verbatim claim, the AutoDiscove
 {% for law in ctx.laws %}
 ### {{ law.id }}{% if law.experiment_plan and law.experiment_plan.objective %} — {{ law.experiment_plan.objective }}{% elif law.construct %} — {{ law.construct }}{% endif %} {#{{ anchor(law.id) }}}
 
+*[↑ Hypotheses table](#sec-laws){% if law.grounding_theories %} · Grounds theories: {% for t in law.grounding_theories %}{{ ref(t) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if law.dataset_chips %} · Tested on: {% for c in law.dataset_chips %}[{{ c.label }}](#{{ anchor(c.id) }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}*
+
 {{ law.statement|mathify }}
 
 {% if law.experiment_plan and law.experiment_plan.objective %}*AutoDiscovery plan.*  {{ law.experiment_plan.objective|mathify }}{% if law.experiment_plan.steps %} {{ law.experiment_plan.steps|mathify }}{% endif %}

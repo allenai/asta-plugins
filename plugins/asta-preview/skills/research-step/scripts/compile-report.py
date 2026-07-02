@@ -419,6 +419,24 @@ def collect(sess, base_url=""):
     for x in laws:
         x["datasets"] = law_ds.get(x.get("id"), [])
 
+    # reverse edges for cross-navigation (all derived from existing id-lists; no schema change):
+    # hypothesis -> theories that ground on it, and dataset -> hypotheses it tested.
+    law_ids = {x.get("id") for x in laws}
+    ds_by_id = {d.get("id"): d for d in datasets}
+    hyp_theories = {}
+    for t in theories:
+        for gid in t.get("grounds_hypothesis_ids") or []:
+            if gid in law_ids:
+                hyp_theories.setdefault(gid, []).append(t.get("id"))
+    for d in datasets:
+        did = d.get("id") or ""
+        d["short"] = did.split("_")[0] if did[:2].upper() == "DS" else did
+        d["tests"] = [h for h in (d.get("covers_hypotheses") or []) if h in law_ids]
+    for x in laws:
+        x["grounding_theories"] = hyp_theories.get(x.get("id"), [])
+        x["dataset_chips"] = [{"id": did, "label": (ds_by_id[did]["short"] if did in ds_by_id else did)}
+                              for did in x.get("datasets", [])]
+
     # lead each section with the strongest results (held/tested, then testable-now theories)
     laws.sort(key=_law_sort_key)
 
@@ -936,6 +954,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
 
     # in-document anchors for every claim id, so id mentions cross-link to their subsection
     known = {x["id"]: _slug(x["id"]) for x in ctx["laws"] + ctx["theories"] if x.get("id")}
+    for d in ctx.get("datasets") or []:   # datasets are anchor targets too (for cross-nav chips)
+        if d.get("id"):
+            known[d["id"]] = _slug(d["id"])
 
     def anchor(i):
         return known.get(i, _slug(i))

@@ -9,7 +9,9 @@ Full entry for each theory — its generation objective, description, testabilit
 {% for t in ctx.theories_ordered %}
 ### {{ t.id }} — {{ t.name }} {#{{ anchor(t.id) }}}
 
-{% if t.eval and t.eval.signal %}{{ tbadge(t.eval.signal.basis) }} {% endif %}*{{ (t.objective or '')|replace('_focused','')|capitalize }}-focused.*{% if t.verdict %} **Verification {{ t.verdict.outcome }}** ({{ t.verdict.testability }}).{% endif %}{% if t.link %} (**{{ link("theory store", t.link if clickable else "") }}**){% endif %}{% if t.grounds %}  Grounds: {% for g in t.grounds %}{{ ref(g) }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
+*[↑ Theories table](#sec-theories)*
+
+{% if t.eval and t.eval.signal %}{{ tbadge(t.eval.signal.basis) }} {% endif %}*{{ (t.objective or '')|replace('_focused','')|capitalize }}-focused.*{% if t.verdict %} **Verification {{ t.verdict.outcome }}** ({{ t.verdict.testability }}).{% endif %}{% if t.link %} (**{{ link("theory store", t.link if clickable else "") }}**){% endif %}{% if t.grounds %}  Grounds hypotheses: {% for g in t.grounds %}{{ ref(g) }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
 
 {% if t.description %}{{ t.description|sent|mathify }}
 
