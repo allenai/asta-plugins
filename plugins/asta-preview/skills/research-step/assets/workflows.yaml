@@ -194,6 +194,7 @@ vocabulary:
   generation_objective:  [accuracy_focused, novelty_focused]
   subject_kind:          [autods_hypothesis, theory]
   novelty:               [established, derivable, genuinely_new]
+  theorizer_novelty:     [new, somewhat-related-to-existing, closely-related-to-existing, not_evaluated]  # Theorizer's native per-statement class; not_evaluated when it scored none
   support_level:         [supports, mixed, contradicts, inconclusive]
   access_status:         [acquired, open_unfetched, restricted, not_found]
   signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated, testable, untestable]
@@ -341,6 +342,7 @@ outputs:
     theory_statements:
       - statement_name: string
         theory_statement: string
+        novelty_evaluation: {likely_classification: theorizer_novelty, "what_is_novel?": string}   # REQUIRED: carry the Theorizer's per-statement novelty verbatim (not_evaluated when it scored none); the report's theory table surfaces this
         supporting_evidence: [{text: string, uuids: [string]}]
         conflicting_evidence: [{text: string, uuids: [string]}]
     new_predictions_likely: [string]

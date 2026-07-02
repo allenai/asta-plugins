@@ -270,7 +270,7 @@ def novelty_badge(cls=None):
 def novelty_tag(cls=None):
     """A lightweight coloured caps tag for a law's novelty inside a dense LaTeX table (no box —
     boxes crowd a longtable cell). Returns a faint em dash when the law is unscored."""
-    if not cls:
+    if not cls or cls == "not_evaluated":
         return r"{\color{ai2gray}\small ---}"
     color, label = _NOVELTY_BADGE.get(cls, ("ai2gray", str(cls).upper()))
     return r"{\footnotesize\sffamily\bfseries\color{%s}%s}" % (color, label)

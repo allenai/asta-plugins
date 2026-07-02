@@ -127,6 +127,26 @@
                 },
                 "type": "array"
               },
+              "novelty_evaluation": {
+                "additionalProperties": true,
+                "properties": {
+                  "likely_classification": {
+                    "enum": [
+                      "new",
+                      "somewhat-related-to-existing",
+                      "closely-related-to-existing",
+                      "not_evaluated"
+                    ]
+                  },
+                  "what_is_novel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "likely_classification"
+                ],
+                "type": "object"
+              },
               "statement_name": {
                 "type": "string"
               },
@@ -159,6 +179,7 @@
             "required": [
               "statement_name",
               "theory_statement",
+              "novelty_evaluation",
               "supporting_evidence",
               "conflicting_evidence"
             ],
