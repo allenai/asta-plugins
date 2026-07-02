@@ -7,7 +7,7 @@ Full entry for each candidate hypothesis — the verbatim claim, the AutoDiscove
 
 **[↑ Hypotheses table](#sec-hyps)**
 
-{% if law.grounding_theories or law.dataset_chips %}*{% if law.grounding_theories %}Grounds theories: {% for t in law.grounding_theories %}{{ ref(t) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% if law.grounding_theories and law.dataset_chips %} · {% endif %}{% if law.dataset_chips %}Tested on: {% for c in law.dataset_chips %}[{{ c.label }}](#{{ anchor(c.id) }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}*
+{% if law.dataset_chips %}*Tested on: {% for c in law.dataset_chips %}[{{ c.label }}](#{{ anchor(c.id) }}){% if not loop.last %}, {% endif %}{% endfor %}*
 
 {% endif %}
 {{ law.statement|mathify }}
