@@ -1,6 +1,8 @@
 ## Methods {#sec-methods}
 
-{% if ctx.flow_diagram %}{{ ctx.flow_diagram }}
+{% if ctx.flow_diagram %}### Workflow {.unnumbered}
+
+{{ ctx.flow_diagram }}
 {% endif %}
 **Data.** {% if ctx.primary_dataset %}{% set dd = ctx.primary_dataset.definition|clean %}The independent (secondary) substrate is {{ (dd[0]|lower) ~ dd[1:] }}{% if ctx.primary_dataset.source %} ({{ ctx.primary_dataset.source|clean }}){% endif %}.{% endif %}
 

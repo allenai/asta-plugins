@@ -878,7 +878,6 @@ def flow_diagram(sess, ctx):
     return (
         "```{mermaid}\n"
         "%%| fig-width: 6.4\n"
-        "%%| fig-cap: \"Executed workflow, derived from the flow definition. Phases run left to right; a loop marker denotes a fan-out whose branches run in parallel (one per theme, hypothesis, or objective). Node colour marks the executing agent (see legend).\"\n"
         + body + "\n"
         "```\n\n" + legend
     )
