@@ -21,8 +21,12 @@ A core set of skills for individual research tasks. Core capabilities include:
   - Example request: _What drives lung adenocarcinomas without known RTK/RAS/RAF pathway driver alterations_ 
 
 ### asta-flows
-A long-range autonomous research assistant. Point the agent to a mission document containing background and directions to explore. 
-The agent will plan and execute a series of actions using the `asta-tools` skills and other tools in the environment 
+A library of multi-step workflows. The agent will select an appropriate workflow and execute a series of actions using the `asta-tools` skills and other tools in the environment 
+
+### asta-assistant
+A long-range autonomous research assistant. Point the agent to a mission document containing background and directions to explore.
+The agent will coordinate with the
+user to pursue open questions in a long-range research plan.
 
 ### asta-dev
 Skills for developers wishing to contribute to the `asta-tools` or `asta-flows` plugins 
@@ -39,7 +43,8 @@ npx skills add allenai/asta-plugins -g
 # Claude Code marketplace (alternative to npx plugins)
 > /plugin marketplace add allenai/asta-plugins
 > /plugin install asta-tools
-> /plugin install asta-flows      # optional, for autonomous research
+> /plugin install asta-flows      # optional, for multi-step workflows
+> /plugin install asta-assistant  # optional, for autonomous research
 > /plugin install asta-dev        # optional, for contributors
 ```
 

@@ -38,8 +38,23 @@
       "keywords": [
         "asta",
         "research",
-        "autonomous",
-        "beads"
+        "workflows"
+      ]
+    },
+    {
+      "name": "asta-assistant",
+      "source": "./plugins/asta-assistant",
+      "description": "Autonomous collaborative agent able to plan and execute a long-range research agenda using asta-tools. Requires installation of asta-tools",
+      "version": "0.100.0",
+      "author": {
+        "name": "Ai2 Asta Team"
+      },
+      "repository": "https://github.com/allenai/asta-plugins",
+      "license": "Apache-2.0",
+      "keywords": [
+        "asta",
+        "research",
+        "autonomous"
       ]
     },
     {
