@@ -428,9 +428,12 @@ def collect(sess, base_url=""):
         for gid in t.get("grounds_hypothesis_ids") or []:
             if gid in law_ids:
                 hyp_theories.setdefault(gid, []).append(t.get("id"))
-    for d in datasets:
+    for i, d in enumerate(datasets, 1):
         did = d.get("id") or ""
-        d["short"] = did.split("_")[0] if did[:2].upper() == "DS" else did
+        # compact table label: reuse a leading DS#/D# token if the id has one, else assign D1..Dn.
+        # (Full ids can be long, unbreakable tokens that overflow the narrow table columns.)
+        m = re.match(r"(DS\d+|D\d+)", did)
+        d["short"] = m.group(1) if m else "D%d" % i
         d["tests"] = [h for h in (d.get("covers_hypotheses") or []) if h in law_ids]
     for x in laws:
         x["grounding_theories"] = hyp_theories.get(x.get("id"), [])
