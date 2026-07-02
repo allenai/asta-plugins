@@ -1,6 +1,31 @@
-## Results: hypotheses {#sec-laws}
+## Results: reproduction {#sec-laws}
 
-The run surfaced {{ ctx.laws|length }} candidate hypotheses, each reproduced on independent data (held results first); the verdict is the reproduction's, not the original run's. Click a node or hypothesis to jump to its full entry in the appendix.
+The run surfaced {{ ctx.laws|length }} candidate hypotheses, reproduced on {{ ctx.datasets|length }} independent dataset{{ '' if ctx.datasets|length == 1 else 's' }} (held results first); each verdict is the reproduction's, not the original run's. Click any row to jump to its full entry in the appendix.
+
+{% if ctx.datasets %}
+### Independent datasets {#sec-datasets-table}
+
+```{=latex}
+\newcommand{\dsrow}[4]{\parbox[t]{1.7cm}{\strut\raggedright #1}\hspace{0.3cm}\parbox[t]{\dimexpr\textwidth-7.4cm\relax}{\strut\raggedright #2}\hspace{0.3cm}\parbox[t]{1.0cm}{\strut\raggedright #3}\hspace{0.3cm}\parbox[t]{2.3cm}{\strut\raggedright #4}}
+\begingroup
+\setlength{\LTpre}{4pt}\setlength{\LTpost}{10pt}\small
+\begin{longtable}{@{}l@{}}
+\toprule
+\dsrow{\textbf{Dataset}}{\textbf{Independent data}}{\textbf{n}}{\textbf{Tested}}\\
+\midrule
+\endfirsthead
+\multicolumn{1}{@{}l@{}}{\footnotesize\itshape Datasets (continued)}\\*[2pt]
+\toprule \dsrow{\textbf{Dataset}}{\textbf{Independent data}}{\textbf{n}}{\textbf{Tested}}\\ \midrule
+\endhead
+{% for ds in ctx.datasets %}\dsrow{\hyperref[ {{- anchor(ds.id) -}} ]{ {{- ds.short|texesc -}} }}{ {{- short(ds.definition|clean, 110)|texesc -}} }{ {{- (ds.n|comma) if ds.n else '—' -}} }{ {{- ds.tests|length }} hyp.}\\
+\addlinespace[2.5pt]
+{% endfor %}\bottomrule
+\end{longtable}
+\endgroup
+```
+
+{% endif %}
+### Reproduced hypotheses {#sec-hyps}
 
 {% if ctx.laws %}
 ```{=latex}
