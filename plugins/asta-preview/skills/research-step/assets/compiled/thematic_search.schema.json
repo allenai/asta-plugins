@@ -79,7 +79,7 @@
       "type": "object"
     }
   },
-  "$id": "asta-research-step/literature_review.schema.json",
+  "$id": "asta-research-step/thematic_search.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -90,6 +90,6 @@
   "required": [
     "literature_review"
   ],
-  "title": "literature_review",
+  "title": "thematic_search",
   "type": "object"
 }

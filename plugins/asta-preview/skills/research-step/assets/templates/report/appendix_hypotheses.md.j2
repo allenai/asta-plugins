@@ -1,0 +1,27 @@
+## Appendix: hypotheses in detail {#sec-appendix-laws}
+
+Full entry for each candidate hypothesis — the verbatim claim, the AutoDiscovery plan, the source effect, and the independent-reproduction verdict. Ordered as in the summary table (held first).
+
+{% for law in ctx.laws %}
+### {{ law.id }}{% if law.experiment_plan and law.experiment_plan.objective %} — {{ law.experiment_plan.objective }}{% elif law.construct %} — {{ law.construct }}{% endif %} {#{{ anchor(law.id) }}}
+
+{{ law.statement|mathify }}
+
+{% if law.experiment_plan and law.experiment_plan.objective %}*AutoDiscovery plan.*  {{ law.experiment_plan.objective|mathify }}{% if law.experiment_plan.steps %} {{ law.experiment_plan.steps|mathify }}{% endif %}
+
+{% endif %}
+{% if law.effect_size_source %}*Source effect.*  {{ law.effect_size_source|mathify }}
+
+{% endif %}
+{% if law.verdict %}{{ badge(law.verdict.outcome, law.verdict.testability) }} *Reproduction.*  Outcome **{{ law.verdict.outcome }}** ({{ law.verdict.testability }}){% if law.verdict.effect_size_observed %} — {{ law.verdict.effect_size_observed|mathify }}{% endif %}.{% if law.audit %}{% set adj = (law.audit.recommended_adjustment or '')|trim %}{% if adj and not (adj.lower().startswith('none') or adj.lower().startswith('n/a')) %}  *Audit:* {{ adj|mathify }}{% else %}  *Audit:* {{ 'passes the negative control (the effect vanishes when the predictor is shuffled)' if law.audit.verdict_survives else 'fails the negative control' }}.{% endif %}{% endif %}{% if law.link %}  (**{{ link("DataVoyager result", law.link if clickable else "") }}**){% endif %}
+
+{% if law.datasets or (law.design and law.design.prespecified and law.design.prespecified.test) %}*Tested on.*  {% if law.datasets %}{{ law.datasets|join(', ') }}{% endif %}{% if law.design and law.design.prespecified and law.design.prespecified.test %}{% if law.datasets %} · {% endif %}{{ law.design.prespecified.test|mathify }}{% endif %}
+
+{% endif %}
+{% else %}*Reproduction.*  Not audited.
+
+{% endif %}
+{% for f in law.figs or [] %}{% if exists(f.image) %}![{{ f.caption }}]({{ f.image }})
+
+{% endif %}{% endfor %}
+{% endfor %}

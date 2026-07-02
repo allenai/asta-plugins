@@ -85,7 +85,7 @@
     "dataset": {
       "additionalProperties": true,
       "properties": {
-        "covers_laws": {
+        "covers_hypotheses": {
           "items": {
             "type": "string"
           },
@@ -120,7 +120,7 @@
         "n",
         "sampling",
         "variables",
-        "covers_laws"
+        "covers_hypotheses"
       ],
       "type": "object"
     },

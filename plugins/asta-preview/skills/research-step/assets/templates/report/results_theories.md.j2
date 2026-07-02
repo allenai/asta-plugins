@@ -1,33 +1,26 @@
 ## Results: theories {#sec-theories}
 
-```{=latex}
-{\small\hyperlink{workflow}{\color{ai2accent}$\uparrow$ Workflow}}
-```
-
-{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) and triaged for testability against the data in hand. {{ ctx.n_testable_theories }} {{ 'was' if ctx.n_testable_theories == 1 else 'were' }} testable now, each committed to a prespecified test; the rest need new data. Theories testable now are listed first. The theories are proposed here, not verified.
+{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) and triaged for testability against the data in hand. {{ ctx.n_testable_theories }} {{ 'was' if ctx.n_testable_theories == 1 else 'were' }} testable now, each committed to a prespecified test; the rest need new data. Novelty is assessed by the Theorizer per law (statement) and shown on each constituent law. Click a theory or law to jump to its full entry in the appendix. The theories are proposed here, not verified.
 
 {% if ctx.theories_ordered %}
-| Theory | Status | Novelty |
-|-----------------------------------------------|------------------------|------------|
-{% for t in ctx.theories_ordered %}| [{{ t.id }}](#{{ anchor(t.id) }}) — {{ t.name|md }} | {% if t.eval and t.eval.signal %}{{ tbadge(t.eval.signal.basis) }}{% else %}—{% endif %} | {{ t.eval.novelty|replace('_',' ')|md if t.eval and t.eval.novelty else '—' }} |
-{% endfor %}
+```{=latex}
+\begingroup
+\setlength{\LTpre}{4pt}\setlength{\LTpost}{10pt}\small
+\newcommand{\throw}[2]{\parbox[t]{\dimexpr\textwidth-2.6cm\relax}{\strut\raggedright #1}\hspace{0.7cm}\parbox[t]{1.9cm}{\strut\raggedright #2}}
+\begin{longtable}{@{}l@{}}
+\toprule
+\throw{\textbf{Theory and its constituent laws}}{\textbf{Novelty}}\\
+\midrule
+\endfirsthead
+\multicolumn{1}{@{}l@{}}{\footnotesize\itshape Theories (continued)}\\*[2pt]
+\toprule \throw{\textbf{Theory and its constituent laws}}{\textbf{Novelty}}\\ \midrule
+\endhead
+{% for t in ctx.theories_ordered %}\throw{\bfseries\hyperref[ {{- anchor(t.id) -}} ]{ {{- t.name|texesc -}} }}{}\\*[1pt]
+{% for s in t.statements %}\throw{\hspace{1.4em}\hyperref[ {{- anchor(t.id) -}} ]{\color{ai2foreground!88}{{ s.name|texesc }}}}{ {{- ntag(s.novelty) -}} }\\
+{% endfor %}{% if not loop.last %}\addlinespace[3.5pt]\midrule\addlinespace[1.5pt]{% endif %}
+{% endfor %}\bottomrule
+\end{longtable}
+\endgroup
+```
 
 {% endif %}
-{% if ctx.overview.theories and exists(ctx.overview.theories.image) %}
-![{{ ctx.overview.theories.caption or 'Cross-cutting mechanism linking the laws.' }}]({{ ctx.overview.theories.image }})
-
-{% endif %}
-{% for t in ctx.theories_ordered %}
-### {{ t.id }} — {{ t.name }} {#{{ anchor(t.id) }}}
-
-{% if t.eval and t.eval.signal %}{{ tbadge(t.eval.signal.basis) }} {% endif %}*{{ (t.objective or '')|replace('_focused','')|capitalize }}-focused{% if t.eval and t.eval.novelty %}; novelty: {{ t.eval.novelty|replace('_',' ') }}{% endif %}.*{% if t.verdict %} **Verification {{ t.verdict.outcome }}** ({{ t.verdict.testability }}).{% endif %}{% if t.link %} (**{{ link("theory store", t.link if clickable else "") }}**){% endif %}{% if t.grounds_law_ids %}  Grounds: {% for g in t.grounds_law_ids %}{{ ref(g) }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}
-
-{% if t.description %}{{ t.description|sent|mathify }}
-
-{% endif %}
-{% if t.eval %}{% if t.eval.signal and t.eval.signal.basis == 'testable' %}*Proposed test.*  {{ t.eval.proposed_test.test|mathify }}{% if t.eval.proposed_test.success_threshold %} — success: {{ t.eval.proposed_test.success_threshold|mathify }}{% endif %}
-{% else %}*Not testable on the in-hand data*{% if t.eval.gap %} — {{ t.eval.gap|mathify }}{% endif %}.
-{% endif %}
-
-{% endif %}
-{% endfor %}

@@ -2,13 +2,19 @@
 %% thick ==> : a loop's child order  ·  thin --> : data input  ·  dashed: input from outside this loop
 flowchart TD
   classDef external stroke-dasharray: 3 3,color:#888888
-  theory_formation["theory_formation"]
+  subgraph theory_formation["theory_formation — fan-out (one branch per objective)"]
+    theory_formation__theory_generation["theory_generation"]
+  end
   novelty_assessment["novelty_assessment"]
   ext__audit(["audit (external)"]):::external
   ext__auto_discovery(["auto_discovery (external)"]):::external
   ext__evidence_gathering(["evidence_gathering (external)"]):::external
-  ext__auto_discovery -.-> theory_formation
-  ext__audit -.-> theory_formation
-  theory_formation --> novelty_assessment
+  ext__literature_search(["literature_search (external)"]):::external
+  theory_formation ==> novelty_assessment
+  ext__auto_discovery -.-> theory_formation__theory_generation
+  ext__audit -.-> theory_formation__theory_generation
+  ext__literature_search -.-> theory_formation__theory_generation
+  theory_formation__theory_generation --> novelty_assessment
   ext__auto_discovery -.-> novelty_assessment
   ext__evidence_gathering -.-> novelty_assessment
+  style theory_formation fill:#eef6ff,stroke:#6699cc,stroke-dasharray: 6 4

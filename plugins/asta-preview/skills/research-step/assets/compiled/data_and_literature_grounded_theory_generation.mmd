@@ -2,53 +2,43 @@
 %% thick ==> : a loop's child order  ·  thin --> : data input  ·  dashed: input from outside this loop
 flowchart TD
   classDef external stroke-dasharray: 3 3,color:#888888
-  subgraph data_provenance["data_provenance"]
-    data_provenance__provenance_search["provenance_search"]
-    data_provenance__provenance_extraction["provenance_extraction"]
-    data_provenance__data_acquisition["data_acquisition"]
+  auto_discovery["auto_discovery"]
+  subgraph literature_search["literature_search — fan-out (one branch per theme)"]
+    literature_search__thematic_search["thematic_search"]
   end
-  subgraph reproduction["reproduction"]
-    reproduction__auto_discovery["auto_discovery"]
-    reproduction__evidence_gathering["evidence_gathering"]
-    subgraph reproduction__replication["replication — fan-out (one branch per item)"]
-      reproduction__replication__experiment_design["experiment_design"]
-      reproduction__replication__analysis["analysis"]
-      reproduction__replication__audit["audit"]
-    end
+  evidence_gathering["evidence_gathering"]
+  subgraph reproduction["reproduction — fan-out (one branch per hypothesis)"]
+    reproduction__experiment_design["experiment_design"]
+    reproduction__analysis["analysis"]
+    reproduction__audit["audit"]
   end
   subgraph theorizer["theorizer"]
-    theorizer__theory_formation["theory_formation"]
+    subgraph theorizer__theory_formation["theory_formation — fan-out (one branch per objective)"]
+      theorizer__theory_formation__theory_generation["theory_generation"]
+    end
     theorizer__novelty_assessment["novelty_assessment"]
   end
-  subgraph summarize["summarize"]
-    summarize__summarize["summarize"]
-  end
-  subgraph reflection["reflection"]
-    reflection__reflection["reflection"]
-  end
-  data_provenance ==> reproduction
+  auto_discovery ==> literature_search
+  literature_search ==> evidence_gathering
+  evidence_gathering ==> reproduction
   reproduction ==> theorizer
-  theorizer ==> summarize
-  summarize ==> reflection
-  reproduction__evidence_gathering ==> reproduction__replication
-  data_provenance__provenance_search --> data_provenance__provenance_extraction
-  data_provenance__provenance_search --> data_provenance__data_acquisition
-  data_provenance__provenance_extraction --> data_provenance__data_acquisition
-  reproduction__auto_discovery --> reproduction__evidence_gathering
-  reproduction__auto_discovery --> reproduction__replication__experiment_design
-  reproduction__evidence_gathering --> reproduction__replication__experiment_design
-  reproduction__replication__experiment_design --> reproduction__replication__analysis
-  reproduction__evidence_gathering --> reproduction__replication__analysis
-  reproduction__replication__experiment_design --> reproduction__replication__audit
-  reproduction__replication__analysis --> reproduction__replication__audit
-  reproduction__auto_discovery --> theorizer__theory_formation
-  reproduction__replication__audit --> theorizer__theory_formation
-  theorizer__theory_formation --> theorizer__novelty_assessment
-  reproduction__auto_discovery --> theorizer__novelty_assessment
-  reproduction__evidence_gathering --> theorizer__novelty_assessment
-  style data_provenance fill:#eef6ff,stroke:#6699cc
-  style reproduction__replication fill:#eef6ff,stroke:#6699cc,stroke-dasharray: 6 4
-  style reproduction fill:none,stroke:#6699cc
-  style theorizer fill:#eef6ff,stroke:#6699cc
-  style summarize fill:#eef6ff,stroke:#6699cc
-  style reflection fill:#eef6ff,stroke:#6699cc
+  theorizer__theory_formation ==> theorizer__novelty_assessment
+  auto_discovery --> literature_search__thematic_search
+  auto_discovery --> evidence_gathering
+  auto_discovery --> reproduction__experiment_design
+  evidence_gathering --> reproduction__experiment_design
+  literature_search --> reproduction__experiment_design
+  reproduction__experiment_design --> reproduction__analysis
+  evidence_gathering --> reproduction__analysis
+  reproduction__experiment_design --> reproduction__audit
+  reproduction__analysis --> reproduction__audit
+  auto_discovery --> theorizer__theory_formation__theory_generation
+  reproduction__audit --> theorizer__theory_formation__theory_generation
+  literature_search --> theorizer__theory_formation__theory_generation
+  theorizer__theory_formation__theory_generation --> theorizer__novelty_assessment
+  auto_discovery --> theorizer__novelty_assessment
+  evidence_gathering --> theorizer__novelty_assessment
+  style literature_search fill:#eef6ff,stroke:#6699cc,stroke-dasharray: 6 4
+  style reproduction fill:#eef6ff,stroke:#6699cc,stroke-dasharray: 6 4
+  style theorizer__theory_formation fill:#eef6ff,stroke:#6699cc,stroke-dasharray: 6 4
+  style theorizer fill:none,stroke:#6699cc

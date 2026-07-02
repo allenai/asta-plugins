@@ -85,9 +85,8 @@
         },
         "subject_kind": {
           "enum": [
-            "empirical_law",
-            "theory",
-            "hypothesis"
+            "autods_hypothesis",
+            "theory"
           ]
         },
         "testability": {

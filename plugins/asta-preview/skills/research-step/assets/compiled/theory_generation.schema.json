@@ -43,7 +43,7 @@
         "description": {
           "type": "string"
         },
-        "grounds_law_ids": {
+        "grounds_hypothesis_ids": {
           "items": {
             "type": "string"
           },
@@ -77,7 +77,7 @@
         "description",
         "theory_query",
         "objective",
-        "grounds_law_ids",
+        "grounds_hypothesis_ids",
         "supporting_evidence_ids",
         "components_path"
       ],
@@ -199,15 +199,12 @@
       "type": "object"
     }
   },
-  "$id": "asta-research-step/theory_formation.schema.json",
+  "$id": "asta-research-step/theory_generation.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "runs": {
-      "items": {
-        "$ref": "#/$defs/run"
-      },
-      "type": "array"
+    "run": {
+      "$ref": "#/$defs/run"
     },
     "theories": {
       "items": {
@@ -218,8 +215,8 @@
   },
   "required": [
     "theories",
-    "runs"
+    "run"
   ],
-  "title": "theory_formation",
+  "title": "theory_generation",
   "type": "object"
 }

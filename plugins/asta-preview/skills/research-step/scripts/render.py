@@ -75,6 +75,14 @@ def _env(trim=True):
     # |md — make any value safe inside a markdown table cell (escape pipes, flatten newlines)
     env.filters["md"] = lambda s: ("" if s is None else str(s)).replace("|", "\\|").replace("\n", " ").strip()
 
+    # |texesc — escape the LaTeX-special ASCII so a value is safe inside a raw {=latex} block.
+    # Unicode math glyphs (², ≥, →, ×, −) are left as-is: the report renders with lualatex, which
+    # typesets them from the main font directly. Use only in hand-authored raw-LaTeX tables.
+    _TEX = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
+            "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
+            "<": r"\textless{}", ">": r"\textgreater{}"}
+    env.filters["texesc"] = lambda s: "".join(_TEX.get(c, c) for c in ("" if s is None else str(s)).replace("\n", " ").strip())
+
     def _comma(n):
         try:
             return f"{int(n):,}"

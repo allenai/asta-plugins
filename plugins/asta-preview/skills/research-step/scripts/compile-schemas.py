@@ -338,8 +338,10 @@ class Compiler:
             if not isinstance(node.mission, str):
                 node.mission = ""
         node.replan = raw.get("replan", False)
-        if not isinstance(node.replan, bool):
-            self.err(ctx, "replan must be a boolean")
+        # replan is either a boolean, or a string naming the fan-out dimension (e.g.
+        # `replan: hypothesis` → "one branch per hypothesis"); a bare `true` falls back to "item"
+        if not isinstance(node.replan, (bool, str)):
+            self.err(ctx, "replan must be a boolean or a string naming the fan-out dimension")
             node.replan = False
         for k in raw:
             if k not in self.LOOP_KEYS:
@@ -549,6 +551,12 @@ class Compiler:
         ]
         edges, externals, loop_styles, order_edges = [], {}, [], []
 
+        # session-reporting phases describe the write-up, not the science; omit them (and any
+        # edges touching them) so the diagram shows only the research pipeline — but never when
+        # summarize/reflection IS the flow being rendered (its own diagram must not go empty).
+        OMIT = {"summarize", "reflection"} if flow_name not in {"summarize", "reflection"} else set()
+        omit_ids = {self.node_id(n) for c in root.children if c.name in OMIT for n in c.subtree()}
+
         # Every non-step node is a loop and renders as a subgraph (recursively),
         # so nested loops always read as loops. A per-subgraph `style` sets the
         # uniform loop fill (mermaid ignores classDef fill on nested subgraphs);
@@ -559,7 +567,8 @@ class Compiler:
             if node.kind == "step":
                 lines.append(f'{pad}{nid}["{self.label(node.name)}"]')
                 return
-            title = node.name + (" — fan-out (one branch per item)" if node.replan else "")
+            _dim = node.replan if isinstance(node.replan, str) else "item"
+            title = node.name + (f" — fan-out (one branch per {_dim})" if node.replan else "")
             lines.append(f'{pad}subgraph {nid}["{self.label(title)}"]')
             for c in node.children:
                 walk(c, depth + 1)
@@ -573,13 +582,19 @@ class Compiler:
             loop_styles.append(f"  style {nid} {fill}")
 
         for child in root.children:
+            if child.name in OMIT:
+                continue
             walk(child, 1)
 
         # data-input edges (and inputs satisfied outside this loop, dashed)
         input_pairs = set()
         for node in root.subtree():
+            if self.node_id(node) in omit_ids:
+                continue
             for inp in node.inputs:
                 src = self.resolve_input(node, inp)
+                if src is not None and self.node_id(src) in omit_ids:
+                    continue
                 if src is not None:
                     input_pairs.add((self.node_id(src), self.node_id(node)))
                     edges.append(f"  {self.node_id(src)} --> {self.node_id(node)}")
@@ -593,7 +608,7 @@ class Compiler:
         # right), so the hierarchy is explicit even for loops with no data input
         # (e.g. summarize, reflection). Skip a pair that a data edge already draws.
         def order(node):
-            kids = node.children
+            kids = [k for k in node.children if self.node_id(k) not in omit_ids]
             for a, b in zip(kids, kids[1:]):
                 pair = (self.node_id(a), self.node_id(b))
                 if pair not in input_pairs:

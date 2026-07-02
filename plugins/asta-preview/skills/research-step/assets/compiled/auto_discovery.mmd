@@ -4,21 +4,11 @@ flowchart TD
   classDef external stroke-dasharray: 3 3,color:#888888
   cohort_assembly["cohort_assembly"]
   discovery_run["discovery_run"]
-  subgraph replication["replication — fan-out (one branch per item)"]
+  subgraph replication["replication — fan-out (one branch per hypothesis)"]
     replication__holdout_replication["holdout_replication"]
   end
-  subgraph summarize["summarize"]
-    summarize__summarize["summarize"]
-  end
-  subgraph reflection["reflection"]
-    reflection__reflection["reflection"]
-  end
   discovery_run ==> replication
-  replication ==> summarize
-  summarize ==> reflection
   cohort_assembly --> discovery_run
   discovery_run --> replication__holdout_replication
   cohort_assembly --> replication__holdout_replication
   style replication fill:#eef6ff,stroke:#6699cc,stroke-dasharray: 6 4
-  style summarize fill:#eef6ff,stroke:#6699cc
-  style reflection fill:#eef6ff,stroke:#6699cc

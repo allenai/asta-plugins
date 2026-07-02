@@ -57,6 +57,32 @@
         "required_data": {
           "type": "string"
         },
+        "source_code": {
+          "type": "string"
+        },
+        "source_experiment_plan": {
+          "additionalProperties": true,
+          "properties": {
+            "deliverables": {
+              "type": "string"
+            },
+            "objective": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "objective",
+            "steps",
+            "deliverables"
+          ],
+          "type": "object"
+        },
+        "source_hypothesis": {
+          "type": "string"
+        },
         "source_operationalization": {
           "type": "string"
         },
@@ -65,9 +91,8 @@
         },
         "subject_kind": {
           "enum": [
-            "empirical_law",
-            "theory",
-            "hypothesis"
+            "autods_hypothesis",
+            "theory"
           ]
         }
       },
@@ -75,6 +100,9 @@
         "subject_kind",
         "subject_id",
         "experiment_name",
+        "source_hypothesis",
+        "source_experiment_plan",
+        "source_code",
         "plain_language_description",
         "source_operationalization",
         "independent_operationalization",

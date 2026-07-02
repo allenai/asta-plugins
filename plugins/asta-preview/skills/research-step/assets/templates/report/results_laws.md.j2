@@ -1,35 +1,25 @@
-## Results: empirical laws {#sec-laws}
+## Results: hypotheses {#sec-laws}
 
-```{=latex}
-{\small\hyperlink{workflow}{\color{ai2accent}$\uparrow$ Workflow}}
-```
-
-The search surfaced {{ ctx.laws|length }} candidate laws; each is reproduced below on the in-hand data, held results first. The verdict is the reproduction's, not the original run's.
+The run surfaced {{ ctx.laws|length }} candidate hypotheses, each reproduced on independent data (held results first); the verdict is the reproduction's, not the original run's. Click a node or hypothesis to jump to its full entry in the appendix.
 
 {% if ctx.laws %}
-| Law | Verdict |
-|-----------------------------------------------------|------------------------|
-{% for law in ctx.laws %}| [{{ law.id }}](#{{ anchor(law.id) }}){% if law.construct %} — {{ law.construct|md }}{% endif %} | {% if law.verdict %}{{ badge(law.verdict.outcome, law.verdict.testability) }} {{ law.verdict.testability|md }}{% else %}—{% endif %} |
-{% endfor %}
+```{=latex}
+\newcommand{\lrow}[3]{\parbox[t]{1.9cm}{\strut\raggedright #1}\hspace{0.4cm}\parbox[t]{\dimexpr\textwidth-5.6cm\relax}{\strut\raggedright #2}\hspace{0.6cm}\parbox[t]{2.7cm}{\strut\raggedright #3}}
+\begingroup
+\setlength{\LTpre}{4pt}\setlength{\LTpost}{10pt}\small
+\begin{longtable}{@{}l@{}}
+\toprule
+\lrow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{Verdict}}\\
+\midrule
+\endfirsthead
+\multicolumn{1}{@{}l@{}}{\footnotesize\itshape Hypotheses (continued)}\\*[2pt]
+\toprule \lrow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{Verdict}}\\ \midrule
+\endhead
+{% for law in ctx.laws %}\lrow{\hyperref[ {{- anchor(law.id) -}} ]{ {{- law.id|texesc -}} }}{\hyperref[ {{- anchor(law.id) -}} ]{\color{ai2foreground}{{ law.statement|texesc }}}}{ {{- otag(law.verdict.outcome, law.verdict.testability) if law.verdict else '' -}} }\\
+\addlinespace[2.5pt]
+{% endfor %}\bottomrule
+\end{longtable}
+\endgroup
+```
 
 {% endif %}
-{% for law in ctx.laws %}
-### {{ law.id }}{% if law.construct %} — {{ law.construct }}{% endif %} {#{{ anchor(law.id) }}}
-
-{{ law.statement|mathify }}
-
-{% if law.effect_size_source %}*Source effect.*  {{ law.effect_size_source|mathify }}
-
-{% endif %}
-{% if law.verdict %}{{ badge(law.verdict.outcome, law.verdict.testability) }} *Reproduction.*  Outcome **{{ law.verdict.outcome }}** ({{ law.verdict.testability }}){% if law.verdict.effect_size_observed %} — {{ law.verdict.effect_size_observed|mathify }}{% endif %}.{% if law.audit %}{% set adj = (law.audit.recommended_adjustment or '')|trim %}{% if adj and not (adj.lower().startswith('none') or adj.lower().startswith('n/a')) %}  *Audit:* {{ adj|mathify }}{% else %}  *Audit:* {{ 'passes the negative control (the effect vanishes when the predictor is shuffled)' if law.audit.verdict_survives else 'fails the negative control' }}.{% endif %}{% endif %}{% if law.link %}  (**{{ link("DataVoyager result", law.link if clickable else "") }}**){% endif %}
-
-{% if law.datasets or (law.design and law.design.prespecified and law.design.prespecified.test) %}*Tested on.*  {% if law.datasets %}{{ law.datasets|join(', ') }}{% endif %}{% if law.design and law.design.prespecified and law.design.prespecified.test %}{% if law.datasets %} · {% endif %}{{ law.design.prespecified.test|mathify }}{% endif %}
-
-{% endif %}
-{% else %}*Reproduction.*  Not audited.
-
-{% endif %}
-{% for f in law.figs or [] %}{% if exists(f.image) %}![{{ f.caption }}]({{ f.image }})
-
-{% endif %}{% endfor %}
-{% endfor %}

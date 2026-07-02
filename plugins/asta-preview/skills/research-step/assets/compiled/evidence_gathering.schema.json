@@ -4,7 +4,7 @@
     "dataset": {
       "additionalProperties": true,
       "properties": {
-        "covers_laws": {
+        "covers_hypotheses": {
           "items": {
             "type": "string"
           },
@@ -39,7 +39,7 @@
         "n",
         "sampling",
         "variables",
-        "covers_laws"
+        "covers_hypotheses"
       ],
       "type": "object"
     },
@@ -63,12 +63,12 @@
             "transient_needed"
           ]
         },
-        "law_id": {
+        "hypothesis_id": {
           "type": "string"
         }
       },
       "required": [
-        "law_id",
+        "hypothesis_id",
         "avenues_tried",
         "gap_kind",
         "explanation"

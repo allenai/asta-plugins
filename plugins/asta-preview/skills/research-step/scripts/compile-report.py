@@ -31,30 +31,15 @@ import render  # noqa: E402
 
 # ordered paper sections (template stem in assets/templates/report/); blank renders skipped
 SECTIONS = [
-    "mission", "abstract", "methods", "glossary", "results_laws", "results_theories",
-    "results_hypotheses", "conclusions",
+    "mission", "abstract", "methods", "results_laws", "results_theories",
+    "appendix_theories", "appendix_hypotheses",
     "appendix_experiments", "appendix_datasets", "appendix_references",
 ]
-
-STAGE_LABEL = {
-    "cohort_assembly": "Assembled a cohort",
-    "provenance_search": "Sourced & acquired data", "provenance_extraction": "Sourced & acquired data",
-    "data_acquisition": "Sourced & acquired data", "evidence_gathering": "Sourced & acquired data",
-    "auto_discovery": "Ran AutoDiscovery and grouped its candidate laws",
-    "discovery_run": "Generated surprising hypotheses from the data",
-    "experiment_design": "Designed prespecified tests", "analysis": "Tested on independent data",
-    "audit": "Audited and reached verdicts",
-    "holdout_replication": "Replicated on held-out data",
-    "theory_formation": "Generated theories",
-    "novelty_assessment": "Triaged testability and scored novelty",
-    "literature_review": "Surveyed the literature", "hypothesis_formation": "Formed hypotheses",
-}
 
 FLOW_SUBTITLE = {
     "data_and_literature_grounded_theory_generation":
         "Reproduction and literature-grounded theory generation over an AutoDiscovery run",
     "auto_discovery": "Cohort assembly, AutoDiscovery, and held-out replication",
-    "hypothesis_driven_research": "Literature-driven hypothesis formation and testing",
 }
 
 
@@ -153,15 +138,6 @@ def _doi_url(s):
     return m.group(0).rstrip(".,);") if m else None
 
 
-_JOURNALISH = ("journal", "cambridge", "copernicus", "elsevier", "springer", "wiley", "nature publ")
-
-
-def _is_data_repo(repo):
-    """A data archive (RGI/NSIDC/Theia/Zenodo/WGMS/…) vs. a journal/publisher venue."""
-    r = (repo or "").lower()
-    return bool(r) and not any(w in r for w in _JOURNALISH)
-
-
 # Figures the producing agent flagged as empty/unrendered — a blank axes with a
 # "the plot is empty" caption is noise in a shareable report, so they're dropped.
 _EMPTY_FIG_RE = re.compile(r"(?i)\bempty\b|\bunrendered\b|no data|missing data")
@@ -210,6 +186,9 @@ def _deref(x):
 _OUTCOME_RANK = {"held": 0, "partial": 1, "underpowered": 2, "failed": 3, "n/a": 4}
 _TEST_RANK = {"tested": 0, "proxy_only": 1, "untestable": 2}
 _NOVELTY_RANK = {"genuinely_new": 0, "derivable": 1, "established": 2}
+# the Theorizer's per-statement novelty class (theory_components.theory_statements[].
+# novelty_evaluation.likely_classification) — the statement-level signal we now surface/sort by
+_STMT_NOVELTY_RANK = {"new": 0, "somewhat-related-to-existing": 1, "closely-related-to-existing": 2}
 
 # outcome → (colour token defined in header_includes, short label)
 _BADGE = {
@@ -224,10 +203,27 @@ def _law_sort_key(x):
     return (_OUTCOME_RANK.get(v.get("outcome"), 5), _TEST_RANK.get(v.get("testability"), 3))
 
 
+def _theory_statements(t):
+    """The Theorizer's per-statement records — name, text, and the statement-level novelty class —
+    read from the theory's carried theory_components (components_path ref). These statements are the
+    granularity the novelty accessor scores; empty when the components file is absent."""
+    comp = _deref(t.get("components_path"))
+    out = []
+    if isinstance(comp, dict):
+        for s in comp.get("theory_statements") or []:
+            ne = s.get("novelty_evaluation") or {}
+            out.append({"name": s.get("statement_name"), "text": s.get("theory_statement"),
+                        "novelty": ne.get("likely_classification"),
+                        "what_is_novel": ne.get("what_is_novel")})
+    return out
+
+
 def _theory_sort_key(t):
-    e = t.get("eval") or {}
-    testable = 0 if (e.get("signal") or {}).get("basis") == "testable" else 1
-    return (testable, _NOVELTY_RANK.get(e.get("novelty"), 3))
+    # testable-now first, then by the theory's most-novel statement (statement-level novelty);
+    # theories with no statement-level novelty (e.g. accuracy-focused) sort last within their group
+    testable = 0 if ((t.get("eval") or {}).get("signal") or {}).get("basis") == "testable" else 1
+    nov = t.get("novelty_rank")
+    return (testable, nov if nov is not None else 3)
 
 
 def verdict_badge(outcome=None, testability=None):
@@ -251,6 +247,56 @@ def triage_badge(basis=None):
     return ""
 
 
+# statement/law-level novelty badge, keyed by the Theorizer's native likely_classification
+_NOVELTY_BADGE = {
+    "new": ("ai2accent", "NEW"),
+    "somewhat-related-to-existing": ("ai2amber", "DERIVABLE"),
+    "closely-related-to-existing": ("ai2gray", "ESTABLISHED"),
+    # tolerate the schema-enum vocabulary too, so the badge renders either way
+    "genuinely_new": ("ai2accent", "NEW"),
+    "derivable": ("ai2amber", "DERIVABLE"),
+    "established": ("ai2gray", "ESTABLISHED"),
+}
+
+
+def novelty_badge(cls=None):
+    """A \\vbadge for a single law/statement's novelty class; empty string when unscored."""
+    if not cls:
+        return ""
+    color, label = _NOVELTY_BADGE.get(cls, ("ai2gray", str(cls).upper()))
+    return r"\vbadge[%s]{%s}" % (color, label)
+
+
+def novelty_tag(cls=None):
+    """A lightweight coloured caps tag for a law's novelty inside a dense LaTeX table (no box —
+    boxes crowd a longtable cell). Returns a faint em dash when the law is unscored."""
+    if not cls:
+        return r"{\color{ai2gray}\small ---}"
+    color, label = _NOVELTY_BADGE.get(cls, ("ai2gray", str(cls).upper()))
+    return r"{\footnotesize\sffamily\bfseries\color{%s}%s}" % (color, label)
+
+
+def outcome_tag(outcome=None, testability=None):
+    """A coloured caps verdict tag (outcome + testability) for the hypotheses table — same
+    palette as the boxed \\vbadge but as lightweight text, matching the theory-table tags."""
+    if not outcome:
+        return ""
+    if testability == "untestable" or outcome == "n/a":
+        return r"{\footnotesize\sffamily\bfseries\color{ai2gray}UNTESTABLE}"
+    color, label = _BADGE.get(outcome, ("ai2gray", str(outcome)))
+    tail = r"\ {\footnotesize\color{ai2gray}%s}" % testability.replace("_", " ") if testability else ""
+    return r"{\footnotesize\sffamily\bfseries\color{%s}%s}%s" % (color, label.upper(), tail)
+
+
+def triage_tag(basis=None):
+    """A compact caps testability tag for a theory row's Testability column."""
+    if basis == "testable":
+        return r"{\footnotesize\sffamily\bfseries\color{ai2accent}TESTABLE}"
+    if basis == "untestable":
+        return r"{\footnotesize\sffamily\bfseries\color{ai2gray}NEEDS DATA}"
+    return ""
+
+
 def short(text, n=140):
     """Word-boundary truncation that strips trailing punctuation before the ellipsis, so a
     clause already ending in '.' never renders a dot-run (replaces a fragile split+truncate)."""
@@ -266,17 +312,26 @@ def collect(sess, base_url=""):
     def out(tt):
         return [rs(i)["output_json"] for i in sess.tasks if rs(i)["task_type"] == tt]
 
-    laws, theories, hypotheses = [], [], []
+    laws, theories = [], []
     for tt in ("auto_discovery", "discovery_run"):
         for o in out(tt):
-            laws += o.get("empirical_laws") or []
-    for o in out("theory_formation"):
+            laws += o.get("autods_hypotheses") or []
+    for o in out("theory_generation"):  # one Theorizer run per generation objective (fan-out)
         store = _art_of_type(o, "theory_store")  # theory cites the store file that formed it
         for t in o.get("theories") or []:
             t["link"] = art_link(store, base_url)
+            t["grounds"] = t.get("grounds_hypothesis_ids") or []
+            # statement-level novelty (the Theorizer's own per-statement class) and the theory's
+            # most-novel statement, used to sort and to render the per-statement novelty view
+            t["statements"] = _theory_statements(t)
+            ranks = [_STMT_NOVELTY_RANK[s["novelty"]] for s in t["statements"]
+                     if s.get("novelty") in _STMT_NOVELTY_RANK]
+            t["novelty_rank"] = min(ranks) if ranks else None
+            t["top_novelty"] = next((n for r, n in
+                                     sorted((_STMT_NOVELTY_RANK[s["novelty"]], s["novelty"])
+                                            for s in t["statements"] if s.get("novelty") in _STMT_NOVELTY_RANK)),
+                                    None)
             theories.append(t)
-    for o in out("hypothesis_formation"):
-        hypotheses += o.get("hypotheses") or []
 
     # novelty_assessment now carries the testability triage too (formerly a separate
     # testability_triage task), so one theory_evaluation serves as both eval and triage.
@@ -337,23 +392,15 @@ def collect(sess, base_url=""):
 
     enrich(laws)
     enrich(theories)
-    enrich(hypotheses)
 
     datasets, experiments, citations = {}, [], {}
-    data_sources, source_access, acquisitions = [], {}, {}
     for i in sess.tasks:
         o = rs(i)["output_json"]
         for ds in o.get("datasets") or []:
             if ds.get("id"):
                 datasets.setdefault(ds["id"], ds)
         experiments += [_deref(e) for e in (o.get("experiments") or [])]
-        for ds in o.get("data_sources") or []:
-            data_sources.append(ds)
-        for sa in o.get("source_access") or []:
-            source_access[sa.get("data_source_id")] = sa
-        for ac in o.get("acquisitions") or []:
-            acquisitions[ac.get("data_source_id")] = ac
-    for o in out("literature_review"):
+    for o in out("thematic_search"):  # the literature_search fan-out grounds the references
         for c in (o.get("literature_review") or {}).get("citations") or []:
             citations.setdefault(c.get("corpus_id") or c.get("id") or c.get("title"), c)
 
@@ -363,35 +410,17 @@ def collect(sess, base_url=""):
     datasets = list(datasets.values())
     primary = max(datasets, key=lambda d: d.get("n") or 0) if datasets else None
 
-    # per-law independent datasets, from the structured covers_laws map (dataset → law ids).
-    # Surfaced as a column so the reader sees which independent data decided each law.
+    # per-hypothesis independent datasets, from the structured covers map (dataset → hypothesis ids).
+    # Surfaced so the reader sees which independent data decided each.
     law_ds = {}
     for d in datasets:
-        for lid in d.get("covers_laws") or []:
+        for lid in d.get("covers_hypotheses") or []:
             law_ds.setdefault(lid, []).append(d.get("id") or (d.get("source") or "").split(",")[0])
     for x in laws:
         x["datasets"] = law_ds.get(x.get("id"), [])
 
     # lead each section with the strongest results (held/tested, then testable-now theories)
     laws.sort(key=_law_sort_key)
-
-    # symbol glossary, from provenance_extraction's extracted_data rows (name_short/full/desc).
-    # Generic: any flow that extracts a variable dictionary populates it; filtered to the symbols
-    # that actually appear in the assembled records so it stays relevant (empty when none do).
-    glossary, seen_sym = [], set()
-    corpus = " ".join(filter(None,
-        [(l.get("statement") or "") + " " + (l.get("construct") or "") + " "
-         + (l.get("effect_size_source") or "") + " "
-         + ((l.get("verdict") or {}).get("effect_size_observed") or "") for l in laws]
-        + [(t.get("description") or "") + " " + (t.get("name") or "") for t in theories]
-        + [(d.get("definition") or "") for d in datasets]))
-    for i in sess.tasks:
-        ed = _deref(rs(i)["output_json"].get("extracted_data"))
-        for r in ((ed.get("rows") if isinstance(ed, dict) else None) or []):
-            sym = (r.get("name_short") or "").strip()
-            if sym and sym not in seen_sym and re.search(r"\b" + re.escape(sym) + r"\b", corpus):
-                seen_sym.add(sym)
-                glossary.append(r)
 
     # experiments cite the AutoDiscovery run: a per-node file when present, else the run's node table
     run_dir = ""
@@ -431,20 +460,12 @@ def collect(sess, base_url=""):
                               if a.get("outcome") == "n/a" or a.get("testability") == "untestable"),
         }
 
-    provenance = [{"ds": ds, "access": source_access.get(ds.get("id")),
-                   "acq": acquisitions.get(ds.get("id"))} for ds in data_sources]
-
     # references, segmented Papers / Datasets — resolvable identifiers only, deduped.
-    # Papers = source publications + literature citations. Datasets = data archives that
-    # were used: registered dataset records (with a DOI), plus source data-repositories
-    # (non-journal repository) that were not restricted/not-found.
+    # Papers = the literature_search citations. Datasets = registered dataset records with a DOI.
     def _key(u):
         return re.sub(r"[#?].*$", "", (u or "").rstrip("/"))
 
     ref_papers, ref_datasets = {}, {}
-    for ds in data_sources:
-        if ds.get("paper_url") and ds.get("paper_title"):
-            ref_papers.setdefault(_key(ds["paper_url"]), {"name": ds["paper_title"], "url": ds["paper_url"]})
     for c in citations.values():
         if c.get("url") and c.get("title"):
             ref_papers.setdefault(_key(c["url"]), {"name": c["title"], "url": c["url"]})
@@ -468,14 +489,6 @@ def collect(sess, base_url=""):
         name = ((d.get("source") or "").split(",")[0].split(" doi")[0].split(";")[0].strip()
                 or (d.get("definition") or "").split(":")[0].strip() or d.get("id"))
         add_dataset(name[:90], url)
-    for ds in data_sources:  # source data-repositories actually available (not a journal, not restricted)
-        sa, ac = source_access.get(ds.get("id")), acquisitions.get(ds.get("id"))
-        if not sa or (ac and ac.get("access_status") in ("restricted", "not_found")):
-            continue
-        for src in sa.get("sources") or []:  # one entry per underlying data product
-            if not _is_data_repo(src.get("repository")):
-                continue
-            add_dataset(ds.get("paper_title") or src.get("repository"), _doi_url(src.get("identifier")))
 
     # overview/summary figures (recursive scan), mapped to a section by producing task
     def find_figs(o):
@@ -518,14 +531,13 @@ def collect(sess, base_url=""):
         "flow": sess.flow,
         "summary": summary,
         "task_types": {rs(i)["task_type"] for i in sess.tasks},
-        "laws": laws, "theories": theories, "hypotheses": hypotheses,
-        "law_stats": tally(laws), "theory_stats": tally(theories), "hyp_stats": tally(hypotheses),
+        "laws": laws, "theories": theories,
+        "law_stats": tally(laws), "theory_stats": tally(theories),
         "n_theories": len(theories),
         "n_testable_theories": len(testable_theories),
         "objectives": sorted({t.get("objective") for t in theories if t.get("objective")}),
         "verified_theories": verified,
         "theories_ordered": sorted(theories, key=_theory_sort_key),
-        "glossary": glossary,
         "held_law_ids": ids_where(laws, lambda v: v.get("outcome") == "held"),
         "held_theory_ids": ids_where(theories, lambda v: v.get("outcome") == "held"),
         "definitional_ids": definitional,
@@ -533,8 +545,6 @@ def collect(sess, base_url=""):
         "issue_subject": issue_subject,
         "overview": overview,
         "datasets": datasets, "experiments": experiments, "citations": list(citations.values()),
-        "provenance": provenance,
-        "acquired": sum(1 for p in provenance if (p["acq"] or {}).get("access_status") == "acquired"),
         "run_id": run_id, "primary_dataset": primary,
         "agents_used": _agents(sess),
     }
@@ -553,9 +563,9 @@ def _agents(sess):
         used.add("AutoDiscovery")
     if {"analysis", "holdout_replication"} & tt:
         used.add("DataVoyager")
-    if {"theory_formation", "novelty_assessment"} & tt:
+    if {"theory_generation", "theory_formation", "novelty_assessment"} & tt:
         used.add("Theorizer")
-    if {"literature_review", "provenance_search"} & tt:
+    if {"thematic_search", "literature_search", "cohort_assembly", "literature_review", "provenance_search"} & tt:
         used.add("Paper Finder")
     if "experiment_design" in tt:
         used.add("AutoExperimentDesigner")
@@ -690,33 +700,6 @@ def _tex(s):
     return s
 
 
-def exec_phases(ctx):
-    """The executed workflow as ordered phases (title, detail, Asta agent, section anchor),
-    built from what actually ran; counts come from the joined records. The anchor is the
-    report section the node links to (pandoc hypertarget id, no leading #)."""
-    tt = ctx["task_types"]
-    has = lambda *xs: any(x in tt for x in xs)
-    L, T, H = ctx["law_stats"], ctx["theory_stats"], ctx["hyp_stats"]
-    ph = []
-    if has("literature_review"):
-        ph.append(("Literature review", "survey and gaps", "Paper Finder", "sec-methods"))
-    if has("provenance_search", "provenance_extraction", "data_acquisition", "evidence_gathering", "cohort_assembly"):
-        ph.append(("Data provenance", f"{ctx['acquired']}/{len(ctx['provenance'])} sources", "Paper Finder", "sec-methods"))
-    if has("auto_discovery", "discovery_run"):
-        ph.append(("AutoDiscovery", f"{len(ctx['experiments'])} experiments", "AutoDiscovery", "sec-laws"))
-    if L["n"]:
-        # "laws" are the high-surprise hypotheses surfaced by discovery and retained —
-        # label them as such in the diagram so the framing is explicit (reviewer note).
-        ph.append(("Reproduction", f"{L['n']} high-surprise hypotheses · {L['held']} held", "DataVoyager", "sec-laws"))
-    if has("theory_formation"):
-        ph.append(("Theorizing", f"{ctx['n_theories']} theories", "Theorizer", "sec-theories"))
-    if T["tested"]:
-        ph.append(("Verification", f"{T['tested']} tested · {T['held']} held", "DataVoyager", "sec-theories"))
-    if has("hypothesis_formation"):
-        ph.append(("Hypotheses", f"{H['n']} formed · {H['held']} held", "DataVoyager", "sec-hypotheses"))
-    return ph
-
-
 def _parse_flow_mmd(flow):
     """Parse assets/compiled/<flow>.mmd (the generated mermaid for the flow) into ordered
     phases. Returns ([(phase_label, [(task_id, task_label), ...]), ...], fanout_ids) where
@@ -751,6 +734,11 @@ def _parse_flow_mmd(flow):
                 phases[top]["tasks"].append(nid)
                 if len(stack) > 1:              # inside a nested subgraph → fan-out
                     fanout.add(nid)
+        elif nm and not stack:                  # a top-level single-task node = its own phase
+            nid = nm.group(1)
+            if nid in node_label and nid not in phases:
+                phases[nid] = {"label": node_label[nid], "tasks": []}
+                order_decl.append(nid)
     succ = {a: b for a, b in re.findall(r'(\w+)\s*==>\s*(\w+)', text) if a in phases and b in phases}
     targets = set(succ.values())
     ordered, seen = [], set()
@@ -769,46 +757,95 @@ def _parse_flow_mmd(flow):
 DIAGRAM_OMIT_PHASES = {"summarize", "reflection"}
 
 
+# Ai2 / Varnish design tokens (assets design system) used to theme the mermaid diagram.
+_DZ = {
+    "extra_dark_teal": "#032629", "dark_teal": "#0a3235", "teal": "#105257",
+    "cream": "#faf2e9", "green": "#0fcb8c", "pink": "#f0529c", "gray60": "#858585",
+}
+
+# Optional executing-agent label per phase (the Asta agent that runs that phase's steps);
+# phases without an entry (e.g. literature_search, evidence_gathering) get no agent line.
+AGENT_BY_PHASE = {
+    "auto_discovery": "AutoDiscovery",
+    "discovery_run": "AutoDiscovery",
+    "literature_search": "Paper Finder",
+    "reproduction": "DataVoyager",
+    "replication": "DataVoyager",
+    "theorizer": "Theorizer",
+}
+
+# phases rendered in the brand green "origin" style (the AutoDiscovery source of the run)
+ORIGIN_PHASES = {"auto_discovery", "discovery_run"}
+
+
+def _mermaid_esc(s):
+    """Human-readable label for a mermaid quoted node string: drop quotes/newlines and
+    render task/phase ids with spaces instead of underscores."""
+    return str(s).replace('"', "'").replace("\n", " ").replace("_", " ").strip()
+
+
 def flow_diagram(sess, ctx):
-    """Asta-branded TikZ diagram of the executed workflow, DERIVED from the flow's compiled
-    mermaid (.mmd) so the picture never drifts from the flow definition. Native LaTeX (no
-    headless browser), Ai2/Varnish brand colours, with clickable nodes that jump to the
-    report section each task feeds."""
+    """A compact Quarto `{mermaid}` diagram of the executed workflow, DERIVED from the flow's
+    compiled mermaid (.mmd) so it never drifts from the flow definition. Generic across flows;
+    themed with the Ai2/Varnish design tokens (assets DESIGN.md). One node per executed phase,
+    left-to-right in execution order, each listing its task steps; fan-out phases (branches run
+    in parallel) are marked with a ⟳ and a distinct fill."""
     phases, fanout = _parse_flow_mmd(sess.flow)
     phases = [p for p in phases if p[0] not in DIAGRAM_OMIT_PHASES]
     if not phases:
         return ""
 
-    def sec_anchor(task_label):
-        return (TASK_SECTION.get(task_label) or "#sec-methods").lstrip("#")
-
-    boxes = []
+    d = _DZ
+    nodes, order = [], []
     for i, (plabel, tasks) in enumerate(phases):
-        lines = [r"{\sffamily\bfseries\color{ai2dark}%s}" % _tex(plabel)]
-        for tid, tlabel in tasks:
-            badge = r"\;{\scriptsize\color{ai2pink}$\circlearrowright$}" if tid in fanout else ""
-            lines.append(r"{\footnotesize\sffamily\color{ai2foreground}"
-                         r"\hyperref[%s]{%s}%s}" % (sec_anchor(tlabel), _tex(tlabel), badge))
-        body = r"\shortstack[l]{%s}" % (r" \\[1pt] ".join(lines))
-        pos = "" if i == 0 else (", right=0.55cm of p%d" % (i - 1))
-        boxes.append(r"\node[phasebox%s] (p%d) {%s};" % (pos, i, body))
-    arrows = [r"\draw[arr] (p%d) -- (p%d);" % (i, i + 1) for i in range(len(phases) - 1)]
+        nid = "p%d" % i
+        order.append(nid)
+        # phase name (strip the mermaid "— fan-out (…)" annotation; encode it as the ⟳ marker)
+        name = re.split(r"\s+—\s+", plabel)[0].strip()
+        is_fan = any(t[0] in fanout for t in tasks) or "fan-out" in plabel
+        # SVG labels (htmlLabels:false) measure correctly (no clipping) but take literal
+        # newlines, not <br/>; keep each node to <=3 short lines: name, steps, executing agent.
+        line_name = _mermaid_esc(name) + (" ⟳" if is_fan else "")
+        lines = [line_name]
+        if tasks:
+            lines.append(" · ".join(_mermaid_esc(tl) for _, tl in tasks))
+        agent = AGENT_BY_PHASE.get(name)
+        if agent:
+            lines.append("via " + agent)
+        cls = "origin" if name in ORIGIN_PHASES else ("fan" if is_fan else "phase")
+        nodes.append('  %s["%s"]:::%s' % (nid, "\n".join(lines), cls))
+    edges = "  " + " --> ".join(order) if len(order) > 1 else ""
+
+    init = (
+        "%%%%{init: {'theme':'base',"
+        "'flowchart':{'htmlLabels':false,'padding':10,'nodeSpacing':26},"
+        "'themeVariables':{"
+        # pin a monospace family so mermaid's text-width measurement matches the font the PDF
+        # actually renders (a mismatch clips short single-word nodes)
+        "'fontFamily':'Courier New, monospace',"
+        "'primaryColor':'%s',"          # node fill
+        "'primaryTextColor':'%s',"      # node text
+        "'primaryBorderColor':'%s',"    # node border
+        "'lineColor':'%s'"              # edges
+        "}}}%%%%" % (d["cream"], d["extra_dark_teal"], d["teal"], d["pink"])
+    )
+    body = "\n".join([
+        init,
+        "flowchart LR",
+        *nodes,
+        edges,
+        "  classDef phase fill:%s,stroke:%s,stroke-width:1.5px,color:%s;"
+        % (d["cream"], d["teal"], d["extra_dark_teal"]),
+        "  classDef fan fill:%s,stroke:%s,stroke-width:1.5px,color:%s;"
+        % ("#cbead6", d["green"], d["extra_dark_teal"]),   # green-20 tint / green border
+        "  classDef origin fill:%s,stroke:%s,stroke-width:1.5px,color:%s;"
+        % ("#cbead6", d["green"], d["extra_dark_teal"]),   # light green — the AutoDiscovery source
+    ])
     return (
-        "```{=latex}\n"
-        "\\hypertarget{workflow}{}%\n"
-        "\\begin{center}\n"
-        "{\\small\\itshape\\sffamily\\color{ai2foreground}"
-        "Workflow derived from the flow definition — click a step to jump to its section; "
-        "$\\circlearrowright$ marks a fan-out (one branch per item).}\\\\[6pt]\n"
-        "\\resizebox{\\textwidth}{!}{%\n"
-        "\\begin{tikzpicture}[\n"
-        "  phasebox/.style={draw=ai2accent, line width=1pt, rounded corners=5pt,"
-        " fill=ai2tealtint, text=ai2foreground, align=left, inner sep=9pt,"
-        " minimum width=3cm, minimum height=1.7cm},\n"
-        "  arr/.style={-{Stealth[length=3mm]}, draw=ai2pink, line width=1.6pt}]\n"
-        + "\n".join(boxes + arrows) + "\n"
-        "\\end{tikzpicture}}\n"
-        "\\end{center}\n"
+        "```{mermaid}\n"
+        "%%| fig-width: 6.4\n"
+        "%%| fig-cap: \"Executed workflow, derived from the flow definition. Phases run left to right; the loop marker denotes a fan-out whose branches run in parallel (one per theme, hypothesis, or objective). The executing Asta agent is noted where one applies.\"\n"
+        + body + "\n"
         "```\n"
     )
 
@@ -819,15 +856,13 @@ def _slug(s):
 
 # coarse fallback: which report section a task type lands in (per-instance subject wins; see compute_anchors)
 TASK_SECTION = {
-    "literature_review": "#sec-methods", "provenance_search": "#sec-methods",
-    "provenance_extraction": "#sec-methods", "data_acquisition": "#sec-methods",
+    "literature_search": "#sec-methods", "thematic_search": "#sec-methods",
     "evidence_gathering": "#sec-methods", "cohort_assembly": "#sec-methods",
     "auto_discovery": "#sec-laws", "discovery_run": "#sec-laws",
     "experiment_design": "#sec-laws", "analysis": "#sec-laws", "audit": "#sec-laws",
     "holdout_replication": "#sec-laws",
     "theory_formation": "#sec-theories",
     "novelty_assessment": "#sec-theories",
-    "hypothesis_formation": "#sec-hypotheses",
 }
 
 
@@ -900,7 +935,7 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
     keywords = [_idx.get(k) for k in ("discipline", "domain", "topic", "discovery_type") if _idx.get(k)]
 
     # in-document anchors for every claim id, so id mentions cross-link to their subsection
-    known = {x["id"]: _slug(x["id"]) for x in ctx["laws"] + ctx["theories"] + ctx["hypotheses"] if x.get("id")}
+    known = {x["id"]: _slug(x["id"]) for x in ctx["laws"] + ctx["theories"] if x.get("id")}
 
     def anchor(i):
         return known.get(i, _slug(i))
@@ -954,15 +989,19 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
             return " ".join(_stmt(s) for s in x)
         return str(x or "")
 
+    # the executed-workflow diagram is rendered in the Methods section (not the cover), so
+    # expose it on ctx for methods.md.j2 to embed.
+    ctx["flow_diagram"] = flow_diagram(sess, ctx)
+
     # the encyclopedia entry (index, context, per-audience executive summaries) is the front matter
     cover = ""
     ctmpl = REPORT_TMPL / "cover.md.j2"
     if ctx.get("summary") and ctmpl.is_file():
         links = build_links(ctx, sess, link_overrides)
         ai2logo = r"\includegraphics[height=16pt]{" + str(LOGO.parent / "logos" / "ai2.pdf").replace("\\", "/") + "}"
-        cover = render.render_template_file(ctmpl, ctx=ctx, links=links, flow=flow_diagram(sess, ctx),
+        cover = render.render_template_file(ctmpl, ctx=ctx, links=links, flow="",
                                             ai2logo=ai2logo, ref=ref, anchor=anchor, prose=prose,
-                                            badge=verdict_badge, tbadge=triage_badge, short=short,
+                                            badge=verdict_badge, tbadge=triage_badge, nbadge=novelty_badge, ntag=novelty_tag, stag=triage_tag, otag=outcome_tag, short=short,
                                             clickable=clickable).strip()
         if dropped:
             print("compile-report: summary cited ids not found in session (rendered as plain text): "
@@ -974,7 +1013,7 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         if not tmpl.is_file():
             continue
         txt = render.render_template_file(tmpl, ctx=ctx, ref=ref, anchor=anchor,
-                                          badge=verdict_badge, tbadge=triage_badge, short=short,
+                                          badge=verdict_badge, tbadge=triage_badge, nbadge=novelty_badge, ntag=novelty_tag, stag=triage_tag, otag=outcome_tag, short=short,
                                           clickable=clickable).strip()
         if txt:
             body.append(txt)
@@ -1010,7 +1049,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         # numbered body sections. The workflow is thus rendered on the cover/TOC block.
         cover,
         "```{=latex}",
-        "\\vspace{0.5em}\\tableofcontents",
+        # TOC lists only the top-level sections (Abstract, Methods, Results, …); the
+        # per-hypothesis / per-theory subsections are excluded.
+        "\\setcounter{tocdepth}{1}\\vspace{0.5em}\\tableofcontents",
         "```",
     ]
     return "\n".join(front) + "\n\n" + sections + "\n", anchors
