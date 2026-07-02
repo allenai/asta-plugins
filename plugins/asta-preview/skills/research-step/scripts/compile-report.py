@@ -792,8 +792,12 @@ AGENT_BY_PHASE = {
     "theorizer": "Theorizer",
 }
 
-# phases rendered in the brand green "origin" style (the AutoDiscovery source of the run)
-ORIGIN_PHASES = {"auto_discovery", "discovery_run"}
+# each executing agent gets its own Ai2/Varnish-branded node colour; phases without an agent
+# (e.g. evidence_gathering) fall back to the neutral cream style.
+AGENT_CLASS = {
+    "AutoDiscovery": "autods", "Paper Finder": "paperfinder",
+    "DataVoyager": "datavoyager", "Theorizer": "theorizer",
+}
 
 
 def _mermaid_esc(s):
@@ -821,25 +825,21 @@ def flow_diagram(sess, ctx):
         # phase name (strip the mermaid "— fan-out (…)" annotation; encode it as the ⟳ marker)
         name = re.split(r"\s+—\s+", plabel)[0].strip()
         is_fan = any(t[0] in fanout for t in tasks) or "fan-out" in plabel
-        # SVG labels (htmlLabels:false) measure correctly (no clipping) but take literal
-        # newlines, not <br/>; keep each node to <=3 short lines: name, steps, executing agent.
-        line_name = _mermaid_esc(name) + (" ⟳" if is_fan else "")
-        lines = [line_name]
-        if tasks:
-            lines.append(" · ".join(_mermaid_esc(tl) for _, tl in tasks))
+        # SINGLE-LINE label only: multi-line mermaid labels emit an SVG <foreignObject> (HTML),
+        # which rsvg-convert cannot rasterise for the PDF. The node shows the phase name; the
+        # executing agent is conveyed by the node colour (see the legend below the diagram).
         agent = AGENT_BY_PHASE.get(name)
-        if agent:
-            lines.append("via " + agent)
-        cls = "origin" if name in ORIGIN_PHASES else ("fan" if is_fan else "phase")
-        nodes.append('  %s["%s"]:::%s' % (nid, "\n".join(lines), cls))
+        label = _mermaid_esc(name) + (" ⟳" if is_fan else "")
+        cls = AGENT_CLASS.get(agent, "neutral")   # colour by executing agent
+        nodes.append('  %s["%s"]:::%s' % (nid, label, cls))
     edges = "  " + " --> ".join(order) if len(order) > 1 else ""
 
     init = (
         "%%%%{init: {'theme':'base',"
         "'flowchart':{'htmlLabels':false,'padding':10,'nodeSpacing':26},"
         "'themeVariables':{"
-        # pin a monospace family so mermaid's text-width measurement matches the font the PDF
-        # actually renders (a mismatch clips short single-word nodes)
+        # monospace so mermaid's text-width measurement matches the rendered font (else short
+        # single-line nodes clip in the png render)
         "'fontFamily':'Courier New, monospace',"
         "'primaryColor':'%s',"          # node fill
         "'primaryTextColor':'%s',"      # node text
@@ -852,19 +852,35 @@ def flow_diagram(sess, ctx):
         "flowchart LR",
         *nodes,
         edges,
-        "  classDef phase fill:%s,stroke:%s,stroke-width:1.5px,color:%s;"
-        % (d["cream"], d["teal"], d["extra_dark_teal"]),
-        "  classDef fan fill:%s,stroke:%s,stroke-width:1.5px,color:%s;"
-        % ("#cbead6", d["green"], d["extra_dark_teal"]),   # green-20 tint / green border
-        "  classDef origin fill:%s,stroke:%s,stroke-width:1.5px,color:%s;"
-        % ("#cbead6", d["green"], d["extra_dark_teal"]),   # light green — the AutoDiscovery source
+        # per-agent node colours (Ai2/Varnish tints), + neutral cream for agent-less phases
+        "  classDef autods fill:#cbead6,stroke:%s,stroke-width:1.5px,color:%s;"      # green
+        % (d["green"], d["extra_dark_teal"]),
+        "  classDef paperfinder fill:#d6e4e5,stroke:%s,stroke-width:1.5px,color:%s;" # teal
+        % (d["teal"], d["extra_dark_teal"]),
+        "  classDef datavoyager fill:#f8d2da,stroke:%s,stroke-width:1.5px,color:%s;" # pink
+        % (d["pink"], d["extra_dark_teal"]),
+        "  classDef theorizer fill:#d3e6fb,stroke:#2a88ef,stroke-width:1.5px,color:%s;"  # info-blue
+        % d["extra_dark_teal"],
+        "  classDef neutral fill:%s,stroke:#858585,stroke-width:1.5px,color:%s;"     # cream / gray
+        % (d["cream"], d["extra_dark_teal"]),
     ])
+    # colour legend (raw LaTeX): swatch colours match the per-agent node fills' borders
+    legend = (
+        "```{=latex}\n"
+        "\\begin{center}\\footnotesize\\sffamily\\color{ai2foreground}"
+        "\\textbf{Executing agent:}\\quad"
+        "\\textcolor[HTML]{0FCB8C}{$\\blacksquare$}~AutoDiscovery\\quad"
+        "\\textcolor[HTML]{105257}{$\\blacksquare$}~Paper Finder\\quad"
+        "\\textcolor[HTML]{F0529C}{$\\blacksquare$}~DataVoyager\\quad"
+        "\\textcolor[HTML]{2A88EF}{$\\blacksquare$}~Theorizer\\end{center}\n"
+        "```\n"
+    )
     return (
         "```{mermaid}\n"
         "%%| fig-width: 6.4\n"
-        "%%| fig-cap: \"Executed workflow, derived from the flow definition. Phases run left to right; the loop marker denotes a fan-out whose branches run in parallel (one per theme, hypothesis, or objective). The executing Asta agent is noted where one applies.\"\n"
+        "%%| fig-cap: \"Executed workflow, derived from the flow definition. Phases run left to right; a loop marker denotes a fan-out whose branches run in parallel (one per theme, hypothesis, or objective). Node colour marks the executing agent (see legend).\"\n"
         + body + "\n"
-        "```\n"
+        "```\n\n" + legend
     )
 
 
@@ -1060,6 +1076,9 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         "  html:",
         "    toc: true",
         "    theme: cosmo",
+        # NB: mermaid-format stays png. SVG output embeds mermaid's <style>-based CSS, which
+        # rsvg-convert (the only SVG->PDF converter here) does not apply, dropping all node
+        # text; true vector would need Inkscape. png renders text+colour crisply via Chromium.
         "header-includes:",
         "  - |",
         *("    " + ln for ln in header_includes(title)),
