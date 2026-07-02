@@ -1,8 +1,6 @@
 ---
 name: pdf-download
 description: Download PDFs for a list of academic papers identified by title, DOI, arXiv ID, or other paper IDs. Use when the user asks to "download these papers", "grab the PDFs", "fetch full text for this list", or supplies a list of citations and wants the source PDFs on disk. Resolves open-access PDFs automatically and drives a real browser (via Playwright, with a persistent profile) so the user can authenticate to paywalled publishers.
-metadata:
-  internal: true
 allowed-tools: Bash(asta papers *) Bash(python3 *) Bash(uv run *) Bash(cat *) Bash(jq *) Bash(mkdir *) Bash(ls *) Bash(wc *) Bash(mv *) Bash(cp *) Bash(find *) Read(*) Write(*) Glob(*)
 ---
 
