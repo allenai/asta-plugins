@@ -1,17 +1,6 @@
 {% if ctx.ref_papers or ctx.ref_datasets %}
 ## References {#sec-references}
 
-{% if ctx.ref_papers %}
-### Papers
-
-Numbered master list (deduplicated, ordered by retrieval relevance). The Literature-by-theme section references these by number.
-
-```{=latex}
-\begingroup\small\setlength{\parskip}{2.5pt}\raggedright
-{% for r in ctx.ref_papers %}\hypertarget{ {{- r.anchor -}} }{}\noindent {{ r.num }}.~{% if r.url %}\href{ {{- r.url|urlesc -}} }{ {{- r.name|texesc -}} }{% else %}{{ r.name|texesc }}{% endif %}\par
-{% endfor %}\endgroup
-```
-{% endif %}
 {% if ctx.ref_datasets %}
 ### Datasets
 

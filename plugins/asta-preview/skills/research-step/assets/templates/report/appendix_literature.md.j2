@@ -1,18 +1,29 @@
 {% if ctx.lit_themes %}
 ## Appendix: literature by theme {#sec-literature}
 
-The grounding literature, organized by the {{ ctx.lit_themes|length }} search themes. Each theme gives its synthesis and the papers that support it (numbered as in the [References](#sec-references)).
+The grounding literature grouped by the {{ ctx.lit_themes|length }} search themes; each paper links to its Semantic Scholar record.
 
 {% for t in ctx.lit_themes %}
 ### {{ t.theme }}
-
-{% if t.summary %}{{ t.summary|clean|sent|mathify }}
-
-{% endif %}
-{% if t.papers %}```{=latex}
-{\small\itshape\color{ai2foreground}Papers ({{ t.papers|length }}):} {% for p in t.papers %}\hyperlink{ {{- p.anchor -}} }{[{{ p.num }}]}{% if not loop.last %} {% endif %}{% endfor %}
+{% if t.papers %}
+```{=latex}
+\providecommand{\ltrow}[2]{\parbox[t]{\dimexpr\textwidth-3.4cm\relax}{\strut\raggedright #1}\hspace{0.4cm}\parbox[t]{2.8cm}{\strut\raggedright #2}}
+\begingroup\setlength{\LTpre}{3pt}\setlength{\LTpost}{9pt}\small
+\begin{longtable}{@{}l@{}}
+\toprule
+\ltrow{\textbf{Paper}}{\textbf{Semantic Scholar}}\\
+\midrule
+\endfirsthead
+\multicolumn{1}{@{}l@{}}{\footnotesize\itshape Literature (continued)}\\*[2pt]
+\toprule \ltrow{\textbf{Paper}}{\textbf{Semantic Scholar}}\\ \midrule
+\endhead
+{% for p in t.papers %}\ltrow{ {{- p.name|texesc -}} }{ {%- if p.s2 -%}\href{ {{- p.s2|urlesc -}} }{link}{%- endif -%} }\\
+\addlinespace[1.5pt]
+{% endfor %}\bottomrule
+\end{longtable}
+\endgroup
 ```
-
 {% endif %}
+
 {% endfor %}
 {% endif %}

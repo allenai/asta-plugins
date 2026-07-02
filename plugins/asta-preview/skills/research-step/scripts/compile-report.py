@@ -508,7 +508,10 @@ def collect(sess, base_url=""):
             key = ("cid:%s" % cid) if cid else (_key(url) if url else (c.get("title") or "").strip().lower())
             if not key or not c.get("title"):
                 continue
-            paper_by_key.setdefault(key, {"name": c["title"], "url": url, "rel": _rel(c)})
+            # api.semanticscholar.org/CorpusID:<id> reliably 302-redirects to the paper page
+            # (the www.../paper/<corpusId> form only returns the client-rendered SPA shell)
+            s2 = ("https://api.semanticscholar.org/CorpusID:%s" % cid) if cid else url
+            paper_by_key.setdefault(key, {"name": c["title"], "url": url, "s2": s2, "rel": _rel(c)})
             if key not in keys:
                 keys.append(key)
         theme_rows.append({"theme": theme, "summary": lr.get("summary") or "",
@@ -522,7 +525,8 @@ def collect(sess, base_url=""):
                    "url": paper_by_key[k]["url"], "anchor": "ref-p%d" % paper_num[k]} for k in ordered]
     lit_themes = [{"theme": tr["theme"], "summary": tr["summary"], "key_findings": tr["key_findings"],
                    "papers": [{"num": paper_num[k], "anchor": "ref-p%d" % paper_num[k],
-                               "name": paper_by_key[k]["name"]} for k in tr["keys"]]}
+                               "name": paper_by_key[k]["name"], "url": paper_by_key[k]["url"],
+                               "s2": paper_by_key[k]["s2"]} for k in tr["keys"]]}
                   for tr in theme_rows]
     ref_datasets = {}
     _paper_names = {(p["name"] or "").strip().lower() for p in ref_papers}
