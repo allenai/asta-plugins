@@ -83,6 +83,9 @@ def _env(trim=True):
             "<": r"\textless{}", ">": r"\textgreater{}"}
     env.filters["texesc"] = lambda s: "".join(_TEX.get(c, c) for c in ("" if s is None else str(s)).replace("\n", " ").strip())
 
+    # |urlesc — escape a URL for the first arg of \href{...}{...} (only % and # are fatal there)
+    env.filters["urlesc"] = lambda s: ("" if s is None else str(s)).strip().replace("%", r"\%").replace("#", r"\#")
+
     def _comma(n):
         try:
             return f"{int(n):,}"

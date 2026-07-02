@@ -322,6 +322,7 @@ outputs:
     relevance: string
 
   literature_review:
+    theme: string                                    # the search theme this review covers; the report groups the bibliography by it
     summary: string
     key_findings: [{text: string, uuids: [string]}]
     open_gaps: [string]

@@ -2002,9 +2002,13 @@
               },
               "summary": {
                 "type": "string"
+              },
+              "theme": {
+                "type": "string"
               }
             },
             "required": [
+              "theme",
               "summary",
               "key_findings",
               "open_gaps",

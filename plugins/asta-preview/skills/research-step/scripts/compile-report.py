@@ -33,7 +33,7 @@ import render  # noqa: E402
 SECTIONS = [
     "mission", "abstract", "methods", "results_laws", "results_theories",
     "appendix_theories", "appendix_hypotheses",
-    "appendix_experiments", "appendix_datasets", "appendix_references",
+    "appendix_experiments", "appendix_datasets", "appendix_literature", "appendix_references",
 ]
 
 FLOW_SUBTITLE = {
@@ -486,15 +486,49 @@ def collect(sess, base_url=""):
     def _key(u):
         return re.sub(r"[#?].*$", "", (u or "").rstrip("/"))
 
-    ref_papers, ref_datasets = {}, {}
-    for c in citations.values():
-        if c.get("url") and c.get("title"):
-            ref_papers.setdefault(_key(c["url"]), {"name": c["title"], "url": c["url"]})
+    # ---- themed literature: one deduped, numbered master bibliography + a per-theme index ----
+    # Each thematic_search is a theme; its citations are relevance-ranked papers. A paper cited in
+    # several themes is deduped to one numbered entry that every theme references by number.
+    def _rel(c):
+        m = re.search(r"\d*\.\d+|\d+", str(c.get("relevance") or ""))
+        return float(m.group()) if m else 0.0
 
-    _paper_names = {(p["name"] or "").strip().lower() for p in ref_papers.values()}
+    paper_by_key, theme_rows = {}, []
+    for i in sess.tasks:
+        if rs(i).get("task_type") != "thematic_search":
+            continue
+        lr = (rs(i)["output_json"] or {}).get("literature_review") or {}
+        theme = re.sub(r"^\s*Theme:\s*", "", (lr.get("theme") or i.get("title") or "").strip())
+        keys = []
+        for c in sorted(lr.get("citations") or [], key=_rel, reverse=True):
+            url = c.get("url") or ""
+            # dedup on the stable Semantic Scholar corpus_id first (same paper can appear with
+            # different urls across themes); fall back to url, then normalised title.
+            cid = c.get("corpus_id")
+            key = ("cid:%s" % cid) if cid else (_key(url) if url else (c.get("title") or "").strip().lower())
+            if not key or not c.get("title"):
+                continue
+            paper_by_key.setdefault(key, {"name": c["title"], "url": url, "rel": _rel(c)})
+            if key not in keys:
+                keys.append(key)
+        theme_rows.append({"theme": theme, "summary": lr.get("summary") or "",
+                           "key_findings": lr.get("key_findings") or [], "keys": keys})
+
+    # number the master list by best relevance (desc), stable; anchor each for cross-linking
+    ordered = sorted(paper_by_key, key=lambda k: -paper_by_key[k]["rel"])
+    paper_num = {k: n for n, k in enumerate(ordered, 1)}
+    paper_urlkeys = {_key(paper_by_key[k]["url"]) for k in ordered if paper_by_key[k]["url"]}
+    ref_papers = [{"num": paper_num[k], "name": paper_by_key[k]["name"],
+                   "url": paper_by_key[k]["url"], "anchor": "ref-p%d" % paper_num[k]} for k in ordered]
+    lit_themes = [{"theme": tr["theme"], "summary": tr["summary"], "key_findings": tr["key_findings"],
+                   "papers": [{"num": paper_num[k], "anchor": "ref-p%d" % paper_num[k],
+                               "name": paper_by_key[k]["name"]} for k in tr["keys"]]}
+                  for tr in theme_rows]
+    ref_datasets = {}
+    _paper_names = {(p["name"] or "").strip().lower() for p in ref_papers}
 
     def add_dataset(name, url):  # only archives with their OWN identifier (not a paper already listed)
-        if not (url and name) or _key(url) in ref_papers:
+        if not (url and name) or _key(url) in paper_urlkeys:
             return
         nm = name.strip()
         # never list a source paper as a dataset, and never list the same-named archive twice
@@ -562,7 +596,8 @@ def collect(sess, base_url=""):
         "held_law_ids": ids_where(laws, lambda v: v.get("outcome") == "held"),
         "held_theory_ids": ids_where(theories, lambda v: v.get("outcome") == "held"),
         "definitional_ids": definitional,
-        "ref_papers": list(ref_papers.values()), "ref_datasets": list(ref_datasets.values()),
+        "ref_papers": ref_papers, "ref_datasets": list(ref_datasets.values()),
+        "lit_themes": lit_themes,
         "issue_subject": issue_subject,
         "overview": overview,
         "datasets": datasets, "experiments": experiments, "citations": list(citations.values()),

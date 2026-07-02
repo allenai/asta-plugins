@@ -1,0 +1,25 @@
+{% if ctx.lit_themes %}
+## Appendix: literature by theme {#sec-literature}
+
+The grounding literature, organized by the {{ ctx.lit_themes|length }} search themes. Each theme gives its synthesis, key findings, and the papers that support it (numbered as in the [References](#sec-references)).
+
+{% for t in ctx.lit_themes %}
+### {{ t.theme }}
+
+{% if t.summary %}{{ t.summary|clean|sent|mathify }}
+
+{% endif %}
+{% if t.key_findings %}*Key findings.*
+
+{% for f in t.key_findings %}
+- {{ f.text|clean|mathify }}
+{% endfor %}
+
+{% endif %}
+{% if t.papers %}```{=latex}
+{\small\itshape\color{ai2foreground}Papers:} {% for p in t.papers %}\hyperlink{ {{- p.anchor -}} }{[{{ p.num }}]}{% if not loop.last %} {% endif %}{% endfor %}
+```
+
+{% endif %}
+{% endfor %}
+{% endif %}
