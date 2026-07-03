@@ -136,11 +136,21 @@ where each beat collects a DECISION or a steer (never a mere status update):
 **README.md = the run DASHBOARD (required; rewrite it at every beat/phase change, keep ≤25 lines):**
 phase · state counts (candidates/judged/rings + gate statuses) · NEXT action · BLOCKED-ON ·
 a MAP of where everything lives (deliverables vs state vs canonical inputs vs scratch vs caches) ·
-the decisions so far (scope charter, tier, deferrals) as one-liners. Rationale: context gets
-compacted and later sessions resume the thread — a reader who reads ONLY README.md must know
-where things stand, what's next, and where to look; everything else is one pointer-hop away.
-Keep deliverables findable (name them in the MAP); keep working/batch files in dedicated
-subfolders, not the run root — a flat 20+-entry root is unnavigable for the next reader.
+the decisions so far (scope charter, tier, deferrals) as one-liners. Keep deliverables findable;
+keep working/batch files in dedicated subfolders, not the run root — a flat 20+-entry root is
+unnavigable for the next reader.
+**WIRE IT INTO THE HARNESS (required — README.md alone has NO special status; nothing auto-reads
+it):** at Step 0, write a stub **`CLAUDE.md`** (and **`AGENTS.md`** for Codex) at the session's
+working directory:
+```
+Active corpus-research run: <run-dir>/
+BEFORE acting: read <run-dir>/README.md (live dashboard: state · gates · NEXT · map).
+Lineage/history: <run-dir>/MANIFEST.md. Config: <run-dir>/thread.json.
+Re-read README.md after any compaction/resumption — it is the source of truth for run state.
+```
+Rationale: CLAUDE.md is what the harness ACTUALLY auto-loads (session start, persists across
+compaction); skills only load when triggered, so a resumed session that never re-fires this skill
+would otherwise land blind. The stub is written once; the dashboard stays the living file.
 
 ## Known limits (say so, don't hide)
 Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching
