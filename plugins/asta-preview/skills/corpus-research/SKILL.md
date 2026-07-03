@@ -131,8 +131,16 @@ where each beat collects a DECISION or a steer (never a mere status update):
 ```
 <run>/thread.json  candidates.jsonl  judgments/  tag-batches/  scope-exclusions.json
       standardized-relevance.jsonl  observations.jsonl  edges-cache.json
-      s2-cache/  fulltext-cache/  extract/  MANIFEST.md  <answers>.md
+      s2-cache/  fulltext-cache/  extract/  MANIFEST.md  README.md  <answers>.md
 ```
+**README.md = the run DASHBOARD (required; rewrite it at every beat/phase change, keep ≤25 lines):**
+phase · state counts (candidates/judged/rings + gate statuses) · NEXT action · BLOCKED-ON ·
+a MAP of where everything lives (deliverables vs state vs canonical inputs vs scratch vs caches) ·
+the decisions so far (scope charter, tier, deferrals) as one-liners. Rationale: context gets
+compacted and later sessions resume the thread — a reader who reads ONLY README.md must know
+where things stand, what's next, and where to look; everything else is one pointer-hop away.
+Keep deliverables findable (name them in the MAP); keep working/batch files in dedicated
+subfolders, not the run root — a flat 20+-entry root is unnavigable for the next reader.
 
 ## Known limits (say so, don't hide)
 Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching
