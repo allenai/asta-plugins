@@ -31,14 +31,16 @@ def _norm_tokens(t):
 def resolve_titles(titles, s2, min_score=0.6, fields="title,corpusId,year", limit=5):
     """Resolve free-text titles/names to corpusIds via S2 search with a token-overlap score —
     NEVER take the first hit blindly (name collisions produce silent garbage: a physics paper
-    matching a model name). Returns (resolved_rows, unresolved_queries)."""
-    resolved, unresolved = [], []
+    matching a model name). Returns (resolved_rows, unresolved_queries, errored_queries).
+    ERRORED ≠ UNRESOLVED: an S2 failure (throttle/outage/missing key) is not evidence the work
+    doesn't exist — retry errored queries; only unresolved are true no-confident-match."""
+    resolved, unresolved, errored = [], [], []
     for q in titles:
         best, best_score = None, 0.0
         try:
             results = s2.search(q, fields=fields, limit=limit)
-        except Exception:
-            unresolved.append(q)
+        except Exception as e:
+            errored.append({"query": q, "error": str(e)[:80]})
             continue
         qt = _norm_tokens(q)
         for r in results:
@@ -54,7 +56,7 @@ def resolve_titles(titles, s2, min_score=0.6, fields="title,corpusId,year", limi
                              "match_score": round(best_score, 2)})
         else:
             unresolved.append(q)
-    return resolved, unresolved
+    return resolved, unresolved, errored
 
 
 # ---------------------------------------------------------------- edges
