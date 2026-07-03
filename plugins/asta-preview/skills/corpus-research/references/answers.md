@@ -3,12 +3,20 @@
 Answers are extracted/synthesized from the substrate, grounded in sources, and each carries its
 own trust story. Output is a revisable artifact, not a final pronouncement.
 
-## Every answer carries a "How performed" note
+## Every answer carries a "How performed" note — HARD requirement
 Append to each answered sub-question a short note: **corpus + ring used + method (tag-tally vs
 per-paper extraction vs aggregation) + evidence tier (abstract / full-text / snippet-grounded) +
 the key limit/gate.** Reuse the gate outputs you already computed — surface them per-answer, don't
 bury them. Trust is built per-answer, in place, not only in a separate methods section. A skeptical
 reader trusts a number when they can see how it was derived and what its limits are.
+**A single global "based on N papers" header does NOT satisfy this** — the note is per answered
+sub-question.
+
+## Paper links — HARD requirement
+Every paper reference in a user-facing artifact links to
+`https://api.semanticscholar.org/CorpusId:<corpusId>` (resolves to the paper's page). A bare
+corpusId is dead text; readers must be able to reach the paper in one click (P1: the user touches
+the sources).
 
 ## Declare the ring
 Say which ring an answer runs over: `core` (fully curated — the conservative read) vs

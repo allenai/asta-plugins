@@ -4,10 +4,21 @@ Turn candidates into a graded, provenanced collection. Relevance is the run's co
 one schema across retrieval scores, judge verdicts, adjudications, audits.
 
 ## The standardized judgment (write to `<run>/judgments/<NN>-<resolution>.jsonl`)
-`{corpusId, tier: in|relevant|maybe|not-relevant, criteria: [{criterion, grade 0-3}], judged_by}`
+`{corpusId, tier: in|relevant|maybe|not-relevant, criteria: [{criterion, grade 0-3}], judged_by,
+  reason, ability_guess/method_guess (thread-shaped open codes), evidence_quote, scope_note}`
 - Grade EACH thread.json criterion 0–3; the tier is your holistic call across criteria.
 - Filename order = authority order (retrieval-judged < single-judge < panel < audit); later
   overrides earlier. `scripts/relevance.py` normalizes them into standardized-relevance.jsonl.
+
+## Judge-and-open-code in ONE pass (do this — don't re-read abstracts per stage)
+The judge must also emit **light open codes**: the thread-shaped "what does it analyze / by what
+method" phrases (whatever your criteria hinge on), a one-line reason, and a short VERBATIM
+`evidence_quote`. Three payoffs: (1) one abstract-read serves judging AND seeds the codebook's
+open codes (grounded coding starts from these); (2) it makes grading HONEST — the criteria hinge
+on exactly these fields, and a judge that cannot name the phenomenon cannot justify a high grade
+(nullable extraction IS the relevance test, countering inclusion bias); (3) the quote makes the
+judgment auditable. KEEP IT LIGHT: open-code phrases + quote only — full extraction (findings,
+claims, spans per sub-question) stays post-curation, on the relevant ring, at the evidence tier.
 
 ## Cost-tier the judging (don't panel everything — validated ordering)
 1. **Corroboration pre-filter** (near-free): candidates found by ≥2 acquisition modalities are

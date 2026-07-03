@@ -56,7 +56,21 @@ From the user's question alone, write `<run>/thread.json`:
 1. **Acquire** — multi-modal, each modality blind to the others: parametric seed enumeration →
    `asta literature` search/snowball + backward co-citation → survey-reference pooling →
    gap-directed sweeps where earlier modalities proved weak → forward citations for recency.
-   Tag every candidate with its modality (provenance). Cache edges/metadata via `scripts/s2.py`.
+   Tag every candidate with its modality (provenance). Mechanics live in `scripts/acquire.py`
+   (resolve_titles — scored matching, never take the first hit; fetch_edges; pool_references;
+   candidates_from_asta_find; merge_candidates). Cache everything via `scripts/s2.py`.
+   **Retrieval division of labor** (each tool's comparative advantage — use accordingly):
+   - `asta literature find` — one-shot ranked search; best for SWEEPS of independent query
+     angles (per-query output files = per-query provenance).
+   - `asta literature interactive` — the full paper-finder agent: query DECOMPOSITION planning +
+     a results-verification loop. Use it for the gnarly semantic queries ("X even if not using
+     those words") where your hand-rolled angles may under-search, and when you want the agent
+     to iterate until criteria are satisfied.
+   - `asta literature snowball` — RANKED citation expansion (reranked against seed relevance),
+     and **citances mode**: citation-CONTEXT snippets — a distinct discovery modality that finds
+     papers by HOW they're cited and hands you judge-ready evidence. Raw S2 edges (s2.py) are
+     for the GRAPH (complete, unranked — coverage signals); the snowball endpoint is for
+     prioritized expansion + citances. Use both, for their different jobs.
 2. **Curate** — relevance-judge every candidate against thread.json criteria
    (`references/curation.md`: cost-tiered judging, corroboration pre-filter, panel+adjudicator
    only for the borderline; strip search noise). Write judgment files → `scripts/relevance.py`.
@@ -64,16 +78,45 @@ From the user's question alone, write `<run>/thread.json`:
    grounded coding (`references/codebook.md`); apply as ordered tag batches. Never import a
    codebook from elsewhere.
 4. **Substrate** — `scripts/substrate.py`: one observation record per paper, RINGS
-   (core/candidate/maybe/out), stage-coverage GATES. All downstream reads THIS.
+   (core/candidate/maybe/unjudged/out), stage-coverage GATES. All downstream reads THIS.
+   **After EVERY candidates-merge or substrate rebuild, run `scripts/validate.py <run>` and stop
+   on failure.** Count checks can't catch content rot (a provenance-union regression keeps counts
+   perfect while corroboration inputs corrupt) — only the machine-checked invariants can. If you
+   deliberately defer judging part of a modality file, DECLARE it in thread.json `acq_deferred`
+   (and say so in the coverage boundary) — deferral must never be silent.
 5. **Coverage** — `scripts/coverage_signals.py` computes the [T] signals; YOU triangulate them
    into a verdict + confidence + ranked gaps (`references/coverage-playbook.md`), loop gaps back
    to Acquire until converged-or-bounded, and state the honest boundary.
 6. **Extract & answer** — per-paper extraction (map) over the evidence tier
    (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
-   sub-question with gates. EVERY final answer carries a short "**How performed:**" note (corpus +
-   ring + method + evidence tier + limits) — trust is built per-answer, in place. For
-   "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
+   sub-question with gates. TWO HARD OUTPUT REQUIREMENTS (not optional style):
+   - EVERY answered sub-question carries its own "**How performed:**" note (corpus + ring +
+     method + evidence tier + limits) — per-answer, in place; a single global methods header
+     does NOT satisfy this.
+   - EVERY paper reference in a user-facing artifact is a working LINK:
+     `https://api.semanticscholar.org/CorpusId:<corpusId>` — a bare corpusId is not clickable.
+   For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
    one-vs-two-paper spats (`references/answers.md`).
+
+## Interaction rhythm — you are collaborating, not executing a ticket  <!-- v1, tune with users -->
+The user's most valuable input comes AFTER contact with the data — they can't react to a
+distribution they haven't seen. Clarifying questions at Step 0 are NOT enough. Work in BEATS,
+where each beat collects a DECISION or a steer (never a mere status update):
+- **First steerable artifact within ~30 minutes:** after Step 0 + the first acquisition sweep,
+  STOP and present: the shape of the space so far (candidate count, apparent clusters/eras), your
+  proposed **scope charter** (boundary families in/out + the contested edges — different honest
+  runs draw materially different boundaries; pin the edges WITH the user), and the plan. Long
+  fetches keep running in the background while you talk.
+- **Post-curation beat:** surprising exclusions + borderline patterns → the user rules on
+  contested edges (they decide scope, you decide mechanics).
+- **Coverage beat:** verdict + boundary → **STOP vs CONTINUE is the user's call** (it depends on
+  their goal, which you don't fully know).
+- **Early-answers beat:** preview headline distributions/findings from the partial corpus BEFORE
+  deep extraction — lets the user start learning immediately and steer emphasis ("more X, skip Y").
+- **Background the long work** (fetch sweeps, judging waves, extraction batches) and return to
+  the user while it runs; fold results in at the next beat.
+- For explicitly batch-shaped asks ("just deliver the full thing"), compress the beats — but the
+  scope-charter beat and the coverage-verdict beat are never skipped.
 
 ## Run-dir layout (the working artifacts; keep a MANIFEST.md — see data-discipline)
 ```
