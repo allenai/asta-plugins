@@ -93,8 +93,9 @@ From the user's question alone, write `<run>/thread.json`:
    - EVERY answered sub-question carries its own "**How performed:**" note (corpus + ring +
      method + evidence tier + limits) — per-answer, in place; a single global methods header
      does NOT satisfy this.
-   - EVERY paper reference in a user-facing artifact is a working LINK:
-     `https://api.semanticscholar.org/CorpusId:<corpusId>` — a bare corpusId is not clickable.
+   - EVERY paper reference in a user-facing artifact is a WORKING link — default
+     `https://api.semanticscholar.org/CorpusId:<corpusId>`; if not on S2, link arXiv/DOI/
+     publisher/the post itself. A bare corpusId is not clickable.
    For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
    one-vs-two-paper spats (`references/answers.md`).
 

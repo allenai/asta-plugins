@@ -25,20 +25,47 @@ def chapman(n1, n2, m):
     return {"N_hat": round(N), "ci95": round(1.96 * math.sqrt(var)) if var > 0 else 0}
 
 
-def capture_recapture_modalities(sample_a_ids, sample_b_ids, in_scope_ids):
+def capture_recapture_modalities(sample_a_ids, sample_b_ids, in_scope_ids, overlap_gate=0.10):
     """Population estimate from two INDEPENDENT acquisition modalities (e.g. seed-driven vs
-    survey/gap-driven), restricted to curated in-scope items. HETEROGENEOUS catchability (famous
-    items over-captured) inflates apparent overlap ⇒ treat N_hat as a LOWER bound. The companion
-    honesty metric: the fraction found by ONLY ONE modality — high single-modality share means the
-    population is under-sampled and a single-modality 'comprehensive' claim would badly undercount."""
+    survey/gap-driven), restricted to curated in-scope items. SELF-CHECK (do not skip): CR is
+    only valid when the two samples genuinely CO-CAPTURE from the same population — modalities
+    with disjoint catchments (different eras/communities) produce a tiny overlap and an absurdly
+    inflated N_hat. `reliable=False` when overlap/captured < overlap_gate ⇒ DISCARD the estimate
+    (report it as gated, don't average it in). Also: heterogeneous catchability (famous items
+    over-captured) makes even a reliable N_hat a LOWER bound. The companion honesty metric:
+    only_one_modality — a high single-modality share means the population is under-sampled."""
     S = set(map(str, in_scope_ids))
     A, B = set(map(str, sample_a_ids)) & S, set(map(str, sample_b_ids)) & S
     m = len(A & B)
     est = chapman(len(A), len(B), m)
+    captured = len(A | B)
+    overlap_frac = m / captured if captured else 0.0
     return {**est, "n_a": len(A), "n_b": len(B), "overlap": m,
-            "only_one_modality": len((A | B) - (A & B)),
-            "captured": len(A | B), "est_missing": max(0, est["N_hat"] - len(A | B)),
-            "note": "lower bound (heterogeneous catchability)"}
+            "overlap_frac": round(overlap_frac, 3),
+            "reliable": overlap_frac >= overlap_gate,
+            "only_one_modality": captured - m,
+            "captured": captured, "est_missing": max(0, est["N_hat"] - captured),
+            "note": "lower bound (heterogeneous catchability); DISCARD if reliable=False"}
+
+
+def yield_by_frequency(rows, freq_key, is_relevant, cap=5):
+    """Relevance yield as a function of capture frequency (e.g. how many hubs cite a forward-
+    citation candidate). Purpose: ground a DEFERRED-SLICE residual estimate — when you judge the
+    high-frequency slice and defer the low-frequency tail, extrapolate the tail's expected
+    relevant count from the yield GRADIENT of the judged strata (yield falls monotonically with
+    frequency), instead of a gut-feel discount. rows: candidate dicts; freq_key: the frequency
+    field; is_relevant: fn(corpusId)->bool|None (None = unjudged, skipped)."""
+    from collections import defaultdict
+    byf = defaultdict(lambda: [0, 0])
+    for r in rows:
+        v = is_relevant(str(r["corpusId"]))
+        if v is None:
+            continue
+        f = min(int(r.get(freq_key) or 0), cap)
+        byf[f][0] += bool(v)
+        byf[f][1] += 1
+    return {f: {"relevant": a, "judged": n, "yield": round(a / n, 3) if n else None}
+            for f, (a, n) in sorted(byf.items())}
 
 
 def unseen_class_incidence(edges, relevance_bool, collection_ids):
@@ -171,10 +198,11 @@ def report(run):
     core = [c for c, o in K.obs.items() if o.get("ring") == "core"]
     relevance_bool = {c: (t in ("in", "relevant")) for c, t in K.tiers.items()}
     obs = list(K.obs.values())
+    uc = unseen_class_incidence(K.edges, relevance_bool, core)
     R = {"n_core": len(core), "n_labeled": len(K.tiers),
          "content": content_distribution(obs),
          "temporal": temporal(obs),
-         "unseen_class": unseen_class_incidence(K.edges, relevance_bool, core),
+         "unseen_class": uc,
          "reference_pool": reference_pool_recall(K.edges, core, K.tiers),
          "citation_graph": citation_graph(K.edges, core)}
     cent = eigenvector_centrality(K.edges, core, K.tiers)
@@ -183,6 +211,21 @@ def report(run):
     R["centrality_prior"] = {
         "n_ranked": len(ranked),
         "top_decile_relevant_rate": round(sum(1 for c, _ in top if relevance_bool.get(c)) / len(top), 2) if top else None}
+    # TRIANGULATION TRANSPARENCY: the verdict must SAY which estimators were used vs gated-out
+    # and why — a silently skipped estimator is indistinguishable from a forgotten one.
+    lc = uc.get("label_coverage") or 0
+    R["estimators"] = {
+        "reference_pool_recall": "USED (stratify canonical vs tail; recompute AFTER the last "
+                                 "gap-closure round — stale strata misreport recall)",
+        "chao1_incidence": ("USED" if lc >= 0.5 else
+                            f"GATED: label_coverage={lc} over external refs (<0.5) — judge more "
+                            f"captures (relevance-as-you-go) or report as unavailable"),
+        "capture_recapture_modalities": "run separately with TRUE modality sets (from acq/ files, "
+                                        "not candidates provenance); DISCARD if reliable=False "
+                                        "(disjoint catchments)",
+        "deferred_slice_residual": "if any slice was deferred, estimate its residual via "
+                                   "yield_by_frequency gradient extrapolation — never gut-feel",
+    }
     return R
 
 

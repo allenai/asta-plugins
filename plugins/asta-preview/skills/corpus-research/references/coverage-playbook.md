@@ -63,3 +63,17 @@ Triangulate: discard signals that fail their self-check; ensemble surviving esti
 RANGE; let convergence + anchors modulate confidence; output captured / estimate / confidence /
 ranked gaps / boundary. State what a user should and should not conclude from the corpus. If the
 population grows continuously (active fields), say "complete as-of" and name the refresh trigger.
+Verdict discipline (each learned from a real run):
+- **Name your estimators — including the gated ones.** The verdict lists every estimator
+  considered and its status (used / GATED: why). A silently skipped estimator is
+  indistinguishable from a forgotten one; "Chao1 gated: external-ref label coverage 0.08" is
+  itself coverage information. `report()` emits this scaffold.
+- **Recompute AFTER the last data change.** Gap-closure rounds change the strata; a verdict
+  computed mid-run and shipped after more closure misreports recall (stale-report bug).
+- **Deferred slices get a DERIVED residual.** If you triage (judge the ≥k-frequency slice, defer
+  the rest), estimate the deferred slice's relevant count by extrapolating the yield-vs-frequency
+  GRADIENT of the judged strata (`yield_by_frequency`) — e.g. yields 45%/38%/27% at freq 4/3/2
+  extrapolate to ~15–20% at freq 1. Show the derivation, not a gut number.
+- **CR across modalities needs co-capture.** Modalities with disjoint catchments (different
+  eras/communities) give tiny overlap and an absurd N̂ — the `reliable=False` gate discards it;
+  say so in the verdict rather than averaging it in.

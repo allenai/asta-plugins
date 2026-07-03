@@ -13,10 +13,11 @@ reader trusts a number when they can see how it was derived and what its limits 
 sub-question.
 
 ## Paper links — HARD requirement
-Every paper reference in a user-facing artifact links to
-`https://api.semanticscholar.org/CorpusId:<corpusId>` (resolves to the paper's page). A bare
-corpusId is dead text; readers must be able to reach the paper in one click (P1: the user touches
-the sources).
+Every paper reference in a user-facing artifact is a WORKING link — a bare corpusId is dead text;
+readers must reach the paper in one click (P1: the user touches the sources). Default:
+`https://api.semanticscholar.org/CorpusId:<corpusId>`. When the work isn't on S2 (blog posts,
+tech reports, some theses), link whatever canonical page exists — arXiv, DOI, publisher, the
+post itself. Any working link beats a perfect-format dead one.
 
 ## Declare the ring
 Say which ring an answer runs over: `core` (fully curated — the conservative read) vs
