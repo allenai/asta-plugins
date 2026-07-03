@@ -38,6 +38,10 @@ consensus with an outlier, exclude it).
    it spans ≥2 sub-areas.
 3. The DEEPEST disagreements are often methodological and need a SYNTHESIS pass over the finding
    text (not just direction-tag counting) — surface them explicitly with supporting corpusIds.
+4. **Ground each side per-paper (proven pattern):** at extraction time, record `positions` =
+   {axis, stance, VERBATIM quote} per contested axis per paper — the per-side counts become
+   auditable claims, not tag tallies. Then [T]-aggregate the stances into a tally file BEFORE
+   the [J] synthesis agent runs, so the synthesis quotes numbers it didn't compute.
 
 ## Aggregation altitude
 Group/count at the altitude the question asks (families, not raw strings; techniques deduped by

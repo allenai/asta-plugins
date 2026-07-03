@@ -51,6 +51,9 @@ From the user's question alone, write `<run>/thread.json`:
   escape (extraction reads deepest — it catches scope leaks nothing else sees).
 - **evidence_tier**: decide per `references/fulltext-at-scale.md` — PILOT abstracts first; if the
   answer fields are systematically absent from abstracts, the thread is fulltext-mandatory.
+- **thread.json is LIVING config**: when the executed schema evolves mid-run (fields renamed/
+  added — it will), write the change BACK into thread.json (bump a version note) + MANIFEST.
+  Config must describe what actually ran, or downstream consumers read a stale contract.
 
 ## The pipeline (each phase has a reference doc; read it when you get there)
 1. **Acquire** — multi-modal, each modality blind to the others: parametric seed enumeration →
@@ -86,7 +89,12 @@ From the user's question alone, write `<run>/thread.json`:
    (and say so in the coverage boundary) — deferral must never be silent.
 5. **Coverage** — `scripts/coverage_signals.py` computes the [T] signals; YOU triangulate them
    into a verdict + confidence + ranked gaps (`references/coverage-playbook.md`), loop gaps back
-   to Acquire until converged-or-bounded, and state the honest boundary.
+   to Acquire until converged-or-bounded, and state the honest boundary. **REQUIRED signal — the
+   known-canon anchor:** enumerate the area's canon parametrically, then check it against the
+   store with `scripts/knowledge.py` `anchor()` (offline) — report recall + how absences were
+   judged. A verdict without the canon check has a hole in it. `knowledge.py` (lookup / find /
+   cites / anchor) is ALSO how you query the substrate for any preliminary view or answer —
+   prefer it over ad-hoc jq (it knows the 3-layer membership semantics).
 6. **Extract & answer** — per-paper extraction (map) over the evidence tier
    (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
    sub-question with gates. TWO HARD OUTPUT REQUIREMENTS (not optional style):
