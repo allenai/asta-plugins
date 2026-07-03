@@ -145,7 +145,7 @@ workflows:
                 input: [experiment_design, evidence_gathering]
                 output: {analysis: analysis, figures: [ref(figure)], "run?": run}
             - audit:
-                mission: Try to refute the analysis or find artifacts, then finalize the hypothesis's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Before finalizing a non-reproduction, rule out an analysis-setup artifact — confirm the independent operationalization preserved the construct's datum, grid, and units and varied only the intended independence axis, and re-test with source-matched auxiliary variables where a mismatch is possible; a null that appears only under a mismatched datum or a single confounded substitution is a setup artifact to fix and re-run, not a failed reproduction. Then finalize the hypothesis's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the hypothesis reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the hypothesis, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Record in source_agreement whether this independent verdict agrees with or contradicts the hypothesis's own source_outcome, flagging a contradiction prominently. Emit an audit_report referencing the hypothesis id. The hypothesis record itself is never re-emitted.
+                mission: Try to refute the analysis or find artifacts, then finalize the hypothesis's verdict. Beyond a negative control that reruns with the predictor shuffled (or equivalent) and confirms the effect disappears, probe sensitivity to influential observations and reasonable subset choices, and report when the verdict is sample-dependent rather than robust. Before finalizing a non-reproduction, rule out an analysis-setup artifact — confirm the independent operationalization preserved the construct's datum, grid, and units and varied only the intended independence axis, and re-test with source-matched auxiliary variables where a mismatch is possible; a null that appears only under a mismatched datum or a single confounded substitution is a setup artifact to fix and re-run, not a failed reproduction. Then finalize the hypothesis's two-axis verdict (outcome crossed with testability), independence axes, and observed effect size from the analysis, or from the experiment_design alone as outcome n/a and testability untestable when the branch was infeasible, checked against the design's prespecified success_threshold and judged by effect size rather than statistical significance alone on large samples. Also emit the reproduction signal (reward and basis), the signal the theorizer reads. When the hypothesis reproduces, give a positive reward with basis reproduced. When the effect does not replicate on the secondary data, give a negative reward with basis not_reproduced, and keep the hypothesis, since this is a negative signal not a removal. When you are confident the source finding is factually wrong (an AutoDS mistake), set reward -1 with basis refuted_incorrect, which drops it from the theorizer. When there is no secondary dataset and DataVoyager never ran, give no reward with basis not_evaluated. Record in source_agreement whether this independent verdict agrees with or contradicts the hypothesis's own source_outcome, flagging a contradiction prominently, and echo the hypothesis's source_outcome into run_finding. Most importantly set reproduction_verdict, the reader-facing SIGNIFICANCE-based verdict on the hypothesis, judged strictly by statistical significance and power, NEVER by point-estimate direction alone. The values are supported (a prespecified test reached significance in the hypothesised direction), supported_partial (at least one prespecified component did), opposite_effect (a significant effect in the OPPOSITE direction), rejected (adequately powered but no significant effect), inconclusive (too few events or samples to decide, so a favorable HR or correlation that did not reach p<0.05 is inconclusive rather than support), or not_tested (no feasible independent test). Emit an audit_report referencing the hypothesis id. The hypothesis record itself is never re-emitted.
                 cli: [asta analyze-data]
                 input: [experiment_design, analysis]
                 output: {audit_report: audit_report, "run?": run}
@@ -161,7 +161,7 @@ workflows:
           cli: [asta literature, asta documents, asta generate-theories, asta autodiscovery]
           output: {cohort: cohort, datasets: [dataset], run: run}
       - discovery_run:
-          mission: Run discovery against the original question with the cohort as data (config n_experiments, set in the run metadata). Fetch the experiments; select the candidate hypotheses one-to-one from the log — every experiment whose `surprising` field is true — and emit them as autods_hypothesis identity records with the `hypothesis` field copied VERBATIM and the `experiment_plan`, `code`, and run signals (`surprising`, `posterior.mean`, `belief_change`, `normalized_surprisal`) carried unchanged, alongside the raw experiments. No grouping, merging, or rewording; the surprising nodes are the hypotheses, one per node.
+          mission: Run discovery against the original question with the cohort as data (config n_experiments, set in the run metadata). Fetch the experiments; select the candidate hypotheses one-to-one from the log — every experiment whose `surprising` field is true — and emit them as autods_hypothesis identity records with the `hypothesis` field copied VERBATIM and the `experiment_plan`, `code`, and run signals (`surprising`, `posterior.mean`, `belief_change`, `normalized_surprisal`, and `creation_idx` minus 1 as `experiment_index` — the run UI's 0-indexed `?exp=N`) carried unchanged, alongside the raw experiments. No grouping, merging, or rewording; the surprising nodes are the hypotheses, one per node.
           cli: [asta autodiscovery]
           input: [cohort_assembly]
           output: {experiments: [ref(experiment)], autods_hypotheses: [autods_hypothesis], run: run}
@@ -200,6 +200,13 @@ vocabulary:
   signal_basis:          [reproduced, not_reproduced, refuted_incorrect, not_evaluated, testable, untestable]
   source_outcome:        [supported, rejected, mixed, unclear]
   source_agreement:      [agrees, discordant, not_applicable]
+  # reader-facing reproduction verdict, SIGNIFICANCE-based (not direction-based). supported = a
+  # prespecified test reached significance in the hypothesised direction; supported_partial = at
+  # least one component did; opposite_effect = a significant effect in the OPPOSITE direction;
+  # rejected = adequately powered but no significant effect; inconclusive = too few events/samples
+  # to decide (a favorable point estimate that did not reach significance is inconclusive, NOT
+  # support); not_tested = no feasible independent test.
+  reproduction_verdict:  [supported, supported_partial, opposite_effect, rejected, inconclusive, not_tested]
   gap_kind:              [not_public, model_output, definitional, transient_needed]
   friction_kind:         [flow, schema, tool, mission, data]
   severity:              [high, medium, low]
@@ -236,11 +243,11 @@ outputs:
     id: string
     statement: string            # the node's `hypothesis`, copied VERBATIM (never reworded)
     source_node: string          # the mcts node id
-    experiment_plan: {objective: string, steps: string, deliverables: string}   # from the log, verbatim
+    experiment_plan: {objective: string, steps: string, deliverables: string}   # from the log, verbatim; steps may be a repo-root-relative .txt path-ref when the full text would exceed the metadata cap
     code: string                 # the node's code, verbatim (what experiment_design adapts for DV)
-    effect_size_source: string   # the source effect from the node's analysis
+    effect_size_source: string   # the source effect from the node's analysis (verbatim, untruncated); may be a repo-root-relative .txt path-ref when the full text would exceed the metadata cap
     source_outcome: source_outcome
-    mcts_provenance?: {surprising: boolean, posterior_mean: number, prior_mean: number, belief_change: number, normalized_surprisal: number}   # the auto-ds search-signal fields, verbatim
+    mcts_provenance?: {surprising: boolean, posterior_mean: number, prior_mean: number, belief_change: number, normalized_surprisal: number, experiment_index: number}   # the auto-ds search-signal fields, verbatim; experiment_index is the run UI's ?exp=N (0-indexed = the node's creation_idx minus 1)
 
   dataset:
     id: string
@@ -303,6 +310,8 @@ outputs:
     outcome: outcome
     testability: testability
     source_agreement: source_agreement
+    reproduction_verdict: reproduction_verdict   # reader-facing, SIGNIFICANCE-based verdict on the hypothesis
+    run_finding: source_outcome            # the run's own verdict, echoed for a direct before/after read
     effect_size_observed: string
     prespecified_check: string
     independence_axes: [independence_axis]

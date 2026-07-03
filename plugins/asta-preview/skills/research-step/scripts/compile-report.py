@@ -29,11 +29,16 @@ LOGO = HERE.parent / "assets" / "asta-logo.pdf"  # Asta (Ai2) brand mark
 sys.path.insert(0, str(HERE))
 import render  # noqa: E402
 
-# ordered paper sections (template stem in assets/templates/report/); blank renders skipped
+# ordered paper sections (template stem in assets/templates/report/); blank renders skipped.
+# Layout mirrors the executed workflow: Abstract (mission) → Workflow (diagram + per-step
+# summary that links to each section) → the four workflow stages in execution order →
+# the appendix, whose fully-expanded entities run in the OPPOSITE order (theories first,
+# AutoDiscovery last) so the reader flows from tables into detail without a jump.
 SECTIONS = [
-    "mission", "abstract", "methods", "results_laws", "results_theories",
-    "appendix_theories", "appendix_hypotheses",
-    "appendix_experiments", "appendix_datasets", "appendix_literature", "appendix_references",
+    "abstract", "workflow",
+    "results_reproduction", "results_theories",
+    "appendix_theories", "appendix_reproduction", "appendix_literature",
+    "appendix_datasets", "appendix_references",
 ]
 
 FLOW_SUBTITLE = {
@@ -182,25 +187,92 @@ def _deref(x):
 # signal_basis) defined in assets/workflows.yaml. No subject ids, dataset names, or domain
 # terms appear here, so the ordering and badges behave identically for any flow's records.
 
-# rank so the strongest, most-tested, most-novel items lead their section; unknowns sort last
-_OUTCOME_RANK = {"held": 0, "partial": 1, "underpowered": 2, "failed": 3, "n/a": 4}
-_TEST_RANK = {"tested": 0, "proxy_only": 1, "untestable": 2}
-_NOVELTY_RANK = {"genuinely_new": 0, "derivable": 1, "established": 2}
 # the Theorizer's per-statement novelty class (theory_components.theory_statements[].
-# novelty_evaluation.likely_classification) — the statement-level signal we now surface/sort by
+# novelty_evaluation.likely_classification) — the statement-level signal we surface/sort by
 _STMT_NOVELTY_RANK = {"new": 0, "somewhat-related-to-existing": 1, "closely-related-to-existing": 2}
 
-# outcome → (colour token defined in header_includes, short label)
-_BADGE = {
-    "held": ("ai2accent", "held"), "partial": ("ai2amber", "partial"),
-    "underpowered": ("ai2amber", "underpowered"), "failed": ("ai2red", "failed"),
-    "n/a": ("ai2gray", "untestable"),
+def run_finding(law):
+    """The source run's own verdict on the law, shown verbatim: supported / rejected / mixed /
+    unclear. Prefers the audit's echoed run_finding, else the hypothesis's source_outcome."""
+    rf = (law.get("verdict") or {}).get("run_finding") or law.get("source_outcome")
+    return rf if rf in ("supported", "rejected", "mixed", "unclear") else ""
+
+
+# The two experiments are shown as two independent, colour-coded facts — the run's own finding
+# and whether the reproduction found the effect — so the reader crosses them without a single
+# imposed "verdict". Both are direct relabels of existing schema fields (source_outcome; the
+# audit outcome/testability), not new interpretation. Colour: teal = a positive result (run
+# believed it / reproduction found it); red = the run rejected it; grey = neutral/inconclusive.
+_RUN_BADGE = {"supported": ("ai2accent", "supported"), "rejected": ("ai2red", "rejected"),
+              "mixed": ("ai2amber", "mixed"), "unclear": ("ai2gray", "unclear")}
+# The reproduction re-answers the SAME question the run did, in a vocabulary anchored to the run's
+# (supported / rejected) so the before->after is directly comparable. It is significance-based, not
+# direction-based: SUPPORT (full or partial) requires a prespecified test to reach significance in
+# the hypothesised direction; a significant OPPOSITE effect is "opposite effect"; an adequately
+# powered null is "rejected"; too few events/samples is "inconclusive"; no test is "not tested".
+# This is the reader-facing verdict, hand-verified against each audit's statistics and stored in
+# the audit_report as reproduction_verdict (schema field), so the renderer never re-derives it.
+# (colour, label, sort-rank) — teal = supported, pink = opposite effect, red = rejected, grey = undecided.
+_REPRO_VERDICT = {
+    "supported":         ("ai2accent", "supported", 0),
+    "supported_partial": ("ai2accent", "supported (partial)", 1),
+    "opposite_effect":   ("ai2pink",   "opposite effect", 2),
+    "rejected":          ("ai2red",    "rejected", 3),
+    "inconclusive":      ("ai2gray",   "inconclusive", 4),
+    "not_tested":        ("ai2gray",   "not tested", 5),
 }
 
 
+def repro_outcome(law):
+    """The reproduction verdict, read verbatim from the audit's stored reproduction_verdict."""
+    return (law.get("verdict") or {}).get("reproduction_verdict")
+
+
+def _tagtext(pair):
+    color, label = pair
+    return r"{\footnotesize\sffamily\bfseries\color{%s}%s}" % (color, label)
+
+
+def run_tag(finding=None):      # coloured text for a raw {=latex} table cell
+    return _tagtext(_RUN_BADGE.get(finding, ("ai2gray", finding or ""))) if finding else ""
+
+
+def run_badge(finding=None):    # \vbadge command for markdown prose (appendix)
+    if not finding:
+        return ""
+    color, label = _RUN_BADGE.get(finding, ("ai2gray", finding))
+    return r"\vbadge[%s]{%s}" % (color, label)
+
+
+def repro_out_tag(key=None):
+    if not key:
+        return ""
+    c, l, _ = _REPRO_VERDICT.get(key, ("ai2gray", str(key), 9))
+    return _tagtext((c, l))
+
+
+def repro_out_badge(key=None):
+    if not key:
+        return ""
+    c, l, _ = _REPRO_VERDICT.get(key, ("ai2gray", str(key), 9))
+    return r"\vbadge[%s]{%s}" % (c, l)
+
+
+def _surprisal(x):
+    """Absolute normalized surprisal from the node's mcts_provenance (0 when absent)."""
+    p = x.get("mcts_provenance") or {}
+    s = p.get("normalized_surprisal")
+    try:
+        return abs(float(s))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _law_sort_key(x):
-    v = x.get("verdict") or {}
-    return (_OUTCOME_RANK.get(v.get("outcome"), 5), _TEST_RANK.get(v.get("testability"), 3))
+    # lead with the genuine wins (supported), then supported(partial), opposite effect, rejected,
+    # inconclusive, not-tested; most-surprising first within each verdict group.
+    rank = _REPRO_VERDICT.get(x.get("repro_out"), ("", "", 9))[2]
+    return (rank, -_surprisal(x))
 
 
 def _theory_statements(t):
@@ -226,18 +298,6 @@ def _theory_sort_key(t):
     return (testable, nov if nov is not None else 3)
 
 
-def verdict_badge(outcome=None, testability=None):
-    """A \\vbadge[colour]{LABEL} LaTeX call for a two-axis verdict; untestable overrides the
-    outcome colour. Empty string when there is no verdict, so templates may call it freely."""
-    if not outcome:
-        return ""
-    if testability == "untestable" or outcome == "n/a":
-        color, label = "ai2gray", "untestable"
-    else:
-        color, label = _BADGE.get(outcome, ("ai2gray", outcome))
-    return r"\vbadge[%s]{%s}" % (color, label.upper())
-
-
 def triage_badge(basis=None):
     """Badge for a theory's testability triage (signal.basis ∈ testable / untestable)."""
     if basis == "testable":
@@ -259,42 +319,13 @@ _NOVELTY_BADGE = {
 }
 
 
-def novelty_badge(cls=None):
-    """A \\vbadge for a single law/statement's novelty class; empty string when unscored."""
-    if not cls:
-        return ""
-    color, label = _NOVELTY_BADGE.get(cls, ("ai2gray", str(cls).upper()))
-    return r"\vbadge[%s]{%s}" % (color, label)
-
-
 def novelty_tag(cls=None):
-    """A lightweight coloured caps tag for a law's novelty inside a dense LaTeX table (no box —
-    boxes crowd a longtable cell). Returns a faint em dash when the law is unscored."""
+    """A lightweight coloured caps tag for a law's novelty inside a dense LaTeX table (no box, as
+    boxes crowd a longtable cell). Returns a faint 'n/a' when the law is unscored."""
     if not cls or cls == "not_evaluated":
-        return r"{\color{ai2gray}\small ---}"
+        return r"{\color{ai2gray}\small n/a}"
     color, label = _NOVELTY_BADGE.get(cls, ("ai2gray", str(cls).upper()))
     return r"{\footnotesize\sffamily\bfseries\color{%s}%s}" % (color, label)
-
-
-def outcome_tag(outcome=None, testability=None):
-    """A coloured caps verdict tag (outcome + testability) for the hypotheses table — same
-    palette as the boxed \\vbadge but as lightweight text, matching the theory-table tags."""
-    if not outcome:
-        return ""
-    if testability == "untestable" or outcome == "n/a":
-        return r"{\footnotesize\sffamily\bfseries\color{ai2gray}UNTESTABLE}"
-    color, label = _BADGE.get(outcome, ("ai2gray", str(outcome)))
-    tail = r"\ {\footnotesize\color{ai2gray}%s}" % testability.replace("_", " ") if testability else ""
-    return r"{\footnotesize\sffamily\bfseries\color{%s}%s}%s" % (color, label.upper(), tail)
-
-
-def triage_tag(basis=None):
-    """A compact caps testability tag for a theory row's Testability column."""
-    if basis == "testable":
-        return r"{\footnotesize\sffamily\bfseries\color{ai2accent}TESTABLE}"
-    if basis == "untestable":
-        return r"{\footnotesize\sffamily\bfseries\color{ai2gray}NEEDS DATA}"
-    return ""
 
 
 def short(text, n=140):
@@ -393,6 +424,28 @@ def collect(sess, base_url=""):
     enrich(laws)
     enrich(theories)
 
+    # the reader-facing reproduction verdict (stored, significance-based) and the run's own finding,
+    # surfaced side by side so the reader sees what was originally claimed vs what the cohort did.
+    for x in laws:
+        x["repro_out"] = repro_outcome(x)      # reader-facing reproduction verdict (stored, hand-verified)
+        x["run_finding"] = run_finding(x)      # the run's own result (source_outcome, verbatim)
+
+    # effect_size_source and experiment_plan.steps may be inline text or a repo-root-relative
+    # path to a .txt file (the x-path-ref overflow used when the full text would push the single
+    # auto_discovery record past the beads metadata cap). Load the file when present so the
+    # appendix always renders the full, untruncated prose rather than a truncation or placeholder.
+    def _deref_text(s):
+        if isinstance(s, str) and s and not s.endswith("…") and len(s) < 260:
+            p = Path(s)
+            if p.suffix in (".txt", ".md") and p.is_file():
+                return p.read_text().strip()
+        return s
+    for x in laws:
+        x["effect_size_source"] = _deref_text(x.get("effect_size_source"))
+        ep = x.get("experiment_plan")
+        if isinstance(ep, dict) and ep.get("steps"):
+            ep["steps"] = _deref_text(ep["steps"])
+
     datasets, experiments, citations = {}, [], {}
     for i in sess.tasks:
         o = rs(i)["output_json"]
@@ -406,7 +459,8 @@ def collect(sess, base_url=""):
 
     run_id = ""
     for o in out("cohort_assembly") + out("auto_discovery"):
-        run_id = (o.get("cohort") or {}).get("run_id", "") or run_id
+        run_id = ((o.get("cohort") or {}).get("run_id")
+                  or (o.get("run") or {}).get("run_id") or o.get("run_id") or "") or run_id
     datasets = list(datasets.values())
     primary = max(datasets, key=lambda d: d.get("n") or 0) if datasets else None
 
@@ -435,9 +489,28 @@ def collect(sess, base_url=""):
         m = re.match(r"(DS\d+|D\d+)", did)
         d["short"] = m.group(1) if m else "D%d" % i
         d["tests"] = [h for h in (d.get("covers_hypotheses") or []) if h in law_ids]
+        # readable dataset name from the free-text `source`: strip parentheticals (mirror urls,
+        # DOIs, author lists), the Asta "Independence axis: …" clause and any prose lead-in, then
+        # keep the leading product token. Falls back to a cleaned id when the source is a path or
+        # prose with no clean product name (so it never renders a file path or a whole sentence).
+        src = re.sub(r"\s+", " ", re.sub(r"\s*\([^)]*\)", "", d.get("source") or "")).strip()
+        src = re.sub(r"[.;,]?\s*Independence ax[ei]s[^.]*\.?", "", src, flags=re.I).strip()
+        src = re.sub(r"(?i)^(assembled|derived|curated|compiled|built)\s+from\s+(provided\s+)?", "", src)
+        src = re.sub(r"(?i)^provided\s+", "", src)
+        src = re.split(r"(?i)\s+local path", src)[0]               # drop "Local path: .asta/…"
+        src = re.split(r"(?<=[A-Za-z])\.\s+[A-Z]", src)[0]         # cut at first sentence break
+        nm = re.split(r"[;,]|\s\+\s| doi", src)[0].strip(" .")     # first item; also cut at " + "
+        nm = re.sub(r"(?i)\s+(files|data|dataset)$", "", nm).strip()
+        if not nm or "/" in nm or nm[:1].islower():               # a path or prose remnant → use id
+            base = re.sub(r"(?i)^(ds_|dataset_|d\d+_|ds\d+_)", "", did)
+            # humanise the id: short/numeric tokens read as acronyms (TCGA, TMB, PAM50), rest title-cased
+            nm = " ".join(t.upper() if (len(t) <= 4 or any(c.isdigit() for c in t)) else t.capitalize()
+                          for t in base.split("_") if t) or did
+        d["name"] = nm[:70]
     for x in laws:
         x["grounding_theories"] = hyp_theories.get(x.get("id"), [])
-        x["dataset_chips"] = [{"id": did, "label": (ds_by_id[did]["short"] if did in ds_by_id else did)}
+        x["dataset_chips"] = [{"id": did, "label": (ds_by_id[did]["short"] if did in ds_by_id else did),
+                               "name": (ds_by_id[did]["name"] if did in ds_by_id else did)}
                               for did in x.get("datasets", [])]
 
     # lead each section with the strongest results (held/tested, then testable-now theories)
@@ -470,6 +543,14 @@ def collect(sess, base_url=""):
                 link = _pref(f"{run_dir}/mcts_nodes.csv", base_url)
         e["link"] = link
 
+    # per-hypothesis deep link into the AutoDiscovery run's shared page (?exp=<creation_idx>),
+    # so each row can open the exact experiment. Needs the run id and the node's experiment_index.
+    exp_tmpl = LINK_TEMPLATES.get("autodiscovery_exp")
+    for x in laws:
+        ei = (x.get("mcts_provenance") or {}).get("experiment_index")
+        x["asta_link"] = (exp_tmpl.format(run_id=run_id, exp=ei)
+                          if run_id and ei is not None and exp_tmpl else "")
+
     def tally(items):
         v = [x["verdict"] for x in items if x.get("verdict")]
         return {
@@ -480,6 +561,16 @@ def collect(sess, base_url=""):
             "untestable": sum(1 for a in v
                               if a.get("outcome") == "n/a" or a.get("testability") == "untestable"),
         }
+
+    def repro_tally(items):
+        # counts under the reproduction-verdict scheme, for the summary prose
+        c = {k: 0 for k in _REPRO_VERDICT}
+        for x in items:
+            if x.get("repro_out"):
+                c[x["repro_out"]] += 1
+        c["n"] = len(items)
+        c["decided"] = c["supported"] + c["supported_partial"] + c["opposite_effect"] + c["rejected"]
+        return c
 
     # references, segmented Papers / Datasets — resolvable identifiers only, deduped.
     # Papers = the literature_search citations. Datasets = registered dataset records with a DOI.
@@ -524,10 +615,13 @@ def collect(sess, base_url=""):
     ref_papers = [{"num": paper_num[k], "name": paper_by_key[k]["name"],
                    "url": paper_by_key[k]["url"], "anchor": "ref-p%d" % paper_num[k]} for k in ordered]
     lit_themes = [{"theme": tr["theme"], "summary": tr["summary"], "key_findings": tr["key_findings"],
+                   "anchor": "lit-theme-%d" % ti, "n_papers": len(tr["keys"]),
+                   # one-line focus for the overview table: the theme's first sentence
+                   "focus": re.split(r"(?<=[.])\s", (tr["summary"] or "").strip(), 1)[0],
                    "papers": [{"num": paper_num[k], "anchor": "ref-p%d" % paper_num[k],
                                "name": paper_by_key[k]["name"], "url": paper_by_key[k]["url"],
                                "s2": paper_by_key[k]["s2"]} for k in tr["keys"]]}
-                  for tr in theme_rows]
+                  for ti, tr in enumerate(theme_rows, 1)]
     ref_datasets = {}
     _paper_names = {(p["name"] or "").strip().lower() for p in ref_papers}
 
@@ -592,6 +686,7 @@ def collect(sess, base_url=""):
         "task_types": {rs(i)["task_type"] for i in sess.tasks},
         "laws": laws, "theories": theories,
         "law_stats": tally(laws), "theory_stats": tally(theories),
+        "repro_stats": repro_tally(laws),
         "n_theories": len(theories),
         "n_testable_theories": len(testable_theories),
         "objectives": sorted({t.get("objective") for t in theories if t.get("objective")}),
@@ -746,7 +841,7 @@ def mission_intro():
     if not p.is_file():
         return ""
     text = p.read_text()
-    m = re.search(r"(?ims)^#+\s*(?:research question|question|motivation|background)\s*\n(.+?)(?=\n#+\s|\Z)", text)
+    m = re.search(r"(?ims)^#+\s*(?:research (?:intent|task|question)|origin and intent[^\n]*|motivation|background|intent)\s*\n(.+?)(?=\n#+\s|\Z)", text)
     if m:
         return m.group(1).strip()
     return ""
@@ -962,7 +1057,8 @@ def compute_anchors(sess, ctx, known):
 # publishing lands; override via CLI (--autods-base / --theorizer-base / --datavoyager-base).
 # {run_id} / {task_id} fill deterministically from identifiers in the records.
 LINK_TEMPLATES = {
-    "autodiscovery": "https://asta.allenai.org/autodiscovery/runs/{run_id}",
+    "autodiscovery": "https://autodiscovery.allen.ai/runs/shared/{run_id}",
+    "autodiscovery_exp": "https://autodiscovery.allen.ai/runs/shared/{run_id}?exp={exp}",
     "theorizer": "https://asta.allenai.org/theorizer/tasks/{task_id}",
     "datavoyager": "https://asta.allenai.org/datavoyager/tasks/{task_id}",
 }
@@ -1079,7 +1175,7 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         ai2logo = r"\includegraphics[height=16pt]{" + str(LOGO.parent / "logos" / "ai2.pdf").replace("\\", "/") + "}"
         cover = render.render_template_file(ctmpl, ctx=ctx, links=links, flow="",
                                             ai2logo=ai2logo, ref=ref, anchor=anchor, prose=prose,
-                                            badge=verdict_badge, tbadge=triage_badge, nbadge=novelty_badge, ntag=novelty_tag, stag=triage_tag, otag=outcome_tag, short=short,
+                                            tbadge=triage_badge, ntag=novelty_tag, runtag=run_tag, runbadge=run_badge, rotag=repro_out_tag, robadge=repro_out_badge, short=short,
                                             clickable=clickable).strip()
         if dropped:
             print("compile-report: summary cited ids not found in session (rendered as plain text): "
@@ -1091,7 +1187,7 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         if not tmpl.is_file():
             continue
         txt = render.render_template_file(tmpl, ctx=ctx, ref=ref, anchor=anchor,
-                                          badge=verdict_badge, tbadge=triage_badge, nbadge=novelty_badge, ntag=novelty_tag, stag=triage_tag, otag=outcome_tag, short=short,
+                                          tbadge=triage_badge, ntag=novelty_tag, runtag=run_tag, runbadge=run_badge, rotag=repro_out_tag, robadge=repro_out_badge, short=short,
                                           clickable=clickable).strip()
         if txt:
             body.append(txt)
@@ -1125,15 +1221,10 @@ def build(sess, base_url="", site=False, clickable=True, link_overrides=None):
         *("    " + ln for ln in header_includes(title)),
         "---",
         "",
-        # front block, directly under the title: the one-line intro + the clickable flow
-        # diagram (unnumbered — not a body section), then the table of contents, then the
-        # numbered body sections. The workflow is thus rendered on the cover/TOC block.
+        # front block, directly under the title: a one-line provenance intro. There is no
+        # table of contents — the Workflow section carries the per-step summary whose inline
+        # links serve as the section index, immediately after the flow diagram.
         cover,
-        "```{=latex}",
-        # TOC lists only the top-level sections (Abstract, Methods, Results, …); the
-        # per-hypothesis / per-theory subsections are excluded.
-        "\\setcounter{tocdepth}{1}\\vspace{0.5em}\\tableofcontents",
-        "```",
     ]
     return "\n".join(front) + "\n\n" + sections + "\n", anchors
 

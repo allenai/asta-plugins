@@ -2,11 +2,11 @@
 ## Appendix: datasets in detail {#sec-datasets}
 
 {% for ds in ctx.datasets %}
-### {{ ds.short }}{% if ds.n %} — n = {{ ds.n|comma }}{% endif %} {#{{ anchor(ds.id) }}}
+### {{ ds.short }}: {{ ds.name }}{% if ds.n %} (n = {{ ds.n|comma }}){% endif %} {#{{ anchor(ds.id) }}}
 
-**[↑ Datasets table](#sec-datasets-table)**
+**[↑ Reproduction table](#sec-reproduction)**
 
-{% if ds.tests %}*Tested by: {% for h in ds.tests %}{{ ref(h) }}{% if not loop.last %}, {% endif %}{% endfor %}*
+{% if ds.tests %}*Tested by: {% for h in ds.tests %}[{{ h }}](#rep-{{ anchor(h) }}){% if not loop.last %}, {% endif %}{% endfor %}*
 
 {% endif %}
 *Identifier:* `{{ ds.id }}`

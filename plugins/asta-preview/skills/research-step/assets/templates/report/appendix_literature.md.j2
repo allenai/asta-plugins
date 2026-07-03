@@ -4,7 +4,11 @@
 The grounding literature grouped by the {{ ctx.lit_themes|length }} search themes; each paper links to its Semantic Scholar record.
 
 {% for t in ctx.lit_themes %}
-### {{ t.theme }}
+### {{ t.theme }} {#{{ t.anchor }}}
+
+{% if t.summary %}{{ t.summary|clean|sent|mathify }}
+
+{% endif %}
 {% if t.papers %}
 ```{=latex}
 \providecommand{\ltrow}[2]{\parbox[t]{\dimexpr\textwidth-3.4cm\relax}{\strut\raggedright #1}\hspace{0.4cm}\parbox[t]{2.8cm}{\strut\raggedright #2}}

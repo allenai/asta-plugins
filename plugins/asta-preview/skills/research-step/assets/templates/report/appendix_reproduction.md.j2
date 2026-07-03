@@ -1,0 +1,47 @@
+## Appendix: reproduction in detail {#sec-appendix-reproduction}
+
+The complete record for each candidate hypothesis in one place: what AutoDiscovery tested and found, then the independent reproduction, its prespecified test, and the negative-control audit. Ordered as in the [reproduction table](#sec-reproduction).
+
+{% for law in ctx.laws %}
+### {{ law.id }}{% if law.experiment_plan and law.experiment_plan.objective %}: {{ short(law.experiment_plan.objective, 90) }}{% endif %} {#rep-{{ anchor(law.id) }}}
+
+*[↑ Reproduction table](#sec-reproduction)*
+
+{{ law.statement|mathify }}
+
+{% if law.experiment_plan and law.experiment_plan.objective %}**AutoDiscovery plan**
+
+{{ law.experiment_plan.objective|mathify }}{% if law.experiment_plan.steps %} {{ law.experiment_plan.steps|mathify }}{% endif %}
+
+{% endif %}
+{% if law.effect_size_source %}**Source effect**
+
+{{ law.effect_size_source|mathify }}
+
+{% endif %}
+**Run finding**
+
+{{ runbadge(law.run_finding) }} the run {{ law.run_finding }} this hypothesis.
+
+{% if law.design and law.design.prespecified and law.design.prespecified.test %}**Prespecified test**
+
+{{ law.design.prespecified.test|mathify }}
+
+{% endif %}
+**Reproduction**
+
+{% if law.verdict %}{{ robadge(law.repro_out) }}{% if law.repro_out == 'untestable' %} (no independent data or infeasible){% endif %}{% if law.verdict.effect_size_observed %}: {{ law.verdict.effect_size_observed|mathify }}{% endif %}.{% if law.dataset_chips %} Tested on {% for c in law.dataset_chips %}[{{ c.name }}](#{{ anchor(c.id) }}){% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}{% if law.link %} (**{{ link("DataVoyager result", law.link if clickable else "") }}**){% endif %}{% else %}Not tested; untestable on the data in hand.{% endif %}
+
+{% if law.verdict and law.audit %}{% set adj = (law.audit.recommended_adjustment or '')|trim %}{% if adj and not (adj.lower().startswith('none') or adj.lower().startswith('n/a')) %}**Audit**
+
+{{ adj|mathify }}
+
+{% elif law.repro_out in ('supported','supported_partial','opposite_effect') %}**Audit**
+
+{{ 'The effect survives the negative control (it vanishes when the predictor is shuffled).' if law.audit.verdict_survives else 'The effect does not survive the negative control.' }}
+
+{% endif %}{% endif %}
+{% for f in law.figs or [] %}{% if exists(f.image) %}![{{ f.caption }}]({{ f.image }})
+
+{% endif %}{% endfor %}
+{% endfor %}

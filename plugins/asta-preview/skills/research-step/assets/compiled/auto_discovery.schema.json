@@ -39,6 +39,9 @@
             "belief_change": {
               "type": "number"
             },
+            "experiment_index": {
+              "type": "number"
+            },
             "normalized_surprisal": {
               "type": "number"
             },
@@ -57,7 +60,8 @@
             "posterior_mean",
             "prior_mean",
             "belief_change",
-            "normalized_surprisal"
+            "normalized_surprisal",
+            "experiment_index"
           ],
           "type": "object"
         },

@@ -1,13 +1,13 @@
 ## Appendix: theories in detail {#sec-appendix-theories}
 
-Full entry for each theory — its generation objective, description, testability triage, and the hypotheses it grounds. Ordered as in the summary table (testable-now and most-novel first).
+Full entry for each theory: its generation objective, description, testability triage, and the hypotheses it grounds. Ordered as in the summary table (testable-now and most-novel first).
 
 {% if ctx.overview.theories and exists(ctx.overview.theories.image) %}
 ![{{ ctx.overview.theories.caption or 'Cross-cutting mechanism linking the hypotheses.' }}]({{ ctx.overview.theories.image }})
 
 {% endif %}
 {% for t in ctx.theories_ordered %}
-### {{ t.id }} — {{ t.name }} {#{{ anchor(t.id) }}}
+### {{ t.id }}: {{ t.name }} {#{{ anchor(t.id) }}}
 
 *[↑ Theories table](#sec-theories)*
 
@@ -16,8 +16,8 @@ Full entry for each theory — its generation objective, description, testabilit
 {% if t.description %}{{ t.description|sent|mathify }}
 
 {% endif %}
-{% if t.eval %}{% if t.eval.signal and t.eval.signal.basis == 'testable' %}*Proposed test.*  {{ t.eval.proposed_test.test|mathify }}{% if t.eval.proposed_test.success_threshold %} — success: {{ t.eval.proposed_test.success_threshold|mathify }}{% endif %}
-{% else %}*Not testable on the in-hand data*{% if t.eval.gap %} — {{ t.eval.gap|mathify }}{% endif %}.
+{% if t.eval %}{% if t.eval.signal and t.eval.signal.basis == 'testable' %}*Proposed test.*  {{ t.eval.proposed_test.test|mathify }}{% if t.eval.proposed_test.success_threshold %} (success: {{ t.eval.proposed_test.success_threshold|mathify }}){% endif %}
+{% else %}*Not testable on the in-hand data*{% if t.eval.gap %}: {{ t.eval.gap|mathify }}{% endif %}.
 {% endif %}
 
 {% endif %}

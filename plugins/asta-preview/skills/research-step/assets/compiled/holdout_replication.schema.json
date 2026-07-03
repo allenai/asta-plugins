@@ -70,6 +70,24 @@
         "recommended_adjustment": {
           "type": "string"
         },
+        "reproduction_verdict": {
+          "enum": [
+            "supported",
+            "supported_partial",
+            "opposite_effect",
+            "rejected",
+            "inconclusive",
+            "not_tested"
+          ]
+        },
+        "run_finding": {
+          "enum": [
+            "supported",
+            "rejected",
+            "mixed",
+            "unclear"
+          ]
+        },
         "signal": {
           "$ref": "#/$defs/signal"
         },
@@ -110,6 +128,8 @@
         "outcome",
         "testability",
         "source_agreement",
+        "reproduction_verdict",
+        "run_finding",
         "effect_size_observed",
         "prespecified_check",
         "independence_axes",

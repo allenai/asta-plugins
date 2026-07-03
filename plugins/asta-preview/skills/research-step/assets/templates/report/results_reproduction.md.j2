@@ -1,0 +1,27 @@
+## Reproduction {#sec-reproduction}
+
+{% set R = ctx.repro_stats %}Each row shows a hypothesis and its two verdicts. **AutoDS Finding** is what the AutoDiscovery run's own experiment concluded (*supported*, teal, or *rejected*, red). **Secondary Finding** is the verdict Asta's DataVoyager reached on *independent* data, and it is **significance-based**, not direction-based: *supported* (a prespecified test reached significance in the hypothesized direction), *supported (partial)* (at least one component did), *opposite effect* (a significant effect in the *opposite* direction), *rejected* (adequately powered, no significant effect), *inconclusive* (too few events or samples to decide), or *not tested* (no feasible independent test). A favorable point estimate that did not reach significance counts as *inconclusive*, not support.
+
+Asta's DataVoyager reached a decision on {{ R.decided }} of the {{ R.n }} hypotheses: **{{ R.supported }} supported** and {{ R.supported_partial }} partially supported on independent data, {{ R.opposite_effect }} showed a significant effect in the opposite direction, and {{ R.rejected }} were rejected (adequately powered nulls). The remaining {{ R.inconclusive }} were inconclusive (underpowered) and {{ R.not_tested }} could not be tested. Rows lead with supported effects. The **Node** links to the full per-node reproduction in the [appendix](#sec-appendix-reproduction); **Asta Link** opens the exact experiment in the AutoDiscovery run.
+
+{% if ctx.laws %}
+```{=latex}
+\newcommand{\rprow}[5]{\parbox[t]{1.7cm}{\strut\raggedright #1}\hspace{0.25cm}\parbox[t]{\dimexpr\textwidth-9.4cm\relax}{\strut\raggedright #2}\hspace{0.25cm}\parbox[t]{2.0cm}{\strut\raggedright #3}\hspace{0.25cm}\parbox[t]{2.7cm}{\strut\raggedright #4}\hspace{0.25cm}\parbox[t]{1.5cm}{\strut\raggedright #5}}
+\begingroup
+\setlength{\LTpre}{4pt}\setlength{\LTpost}{10pt}\footnotesize
+\begin{longtable}{@{}l@{}}
+\toprule
+\rprow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{AutoDS Finding}}{\textbf{Secondary Finding}}{\textbf{Asta Link}}\\
+\midrule
+\endfirsthead
+\multicolumn{1}{@{}l@{}}{\footnotesize\itshape Reproduction (continued)}\\*[2pt]
+\toprule \rprow{\textbf{Node}}{\textbf{Hypothesis}}{\textbf{AutoDS Finding}}{\textbf{Secondary Finding}}{\textbf{Asta Link}}\\ \midrule
+\endhead
+{% for law in ctx.laws %}{% set ei = (law.mcts_provenance or {}).get('experiment_index') %}\rprow{\hyperref[rep-{{ anchor(law.id) }}]{ {{- law.id|texesc -}} }}{ {{- law.statement|texesc -}} }{ {{- runtag(law.run_finding) -}} }{ {{- rotag(law.repro_out) -}} }{ {%- if law.asta_link and clickable -%}\href{ {{- law.asta_link|urlesc -}} }{exp~{{ ei }}}{%- elif ei is not none -%}exp~{{ ei }}{%- else -%}{\color{ai2gray}n/a}{%- endif -%} }\\
+\addlinespace[2.5pt]
+{% endfor %}\bottomrule
+\end{longtable}
+\endgroup
+```
+
+{% endif %}

@@ -1,6 +1,6 @@
-## Results: theories {#sec-theories}
+## Theories {#sec-theories}
 
-{{ ctx.n_theories }} theories were generated under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) and triaged for testability against the data in hand. {{ ctx.n_testable_theories }} {{ 'was' if ctx.n_testable_theories == 1 else 'were' }} testable now, each committed to a prespecified test; the rest need new data. Novelty is assessed by the Theorizer per law (statement) and shown on each constituent law. Click a theory or law to jump to its full entry in the appendix. The theories are proposed here, not verified.
+Asta's Theorizer generated **{{ ctx.n_theories }} literature-grounded theories** under {{ ctx.objectives|length }} objectives ({{ ctx.objectives|map('replace','_focused','')|join(' and ') }}) that explain the reproduced relationships, then triaged each for testability against the data in hand: {{ ctx.n_testable_theories }} {{ 'is' if ctx.n_testable_theories == 1 else 'are' }} testable now, each committed to a prespecified test, and the rest await new data. The Theorizer assesses novelty per constituent law (statement), shown below on each law. Each row links to the theory's full entry in the [appendix](#sec-appendix-theories). The theories are proposed and triaged here, not yet verified.
 
 {% if ctx.theories_ordered %}
 ```{=latex}
