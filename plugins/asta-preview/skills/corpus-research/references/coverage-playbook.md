@@ -4,6 +4,16 @@ Goal: a coverage VERDICT you can defend — `{captured, missing-estimate range, 
 gaps, explicit boundary}` — never a bare "comprehensive" and never a single scalar.
 
 ## 1. Multi-modal acquisition (the only honest way in)
+**Match the modality set to WHERE THE POPULATION LIVES — not to your tooling.** Academic indexes
+(search, citation graph, survey references) enumerate *academic* literature; if the thread's
+population is industry-adjacent or practice-driven (models, tools, systems, datasets, clinical
+topics), the web has MAINTAINED ENUMERATIONS that academic modalities structurally miss:
+registries, leaderboards, comparison/pricing aggregators, curated "awesome" lists, Wikipedia
+list-articles, vendor documentation. These are BOTH an acquisition modality (enumerate → resolve
+each entry to its paper/report → judge; some entries legitimately have no paper — record that)
+AND a recall anchor. Ask at Step 0: "who else already maintains a list of these things?" —
+skipping this cost a real run its most obvious gap.
+
 Run INDEPENDENT modalities, each blind to the others, tagging every candidate with its modality:
 1. **Parametric enumeration** — list what you already know (seeds). Biased toward famous/recent —
    that's fine, it's one modality, and the corpus adjudicates it.

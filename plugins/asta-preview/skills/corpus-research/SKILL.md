@@ -58,6 +58,9 @@ From the user's question alone, write `<run>/thread.json`:
 ## The pipeline (each phase has a reference doc; read it when you get there)
 1. **Acquire** — multi-modal, each modality blind to the others: parametric seed enumeration →
    `asta literature` search/snowball + backward co-citation → survey-reference pooling →
+   **web/registry enumeration when the population lives outside academia** (registries,
+   leaderboards, aggregators, Wikipedia list-articles — enumerate, resolve entries to
+   papers/reports, judge; see the playbook §1 doctrine) →
    gap-directed sweeps where earlier modalities proved weak → forward citations for recency.
    Tag every candidate with its modality (provenance). Mechanics live in `scripts/acquire.py`
    (resolve_titles — scored matching, never take the first hit; fetch_edges; pool_references;
