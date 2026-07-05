@@ -13,12 +13,19 @@ list-articles, vendor documentation. These are BOTH an acquisition modality (enu
 each entry to its paper/report → judge; some entries legitimately have no paper — record that)
 AND a recall anchor. Ask at Step 0: "who else already maintains a list of these things?" —
 skipping this cost a real run its most obvious gap.
-**The INDEX does not define the population.** If an enumerated item's report exists only on a
-lab/vendor page — or on arXiv but not (yet) in the scholarly index — it is STILL in-population:
-mint a stable synthetic id (`arxiv:<id>` when arXiv-only; `web:<slug>` otherwise), fetch the
-page/PDF into the fulltext cache under that id, record the canonical URL, and judge it like any
-candidate. Substrate ids are opaque strings, so synthetic ids flow through rings/gates/extraction
-unchanged (citation-graph signals simply won't cover them — note that in the coverage boundary).
+**The INDEX does not define the population — but identity must stay robust (S2 = prime citizen):**
+- **Primary key = the S2 corpusId whenever one exists.** Before minting anything synthetic,
+  try S2 by EXTERNAL ID — `paper/arXiv:<id>`, `paper/DOI:<doi>` — title-search failing is NOT
+  evidence of absence (a real round minted 2 unnecessary synthetics that direct lookup resolved).
+- **Only then mint a synthetic key** (`web:<slug>`; `arxiv:<id>` only if the direct lookup truly
+  404s), fetch the page/PDF into the fulltext cache under that key, and record ALL known
+  identifiers in an `ids{}` field (arxiv/doi/url) so later resolution is possible.
+- **Promotion with aliasing:** when an S2 id is later found for a synthetic-keyed record (arXiv
+  papers DO get indexed), re-key the record and append `old→new` to the run's `id-aliases.json`;
+  apply the alias map whenever merging any output still keyed by old ids. Joins must never break.
+- Dedup resolution order across id spaces: `s2 > doi > arxiv > url-slug`.
+- Synthetic-keyed items flow through rings/gates/extraction unchanged (ids are opaque strings);
+  citation-graph signals won't cover them — say so in the coverage boundary.
 Priority rule: a PROPER technical report must never be missed because of indexing; page-only
 long-tail items are captured best-effort.
 
