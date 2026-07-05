@@ -25,6 +25,13 @@ the decision as `evidence_tier` in thread.json and say which tier each answer us
 3. **Map** — batch reports across subagents; each reads its digest from cache (NEVER re-fetches)
    and extracts the thread.json extraction_schema, grounding each field in a verbatim span. Use
    per-batch isolated output files (shared scratch corrupts parallel runs).
+   **INCREMENTAL-WRITE DISCIPLINE (every worker, every long job):** APPEND each record to the
+   output JSONL as it is produced — never hold results for one final Write. On start, read the
+   output file if it exists and SKIP already-done ids. Why: a stalled/killed worker that wrote
+   nothing loses ALL its work (this happened — a 10-minute agent died at a watchdog with zero
+   output); with append+skip, the orchestrator sees live progress (`wc -l`) and a relaunch of the
+   SAME prompt RESUMES instead of redoing. Same principle as checkpointed fetches
+   (acquire.fetch_edges): long work is resumable work.
 4. **Reduce** — aggregate per sub-question with gates (below).
 
 ## Two-tier evidence pattern
