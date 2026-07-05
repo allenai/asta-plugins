@@ -13,6 +13,14 @@ list-articles, vendor documentation. These are BOTH an acquisition modality (enu
 each entry to its paper/report → judge; some entries legitimately have no paper — record that)
 AND a recall anchor. Ask at Step 0: "who else already maintains a list of these things?" —
 skipping this cost a real run its most obvious gap.
+**The INDEX does not define the population.** If an enumerated item's report exists only on a
+lab/vendor page — or on arXiv but not (yet) in the scholarly index — it is STILL in-population:
+mint a stable synthetic id (`arxiv:<id>` when arXiv-only; `web:<slug>` otherwise), fetch the
+page/PDF into the fulltext cache under that id, record the canonical URL, and judge it like any
+candidate. Substrate ids are opaque strings, so synthetic ids flow through rings/gates/extraction
+unchanged (citation-graph signals simply won't cover them — note that in the coverage boundary).
+Priority rule: a PROPER technical report must never be missed because of indexing; page-only
+long-tail items are captured best-effort.
 
 Run INDEPENDENT modalities, each blind to the others, tagging every candidate with its modality:
 1. **Parametric enumeration** — list what you already know (seeds). Biased toward famous/recent —
