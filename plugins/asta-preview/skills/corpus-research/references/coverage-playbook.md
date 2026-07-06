@@ -63,9 +63,13 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   hits zero — a same-shaped tail is more-of-the-same, not new coverage.
 
 ## 3. Estimate what's missing (the [T] signals; `scripts/coverage_signals.py`)
-- **Capture-recapture across modalities** (`capture_recapture_modalities`): treat two independent
-  modality groups as capture occasions → Chapman population estimate. Heterogeneous catchability
-  (famous items over-captured) makes it a LOWER bound — say so.
+- **Capture-recapture across modalities** (`capture_recapture_modalities`): treat two capture
+  occasions → Chapman estimate. CALIBRATED usage: pair the PF-FILTERED group against the
+  FILTER-INDEPENDENT group (best usable estimate; still ~20% low). NEVER pair two independent
+  modalities against each other — they co-capture the same famous canon and N̂ collapses (the
+  deeper shared latent is citation FAME, which no lineage split removes). Heterogeneous
+  catchability makes every variant a LOWER bound — say so; on disjoint catchments the
+  reliability gate fires and no re-slice helps (that class needs exposure/rejected data).
 - **Many-occasion Chao1 on real citation incidence** (`unseen_class_incidence`) for the
   backward axis. GATE: label_coverage < 1 ⇒ lower bound; judge every capture (relevance-as-you-go).
 - **STRATIFY, never quote a flat "% missing"** (`reference_pool_recall`): recall by
