@@ -46,3 +46,6 @@ consensus with an outlier, exclude it).
 ## Aggregation altitude
 Group/count at the altitude the question asks (families, not raw strings; techniques deduped by
 model-family; findings by phenomenon). Make groupings revisable on request ("redo those groups").
+When thread.json declares `scope.strata` (eras, kinds, populations the user said to include
+side-by-side), aggregate PER-STRATUM and present strata separately — pooling across strata the
+user explicitly distinguished corrupts every distribution and count.

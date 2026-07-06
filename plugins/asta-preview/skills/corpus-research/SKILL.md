@@ -42,10 +42,15 @@ From the user's question alone, write `<run>/thread.json`:
  "evidence_tier": "abstract|fulltext"}
 ```
 - **criteria**: decompose the question into per-criterion relevance tests (graded 0–3, tier =
-  in/relevant/maybe/not-relevant). Confirm scope edges with the user when ambiguous.
+  in/relevant/maybe/not-relevant). Ask at Step 0 only what BLOCKS the first sweep; defer other
+  scope-edge questions to the scope-charter beat — questions asked after first contact with the
+  data are visibly better-informed (measured across runs).
 - **scope.axis**: `folded` when relevance IS the scope test; `separate` when a paper can be
   relevant-shaped but off-scope on an orthogonal axis (fill `out_of_scope_families` only AFTER
-  codebook derivation exposes them).
+  codebook derivation exposes them). When the user says "include both X and Y" (eras, kinds,
+  populations), record them as `scope.strata`: include both, POOL NEITHER — deliverables are
+  computed per-stratum (or primary-stratum-only with the rest reported separately). Pooling
+  strata the user explicitly distinguished corrupts every count downstream.
 - **extraction_schema**: design fields from the question's sub-questions (what does each paper
   analyze/use/find/extend...). Include per-record: evidence span, confidence, and a `scope_flag`
   escape (extraction reads deepest — it catches scope leaks nothing else sees).
@@ -56,7 +61,14 @@ From the user's question alone, write `<run>/thread.json`:
   Config must describe what actually ran, or downstream consumers read a stale contract.
 
 ## The pipeline (each phase has a reference doc; read it when you get there)
-1. **Acquire** — multi-modal, each modality blind to the others: parametric seed enumeration →
+1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
+   population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
+   ("find the librarians": registries, leaderboards, review tables, curated lists, trial
+   registries), and **≥2 candidate modalities NOT in the list below — justify or refute each**.
+   The modality list here is EXEMPLARS + a FLOOR, not the population: a checklist satisfies
+   diligence ("did I run the list?") — the habitat note restores the real question ("have I
+   found everything?"). A real run skipped it and missed the asker's #1 named item.
+   Then run multi-modal, each modality blind to the others: parametric seed enumeration →
    `asta literature` search/snowball + backward co-citation → survey-reference pooling →
    **web/registry enumeration when the population lives outside academia** (registries,
    leaderboards, aggregators, Wikipedia list-articles — enumerate, resolve entries to
@@ -69,9 +81,11 @@ From the user's question alone, write `<run>/thread.json`:
    - `asta literature find` — one-shot ranked search; best for SWEEPS of independent query
      angles (per-query output files = per-query provenance).
    - `asta literature interactive` — the full paper-finder agent: query DECOMPOSITION planning +
-     a results-verification loop. Use it for the gnarly semantic queries ("X even if not using
-     those words") where your hand-rolled angles may under-search, and when you want the agent
-     to iterate until criteria are satisfied.
+     a results-verification loop. Inside THIS skill your own loop already does decomposition and
+     iteration, and the one measured run found interactive the highest-PRECISION surface but with
+     ZERO unique-relevant yield (everything it found, find/snowball/citances also found). Treat
+     it as an optional precision/validation probe or for one-off gnarly semantic questions — not
+     as a corpus recall workhorse (evidence is n=1; re-measure if your thread differs).
    - `asta literature snowball` — RANKED citation expansion (reranked against seed relevance),
      and **citances mode**: citation-CONTEXT snippets — a distinct discovery modality that finds
      papers by HOW they're cited and hands you judge-ready evidence. Raw S2 edges (s2.py) are
@@ -108,7 +122,17 @@ From the user's question alone, write `<run>/thread.json`:
      `https://api.semanticscholar.org/CorpusId:<corpusId>`; if not on S2, link arXiv/DOI/
      publisher/the post itself. A bare corpusId is not clickable.
    For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
-   one-vs-two-paper spats (`references/answers.md`).
+   one-vs-two-paper spats (`references/answers.md`). The final user-facing deliverable is the
+   REPORT — shape and content requirements in `references/report.md` (index page, per-question
+   method notes, evidence in-body, data-generated distribution charts, self-contained rendering,
+   the package). Do NOT source deliverable structure from generic artifact/design skills.
+
+## Worker discipline (HARD — every long-running subagent job, all phases)
+Judging waves, extraction batches, fetch sweeps, tagging runs: the worker APPENDS each result as
+it is produced (never write-at-end) and SKIPS items already present in its output file
+(idempotent resume). A stalled write-at-end worker loses everything; an append-as-produced worker
+resumes for free, and `wc -l` is live progress. **Put these two instructions in every worker
+prompt verbatim** — doctrine that lives only in a phase reference does not reach spawned workers.
 
 ## Interaction rhythm — you are collaborating, not executing a ticket  <!-- v1, tune with users -->
 The user's most valuable input comes AFTER contact with the data — they can't react to a
@@ -120,7 +144,9 @@ where each beat collects a DECISION or a steer (never a mere status update):
   runs draw materially different boundaries; pin the edges WITH the user), and the plan. Long
   fetches keep running in the background while you talk.
 - **Post-curation beat:** surprising exclusions + borderline patterns → the user rules on
-  contested edges (they decide scope, you decide mechanics).
+  contested edges (they decide scope, you decide mechanics). Do NOT self-adjudicate contested
+  edges silently, even when confident — surfacing them IS the beat (the one run that skipped it
+  was right on the merits and still wrong on process: the user never saw the edge existed).
 - **Coverage beat:** verdict + boundary → **STOP vs CONTINUE is the user's call** (it depends on
   their goal, which you don't fully know).
 - **Early-answers beat:** preview headline distributions/findings from the partial corpus BEFORE

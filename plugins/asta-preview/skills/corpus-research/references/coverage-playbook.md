@@ -11,8 +11,10 @@ topics), the web has MAINTAINED ENUMERATIONS that academic modalities structural
 registries, leaderboards, comparison/pricing aggregators, curated "awesome" lists, Wikipedia
 list-articles, vendor documentation. These are BOTH an acquisition modality (enumerate → resolve
 each entry to its paper/report → judge; some entries legitimately have no paper — record that)
-AND a recall anchor. Ask at Step 0: "who else already maintains a list of these things?" —
-skipping this cost a real run its most obvious gap.
+AND a recall anchor. This doctrine has TWO halves — **CAPTURE** (accept off-index works as
+first-class records) and **ENUMERATION** (actually sweep the maintained lists) — and a real run
+used capture while skipping enumeration and missed the asker's #1 named item. The habitat note
+(SKILL step 1) forces the enumeration question every time: who else already keeps a list of these?
 **The INDEX does not define the population — but identity must stay robust (S2 = prime citizen):**
 - **Primary key = the S2 corpusId whenever one exists.** Before minting anything synthetic,
   try S2 by EXTERNAL ID — `paper/arXiv:<id>`, `paper/DOI:<doi>` — title-search failing is NOT
@@ -29,7 +31,8 @@ skipping this cost a real run its most obvious gap.
 Priority rule: a PROPER technical report must never be missed because of indexing; page-only
 long-tail items are captured best-effort.
 
-Run INDEPENDENT modalities, each blind to the others, tagging every candidate with its modality:
+Run INDEPENDENT modalities, each blind to the others, tagging every candidate with its modality
+(this list is EXEMPLARS + FLOOR — the habitat note proposes what it's missing for THIS population):
 1. **Parametric enumeration** — list what you already know (seeds). Biased toward famous/recent —
    that's fine, it's one modality, and the corpus adjudicates it.
 2. **Citation expansion** — `asta literature snowball` (backward/forward/citances) + co-citation
@@ -76,7 +79,9 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
 
 ## 5. Localize gaps, prioritize closure
 - `citation_graph` missed-high-centrality: uncaptured nodes many core papers cite — TRIAGE
-  in-scope canon vs out-of-scope famous hubs (they're usually hubs).
+  in-scope canon vs out-of-scope famous hubs (they're usually hubs). `gap_lift` automates the
+  triage: local-citers / log(global citations) separates thread-specific gaps (high lift) from
+  world-famous hubs (low lift) — judge its head, not raw local counts.
 - **Relevance-weighted eigenvector centrality** (`eigenvector_centrality`) = the validated
   ranking prior for which candidates to judge/acquire next (top-decile ~80% relevant). Keep the
   weight binary; feed the cached edges.
@@ -102,3 +107,8 @@ Verdict discipline (each learned from a real run):
 - **CR across modalities needs co-capture.** Modalities with disjoint catchments (different
   eras/communities) give tiny overlap and an absurd N̂ — the `reliable=False` gate discards it;
   say so in the verdict rather than averaging it in.
+- **Completeness critic (fresh eyes, cheap) before finalizing:** spawn a FRESH-context subagent
+  given only the question + a corpus summary + the modalities used, prompted adversarially:
+  "what would a resourceful human do that this pipeline didn't? what chunk could be missing?"
+  Every signal above is computed from INSIDE your catchments; the critic is the only one that can
+  point at a library you never visited. Its output = candidate gaps to check, not verdict overrides.

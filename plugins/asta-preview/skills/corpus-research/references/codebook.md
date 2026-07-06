@@ -32,3 +32,20 @@ subfield, a methodology-only cluster). Those become `scope.out_of_scope_families
 ## Methods/entities get their own codebook
 The same recipe derives a METHODS codebook (normalize free-text method strings into countable
 families) or an ENTITY vocabulary — whatever the question aggregates over. Derive per axis.
+
+## Canonicalization maps are DATA — gate them like data
+Entity/name canonicalization (model names, method names, dataset names) uses a **2-level scheme**:
+raw string → `{canonical_name, family}` (spelling variants → one canonical; versions → one
+family). Rules, each learned from a real failure:
+- **Frozen artifact, never inline.** The map is a versioned FILE (`canon-map.json`) applied
+  deterministically [T]. Inline normalization ships its errors silently; a file is a 30-second
+  audit.
+- **Attested names only.** `canonical_name` must appear (modulo punctuation/case) somewhere in
+  THIS corpus — a title or an extraction. NEVER invent a name; when none is attested, keep the
+  raw string as the canonical and assign only `family`. Real failure: parameter sizes became
+  phantom versions ("DeepSeek-Coder 33B" → "DeepSeek 33", "1.1B Llama-arch model" → "Llama 1.1").
+- **Machine self-check → review queue.** Scan the map for unattested canonical names (normalized
+  substring check against the corpus vocabulary); fix or revert each hit; surface UNCERTAIN
+  mappings to the user at a beat — a review queue, not silent auto-accept.
+- **General rule: pair every "produce X" with "gate X".** Any derived mapping/table ships only
+  after an acceptance check on the artifact itself — same discipline as merges and substrates.

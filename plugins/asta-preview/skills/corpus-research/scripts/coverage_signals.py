@@ -175,6 +175,30 @@ def citation_graph(edges, collection_ids, top_missed=15):
             "missed_high_centrality": ext_count.most_common(top_missed)}
 
 
+def gap_lift(edges, collection_ids, global_citations, top=25):
+    """Triage missed-high-centrality nodes: in-scope gap vs out-of-scope famous hub.
+    lift = local_citers / log(1 + global_citations) — a node many CORE papers cite but the world
+    mostly ignores is thread-specific (a real gap); a node the whole world cites (optimizers,
+    foundational architectures) is a hub, not a gap. `global_citations` = {corpusId: citationCount}
+    (fetch for the top missed nodes only). Returns [(corpusId, lift, local, global)] descending —
+    judge the head of THIS list, not raw local counts."""
+    import math
+    S = set(map(str, collection_ids))
+    local = Counter()
+    for c in S:
+        for r in edges.get(c, ()):
+            if r not in S:
+                local[r] += 1
+    out = []
+    for cid, n in local.most_common(top * 4):
+        g = global_citations.get(str(cid))
+        if g is None:
+            continue
+        out.append((cid, round(n / math.log(1 + max(g, 1)), 3), n, g))
+    out.sort(key=lambda t: -t[1])
+    return out[:top]
+
+
 # -------------------------------------------------------------- distributions
 def content_distribution(observations, key="primary_family", ring=("core", "candidate")):
     """Family/tag distribution over the answer set — ONLY trustworthy if the tag-coverage gate

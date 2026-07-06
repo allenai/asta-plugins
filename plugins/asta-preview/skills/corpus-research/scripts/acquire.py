@@ -13,7 +13,8 @@ Usage (library, from the run dir):
     acquire.resolve_titles(titles, s2)                      # parametric seeds -> ids (scored match)
     acquire.fetch_edges(ids, s2, "edges-cache.json")        # checkpointed reference caching
     acquire.pool_references(edges, group_ids, min_count=2)  # survey-ref / co-citation pooling
-    acquire.candidates_from_asta_find("acq/astafind-*.json")# adapt `asta literature find -o` output
+    acquire.candidates_from_asta("acq/astafind/*.json")     # adapt find/interactive/snowball output
+    acquire.write_seeds_file(core_ids, "acq/seeds.json")    # seeds for `snowball --seeds-file`
     acquire.merge_candidates(".")                           # union ALL acq/*.jsonl -> candidates.jsonl
 """
 from __future__ import annotations
@@ -92,28 +93,55 @@ def pool_references(edges, group_ids, min_count=2, exclude=None):
 
 
 # ---------------------------------------------------------------- adapters
-def candidates_from_asta_find(glob_pattern, provenance="asta-find"):
-    """Adapt `asta literature find ... -o out.json` result files into candidate rows. Keeps
-    snippets + relevance score + which queries found each paper (all judge-useful)."""
+def candidates_from_asta(paths, provenance="asta-find"):
+    """Adapt `asta literature find/interactive/snowball -o out.json` results into candidate rows —
+    all three surfaces emit the same envelope ({query, results, thread_id, narrative}) and row
+    schema. Keeps everything judge-useful: abstract, snippets, relevanceScore, the paper-finder
+    relevance grade, citationCount, venue, url, citation CONTEXTS (snowball/citances — judge-ready
+    evidence), and which queries found each paper. `paths` = glob pattern or list of files."""
+    files = sorted(glob.glob(paths)) if isinstance(paths, str) else list(paths)
     rows = {}
-    for path in sorted(glob.glob(glob_pattern)):
+    for path in files:
         try:
             data = json.load(open(path))
         except Exception:
             continue
+        qname = os.path.basename(path).rsplit(".", 1)[0]
         for r in data.get("results", data if isinstance(data, list) else []):
             cid = str(r.get("corpusId") or "")
             if not cid or cid == "None":
                 continue
+            rj = r.get("relevanceJudgement")
+            pf_grade = rj.get("relevance") if isinstance(rj, dict) else None
             rec = rows.setdefault(cid, {"corpusId": cid, "title": r.get("title"),
                                         "year": r.get("year"), "provenance": [provenance],
                                         "abstract": r.get("abstract"), "snippets": r.get("snippets"),
                                         "relevanceScore": r.get("relevanceScore"),
+                                        "pf_grade": pf_grade, "citationCount": r.get("citationCount"),
+                                        "venue": r.get("venue"), "url": r.get("url"),
+                                        "citationContexts": r.get("citationContexts"),
                                         "found_by_queries": []})
-            rec["found_by_queries"].append(os.path.basename(path))
+            rec["found_by_queries"].append(qname)
             if (r.get("relevanceScore") or 0) > (rec.get("relevanceScore") or 0):
                 rec["relevanceScore"] = r.get("relevanceScore")
+            if pf_grade is not None and (rec.get("pf_grade") is None or pf_grade > rec["pf_grade"]):
+                rec["pf_grade"] = pf_grade
     return list(rows.values())
+
+
+candidates_from_asta_find = candidates_from_asta  # back-compat alias
+
+
+def write_seeds_file(seeds, path):
+    """Write a seeds file for `asta literature snowball --seeds-file`. Accepts [corpusId],
+    [(corpusId, relevance)], or {corpusId: relevance}; emits the JSON list of
+    "corpusId:relevance" strings the CLI parses (relevance 0-3, default 3)."""
+    if isinstance(seeds, dict):
+        items = list(seeds.items())
+    else:
+        items = [s if isinstance(s, (list, tuple)) else (s, 3) for s in seeds]
+    json.dump([f"{cid}:{rel}" for cid, rel in items], open(path, "w"))
+    return len(items)
 
 
 # ---------------------------------------------------------------- merge

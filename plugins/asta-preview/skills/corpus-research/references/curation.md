@@ -29,6 +29,22 @@ claims, spans per sub-question) stays post-curation, on the relevant ring, at th
    (A lone judge GIVEN body text can do WORSE than on the abstract — query-conditioned snippets
    mislead without cross-check; escalate to body only inside the panel.)
 
+## Graduated judging for large candidate pools (designed from measured runs)
+When the judged tail is big (typically ~60% of judging spend goes to rejects), don't judge in
+arrival order and don't defer all-or-nothing at the end:
+1. **Prior-ordered queue ([T], free):** order candidates by the priors you already hold —
+   retrieval relevanceScore, corroboration count, the relevance-weighted centrality prior
+   (`coverage_signals.eigenvector_centrality`; top-decile ~80% relevant). Judge descending and
+   track **yield-by-prior-decile** as you go: the defer/continue call becomes a data-driven
+   mid-stream decision on the marginal-yield curve (honestly reportable), and anything deferred
+   gets its derived residual from the same curve.
+2. **Cheap-first cascade (model tiering):** a screening pass on a cheap model three-ways the pool
+   (clear-in / clear-out / uncertain); the strong model judges only the uncertain band.
+   **Calibration is non-negotiable:** before trusting the cheap tier, measure its agreement
+   against the strong tier on a sample of THIS thread; adjudication/escalation always strong-tier.
+   Mechanical stages (tagging, chart data) go to the cheapest tier; extraction needs a tier that
+   preserves VERBATIM quotes — verify it doesn't paraphrase before delegating.
+
 ## Evidence: reuse snippets, escalate deliberately
 - `asta literature` returns snippets/contexts — KEEP them on the candidate; judge on
   abstract+snippet, not title alone (title-only drops are a systematic false-negative source).
