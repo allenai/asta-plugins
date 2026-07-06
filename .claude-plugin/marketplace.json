@@ -24,8 +24,7 @@
         "semantic-scholar",
         "literature"
       ],
-      "strict": false,
-      "hooks": "./hooks/hooks.json"
+      "strict": false
     },
     {
       "name": "asta-flows",
@@ -42,8 +41,7 @@
         "research",
         "workflows"
       ],
-      "strict": false,
-      "hooks": "./hooks/hooks.json"
+      "strict": false
     },
     {
       "name": "asta-assistant",
