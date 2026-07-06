@@ -31,8 +31,17 @@ used capture while skipping enumeration and missed the asker's #1 named item. Th
 Priority rule: a PROPER technical report must never be missed because of indexing; page-only
 long-tail items are captured best-effort.
 
-Run INDEPENDENT modalities, each blind to the others, tagging every candidate with its modality
-(this list is EXEMPLARS + FLOOR — the habitat note proposes what it's missing for THIS population):
+**The shared-filter caveat (calibrated, explains measured verdict overconfidence):** queries are
+independent, but every paper-finder surface (find/interactive/snowball/citances) shares ONE
+relevance reranker. Cross-modality corroboration partly measures filter agreement; CR occasions
+correlate → N̂ biased DOWN. Treat modalities by FILTER LINEAGE: paper-finder-filtered vs
+filter-independent (parametric enumeration, survey-ref pooling, raw-edge co-citation, raw-S2
+sweeps, web lists). The retrieval filter's false-negative rate is a named verdict term —
+UNMEASURED until the rejected-stats sidecar is available, then measured per thread by judging
+the reject sample.
+
+Run modalities with independent QUERIES, each blind to the others, tagging every candidate with
+its modality (this list is EXEMPLARS + FLOOR — the habitat note proposes what's missing):
 1. **Parametric enumeration** — list what you already know (seeds). Biased toward famous/recent —
    that's fine, it's one modality, and the corpus adjudicates it.
 2. **Citation expansion** — `asta literature snowball` (backward/forward/citances) + co-citation
@@ -90,6 +99,14 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   weight binary; feed the cached edges.
 - Closing the peripheral tail needs NON-citation modalities (semantic/venue/author sweeps) — more
   snowball only re-reaches the same neighborhood.
+- **Shadow signals beyond citations** (each relation sees a different missing population):
+  **mention-shadow sweep (VALIDATED)** — invert the mentioned-entities extraction field against
+  the corpus name universe; rank mention-dangling entities by doc-frequency and judge the head
+  (caught a real run's #1 named gap at 12 mentions, plus misses even the gold union shared;
+  verify every flag against corpus+gold before claiming — a normalization bug false-flagged an
+  in-corpus item). **Dangling-lineage (pass-gate)**: extends-graph parents ∉ corpus should be
+  EMPTY — non-empty is a loud alarm; empty licenses only "lineage closed", it cannot detect
+  comparison-class misses.
 
 ## 6. The verdict (the [J] step — yours)
 Triangulate: discard signals that fail their self-check; ensemble surviving estimators into a
@@ -110,6 +127,11 @@ every verdict tested was OVERCONFIDENT, none underconfident; correct for the bia
   entered the rings — check it) and **scope drift** (state the exact file+count the verdict was
   computed over; recompute after the last data change).
 - The cheapest calibrator of all is a second independent run — for high-stakes threads, say so.
+- **Report coverage as a FAMILY × ERA MATRIX, not a scalar** (calibrated: misses concentrate —
+  top cells held 40–56% of true misses in ~20% of coverage; scalars hide exactly this). The two
+  validated INTERNAL flags are **era-dips** and **empty cells**; deeper hole-detection needs an
+  EXTERNAL per-cell volume prior (self-consistent holes look healthy from inside — do not claim
+  the matrix's quiet cells are covered).
 Verdict discipline (each learned from a real run):
 - **Name your estimators — including the gated ones.** The verdict lists every estimator
   considered and its status (used / GATED: why). A silently skipped estimator is

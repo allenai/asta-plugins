@@ -13,7 +13,9 @@ one schema across retrieval scores, judge verdicts, adjudications, audits.
 ## Judge-and-open-code in ONE pass (do this — don't re-read abstracts per stage)
 The judge must also emit **light open codes**: the thread-shaped "what does it analyze / by what
 method" phrases (whatever your criteria hinge on), a one-line reason, and a short VERBATIM
-`evidence_quote`. Three payoffs: (1) one abstract-read serves judging AND seeds the codebook's
+`evidence_quote`. **Verbatim means verbatim** — copy the span exactly; elide with "..." (each
+fragment exact), never condense in your own words (audited: judge-time quotes ran ~93% verbatim
+with light paraphrase the main deviation — the quote is the judgment's audit trail). Three payoffs: (1) one abstract-read serves judging AND seeds the codebook's
 open codes (grounded coding starts from these); (2) it makes grading HONEST — the criteria hinge
 on exactly these fields, and a judge that cannot name the phenomenon cannot justify a high grade
 (nullable extraction IS the relevance test, countering inclusion bias); (3) the quote makes the

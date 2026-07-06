@@ -24,6 +24,24 @@ from another thread (that's a train-test leak and it won't fit).
 - **Over-conservative tagging.** A batch that dumps classifiable papers into "Other" fails the
   same gate. Re-tag them (they usually fit existing families) rather than inventing families.
 
+## Parametric family anchor — REQUIRED gate after codebook@v1 (§anchor)
+A corpus-derived codebook is circular by construction: a whole missing family produces no
+"Other" growth, no tag-gate failure, nothing. The anchor is the validated check for that class
+(caught 4 real families hidden in a real run's "Other"; correct null on a good codebook;
+charter-conditioning is the false-positive control — 15/20 spurious naive → 0 conditioned):
+> **Protocol.** Reading ONLY the thread charter (question, deliverables, out_of_scope_families)
+> — NOT the codebook or corpus — enumerate 12–25 content families you'd expect this literature
+> to span, with one-line definitions; WRITE THEM DOWN before opening the codebook. Then align
+> each to the codebook: PRESENT / SUBSUMED / ABSENT. For every ABSENT family, title-scan the
+> run's candidates and core: (a) papers in-core → carve out the family or add it as a NAMED
+> residual (never silently in Other); (b) papers in candidates but not core → audit the
+> curation/scope decision; (c) papers nowhere → thin-literature note or an acquisition probe.
+> For SUBSUMED families with substantial in-core mass, consider promotion at codebook@v2.
+> Record the table in the run's coverage evidence; the gate FAILS if any ABSENT-case-(a) family
+> is left uncarved and unnamed.
+The anchor is one-directional (it misses families you didn't think to enumerate) — it
+complements grounded open-coding, never replaces it.
+
 ## A codebook is also a scope audit
 Deriving families exposes clusters that don't belong to the thread's phenomenon (an orthogonal
 subfield, a methodology-only cluster). Those become `scope.out_of_scope_families` in thread.json

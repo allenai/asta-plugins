@@ -85,7 +85,9 @@ the costed options at that beat renew the consent — never silently 2× the app
    The modality list here is EXEMPLARS + a FLOOR, not the population: a checklist satisfies
    diligence ("did I run the list?") — the habitat note restores the real question ("have I
    found everything?"). A real run skipped it and missed the asker's #1 named item.
-   Then run multi-modal, each modality blind to the others: parametric seed enumeration →
+   Then run multi-modal — queries independent, but know that every paper-finder surface shares
+   ONE relevance filter (calibrated consequence: corroboration and capture-recapture overstate
+   independence — playbook §1): parametric seed enumeration →
    `asta literature` search/snowball + backward co-citation → survey-reference pooling →
    **web/registry enumeration when the population lives outside academia** (registries,
    leaderboards, aggregators, Wikipedia list-articles — enumerate, resolve entries to
@@ -96,7 +98,9 @@ the costed options at that beat renew the consent — never silently 2× the app
    candidates_from_asta_find; merge_candidates). Cache everything via `scripts/s2.py`.
    **Retrieval division of labor** (each tool's comparative advantage — use accordingly):
    - `asta literature find` — one-shot ranked search; best for SWEEPS of independent query
-     angles (per-query output files = per-query provenance).
+     angles (per-query output files = per-query provenance). Pass `--include-rejected summary`
+     when the server supports it: drop statistics land in a `.rejected.json` SIDECAR (coverage
+     input — scripts read it; never pull it into your context).
    - `asta literature interactive` — the full paper-finder agent: query DECOMPOSITION planning +
      a results-verification loop. Inside THIS skill your own loop already does decomposition and
      iteration, and the one measured run found interactive the highest-PRECISION surface but with
@@ -113,7 +117,9 @@ the costed options at that beat renew the consent — never silently 2× the app
    only for the borderline; strip search noise). Write judgment files → `scripts/relevance.py`.
 3. **Codebook** (when the question needs content families) — DERIVE it from this corpus by
    grounded coding (`references/codebook.md`); apply as ordered tag batches. Never import a
-   codebook from elsewhere.
+   codebook from elsewhere. REQUIRED GATE after codebook@v1: the **parametric family anchor**
+   (codebook.md §anchor) — corpus-derived codebooks are circular and cannot see a whole missing
+   family; the blind-enumerated anchor is the validated check for that class.
 4. **Substrate** — `scripts/substrate.py`: one observation record per paper, RINGS
    (core/candidate/maybe/unjudged/out), stage-coverage GATES. All downstream reads THIS.
    **After EVERY candidates-merge or substrate rebuild, run `scripts/validate.py <run>` and stop
@@ -131,7 +137,10 @@ the costed options at that beat renew the consent — never silently 2× the app
    prefer it over ad-hoc jq (it knows the 3-layer membership semantics).
 6. **Extract & answer** — per-paper extraction (map) over the evidence tier
    (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
-   sub-question with gates. TWO HARD OUTPUT REQUIREMENTS (not optional style):
+   sub-question with gates. Extraction schemas include a **mentioned-entities field** (the
+   thread's pertinent entity types: models/methods/datasets the paper COMPARES AGAINST, not just
+   its own subject) — nearly free at extraction time, and its inversion is a validated coverage
+   signal (playbook §5: mention-shadow). TWO HARD OUTPUT REQUIREMENTS (not optional style):
    - EVERY answered sub-question carries its own "**How performed:**" note (corpus + ring +
      method + evidence tier + limits) — per-answer, in place; a single global methods header
      does NOT satisfy this.

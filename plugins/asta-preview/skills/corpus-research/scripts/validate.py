@@ -24,7 +24,7 @@ Checks:
 Usage: python validate.py <run-dir>          (exit 0 = all gates pass)
 """
 from __future__ import annotations
-import glob, json, os, sys
+import glob, json, os, re, sys
 from collections import Counter
 
 RAW_MARKERS = ("-all.jsonl", "-raw.jsonl", ".raw.")
@@ -109,7 +109,32 @@ def validate(run):
     if ring_err:
         failures.append(f"[rings] {ring_err} ring/tier inconsistencies")
 
-    # 8. coverage report (informational)
+    # 8. ingestion loss — judged-relevant papers MUST hold a substrate ring (a real gold run
+    # silently lost 85 judged-relevant papers incl. 1,500-cite canon; no coverage estimator can
+    # see this class, only this check can)
+    obs_ring = {str(o["corpusId"]): o.get("ring") for o in obs_rows}
+    lost = [c for c, t in tiers.items()
+            if t in ("in", "relevant") and obs_ring.get(c) in (None, "out", "unjudged")]
+    if lost:
+        failures.append(f"[ingestion-loss] {len(lost)} judged-relevant ids have no live ring "
+                        f"(never entered the substrate) e.g. {sorted(lost)[:3]}")
+
+    # 9. canon-map attestation — canonicalization maps are DATA: canonical names must be
+    # ATTESTED (appear, modulo punctuation/case, among raw keys or candidate titles); invented
+    # names (sizes-as-versions) shipped in a real run before this gate existed
+    cmap_path = os.path.join(run, "canon-map.json")
+    if os.path.exists(cmap_path):
+        cmap = json.load(open(cmap_path))
+        norm = lambda s: re.sub(r"[^a-z0-9]", "", (s or "").lower())
+        vocab = norm(" ".join(list(cmap.keys()) + [r.get("title") or "" for r in cand_rows]))
+        ghosts = sorted({v.get("canonical_name") for v in cmap.values()
+                         if isinstance(v, dict) and v.get("canonical_name")
+                         and norm(v["canonical_name"]) not in vocab})
+        if ghosts:
+            failures.append(f"[canon-attestation] {len(ghosts)} canonical names attested NOWHERE "
+                            f"(invented?) e.g. {ghosts[:4]}")
+
+    # 10. coverage report (informational)
     relevant = [o for o in obs_rows if o.get("relevance_tier") in ("in", "relevant")]
     if obs_rows:
         lab = sum(1 for o in obs_rows if o.get("relevance_tier")) / len(obs_rows)

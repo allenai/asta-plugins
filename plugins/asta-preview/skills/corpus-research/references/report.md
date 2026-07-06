@@ -36,3 +36,7 @@ Disambiguation (three things people conflate):
 10. **Engagement is a feature** — interactive embeds (sortable catalog, filters, expandable
     evidence) are worth their cost IF grounded in the data files; a browsable report is what
     non-operators actually read.
+11. **Every prose aggregate has a data-file home.** Any count/percentage quoted in report prose
+    must exist in a shipped data file (ship the aggregate you quote; coverage-verdict numbers
+    live in coverage files). Audited: a real report's per-family adoption counts existed only in
+    prose — untraceable = unreviewable. `report_trace`-style checking should find ~0 orphans.
