@@ -11,7 +11,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 PLUGINS_ROOT = REPO_ROOT / "plugins"
-PLUGIN_NAMES = ("asta-tools", "asta-flows", "asta-dev")
+PLUGIN_NAMES = ("asta-tools", "asta-flows", "asta-assistant", "asta-dev")
 
 
 def _skill_mds(plugin: str) -> list[Path]:

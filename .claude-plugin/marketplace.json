@@ -11,7 +11,7 @@
       "name": "asta-tools",
       "source": "./plugins/asta-tools",
       "description": "Paper search, metadata, document management, literature reports, experiments, and theory generation for scientific research",
-      "version": "0.100.0",
+      "version": "0.101.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
@@ -29,7 +29,7 @@
       "name": "asta-flows",
       "source": "./plugins/asta-flows",
       "description": "Executes named, typed chains of research steps using the skills in asta-tools. Requires installation of asta-tools",
-      "version": "0.100.0",
+      "version": "0.101.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
@@ -38,15 +38,30 @@
       "keywords": [
         "asta",
         "research",
-        "autonomous",
-        "beads"
+        "workflows"
+      ]
+    },
+    {
+      "name": "asta-assistant",
+      "source": "./plugins/asta-assistant",
+      "description": "Autonomous collaborative agent able to plan and execute a long-range research agenda using asta-tools. Requires installation of asta-tools",
+      "version": "0.101.0",
+      "author": {
+        "name": "Ai2 Asta Team"
+      },
+      "repository": "https://github.com/allenai/asta-plugins",
+      "license": "Apache-2.0",
+      "keywords": [
+        "asta",
+        "research",
+        "autonomous"
       ]
     },
     {
       "name": "asta-dev",
       "source": "./plugins/asta-dev",
       "description": "Developer skills for working on Asta itself (improve-skills, research-challenge). Requires the asta-tools plugin to be installed.",
-      "version": "0.100.0",
+      "version": "0.101.0",
       "author": {
         "name": "Ai2 Asta Team"
       },
