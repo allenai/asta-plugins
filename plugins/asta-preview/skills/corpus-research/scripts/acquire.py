@@ -120,6 +120,7 @@ def candidates_from_asta(paths, provenance="asta-find"):
                                         "pf_grade": pf_grade, "citationCount": r.get("citationCount"),
                                         "venue": r.get("venue"), "url": r.get("url"),
                                         "citationContexts": r.get("citationContexts"),
+                                        "origins": r.get("origins"),
                                         "found_by_queries": []})
             rec["found_by_queries"].append(qname)
             if (r.get("relevanceScore") or 0) > (rec.get("relevanceScore") or 0):

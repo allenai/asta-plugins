@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class Author(BaseModel):
@@ -25,28 +25,97 @@ class Snippet(BaseModel):
 class RelevantSnippet(BaseModel):
     """Snippet supporting relevance judgement"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     text: str
-    sectionTitle: str | None = None
+    sectionTitle: str | None = Field(
+        default=None, validation_alias=AliasChoices("sectionTitle", "section_title")
+    )
     sentenceIds: list[str] = Field(default_factory=list)
 
 
 class RelevanceCriteriaJudgement(BaseModel):
-    """Per-concept relevance judgement"""
+    """Per-concept relevance judgement.
 
-    name: str
-    relevance: int
-    relevantSnippets: list[RelevantSnippet] = Field(default_factory=list)
+    Tolerant of both wire shapes: the a2a artifact ({name, relevance, relevantSnippets}) and the
+    enriched headless endpoints ({name, relevance, evidence})."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str | None = None
+    relevance: int | None = None
+    relevantSnippets: list[RelevantSnippet] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("relevantSnippets", "relevant_snippets", "evidence"),
+    )
     numOfOmittedRelevanceSnippetsDueLegal: int = 0
 
 
 class RelevanceJudgement(BaseModel):
-    """Overall relevance judgement for a paper"""
+    """Overall relevance judgement for a paper.
+
+    Tolerant of both wire shapes: the a2a artifact ({relevance, relevanceSummary,
+    relevanceCriteriaJudgements}) and the enriched headless endpoints ({relevance, summary,
+    criteria}) — previously relevanceSummary was REQUIRED, which would crash parsing the
+    headless shape."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     relevance: int
-    relevanceSummary: str
-    relevanceCriteriaJudgements: list[RelevanceCriteriaJudgement] = Field(
-        default_factory=list
+    relevanceSummary: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("relevanceSummary", "relevance_summary", "summary"),
     )
+    relevanceCriteriaJudgements: list[RelevanceCriteriaJudgement] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "relevanceCriteriaJudgements", "relevance_criteria_judgements", "criteria"
+        ),
+    )
+
+
+class Origin(BaseModel):
+    """Which retrieval operation surfaced a paper (per-result provenance from paper-finder).
+    Each operation = its own capture occasion for coverage estimation; total_hits = backend's
+    total matches BEFORE top-k truncation (S2 search + snowball; dense has none)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    query_type: str
+    provider: str | None = None
+    dataset: str | None = None
+    variant: str | None = None
+    query: str | None = None
+    iteration: int | None = None
+    ranks: list[int] | None = None
+    total_hits: int | None = None
+
+
+class RejectedItem(BaseModel):
+    """Slim row from the pipeline's rejected-sample (id/title/scores/origins only)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    corpus_id: str
+    title: str | None = None
+    relevance: int | None = None
+    score: float | None = None
+    drop_stage: str
+    origins: list[str] | None = None
+    best_rank: int | None = None
+
+
+class RejectedSummary(BaseModel):
+    """Statistics about docs paper-finder dropped (opt-in via include_rejected). Written to a
+    SIDECAR file by the CLI — coverage scripts read it programmatically; it never lands in the
+    main results file or the session's context."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    counts_by_stage: dict[str, int] = Field(default_factory=dict)
+    judged_grade_counts: dict[str, int] = Field(default_factory=dict)
+    counts_by_origin: dict[str, int] = Field(default_factory=dict)
+    sample: list[RejectedItem] | None = None
 
 
 class CitationContext(BaseModel):
@@ -89,6 +158,7 @@ class Paper(BaseModel):
     citationContexts: list[CitationContext] = Field(
         default_factory=list, validation_alias="citation_contexts"
     )
+    origins: list[Origin] | None = None
 
     # Legal/filtering fields
     legalToShow: bool = Field(default=True, validation_alias="legal_to_show")
@@ -133,4 +203,7 @@ class LiteratureSearchResult(BaseModel):
     # Populated by `asta literature interactive` to identify the conversation
     # so a follow-up call can resume it. None for one-shot `asta literature find`.
     thread_id: str | None = None
+    # Opt-in drop statistics (include_rejected != "none") — the CLI moves this to a sidecar
+    # file before writing the main results.
+    rejected: RejectedSummary | None = None
     narrative: str | None = None

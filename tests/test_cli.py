@@ -153,7 +153,11 @@ class TestFindCommand:
 
         assert result.exit_code == 0
         mock_instance.find_papers.assert_called_once_with(
-            "test query", timeout=60, save_to_file=None, operation_mode="infer"
+            "test query",
+            timeout=60,
+            save_to_file=None,
+            operation_mode="infer",
+            include_rejected="none",
         )
 
     def test_find_with_mode_option(self, runner, tmp_path):
@@ -196,7 +200,11 @@ class TestFindCommand:
 
         assert result.exit_code == 0
         mock_instance.find_papers.assert_called_with(
-            "test query", timeout=300, save_to_file=None, operation_mode="fast"
+            "test query",
+            timeout=300,
+            save_to_file=None,
+            operation_mode="fast",
+            include_rejected="none",
         )
 
 

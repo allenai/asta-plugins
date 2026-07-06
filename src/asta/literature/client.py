@@ -71,6 +71,7 @@ class AstaPaperFinder:
         save_to_file: Path | None = None,
         operation_mode: str = "infer",
         include_full_metadata: bool = True,
+        include_rejected: str = "none",
     ) -> dict[str, Any]:
         """Execute a one-shot paper search using the headless endpoint.
 
@@ -90,6 +91,7 @@ class AstaPaperFinder:
             "query": query,
             "operation_mode": operation_mode,
             "include_full_metadata": include_full_metadata,
+            "include_rejected": include_rejected,
             "timeout_seconds": timeout,
         }
 
@@ -113,6 +115,7 @@ class AstaPaperFinder:
             "status": "completed",
             "timestamp": time.time(),
             "paper_count": len(papers),
+            "rejected": result.get("rejected"),
         }
 
         # Save to file if path provided
