@@ -79,9 +79,12 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
 
 ## 5. Localize gaps, prioritize closure
 - `citation_graph` missed-high-centrality: uncaptured nodes many core papers cite — TRIAGE
-  in-scope canon vs out-of-scope famous hubs (they're usually hubs). `gap_lift` automates the
-  triage: local-citers / log(global citations) separates thread-specific gaps (high lift) from
-  world-famous hubs (low lift) — judge its head, not raw local counts.
+  in-scope canon vs out-of-scope famous hubs (they're usually hubs). The triage is a KIND/SCOPE
+  judgment, so automate it with a cheap-tier LLM classification of the never-seen titles
+  (infra/benchmark/method-of-the-field vs candidate in-scope work), NOT with a citation-ratio
+  score: `gap_lift` (local/log-global) was calibrated against a real hand triage and scored
+  AUC 0.50 — chance — because the field's own infrastructure is maximally thread-specific yet
+  out-of-scope. Use gap_lift only as a presentation order (mega-hubs sink); never as the triager.
 - **Relevance-weighted eigenvector centrality** (`eigenvector_centrality`) = the validated
   ranking prior for which candidates to judge/acquire next (top-decile ~80% relevant). Keep the
   weight binary; feed the cached edges.
@@ -93,6 +96,20 @@ Triangulate: discard signals that fail their self-check; ensemble surviving esti
 RANGE; let convergence + anchors modulate confidence; output captured / estimate / confidence /
 ranked gaps / boundary. State what a user should and should not conclude from the corpus. If the
 population grows continuously (active fields), say "complete as-of" and name the refresh trigger.
+**Calibrated claim shape (leave-one-out calibration across 3 independent runs of one thread —
+every verdict tested was OVERCONFIDENT, none underconfident; correct for the bias structurally):**
+- Claim the HEAD and the TAIL separately: canon-anchor licenses "~85–95% of the highly-cited
+  stratum captured" and NOTHING about the tail — beyond the head, say "the corpus SAMPLES the
+  tail; it does not enumerate it." Chao1-style lower bounds were the only calibrated estimator —
+  prefer "at least X missing" over point estimates.
+- PROPAGATE the single-modality-share smell into the claimed range (it was the best early-warning
+  signal in calibration and was ignored by the verdict numbers it should have widened).
+- Reference-pool recall is self-referential (blind to sub-communities the core doesn't cite) —
+  never let it stand without an EXTERNAL anchor (enumeration/maintained list).
+- Name two loss terms estimators can't see: **ingestion loss** (judged-relevant papers that never
+  entered the rings — check it) and **scope drift** (state the exact file+count the verdict was
+  computed over; recompute after the last data change).
+- The cheapest calibrator of all is a second independent run — for high-stakes threads, say so.
 Verdict discipline (each learned from a real run):
 - **Name your estimators — including the gated ones.** The verdict lists every estimator
   considered and its status (used / GATED: why). A silently skipped estimator is

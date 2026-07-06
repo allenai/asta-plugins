@@ -176,12 +176,13 @@ def citation_graph(edges, collection_ids, top_missed=15):
 
 
 def gap_lift(edges, collection_ids, global_citations, top=25):
-    """Triage missed-high-centrality nodes: in-scope gap vs out-of-scope famous hub.
-    lift = local_citers / log(1 + global_citations) — a node many CORE papers cite but the world
-    mostly ignores is thread-specific (a real gap); a node the whole world cites (optimizers,
-    foundational architectures) is a hub, not a gap. `global_citations` = {corpusId: citationCount}
-    (fetch for the top missed nodes only). Returns [(corpusId, lift, local, global)] descending —
-    judge the head of THIS list, not raw local counts."""
+    """SORT ORDER ONLY — calibrated AUC 0.50 (chance) as a hub-vs-gap TRIAGER on a real run's
+    hand triage: thread-specificity != in-scope (a field's own infra — tokenizers, optimizers,
+    benchmarks — is maximally thread-specific yet out-of-scope, while real gaps often have big
+    citing communities elsewhere). Triage never-seen items by cheap-tier LLM kind/scope
+    classification of titles instead (see playbook §5). This function only provides a display
+    order in which mega-hubs sink to the tail. lift = local_citers / log(1+global_citations);
+    `global_citations` = {corpusId: citationCount}."""
     import math
     S = set(map(str, collection_ids))
     local = Counter()

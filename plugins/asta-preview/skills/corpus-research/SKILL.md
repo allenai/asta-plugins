@@ -60,6 +60,23 @@ From the user's question alone, write `<run>/thread.json`:
   added — it will), write the change BACK into thread.json (bump a version note) + MANIFEST.
   Config must describe what actually ran, or downstream consumers read a stale contract.
 
+## Cost gate (HARD — get explicit approval BEFORE the first acquisition fan-out)
+This pipeline is a significant commitment, not a search. After Step 0 (and at most one cheap
+sizing probe — a single `find` call to gauge the space), STOP and present, in one short block:
+- **Scale estimate**: expected corpus size for this thread (measured reference: 300–500-core
+  threads ran ~2,000–2,500 candidates judged; scale the numbers if this thread looks smaller).
+- **Time**: ~2–2.5 hours ACTIVE session time (measured), wall-clock longer with background waves;
+  the user's own attention is needed at ~4–5 decision beats.
+- **Tokens/cost order-of-magnitude**: measured full runs consumed ~2.5–7M model-output tokens
+  plus 250–600M cache-read (≈ $550–850 at API list prices per run; subscription quotas differ) —
+  say "hundreds of dollars at list prices / a large slice of a daily quota", not a false-precise
+  number.
+- **Lighter alternatives**: a plain find-literature search (~minutes), or a snowball-only
+  quick pass — offer them honestly; some questions don't need a corpus.
+Proceed only on explicit approval ("go" / a chosen alternative). If mid-run scope grows
+materially past the approved scale (e.g. a STOP/CONTINUE beat proposing a large tail round),
+the costed options at that beat renew the consent — never silently 2× the approved commitment.
+
 ## The pipeline (each phase has a reference doc; read it when you get there)
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
