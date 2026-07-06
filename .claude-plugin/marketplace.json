@@ -6,7 +6,6 @@
   "metadata": {
     "description": "Asta science tools for Claude Code"
   },
-  "strict": false,
   "plugins": [
     {
       "name": "asta-tools",
@@ -24,7 +23,9 @@
         "citations",
         "semantic-scholar",
         "literature"
-      ]
+      ],
+      "strict": false,
+      "hooks": "./hooks/hooks.json"
     },
     {
       "name": "asta-flows",
@@ -40,7 +41,9 @@
         "asta",
         "research",
         "workflows"
-      ]
+      ],
+      "strict": false,
+      "hooks": "./hooks/hooks.json"
     },
     {
       "name": "asta-assistant",
@@ -56,7 +59,8 @@
         "asta",
         "research",
         "autonomous"
-      ]
+      ],
+      "strict": false
     },
     {
       "name": "asta-dev",
@@ -72,7 +76,8 @@
         "asta",
         "development",
         "contributing"
-      ]
+      ],
+      "strict": false
     }
   ]
 }
