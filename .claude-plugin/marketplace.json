@@ -6,6 +6,7 @@
   "metadata": {
     "description": "Asta science tools for Claude Code"
   },
+  "strict": false,
   "plugins": [
     {
       "name": "asta-tools",
