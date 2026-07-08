@@ -103,9 +103,10 @@ the costed options at that beat renew the consent — never silently 2× the app
    candidates_from_asta_find; merge_candidates). Cache everything via `scripts/s2.py`.
    **Retrieval division of labor** (each tool's comparative advantage — use accordingly):
    - `asta literature find` — one-shot ranked search; best for SWEEPS of independent query
-     angles (per-query output files = per-query provenance). Pass `--include-rejected summary`
-     when the server supports it: drop statistics land in a `.rejected.json` SIDECAR (coverage
-     input — scripts read it; never pull it into your context).
+     angles (per-query output files = per-query provenance). Pass `--include-rejected sample`
+     when the server supports it: drop statistics + a stratified sample of dropped rows land in
+     a `.rejected.json` SIDECAR (coverage-audit input — scripts read it; never pull it into your
+     context; the sample costs the session nothing).
    - `asta literature interactive` — the full paper-finder agent: query DECOMPOSITION planning +
      a results-verification loop. Inside THIS skill your own loop already does decomposition and
      iteration, and the one measured run found interactive the highest-PRECISION surface but with
