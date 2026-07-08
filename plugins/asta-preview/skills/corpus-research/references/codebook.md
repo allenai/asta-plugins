@@ -61,7 +61,7 @@ family). Rules, each learned from a real failure:
 - **Attested names only.** `canonical_name` must appear (modulo punctuation/case) somewhere in
   THIS corpus — a title or an extraction. NEVER invent a name; when none is attested, keep the
   raw string as the canonical and assign only `family`. Real failure: parameter sizes became
-  phantom versions ("DeepSeek-Coder 33B" → "DeepSeek 33", "1.1B Llama-arch model" → "Llama 1.1").
+  phantom versions ("FooCoder 33B" → "Foo 33", "a 1.1B Bar-architecture model" → "Bar 1.1").
 - **Machine self-check → review queue.** Scan the map for unattested canonical names (normalized
   substring check against the corpus vocabulary); fix or revert each hit; surface UNCERTAIN
   mappings to the user at a beat — a review queue, not silent auto-accept.

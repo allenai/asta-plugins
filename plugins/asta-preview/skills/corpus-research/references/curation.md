@@ -5,7 +5,8 @@ one schema across retrieval scores, judge verdicts, adjudications, audits.
 
 ## The standardized judgment (write to `<run>/judgments/<NN>-<resolution>.jsonl`)
 `{corpusId, tier: in|relevant|maybe|not-relevant, criteria: [{criterion, grade 0-3}], judged_by,
-  reason, ability_guess/method_guess (thread-shaped open codes), evidence_quote, scope_note}`
+  reason, <axis>_guess fields (open codes — one guess field per axis of YOUR thread's criteria;
+  derive the names from thread.json, don't copy another thread's), evidence_quote, scope_note}`
 - Grade EACH thread.json criterion 0–3; the tier is your holistic call across criteria.
 - Filename order = authority order (retrieval-judged < single-judge < panel < audit); later
   overrides earlier. `scripts/relevance.py` normalizes them into standardized-relevance.jsonl.

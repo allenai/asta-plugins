@@ -81,7 +81,7 @@ class Origin(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    query_type: str
+    query_type: str | None = None
     provider: str | None = None
     dataset: str | None = None
     variant: str | None = None
@@ -100,9 +100,14 @@ class RejectedItem(BaseModel):
     title: str | None = None
     relevance: int | None = None
     score: float | None = None
-    drop_stage: str
+    drop_stage: str | None = None
     origins: list[str] | None = None
     best_rank: int | None = None
+
+    @field_validator("corpus_id", mode="before")
+    @classmethod
+    def _coerce_corpus_id(cls, v: object) -> str:
+        return str(v)
 
 
 class RejectedSummary(BaseModel):

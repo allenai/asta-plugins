@@ -91,9 +91,12 @@ class AstaPaperFinder:
             "query": query,
             "operation_mode": operation_mode,
             "include_full_metadata": include_full_metadata,
-            "include_rejected": include_rejected,
             "timeout_seconds": timeout,
         }
+        # Only send when active, so the request stays compatible with server versions
+        # that don't yet accept the field (same discipline as snowball() optionals).
+        if include_rejected != "none":
+            request_body["include_rejected"] = include_rejected
 
         # Make the synchronous request
         result = self._request(url, method="POST", data=request_body)
