@@ -71,10 +71,11 @@ sizing probe — a single `find` call to gauge the space), STOP and present, in 
   threads ran ~2,000–2,500 candidates judged; scale the numbers if this thread looks smaller).
 - **Time**: ~2–2.5 hours ACTIVE session time (measured), wall-clock longer with background waves;
   the user's own attention is needed at ~4–5 decision beats.
-- **Tokens/cost order-of-magnitude**: measured full runs consumed ~2.5–7M model-output tokens
-  plus 250–600M cache-read (≈ $550–850 at API list prices per run; subscription quotas differ) —
-  say "hundreds of dollars at list prices / a large slice of a daily quota", not a false-precise
-  number.
+- **Tokens/cost order-of-magnitude**: measured full runs consumed ~0.3–0.5M model-output tokens
+  plus 100–160M cache-read (≈ $230–330 at API list prices per run, ~$0.5–0.9 per core paper;
+  subscription quotas differ). Cache-read is ~60% of the bill — cost ≈ context × call-count,
+  not generation. Say "low-to-mid hundreds of dollars at list / a sizable slice of a daily
+  quota", not a false-precise number.
 - **Lighter alternatives**: a plain find-literature search (~minutes), or a snowball-only
   quick pass — offer them honestly; some questions don't need a corpus.
 Proceed only on explicit approval ("go" / a chosen alternative). If mid-run scope grows
