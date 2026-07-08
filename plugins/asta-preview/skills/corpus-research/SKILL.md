@@ -90,8 +90,10 @@ the costed options at that beat renew the consent — never silently 2× the app
    The modality list here is EXEMPLARS + a FLOOR, not the population: a checklist satisfies
    diligence ("did I run the list?") — the habitat note restores the real question ("have I
    found everything?"). A real run skipped it and missed the asker's #1 named item.
-   Then run multi-modal — queries independent, but know that every paper-finder surface shares
-   ONE relevance filter (calibrated consequence: corroboration and capture-recapture overstate
+   Then run multi-modal — sweep at MODEST CONCURRENCY (~3-4 parallel finds: search backends
+   run few searches concurrently and their request timeout counts queue wait, so a wide parallel
+   burst just converts the tail into timeouts). Queries independent, but know that every
+   paper-finder surface shares ONE relevance filter (calibrated consequence: corroboration and capture-recapture overstate
    independence — playbook §1): parametric seed enumeration →
    `asta literature` search/snowball + backward co-citation → survey-reference pooling →
    **web/registry enumeration when the population lives outside academia** (registries,
