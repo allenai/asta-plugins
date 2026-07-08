@@ -10,6 +10,24 @@ one schema across retrieval scores, judge verdicts, adjudications, audits.
 - Filename order = authority order (retrieval-judged < single-judge < panel < audit); later
   overrides earlier. `scripts/relevance.py` normalizes them into standardized-relevance.jsonl.
 
+**The 0–3 grade rubric (per criterion) — this is the shared currency; make the same call every
+time.** Deliberately the paper-finder 4-level scale, so grades are comparable across
+retrieval-judged / Claude-judged / audited records and across runs:
+- **3 — perfectly meets this criterion.** Squarely, unambiguously what the criterion asks for.
+- **2 — highly relevant.** Clearly meets it, with a minor caveat (partial coverage, adjacent framing).
+- **1 — somewhat relevant.** Touches the criterion tangentially / in passing; a stretch to count.
+- **0 — not relevant.** Does not meet this criterion.
+Grade against the criterion's `definition` in thread.json, NOT against overall vibe — a paper can
+be 3 on one criterion and 0 on another. The `reason` + `evidence_quote` must justify a ≥2.
+
+**tier = the holistic verdict across criteria** (which ring the paper lands in):
+- **in** — core: meets the thread's relevance bar decisively (typically 3 on the primary criteria).
+- **relevant** — belongs, but lighter (a 2, or abstract-only judged) — the candidate ring.
+- **maybe** — genuinely borderline; surface these at the post-curation beat, don't silently decide.
+- **not-relevant** — out (name-collision, off-thread, wrong modality) — one-line reason required.
+Grade→tier is a JUDGMENT [J], not an arithmetic threshold — but if you find yourself calling a
+straight-1 paper "in", say why in the reason.
+
 ## Judge-and-open-code in ONE pass (do this — don't re-read abstracts per stage)
 The judge must also emit **light open codes**: the thread-shaped "what does it analyze / by what
 method" phrases (whatever your criteria hinge on), a one-line reason, and a short VERBATIM

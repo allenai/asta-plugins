@@ -10,9 +10,13 @@ allowed-tools: Bash(asta literature *) Bash(asta papers *) Bash(python *) Bash(j
 
 Build ONE rich corpus for a research thread, then work OVER it: coverage you can defend,
 per-paper extraction grounded in sources, aggregate answers that carry their own trust story.
-This skill is a **methodology + deterministic tools**; the judgment steps (relevance, tagging,
-extraction, synthesis) are yours/subagents'. Never fake the [T] parts with an LLM; never fake
-precision on the [J] parts.
+This skill is a **methodology + deterministic tools**. Throughout, steps are marked **[T]**
+(Tool — deterministic, script-computed, exactly reproducible: merges, tallies, coverage
+estimators, gate checks, chart data) or **[J]** (Judgment — a mind's call, yours or a
+subagent's: relevance, tagging, extraction, synthesis, the coverage verdict). The rule:
+**never fake a [T] with an LLM** (don't have a model eyeball a number a script should compute)
+and **never fake precision on a [J]** (don't dress a judgment as if it were exact). The whole
+trust story is this separation — a reader can re-run every [T] and audit every [J].
 
 ## Principles (the north star — internalize before starting)
 1. **Corpus-first.** Build the corpus, then every operation queries the OWN store first
