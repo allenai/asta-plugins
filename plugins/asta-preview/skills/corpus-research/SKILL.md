@@ -100,8 +100,9 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    the CHARTER's ability/method families before any codebook exists — a corpus-derived codebook
    cannot see a family that was never queried (a run's sweeps skipped two charter families; the
    ~20 highest-cited misses clustered exactly there). And the parametric seed enumeration must
-   run PER FAMILY-AXIS (abilities × methods × eras × adjacent subfields), never as one flat
-   list — a flat list inherits the same culture as your queries and anchors nothing (the same
+   run PER FAMILY-AXIS — derive the axes from YOUR thread (abilities × methods × eras ×
+   adjacent subfields are the a2-shaped exemplars, not the list), never as one flat
+   enumeration — a flat list inherits the same culture as your queries and anchors nothing (the same
    run's 54-seed anchor shared its sweeps' blind spot and caught zero of the misses).
    Then run multi-modal — sweep at MODEST CONCURRENCY (~3-4 parallel finds: search backends
    run few searches concurrently and their request timeout counts queue wait, so a wide parallel
