@@ -34,7 +34,7 @@ The value is the FEW MAJOR axes the field is split on — spanning MANY papers w
 BOTH sides — NOT one-vs-two-paper spats, and NOT lopsided near-consensus (a 30-vs-1 split is
 consensus with an outlier, exclude it).
 1. Pool oppositions ACROSS content-families into field-level axes (don't enumerate per-family spats).
-2. Support-gate: keep an axis only if the minority side has real support (≥N papers AND ≥~25%) and
+2. Support-gate: keep an axis only if the minority side has real support (floor: ≥2-3 papers with verbatim quotes AND ≥~25% of the axis's cited papers — two runs' axes at ≥2/side replicated each other independently; uncontested axes are findings, not disagreements) and
    it spans ≥2 sub-areas.
 3. The DEEPEST disagreements are often methodological and need a SYNTHESIS pass over the finding
    text (not just direction-tag counting) — surface them explicitly with supporting corpusIds.

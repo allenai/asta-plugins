@@ -82,7 +82,11 @@ Proceed only on explicit approval ("go" / a chosen alternative). If mid-run scop
 materially past the approved scale (e.g. a STOP/CONTINUE beat proposing a large tail round),
 the costed options at that beat renew the consent — never silently 2× the approved commitment.
 
-## The pipeline (each phase has a reference doc; read it when you get there)
+## The pipeline (each phase has a reference doc; RE-READ it when you get there)
+Re-read the phase's reference AT the phase even if you read it at session start — long runs span
+compactions, and measured: structurally-enforced requirements survive them but prose-only
+guidance decays (a run built its report 20h after its only read of report.md and dropped exactly
+the prose-specified requirements; a sibling run re-read at the phase and dropped none).
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
    ("find the librarians": registries, leaderboards, review tables, curated lists, trial
