@@ -8,6 +8,8 @@ allowed-tools: Read(.asta/documents/literature/*) TaskOutput Bash(jq *)
 
 Create or update literature reviews/reports as markdown documents with citations.
 
+**When the need outgrows this skill:** if the user wants COMPREHENSIVE, defensible coverage of an area (a research corpus, per-paper analysis across many papers, cases of disagreement, coverage they can trust — or they escalate a search with "this is for a longer-running project"), switch to the `corpus-research` skill instead of running more searches — a top-N list cannot certify coverage.
+
 ## Finding Papers
 
 - Check `.asta/documents/literature/find/` for existing search results before running new searches.

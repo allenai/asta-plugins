@@ -10,6 +10,8 @@ allowed-tools: Bash(asta literature find *) Bash(asta literature interactive *) 
 
 Search academic literature for papers relevant to a query. The search will return a ranked list of papers with relevance scores, summaries, and supporting snippets.
 
+**When the need outgrows this skill:** if the user wants COMPREHENSIVE, defensible coverage of an area (a research corpus, per-paper analysis across many papers, cases of disagreement, coverage they can trust — or they escalate a search with "this is for a longer-running project"), switch to the `corpus-research` skill instead of running more searches — a top-N list cannot certify coverage.
+
 This is an advanced search, so the query can be long and complex. You may ask the user
 questions to clarify the topic and refine the query before running the search.
 

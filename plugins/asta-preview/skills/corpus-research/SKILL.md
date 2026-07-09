@@ -1,6 +1,6 @@
 ---
 name: corpus-research
-description: This skill should be used when the user asks for a "comprehensive list of papers on", "coverage of a research area", "corpus-scale analysis", "what does each paper in an area do/use/find", "cases of disagreement across the literature", "build a research corpus", or any literature question whose answer must aggregate/extract across MANY papers with trustworthy coverage — beyond a single search.
+description: This skill should be used when the user asks for a "comprehensive list of papers on", "coverage of a research area", "corpus-scale analysis", "what does each paper in an area do/use/find", "cases of disagreement across the literature", "build a research corpus", "papers that discuss/address <topic>", a survey of "failure modes of X" / "approaches to X", a multi-question research need over one literature, or any literature question whose answer must aggregate/extract across MANY papers with trustworthy coverage — beyond a single search. Also invoke when a plain literature search is done and the user escalates ("this is for a longer-running project", "I need comprehensive/trustworthy coverage", "build a corpus") — a real user's first message often reads like a search request; the escalation moment is a trigger too.
 metadata:
   internal: true
 allowed-tools: Bash(asta literature *) Bash(asta papers *) Bash(python *) Bash(jq *) TaskOutput
@@ -90,6 +90,13 @@ the costed options at that beat renew the consent — never silently 2× the app
    The modality list here is EXEMPLARS + a FLOOR, not the population: a checklist satisfies
    diligence ("did I run the list?") — the habitat note restores the real question ("have I
    found everything?"). A real run skipped it and missed the asker's #1 named item.
+   **Query floors + anchor diversity (both measured failure modes):** sweep angles must cover
+   the CHARTER's ability/method families before any codebook exists — a corpus-derived codebook
+   cannot see a family that was never queried (a run's sweeps skipped two charter families; the
+   ~20 highest-cited misses clustered exactly there). And the parametric seed enumeration must
+   run PER FAMILY-AXIS (abilities × methods × eras × adjacent subfields), never as one flat
+   list — a flat list inherits the same culture as your queries and anchors nothing (the same
+   run's 54-seed anchor shared its sweeps' blind spot and caught zero of the misses).
    Then run multi-modal — sweep at MODEST CONCURRENCY (~3-4 parallel finds: search backends
    run few searches concurrently and their request timeout counts queue wait, so a wide parallel
    burst just converts the tail into timeouts). Queries independent, but know that every
@@ -109,6 +116,17 @@ the costed options at that beat renew the consent — never silently 2× the app
      when the server supports it: drop statistics + a stratified sample of dropped rows land in
      a `.rejected.json` SIDECAR (coverage-audit input — scripts read it; never pull it into your
      context; the sample costs the session nothing).
+     **Staged sweep policy (measured: fast is a truncated diligent, and blind fast cost a run
+     most of its head recall):** (1) sweep ALL angles in `--mode fast` (breadth, ~10s/query);
+     (2) ALWAYS also run the thread's PRIMARY question in `--mode diligent` — it calibrates
+     what depth buys on THIS thread and pairs with its fast twin as a depth capture-occasion;
+     (3) [T] escalation gate: rank fast queries by their own sidecar `not_judged` count (this
+     ranked diligent gains perfectly in calibration; add total_hits where present, judged yield
+     once known) and escalate a budgeted top slice (~25-30%) plus any query covering an
+     anchor-flagged thin family to diligent; stop escalating when marginal new-yield flattens;
+     (4) the coverage verdict MUST name the binding cuts and the un-escalated remainder
+     (exhausted-N-of-N vs truncated-N-of-M — the data is in your own sidecars/origins; a run
+     that never read them shipped an 85-90% head claim that measured ~44%).
    - `asta literature interactive` — the full paper-finder agent: query DECOMPOSITION planning +
      a results-verification loop. Inside THIS skill your own loop already does decomposition and
      iteration, and the one measured run found interactive the highest-PRECISION surface but with
