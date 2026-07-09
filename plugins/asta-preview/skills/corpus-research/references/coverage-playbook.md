@@ -90,6 +90,17 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   non-indexed items (tech reports/blogs) — it rarely changes coverage; the aggregate
   reference-pool already covers that signal offline.
 
+**Two anchor moves that two independent runs evolved unprompted — adopt as named moves:**
+- **Infrastructure-adjusted reference-pool recall**: when raw reference-pool recall looks low,
+  enumerate the TOP never-captured co-cited hubs and CLASSIFY each (foundation models, datasets,
+  optimizers, retrievers = out-of-scope substrate). If ~90% of high-frequency never-seen nodes
+  are substrate, the depressed recall is an artifact and the boundary is validated; the residue
+  is your real gap list.
+- **External-enumeration anchor**: resolve a maintained community list/registry against the
+  corpus and report BOTH resolve-rate and %-into-core. Calibration receipt: academic-only
+  modalities captured just 38% of a maintained community roster on one thread — the list was the
+  detector, and absorbing it was the fix.
+
 ## 5. Localize gaps, prioritize closure
 - `citation_graph` missed-high-centrality: uncaptured nodes many core papers cite — TRIAGE
   in-scope canon vs out-of-scope famous hubs (they're usually hubs). The triage is a KIND/SCOPE
@@ -130,6 +141,20 @@ every verdict tested was OVERCONFIDENT, none underconfident; correct for the bia
 - Name two loss terms estimators can't see: **ingestion loss** (judged-relevant papers that never
   entered the rings — check it) and **scope drift** (state the exact file+count the verdict was
   computed over; recompute after the last data change).
+- **The anchoring rule (measured failure: a verdict claimed 85-90% head; external truth measured
+  ~44%):** a CR/lower-bound point estimate may NEVER anchor the "missing" number — write the
+  bound AS a bound and let the smells widen it. Any head claim ≥ "most of the head captured"
+  requires an anchor EXTERNAL to the run's own enumeration culture (accumulated gold, a
+  maintained list, a registry) — a self-enumerated seed canon shares your sweeps' blind spot and
+  anchors nothing.
+- **Truncation term (REQUIRED — the data is already in your sidecars/origins):** per modality,
+  state the binding cuts: exhausted-N-of-N vs truncated-N-of-M (total_hits), and the un-escalated
+  remainder of the sweep policy. A measured run left ~9,500 unjudged drop-events (~6-12%
+  relevant) unmentioned because it never read its own sidecars.
+- **Venue/list-enumeration completeness:** any venue or curated list you enumerated gets an
+  explicit year-range/entry-count completeness assertion against the source (a run enumerated a
+  workshop 2018-2024 while the source listed 2025 too — the machinery never flagged the missing
+  year; it was caught only by external audit).
 - The cheapest calibrator of all is a second independent run — for high-stakes threads, say so.
 - **Report coverage as a FAMILY × ERA MATRIX, not a scalar** (calibrated: misses concentrate —
   top cells held 40–56% of true misses in ~20% of coverage; scalars hide exactly this). The two
