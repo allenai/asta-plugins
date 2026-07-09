@@ -8,6 +8,12 @@ one schema across retrieval scores, judge verdicts, adjudications, audits.
   reason, <axis>_guess fields (open codes — one guess field per axis of YOUR thread's criteria;
   derive the names from thread.json, don't copy another thread's), evidence_quote, scope_note}`
 - Grade EACH thread.json criterion 0–3; the tier is your holistic call across criteria.
+- **Librarian class (not a tier — a classification):** surveys, systematic reviews, and position
+  papers ABOUT the thread's literature are neither core (they perform no analysis of their own)
+  nor discards — tag them `librarian:<survey|systematic-review|position-paper|benchmark-roster|
+  curated-list>` and keep them in a dedicated ring. They are ACQUISITION ANCHORS: their reference
+  lists feed survey-pooling, and the classified roster hands the next run on this thread its
+  librarians pre-found (user policy 2026-07-09).
 - Filename order = authority order (retrieval-judged < single-judge < panel < audit); later
   overrides earlier. `scripts/relevance.py` normalizes them into standardized-relevance.jsonl.
 

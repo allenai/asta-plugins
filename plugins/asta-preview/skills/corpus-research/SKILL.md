@@ -90,7 +90,9 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
    ("find the librarians": registries, leaderboards, review tables, curated lists, trial
-   registries), and **≥2 candidate modalities NOT in the list below — justify or refute each**.
+   registries — and CHECK the corpus/gold for an existing `librarian:*` roster from prior work
+   on this thread: curation classifies thread-surveys/reviews as librarian records precisely so
+   the next run starts with them), and **≥2 candidate modalities NOT in the list below — justify or refute each**.
    The modality list here is EXEMPLARS + a FLOOR, not the population: a checklist satisfies
    diligence ("did I run the list?") — the habitat note restores the real question ("have I
    found everything?"). A real run skipped it and missed the asker's #1 named item.
