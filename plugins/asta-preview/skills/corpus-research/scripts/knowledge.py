@@ -16,17 +16,26 @@ Run-dir layout contract (produced by substrate.py / relevance.py / the acquisiti
   <run>/edges-cache.json              {corpusId: [reference corpusIds]}
 
 Usage:
-    from knowledge import load
+    from knowledge import load, view, grep
     K = load(run_dir)
     K.lookup(cid)                 # 3-layer membership + how judged + degree
-    K.find(text=, tier=, family=, ring=, year=, provenance=, in_scope=)
-    K.cites(cid) / K.cited_by(cid)
     K.anchor(known_good_ids)      # offline recall vs the store; never_seen -> Acquire
+    view(run_dir)                 # materialize <run>/collection.jsonl — the CANONICAL JOIN
+                                  # (one row per paper, all stages' fields, id-normalized).
+                                  # Query THIS with your ad-hoc joins/jq; rebuild after any
+                                  # stage change (stale view = stale answers).
+    grep(run_dir, pattern)        # content search over fulltext-cache; LOGS query+hits to
+                                  # <run>/queries.log so method notes can cite the query
+CLI:  python knowledge.py view <run>   ·   python knowledge.py grep <run> <regex>
 """
 from __future__ import annotations
 import json, os
 
 RELEVANT_TIERS = ("in", "relevant")
+
+
+def _jl(p):
+    return [json.loads(l) for l in open(p) if l.strip()]
 
 
 class Knowledge:
@@ -107,9 +116,93 @@ def load(run):
     return Knowledge(obs, edges, tiers)
 
 
+def view(run):
+    """Materialize the CANONICAL JOIN: <run>/collection.jsonl — one id-normalized row per paper
+    with every stage's fields. This exists because measured runs wrote the same 4-file join
+    40+ times each, and every rewrite re-decided id/ring/tier normalization (drift). Query the
+    VIEW ad-hoc (python/jq — full freedom); never re-join the raw files.
+    Rebuild after any stage change; meta stamps let validate.py catch staleness."""
+    obs = {str(r["corpusId"]): r for r in _jl(f"{run}/observations.jsonl")}
+    rel = {str(r["corpusId"]): r for r in _jl(f"{run}/standardized-relevance.jsonl")}
+    cand = {}
+    cpath = f"{run}/candidates.jsonl"
+    if os.path.exists(cpath):
+        for r in _jl(cpath):
+            cand.setdefault(str(r.get("corpusId")), r)
+    extr = {}
+    import glob as _glob
+    for pat in ("extract/merged.jsonl", "extract/records.jsonl", "extract/records/*.jsonl",
+                "extractions.jsonl"):
+        paths = sorted(_glob.glob(f"{run}/{pat}"))
+        for p in paths:
+            for r in _jl(p):
+                cid = str(r.get("corpusId") or r.get("corpus_id") or "")
+                if cid:
+                    extr.setdefault(cid, r)
+        if paths:
+            break
+    ids = set(obs) | set(rel)
+    rows = []
+    for cid in sorted(ids):
+        o, j, c = obs.get(cid, {}), rel.get(cid, {}), cand.get(cid, {})
+        rows.append({
+            "corpusId": cid,
+            "title": o.get("title") or c.get("title"),
+            "year": o.get("year") or c.get("year"),
+            "ring": o.get("ring"),
+            "tier": j.get("tier"),
+            "criteria": j.get("criteria"),
+            "in_scope": o.get("in_scope"),
+            "primary_family": o.get("primary_family"),
+            "secondary_families": o.get("secondary_families"),
+            "provenance": o.get("provenance") or c.get("provenance"),
+            "citationCount": c.get("citationCount"),
+            "extraction": extr.get(cid),
+        })
+    out = f"{run}/collection.jsonl"
+    with open(out, "w") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    meta = {"rows": len(rows),
+            "inputs": {p: int(os.path.getmtime(f"{run}/{p}"))
+                       for p in ("observations.jsonl", "standardized-relevance.jsonl")
+                       if os.path.exists(f"{run}/{p}")}}
+    json.dump(meta, open(f"{run}/collection.meta.json", "w"))
+    return out, meta
+
+
+def grep(run, pattern, flags=0):
+    """Content search over <run>/fulltext-cache/*.md. Returns [(corpusId, n_matches)] and
+    APPENDS {pattern, hits} to <run>/queries.log — a coverage query is evidence; method notes
+    cite it instead of an unrecorded shell grep."""
+    import re as _re
+    rx = _re.compile(pattern, flags or _re.I)
+    hits = []
+    cdir = f"{run}/fulltext-cache"
+    for fn in sorted(os.listdir(cdir)) if os.path.isdir(cdir) else []:
+        if not fn.endswith(".md"):
+            continue
+        n = len(rx.findall(open(f"{cdir}/{fn}", errors="ignore").read()))
+        if n:
+            hits.append((fn[:-3], n))
+    hits.sort(key=lambda t: -t[1])
+    with open(f"{run}/queries.log", "a") as f:
+        f.write(json.dumps({"pattern": pattern, "files_hit": len(hits),
+                            "hits": hits[:50]}) + "\n")
+    return hits
+
+
+
 if __name__ == "__main__":
     import sys
-    K = load(sys.argv[1])
-    print(f"knowledge: {len(K.obs)} observations, {len(K.tiers)} labeled, {len(K.edges)} nodes with edges")
-    if len(sys.argv) > 2:
-        print(json.dumps(K.lookup(sys.argv[2]), indent=1))
+    if sys.argv[1] == "view":
+        out, meta = view(sys.argv[2])
+        print(f"view: {out} ({meta['rows']} rows)")
+    elif sys.argv[1] == "grep":
+        for cid, n in grep(sys.argv[2], sys.argv[3])[:30]:
+            print(f"{cid}\t{n}")
+    else:
+        K = load(sys.argv[1])
+        print(f"knowledge: {len(K.obs)} observations, {len(K.tiers)} labeled, {len(K.edges)} nodes with edges")
+        if len(sys.argv) > 2:
+            print(json.dumps(K.lookup(sys.argv[2]), indent=1))

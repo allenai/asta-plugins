@@ -51,6 +51,8 @@ judgment auditable. KEEP IT LIGHT: open-code phrases + quote only — full extra
 claims, spans per sub-question) stays post-curation, on the relevant ring, at the evidence depth.
 
 ## Cost-tier the judging (don't panel everything — validated ordering)
+Build the shards with `scripts/shards.py` (interleave + salt + sub-batches — workers.md); the
+salt scores are what make every calibration below measurable on THIS thread.
 1. **Corroboration pre-filter** (near-free): candidates found by ≥2 acquisition modalities are
    very likely relevant — light-touch them.
 2. **Single abstract judge** for the bulk — matches a body+panel gold ~95%+ on clear cases.

@@ -5,7 +5,7 @@ Some threads are FULL-TEXT-MANDATORY: the answer fields live in the paper body, 
 evidence tier per thread (see references/fulltext-at-scale.md); when full text is needed, fetch
 ONCE into the run's cache and let every extraction pass read the cache offline.
 
-Source ladder: arxiv HTML -> ar5iv static HTML -> None (caller falls back to abstract / flags
+Source ladder: arxiv HTML -> ar5iv -> ACL Anthology -> openAccessPdf -> None (caller falls back to abstract / flags
 unreachable — report the reachability rate honestly; expect ~90% for arXiv-era corpora, less
 for older/closed venues).
 
@@ -38,22 +38,38 @@ def _html_to_text(html):
     return html.strip()
 
 
-def fetch(corpus_id, arxiv_id, cache_dir, refresh=False):
-    """Return cleaned full text (cache-first). Writes <cache_dir>/<corpusId>.md. None if unreachable."""
+def fetch(corpus_id, arxiv_id, cache_dir, refresh=False, acl_id=None, oa_url=None):
+    """Return cleaned full text (cache-first). Writes <cache_dir>/<corpusId>.md. None if unreachable.
+    Ladder: arxiv HTML -> ar5iv -> ACL Anthology (acl_id from S2 externalIds.ACL) -> open-access
+    URL (oa_url from S2 openAccessPdf.url) -> None. HTML sources parse directly; PDF sources are
+    SAVED to <cache_dir>/<corpusId>.pdf for the pdf-extraction path and return None here (report
+    them as pdf-cached, not unreachable). Measured: arxiv-only reached ~78% on a BERT-era ACL
+    corpus; these rungs exist to close that gap."""
     os.makedirs(cache_dir, exist_ok=True)
     path = os.path.join(cache_dir, f"{corpus_id}.md")
     if os.path.exists(path) and not refresh:
         return open(path).read()
-    if not arxiv_id:
-        return None
-    aid = arxiv_id.split("v")[0]
-    for url in (f"https://arxiv.org/html/{arxiv_id}", f"https://arxiv.org/html/{aid}",
-                f"https://ar5iv.labs.arxiv.org/html/{aid}"):
+    urls = []
+    if arxiv_id:
+        aid = arxiv_id.split("v")[0]
+        urls += [f"https://arxiv.org/html/{arxiv_id}", f"https://arxiv.org/html/{aid}",
+                 f"https://ar5iv.labs.arxiv.org/html/{aid}"]
+    if acl_id:
+        urls += [f"https://aclanthology.org/{acl_id}.pdf"]  # PDF only — the landing page is
+        # abstract+nav and must NOT masquerade as body text
+    if oa_url:
+        urls += [oa_url]
+    for url in urls:
         try:
-            html = _get(url)
-            if len(html) < 2000:          # stub / error page
+            body = _get(url)
+            if body.lstrip()[:5] == "%PDF-" or url.endswith(".pdf"):
+                pdf_path = os.path.join(cache_dir, f"{corpus_id}.pdf")
+                with open(pdf_path, "w", errors="ignore") as f:
+                    f.write(body)
+                continue  # cached for pdf-extraction; keep trying HTML rungs
+            if len(body) < 2000:          # stub / error page
                 continue
-            txt = _html_to_text(html)
+            txt = _html_to_text(body)
             if len(txt) < 1500:
                 continue
             hdr = f"<!-- source: {url} | corpusId {corpus_id} | arxiv {arxiv_id} -->\n\n"

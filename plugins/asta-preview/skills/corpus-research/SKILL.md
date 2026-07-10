@@ -151,7 +151,11 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    known-canon anchor** via `knowledge.anchor()` (playbook §4) — a verdict without it has a hole
    in it. Substrate queries are ad-hoc joins over the standard files (measured: that's what
    works); `knowledge.anchor/lookup` cover the membership-semantics cases.
-6. **Extract & answer** — per-paper extraction (map) over the evidence depth
+6. **Extract & answer** — FIRST materialize the collection view (`python scripts/knowledge.py
+   view <run>` → collection.jsonl): the canonical id-normalized join every answer queries —
+   ad-hoc joins run over the VIEW, never over the raw stage files (measured: 40+ hand-rolled
+   re-joins per run, each re-deciding normalization). Rebuild it after any stage change.
+   Then per-paper extraction (map) over the evidence depth
    (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
    sub-question with gates. Extraction schemas include a **mentioned-entities field** (the
    thread's pertinent entity types: models/methods/datasets the paper COMPARES AGAINST, not just
@@ -162,13 +166,18 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    one-vs-two-paper spats (`references/deliverables.md`). The final user-facing deliverable is the
    REPORT — shape and content requirements in `references/deliverables.md` Part B (index page,
    evidence in-body, distribution charts, self-contained rendering, the package). Do NOT source deliverable structure from generic artifact/design skills.
+   **REPORT GATE [T] (HARD):** after building the report, run `python scripts/report_gate.py
+   <report_dir> --run <run> --questions <n>` and fix-and-rerun until PASS — number tracing,
+   boundary framing, method notes, links, self-containment. Produce-X-gate-X applied to the
+   report; prose requirements decay, the gate does not.
 
 ## Worker discipline (HARD — every long-running subagent job, all phases)
-Judging waves, extraction batches, fetch sweeps, tagging runs: the worker APPENDS each result as
-it is produced (never write-at-end) and SKIPS items already present in its output file
-(idempotent resume). A stalled write-at-end worker loses everything; an append-as-produced worker
-resumes for free, and `wc -l` is live progress. **Put these two instructions in every worker
-prompt verbatim** — doctrine that lives only in a phase reference does not reach spawned workers.
+Full contract: `references/workers.md` (re-read before ANY fleet fan-out). Build judge shards
+with `scripts/shards.py` — stratified-interleave + salted gold items + k-chunked sub-batches:
+measured lesson, prompts do not change worker behavior; STRUCTURE does (append-as-produced +
+skip-already-done still go in every worker prompt verbatim, but the sub-batch shard format is
+what actually enforces them). Score every judge wave with `shards.py score` (salt agreement =
+drift alarms with evidence). Probe-canary one worker per operation before fanning out.
 
 ## Interaction rhythm — you are collaborating, not executing a ticket  <!-- v1, tune with users -->
 The user's most valuable input comes AFTER contact with the data — they can't react to a
