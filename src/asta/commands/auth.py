@@ -6,6 +6,7 @@ import asyncio
 import base64
 import datetime
 import json
+import os
 
 import click
 from rich.console import Console
@@ -84,6 +85,42 @@ def status():
         audience=settings.auth0_audience,
         gateway_url=settings.gateway_url,
     )
+
+    # ASTA_TOKEN overrides stored credentials (see asta.utils.auth_helper).
+    env_token = os.environ.get("ASTA_TOKEN")
+    if env_token:
+        table = Table(title="Authentication Status")
+        table.add_column("Property", style="cyan")
+        table.add_column("Value")
+        table.add_row("Token Source", "[cyan]ASTA_TOKEN environment variable[/cyan]")
+
+        verification_result = token_manager.verify_token_with_gateway(
+            access_token=env_token
+        )
+        if verification_result["valid"]:
+            table.add_row("Server Verification", "✅ [green]Valid[/green]")
+            server_user = verification_result.get("user_info") or {}
+            if email := server_user.get("email"):
+                table.add_row("Email", email)
+            if name := server_user.get("name"):
+                table.add_row("Name", name)
+        else:
+            error_msg = verification_result.get("error", "Unknown error")
+            table.add_row(
+                "Server Verification", f"❌ [red]Invalid[/red]\n   {error_msg}"
+            )
+
+        console.print(table)
+
+        if not verification_result["valid"]:
+            console.print()
+            console.print(
+                "⚠️  [yellow]Token verification failed with gateway server.[/yellow]"
+            )
+            console.print(
+                "   Check that [cyan]ASTA_TOKEN[/cyan] is set to a valid token."
+            )
+        return
 
     user_info = token_manager.get_user_info()
 
