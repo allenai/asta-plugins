@@ -17,7 +17,6 @@ Thread-config-driven — NO thread content lives here. Inputs (standard run layo
                                        by READING them (system/paper axis the family rule can't see)
 
 Output: <run>/observations.jsonl, records:
-  {corpusId, title, year, provenance[], n_strategies, relevance_tier, relevance_resolution,
    primary_family, secondary_families, tag_batch, tag_confidence, in_scope,
    scope_exclusion_reason, ring, codebook_version}
 
@@ -101,7 +100,6 @@ def build(run):
             ring = "maybe"
         out.append({"corpusId": c, "title": r.get("title"), "year": r.get("year"),
                     "provenance": sorted(r.get("provenance", set())),
-                    "n_strategies": len(r.get("provenance", set())),
                     "relevance_tier": tier, "relevance_resolution": sr.get("resolution"),
                     "primary_family": fam, "secondary_families": r.get("secondary_families", []),
                     "tag_batch": r.get("tag_batch"), "tag_confidence": r.get("tag_confidence"),

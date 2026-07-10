@@ -175,32 +175,7 @@ def citation_graph(edges, collection_ids, top_missed=15):
             "missed_high_centrality": ext_count.most_common(top_missed)}
 
 
-def gap_lift(edges, collection_ids, global_citations, top=25):
-    """SORT ORDER ONLY — calibrated AUC 0.50 (chance) as a hub-vs-gap TRIAGER on a real run's
-    hand triage: thread-specificity != in-scope (a field's own infra — tokenizers, optimizers,
-    benchmarks — is maximally thread-specific yet out-of-scope, while real gaps often have big
-    citing communities elsewhere). Triage never-seen items by cheap-tier LLM kind/scope
-    classification of titles instead (see playbook §5). This function only provides a display
-    order in which mega-hubs sink to the tail. lift = local_citers / log(1+global_citations);
-    `global_citations` = {corpusId: citationCount}."""
-    import math
-    S = set(map(str, collection_ids))
-    local = Counter()
-    for c in S:
-        for r in edges.get(c, ()):
-            if r not in S:
-                local[r] += 1
-    out = []
-    for cid, n in local.most_common(top * 4):
-        g = global_citations.get(str(cid))
-        if g is None:
-            continue
-        out.append((cid, round(n / math.log(1 + max(g, 1)), 3), n, g))
-    out.sort(key=lambda t: -t[1])
-    return out[:top]
 
-
-# -------------------------------------------------------------- distributions
 def content_distribution(observations, key="primary_family", ring=("core", "candidate")):
     """Family/tag distribution over the answer set — ONLY trustworthy if the tag-coverage gate
     passes (see substrate.py); an inflated 'Other/untagged' bucket silently distorts this."""

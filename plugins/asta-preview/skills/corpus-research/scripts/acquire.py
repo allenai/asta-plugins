@@ -14,7 +14,6 @@ Usage (library, from the run dir):
     acquire.fetch_edges(ids, s2, "edges-cache.json")        # checkpointed reference caching
     acquire.pool_references(edges, group_ids, min_count=2)  # survey-ref / co-citation pooling
     acquire.candidates_from_asta("acq/astafind/*.json")     # adapt find/interactive/snowball output
-    acquire.write_seeds_file(core_ids, "acq/seeds.json")    # seeds for `snowball --seeds-file`
     acquire.merge_candidates(".")                           # union ALL acq/*.jsonl -> candidates.jsonl
 """
 from __future__ import annotations
@@ -130,22 +129,9 @@ def candidates_from_asta(paths, provenance="asta-find"):
     return list(rows.values())
 
 
-candidates_from_asta_find = candidates_from_asta  # back-compat alias
 
 
-def write_seeds_file(seeds, path):
-    """Write a seeds file for `asta literature snowball --seeds-file`. Accepts [corpusId],
-    [(corpusId, relevance)], or {corpusId: relevance}; emits the JSON list of
-    "corpusId:relevance" strings the CLI parses (relevance 0-3, default 3)."""
-    if isinstance(seeds, dict):
-        items = list(seeds.items())
-    else:
-        items = [s if isinstance(s, (list, tuple)) else (s, 3) for s in seeds]
-    json.dump([f"{cid}:{rel}" for cid, rel in items], open(path, "w"))
-    return len(items)
 
-
-# ---------------------------------------------------------------- merge
 def merge_candidates(run, extra_exclude=()):
     """Union ALL `<run>/acq/*.jsonl` modality files into `<run>/candidates.jsonl` with
     PROVENANCE UNION on overlap (never overwrite — corroboration depends on it). Inclusion is

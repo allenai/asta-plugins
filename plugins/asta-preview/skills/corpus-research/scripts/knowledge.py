@@ -65,35 +65,8 @@ class Knowledge:
             "cited_by_relevant": sum(1 for s in citers if self.is_relevant(s)),
         }
 
-    def find(self, text=None, tier=None, family=None, ring=None, year=None,
-             provenance=None, in_scope=None, limit=None):
-        text = text.lower() if text else None
-        as_set = lambda v: v if isinstance(v, (list, tuple, set)) else {v}
-        out = []
-        for r in self.obs.values():
-            if text and text not in (r.get("title") or "").lower():
-                continue
-            if ring is not None and r.get("ring") not in as_set(ring):
-                continue
-            if tier is not None and r.get("relevance_tier") not in as_set(tier):
-                continue
-            if family and family != r.get("primary_family") and family not in (r.get("secondary_families") or []):
-                continue
-            if year is not None and r.get("year") != year:
-                continue
-            if provenance and provenance not in (r.get("provenance") or []):
-                continue
-            if in_scope is not None and r.get("in_scope") is not in_scope:
-                continue
-            out.append(r)
-        out.sort(key=lambda r: (r.get("year") or 0), reverse=True)
-        return out[:limit] if limit else out
-
-    def cites(self, cid):
-        return [self.lookup(r) for r in self.edges.get(str(cid), [])]
-
-    def cited_by(self, cid):
-        return [self.lookup(s) for s in self._citers.get(str(cid), [])]
+    # (find/cites/cited_by were removed 2026-07-09: measured 1 use in ~130 collection queries
+    # across 4 runs — ad-hoc joins over the standard files won. See design/forgone-capabilities.)
 
     def anchor(self, ids, label=""):
         """Recall of a KNOWN-GOOD set (survey refs, expert list, enumerated canon) vs the store —

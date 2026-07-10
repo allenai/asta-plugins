@@ -116,7 +116,7 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    gap-directed sweeps where earlier modalities proved weak → forward citations for recency.
    Tag every candidate with its modality (provenance). Mechanics live in `scripts/acquire.py`
    (resolve_titles — scored matching, never take the first hit; fetch_edges; pool_references;
-   candidates_from_asta_find; merge_candidates). Cache everything via `scripts/s2.py`.
+   candidates_from_asta; merge_candidates). Cache everything via `scripts/s2.py`.
    **Retrieval division of labor** (each tool's comparative advantage — use accordingly):
    - `asta literature find` — one-shot ranked search; best for SWEEPS of independent query
      angles (per-query output files = per-query provenance). Pass `--include-rejected sample`
@@ -140,7 +140,8 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
      ZERO unique-relevant yield (everything it found, find/snowball/citances also found). Treat
      it as an optional precision/validation probe or for one-off gnarly semantic questions — not
      as a corpus recall workhorse (evidence is n=1; re-measure if your thread differs).
-   - `asta literature snowball` — RANKED citation expansion (reranked against seed relevance),
+   - `asta literature snowball` — RANKED citation expansion (reranked against seed relevance;
+     `--seeds-file` = a JSON list of "corpusId:relevance" strings),
      and **citances mode**: citation-CONTEXT snippets — a distinct discovery modality that finds
      papers by HOW they're cited and hands you judge-ready evidence. Raw S2 edges (s2.py) are
      for the GRAPH (complete, unranked — coverage signals); the snowball endpoint is for

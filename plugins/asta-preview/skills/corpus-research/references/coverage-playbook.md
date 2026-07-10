@@ -104,11 +104,10 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
 ## 5. Localize gaps, prioritize closure
 - `citation_graph` missed-high-centrality: uncaptured nodes many core papers cite — TRIAGE
   in-scope canon vs out-of-scope famous hubs (they're usually hubs). The triage is a KIND/SCOPE
-  judgment, so automate it with a cheap-tier LLM classification of the never-seen titles
-  (infra/benchmark/method-of-the-field vs candidate in-scope work), NOT with a citation-ratio
-  score: `gap_lift` (local/log-global) was calibrated against a real hand triage and scored
-  AUC 0.50 — chance — because the field's own infrastructure is maximally thread-specific yet
-  out-of-scope. Use gap_lift only as a presentation order (mega-hubs sink); never as the triager.
+  judgment, so automate it with a cheap-model classification of the never-seen titles
+  (infra/benchmark/method-of-the-field vs candidate in-scope work) — NEVER with a citation-ratio
+  score (one was calibrated at AUC 0.50, chance, and removed: the field's own infrastructure is
+  maximally cited yet out-of-scope).
 - **Relevance-weighted eigenvector centrality** (`eigenvector_centrality`) = the validated
   ranking prior for which candidates to judge/acquire next (top-decile ~80% relevant). Keep the
   weight binary; feed the cached edges.
