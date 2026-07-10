@@ -119,32 +119,17 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    Tag every candidate with its modality (provenance). Mechanics live in `scripts/acquire.py`
    (resolve_titles — scored matching, never take the first hit; fetch_edges; pool_references;
    candidates_from_asta; merge_candidates). Cache everything via `scripts/s2.py`.
-   **Retrieval division of labor** (each tool's comparative advantage — use accordingly):
-   - `asta literature find` — one-shot ranked search; best for SWEEPS of independent query
-     angles (per-query output files = per-query provenance). Pass `--include-rejected sample`
-     when the server supports it: drop statistics + a stratified sample of dropped rows land in
-     a `.rejected.json` SIDECAR (coverage-audit input — scripts read it; never pull it into your
-     context; the sample costs the session nothing).
-     **Staged sweep policy (measured: fast is a truncated diligent, and blind fast cost a run
-     most of its head recall):** (1) sweep ALL angles in `--mode fast` (breadth, ~10s/query);
-     (2) ALWAYS also run the thread's PRIMARY question in `--mode diligent` — it calibrates
-     what depth buys on THIS thread and pairs with its fast twin as a depth capture-occasion;
-     (3) [T] escalation gate: rank fast queries by their own sidecar `not_judged` count (this
-     ranked diligent gains perfectly in calibration; add total_hits where present, judged yield
-     once known) and escalate a budgeted top slice (~25-30%) plus any query covering an
-     anchor-flagged thin family to diligent; stop escalating when marginal new-yield flattens;
-     (4) the coverage verdict MUST name the binding cuts and the un-escalated remainder
-     (exhausted-N-of-N vs truncated-N-of-M — the data is in your own sidecars/origins; a run
-     that never read them shipped an 85-90% head claim that measured ~44%).
-   - `asta literature interactive` — the full paper-finder agent. Measured (n=1): highest
-     precision, ZERO unique-relevant yield. Optional validation probe / one-off gnarly semantic
-     questions; not a recall workhorse. Re-measure if your thread differs.
-   - `asta literature snowball` — RANKED citation expansion (reranked against seed relevance;
-     `--seeds-file` = a JSON list of "corpusId:relevance" strings),
-     and **citances mode**: citation-CONTEXT snippets — a distinct discovery modality that finds
-     papers by HOW they're cited and hands you judge-ready evidence. Raw S2 edges (s2.py) are
-     for the GRAPH (complete, unranked — coverage signals); the snowball endpoint is for
-     prioritized expansion + citances. Use both, for their different jobs.
+   **Staged sweep policy (measured: fast is a truncated diligent, and blind fast cost a run
+   most of its head recall):** (1) sweep ALL angles in `--mode fast`, each with
+   `--include-rejected sample` (drop stats land in a `.rejected.json` SIDECAR — scripts read it,
+   never your context); (2) ALWAYS also run the thread's PRIMARY question in `--mode diligent` —
+   it calibrates what depth buys on THIS thread; (3) [T] escalation gate: rank fast queries by
+   their own sidecar `not_judged` count (+ total_hits, + judged yield) and escalate a budgeted
+   top slice (~25-30%) plus anchor-flagged thin families to diligent; stop when marginal
+   new-yield flattens; (4) the verdict MUST name the binding cuts and the un-escalated remainder
+   (a run that never read its own sidecars shipped an 85-90% head claim that measured ~44%).
+   **Read playbook §1's retrieval division-of-labor BEFORE the first find call** (find vs
+   interactive vs snowball/citances vs raw edges — each tool's measured comparative advantage).
 2. **Curate** — relevance-judge every candidate against thread.json criteria
    (`references/curation.md`: cost-tiered judging, corroboration pre-filter, panel+adjudicator
    only for the borderline; strip search noise). Write judgment files → `scripts/relevance.py`.

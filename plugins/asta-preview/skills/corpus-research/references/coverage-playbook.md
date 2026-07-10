@@ -54,6 +54,21 @@ its modality (this list is EXEMPLARS + FLOOR — the habitat note proposes what'
 5. **Forward citations** for recency (new items citing the captured hubs).
 Expect title-search name-collisions in sweeps — curation strips them; judge the paper, not the query.
 
+**Retrieval division of labor (each tool's measured comparative advantage):**
+- `asta literature find` — one-shot ranked search; the SWEEP workhorse (per-query output files =
+  per-query provenance; `--include-rejected sample` sidecars = the coverage-audit input; the
+  sample costs the session nothing). Modes: fast = breadth (~10s), diligent = depth (~10×) —
+  the staged sweep policy in SKILL step 1 governs which runs where.
+- `asta literature interactive` — the full paper-finder agent. Measured (n=1): highest precision,
+  ZERO unique-relevant yield. Optional validation probe / one-off gnarly semantic questions; not
+  a recall workhorse. Re-measure if your thread differs.
+- `asta literature snowball` — RANKED citation expansion (reranked against seed relevance;
+  `--seeds-file` = a JSON list of "corpusId:relevance" strings), and **citances mode**:
+  citation-CONTEXT snippets — a distinct discovery modality that finds papers by HOW they're
+  cited and hands you judge-ready evidence.
+- Raw S2 edges (`s2.py`) are for the GRAPH (complete, unranked — coverage signals); the snowball
+  endpoint is for prioritized expansion + citances. Use both, for their different jobs.
+
 ## 2. Convergence: cross-modality yield, not zero-count
 - A fresh independent modality returning mostly-new items = NOT converged (low inter-modality
   overlap means the population is under-sampled). Keep adding modalities until a new one yields
@@ -129,23 +144,20 @@ ranked gaps / boundary. State what a user should and should not conclude from th
 population grows continuously (active fields), say "complete as-of" and name the refresh trigger.
 **Calibrated claim shape (leave-one-out calibration across 3 independent runs of one thread —
 every verdict tested was OVERCONFIDENT, none underconfident; correct for the bias structurally):**
-- Claim the HEAD and the TAIL separately: canon-anchor licenses "~85–95% of the highly-cited
-  stratum captured" and NOTHING about the tail — beyond the head, say "the corpus SAMPLES the
-  tail; it does not enumerate it." Chao1-style lower bounds were the only calibrated estimator —
-  prefer "at least X missing" over point estimates.
-- PROPAGATE the single-modality-share smell into the claimed range (it was the best early-warning
-  signal in calibration and was ignored by the verdict numbers it should have widened).
+- **Claim the HEAD and the TAIL separately, and anchor the head EXTERNALLY.** Any head claim ≥
+  "most of it captured" requires an anchor OUTSIDE the run's own enumeration culture (accumulated
+  gold, a maintained list, a registry) — a self-enumerated canon shares your sweeps' blind spot
+  and anchors nothing (measured: a verdict claimed 85-90% head; external truth measured ~44%).
+  Beyond the head, "the corpus SAMPLES the tail; it does not enumerate it."
+- **Bounds are bounds.** Chao1-style lower bounds were the only calibrated estimator — prefer
+  "at least X missing"; a CR/lower-bound point estimate may NEVER anchor the "missing" number.
+  PROPAGATE the single-modality-share smell into the claimed range (best early-warning signal in
+  calibration; it must WIDEN the numbers, not sit beside them).
 - Reference-pool recall is self-referential (blind to sub-communities the core doesn't cite) —
-  never let it stand without an EXTERNAL anchor (enumeration/maintained list).
+  never let it stand without an EXTERNAL anchor.
 - Name two loss terms estimators can't see: **ingestion loss** (judged-relevant papers that never
   entered the rings — check it) and **scope drift** (state the exact file+count the verdict was
   computed over; recompute after the last data change).
-- **The anchoring rule (measured failure: a verdict claimed 85-90% head; external truth measured
-  ~44%):** a CR/lower-bound point estimate may NEVER anchor the "missing" number — write the
-  bound AS a bound and let the smells widen it. Any head claim ≥ "most of the head captured"
-  requires an anchor EXTERNAL to the run's own enumeration culture (accumulated gold, a
-  maintained list, a registry) — a self-enumerated seed canon shares your sweeps' blind spot and
-  anchors nothing.
 - **Truncation term (REQUIRED — the data is already in your sidecars/origins):** per modality,
   state the binding cuts: exhausted-N-of-N vs truncated-N-of-M (total_hits), and the un-escalated
   remainder of the sweep policy. A measured run left ~9,500 unjudged drop-events (~6-12%
