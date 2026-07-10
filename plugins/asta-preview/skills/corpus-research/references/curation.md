@@ -48,7 +48,7 @@ open codes (grounded coding starts from these); (2) it makes grading HONEST — 
 on exactly these fields, and a judge that cannot name the phenomenon cannot justify a high grade
 (nullable extraction IS the relevance test, countering inclusion bias); (3) the quote makes the
 judgment auditable. KEEP IT LIGHT: open-code phrases + quote only — full extraction (findings,
-claims, spans per sub-question) stays post-curation, on the relevant ring, at the evidence tier.
+claims, spans per sub-question) stays post-curation, on the relevant ring, at the evidence depth.
 
 ## Cost-tier the judging (don't panel everything — validated ordering)
 1. **Corroboration pre-filter** (near-free): candidates found by ≥2 acquisition modalities are

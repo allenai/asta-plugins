@@ -48,7 +48,7 @@ From the user's question alone, write `<run>/thread.json`:
  "criteria": [{"id": "crit_1", "name": "...", "definition": "what makes a paper relevant, per criterion"}],
  "scope": {"axis": "folded|separate", "out_of_scope_families": []},
  "extraction_schema": {"<field>": "<what to extract, per the question's sub-questions>"},
- "evidence_tier": "abstract|fulltext"}
+ "evidence_depth": "abstract|fulltext"}
 ```
 - **criteria**: decompose the question into per-criterion relevance tests (graded 0–3, tier =
   in/relevant/maybe/not-relevant). Ask at Step 0 only what BLOCKS the first sweep; defer other
@@ -63,7 +63,7 @@ From the user's question alone, write `<run>/thread.json`:
 - **extraction_schema**: design fields from the question's sub-questions (what does each paper
   analyze/use/find/extend...). Include per-record: evidence span, confidence, and a `scope_flag`
   escape (extraction reads deepest — it catches scope leaks nothing else sees).
-- **evidence_tier**: decide per `references/fulltext-at-scale.md` — PILOT abstracts first; if the
+- **evidence_depth** (thread-level): decide per `references/fulltext-at-scale.md` — PILOT abstracts first; if the
   answer fields are systematically absent from abstracts, the thread is fulltext-mandatory.
 - **thread.json is LIVING config**: when the executed schema evolves mid-run (fields renamed/
   added — it will), write the change BACK into thread.json (bump a version note) + MANIFEST.
@@ -90,7 +90,7 @@ the costed options at that beat renew the consent — never silently 2× the app
 ## The pipeline (each phase has a reference doc; RE-READ it when you get there)
 Re-read the phase's reference AT the phase even if you read it at session start — long runs span
 compactions, and measured: structurally-enforced requirements survive them but prose-only
-guidance decays (a run built its report 20h after its only read of report.md and dropped exactly
+guidance decays (a run built its report 20h after its only read of the report reference and dropped exactly
 the prose-specified requirements; a sibling run re-read at the phase and dropped none).
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
@@ -166,18 +166,17 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    known-canon anchor** via `knowledge.anchor()` (playbook §4) — a verdict without it has a hole
    in it. Substrate queries are ad-hoc joins over the standard files (measured: that's what
    works); `knowledge.anchor/lookup` cover the membership-semantics cases.
-6. **Extract & answer** — per-paper extraction (map) over the evidence tier
+6. **Extract & answer** — per-paper extraction (map) over the evidence depth
    (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
    sub-question with gates. Extraction schemas include a **mentioned-entities field** (the
    thread's pertinent entity types: models/methods/datasets the paper COMPARES AGAINST, not just
    its own subject) — nearly free at extraction time, and its inversion is a validated coverage
    signal (playbook §5: mention-shadow). TWO HARD OUTPUT REQUIREMENTS (not optional style):
    per-answer "How performed" notes and working paper links on every reference — full spec in
-   `references/answers.md`, re-read at this phase. For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
-   one-vs-two-paper spats (`references/answers.md`). The final user-facing deliverable is the
-   REPORT — shape and content requirements in `references/report.md` (index page, per-question
-   method notes, evidence in-body, data-generated distribution charts, self-contained rendering,
-   the package). Do NOT source deliverable structure from generic artifact/design skills.
+   `references/deliverables.md` Part A, re-read at this phase. For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
+   one-vs-two-paper spats (`references/deliverables.md`). The final user-facing deliverable is the
+   REPORT — shape and content requirements in `references/deliverables.md` Part B (index page,
+   evidence in-body, distribution charts, self-contained rendering, the package). Do NOT source deliverable structure from generic artifact/design skills.
 
 ## Worker discipline (HARD — every long-running subagent job, all phases)
 Judging waves, extraction batches, fetch sweeps, tagging runs: the worker APPENDS each result as

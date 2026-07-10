@@ -3,13 +3,13 @@
 Some threads are FULL-TEXT-MANDATORY: the answer fields live in the paper BODY, not the abstract
 (typical body-only fields: resources/inputs used, provenance/what-builds-on-what, verbatim
 procedure passages, mechanism details). Other threads are abstract-sufficient (a per-paper claim
-that abstracts state well). Decide the evidence tier per thread, with a pilot — don't assume.
+that abstracts state well). Decide the evidence depth per thread, with a pilot — don't assume.
 
 ## Decide the tier (pilot first)
 Extract the schema from ~25 abstracts. If the answer fields are systematically ABSENT (only a
 small fraction name the datasets / state the parent / give the mechanism), the thread is
 fulltext-mandatory. If abstracts carry the fields, stay abstract (cheaper, full coverage). Record
-the decision as `evidence_tier` in thread.json and say which tier each answer used.
+the decision as `evidence_depth` in thread.json and say which depth each answer used.
 
 ## The full-text pipeline (cache-first map-reduce)
 1. **Fetch once, cache** — `scripts/fulltext.py fetch(corpusId, arxiv, cache_dir)`: arxiv-html →
