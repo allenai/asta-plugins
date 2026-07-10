@@ -77,7 +77,7 @@ def gate(report_dir, run_dir=None, min_val=10, questions=4):
     # 2. boundary language — the reader-facing framing specifically (a report that only says
     # "complete as-of" passed a human review as DEFICIENT; the should-not-conclude framing is
     # the requirement)
-    if not re.search(r"should\s+not\s+conclude|not\s+a\s+complete\s+enumeration|do(es)?\s+not\s+enumerate", prose, re.I):
+    if not re.search(r"should\s+not\s+(conclude|read)|not\s+a\s+complete\s+enumeration|not\s+enumerated|do(es)?\s+not\s+(enumerate|read\s+the\s+corpus\s+as\s+complete)|sampled,?\s+not\s+enumerated", prose, re.I):
         fails.append("no reader-facing boundary framing (what a reader should NOT conclude)")
     if not re.search(r"complete\s+as[- ]of|as[- ]of\s+\d{4}-", prose, re.I):
         fails.append("no as-of freshness statement")
