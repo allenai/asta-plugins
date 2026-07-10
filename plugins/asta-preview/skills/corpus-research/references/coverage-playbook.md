@@ -37,7 +37,7 @@ relevance reranker. Cross-modality corroboration partly measures filter agreemen
 correlate → N̂ biased DOWN. Treat modalities by FILTER LINEAGE: paper-finder-filtered vs
 filter-independent (parametric enumeration, survey-ref pooling, raw-edge co-citation, raw-S2
 sweeps, web lists). The retrieval filter's false-negative rate is a named verdict term —
-UNMEASURED until the rejected-stats sidecar is available, then measured per thread by judging
+measured per thread by judging
 the reject sample.
 
 Run modalities with independent QUERIES, each blind to the others, tagging every candidate with

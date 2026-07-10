@@ -9,7 +9,7 @@ often fails — treat it as first-priority, not bookkeeping.)
 Every stage reports a coverage/quality number and REFUSES to feed downstream when it's low:
 - relevance label_coverage · **tag_coverage** (real-family, not Other/untagged) · extraction
   coverage + evidence-grounding · evidence-depth mix.
-- `substrate.py` fails the TAG_GATE <90% — do not read a family distribution until it passes.
+- `substrate.py`'s TAG_GATE refuses downstream reads until it passes (threshold lives in substrate.py + codebook.md).
 - **Never let a quality drop hide in a real category.** Split "Other" into genuine-unclassifiable
   vs untagged/low-confidence. A ballooning "Other" is a gate failure, not a finding.
 

@@ -32,7 +32,12 @@ trust story is this separation — a reader can re-run every [T] and audit every
 4. **Honest coverage.** Multi-modal acquisition + population estimates + an explicit boundary.
    Never claim "comprehensive" from one modality; never quote a flat "% missing" (stratify
    canonical vs long-tail). See `references/coverage-playbook.md`.
-5. **Adopt, don't reinvent.** Retrieval = `asta literature find/interactive/snowball` (see the
+5. **User touches the sources.** Hand verbatim excerpts + working pointers into papers, not
+   only synthesis — provenance is necessary but not sufficient.
+6. **Flex modes; surface the goal.** Interrogation is one mode, not a lock-in; after a few turns
+   make the user's higher-level goal explicit, and steer stretched micro-operations to a more
+   reliable route to the same goal.
+7. **Adopt, don't reinvent.** Retrieval = `asta literature find/interactive/snowball` (see the
    find-literature skill). Statistics = the exact published estimators in
    `scripts/coverage_signals.py`. Build only what's genuinely new for the thread.
 
@@ -90,9 +95,8 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
    ("find the librarians": registries, leaderboards, review tables, curated lists, trial
-   registries — and CHECK the corpus/gold for an existing `librarian:*` roster from prior work
-   on this thread: curation classifies thread-surveys/reviews as librarian records precisely so
-   the next run starts with them), and **≥2 candidate modalities NOT in the list below — justify or refute each**.
+   registries — and CHECK for an existing `librarian:*` roster from prior work on this thread,
+   curation.md §librarian), and **≥2 candidate modalities NOT in the list below — justify or refute each**.
    The modality list here is EXEMPLARS + a FLOOR, not the population: a checklist satisfies
    diligence ("did I run the list?") — the habitat note restores the real question ("have I
    found everything?"). A real run skipped it and missed the asker's #1 named item.
@@ -104,11 +108,9 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    adjacent subfields are the a2-shaped exemplars, not the list), never as one flat
    enumeration — a flat list inherits the same culture as your queries and anchors nothing (the same
    run's 54-seed anchor shared its sweeps' blind spot and caught zero of the misses).
-   Then run multi-modal — sweep at MODEST CONCURRENCY (~3-4 parallel finds: search backends
-   run few searches concurrently and their request timeout counts queue wait, so a wide parallel
-   burst just converts the tail into timeouts). Queries independent, but know that every
-   paper-finder surface shares ONE relevance filter (calibrated consequence: corroboration and capture-recapture overstate
-   independence — playbook §1): parametric seed enumeration →
+   Then run multi-modal (diligent/escalated finds at ~3-4 parallel — backend timeouts count
+   queue wait; all paper-finder surfaces share ONE relevance filter, playbook §1): parametric
+   seed enumeration →
    `asta literature` search/snowball + backward co-citation → survey-reference pooling →
    **web/registry enumeration when the population lives outside academia** (registries,
    leaderboards, aggregators, Wikipedia list-articles — enumerate, resolve entries to
@@ -134,12 +136,9 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
      (4) the coverage verdict MUST name the binding cuts and the un-escalated remainder
      (exhausted-N-of-N vs truncated-N-of-M — the data is in your own sidecars/origins; a run
      that never read them shipped an 85-90% head claim that measured ~44%).
-   - `asta literature interactive` — the full paper-finder agent: query DECOMPOSITION planning +
-     a results-verification loop. Inside THIS skill your own loop already does decomposition and
-     iteration, and the one measured run found interactive the highest-PRECISION surface but with
-     ZERO unique-relevant yield (everything it found, find/snowball/citances also found). Treat
-     it as an optional precision/validation probe or for one-off gnarly semantic questions — not
-     as a corpus recall workhorse (evidence is n=1; re-measure if your thread differs).
+   - `asta literature interactive` — the full paper-finder agent. Measured (n=1): highest
+     precision, ZERO unique-relevant yield. Optional validation probe / one-off gnarly semantic
+     questions; not a recall workhorse. Re-measure if your thread differs.
    - `asta literature snowball` — RANKED citation expansion (reranked against seed relevance;
      `--seeds-file` = a JSON list of "corpusId:relevance" strings),
      and **citances mode**: citation-CONTEXT snippets — a distinct discovery modality that finds
@@ -163,25 +162,18 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    (and say so in the coverage boundary) — deferral must never be silent.
 5. **Coverage** — `scripts/coverage_signals.py` computes the [T] signals; YOU triangulate them
    into a verdict + confidence + ranked gaps (`references/coverage-playbook.md`), loop gaps back
-   to Acquire until converged-or-bounded, and state the honest boundary. **REQUIRED signal — the
-   known-canon anchor:** enumerate the area's canon parametrically, then check it against the
-   store with `scripts/knowledge.py` `anchor()` (offline) — report recall + how absences were
-   judged. A verdict without the canon check has a hole in it. `knowledge.py` (lookup / find /
-   cites / anchor) is ALSO how you query the substrate for any preliminary view or answer —
-   prefer it over ad-hoc jq (it knows the 3-layer membership semantics).
+   to Acquire until converged-or-bounded, and state the honest boundary. **REQUIRED signal: the
+   known-canon anchor** via `knowledge.anchor()` (playbook §4) — a verdict without it has a hole
+   in it. Substrate queries are ad-hoc joins over the standard files (measured: that's what
+   works); `knowledge.anchor/lookup` cover the membership-semantics cases.
 6. **Extract & answer** — per-paper extraction (map) over the evidence tier
    (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
    sub-question with gates. Extraction schemas include a **mentioned-entities field** (the
    thread's pertinent entity types: models/methods/datasets the paper COMPARES AGAINST, not just
    its own subject) — nearly free at extraction time, and its inversion is a validated coverage
    signal (playbook §5: mention-shadow). TWO HARD OUTPUT REQUIREMENTS (not optional style):
-   - EVERY answered sub-question carries its own "**How performed:**" note (corpus + ring +
-     method + evidence tier + limits) — per-answer, in place; a single global methods header
-     does NOT satisfy this.
-   - EVERY paper reference in a user-facing artifact is a WORKING link — default
-     `https://api.semanticscholar.org/CorpusId:<corpusId>`; if not on S2, link arXiv/DOI/
-     publisher/the post itself. A bare corpusId is not clickable.
-   For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
+   per-answer "How performed" notes and working paper links on every reference — full spec in
+   `references/answers.md`, re-read at this phase. For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
    one-vs-two-paper spats (`references/answers.md`). The final user-facing deliverable is the
    REPORT — shape and content requirements in `references/report.md` (index page, per-question
    method notes, evidence in-body, data-generated distribution charts, self-contained rendering,

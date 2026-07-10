@@ -14,7 +14,7 @@ sub-question.
 
 ## Paper links — HARD requirement
 Every paper reference in a user-facing artifact is a WORKING link — a bare corpusId is dead text;
-readers must reach the paper in one click (P1: the user touches the sources). Default:
+readers must reach the paper in one click (the user touches the sources). Default:
 `https://api.semanticscholar.org/CorpusId:<corpusId>`. When the work isn't on S2 (blog posts,
 tech reports, some theses), link whatever canonical page exists — arXiv, DOI, publisher, the
 post itself. Any working link beats a perfect-format dead one.
@@ -46,6 +46,5 @@ consensus with an outlier, exclude it).
 ## Aggregation altitude
 Group/count at the altitude the question asks (families, not raw strings; techniques deduped by
 model-family; findings by phenomenon). Make groupings revisable on request ("redo those groups").
-When thread.json declares `scope.strata` (eras, kinds, populations the user said to include
-side-by-side), aggregate PER-STRATUM and present strata separately — pooling across strata the
-user explicitly distinguished corrupts every distribution and count.
+Aggregate PER-STRATUM when thread.json declares `scope.strata` (the pooling rule lives at
+SKILL step 0).
