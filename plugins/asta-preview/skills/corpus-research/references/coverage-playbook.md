@@ -7,8 +7,7 @@ gaps, explicit boundary}` — never a bare "comprehensive" and never a single sc
 **A mechanism-diverse modality is also a MEASURING INSTRUMENT, not just a paper source
 (measured: ψ study, §3):** recall is only estimable against a capture occasion whose mechanism
 is independent of yours — so a low-yield registry/enumeration/citation-machine sweep earns its
-cost even when it adds few papers: it is what makes the coverage estimate calibrated instead
-of +19-29% optimistic. Keep at least one mechanism-diverse capture occasion alive per thread.
+cost even when it adds few papers: it is the LEAST-BIASED anchor available (measured: ~20-30 points less optimistic than a same-culture pair, under every truth construction). Keep at least one mechanism-diverse capture occasion alive per thread.
 **Match the modality set to WHERE THE POPULATION LIVES — not to your tooling.** Academic indexes
 (search, citation graph, survey references) enumerate *academic* literature; if the thread's
 population is industry-adjacent or practice-driven (models, tools, systems, datasets, clinical
@@ -81,9 +80,9 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   the under-sampling smell.
 - Within a modality: stop when the DISTRIBUTION (family shape) stops shifting, not when raw yield
   hits zero — a same-shaped tail is more-of-the-same, not new coverage.
-- **Diversify on saturation before concluding exhaustion** (literature-derived — the deep-search
-  stopping literature's replicated failure mode is the premature stop on a single stagnation
-  signal; our-side empirical check pending): when a sweep stagnates, first RE-DECOMPOSE — switch
+- **Diversify on saturation before concluding exhaustion** (literature-derived AND observed on our own sweep:
+  a flattening-based stop at queries 3-4 forfeits ~85% of eventual sweep-gold; every flattening
+  was broken by an axis-switch spike of +20-32): when a sweep stagnates, first RE-DECOMPOSE — switch
   axis, register, or query family — and only call exhaustion when the coverage picture is
   complete AND a fresh decomposition also comes up dry. Stagnation of one strategy is evidence
   about that strategy, not about the population.
