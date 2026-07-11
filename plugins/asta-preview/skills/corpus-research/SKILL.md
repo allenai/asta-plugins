@@ -227,8 +227,10 @@ compaction); skills only load when triggered, so a resumed session that never re
 would otherwise land blind. The stub is written once; the dashboard stays the living file.
 
 ## Long-running threads: the VAULT (full doctrine: `references/vault.md` — re-read it when a
-thread continues past its first run)
-When a corpus outlives one session, it becomes a vault: prior rounds' canonical records
+thread continues past its first round)
+When a corpus outlives its first round — a later question batch in the SAME session counts
+exactly as much as a new session; the boundary is rounds-of-work, not sessions — it becomes a
+vault: prior rounds' canonical records
 (append-only, verbatim) + a derived union view + fetch-once caches. Later rounds start from
 `vault/VAULT-MANIFEST.md`, work vault-first with inherited≠verified trust marks, scale the
 stack to the question shape (an answer round ≠ a corpus build), and CLOSE with the round

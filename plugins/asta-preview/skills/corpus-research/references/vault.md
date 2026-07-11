@@ -7,6 +7,18 @@ judgments, and leave structure the next round can trust. Measured receipts: roun
 a vault manifest alone executed the full round contract 4-for-4; cross-round re-judging created
 the first 2× corroboration tier; warm answer rounds cost ~5-10% of a cold corpus build.
 
+**The boundary is NOT sessions.** A ROUND is a unit of work with its own charter and as-of date
+— a follow-up question batch an hour later in the SAME session is a round exactly as much as a
+fresh session weeks later. The vault line is: knowledge that must be trusted LATER, without
+re-derivation, by a reader who didn't watch it being made — and a single long session crosses
+that line too (context gets compacted; in-context "memory" of a judgment decays into an
+unverifiable claim; the agent that extracted a fact 20 hours ago is effectively a prior round).
+So graduate a run to a vault when its FIRST round closes (coverage verdict + answers shipped)
+and the thread continues in any form — same session included. Everything below (append-only
+records, trust marks, the round contract, the closing rebuild) applies within one session
+identically: prose you remember is inherited; only what's re-verified against records is
+verified.
+
 ## Layout (what `scripts/vault.py` builds and maintains)
 ```
 vault/
