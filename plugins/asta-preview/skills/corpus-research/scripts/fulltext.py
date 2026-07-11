@@ -20,9 +20,13 @@ from __future__ import annotations
 import os, re, urllib.request
 
 
-def _get(url, timeout=60):
+def _get_raw(url, timeout=60):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research; fulltext-cache)"})
-    return urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace")
+    return urllib.request.urlopen(req, timeout=timeout).read()
+
+
+def _get(url, timeout=60):
+    return _get_raw(url, timeout).decode("utf-8", "replace")
 
 
 def _html_to_text(html):
@@ -61,11 +65,14 @@ def fetch(corpus_id, arxiv_id, cache_dir, refresh=False, acl_id=None, oa_url=Non
         urls += [oa_url]
     for url in urls:
         try:
-            body = _get(url)
-            if body.lstrip()[:5] == "%PDF-" or url.endswith(".pdf"):
+            raw = _get_raw(url)
+            body = raw.decode("utf-8", "replace")
+            if raw.lstrip()[:5] == b"%PDF-" or url.endswith(".pdf"):
                 pdf_path = os.path.join(cache_dir, f"{corpus_id}.pdf")
-                with open(pdf_path, "w", errors="ignore") as f:
-                    f.write(body)
+                # RAW bytes end-to-end — the old text-mode decode+write corrupted every
+                # cached PDF (bug found by a live acquisition round)
+                with open(pdf_path, "wb") as f:
+                    f.write(raw)
                 continue  # cached for pdf-extraction; keep trying HTML rungs
             if len(body) < 2000:          # stub / error page
                 continue
