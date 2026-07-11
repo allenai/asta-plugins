@@ -105,10 +105,14 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   diversified by MECHANISM — different tool, index, or axis — not two prompts on one model;
   two agents sharing a base model + search API sit in the worst quadrant of both axes. This is
   the coverage-side reason multi-modal acquisition and preserve-explore exist: enumerator
-  diversity is what keeps ψ near 1. **MEASURED on a known-denominator corpus (N=708):
-  same-culture agent pairs ψ=1.8-2.6, recall over-stated +19-29%; mechanism-diverse pairs
-  ψ=0.86-1.04, N̂ within ±3% — a mechanism-diverse pair may anchor a recall estimate;
-  same-culture pairs may not.**
+  diversity is what keeps ψ near 1. **MEASURED, then STRESS-TESTED (bootstrap +
+  leave-source-out truth + second thread): the mechanism-DIVERSITY ADVANTAGE is robust
+  (diverse pairs beat same-culture pairs by ~20-30 points under every truth construction,
+  CI-separated), but the ABSOLUTE estimate is not identifiable from inside your own sources —
+  against pair-independent truth even diverse pairs over-estimated ~+30%, and a second thread's
+  pair missed -30% the OTHER way. Doctrine: prefer the most mechanism-diverse pair available,
+  quote its estimate only as ORDER-OF-MAGNITUDE with the union-denominator caveat, and never
+  as a calibrated point value (bounds stay bounds).**
 - **Many-occasion Chao1 on real citation incidence** (`unseen_class_incidence`) for the
   backward axis. GATE: label_coverage < 1 ⇒ lower bound; judge every capture (relevance-as-you-go).
 - **STRATIFY, never quote a flat "% missing"** (`reference_pool_recall`): recall by
