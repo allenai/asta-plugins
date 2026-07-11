@@ -1,0 +1,103 @@
+# Vaults — how a corpus thread accumulates knowledge across rounds
+
+A VAULT is a corpus thread's persistent knowledge store: the canonical records of every prior
+round (verbatim), a derived union view, and fetch-once caches. It is what turns one-shot corpus
+runs into a LONG-RUNNING research thread: later rounds start warm, corroborate earlier
+judgments, and leave structure the next round can trust. Measured receipts: rounds working from
+a vault manifest alone executed the full round contract 4-for-4; cross-round re-judging created
+the first 2× corroboration tier; warm answer rounds cost ~5-10% of a cold corpus build.
+
+## Layout (what `scripts/vault.py` builds and maintains)
+```
+vault/
+  VAULT-MANIFEST.md     the covenant: what exists, trust marks, the round contract (template below)
+  vault.json            machine-readable: rounds registry (id, source, as_of, note), layer stats.
+                        COUNTS AND FRESHNESS LIVE HERE, not in manifest prose (prose goes stale).
+  rounds/<id>/          each round's canonical record VERBATIM: thread.json (charter),
+                        standardized-relevance.jsonl, observations/extractions, coverage verdict,
+                        round-manifest.json. Schemas may DIFFER by round — deliberately not
+                        normalized (primitives over schemas; the consumer controls joins).
+  view/union.jsonl      one row per paper ever judged: per-round tiers side by side + agreement
+                        (agreed-positive / agreed-negative / DISPUTED) + n_rounds_judged + trust
+                        mark. THE default query surface (same core fields as knowledge.py's
+                        collection view — the vault IS that view, persisted and growing).
+  cache/                fulltext-cache/ + s2-cache/, merged across rounds. Fetch-once.
+  QUESTIONS.log         the question stream (asked / answered-by / spawned-by) — append-only;
+                        itself vault knowledge.
+```
+
+## The growth model (what may change and how — this is the whole integrity story)
+- **Canonical records are APPEND-ONLY.** A round adds `rounds/<its-id>/`; it NEVER edits a prior
+  round's files. Trust marks mean nothing if history can be rewritten.
+- **Caches are append-only fold-back — and this binds SUBAGENTS.** Every external fetch (main
+  agent or worker) deposits into `cache/` before use. A worker that fetches full texts and keeps
+  them in its own context has broken fetch-once (measured failure: a round's fetched PDFs were
+  lost because the fold-back rule didn't name subagents).
+- **Derived layers are never hand-edited.** `view/union.jsonl` and `vault.json` are rebuilt
+  mechanically — `python scripts/vault.py rebuild <workspace>` — as the ROUND'S OWN closing
+  step. No human maintainer in the loop; the derivation is deterministic and auditable.
+- The one hand-written vault file a round touches is `QUESTIONS.log` (append).
+
+## Trust marks (thread-side facts only — no external gold enters a vault)
+- `agreed-positive/N×` with N≥2 — independent rounds with different charters converged. The
+  strongest claim a vault makes. Reliable, not infallible.
+- `agreed-*/1×` — a single round's uncontested call. A claim, not a verification.
+- `DISPUTED` — rounds genuinely disagreed (usually charter-boundary differences). Never silently
+  pick a side: if a disputed paper matters to your question, judge it against YOUR charter and
+  record that as a new opinion (that's how disputes resolve — by more opinions, not edits).
+- **Inherited ≠ verified.** Anything stated from the vault carries its mark; anything you
+  re-judge, re-extract, or fresh-sweep yourself upgrades it — and a verification that lives
+  only in prose upgrades NOTHING: write it to `trust-upgrades.jsonl` (schema below).
+
+## Operating clause (how to work within a vault)
+1. The vault is your FIRST capture occasion, never the population. Query the view before any
+   external call; every fetch folds back into the caches.
+2. Separate inherited from verified in every coverage claim and answer.
+3. The vault shares the blind spots of the rounds that built it (shared retrieval culture, an
+   era, its charters' exclusions — each verdict names its holes; read them). New external
+   anchors beat another pass over the vault.
+4. Extend, don't fork — and CLOSE YOUR ROUND (the contract).
+
+## THE ROUND CONTRACT (prose answers are welcome; STRUCTURE is what compounds)
+Before finishing, a round leaves, under `round-<id>/` in the workspace:
+1. `round-manifest.json` — charter, as-of date, questions asked/answered/spawned, files
+   produced, what was verified vs inherited, method notes per question.
+2. Any NEW or RE-JUDGED papers as `standardized-relevance.jsonl` rows — same schema as prior
+   rounds (per-criterion 0-3 grades, stratum, text_source, title). This is how the vault grows.
+3. `trust-upgrades.jsonl` — every claim re-verified this round, durably:
+   `{corpusId, claim, from_mark, to_mark, evidence_span, method}`.
+4. Appends to `vault/QUESTIONS.log`.
+5. **The closing rebuild**: `python scripts/vault.py rebuild <workspace>` — folds the round in,
+   advances the vault's as-of. Verify the printed counts moved as expected.
+
+Round TYPES share this contract and differ only in gates: an ANSWER round (a few questions,
+targeted retrieval) adds rows in the handful range and must not regress to memory-only answers;
+an ACQUISITION round (new sweep) runs the full pipeline gates (SKILL.md steps 1-6); an AUDIT
+round (re-judge a slice, fulltext-verify) is measured by trust-upgrades produced. Scale the
+machinery to the question shape — a 2-question answer round with the stack in targeted mode
+measured ~2× a skill-less baseline's cost, not 20×.
+
+## Warm-workspace setup (the binding — do this when a thread goes long-running)
+Skill triggers cannot see that a fresh session is a continuation. The workspace carries it:
+the workspace `CLAUDE.md` names this skill ("research rounds use the corpus-research skill —
+invoke it at round start"), names the retrieval stack, and says "read vault/VAULT-MANIFEST.md
+before acting". Measured: this one paragraph is what made the treatment round load the skill;
+without it, rounds run on base ability and the manifest alone.
+
+## VAULT-MANIFEST.md template (adapt; keep it ~1 page)
+```
+# VAULT — <thread topic>
+You are working WITHIN an accumulated research vault: <founding round, date, charter owner>
+plus <answer/audit rounds folded in>. Read this manifest before anything else.
+## What's here            <the Layout section above, instantiated; counts → "see vault.json">
+## Trust marks            <the marks above + any round-specific caveats (e.g. "r2 has no
+                           evidence quotes"; "r1 +relevant slice is abstract-judged")>
+## Freshness              complete as-of <date, per vault.json>; this field moves in <weeks|
+                           months> — for recency-sensitive questions sweep forward first.
+## Operating clause       <the four points + THE ROUND CONTRACT, verbatim from this reference>
+```
+
+## Creating a vault from a finished run
+`python scripts/vault.py init <workspace> --from <run_dir>` copies the run's canonical files in
+as the founding round, builds caches/view/vault.json, and drops the manifest template for you
+to instantiate. Then write the workspace CLAUDE.md binding (above) and the thread is warm.

@@ -226,6 +226,18 @@ Rationale: CLAUDE.md is what the harness ACTUALLY auto-loads (session start, per
 compaction); skills only load when triggered, so a resumed session that never re-fires this skill
 would otherwise land blind. The stub is written once; the dashboard stays the living file.
 
+## Long-running threads: the VAULT (full doctrine: `references/vault.md` — re-read it when a
+thread continues past its first run)
+When a corpus outlives one session, it becomes a vault: prior rounds' canonical records
+(append-only, verbatim) + a derived union view + fetch-once caches. Later rounds start from
+`vault/VAULT-MANIFEST.md`, work vault-first with inherited≠verified trust marks, scale the
+stack to the question shape (an answer round ≠ a corpus build), and CLOSE with the round
+contract — new/re-judged rows, durable trust-upgrades, question-log appends, and
+`python scripts/vault.py rebuild <workspace>` as the closing step (derived layers are never
+hand-edited; growth is mechanical). `vault.py init` turns a finished run into a vault; the
+workspace CLAUDE.md stub (above) is what makes future rounds load this skill — add the vault
+line to it when a thread goes long-running.
+
 ## Known limits (say so, don't hide)
 Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching
 is heuristic — verify digests aren't empty before extracting. No corpus-local semantic search yet
