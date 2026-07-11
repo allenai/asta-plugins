@@ -146,10 +146,19 @@ def _derive(vault, rounds):
     return layers
 
 
-def rebuild(workspace):
+def rebuild(workspace, amend=None):
     vault = f"{workspace}/vault"
     vj = f"{vault}/vault.json"
     meta = json.load(open(vj)) if os.path.isfile(vj) else {"rounds": [], "layers": {}}
+    if amend:
+        # amendment semantics: ONLY the latest round may be re-folded (post-close fixes);
+        # earlier rounds stay immutable (measured: a round's post-close report fixes left
+        # its canonical copy stale, and append-only correctly refused a silent re-fold)
+        if not meta["rounds"] or meta["rounds"][0]["id"] != amend:
+            raise SystemExit(f"--amend {amend}: only the LATEST round "
+                             f"({meta['rounds'][0]['id'] if meta['rounds'] else 'none'}) is amendable")
+        shutil.rmtree(f"{vault}/rounds/{amend}", ignore_errors=True)
+        meta["rounds"] = meta["rounds"][1:]
     # identity must survive a moved/copied workspace: match id, recorded path, OR the
     # recorded source's basename (a copied workspace re-folding its own rounds = 2x rows)
     known = ({r.get("source") for r in meta["rounds"]} | {r["id"] for r in meta["rounds"]}
@@ -190,7 +199,8 @@ def init(workspace, run_dir, rid="r1"):
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "rebuild":
-        m = rebuild(sys.argv[2])
+        amend = sys.argv[sys.argv.index("--amend") + 1] if "--amend" in sys.argv else None
+        m = rebuild(sys.argv[2], amend=amend)
     elif cmd == "init":
         src = sys.argv[sys.argv.index("--from") + 1]
         rid = sys.argv[sys.argv.index("--id") + 1] if "--id" in sys.argv else "r1"

@@ -64,9 +64,15 @@ Disambiguation (three things people conflate):
   It is a FILE first (markdown set + an HTML explorer) — packageable, emailable, re-sendable.
 - **Run artifacts** = workspace files (candidates, judgments, substrate, caches). Never shown AS
   the deliverable; the report LINKS INTO them ("every number traces to a file you can open").
-- **Harness/publishing artifacts** (e.g. a hosted page) = optional PUBLISHING CHANNELS for the
-  report, not the report. Do NOT source the report's structure from generic artifact-design
-  guidance — this file is the spec.
+- **Delivery is part of the report (measured: calling the hosted page "optional" cost two
+  rounds their links).** When the ask is sharing-shaped ("show my team lead", "send a
+  colleague"), the report SHIPS as a deployed hosted page: deploy, hand the user the URL, and
+  record the URL in the round-manifest/MANIFEST — a report is not "presented" until the user
+  holds a working link. The package must work OUTSIDE this machine: no links into local
+  workspace paths (bundle the standing report in when layering an update). The report gate
+  applies to UPDATES exactly as to first builds. The hosted page is the publishing channel
+  only — do NOT source the report's structure from generic artifact-design guidance; this
+  file is the spec.
 
 ## Content requirements (each traces to a real reader complaint or a real run's win)
 1. **One index page / README**: what this is, corpus size + as-of date + refresh trigger, links

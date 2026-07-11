@@ -48,7 +48,9 @@ vault/
 - **Derived layers are never hand-edited.** `view/union.jsonl` and `vault.json` are rebuilt
   mechanically — `python scripts/vault.py rebuild <workspace>` — as the ROUND'S OWN closing
   step. No human maintainer in the loop; the derivation is deterministic and auditable.
-- The one hand-written vault file a round touches is `QUESTIONS.log` (append).
+- Hand-written vault files a round touches: `QUESTIONS.log` (append) and the MANIFEST's
+  narrative prose (a round MAY update the freshness note / header story — that's covenant
+  text, not derived data; counts NEVER go in prose, they live in vault.json).
 
 ## Trust marks (thread-side facts only — no external gold enters a vault)
 - `agreed-positive/N×` with N≥2 — independent rounds with different charters converged. The
@@ -75,12 +77,26 @@ Before finishing, a round leaves, under `round-<id>/` in the workspace:
 1. `round-manifest.json` — charter, as-of date, questions asked/answered/spawned, files
    produced, what was verified vs inherited, method notes per question.
 2. Any NEW or RE-JUDGED papers as `standardized-relevance.jsonl` rows — same schema as prior
-   rounds (per-criterion 0-3 grades, stratum, text_source, title). This is how the vault grows.
+   rounds (per-criterion 0-3 grades, stratum, text_source, title). Where prior rounds' rows
+   predate a field the curation doctrine now requires (e.g. title), curation.md WINS — add the
+   field rather than matching old rows' omissions. This is how the vault grows.
 3. `trust-upgrades.jsonl` — every claim re-verified this round, durably:
    `{corpusId, claim, from_mark, to_mark, evidence_span, method}`.
 4. Appends to `vault/QUESTIONS.log`.
-5. **The closing rebuild**: `python scripts/vault.py rebuild <workspace>` — folds the round in,
-   advances the vault's as-of. Verify the printed counts moved as expected.
+5. **Deliverable gate (measured to decay when left to memory — this line is the durable
+   trigger):** before building OR UPDATING any user-facing report, re-read deliverables.md and
+   run `report_gate.py` to PASS; sharing-shaped asks ship DEPLOYED with the URL recorded in
+   the round-manifest.
+6. **The closing rebuild**: `python scripts/vault.py rebuild <workspace>` — folds the round in,
+   advances the vault's as-of. Verify the printed counts moved as expected. Post-close fixes
+   to the LATEST round: re-run with `--amend <round-id>` (refreshes its canonical copy;
+   earlier rounds stay immutable).
+
+**Deferral-with-declaration (a named right-sizing move — measured: a 1,381-candidate
+forward-cite tail deferred cleanly):** when a question surfaces acquisition-scale work
+mid-round, CACHE the candidates, DECLARE the deferral (thread.json / round-manifest), and
+spawn it into QUESTIONS.log as its own future round — never silently judge a tail the round
+wasn't scoped for, never silently drop it.
 
 Round TYPES share this contract and differ only in gates: an ANSWER round (a few questions,
 targeted retrieval) adds rows in the handful range and must not regress to memory-only answers;

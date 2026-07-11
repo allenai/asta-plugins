@@ -158,7 +158,9 @@ Triangulate: discard signals that fail their self-check; ensemble surviving esti
 RANGE; let convergence + anchors modulate confidence; output captured / estimate / confidence /
 ranked gaps / boundary. State what a user should and should not conclude from the corpus. If the
 population grows continuously (active fields), say "complete as-of" and name the refresh trigger.
-**Name the denominator regime (one sentence in every verdict):** a CLOSED/samplable pool (a
+**Name the denominator regime (one sentence in every verdict — and in any ANSWER whose claim
+rides on coverage, e.g. "no paper does X" / "the field lacks Y"; answer rounds make coverage
+claims without a verdict step, and the regime line travels with the CLAIM):** a CLOSED/samplable pool (a
 registry, a proceedings list, a fixed collection) admits calibrated recall targets — you can
 sample the unretrieved remainder (the TAR/e-discovery literature has certified stops for
 exactly this). An OPEN denominator (the web, "all of S2") does not: recall there is estimable

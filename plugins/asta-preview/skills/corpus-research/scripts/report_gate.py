@@ -94,6 +94,16 @@ def gate(report_dir, run_dir=None, min_val=10, questions=4):
     cdn = re.findall(r'(?:src|href)="https?://(?!api\.semanticscholar)[^"]+\.(?:js|css)"', text)
     if cdn:
         fails.append(f"external CDN refs (self-contained rule): {cdn[:3]}")
+    # package-escape: relative links out of the report dir break the moment the package is
+    # shared (measured: ../../vault/... links shipped to a colleague)
+    esc = re.findall(r'(?:src|href)="(\.\./[^"]+)"', text)
+    if esc:
+        fails.append(f"links escape the package (must be self-contained for sharing): {esc[:3]}")
+    # S2 canonical link form: api.semanticscholar.org/CorpusId:<id> is the documented redirect;
+    # the www./paper/CorpusID: variant is undocumented (measured: shipped once, user-caught)
+    badform = re.findall(r'www\.semanticscholar\.org/paper/CorpusI[dD]:\d+', text)
+    if badform:
+        fails.append(f"non-canonical S2 links (use api.semanticscholar.org/CorpusId:<id>): {badform[:3]}")
     data_files = [p for p in glob.glob(f"{report_dir}/data/*") if os.path.getsize(p) > 2]
     if not data_files:
         fails.append("report/data/ empty — prose aggregates have no data home")
