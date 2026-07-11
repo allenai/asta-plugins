@@ -17,6 +17,8 @@ Usage:
 Round discovery is by REGISTRY, not by name or mtime: a workspace round dir is new iff its
 realpath is not recorded as a source in vault.json. New rounds are prepended (newest first =
 column order and metadata precedence in the union view).
+INVARIANT: vault.json rounds[] is NEWEST-FIRST — dispute-resolution and obs precedence both
+ride on it (a legacy oldest-first registry produced bogus resolution marks until reordered).
 """
 from __future__ import annotations
 import json, os, re, shutil, sys
@@ -116,6 +118,7 @@ def _derive(vault, rounds):
     all_ids = set()
     for rel in tiers_by_round.values():
         all_ids |= set(rel)
+    order = list(tiers_by_round)  # registry order = newest first
     rows = []
     for cid in sorted(all_ids):
         tiers = {rid: tiers_by_round[rid][cid] for rid in tiers_by_round
@@ -125,11 +128,22 @@ def _derive(vault, rounds):
         agreement = ("agreed-positive" if judged and all(pos) else
                      "agreed-negative" if judged and not any(pos) else
                      "DISPUTED" if judged else "unjudged")
+        # dispute resolution overlay: the newest opinion RESOLVES iff the conflict already
+        # existed among strictly OLDER rounds (a deliberate re-judge of a known dispute, per
+        # the operating clause). A newest opinion that CREATES the conflict resolves nothing.
+        # History is never erased: agreement stays DISPUTED; this is the thread's current call.
+        resolved = None
+        if agreement == "DISPUTED":
+            seq = [(rid, tiers[rid]) for rid in order if rid in tiers and tiers[rid]]
+            older = [t in POS for _, t in seq[1:]]
+            if any(older) and not all(older):  # conflict predates the newest opinion
+                resolved = {"tier": seq[0][1], "by": seq[0][0]}
         o = next((obs_by_round[r][cid] for r in obs_by_round if cid in obs_by_round[r]), {})
         rows.append({"corpusId": cid, "title": o.get("title"), "year": o.get("year"),
                      "tiers_by_round": tiers, "n_rounds_judged": len(judged),
-                     "agreement": agreement,
-                     "trust": f"{agreement}/{len(judged)}x",
+                     "agreement": agreement, "resolved_latest": resolved,
+                     "trust": (f"DISPUTED-resolved:{resolved['tier']}/{resolved['by']}"
+                               if resolved else f"{agreement}/{len(judged)}x"),
                      "primary_family_latest": o.get("primary_family") or o.get("primary_family_latest")})
     os.makedirs(f"{vault}/view", exist_ok=True)
     with open(f"{vault}/view/union.jsonl", "w") as f:

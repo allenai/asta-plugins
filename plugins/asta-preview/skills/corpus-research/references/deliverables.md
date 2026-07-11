@@ -74,6 +74,14 @@ Disambiguation (three things people conflate):
   only — do NOT source the report's structure from generic artifact-design guidance; this
   file is the spec.
 
+## Living reports — layering an update (measured pattern, adopt it)
+When updating a standing report (new rounds since it shipped): ONE page serves both readers —
+a **changelog block** up top (what changed, when, by which round) + **NEW badges** on added
+findings and **standing badges** where unchanged material carries fresh corroboration; the
+standing report is BUNDLED into the package (not linked across the filesystem) so first-time
+readers get one coherent report and returning readers find additions at a glance. Flag stale
+items rather than silently re-deriving them. The report gate runs on the update like any build.
+
 ## Content requirements (each traces to a real reader complaint or a real run's win)
 1. **One index page / README**: what this is, corpus size + as-of date + refresh trigger, links
    to every deliverable, a read-order, and honest notes. Readers start here.

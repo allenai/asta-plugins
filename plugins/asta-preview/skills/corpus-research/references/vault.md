@@ -56,9 +56,16 @@ vault/
 - `agreed-positive/N×` with N≥2 — independent rounds with different charters converged. The
   strongest claim a vault makes. Reliable, not infallible.
 - `agreed-*/1×` — a single round's uncontested call. A claim, not a verification.
-- `DISPUTED` — rounds genuinely disagreed (usually charter-boundary differences). Never silently
-  pick a side: if a disputed paper matters to your question, judge it against YOUR charter and
+- `DISPUTED` — rounds genuinely disagreed (usually charter-boundary differences; one thread's
+  audit measured 85% of its hard conflicts as charter-maturity artifacts). Never silently pick
+  a side: if a disputed paper matters to your question, judge it against YOUR charter and
   record that as a new opinion (that's how disputes resolve — by more opinions, not edits).
+- `DISPUTED-resolved:<tier>/<round>` — the mechanical resolution overlay (`resolved_latest` in
+  the view): set when the NEWEST opinion postdates an already-existing conflict among older
+  rounds — a deliberate re-judge of a known dispute, or a later round's fresh call under the
+  matured charter. The dispute history is never erased (agreement stays DISPUTED,
+  tiers_by_round keeps every opinion); this is the thread's CURRENT call. Only row-backed
+  re-judges count — a resolution argued in prose resolves nothing.
 - **Inherited ≠ verified.** Anything stated from the vault carries its mark; anything you
   re-judge, re-extract, or fresh-sweep yourself upgrades it — and a verification that lives
   only in prose upgrades NOTHING: write it to `trust-upgrades.jsonl` (schema below).
