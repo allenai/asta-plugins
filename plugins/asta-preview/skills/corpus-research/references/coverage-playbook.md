@@ -4,6 +4,11 @@ Goal: a coverage VERDICT you can defend — `{captured, missing-estimate range, 
 gaps, explicit boundary}` — never a bare "comprehensive" and never a single scalar.
 
 ## 1. Multi-modal acquisition (the only honest way in)
+**A mechanism-diverse modality is also a MEASURING INSTRUMENT, not just a paper source
+(measured: ψ study, §3):** recall is only estimable against a capture occasion whose mechanism
+is independent of yours — so a low-yield registry/enumeration/citation-machine sweep earns its
+cost even when it adds few papers: it is what makes the coverage estimate calibrated instead
+of +19-29% optimistic. Keep at least one mechanism-diverse capture occasion alive per thread.
 **Match the modality set to WHERE THE POPULATION LIVES — not to your tooling.** Academic indexes
 (search, citation graph, survey references) enumerate *academic* literature; if the thread's
 population is industry-adjacent or practice-driven (models, tools, systems, datasets, clinical
