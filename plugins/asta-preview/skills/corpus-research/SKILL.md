@@ -81,7 +81,8 @@ sizing probe — a single `find` call to gauge the space), STOP and present, in 
   subscription quotas differ). Cache-read is ~60% of the bill — cost ≈ context × call-count,
   not generation. Say "low-to-mid hundreds of dollars at list / a sizable slice of a daily
   quota", not a false-precise number.
-- **Lighter alternatives**: a plain find-literature search (~minutes), or a snowball-only
+- **Lighter alternatives**: a plain find-literature search (~minutes), a targeted
+  semantic-scholar lookup (a specific paper/author/citation, seconds), or a snowball-only
   quick pass — offer them honestly; some questions don't need a corpus.
 Proceed only on explicit approval ("go" / a chosen alternative). If mid-run scope grows
 materially past the approved scale (e.g. a STOP/CONTINUE beat proposing a large tail round),

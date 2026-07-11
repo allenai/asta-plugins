@@ -19,6 +19,10 @@ allowed-tools: Bash(asta papers *)
 
 **Not for comprehensive reports** - use the Literature Report Generation skill for that.
 
+**Scale boundary:** these commands are for a HANDFUL of targeted calls. Do not loop them over
+hundreds of papers — bulk S2 fetching gets rate-limited; corpus-scale work belongs to the
+corpus-research skill, which serializes and caches S2 access (`scripts/s2.py`).
+
 ## Related: Find Literature skill
 
 `asta papers ...` (this skill) is for **mechanical, targeted lookups** against the Semantic
