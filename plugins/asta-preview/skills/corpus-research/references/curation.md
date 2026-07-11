@@ -4,9 +4,12 @@ Turn candidates into a graded, provenanced collection. Relevance is the run's co
 one schema across retrieval scores, judge verdicts, adjudications, audits.
 
 ## The standardized judgment (write to `<run>/judgments/<NN>-<resolution>.jsonl`)
-`{corpusId, tier: in|relevant|maybe|not-relevant, criteria: [{criterion, grade 0-3}], judged_by,
-  reason, <axis>_guess fields (open codes — one guess field per axis of YOUR thread's criteria;
-  derive the names from thread.json, don't copy another thread's), evidence_quote, scope_note}`
+`{corpusId, title, tier: in|relevant|maybe|not-relevant, criteria: [{criterion, grade 0-3}],
+  judged_by, reason, <axis>_guess fields (open codes — one guess field per axis of YOUR thread's
+  criteria; derive the names from thread.json, don't copy another thread's), evidence_quote,
+  scope_note}` — carry `title`: judgment rows outlive the session that made them (vault rounds
+  without an observations file lean on them for view metadata), and a row a human can't
+  recognize without a join is a worse audit surface.
 - Grade EACH thread.json criterion 0–3; the tier is your holistic call across criteria.
 - **Librarian class (not a tier — a classification):** works ABOUT the thread's literature that
   KEEP A LIST of it are neither core (they perform no analysis of their own) nor discards — tag

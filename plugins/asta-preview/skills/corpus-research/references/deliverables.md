@@ -5,6 +5,12 @@
 Answers are extracted/synthesized from the substrate, grounded in sources, and each carries its
 own trust story. Output is a revisable artifact, not a final pronouncement.
 
+**Machinery stays backstage (user call, measured against a run whose prose read "round-X /
+job-X"):** user-facing prose leads with findings and speaks the USER's vocabulary; internal
+unit names (rounds, jobs, shards, waves, gates) belong in the contract artifacts and method
+notes, not the narrative. The method note names the method, not the machinery's filing system.
+Findings first; artifacts listed compactly at the end.
+
 ## Every answer carries a "How performed" note — HARD requirement
 Append to each answered sub-question a short note: **corpus + ring used + method (tag-tally vs
 per-paper extraction vs aggregation) + evidence depth (abstract / full-text / snippet-grounded) +

@@ -76,6 +76,12 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   the under-sampling smell.
 - Within a modality: stop when the DISTRIBUTION (family shape) stops shifting, not when raw yield
   hits zero — a same-shaped tail is more-of-the-same, not new coverage.
+- **Diversify on saturation before concluding exhaustion** (literature-derived — the deep-search
+  stopping literature's replicated failure mode is the premature stop on a single stagnation
+  signal; our-side empirical check pending): when a sweep stagnates, first RE-DECOMPOSE — switch
+  axis, register, or query family — and only call exhaustion when the coverage picture is
+  complete AND a fresh decomposition also comes up dry. Stagnation of one strategy is evidence
+  about that strategy, not about the population.
 
 ## 3. Estimate what's missing (the [T] signals; `scripts/coverage_signals.py`)
 - **Capture-recapture across modalities** (`capture_recapture_modalities`): treat two capture
@@ -85,6 +91,16 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   deeper shared latent is citation FAME, which no lineage split removes). Heterogeneous
   catchability makes every variant a LOWER bound — say so; on disjoint catchments the
   reliability gate fires and no re-slice helps (that class needs exposure/rejected data).
+  **The bias is one-directional and compounding (verbatim-verified from the CR literature):**
+  positive dependence between "independent" enumerators biases N̂ DOWN by ≈1/ψ (ψ = the 2×2
+  odds ratio; Brittain & Böhning 2009), and item heterogeneity biases N̂ down too (Chao1/2 are
+  lower bounds on N; Binette & Steorts 2022) — so CR-derived recall is OVER-estimated, worst
+  for homogeneous enumerators (SE-inspection analog: 22-35% under-estimated missing with two
+  correlated reviewers). Consequence: any two-enumerator agreement proxy needs enumerators
+  diversified by MECHANISM — different tool, index, or axis — not two prompts on one model;
+  two agents sharing a base model + search API sit in the worst quadrant of both axes. This is
+  the coverage-side reason multi-modal acquisition and preserve-explore exist: enumerator
+  diversity is what keeps ψ near 1.
 - **Many-occasion Chao1 on real citation incidence** (`unseen_class_incidence`) for the
   backward axis. GATE: label_coverage < 1 ⇒ lower bound; judge every capture (relevance-as-you-go).
 - **STRATIFY, never quote a flat "% missing"** (`reference_pool_recall`): recall by
@@ -142,6 +158,13 @@ Triangulate: discard signals that fail their self-check; ensemble surviving esti
 RANGE; let convergence + anchors modulate confidence; output captured / estimate / confidence /
 ranked gaps / boundary. State what a user should and should not conclude from the corpus. If the
 population grows continuously (active fields), say "complete as-of" and name the refresh trigger.
+**Name the denominator regime (one sentence in every verdict):** a CLOSED/samplable pool (a
+registry, a proceedings list, a fixed collection) admits calibrated recall targets — you can
+sample the unretrieved remainder (the TAR/e-discovery literature has certified stops for
+exactly this). An OPEN denominator (the web, "all of S2") does not: recall there is estimable
+with bounds, never guaranteed — claim "estimated ≥X% with <method>, lower-bound" and nothing
+stronger. Most corpus threads are MIXED (closed venue slices inside an open field): say which
+claims ride on which regime.
 **Calibrated claim shape (leave-one-out calibration across 3 independent runs of one thread —
 every verdict tested was OVERCONFIDENT, none underconfident; correct for the bias structurally):**
 - **Claim the HEAD and the TAIL separately, and anchor the head EXTERNALLY.** Any head claim ≥

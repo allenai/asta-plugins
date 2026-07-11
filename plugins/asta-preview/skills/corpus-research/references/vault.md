@@ -89,6 +89,13 @@ round (re-judge a slice, fulltext-verify) is measured by trust-upgrades produced
 machinery to the question shape — a 2-question answer round with the stack in targeted mode
 measured ~2× a skill-less baseline's cost, not 20×.
 
+Vocabulary, precisely: **the FIRST corpus build is round 1** — a finished run's canonical
+closing state already satisfies this contract, which is why `vault.py init` folds it in
+verbatim as the founding round. And rounds ≠ BEATS: a round is a knowledge-lifecycle unit
+(charter in → contract out → folds into the vault); a beat (SKILL.md interaction cadence) is a
+user-contact point WITHIN a round where state is surfaced for steering. Beats communicate,
+rounds compound; a beat may END a round early, but the close is still the contract.
+
 ## Warm-workspace setup (the binding — do this when a thread goes long-running)
 Skill triggers cannot see that a fresh session is a continuation. The workspace carries it:
 the workspace `CLAUDE.md` names this skill ("research rounds use the corpus-research skill —
