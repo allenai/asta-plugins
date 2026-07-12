@@ -139,6 +139,11 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
 - **Known-canon check**: enumerate the area's canon parametrically → `knowledge.anchor()` — the
   corpus adjudicates (present? judged how?). OFFLINE-first: anchors are usually already in the
   store. A low recall-to-relevant with high judged-out is deliberate exclusion, NOT a miss.
+- **Persona-shifted canon check (measured: 1 of 3 shifted personas exposed a never-surfaced
+  4-paper spine in a register whose EDGES the corpus had judged positive):** re-run the
+  known-canon enumeration from 2-3 research-community personas OUTSIDE the thread's own
+  culture. Absences explainable by charter = validation; absences with in-corpus POSITIVE
+  neighbors = a real blind spot ("deliberately excluded" requires judged-out, never never-seen).
 - **Survey-reference recall**: what fraction of a scope-matched survey's references did you see?
   Only the never-seen slice is a candidate gap.
 - Related-Work reading of a few central papers adds framing/understanding and catches
