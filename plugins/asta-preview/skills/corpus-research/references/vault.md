@@ -52,6 +52,13 @@ vault/
   narrative prose (a round MAY update the freshness note / header story — that's covenant
   text, not derived data; counts NEVER go in prose, they live in vault.json).
 
+## The eval boundary (audited 2026-07-12; state it precisely)
+A thread's OWN ground truth (its gold rows, adjudications, calibration docs) never enters that
+thread's vault — that would let the corpus grade itself. Eval-side MEASUREMENTS about tools,
+methods, or OTHER corpora are admissible as [external] evidence in a vault's question log,
+attributed like any published result. Questions routed from the eval side carry their source
+label ("eval-side probe") — attribution is part of the record.
+
 ## Trust marks (thread-side facts only — no external gold enters a vault)
 - `agreed-positive/N×` with N≥2 — independent rounds with different charters converged. The
   strongest claim a vault makes. Reliable, not infallible.
