@@ -90,6 +90,11 @@ label ("eval-side probe") — attribution is part of the record.
 Before finishing, a round leaves, under `round-<id>/` in the workspace:
 1. `round-manifest.json` — charter, as-of date, questions asked/answered/spawned, files
    produced, what was verified vs inherited, method notes per question.
+   **Charter provenance is explicit:** the charter is versioned PER ROUND (each round's
+   thread.json states what it operated under; the current charter = the newest round's; prior
+   ones are history — the dispute audit resolved 85% of conflicts by diffing them). A round
+   states "inherited verbatim from <round>" or lists its amendments; a USER-LOCKED charter is
+   never amended without the user (ask at the round's first beat, not after judging).
 2. Any NEW or RE-JUDGED papers as `standardized-relevance.jsonl` rows — same schema as prior
    rounds (per-criterion 0-3 grades, stratum, text_source, title). Where prior rounds' rows
    predate a field the curation doctrine now requires (e.g. title), curation.md WINS — add the
