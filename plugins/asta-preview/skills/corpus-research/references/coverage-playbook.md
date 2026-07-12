@@ -111,7 +111,12 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   against pair-independent truth even diverse pairs over-estimated ~+30%, and a second thread's
   pair missed -30% the OTHER way. Doctrine: prefer the most mechanism-diverse pair available,
   quote its estimate only as ORDER-OF-MAGNITUDE with the union-denominator caveat, and never
-  as a calibrated point value (bounds stay bounds).**
+  as a calibrated point value (bounds stay bounds). SECOND-POPULATION replication (practice
+  corpus, 3 mechanisms): pair choice swung the estimate -28%..+64% in BOTH directions —
+  fame-coupled pairs (parametric memory + curated lists) over-state coverage; reach-disjoint
+  pairs (topic sweep vs curation) under-state it. Diagnose the pair's shared latent vs
+  disjoint reach BEFORE quoting; when pairs disagree in direction, report the SPREAD as the
+  uncertainty.**
 - **Many-occasion Chao1 on real citation incidence** (`unseen_class_incidence`) for the
   backward axis. GATE: label_coverage < 1 ⇒ lower bound; judge every capture (relevance-as-you-go).
 - **STRATIFY, never quote a flat "% missing"** (`reference_pool_recall`): recall by
