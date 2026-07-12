@@ -1,0 +1,195 @@
+"""reviews.py — [T] OpenReview review-register fetcher (a MODALITY: peer reviews of corpus
+papers feed disagreement-axis CANDIDATE GENERATION, contested-claim evidence, and meta-review
+anchors — see deliverables.md disagreement doctrine and coverage-playbook anchors).
+
+Scope honesty: OpenReview-hosted venues only (ICLR, NeurIPS, etc.) — a STRATUM of the corpus,
+never the population; regime language applies to any claim built on it.
+
+Access (measured constraints, 2026-07-12):
+  - Anonymous access is bot-challenged; a FREE registered account is the sanctioned path
+    (ToS: the API exists for "search, and download"; identity/affiliation must be truthful).
+  - Credentials: env OPENREVIEW_USERNAME/OPENREVIEW_PASSWORD, or ~/.config/openreview.env.
+    NEVER logged, never cached in the run dir.
+  - LOGIN is rate-limited (~3/window) — tokens are cached at ~/.cache/openreview-tokens.json
+    (user-level cache, NOT the run dir: run dirs get folded into vaults) and reused (~6 days).
+  - Requests paced ~1.5s, serialized — same discipline as s2.py.
+  - Two APIs: v1 (pre-2024 venues; fuzzy title search WORKS) and v2 (2024+; search is
+    unavailable server-side → resolution via a cached per-venue title index).
+Validated against a hand-verified slice: 8/8 reviewer quotes extracted from browser-saved
+PDFs were found verbatim in API fetches across both API versions.
+
+Usage:
+  python reviews.py fetch <run_dir> --title "<paper title>" [--year YYYY] [--corpus-id N]
+  python reviews.py batch <run_dir> <papers.jsonl>     # rows: {corpusId, title, year}
+Outputs: <run>/review-cache/<forum>.json (raw notes, fetch-once) and appends normalized rows
+to <run>/reviews.jsonl: {corpusId, title, forum, api, venue, decision, n_reviews,
+reviews: [{signature, rating, text}], meta_review}.
+"""
+from __future__ import annotations
+import json, os, re, sys, time
+
+TOKENS = os.path.expanduser("~/.cache/openreview-tokens.json")
+CREDS = os.path.expanduser("~/.config/openreview.env")
+PACE = 1.5
+_clients = {}
+
+
+def _creds():
+    u, p = os.environ.get("OPENREVIEW_USERNAME"), os.environ.get("OPENREVIEW_PASSWORD")
+    if not (u and p) and os.path.exists(CREDS):
+        for line in open(CREDS):
+            if "=" in line:
+                k, v = line.strip().split("=", 1)
+                if k == "OPENREVIEW_USERNAME": u = u or v
+                if k == "OPENREVIEW_PASSWORD": p = p or v
+    if not (u and p):
+        raise SystemExit("no OpenReview credentials (env or ~/.config/openreview.env)")
+    return u, p
+
+
+def client(ver):
+    if ver in _clients:
+        return _clients[ver]
+    import openreview
+    base = "https://api.openreview.net" if ver == 1 else "https://api2.openreview.net"
+    cls = openreview.Client if ver == 1 else openreview.api.OpenReviewClient
+    toks = json.load(open(TOKENS)) if os.path.exists(TOKENS) else {}
+    key = f"v{ver}"
+    if toks.get(key, {}).get("exp", 0) > time.time() + 3600:
+        c = cls(baseurl=base, token=toks[key]["token"])
+    else:
+        u, p = _creds()
+        c = cls(baseurl=base, username=u, password=p)  # login is rate-limited: reuse tokens!
+        toks[key] = {"token": c.token, "exp": time.time() + 6 * 24 * 3600}
+        os.makedirs(os.path.dirname(TOKENS), exist_ok=True)
+        json.dump(toks, open(TOKENS, "w"))
+        os.chmod(TOKENS, 0o600)
+    _clients[ver] = c
+    return c
+
+
+def _norm(t):
+    return re.sub(r"[^a-z0-9]", "", (t or "").lower())
+
+
+def _val(x):
+    return x.get("value") if isinstance(x, dict) else x
+
+
+def resolve_v1(title):
+    """Fuzzy search works on v1 (pre-2024 venues)."""
+    time.sleep(PACE)
+    notes = client(1).search_notes(term=re.sub(r"[^\w\s]", " ", title)[:120], source="forum")
+    n0 = _norm(title)
+    for n in notes:
+        if _norm(_val(n.content.get("title", "")))[:60] == n0[:60]:
+            return n.forum
+    return None
+
+
+def venue_index(run, venueid):
+    """v2 has no search — build (once, cached in the run) a norm-title -> forum index."""
+    os.makedirs(f"{run}/review-cache", exist_ok=True)
+    p = f"{run}/review-cache/venue-index-{venueid.replace('/', '_')}.json"
+    if os.path.exists(p):
+        return json.load(open(p))
+    idx, offset = {}, 0
+    while True:
+        time.sleep(PACE)
+        batch = client(2).get_notes(content={"venueid": venueid}, limit=1000, offset=offset)
+        for n in batch:
+            idx[_norm(_val(n.content.get("title", "")))] = n.forum
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    json.dump(idx, open(p, "w"))
+    return idx
+
+
+def resolve_v2(run, title, year):
+    for venue in (f"ICLR.cc/{year}/Conference", f"NeurIPS.cc/{year}/Conference",
+                  f"ICLR.cc/{year + 1}/Conference"):
+        try:
+            idx = venue_index(run, venue)
+        except Exception:
+            continue
+        f = idx.get(_norm(title))
+        if f:
+            return f
+    return None
+
+
+def fetch_forum(run, forum, ver):
+    os.makedirs(f"{run}/review-cache", exist_ok=True)
+    p = f"{run}/review-cache/{forum}.json"
+    if os.path.exists(p):
+        return json.load(open(p))
+    time.sleep(PACE)
+    notes = client(ver).get_notes(forum=forum)
+    raw = [{"id": n.id, "invitation": getattr(n, "invitation", None) or
+            (n.invitations[0] if getattr(n, "invitations", None) else ""),
+            "invitations": getattr(n, "invitations", None),
+            "signatures": n.signatures, "content": {k: _val(v) for k, v in n.content.items()}}
+           for n in notes]
+    json.dump(raw, open(p, "w"))
+    return raw
+
+
+def normalize(raw):
+    revs, meta, decision = [], None, None
+    for n in raw:
+        invs = " ".join(n.get("invitations") or [n.get("invitation") or ""])
+        c = n["content"]
+        if "Official_Review" in invs:
+            text = " ".join(str(c.get(k, "")) for k in
+                            ("review", "summary", "strengths", "weaknesses", "main_review",
+                             "strength_and_weaknesses", "summary_of_the_review",
+                             "questions", "limitations") if c.get(k))
+            revs.append({"signature": (n["signatures"] or ["?"])[0].split("/")[-1],
+                         "rating": c.get("rating") or c.get("recommendation"),
+                         "text": text})
+        elif "Meta_Review" in invs or "Meta-Review" in invs:
+            meta = str(c.get("metareview") or c.get("metareview:") or c.get("comment") or "")
+        elif "Decision" in invs:
+            decision = c.get("decision")
+    return revs, meta, decision
+
+
+def fetch_one(run, title, year=None, corpus_id=None):
+    ver, forum = None, None
+    if year and int(year) >= 2024:
+        forum, ver = resolve_v2(run, title, int(year)), 2
+    if not forum:
+        forum, ver = resolve_v1(title), 1
+    if not forum and year and int(year) < 2024:
+        forum, ver = resolve_v2(run, title, max(int(year), 2024)), 2
+    if not forum:
+        return {"corpusId": corpus_id, "title": title, "forum": None,
+                "note": "unresolved — not an OpenReview venue, or title mismatch"}
+    raw = fetch_forum(run, forum, ver)
+    revs, meta, decision = normalize(raw)
+    return {"corpusId": corpus_id, "title": title, "forum": forum, "api": f"v{ver}",
+            "decision": decision, "n_reviews": len(revs), "reviews": revs,
+            "meta_review": meta}
+
+
+if __name__ == "__main__":
+    cmd, run = sys.argv[1], sys.argv[2]
+    rows = []
+    if cmd == "fetch":
+        a = sys.argv
+        title = a[a.index("--title") + 1]
+        year = a[a.index("--year") + 1] if "--year" in a else None
+        cid = a[a.index("--corpus-id") + 1] if "--corpus-id" in a else None
+        rows = [fetch_one(run, title, year, cid)]
+    elif cmd == "batch":
+        for line in open(sys.argv[3]):
+            if line.strip():
+                r = json.loads(line)
+                rows.append(fetch_one(run, r["title"], r.get("year"), r.get("corpusId")))
+    with open(f"{run}/reviews.jsonl", "a") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    for r in rows:
+        print(r.get("forum") or "UNRESOLVED", f"reviews={r.get('n_reviews', 0)}",
+              str(r.get('decision') or '')[:30], "|", r["title"][:55])
