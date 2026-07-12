@@ -258,23 +258,25 @@ def fetch_one(run, title, year=None, corpus_id=None, dblp=None):
                     "note": "unresolved — not an OpenReview venue, or title mismatch"}
 
 
+def _emit(run, r, i=None, n=None):
+    """STREAMING: each row is appended + printed as it completes (a batch that dies keeps
+    everything done so far; progress is watchable). Caches were always per-fetch."""
+    with open(f"{run}/reviews.jsonl", "a") as f:
+        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    pre = f"[{i}/{n}] " if i else ""
+    print(pre + (r.get("forum") or "UNRESOLVED"), f"reviews={r.get('n_reviews', 0)}",
+          str(r.get('decision') or '')[:30], "|", r["title"][:55], flush=True)
+
+
 if __name__ == "__main__":
     cmd, run = sys.argv[1], sys.argv[2]
-    rows = []
     if cmd == "fetch":
         a = sys.argv
         title = a[a.index("--title") + 1]
         year = a[a.index("--year") + 1] if "--year" in a else None
         cid = a[a.index("--corpus-id") + 1] if "--corpus-id" in a else None
-        rows = [fetch_one(run, title, year, cid)]
+        _emit(run, fetch_one(run, title, year, cid))
     elif cmd == "batch":
-        for line in open(sys.argv[3]):
-            if line.strip():
-                r = json.loads(line)
-                rows.append(fetch_one(run, r["title"], r.get("year"), r.get("corpusId"), r.get("dblp")))
-    with open(f"{run}/reviews.jsonl", "a") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    for r in rows:
-        print(r.get("forum") or "UNRESOLVED", f"reviews={r.get('n_reviews', 0)}",
-              str(r.get('decision') or '')[:30], "|", r["title"][:55])
+        items = [json.loads(l) for l in open(sys.argv[3]) if l.strip()]
+        for i, r in enumerate(items, 1):
+            _emit(run, fetch_one(run, r["title"], r.get("year"), r.get("corpusId"), r.get("dblp")), i, len(items))
