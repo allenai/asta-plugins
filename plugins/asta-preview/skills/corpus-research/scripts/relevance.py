@@ -28,6 +28,17 @@ TIER_ALIASES = {"in": "in", "relevant": "relevant", "maybe": "maybe", "borderlin
 
 
 def normalize(run):
+    # titles injected [T]-side: two measured rounds' judge fleets dropped the title field
+    # despite the doctrine requiring it — rows outlive their session; enforce mechanically.
+    titles = {}
+    for src in ("candidates.jsonl", "observations.jsonl"):
+        p = os.path.join(run, src)
+        if os.path.exists(p):
+            for line in open(p):
+                if line.strip():
+                    r = json.loads(line)
+                    if r.get("title"):
+                        titles.setdefault(str(r["corpusId"]), r["title"])
     out = {}
     for path in sorted(glob.glob(os.path.join(run, "judgments", "*.jsonl"))):
         resolution = os.path.basename(path).rsplit(".", 1)[0].split("-", 1)[-1]
@@ -43,7 +54,8 @@ def normalize(run):
             crit = r.get("criteria") or []
             if isinstance(crit, dict):                       # {criterion: grade} -> list form
                 crit = [{"criterion": k, "grade": v} for k, v in crit.items()]
-            out[c] = {"corpusId": c, "tier": tier, "criteria": crit,
+            out[c] = {"corpusId": c, "title": r.get("title") or titles.get(c),
+                      "tier": tier, "criteria": crit,
                       "resolution": resolution, "judged_by": r.get("judged_by")}
     with open(os.path.join(run, "standardized-relevance.jsonl"), "w") as f:
         for r in out.values():
