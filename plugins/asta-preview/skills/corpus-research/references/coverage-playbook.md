@@ -3,6 +3,24 @@
 Goal: a coverage VERDICT you can defend — `{captured, missing-estimate range, confidence, ranked
 gaps, explicit boundary}` — never a bare "comprehensive" and never a single scalar.
 
+## Expectations (read first — what a verdict can and cannot honestly say; all measured)
+- Coverage is stated PER REGIME: enumerable-and-sampled strata get committed fractions with
+  confidence; open-denominator strata get "sampled — no fraction definable". Never one flat number.
+- Absolute recall points derived from your own sources alone are NOT identifiable (union-denominator
+  tautology; measured swings −28%…+64% by pair choice, both directions, two corpora). Lower bounds
+  and orderings are reliable; points are not.
+- Head claims need an anchor outside your own enumeration culture (a self-anchored verdict claimed
+  85-90%, external truth measured ~44%).
+- Same-culture agent agreement is NOT coverage evidence (+19-29% recall optimism, measured). Report
+  raw overlap as a dependence diagnostic only. A mechanism-diverse pair may anchor an
+  order-of-magnitude estimate, stated with the union-denominator caveat.
+- UNDER-promising is also miscalibration (a two-source estimate measured −30% low; hedging wastes
+  the strata where committed numbers are defensible). Commit to real numbers where the regime
+  supports them; use bounds where it doesn't; never hedge instead of measuring.
+- The DEFAULT verdict carries all of: per-regime numbers · anchored-or-flagged head claim · the
+  gap map (corpus-thin vs field-thin, field-thin only after a dedicated sweep) · as-of + refresh
+  trigger · the named loss terms (filter-FN, truncation, unjudged exposure).
+
 ## 1. Multi-modal acquisition (the only honest way in)
 **A mechanism-diverse modality is also a MEASURING INSTRUMENT, not just a paper source
 (measured: ψ study, §3):** recall is only estimable against a capture occasion whose mechanism
