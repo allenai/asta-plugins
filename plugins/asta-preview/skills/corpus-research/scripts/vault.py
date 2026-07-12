@@ -210,11 +210,45 @@ def init(workspace, run_dir, rid="r1"):
     return meta
 
 
+def verify(workspace):
+    """Staleness/corruption check for the DERIVED layers (the vault analog of validate.py's
+    collection.meta check): recompute the derivation in memory and diff against what's on
+    disk; also compare each round's current row count against the registry's fold-time count.
+    Exit non-zero on any drift — run before trusting the view after any manual surgery."""
+    vault = f"{workspace}/vault"
+    meta = json.load(open(f"{vault}/vault.json"))
+    fails = []
+    for r in meta["rounds"]:
+        rp = f"{vault}/rounds/{r['id']}/standardized-relevance.jsonl"
+        n = sum(1 for l in open(rp) if l.strip()) if os.path.isfile(rp) else 0
+        if n != r.get("judged", 0):
+            fails.append(f"round {r['id']}: rows now {n} != registry {r.get('judged')} (post-rebuild edit? use --amend)")
+    # snapshot the on-disk union BEFORE recomputing (_derive is the writer); after the
+    # recompute, diff old vs new. On drift this check REPORTS FAIL and leaves the vault
+    # consistent (the fresh derivation) — stated behavior, not a silent mutation.
+    up = f"{vault}/view/union.jsonl"
+    before = {r["corpusId"]: r for r in (json.loads(l) for l in open(up))} if os.path.isfile(up) else {}
+    import copy
+    _derive(vault, copy.deepcopy(meta["rounds"]))
+    after = {r["corpusId"]: r for r in (json.loads(l) for l in open(up))}
+    drift = [k for k in after if before.get(k) != after[k]] + [k for k in before if k not in after]
+    if drift:
+        fails.append(f"union was STALE: {len(drift)} rows differed from the sources "
+                     f"(now refreshed by this check)")
+    for f in fails:
+        print("STALE:", f)
+    print("VAULT VERIFY:", "FAIL (refreshed)" if fails else "OK",
+          f"({len(meta['rounds'])} rounds, {len(after)} rows)")
+    return 1 if fails else 0
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "rebuild":
         amend = sys.argv[sys.argv.index("--amend") + 1] if "--amend" in sys.argv else None
         m = rebuild(sys.argv[2], amend=amend)
+    elif cmd == "verify":
+        sys.exit(verify(sys.argv[2]))
     elif cmd == "init":
         src = sys.argv[sys.argv.index("--from") + 1]
         rid = sys.argv[sys.argv.index("--id") + 1] if "--id" in sys.argv else "r1"
