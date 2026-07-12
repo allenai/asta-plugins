@@ -86,6 +86,14 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   axis, register, or query family — and only call exhaustion when the coverage picture is
   complete AND a fresh decomposition also comes up dry. Stagnation of one strategy is evidence
   about that strategy, not about the population.
+- **The operational stop rule — a per-CELL ledger (measured by simulation on a real 25-query
+  sweep + confirmed by the thread's own later gap sweeps):** cells = the thread's axis families;
+  a sweep may stop only when every cell is FILLED (≥3 captures) or DECLARED FIELD-THIN after a
+  dedicated sweep, AND the frontier is dry (last ~3 queries near-zero new). Receipts: a
+  two-consecutive-low-yield stagnation stop fired at query 15/25 forfeiting 25% of the sweep's
+  eventual relevant captures; the ledger refused to stop and named the two under-filled cells —
+  the thread's later dedicated sweeps confirmed one was corpus-thin (+12 core) and earned the
+  other's field-thin declaration.
 
 ## 3. Estimate what's missing (the [T] signals; `scripts/coverage_signals.py`)
 - **Capture-recapture across modalities** (`capture_recapture_modalities`): treat two capture
