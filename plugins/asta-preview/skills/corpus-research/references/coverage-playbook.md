@@ -4,6 +4,12 @@ Goal: a coverage VERDICT you can defend — `{captured, missing-estimate range, 
 gaps, explicit boundary}` — never a bare "comprehensive" and never a single scalar.
 
 ## Expectations (read first — what a verdict can and cannot honestly say; all measured)
+- **Definition — "regime" (used throughout):** the kind of DENOMINATOR a coverage claim stands
+  on. CLOSED regime = the population is enumerable or samplable (a registry, a proceedings list,
+  a topic pool) → fractions and calibrated stops are possible. OPEN regime = no enumerable
+  denominator exists (the web, "all papers on X") → only bounds and sampling statements are
+  honest. In USER-FACING prose say it plainly ("the parts we can count" vs "the open-ended
+  parts"), keep "regime" for internal artifacts.
 - Coverage is stated PER REGIME: enumerable-and-sampled strata get committed fractions with
   confidence; open-denominator strata get "sampled — no fraction definable". Never one flat number.
 - Absolute recall points derived from your own sources alone are NOT identifiable (union-denominator
