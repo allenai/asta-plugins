@@ -79,6 +79,42 @@ def _val(x):
     return x.get("value") if isinstance(x, dict) else x
 
 
+def resolve_dblp(run, corpus_id=None, dblp_key=None):
+    """Rung 0 — DETERMINISTIC, search-free: corpusId -> S2 externalIds.DBLP (conference key)
+    -> DBLP record's ee = the OpenReview forum URL. Measured reach: ICLR conf-keys resolve
+    exactly; NeurIPS ee points to papers.nips.cc (use the venue index instead); S2 sometimes
+    carries the journals/corr key (arXiv version) — falls through to the next rung."""
+    import urllib.request
+    os.makedirs(f"{run}/review-cache", exist_ok=True)
+    mp = f"{run}/review-cache/dblp-map.json"
+    m = json.load(open(mp)) if os.path.exists(mp) else {}
+    key = dblp_key
+    if not key and corpus_id:
+        if str(corpus_id) in m:
+            key = m[str(corpus_id)]
+        elif os.environ.get("S2_API_KEY"):
+            time.sleep(PACE)
+            try:
+                req = urllib.request.Request(
+                    f"https://api.semanticscholar.org/graph/v1/paper/CorpusId:{corpus_id}?fields=externalIds",
+                    headers={"x-api-key": os.environ["S2_API_KEY"]})
+                key = (json.load(urllib.request.urlopen(req, timeout=15)).get("externalIds") or {}).get("DBLP")
+            except Exception:
+                key = None
+            m[str(corpus_id)] = key
+            json.dump(m, open(mp, "w"))
+    if not key or not key.startswith("conf/"):
+        return None
+    time.sleep(PACE)
+    try:
+        xml = urllib.request.urlopen(urllib.request.Request(
+            f"https://dblp.org/rec/{key}.xml", headers={"User-Agent": "corpus-research"}), timeout=15).read().decode()
+    except Exception:
+        return None
+    hits = re.findall(r"openreview\.net/forum\?id=([\w-]+)", xml)
+    return hits[0] if hits else None
+
+
 def resolve_v1(title):
     """Fuzzy search works on v1 (pre-2024 venues). Returns ALL title-matching forums, best
     match first — version multiplicity is real (the same paper can have submitted/rejected/
@@ -174,7 +210,7 @@ def normalize(raw):
     return revs, meta, decision
 
 
-def fetch_one(run, title, year=None, corpus_id=None):
+def fetch_one(run, title, year=None, corpus_id=None, dblp=None):
     """Resolution ladder with ESCALATION: a resolved forum with ZERO official reviews is a
     mis-resolution (measured: version multiplicity — S2 carries the arXiv year, the venue year
     may differ; v2 hosting starts ~2023, NeurIPS 2023 included), so keep trying candidates and
@@ -189,6 +225,19 @@ def fetch_one(run, title, year=None, corpus_id=None):
         if y:
             cands += [("v2", yy) for yy in (max(y, 2023), max(y, 2023) + 1)]
     best = None
+    # rung 0: deterministic id-chain (no search) — measured: exact for ICLR conf-keyed papers
+    f0 = resolve_dblp(run, corpus_id=corpus_id, dblp_key=dblp)
+    if f0:
+        for ver in (1, 2):
+            try:
+                raw = fetch_forum(run, f0, ver)
+            except Exception:
+                continue
+            revs, meta, decision = normalize(raw)
+            if revs:
+                return {"corpusId": corpus_id, "title": title, "forum": f0, "api": f"v{ver}",
+                        "decision": decision, "n_reviews": len(revs), "reviews": revs,
+                        "meta_review": meta}
     for api, yy in cands:
         if api == "v2":
             f2 = resolve_v2(run, title, yy)
@@ -222,7 +271,7 @@ if __name__ == "__main__":
         for line in open(sys.argv[3]):
             if line.strip():
                 r = json.loads(line)
-                rows.append(fetch_one(run, r["title"], r.get("year"), r.get("corpusId")))
+                rows.append(fetch_one(run, r["title"], r.get("year"), r.get("corpusId"), r.get("dblp")))
     with open(f"{run}/reviews.jsonl", "a") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
