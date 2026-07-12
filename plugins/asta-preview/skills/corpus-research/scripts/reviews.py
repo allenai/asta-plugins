@@ -15,6 +15,9 @@ Access (measured constraints, 2026-07-12):
   - Requests paced ~1.5s, serialized — same discipline as s2.py.
   - Two APIs: v1 (pre-2024 venues; fuzzy title search WORKS) and v2 (2024+; search is
     unavailable server-side → resolution via a cached per-venue title index).
+Measured reach (pilot: 15-paper corpus slice): 13/13 papers WITH obtainable reviews resolved
+(~53 reviews + decisions); the 2 misses are STRUCTURAL — NeurIPS pre-2021 predates its move
+to OpenReview (reviews don't exist there). State the boundary: ICLR ~2017+, NeurIPS 2021+.
 Validated against a hand-verified slice: 8/8 reviewer quotes extracted from browser-saved
 PDFs were found verbatim in API fetches across both API versions.
 
@@ -77,14 +80,25 @@ def _val(x):
 
 
 def resolve_v1(title):
-    """Fuzzy search works on v1 (pre-2024 venues)."""
+    """Fuzzy search works on v1 (pre-2024 venues). Returns ALL title-matching forums, best
+    match first — version multiplicity is real (the same paper can have submitted/rejected/
+    workshop copies; the caller prefers the forum that carries official reviews)."""
     time.sleep(PACE)
-    notes = client(1).search_notes(term=re.sub(r"[^\w\s]", " ", title)[:120], source="forum")
+    notes = client(1).search_notes(term=re.sub(r"[^\w\s]", " ", title)[:120],
+                                   content="all", group="all", source="forum")
     n0 = _norm(title)
+    exact, prefix = [], []
     for n in notes:
-        if _norm(_val(n.content.get("title", "")))[:60] == n0[:60]:
-            return n.forum
-    return None
+        nt = _norm(_val(n.content.get("title", "")))
+        if nt == n0:
+            exact.append(n.forum)
+        elif nt[:60] == n0[:60]:
+            prefix.append(n.forum)
+    seen, out = set(), []
+    for f in exact + prefix:
+        if f not in seen:
+            seen.add(f); out.append(f)
+    return out
 
 
 def venue_index(run, venueid):
@@ -152,25 +166,47 @@ def normalize(raw):
             meta = str(c.get("metareview") or c.get("metareview:") or c.get("comment") or "")
         elif "Decision" in invs:
             decision = c.get("decision")
+        elif ("Blind_Submission" in invs or "/Submission" in invs) and not decision:
+            # v2 carries the outcome in the submission's venue field ("ICLR 2024 spotlight")
+            v = c.get("venue")
+            if v and any(w in str(v).lower() for w in ("accept", "poster", "oral", "spotlight", "reject")):
+                decision = v
     return revs, meta, decision
 
 
 def fetch_one(run, title, year=None, corpus_id=None):
-    ver, forum = None, None
-    if year and int(year) >= 2024:
-        forum, ver = resolve_v2(run, title, int(year)), 2
-    if not forum:
-        forum, ver = resolve_v1(title), 1
-    if not forum and year and int(year) < 2024:
-        forum, ver = resolve_v2(run, title, max(int(year), 2024)), 2
-    if not forum:
-        return {"corpusId": corpus_id, "title": title, "forum": None,
-                "note": "unresolved — not an OpenReview venue, or title mismatch"}
-    raw = fetch_forum(run, forum, ver)
-    revs, meta, decision = normalize(raw)
-    return {"corpusId": corpus_id, "title": title, "forum": forum, "api": f"v{ver}",
-            "decision": decision, "n_reviews": len(revs), "reviews": revs,
-            "meta_review": meta}
+    """Resolution ladder with ESCALATION: a resolved forum with ZERO official reviews is a
+    mis-resolution (measured: version multiplicity — S2 carries the arXiv year, the venue year
+    may differ; v2 hosting starts ~2023, NeurIPS 2023 included), so keep trying candidates and
+    prefer the first forum that actually carries official reviews."""
+    y = int(year) if year else None
+    cands = []
+    if y and y >= 2023:
+        cands += [("v2", yy) for yy in (y, y + 1)]
+        cands += [("v1", None)]
+    else:
+        cands += [("v1", None)]
+        if y:
+            cands += [("v2", yy) for yy in (max(y, 2023), max(y, 2023) + 1)]
+    best = None
+    for api, yy in cands:
+        if api == "v2":
+            f2 = resolve_v2(run, title, yy)
+            forums = [f2] if f2 else []
+        else:
+            forums = resolve_v1(title)
+        for forum in forums:
+            ver = 2 if api == "v2" else 1
+            raw = fetch_forum(run, forum, ver)
+            revs, meta, decision = normalize(raw)
+            rec = {"corpusId": corpus_id, "title": title, "forum": forum, "api": f"v{ver}",
+                   "decision": decision, "n_reviews": len(revs), "reviews": revs,
+                   "meta_review": meta}
+            if revs:
+                return rec
+            best = best or rec  # reviewless copy: keep as fallback, keep escalating
+    return best or {"corpusId": corpus_id, "title": title, "forum": None,
+                    "note": "unresolved — not an OpenReview venue, or title mismatch"}
 
 
 if __name__ == "__main__":
