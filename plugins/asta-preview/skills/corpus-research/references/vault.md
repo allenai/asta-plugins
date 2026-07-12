@@ -90,6 +90,11 @@ Before finishing, a round leaves, under `round-<id>/` in the workspace:
 3. `trust-upgrades.jsonl` — every claim re-verified this round, durably:
    `{corpusId, claim, from_mark, to_mark, evidence_span, method}`.
 4. Appends to `vault/QUESTIONS.log`.
+4b. **Answer-invalidation check (corpus-changing rounds only; measured: a round tripled a
+   family while the deployed report still said "thin"):** diff what your round changed against
+   the STANDING answers and any deployed report — refresh what your delta touched (redeploy
+   same-URL) or flag it in QUESTIONS.log. The report's own "refresh trigger" line IS this
+   obligation; a corpus-changing round is the trigger firing.
 5. **Deliverable gate (measured to decay when left to memory — this line is the durable
    trigger):** before building OR UPDATING any user-facing report, re-read deliverables.md and
    run `report_gate.py` to PASS; sharing-shaped asks ship DEPLOYED with the URL recorded in
