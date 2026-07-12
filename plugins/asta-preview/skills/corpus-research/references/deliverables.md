@@ -38,6 +38,12 @@ verbatim claims/disagreements from body snippets). Hand the user verbatim spans 
 papers, not only your synthesis.
 
 ## "Disagreement / controversy" questions (a specific, easy-to-get-wrong shape)
+**Candidate axes must not be mined from the positive core alone (measured: a real spanning
+axis — intervention identifiability — was invisible to positives-only mining because its
+partisan papers sat judged-out/DISPUTED at the charter boundary, while peer reviews of core
+papers carried it loudly):** generate candidates from the core PLUS the adjacent/judged-out
+ring and any available review/critique register; the support gate still governs what gets
+CLAIMED as an axis.
 The value is the FEW MAJOR axes the field is split on — spanning MANY papers with real support on
 BOTH sides — NOT one-vs-two-paper spats, and NOT lopsided near-consensus (a 30-vs-1 split is
 consensus with an outlier, exclude it).
