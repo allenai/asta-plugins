@@ -111,7 +111,10 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   was broken by an axis-switch spike of +20-32): when a sweep stagnates, first RE-DECOMPOSE — switch
   axis, register, or query family — and only call exhaustion when the coverage picture is
   complete AND a fresh decomposition also comes up dry. Stagnation of one strategy is evidence
-  about that strategy, not about the population.
+  about that strategy, not about the population. The [T] form of "this strategy, not the
+  population": `coverage_signals.strategy_decay` (per-query yields → strategy-relative progress
+  f=1−e^(−n/τ); honest `identifiable=False` on short prefixes) — compute it instead of
+  eyeballing the yield curve.
 - **The operational stop rule — a per-CELL ledger (measured by simulation on a real 25-query
   sweep + confirmed by the thread's own later gap sweeps):** cells = the thread's axis families;
   a sweep may stop only when every cell is FILLED (≥3 captures) or DECLARED FIELD-THIN after a
@@ -209,6 +212,13 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   comparison-class misses.
 
 ## 6. The verdict (the [J] step — yours)
+**Before shipping, run the mechanical pre-check: `python scripts/coverage_signals.py
+verdict-gate <verdict.md> [--run <run>]`** — it [T]-checks the default promises below (regime
+line, external anchor, loss terms, truncation, estimator statuses) and has caught a real
+deficiency in a shipped verdict. The gate checks presence, not quality — passing it does not
+make the verdict right, but failing it means a promise is missing.
+On a VAULT thread with ≥2 enumerators, also run `python scripts/vault.py recall` — the
+union-recall signal (vs KNOWN positives, never the world) — instead of hand-computing overlap.
 Triangulate: discard signals that fail their self-check; ensemble surviving estimators into a
 RANGE; let convergence + anchors modulate confidence; output captured / estimate / confidence /
 ranked gaps / boundary. State what a user should and should not conclude from the corpus. If the

@@ -39,7 +39,11 @@ trust story is this separation — a reader can re-run every [T] and audit every
    reliable route to the same goal.
 7. **Adopt, don't reinvent.** Retrieval = `asta literature find/interactive/snowball` (see the
    find-literature skill). Statistics = the exact published estimators in
-   `scripts/coverage_signals.py`. Build only what's genuinely new for the thread.
+   `scripts/coverage_signals.py`. Build only what's genuinely new for the thread — and
+   **scan the scripts index (bottom of this file) BEFORE writing a script** (measured: two
+   parallel rounds each hand-rolled sharding, sweep-driving, and recall equivalents that
+   already existed). Context-fitted one-offs are legitimate; rebuilding a stock capability
+   is not.
 
 ## Step 0 — derive the THREAD CONFIG (you must do this; nothing is pre-filled)
 **Phrasing sets defaults, never silent finals (measured: four paraphrases of one need all
@@ -129,7 +133,8 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    **Staged sweep policy (measured: fast is a truncated diligent, and blind fast cost a run
    most of its head recall):** (1) sweep ALL angles in `--mode fast`, each with
    `--include-rejected sample` (drop stats land in a `.rejected.json` SIDECAR — scripts read it,
-   never your context); (2) ALWAYS also run the thread's PRIMARY question in `--mode diligent` —
+   never your context) — drive the fan-out with `scripts/sweep.py` (queries.tsv in, per-query
+   provenance + sidecars + escalation ranking out), don't hand-loop the queries; (2) ALWAYS also run the thread's PRIMARY question in `--mode diligent` —
    it calibrates what depth buys on THIS thread; (3) [T] escalation gate: rank fast queries by
    their own sidecar `not_judged` count (+ total_hits, + judged yield) and escalate a budgeted
    top slice (~25-30%) plus anchor-flagged thin families to diligent; stop when marginal
@@ -246,6 +251,18 @@ contract — new/re-judged rows, durable trust-upgrades, question-log appends, a
 hand-edited; growth is mechanical). `vault.py init` turns a finished run into a vault; the
 workspace CLAUDE.md stub (above) is what makes future rounds load this skill — add the vault
 line to it when a thread goes long-running.
+
+## Scripts index (scan BEFORE writing your own; each is ground truth for its phase)
+`acquire.py` resolve/edges/pool/merge candidates · `sweep.py` parallel find fan-outs from a
+queries.tsv + sidecars + escalation ranking · `s2.py` ALL S2 access (serialized, cached) ·
+`relevance.py` judgment files · `shards.py` judge-fleet shards (interleave+salt+sub-batches),
+`score` (salt agreement), `completeness` (expected-vs-got per shard) · `substrate.py` rings ·
+`validate.py` machine-checked invariants (run after every merge/rebuild) · `knowledge.py`
+collection view/anchor/lookup · `coverage_signals.py` the [T] estimators + `verdict-gate` (checks
+a verdict's default promises) + `strategy_decay` (strategy-relative saturation) ·
+`fulltext.py` fetch/extract (+`--local` pypdf) · `reviews.py` OpenReview reviews by corpusId ·
+`report_gate.py` report number-tracing gate · `vault.py` init/rebuild/verify/`recall`
+(union-recall vs KNOWN)/`--amend`.
 
 ## Known limits (say so, don't hide)
 Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching
