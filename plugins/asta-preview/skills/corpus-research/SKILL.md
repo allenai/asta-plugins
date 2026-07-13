@@ -42,6 +42,12 @@ trust story is this separation — a reader can re-run every [T] and audit every
    `scripts/coverage_signals.py`. Build only what's genuinely new for the thread.
 
 ## Step 0 — derive the THREAD CONFIG (you must do this; nothing is pre-filled)
+**Phrasing sets defaults, never silent finals (measured: four paraphrases of one need all
+reproduced the charter skeleton, but casual phrasing silently narrowed scope and register
+shifted boundary calls):** the scope-charter beat MUST put the drift-prone boundaries to the
+user explicitly — the rigor/probing tier, adjacent-vs-core for method-genealogy work, and the
+breadth of the target concept (their thread's analogs) — even when the phrasing seems to have
+already decided them.
 From the user's question alone, write `<run>/thread.json`:
 ```json
 {"name": "<slug>", "question": "<verbatim>",
