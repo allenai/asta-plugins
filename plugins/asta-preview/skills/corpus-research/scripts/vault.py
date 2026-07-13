@@ -288,9 +288,12 @@ def rebuild(workspace, amend=None):
         except Exception:
             raise SystemExit(f"{rid}: round-manifest.json missing/unreadable — the round "
                              f"contract requires it (charter provenance + as_of) before fold")
-        if not rm.get("as_of") or not (rm.get("charter") or rm.get("charter_file")):
-            raise SystemExit(f"{rid}: round-manifest.json must carry 'as_of' and 'charter' "
-                             f"(inherited-verbatim-from-<round> or amendments listed)")
+        if not rm.get("as_of") or not (rm.get("charter") or rm.get("charter_file")
+                                       or rm.get("charter_inherited_from")):
+            raise SystemExit(f"{rid}: round-manifest.json must carry 'as_of' and charter "
+                             f"provenance ('charter', 'charter_file', or "
+                             f"'charter_inherited_from' — inherited-verbatim-from-<round> "
+                             f"or amendments listed)")
         meta["rounds"].insert(0, _fold_round(vault, rid, src))
         print(f"folded {rid} <- {src}")
     meta["layers"] = _derive(vault, meta["rounds"])
