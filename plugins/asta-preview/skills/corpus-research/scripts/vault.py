@@ -249,9 +249,12 @@ def _derive(vault, rounds):
 
 
 def rebuild(workspace, amend=None):
+    """Prints its own BEFORE/AFTER delta (rows, agreement, 2x-layer) — every measured session
+    hand-wrapped rebuild with exactly these snapshots; the tool now provides them."""
     vault = f"{workspace}/vault"
     vj = f"{vault}/vault.json"
     meta = json.load(open(vj)) if os.path.isfile(vj) else {"rounds": [], "layers": {}}
+    before = (meta.get("layers", {}) or {}).get("view", {})
     if amend:
         # amendment semantics: ONLY the latest round may be re-folded (post-close fixes);
         # earlier rounds stay immutable (measured: a round's post-close report fixes left
@@ -280,6 +283,14 @@ def rebuild(workspace, amend=None):
         print(f"folded {rid} <- {src}")
     meta["layers"] = _derive(vault, meta["rounds"])
     json.dump(meta, open(vj, "w"), indent=1)
+    after = meta["layers"]["view"]
+    if before:
+        d_rows = after["rows"] - before.get("rows", 0)
+        b_agr, a_agr = before.get("agreement", {}), after.get("agreement", {})
+        deltas = {k: a_agr.get(k, 0) - b_agr.get(k, 0) for k in set(a_agr) | set(b_agr)
+                  if a_agr.get(k, 0) != b_agr.get(k, 0)}
+        print(f"DELTA: rows {before.get('rows','?')}→{after['rows']} ({d_rows:+d}) · "
+              f"agreement changes {deltas or 'none'}")
     return meta
 
 

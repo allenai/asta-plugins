@@ -47,3 +47,21 @@ expectations as task structure and [T] checks, not as requests.
 one giant Write at the end · results held in context across sub-batches · multi-shard workers
 (3×90 in one context drifts) · inline fulltext in shards · leaf workers spawning helpers ·
 blind retry loops · quotes deferred to "later".
+
+
+## Waiting on a fleet (canonical loop — measured: every session re-derived this, several hit
+the blocked-foreground-sleep error first)
+Foreground `sleep` chains are blocked by the harness. Wait with an until-loop on the OUTPUT
+files, checking both existence and expected line count:
+```
+until [ -f <run>/judgments/shard-07.jsonl ] && [ $(wc -l < <run>/judgments/shard-07.jsonl) -ge 158 ]; do sleep 15; done
+```
+For many shards, one background waiter over the set beats per-shard polls. After the wait,
+ALWAYS run the completeness check (shards.py) — a worker stopping one sub-batch early is a
+measured failure mode; recover the missing ids with a small single-judge tail, don't re-run
+the shard.
+
+## Worker scratch is PER-WORKER (measured collision: one worker's scratch file was overwritten
+mid-run by a sibling targeting a different shard)
+Workers write intermediate/scratch files ONLY under <run>/scratch/<worker-id>/ (the shard name
+serves as the id). Shared locations are for the protocol outputs the packet names — nothing else.
