@@ -3,7 +3,9 @@
 The growth model this enforces (the vault's whole integrity story):
   canonical rounds/<id>/ are APPEND-ONLY (folded verbatim, never edited);
   caches merge append-only (fetch-once; existing files win);
-  view/union.jsonl + vault.json are DERIVED — never hand-edited, always rebuilt here.
+  view/union.jsonl + vault.json + vault.db are DERIVED — never hand-edited, always rebuilt here.
+  vault.db is a DISPOSABLE sqlite index (query convenience only; NEVER canonical — delete and
+  rebuild anytime; corruption remedy is delete+rebuild). See _build_db.
 Rebuild is deterministic: same rounds in, same view out — a round runs it as its CLOSING
 contract step; there is no human maintainer in the loop.
 
@@ -21,8 +23,10 @@ INVARIANT: vault.json rounds[] is NEWEST-FIRST — dispute-resolution and obs pr
 ride on it (a legacy oldest-first registry produced bogus resolution marks until reordered).
 """
 from __future__ import annotations
-import json, os, re, shutil, sys
+import json, os, re, shutil, sqlite3, sys
 from collections import Counter
+
+FTS_SIZE_CAP = 2_000_000  # cache/fulltext-cache text files >= this are skipped by cache_fts
 
 POS = ("in", "relevant")
 # a round's canonical record is its WHOLE dir, verbatim — no filename enumeration (an
@@ -96,6 +100,88 @@ def _derive_aliases(obs_by_round):
     return alias
 
 
+def _build_db(vault, rows, rounds):
+    """Materialize <vault>/vault.db — a DISPOSABLE sqlite DERIVED INDEX over the union view
+    (+ questions, trust-upgrades, and an FTS5 index of the fulltext cache) for ad-hoc queries.
+
+    NEVER CANONICAL. The source of truth is rounds/ + view/union.jsonl; vault.db is dropped and
+    rebuilt WHOLE on every _derive, so it is always reconstructable and the corruption remedy is
+    simply delete+rebuild. A meta row (key='disposable') records this inside the db itself.
+    Called only by _derive (the sole writer of derived layers). stdlib sqlite3 only; one txn."""
+    dbp = f"{vault}/vault.db"
+    con = sqlite3.connect(dbp, isolation_level=None)  # explicit BEGIN/COMMIT = one transaction
+    try:
+        cur = con.cursor()
+        cur.execute("BEGIN")
+        for t in ("rows", "questions", "trust_upgrades", "meta"):
+            cur.execute(f"DROP TABLE IF EXISTS {t}")
+        cur.execute("DROP TABLE IF EXISTS cache_fts")
+        cur.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        cur.executemany("INSERT INTO meta VALUES (?,?)", [
+            ("disposable", "delete and rebuild anytime"),
+            ("note", "DERIVED index, NOT canonical. Source of truth = rounds/ + view/union.jsonl. "
+                     "Rebuilt whole on every `vault.py rebuild`; corruption remedy = delete+rebuild.")])
+        cur.execute("""CREATE TABLE rows (
+            corpusId TEXT PRIMARY KEY, title TEXT, year INTEGER, agreement TEXT, trust TEXT,
+            n_rounds_judged INTEGER, resolved_tier TEXT, resolved_by TEXT,
+            primary_family TEXT, tiers_json TEXT)""")
+        cur.executemany("INSERT OR REPLACE INTO rows VALUES (?,?,?,?,?,?,?,?,?,?)", [
+            (r["corpusId"], r.get("title"), r.get("year"), r.get("agreement"), r.get("trust"),
+             r.get("n_rounds_judged"), (r.get("resolved_latest") or {}).get("tier"),
+             (r.get("resolved_latest") or {}).get("by"), r.get("primary_family_latest"),
+             json.dumps(r.get("tiers_by_round"), ensure_ascii=False)) for r in rows])
+        # questions from QUESTIONS.log — skip any unparseable line ("if parseable")
+        cur.execute("CREATE TABLE questions (q TEXT, asked_by TEXT, status TEXT, answer TEXT)")
+        qp = f"{vault}/QUESTIONS.log"
+        if os.path.isfile(qp):
+            qrows = []
+            for line in open(qp):
+                if not line.strip():
+                    continue
+                try:
+                    x = json.loads(line)
+                except Exception:
+                    continue
+                qrows.append((x.get("q"), x.get("asked_by"), x.get("status"), x.get("answer")))
+            cur.executemany("INSERT INTO questions VALUES (?,?,?,?)", qrows)
+        # trust_upgrades from rounds/*/trust-upgrades.jsonl — round_id from the owning round dir
+        cur.execute("""CREATE TABLE trust_upgrades (
+            round_id TEXT, corpusId TEXT, claim TEXT, from_mark TEXT, to_mark TEXT)""")
+        turows = []
+        for r in rounds:
+            tp = f"{vault}/rounds/{r['id']}/trust-upgrades.jsonl"
+            if os.path.isfile(tp):
+                for x in _jl(tp):
+                    cid = x.get("corpusId")
+                    turows.append((r["id"], str(cid) if cid is not None else None,
+                                   x.get("claim"), x.get("from_mark"), x.get("to_mark")))
+        cur.executemany("INSERT INTO trust_upgrades VALUES (?,?,?,?,?)", turows)
+        # FTS5 over cache/fulltext-cache: text files < 2MB only (skip pdf + undecodable binaries)
+        cur.execute("CREATE VIRTUAL TABLE cache_fts USING fts5(corpusId, body)")
+        cdir = f"{vault}/cache/fulltext-cache"
+        ftrows = []
+        if os.path.isdir(cdir):
+            for base, _dirs, files in os.walk(cdir):
+                for fn in files:
+                    p = os.path.join(base, fn)
+                    if fn.endswith(".pdf") or os.path.getsize(p) >= FTS_SIZE_CAP:
+                        continue
+                    try:
+                        body = open(p, encoding="utf-8").read()
+                    except (UnicodeDecodeError, OSError):
+                        continue  # binary / unreadable — skipped
+                    ftrows.append((os.path.splitext(fn)[0], body))
+        cur.executemany("INSERT INTO cache_fts (corpusId, body) VALUES (?,?)", ftrows)
+        cur.execute("COMMIT")
+    except Exception:
+        cur.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
+    return {"rows": len(rows), "questions_file": os.path.isfile(f"{vault}/QUESTIONS.log"),
+            "fts_docs": len(ftrows), "trust_upgrades": len(turows)}
+
+
 def _derive(vault, rounds):
     """Re-derive view/union.jsonl + layer stats from vault/rounds/* — the only writer of
     derived layers. Round order = registry order (newest first): column order + obs precedence."""
@@ -157,6 +243,8 @@ def _derive(vault, rounds):
     for cache in ("fulltext-cache", "s2-cache"):
         cdir = f"{vault}/cache/{cache}"
         layers[cache] = {"files": len(os.listdir(cdir)) if os.path.isdir(cdir) else 0}
+    # disposable sqlite derived index — materialized AFTER union.jsonl, from the same rows
+    layers["db"] = _build_db(vault, rows, rounds)
     return layers
 
 
@@ -228,6 +316,18 @@ def verify(workspace):
     # consistent (the fresh derivation) — stated behavior, not a silent mutation.
     up = f"{vault}/view/union.jsonl"
     before = {r["corpusId"]: r for r in (json.loads(l) for l in open(up))} if os.path.isfile(up) else {}
+    # vault.db is a DISPOSABLE derived index: snapshot its row count BEFORE the recompute
+    # (_build_db, called by _derive, rebuilds it fresh — so this compares the on-disk db as it
+    # stood against the freshly derived union, then leaves the db consistent).
+    dbp = f"{vault}/vault.db"
+    db_before = None
+    if os.path.isfile(dbp):
+        try:
+            dbc = sqlite3.connect(dbp)
+            db_before = dbc.execute("SELECT count(*) FROM rows").fetchone()[0]
+            dbc.close()
+        except Exception:
+            db_before = None  # unreadable/corrupt — treat as missing, rebuild refreshes it
     import copy
     _derive(vault, copy.deepcopy(meta["rounds"]))
     after = {r["corpusId"]: r for r in (json.loads(l) for l in open(up))}
@@ -235,6 +335,9 @@ def verify(workspace):
     if drift:
         fails.append(f"union was STALE: {len(drift)} rows differed from the sources "
                      f"(now refreshed by this check)")
+    if db_before != len(after):
+        fails.append(f"vault.db was STALE/missing: {db_before} rows != union {len(after)} "
+                     f"(disposable index rebuilt by this check)")
     for f in fails:
         print("STALE:", f)
     print("VAULT VERIFY:", "FAIL (refreshed)" if fails else "OK",
