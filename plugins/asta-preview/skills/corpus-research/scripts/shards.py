@@ -14,11 +14,17 @@ Usage:
          sub-batch markers every k items ({"subbatch": m, "emit_now": true} sentinel rows).
   score_salt(judgment_files_glob, salts_path, gold_tiers)
       -> per-shard: salt agreement, strictness delta, boundary calls; flags shards for re-judge.
+  completeness(judge_input_glob, judgment_glob)
+      -> per-shard expected-vs-got id reconciliation. Receipt: expected-vs-got missing-ids was
+         hand-rolled in ≥3 sessions, incl. one that recovered a worker which stopped a sub-batch
+         early — the shard "completed" but its tail was never judged. This turns that audit into a
+         tool: missing ids POP instead of hiding in a perfect-looking count.
 
 CLI:  python shards.py score '<run>/judgments/*.jsonl' <run>/judge-input/salts.json gold.json
+      python shards.py completeness '<run>/judge-input/shard-*.jsonl' '<run>/judgments/*.jsonl'
 """
 from __future__ import annotations
-import glob, json, os, random
+import glob, json, os, random, re
 
 POS = ("in", "relevant")
 
@@ -95,8 +101,80 @@ def score_salt(judgment_glob, salts_path, gold_tiers=None):
     return report
 
 
+def _shard_num(name):
+    """The shard number embedded in a filename, as a normalized string (leading zeros dropped),
+    so `shard-03.jsonl` judge-input and `judgments-3.jsonl` output match on the same shard."""
+    m = re.search(r"shard[-_]?(\d+)", name) or re.search(r"(\d+)", name)
+    if not m:
+        return None
+    return str(int(m.group(1)))
+
+
+def completeness(judge_input_glob, judgment_glob):
+    """Reconcile expected (judge-input) vs got (judgments) per shard, matched by shard number.
+    Expected = every judge-input row carrying a corpusId, IGNORING sub-batch sentinel rows
+    (those have `subbatch_boundary`/`emit_now`, no corpusId). Got = corpusIds in the judgment
+    files whose shard number matches. Returns (per_shard_report, all_missing_ids)."""
+    j_by_num = {}
+    for p in sorted(glob.glob(judgment_glob)):
+        num = _shard_num(os.path.basename(p))
+        j_by_num.setdefault(num, []).append(p)
+    report, all_missing = {}, []
+    for sp in sorted(glob.glob(judge_input_glob)):
+        sh = os.path.basename(sp).split(".")[0]
+        num = _shard_num(os.path.basename(sp))
+        expected = []
+        for r in _jl(sp):
+            if "subbatch_boundary" in r or "emit_now" in r:
+                continue                              # sentinel row — not a candidate
+            cid = r.get("corpusId")
+            if cid is not None:
+                expected.append(str(cid))
+        exp_set = set(expected)
+        got = set()
+        for jp in j_by_num.get(num, []):
+            for r in _jl(jp):
+                cid = r.get("corpusId")
+                if cid is not None:
+                    got.add(str(cid))
+        seen, missing = set(), []
+        for c in expected:                            # preserve shard order, dedup
+            if c not in got and c not in seen:
+                seen.add(c)
+                missing.append(c)
+        report[sh] = {"shard_num": num,
+                      "judgment_files": [os.path.basename(x) for x in j_by_num.get(num, [])],
+                      "expected": len(exp_set), "got": len(got & exp_set),
+                      "missing_count": len(missing), "missing": missing}
+        all_missing.extend(missing)
+    return report, all_missing
+
+
+def run_completeness(judge_input_glob, judgment_glob):
+    """CLI wrapper: write <judgments-dir>/missing-ids.json and print per-shard counts + total."""
+    report, all_missing = completeness(judge_input_glob, judgment_glob)
+    outdir = os.path.dirname(judgment_glob) or "."
+    os.makedirs(outdir, exist_ok=True)
+    outpath = os.path.join(outdir, "missing-ids.json")
+    with open(outpath, "w") as f:
+        json.dump({"per_shard": report, "total_missing": len(all_missing),
+                   "missing_ids": all_missing}, f, indent=1)
+    total_exp = sum(v["expected"] for v in report.values())
+    for sh in sorted(report):
+        v = report[sh]
+        flag = "  <-- MISSING" if v["missing_count"] else ""
+        matched = "" if v["judgment_files"] else "  [no judgment file matched this shard]"
+        print(f"{sh}: expected={v['expected']:>4} got={v['got']:>4} "
+              f"missing={v['missing_count']:>4}{flag}{matched}")
+    print(f"TOTAL: expected={total_exp} missing={len(all_missing)} "
+          f"across {len(report)} shards -> {outpath}")
+    return outpath
+
+
 if __name__ == "__main__":
     import sys
     if sys.argv[1] == "score":
         gold = json.load(open(sys.argv[4])) if len(sys.argv) > 4 else None
         print(json.dumps(score_salt(sys.argv[2], sys.argv[3], gold), indent=1))
+    elif sys.argv[1] == "completeness":
+        run_completeness(sys.argv[2], sys.argv[3])

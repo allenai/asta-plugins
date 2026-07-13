@@ -14,10 +14,26 @@ Usage:
     text = fetch(corpus_id, arxiv_id, cache_dir="<run>/fulltext-cache")
     secs = sections(text, want=("data", "training", "architecture"))   # targeted extraction input
 
+Local PDFs (already on disk — the pdf rung above caches PDFs, and some threads bring their own):
+`--local` extracts one via pypdf into the same markdown cache with a provenance header.
+
 CLI:  python fulltext.py --cache <dir> <corpusId> <arxivId>
+      python fulltext.py --local <pdf-path> [--cache <dir>] [--corpus-id X]
 """
 from __future__ import annotations
-import os, re, urllib.request
+import datetime, os, re, urllib.request
+
+# Receipt: a warm round hand-rolled pypdf extraction and had to probe THREE interpreters because
+# the plugin venv is pip-less — /usr/bin/python3 had pypdf. So on ImportError we don't tell the
+# caller to `pip install` (that can't work in the plugin venv); we point at the interpreter that
+# already carries it.
+_PYPDF_GUIDANCE = (
+    "pypdf is not importable in THIS interpreter, and the plugin venv is pip-less so installing "
+    "here won't help. Measured fix: re-run --local with an interpreter that already has pypdf. "
+    "In a measured warm round `/usr/bin/python3` had it:\n"
+    "    /usr/bin/python3 fulltext.py --local <pdf> [--cache <dir>] [--corpus-id X]\n"
+    "Probe order that worked: /usr/bin/python3, then a conda/base python, then check `pip show pypdf`."
+)
 
 
 def _get_raw(url, timeout=60):
@@ -113,12 +129,49 @@ def digest(text, want, per_section=1800, total=7000, fallback_head=4000):
     return d[:total] if d else text[:fallback_head]
 
 
+def extract_local(pdf_path, cache_dir="fulltext-cache", corpus_id=None):
+    """Extract a LOCAL PDF to cached markdown via pypdf, same cache + provenance-header convention
+    as fetch(). Raises ImportError (message = _PYPDF_GUIDANCE) if pypdf is missing here — the CLI
+    turns that into exit code 2. Returns (output_path, char_count)."""
+    try:
+        import pypdf
+    except ImportError as e:
+        raise ImportError(_PYPDF_GUIDANCE) from e
+    reader = pypdf.PdfReader(pdf_path)
+    npages = len(reader.pages)
+    body = "\n\n".join((pg.extract_text() or "") for pg in reader.pages).strip()
+    os.makedirs(cache_dir, exist_ok=True)
+    name = str(corpus_id) if corpus_id else os.path.splitext(os.path.basename(pdf_path))[0]
+    path = os.path.join(cache_dir, f"{name}.md")
+    ver = getattr(pypdf, "__version__", "?")
+    hdr = (f"<!-- source: {os.path.abspath(pdf_path)} | extractor: pypdf {ver} | "
+           f"pages: {npages} | extracted: {datetime.date.today().isoformat()} | "
+           f"corpusId {corpus_id if corpus_id else '-'} -->\n\n")
+    out = hdr + body
+    with open(path, "w") as f:
+        f.write(out)
+    return path, len(out)
+
+
 if __name__ == "__main__":
     import sys
     a = sys.argv[1:]
-    cache = a[a.index("--cache") + 1]
-    rest = [x for i, x in enumerate(a) if x != "--cache" and (i == 0 or a[i - 1] != "--cache")]
-    t = fetch(rest[0], rest[1], cache)
-    print(f"{rest[0]}: {'FETCHED ' + str(len(t)) + ' chars' if t else 'UNREACHABLE'}")
-    if t:
-        print("sections:", list(sections(t, ("data", "training", "architecture", "model")))[:8])
+
+    def _opt(flag, default=None):
+        return a[a.index(flag) + 1] if flag in a else default
+
+    if "--local" in a:
+        try:
+            path, n = extract_local(_opt("--local"), _opt("--cache", "fulltext-cache"),
+                                    _opt("--corpus-id"))
+        except ImportError as e:
+            print(str(e), file=sys.stderr)
+            sys.exit(2)
+        print(f"{path}: {n} chars")
+    else:
+        cache = a[a.index("--cache") + 1]
+        rest = [x for i, x in enumerate(a) if x != "--cache" and (i == 0 or a[i - 1] != "--cache")]
+        t = fetch(rest[0], rest[1], cache)
+        print(f"{rest[0]}: {'FETCHED ' + str(len(t)) + ' chars' if t else 'UNREACHABLE'}")
+        if t:
+            print("sections:", list(sections(t, ("data", "training", "architecture", "model")))[:8])

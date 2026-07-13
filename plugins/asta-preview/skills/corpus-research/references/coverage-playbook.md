@@ -83,7 +83,9 @@ its modality (this list is EXEMPLARS + FLOOR — the habitat note proposes what'
 Expect title-search name-collisions in sweeps — curation strips them; judge the paper, not the query.
 
 **Retrieval division of labor (each tool's measured comparative advantage):**
-- `asta literature find` — one-shot ranked search; the SWEEP workhorse (per-query output files =
+- `asta literature find` — one-shot ranked search; the SWEEP workhorse. Drive fan-outs with
+  `scripts/sweep.py` (queries.tsv → parallel find + sidecar collection + escalation ranking —
+  two runs invented this driver independently; now canonical) (per-query output files =
   per-query provenance; `--include-rejected sample` sidecars = the coverage-audit input; the
   sample costs the session nothing). Modes: fast = breadth (~10s), diligent = depth (~10×) —
   the staged sweep policy in SKILL step 1 governs which runs where.
