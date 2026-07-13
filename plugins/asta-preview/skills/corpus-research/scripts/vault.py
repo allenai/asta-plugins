@@ -279,6 +279,18 @@ def rebuild(workspace, amend=None):
                      or os.path.isfile(f"{p}/standardized-relevance.jsonl"))):
             new.append((d, p))
     for rid, src in new:
+        # contract-as-code (minimal fields only): a round without charter provenance and an
+        # as-of date cannot fold — measured: charter rulings that lived only in transcripts
+        # were invisible to later fleets; the manifest is the durable carrier.
+        mp = f"{src}/round-manifest.json"
+        try:
+            rm = json.load(open(mp))
+        except Exception:
+            raise SystemExit(f"{rid}: round-manifest.json missing/unreadable — the round "
+                             f"contract requires it (charter provenance + as_of) before fold")
+        if not rm.get("as_of") or not (rm.get("charter") or rm.get("charter_file")):
+            raise SystemExit(f"{rid}: round-manifest.json must carry 'as_of' and 'charter' "
+                             f"(inherited-verbatim-from-<round> or amendments listed)")
         meta["rounds"].insert(0, _fold_round(vault, rid, src))
         print(f"folded {rid} <- {src}")
     meta["layers"] = _derive(vault, meta["rounds"])
@@ -361,6 +373,24 @@ if __name__ == "__main__":
     if cmd == "rebuild":
         amend = sys.argv[sys.argv.index("--amend") + 1] if "--amend" in sys.argv else None
         m = rebuild(sys.argv[2], amend=amend)
+    elif cmd == "recall":
+        # C3: union-recall — a round's positives vs the vault's agreed-positive union.
+        # STANDARD REPORTED SIGNAL (receipt: known truth ~doubles per new enumerator; recall
+        # vs the union is the honest, always-available denominator — with the union caveat:
+        # the union GROWS, so this is recall vs currently-known, never vs the world).
+        ws, rid = sys.argv[2], sys.argv[3]
+        meta = json.load(open(f"{ws}/vault/vault.json"))
+        union_pos = set(); mine = set()
+        for l in open(f"{ws}/vault/view/union.jsonl"):
+            r = json.loads(l)
+            if r["agreement"] == "agreed-positive" or (r.get("resolved_latest") or {}).get("tier") in POS:
+                union_pos.add(r["corpusId"])
+                if (r["tiers_by_round"].get(rid) or "") in POS:
+                    mine.add(r["corpusId"])
+        print(f"{rid}: {len(mine)}/{len(union_pos)} = {len(mine)/max(len(union_pos),1):.1%} "
+              f"of currently-known union positives (union grows with every enumerator — "
+              f"this is recall vs KNOWN, not vs the world)")
+        sys.exit(0)
     elif cmd == "verify":
         sys.exit(verify(sys.argv[2]))
     elif cmd == "init":

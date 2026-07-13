@@ -129,6 +129,18 @@ round (re-judge a slice, fulltext-verify) is measured by trust-upgrades produced
 machinery to the question shape — a 2-question answer round with the stack in targeted mode
 measured ~2× a skill-less baseline's cost, not 20×.
 
+**Named round recipes (both twice-receipted):**
+- **DISPUTE-AUDIT round**: input = the view's DISPUTED rows. [T]-classify by charter deltas
+  (diff the disputing rounds' thread.jsons) → boundary-artifacts vs genuine conflicts; fulltext
+  re-judge only the genuine ones under the CURRENT charter; rows + trust-upgrades; the
+  resolution overlay surfaces the current calls at rebuild. (Receipts: a2 round-5 — 85% of 373
+  were charter history, ~$23; the sa thread's 66 disputes born from its second enumerator.)
+- **SECOND-ENUMERATOR round**: an independent cold enumeration of the SAME charter (verbatim
+  original kickoff, copied from the transcript — never reconstructed). Buys: the corroboration
+  layer (2× marks), the first genuine dispute set, and union growth (measured: known positives
+  ~doubled, 579→1,067, for $126). The union-recall signal (`vault.py recall`) becomes
+  meaningful the moment a second enumerator exists.
+
 Vocabulary, precisely: **the FIRST corpus build is round 1** — a finished run's canonical
 closing state already satisfies this contract, which is why `vault.py init` folds it in
 verbatim as the founding round. And rounds ≠ BEATS: a round is a knowledge-lifecycle unit
