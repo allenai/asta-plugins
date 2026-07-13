@@ -10,7 +10,7 @@ All functions are argument-driven (edges dicts, id lists, relevance maps) — no
 assumptions except `report(run_dir)`, which reads the standard layout via knowledge.load.
 """
 from __future__ import annotations
-import json, math, os, sys
+import glob, json, math, os, re, sys
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +66,63 @@ def yield_by_frequency(rows, freq_key, is_relevant, cap=5):
         byf[f][1] += 1
     return {f: {"relevant": a, "judged": n, "yield": round(a / n, 3) if n else None}
             for f, (a, n) in sorted(byf.items())}
+
+
+def strategy_decay(yields, min_points=8):
+    """[T] Fit a saturating exponential f(n)=A*(1-exp(-n/tau)) to ONE strategy's cumulative
+    new-relevant curve to estimate how exhausted THAT strategy is — NEVER population coverage.
+    RECEIPT: on a real 25-query sweep the fit was UNIDENTIFIABLE at 10 and 15 steps (curve still
+    ~linear, best A rode the grid ceiling) and only firmed up by 25 steps, where A measured
+    strategy exhaustion (~394, progress ~63%) NOT the population (708+ known relevant) — so the
+    asymptote is a per-strategy ceiling, not a denominator. yields: per-step NEW-relevant counts
+    in acquisition order. Grid A in [cum, 6*cum]; closed-form tau per A via regression-through-
+    origin on the linearized curve ln(1-cum/A) = -(1/tau)*n; pick A by least squares over ALL
+    steps. identifiable=False when the curve is still ~linear (best A > 3*cum, riding the ceiling)
+    — then A is a lower bound and progress an upper bound, not committed numbers."""
+    ys = [max(0, int(y)) for y in yields]
+    n = len(ys)
+    cum, s = [], 0
+    for y in ys:
+        s += y
+        cum.append(s)
+    total = cum[-1] if cum else 0
+    label = "STRATEGY-RELATIVE exhaustion — never population coverage"
+    base = {"A": None, "tau": None, "progress": None, "cum": total, "n_points": n, "label": label}
+    if n < min_points:
+        return {**base, "identifiable": False, "note": f"{n} points (< min_points {min_points})"}
+    if total <= 0:
+        return {**base, "identifiable": False, "note": "no relevant yield to fit"}
+    xs = list(range(1, n + 1))
+    sxx = sum(x * x for x in xs)
+    lo, hi, steps = float(total), 6.0 * total, 600
+    best = None
+    for i in range(steps + 1):
+        A = lo + (hi - lo) * i / steps
+        L, ok = [], True
+        for c in cum:
+            r = 1.0 - c / A
+            if r <= 0:  # A must exceed every cumulative point for the log to exist
+                ok = False
+                break
+            L.append(math.log(r))
+        if not ok:
+            continue
+        slope = sum(x * l for x, l in zip(xs, L)) / sxx  # regression through origin
+        if slope >= 0:  # non-decaying — no exhaustion signal
+            continue
+        tau = -1.0 / slope
+        sse = sum((A * (1.0 - math.exp(-x / tau)) - c) ** 2 for x, c in zip(xs, cum))
+        if best is None or sse < best[0]:
+            best = (sse, A, tau)
+    if best is None:
+        return {**base, "identifiable": False, "note": "no admissible fit (curve too flat/linear)"}
+    _, A, tau = best
+    identifiable = A <= 3.0 * total
+    return {**base, "A": round(A, 1), "tau": round(tau, 2),
+            "progress": round(total / A, 3), "identifiable": identifiable,
+            "note": ("fit firm — asymptote = this strategy's ceiling (not the population)"
+                     if identifiable else
+                     "curve still ~linear; A is a LOWER bound, progress an UPPER bound")}
 
 
 def unseen_class_incidence(edges, relevance_bool, collection_ids):
@@ -229,6 +286,132 @@ def report(run):
     return R
 
 
+# --------------------------------------------------------------- verdict gate
+# DEFAULT-PROMISE checks for a coverage VERDICT (playbook Expectations preamble). Patterns are
+# deliberately GENEROUS (many phrasings) — this gates PRESENCE of each promised element, not its
+# wording. Each entry: (label, compiled pattern, whether a number must co-occur on the same line).
+_VERDICT_CHECKS = {
+    "regime": (r"regime|enumerab|countable|closed[- ]?ish|open[- ]?ended|open[- ]?denominator|"
+               r"no fraction (?:is )?definable|sampled,?\s+not enumerated|"
+               r"parts (?:we|you) can count|denominator", False),
+    "external_anchor": (r"held[- ]?out|community list|registr(?:y|ies)|persona|web[- ]?librarian|"
+                        r"external[- ]?(?:enumeration )?anchor|enumeration anchor|leaderboard|"
+                        r"awesome list|wikipedia list|completeness critic|adversarial critic|"
+                        r"held[- ]?out canon|\bcanon\b", True),
+    "gap_map": (r"\bgaps?\b|\bthin\b|periphery|peripheral|under[- ]?stud|under[- ]?sampl|"
+                r"ranked gap|localiz|field[- ]?thin|corpus[- ]?thin", False),
+    "as_of": (r"as[- ]of\b|as of \d", False),
+    "refresh": (r"refresh", False),
+}
+_LOSS_TERMS = {
+    "filter-false-negative": r"filter[- ]?(?:false[- ]?neg\w*|fn\b|false neg)",
+    "truncation": r"truncat",
+    "unjudged/deferred": r"un-?judged|deferred|not (?:yet )?judged|dropped[- ]?unjudged|acq_deferred",
+}
+
+
+def _resolve_verdict(path):
+    """Accept a file, or a dir/run root — find the verdict by the standard names."""
+    if os.path.isfile(path):
+        return path
+    for cand in ("coverage-verdict.md", "coverage/VERDICT.md", "VERDICT.md",
+                 "coverage/coverage-verdict.md"):
+        p = os.path.join(path, cand)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _sibling_evidence(pattern, run_dir, verdict_file):
+    """Diagnostic only: if the verdict misses an item, does a sibling coverage/*.md carry it?
+    (The doctrine wants it IN the verdict — this just points the author at where it lives.)"""
+    if not run_dir:
+        return None
+    hits = []
+    for p in glob.glob(f"{run_dir}/**/*.md", recursive=True):
+        if os.path.abspath(p) == os.path.abspath(verdict_file):
+            continue
+        try:
+            if re.search(pattern, open(p, errors="ignore").read(), re.I):
+                hits.append(os.path.basename(p))
+        except Exception:
+            continue
+    return hits[:3] or None
+
+
+def verdict_gate(verdict_path, run_dir=None):
+    """[T] produce-X-gate-X for a coverage VERDICT file — the verdict now gets the same treatment
+    report_gate.py gives the report. RECEIPT: verdict-time doctrine measurably decays when carried
+    in prose, so the DEFAULT-PROMISE items (playbook Expectations preamble) must be PRESENT in the
+    verdict itself. Checks: (1) denominator-REGIME language (closed/enumerable vs open-ended, or
+    'no fraction definable'); (2) an EXTERNAL ANCHOR named with a number (community list / registry
+    / held-out canon / persona / enumeration anchor); (3) a GAP MAP (thin/gap language, ideally
+    with named families/strata); (4) AS-OF date + REFRESH trigger; (5) at least one named LOSS term
+    (filter false-negative / truncation / unjudged-deferred). Patterns are generous — gates
+    presence, not wording; a miss on a real verdict is a FINDING. Returns (fails, notes). run_dir
+    (optional): when an item is missing, notes whether a sibling coverage/*.md carries the evidence
+    (diagnostic — the gate still fails; doctrine wants it in the verdict)."""
+    vf = _resolve_verdict(verdict_path)
+    if not vf:
+        return [f"no verdict file found at {verdict_path}"], []
+    text = open(vf, errors="ignore").read()
+    lines = text.splitlines()
+    fails, notes = [], [f"verdict: {vf}"]
+
+    for name, (pat, needs_num) in _VERDICT_CHECKS.items():
+        if needs_num:
+            present = any(re.search(pat, ln, re.I) and re.search(r"\d", ln) for ln in lines)
+        else:
+            present = bool(re.search(pat, text, re.I))
+        if present:
+            notes.append(f"{name}: present")
+        else:
+            msg = {"regime": "no denominator-regime language (closed/enumerable vs open-ended)",
+                   "external_anchor": "no external anchor named WITH a number (community list / "
+                                      "registry / held-out canon / persona)",
+                   "gap_map": "no gap map (thin/gap language with named families/strata)",
+                   "as_of": "no as-of date", "refresh": "no refresh trigger"}[name]
+            sib = _sibling_evidence(pat, run_dir, vf)
+            if sib:
+                msg += f" [but present in sibling(s): {sib} — put it IN the verdict]"
+            fails.append(msg)
+
+    found_loss = [k for k, pat in _LOSS_TERMS.items() if re.search(pat, text, re.I)]
+    missing_loss = [k for k in _LOSS_TERMS if k not in found_loss]
+    notes.append(f"loss terms named: {found_loss or 'NONE'}"
+                 + (f" (missing: {missing_loss})" if found_loss and missing_loss else ""))
+    if not found_loss:
+        msg = "no named loss terms (filter false-negative / truncation / unjudged-deferred)"
+        sib = _sibling_evidence("|".join(_LOSS_TERMS.values()), run_dir, vf)
+        if sib:
+            msg += f" [but present in sibling(s): {sib} — put it IN the verdict]"
+        fails.append(msg)
+
+    # gap-map depth diagnostic (does not fail the gate): named families/strata alongside gaps
+    if re.search(r"famil(?:y|ies)|strat(?:um|a)|\bhead\b|\btail\b", text, re.I):
+        notes.append("gap_map: named families/strata detected (good)")
+
+    return fails, notes
+
+
 if __name__ == "__main__":
     import pprint
-    pprint.pp(report(sys.argv[1]))
+    argv = sys.argv[1:]
+    cmd = argv[0] if argv else ""
+    if cmd == "verdict-gate":
+        run = argv[argv.index("--run") + 1] if "--run" in argv else None
+        fails, notes = verdict_gate(argv[1], run)
+        for n in notes:
+            print("  ·", n)
+        if fails:
+            print("VERDICT GATE: FAIL")
+            for f in fails:
+                print("  ✗", f)
+            sys.exit(1)
+        print("VERDICT GATE: PASS")
+    elif cmd == "strategy-decay":
+        data = json.load(open(argv[1]))
+        ys = [d["new_gold"] if isinstance(d, dict) else int(d) for d in data]
+        pprint.pp(strategy_decay(ys))
+    else:
+        pprint.pp(report(argv[0]))
