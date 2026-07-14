@@ -260,7 +260,7 @@ queries.tsv + sidecars + escalation ranking · `s2.py` ALL S2 access (serialized
 `validate.py` machine-checked invariants (run after every merge/rebuild) · `knowledge.py`
 collection view/anchor/lookup · `coverage_signals.py` the [T] estimators + `verdict-gate` (checks
 a verdict's default promises) + `strategy_decay` (strategy-relative saturation) ·
-`fulltext.py` fetch/extract (+`--local` pypdf) · `reviews.py` OpenReview reviews by corpusId ·
+`fulltext.py` fetch/extract (+`--local` pypdf) · `reviews.py` peer reviews by corpusId (OpenReview: ICLR/NeurIPS-2021+/TMLR/COLM/MIDL public; ACL+CV hosted-but-closed — coverage map in its docstring; other domains need other platforms) ·
 `report_gate.py` report number-tracing gate · `vault.py` init/rebuild/verify/`recall`
 (union-recall vs KNOWN)/`--amend`.
 

@@ -2,8 +2,23 @@
 papers feed disagreement-axis CANDIDATE GENERATION, contested-claim evidence, and meta-review
 anchors — see deliverables.md disagreement doctrine and coverage-playbook anchors).
 
-Scope honesty: OpenReview-hosted venues only (ICLR, NeurIPS, etc.) — a STRATUM of the corpus,
-never the population; regime language applies to any claim built on it.
+Scope honesty: OpenReview-hosted venues only — a STRATUM of the corpus, never the population;
+regime language applies to any claim built on it.
+
+COVERAGE MAP (probed 2026-07-13, authenticated; one sample forum per venue — re-probe per year
+if a venue is load-bearing). HOSTED (4,318 venue ids: CV, ACL, IEEE, MICCAI, robotics, KDD…)
+is NOT the same as READABLE — most venues run a CLOSED workflow here. Public reviews VERIFIED:
+  ICLR ~2017+ (incl. rejected) · NeurIPS 2021+ · TMLR (rolling, fully public) · COLM 2024+ ·
+  MIDL (medical imaging).
+NOT publicly readable despite being hosted (don't burn calls): ICML, CVPR/ICCV, ACL/ARR
+(private unless authors opt in — rare), AAAI, UAI, CoRL. NeurIPS pre-2021 = papers.nips.cc,
+no reviews exist.
+Other domains, other platforms (this tool does NOT cover them; different evidence tiers —
+label them): SciPost (physics, fully open) · eLife Reviewed Preprints 2023+ / PLOS opt-in /
+Nature-portfolio transparent-review files / EMBO / BMJ-BMC / F1000-PeerJ-MDPI (biomed &
+journals) · Crossref peer-review deposits (cross-publisher discovery layer) · Review Commons /
+PREreview / alphaXiv / PubPeer (preprint & post-pub community review, not venue-official).
+For a biomed thread, eLife/PLOS/BMJ/F1000 are the review sources; OpenReview is near-irrelevant.
 
 Access (measured constraints, 2026-07-12):
   - Anonymous access is bot-challenged; a FREE registered account is the sanctioned path
