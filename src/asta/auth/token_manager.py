@@ -215,9 +215,14 @@ class TokenManager:
         except Exception:
             return None
 
-    def verify_token_with_gateway(self) -> dict[str, any]:
+    def verify_token_with_gateway(
+        self, access_token: str | None = None
+    ) -> dict[str, any]:
         """
         Verify the access token with the gateway server.
+
+        Args:
+            access_token: Token to verify. If None, loads from storage.
 
         Returns:
             Dictionary with verification result:
@@ -231,11 +236,12 @@ class TokenManager:
         if not self.gateway_url:
             raise AuthenticationError("Gateway URL not configured")
 
-        tokens = self.storage.load_tokens()
-        if not tokens or not tokens.get("access_token"):
-            return {"valid": False, "error": "No access token found"}
+        if access_token is None:
+            tokens = self.storage.load_tokens()
+            if not tokens or not tokens.get("access_token"):
+                return {"valid": False, "error": "No access token found"}
+            access_token = tokens["access_token"]
 
-        access_token = tokens["access_token"]
         verify_url = f"{self.gateway_url}/auth/verify"
 
         try:

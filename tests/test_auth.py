@@ -64,13 +64,18 @@ class TestTokenStorage:
 class TestAuthCommands:
     """Tests for auth CLI commands."""
 
+    @staticmethod
+    def _invoke(runner, args):
+        """Invoke CLI with ASTA_TOKEN cleared from env for storage-based tests."""
+        return runner.invoke(cli, args, env={"ASTA_TOKEN": ""})
+
     def test_auth_status_not_authenticated(self):
         """Test auth status when not authenticated."""
         runner = CliRunner()
 
         # Mock TokenStorage.load_tokens to return None (no tokens)
         with patch.object(TokenStorage, "load_tokens", return_value=None):
-            result = runner.invoke(cli, ["auth", "status"])
+            result = self._invoke(runner, ["auth", "status"])
             assert result.exit_code == 0
             assert "Not authenticated" in result.output
 
@@ -100,7 +105,7 @@ class TestAuthCommands:
                 return_value=mock_verification,
             ),
         ):
-            result = runner.invoke(cli, ["auth", "status"])
+            result = self._invoke(runner, ["auth", "status"])
             assert result.exit_code == 0
             assert "Server Verification" in result.output
             assert "Valid" in result.output
@@ -128,16 +133,64 @@ class TestAuthCommands:
                 return_value=mock_verification,
             ),
         ):
-            result = runner.invoke(cli, ["auth", "status"])
+            result = self._invoke(runner, ["auth", "status"])
             assert result.exit_code == 0
             assert "Server Verification" in result.output
             assert "Invalid" in result.output
             assert "Token verification failed" in result.output
 
+    def test_auth_status_honors_asta_token_env_var(self):
+        """auth status verifies ASTA_TOKEN from env, ignoring stored tokens."""
+        runner = CliRunner()
+
+        mock_verification = {
+            "valid": True,
+            "user_info": {"email": "env@example.com", "name": "Env User"},
+        }
+
+        # No stored tokens — status should still succeed via env var.
+        with (
+            patch.object(TokenStorage, "load_tokens", return_value=None),
+            patch.object(
+                TokenManager,
+                "verify_token_with_gateway",
+                return_value=mock_verification,
+            ) as verify_mock,
+        ):
+            result = runner.invoke(
+                cli, ["auth", "status"], env={"ASTA_TOKEN": "env-token-value"}
+            )
+            assert result.exit_code == 0
+            assert "ASTA_TOKEN" in result.output
+            assert "Valid" in result.output
+            assert "env@example.com" in result.output
+            # Verified the token from the env var, not from storage.
+            verify_mock.assert_called_once()
+            _, kwargs = verify_mock.call_args
+            assert kwargs.get("access_token") == "env-token-value"
+
+    def test_auth_status_asta_token_invalid(self):
+        """auth status surfaces gateway rejection of ASTA_TOKEN."""
+        runner = CliRunner()
+
+        mock_verification = {"valid": False, "error": "Invalid signature"}
+
+        with patch.object(
+            TokenManager,
+            "verify_token_with_gateway",
+            return_value=mock_verification,
+        ):
+            result = runner.invoke(
+                cli, ["auth", "status"], env={"ASTA_TOKEN": "bad-token"}
+            )
+            assert result.exit_code == 0
+            assert "Invalid" in result.output
+            assert "Invalid signature" in result.output
+
     def test_auth_logout(self):
         """Test auth logout command."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["auth", "logout"])
+        result = self._invoke(runner, ["auth", "logout"])
         assert result.exit_code == 0
         assert "Logged out successfully" in result.output
 
@@ -147,7 +200,7 @@ class TestAuthCommands:
 
         # Mock TokenStorage.load_tokens to return None
         with patch.object(TokenStorage, "load_tokens", return_value=None):
-            result = runner.invoke(cli, ["auth", "print-token"])
+            result = self._invoke(runner, ["auth", "print-token"])
             assert result.exit_code == 1
             assert "No token found" in result.output
 
@@ -160,7 +213,7 @@ class TestAuthCommands:
         mock_tokens = {"access_token": test_token}
 
         with patch.object(TokenStorage, "load_tokens", return_value=mock_tokens):
-            result = runner.invoke(cli, ["auth", "print-token", "--raw"])
+            result = self._invoke(runner, ["auth", "print-token", "--raw"])
             assert result.exit_code == 0
             assert test_token in result.output
 
@@ -175,7 +228,7 @@ class TestAuthCommands:
         mock_tokens = {"access_token": test_token}
 
         with patch.object(TokenStorage, "load_tokens", return_value=mock_tokens):
-            result = runner.invoke(cli, ["auth", "print-token"])
+            result = self._invoke(runner, ["auth", "print-token"])
             assert result.exit_code == 0
             assert "JWT Header:" in result.output
             assert "JWT Payload:" in result.output
