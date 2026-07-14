@@ -1,10 +1,18 @@
-.PHONY: preview render clean dev deployed-url
+.PHONY: preview render clean dev deployed-url check
 
 preview:
 	quarto preview --no-browser
 
 render:
 	quarto render
+
+# Run the same quality gates CI runs, in one place so local and CI can't
+# drift. CI's docs workflow calls this target — when a project grows a new
+# gate, add it here (or as a prerequisite target), never as an inline workflow
+# step. The shared render/validate logic is vendored in scripts/quarto-check.sh
+# (from the workspace skill; update by re-copying, don't hand-edit).
+check:
+	sh scripts/quarto-check.sh
 
 clean:
 	rm -rf _site .quarto

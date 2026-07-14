@@ -1,0 +1,5 @@
+# Quarto build artifacts (the workspace skill appends any of these lines
+# missing from the project's .gitignore).
+_site/
+.quarto/
+quarto-render.*
