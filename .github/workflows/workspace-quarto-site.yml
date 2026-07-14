@@ -1,0 +1,195 @@
+# Reusable workflow: build, deploy, and PR-preview a Quarto site on GitHub
+# Pages. Scaffolded research projects (see the asta-tools `workspace` skill)
+# call this from a thin `docs.yml` stub, so the deploy machinery is maintained
+# once here rather than copied into every project.
+#
+# Contract with the calling repo:
+#   - A `make check` target runs the repo's quality gates and renders the site
+#     to `_site/` (the workspace skill's Makefile asset provides the baseline;
+#     repos add their own gates to that target, never as workflow steps).
+#   - The caller grants `contents: write` + `pull-requests: write`; jobs here
+#     downscope to least privilege individually.
+#   - Full history and PR head refs are fetched before `make check`, for
+#     repos whose checks derive content from git history.
+name: Quarto site
+
+on:
+  workflow_call:
+
+jobs:
+  # Build + quality gates (via `make check`). This is the required status
+  # check. Concurrency is keyed per PR (or per branch for main), so a new
+  # commit supersedes its own stale build while separate PRs and main never
+  # cancel each other.
+  build:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: pages-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for checks that read git history
+
+      # PR head refs are permanent; fetch them so provenance commits referenced
+      # by history-derived checks still resolve.
+      - name: Fetch PR refs
+        run: git fetch --no-tags origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      # The shared render/validate logic is vendored into each project as
+      # scripts/quarto-check.sh. Surface (never fail on) drift between that
+      # copy and the canonical one shipped at this workflow's own commit, so
+      # stale or hand-edited copies get noticed on every run.
+      - name: Check vendored quarto-check.sh for drift
+        run: |
+          [ -f scripts/quarto-check.sh ] || exit 0
+          canonical="https://raw.githubusercontent.com/allenai/asta-plugins/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
+          if curl -fsSL "$canonical" -o /tmp/quarto-check.canonical; then
+            if ! diff -u scripts/quarto-check.sh /tmp/quarto-check.canonical > /tmp/quarto-check.diff; then
+              echo "::warning::scripts/quarto-check.sh differs from the workspace skill's canonical copy — re-copy assets/quarto-check.sh to update (or ignore if intentionally customized)"
+              { echo "## quarto-check.sh drift (vendored → canonical)"; echo '```diff'; cat /tmp/quarto-check.diff; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "could not fetch canonical quarto-check.sh; skipping drift check"
+          fi
+
+      # All quality gates live in the repo's `check` Makefile target — the
+      # single source of truth shared with local runs, so CI and local can't
+      # drift. Warnings are surfaced to the step summary from inside the target.
+      - name: Run docs checks
+        run: make check
+
+      - name: Prepare Pages artifact
+        run: touch _site/.nojekyll  # serve asset dirs verbatim (no Jekyll)
+
+      - name: Upload rendered site
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: _site
+          include-hidden-files: true  # keep .nojekyll
+
+  # Publish: main -> gh-pages root (keeping PR previews); a PR -> a preview under
+  # /pr-preview/pr-<N>/ with a link comment. Concurrency is keyed per PR (and
+  # separately for main), so main and any PR are always in different groups — a
+  # main deploy can't be queued behind or cancelled by a PR's write (including a
+  # PR-close cleanup that fires at merge). Concurrent writes from different
+  # groups reconcile via rebase-and-retry on push, not a global queue.
+  deploy:
+    needs: build
+    if: github.event_name == 'push' || github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: pages-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: _site
+
+      - name: Publish to gh-pages
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # First deploy: create gh-pages from the empty tree without touching
+          # the main checkout (an orphan checkout here would make the worktree
+          # add below fail — a branch can't be checked out twice).
+          git fetch origin gh-pages:gh-pages 2>/dev/null \
+            || git branch gh-pages "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "Initialize gh-pages")"
+          tmp=$(mktemp -d)
+          git worktree add "$tmp" gh-pages
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Main deploy: replace the site root, keep pr-preview/.
+            find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+            cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
+          else
+            # PR preview: publish under pr-preview/pr-<N>/.
+            rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
+            mkdir -p "$tmp/pr-preview/pr-$PR_NUMBER"
+            cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/pr-preview/pr-$PR_NUMBER/"
+            # Keep previews out of search indexes. A project Pages site can't use
+            # a path-scoped robots.txt (only the host-root one is honored), so
+            # inject a noindex meta tag into the preview's pages (main is left
+            # indexable).
+            find "$tmp/pr-preview/pr-$PR_NUMBER" -name '*.html' -print0 \
+              | xargs -0 sed -i 's#<head>#<head><meta name="robots" content="noindex, nofollow">#'
+          fi
+
+          cd "$tmp"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "gh-pages already up to date"
+          else
+            git commit -m "Deploy ${{ github.event_name }} ${{ github.sha }}"
+            for i in 1 2 3 4 5; do
+              git push origin gh-pages && break
+              [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
+              echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
+              git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
+            done
+          fi
+
+          # For a PR, ensure exactly one preview-link comment (create or update),
+          # independent of whether the content changed. Best-effort — a comment
+          # hiccup shouldn't fail an otherwise-successful publish.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-$PR_NUMBER/"
+            body="📄 Preview: $url"
+            existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty')
+            if [ -n "$existing" ]; then
+              gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
+                || echo "::warning::could not update preview comment"
+            else
+              gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null \
+                || echo "::warning::could not create preview comment"
+            fi
+          fi
+
+  # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
+  # (keyed on the PR number) so it cancels any still-running build/deploy for the
+  # PR first — otherwise a late deploy could recreate the preview after removal.
+  cleanup-preview:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: pages-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove PR preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages:gh-pages 2>/dev/null || exit 0
+          tmp=$(mktemp -d)
+          git worktree add "$tmp" gh-pages
+          rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
+          cd "$tmp"
+          git add -A
+          if git diff --cached --quiet; then echo "no preview to remove"; exit 0; fi
+          git commit -m "Remove preview for PR #$PR_NUMBER"
+          for i in 1 2 3 4 5; do
+            git push origin gh-pages && break
+            [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
+            echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
+            git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
+          done

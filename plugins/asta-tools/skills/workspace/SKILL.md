@@ -46,14 +46,14 @@ Before writing any file in the steps below, check whether the target path alread
 1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}`.
 2. Create `index.qmd` with `title:` frontmatter.
 3. Create empty `references.bib`.
-4. Append `_site/` and `.quarto/` to `.gitignore` (don't overwrite).
-5. Copy `assets/Makefile` to project root.
+4. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
+5. Copy `assets/Makefile` to project root, and `assets/quarto-check.sh` to `scripts/quarto-check.sh` (vendored verbatim — the Makefile's `check` target runs it; to update it later, re-copy rather than hand-edit). CI warns when the vendored copy drifts from the canonical one; on that warning, re-copy the asset.
 6. Copy `assets/README.md`; fill `{{TITLE}}` and `{{DESCRIPTION}}` from the user.
 7. Copy `assets/DEVELOPER.md` to project root. User owns it — only update later with explicit user permission.
 
 ### GitHub Pages deploy
 
-1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`.
+1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — via `gh api` if the token has admin on the repo, otherwise ask the user.
 2. Configure Pages to serve from `gh-pages`:
    ```bash
    gh api repos/{owner}/{repo}/pages -X POST --input - <<'EOF'

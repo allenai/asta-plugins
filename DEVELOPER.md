@@ -19,6 +19,14 @@ Design rules worth knowing before you change code:
 - New external-tool integrations go through the passthrough system
   (`asta.utils.passthrough` + `passthrough.conf`), not bespoke wrappers.
 
+One directory is *not* this repo's own CI:
+`.github/workflows/workspace-quarto-site.yml` is a published reusable workflow
+(`workflow_call`-only) for the research projects the `workspace` skill
+scaffolds — GitHub mandates the `.github/workflows/` path for reusable
+workflows, so it can't live with the skill. Maintain it together with
+`plugins/asta-tools/skills/workspace/` (its `assets/docs.yml` stub and
+`assets/Makefile` `check` target form one contract with it).
+
 ## Development Setup
 
 Prerequisites: Python 3.11+, `uv`, `make`, and Node.js 20+ / `npx`

@@ -24,7 +24,7 @@ jobs:
       - name: Lint shell scripts with shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
-          scandir: './scripts ./plugins/asta-tools/hooks'
+          scandir: './scripts ./plugins/asta-tools/hooks ./plugins/asta-tools/skills/workspace/assets'
 
       - name: Check skill frontmatter against Agent Skills spec
         run: make check-skills
