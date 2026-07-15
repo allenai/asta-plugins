@@ -287,3 +287,11 @@ Verdict discipline (each learned from a real run):
   "what would a resourceful human do that this pipeline didn't? what chunk could be missing?"
   Every signal above is computed from INSIDE your catchments; the critic is the only one that can
   point at a library you never visited. Its output = candidate gaps to check, not verdict overrides.
+- **A "gaps / open problems / future-work" ANSWER must go back to the PAPERS, not only the vault
+  (measured, pre-registered pair):** an un-nudged session recomputed gaps purely from vault-held
+  signal (disagreement axes, coverage verdicts, the question log) — a filter bubble (P7): the
+  gaps a corpus sees from inside are the ones it already sampled, and the field's OWN stated open
+  problems are invisible to that signal. The fix is a second lens — fulltext-extract the
+  future-work / limitations / open-challenge sections of the load-bearing papers (verbatim spans,
+  themed) and synthesize THAT alongside the internal coverage gaps. The nudge was decisive across
+  the pair; make it the default for this answer shape.
