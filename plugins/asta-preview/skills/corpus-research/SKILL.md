@@ -263,10 +263,10 @@ line to it when a thread goes long-running.
 
 ## Scripts index (scan BEFORE writing your own; each is ground truth for its phase)
 CONVENIENCES, offered never required (inline python is always legitimate; NEVER gate on these):
-`inspect.py peek <file>` (shape/keys/first-record) · `tally <file> <field…>` (value counts) ·
+`inspect_data.py peek <file>` (shape/keys/first-record) · `tally <file> <field…>` (value counts) ·
 `check <file> --require f1,f2` (per-file integrity; run-level invariants stay validate.py's).
 Importing skill modules from run scripts is canonical:
-`sys.path.insert(0, "<skill>/scripts")` then e.g. `from s2 import S2` (the measured pattern).
+`sys.path.insert(0, "<skill>/scripts")` then e.g. `from s2 import S2` (the measured pattern). NOTE: a script here must NEVER be named after a stdlib module — sys.path.insert(0) makes such a name shadow the stdlib for every sibling (measured: an `inspect.py` broke fulltext.py's pypdf import).
 `acquire.py` resolve/edges/pool/merge candidates · `sweep.py` parallel find fan-outs from a
 queries.tsv + sidecars + escalation ranking · `s2.py` ALL S2 access (serialized, cached) ·
 `relevance.py` judgment files · `shards.py` judge-fleet shards (interleave+salt+sub-batches),

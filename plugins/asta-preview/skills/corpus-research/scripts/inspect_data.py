@@ -1,13 +1,13 @@
-"""inspect.py — [T] OPTIONAL convenience verbs for the three highest-repetition ad-hoc shapes
+"""inspect_data.py — [T] OPTIONAL convenience verbs for the three highest-repetition ad-hoc shapes
 (measured: 490 one-liners across 10 runs / 4 domains; these skeletons replicate cross-domain —
 eval/mining/oneliner-census.md in the movement repo).
 
 OFFERED, NEVER REQUIRED (P3 sweet-spot criterion): inline python is always legitimate — these
 exist to save the re-typing, not to gate anything. Uptake is measured; unused verbs get demoted.
 
-  python inspect.py peek  <file.json|.jsonl>            # shape: keys, first record, row count
-  python inspect.py tally <file.jsonl> <field> [field2]  # value counts for a field (dotted ok)
-  python inspect.py check <file.jsonl> --require f1,f2   # per-file integrity: parse, required
+  python inspect_data.py peek  <file.json|.jsonl>            # shape: keys, first record, row count
+  python inspect_data.py tally <file.jsonl> <field> [field2]  # value counts for a field (dotted ok)
+  python inspect_data.py check <file.jsonl> --require f1,f2   # per-file integrity: parse, required
                                                           # fields non-null, corpusId unique+str
 next: for run-LEVEL invariants use validate.py; for membership/joins use knowledge.py.
 """
