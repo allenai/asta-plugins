@@ -6,7 +6,20 @@ never buffer" instruction yet written — every judge still buffered, and when a
 killed the fleet, 8 shards died with zero lines on disk (~344 judgments re-paid). Encode
 expectations as task structure and [T] checks, not as requests.
 
+## Fleet MODEL TIER (measured at three levels — a DEFAULT with override, not a mandate)
+Judge/worker fleets default to the **cheap-capable tier (sonnet-class)**; main-loop synthesis
+stays on the strong model. Measured on the same gold ruler: sonnet fleet vs opus fleet showed
+**no quality difference at any level** (aggregate recall parity · both passed salt gates ·
+row-level disagreement arbitration a statistical tie, 23-26 of 49) while the opus fleet cost
+~5× per fleet token — the single largest uncontrolled cost variable found across runs ($387 vs
+$132 for the same build). The salt/canary gates are the quality guard (fired correctly in both
+directions: rejected a haiku fleet, passed sonnet and opus fleets). Override deliberately when
+a fleet task genuinely needs the strong model — and record the override in the round record.
+
 ## Build shards with `scripts/shards.py` (structure does the enforcing)
+- **SALTS ARE A GATE**: `build_shards` now REFUSES to build an unsalted fleet (measured: a
+  warm round's hand-rolled shards silently dropped salts and lost per-judge calibration).
+  Deliberate exceptions declare `allow_unsalted="<reason>"`, recorded in salts.json.
 - **Stratified-interleave assignment**: shards are exchangeable samples of the pool, so
   per-shard positive-rate spread becomes a judge-drift ALARM instead of composition noise
   (measured spreads of 4-87% across shards were unreadable without this).

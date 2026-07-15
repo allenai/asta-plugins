@@ -12,6 +12,12 @@ gaps, explicit boundary}` — never a bare "comprehensive" and never a single sc
   parts"), keep "regime" for internal artifacts.
 - Coverage is stated PER REGIME: enumerable-and-sampled strata get committed fractions with
   confidence; open-denominator strata get "sampled — no fraction definable". Never one flat number.
+- **The ×2 empirical prior (state it to the reader, measured across five cold verdicts):** true
+  missing has run **~1.8-2.5× the verdict's own claimed bound** (out-of-sample: ×2 fit on two
+  early verdicts predicted a later one within 13%; the single calibrated exception was a
+  curated near-oracle build). Doctrine fixed the claim's SHAPE (valid hedged lower bounds), not
+  its center — so any "≥X missing (lower bound)" line carries the companion sentence: "history:
+  true missing has run ~2× stated bounds." The reader gets the prior, not just the hedge.
 - Absolute recall points derived from your own sources alone are NOT identifiable (union-denominator
   tautology; measured swings −28%…+64% by pair choice, both directions, two corpora). Lower bounds
   and orderings are reliable; points are not.

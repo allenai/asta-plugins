@@ -166,6 +166,25 @@ def merge_candidates(run, extra_exclude=()):
     with open(out, "w") as f:
         for r in merged.values():
             f.write(json.dumps(r) + "\n")
+    # boundary signals (measured needs: two cold runs improvised same-modality multi-file
+    # layouts that inflate corroboration; and the cross-modality overlap IS the under-sampling
+    # smell every verdict wants) — print them AT the merge, where the fix is cheap:
+    tag_files = {}
+    for path in sorted(glob.glob(os.path.join(run, "acq", "*.jsonl"))):
+        b = os.path.basename(path)
+        if any(m in b for m in RAW_MARKERS) or b in deferred:
+            continue
+        first = next((l for l in open(path) if l.strip()), None)
+        if first and "provenance" in json.loads(first):
+            for t in json.loads(first).get("provenance") or []:
+                tag_files.setdefault(t, set()).add(b)
+    for t, fs in sorted(tag_files.items()):
+        if len(fs) > 1:
+            print(f"  ⚠ modality '{t}' spans {len(fs)} files ({', '.join(sorted(fs))}) — "
+                  f"same-modality splits inflate corroboration; union into ONE file or declare in acq_deferred")
+    n_multi = sum(1 for r in merged.values() if len(r.get("provenance") or []) >= 2)
+    print(f"  cross-modality overlap: {n_multi}/{len(merged)} candidates found by ≥2 modalities "
+          f"(low share = under-sampling smell; feeds capture-recapture)")
     return len(merged)
 
 

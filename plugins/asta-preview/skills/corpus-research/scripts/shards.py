@@ -33,10 +33,20 @@ def _jl(p):
     return [json.loads(l) for l in open(p) if l.strip()]
 
 
-def build_shards(items, run_dir, n_shards=10, salt=None, k=25, strata_key=None, seed=13):
+def build_shards(items, run_dir, n_shards=10, salt=None, k=25, strata_key=None, seed=13,
+                 allow_unsalted=None):
     """items: list of candidate dicts (must carry corpusId). salt: list of dicts with
     corpusId + a `salt_tier` field (the known gold tier) — salt_tier is STRIPPED from the
-    written shard rows and recorded only in salts.json."""
+    written shard rows and recorded only in salts.json.
+
+    SALT GATE (invariant, measured: a warm round's hand-rolled shards silently dropped salts
+    and lost per-judge calibration): a fleet WITHOUT salts refuses to build. Deliberate
+    exceptions pass allow_unsalted="<reason>" — the reason is recorded in salts.json so the
+    round's record carries the declaration, not just the omission."""
+    if not salt and not allow_unsalted:
+        raise SystemExit("build_shards: NO SALTS — judge fleets need planted calibration items "
+                         "(per-judge gate; see workers.md). Pass salt=[...] or declare "
+                         "allow_unsalted='<reason>' (recorded in salts.json).")
     rng = random.Random(seed)
     strata_key = strata_key or (lambda r: "all")
     # stratified interleave: shuffle within stratum, deal round-robin across shards
@@ -54,6 +64,8 @@ def build_shards(items, run_dir, n_shards=10, salt=None, k=25, strata_key=None, 
     # salt: distribute a copy of each salt item to every shard? No — ~5 DISTINCT per shard,
     # sampled with replacement across shards so each judge sees a comparable mini-panel.
     salts_map = {}
+    if not salt:
+        salts_map["_unsalted_declared"] = str(allow_unsalted)
     if salt:
         for si, sh in enumerate(shards):
             picks = rng.sample(salt, min(5, len(salt)))

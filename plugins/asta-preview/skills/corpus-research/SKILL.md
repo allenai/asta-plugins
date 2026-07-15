@@ -91,6 +91,11 @@ sizing probe — a single `find` call to gauge the space), STOP and present, in 
   subscription quotas differ). Cache-read is ~60% of the bill — cost ≈ context × call-count,
   not generation. Say "low-to-mid hundreds of dollars at list / a sizable slice of a daily
   quota", not a false-precise number.
+  **STATE THE FLEET TIER the estimate assumes** (measured: an estimate quoted at mixed-tier
+  prices, then run with an all-strong-model fleet, landed at ~3× — see workers.md Fleet MODEL
+  TIER; the default is a sonnet-class fleet). And say the fragmentation expectation out loud:
+  a build split across quota windows re-primes expired caches at full price (~1.3–1.5× extra) —
+  prefer one window.
 - **Lighter alternatives**: a plain find-literature search (~minutes), a targeted
   semantic-scholar lookup (a specific paper/author/citation, seconds), or a snowball-only
   quick pass — offer them honestly; some questions don't need a corpus.
@@ -139,7 +144,11 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    their own sidecar `not_judged` count (+ total_hits, + judged yield) and escalate a budgeted
    top slice (~25-30%) plus anchor-flagged thin families to diligent; stop when marginal
    new-yield flattens; (4) the verdict MUST name the binding cuts and the un-escalated remainder
-   (a run that never read its own sidecars shipped an 85-90% head claim that measured ~44%).
+   (a run that never read its own sidecars shipped an 85-90% head claim that measured ~44%);
+   (5) **JUDGE a random ~50-item sample of the sidecar-dropped pool** — the retrieval filter's
+   false-negative rate becomes a MEASURED per-thread number instead of "unquantified" (a
+   full-lifecycle run's verdict had to say exactly that; elsewhere a measured 0/50 converted a
+   low-growth claim from assumed to strong).
    **Read playbook §1's retrieval division-of-labor BEFORE the first find call** (find vs
    interactive vs snowball/citances vs raw edges — each tool's measured comparative advantage).
 2. **Curate** — relevance-judge every candidate against thread.json criteria
