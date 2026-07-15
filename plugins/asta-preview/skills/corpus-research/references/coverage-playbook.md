@@ -288,7 +288,11 @@ Verdict discipline (each learned from a real run):
   Every signal above is computed from INSIDE your catchments; the critic is the only one that can
   point at a library you never visited. Its output = candidate gaps to check, not verdict overrides.
 - **A "gaps / open problems / future-work" ANSWER must go back to the PAPERS, not only the vault
-  (measured, pre-registered pair):** an un-nudged session recomputed gaps purely from vault-held
+  (measured, pre-registered pair — ONE INSTANCE of a general, not-yet-fully-rubricized principle:
+  match the EVIDENCE TIER to the claim type; in particular, absence/completeness-shaped claims
+  cannot be answered from inside derived layers, because a derived layer only contains what was
+  already sampled. The general per-claim tier rubric is under design — this line prescribes only
+  the measured case):** an un-nudged session recomputed gaps purely from vault-held
   signal (disagreement axes, coverage verdicts, the question log) — a filter bubble (P7): the
   gaps a corpus sees from inside are the ones it already sampled, and the field's OWN stated open
   problems are invisible to that signal. The fix is a second lens — fulltext-extract the
