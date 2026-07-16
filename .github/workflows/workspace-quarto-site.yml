@@ -149,8 +149,13 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-$PR_NUMBER/"
             body="📄 Preview: $url"
+            # Guard the read too: the step runs under `set -e`, so an unguarded
+            # command substitution that returns non-zero (e.g. gh gets an HTML
+            # 5xx error page instead of JSON: "invalid character '<'…") would
+            # abort the whole deploy after the publish already succeeded.
             existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty')
+              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty' \
+              2>/dev/null) || { echo "::warning::could not list comments to find existing preview"; existing=""; }
             if [ -n "$existing" ]; then
               gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
                 || echo "::warning::could not update preview comment"
