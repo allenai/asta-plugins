@@ -13,9 +13,12 @@ on:
 #
 # The token needs write access for gh-pages pushes and PR preview comments;
 # the called workflow's jobs individually downscope to least privilege.
+# `pages: read` lets the deploy job resolve the real served URL for the preview
+# link (private/internal repos use an obfuscated *.pages.github.io domain).
 permissions:
   contents: write
   pull-requests: write
+  pages: read
 
 jobs:
   docs:
