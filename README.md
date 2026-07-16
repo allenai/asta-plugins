@@ -41,12 +41,27 @@ npx plugins add allenai/asta-plugins
 npx skills add allenai/asta-plugins -g
 
 # Claude Code marketplace (alternative to npx plugins)
+# 1. Add this repo as a plugin marketplace. This step is required first —
+#    the plugins can't be installed until their marketplace is registered.
 > /plugin marketplace add allenai/asta-plugins
-> /plugin install asta-tools
-> /plugin install asta-flows      # optional, for multi-step workflows
-> /plugin install asta-assistant  # optional, for autonomous research
-> /plugin install asta-dev        # optional, for contributors
+
+# 2. Install the plugins you want. The `@asta-plugins` suffix names the
+#    marketplace added above and is what Claude Code's auto-complete offers.
+> /plugin install asta-tools@asta-plugins
+> /plugin install asta-flows@asta-plugins      # optional, for multi-step workflows
+> /plugin install asta-assistant@asta-plugins  # optional, for autonomous research
+> /plugin install asta-dev@asta-plugins        # optional, for contributors
 ```
+
+To pull the latest version later, update the marketplace:
+
+```commandline
+> /plugin marketplace update asta-plugins
+```
+
+If your marketplace list is empty (for example, you previously removed
+`asta-plugins`), `update` won't find it — re-add it first with
+`/plugin marketplace add allenai/asta-plugins`, then re-run the installs above.
 
 ## Asta CLI
 
