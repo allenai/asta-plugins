@@ -23,7 +23,8 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 For a headless agent (the user only sees results via deployed URL):
 
-- First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- **Bootstrap an empty repo first.** On a brand-new repo with no commits, the *first* branch pushed becomes the repo's default branch — so a feature branch pushed first wrongly becomes the default and leaves no `main` to open a PR against. Before the first save, check whether the repo is initialized: `git ls-remote --heads origin main` (or `gh api repos/{owner}/{repo} -q .default_branch`). If there's no `main`, push the initial scaffold commit straight to `main` to establish the default branch — `git push -u origin HEAD:main` — and use that as the base for all later PRs. Seeding `main` is the one legitimate direct push; it's not bypassing review because there's no prior state to review. If `main` already exists, skip this and use the feature-branch flow below.
+- First save (repo already initialized): `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
