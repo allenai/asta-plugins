@@ -145,12 +145,19 @@ jobs:
 
           # For a PR, ensure exactly one preview-link comment (create or update),
           # independent of whether the content changed. Best-effort — a comment
-          # hiccup shouldn't fail an otherwise-successful publish.
+          # hiccup shouldn't fail an otherwise-successful publish, so the whole
+          # block runs with errexit disabled. Without this, a transient API 5xx
+          # (which `gh api` surfaces as an HTML body that breaks `--jq` parsing)
+          # made the `existing=$(...)` assignment fail under `set -e` and turned
+          # a green deploy red — see the guard on each write below, which only
+          # helped once the read had already succeeded.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
+            set +e
             url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-$PR_NUMBER/"
             body="📄 Preview: $url"
             existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty')
+              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty') \
+              || echo "::warning::could not read existing preview comments"
             if [ -n "$existing" ]; then
               gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
                 || echo "::warning::could not update preview comment"
@@ -158,6 +165,7 @@ jobs:
               gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null \
                 || echo "::warning::could not create preview comment"
             fi
+            set -e
           fi
 
   # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
