@@ -159,8 +159,15 @@ jobs:
             # yields a dead preview link there. Fall back to the canonical form
             # if the Pages API is unavailable (e.g. token lacks `pages: read`).
             base=$(gh api "repos/${{ github.repository }}/pages" --jq '.html_url' 2>/dev/null)
-            base="${base%/}"
-            [ -n "$base" ] || base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+            # On failure (e.g. Pages not configured yet -> 404, or a 5xx),
+            # `gh api` prints the raw error body to stdout and never applies
+            # --jq, so $base is a non-empty blob of error JSON. Guard on it
+            # actually being an https URL, not merely non-empty, before trusting
+            # it -- otherwise the error text lands inside the preview link.
+            case "$base" in
+              https://*) base="${base%/}" ;;
+              *) base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" ;;
+            esac
             url="$base/pr-preview/pr-$PR_NUMBER/"
             body="📄 Preview: $url"
             # Guard the read: it runs the same set of transient failure modes as
