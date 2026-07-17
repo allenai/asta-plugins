@@ -87,6 +87,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # `pages: read` lets us resolve the site's real served URL from the Pages
+      # API (private/internal repos serve from an obfuscated *.pages.github.io
+      # domain, not <owner>.github.io/<repo>). Degrades gracefully if absent.
+      pages: read
     concurrency:
       group: pages-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -145,12 +149,32 @@ jobs:
 
           # For a PR, ensure exactly one preview-link comment (create or update),
           # independent of whether the content changed. Best-effort — a comment
-          # hiccup shouldn't fail an otherwise-successful publish.
+          # hiccup shouldn't fail an otherwise-successful publish, so the whole
+          # block runs with errexit disabled and closes on a guaranteed success.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            url="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-$PR_NUMBER/"
+            set +e
+            # Resolve the site's real base URL from the Pages config. Private and
+            # internal repos serve from an obfuscated <random>.pages.github.io
+            # domain, NOT <owner>.github.io/<repo>, so hardcoding the latter
+            # yields a dead preview link there. Fall back to the canonical form
+            # if the Pages API is unavailable (e.g. token lacks `pages: read`).
+            base=$(gh api "repos/${{ github.repository }}/pages" --jq '.html_url' 2>/dev/null)
+            # On failure (e.g. Pages not configured yet -> 404, or a 5xx),
+            # `gh api` prints the raw error body to stdout and never applies
+            # --jq, so $base is a non-empty blob of error JSON. Guard on it
+            # actually being an https URL, not merely non-empty, before trusting
+            # it -- otherwise the error text lands inside the preview link.
+            case "$base" in
+              https://*) base="${base%/}" ;;
+              *) base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" ;;
+            esac
+            url="$base/pr-preview/pr-$PR_NUMBER/"
             body="📄 Preview: $url"
+            # Guard the read: it runs the same set of transient failure modes as
+            # the writes below (a 5xx returns an HTML body that --jq can't parse),
+            # so an unguarded assignment would abort the step mid-publish.
             existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty')
+              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty' 2>/dev/null)
             if [ -n "$existing" ]; then
               gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
                 || echo "::warning::could not update preview comment"
@@ -158,6 +182,7 @@ jobs:
               gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null \
                 || echo "::warning::could not create preview comment"
             fi
+            set -e
           fi
 
   # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
