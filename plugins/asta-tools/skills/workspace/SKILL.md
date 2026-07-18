@@ -23,11 +23,8 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 For a headless agent (the user only sees results via deployed URL):
 
-- **Require `main` before the first feature-branch push.** Check with `git ls-remote --heads origin main` **before pushing anything**. If `main` is absent, **do not push a feature branch**: on an empty repository the first pushed branch becomes the default, leaving no `main` to target with a PR and preventing the expected GitHub Pages workflow from running.
-  - When creating the repository, initialize it with `main` (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`).
-  - For an existing empty repository, request explicit approval to seed it with `git push -u origin HEAD:main`. If higher-priority policy forbids that write even with approval, hand the bootstrap to an authorized operator and stop; never fall back to pushing the feature branch.
-  - **If a feature branch was already pushed first:** changing or renaming the default branch may require repository-admin authority. Do not claim the workspace is self-recoverable. Give an authorized operator the exact repair command (`gh repo edit <owner>/<name> --default-branch main`, after creating `main`, or the equivalent branch-rename API call), and resume the PR/deploy flow only after they confirm `main` is the default.
-- First save: use `make push-feature` rather than a raw `git push`; the target refuses to push when `origin/main` is absent. Then run `gh pr create --fill`, `make deployed-url`, and report the URL.
+- First save: run `make push-feature`; it refuses to push unless `origin/main` exists. Then run `gh pr create --fill`, `make deployed-url`, and report the URL.
+- If `main` is missing, stop. Initialize new repositories with a README, or ask an authorized operator to create `main` and make it the default. Never push a feature branch first.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
