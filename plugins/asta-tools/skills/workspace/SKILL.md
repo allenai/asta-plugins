@@ -23,7 +23,9 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 For a headless agent (the user only sees results via deployed URL):
 
-- **⚠️ Empty repo (no `main`): don't push a feature branch first.** On a repo with no commits the first branch pushed silently becomes the *default* branch — which leaves no `main` to open a PR against or to deploy Pages from, and fixing it needs repo-admin access an agent doesn't have. Check with `git ls-remote --heads origin main`; if `main` is absent, get it created before your first push — have the repo initialized with a commit (GitHub's **"Add a README file"** / `gh repo create <owner>/<name> --add-readme`), or ask an authorized operator to create `main` — then use the feature-branch flow below.
+- **⚠️ Empty repo (no `main`): establish `main` before pushing any feature branch.** On a repo with no commits the first branch pushed silently becomes the *default* branch — leaving no `main` to open a PR against or deploy Pages from, and repairing that needs repo-admin access. Check with `git ls-remote --heads origin main`; if `main` is absent, seed it *first*, then use the feature-branch flow below:
+  - If you're allowed to push `main` directly: `git push -u origin HEAD:main` (legitimate — an empty repo has no prior state to review), or have the repo created with an initial commit (GitHub's **"Add a README file"** / `gh repo create <owner>/<name> --add-readme`).
+  - If a push guard blocks you from writing `main`: **do not** push a feature branch instead — that triggers the lock-in above. Ask an authorized operator to create `main` (or set it as default), then continue.
 - First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
