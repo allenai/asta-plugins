@@ -1,4 +1,4 @@
-.PHONY: preview render clean dev deployed-url check push-feature
+.PHONY: preview render clean dev deployed-url check
 
 preview:
 	quarto preview --no-browser
@@ -20,16 +20,6 @@ clean:
 # Open VS Code attached to the devcontainer.
 dev:
 	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
-
-# Push the current feature branch only when the remote already has main.
-# This prevents a feature branch from accidentally becoming the default branch
-# of an empty repository, which would leave no base branch for a PR.
-push-feature:
-	@branch=$$(git branch --show-current); \
-	[ -n "$$branch" ] || { echo "Refusing to push a detached HEAD." >&2; exit 1; }; \
-	[ "$$branch" != "main" ] || { echo "Refusing to push main with the feature-branch target." >&2; exit 1; }; \
-	git ls-remote --exit-code --heads origin main >/dev/null 2>&1 || { echo "Refusing to push $$branch: origin/main does not exist. Initialize main or ask an authorized operator to do so first." >&2; exit 1; }; \
-	git push -u origin "HEAD:refs/heads/$$branch"
 
 # Print the deployed URL the user can visit.
 # On main: the GitHub Pages root. On a feature branch: the PR's preview URL.
