@@ -28,6 +28,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make check` | run the same quality gates CI runs (render + warning validation) |
 | `make clean` | wipe build artifacts |
 | `make dev` | open VS Code attached to devcontainer |
+| `make push-feature` | push the current feature branch after verifying `origin/main` exists |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
 
 ## Auto-deploy (`.github/workflows/docs.yml`)

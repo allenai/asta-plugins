@@ -23,11 +23,11 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 For a headless agent (the user only sees results via deployed URL):
 
-- **First, bootstrap `main` if the repo is empty — do this before pushing anything else.** On a repo with no commits, *the first branch pushed becomes the default branch*, so if you push a feature branch first you leave no `main` to open a PR against and GitHub Pages (which deploys on `main`/PRs) never fires — a self-inflicted lock-in that the user then has to unstick by hand. Check with `git ls-remote --heads origin main` **before your first push**. If `main` is absent:
-  - Prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it yourself with `git push -u origin HEAD:main`.
-  - **This first push to `main` is correct and expected — do not let a generic "never push to `main`, always branch and PR" rule block it.** That rule protects an existing branch's review history; an empty repo has no prior state and no review checkpoint to protect, so seeding `main` is the legitimate first write. Only *after* `main` exists do you switch to the branch-and-PR flow below.
-  - **Recovery if you already pushed a feature branch that became the default:** don't stay stuck. Create `main` from it and hand the default back, e.g. `git push origin HEAD:main` then `gh repo edit <owner>/<name> --default-branch main` (or, equivalently, rename the mistaken default branch to `main` via `gh api -X POST repos/<owner>/<name>/branches/<branch>/rename -f new_name=main`). Then re-create your feature branch off `main` for the PR.
-- First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- **Require `main` before the first feature-branch push.** Check with `git ls-remote --heads origin main` **before pushing anything**. If `main` is absent, **do not push a feature branch**: on an empty repository the first pushed branch becomes the default, leaving no `main` to target with a PR and preventing the expected GitHub Pages workflow from running.
+  - When creating the repository, initialize it with `main` (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`).
+  - For an existing empty repository, request explicit approval to seed it with `git push -u origin HEAD:main`. If higher-priority policy forbids that write even with approval, hand the bootstrap to an authorized operator and stop; never fall back to pushing the feature branch.
+  - **If a feature branch was already pushed first:** changing or renaming the default branch may require repository-admin authority. Do not claim the workspace is self-recoverable. Give an authorized operator the exact repair command (`gh repo edit <owner>/<name> --default-branch main`, after creating `main`, or the equivalent branch-rename API call), and resume the PR/deploy flow only after they confirm `main` is the default.
+- First save: use `make push-feature` rather than a raw `git push`; the target refuses to push when `origin/main` is absent. Then run `gh pr create --fill`, `make deployed-url`, and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
