@@ -288,14 +288,48 @@ Verdict discipline (each learned from a real run):
   Every signal above is computed from INSIDE your catchments; the critic is the only one that can
   point at a library you never visited. Its output = candidate gaps to check, not verdict overrides.
 - **A "gaps / open problems / future-work" ANSWER must go back to the PAPERS, not only the vault
-  (measured, pre-registered pair — ONE INSTANCE of a general, not-yet-fully-rubricized principle:
-  match the EVIDENCE TIER to the claim type; in particular, absence/completeness-shaped claims
-  cannot be answered from inside derived layers, because a derived layer only contains what was
-  already sampled. The general per-claim tier rubric is under design — this line prescribes only
-  the measured case):** an un-nudged session recomputed gaps purely from vault-held
+  (measured, pre-registered pair — one instance of the general principle now in the EVIDENCE-TIER
+  RUBRIC v0 section below: match the EVIDENCE TIER to the claim type; absence/completeness-shaped
+  claims cannot be answered from inside derived layers, because a derived layer only contains
+  what was already sampled):** an un-nudged session recomputed gaps purely from vault-held
   signal (disagreement axes, coverage verdicts, the question log) — a filter bubble (P7): the
   gaps a corpus sees from inside are the ones it already sampled, and the field's OWN stated open
   problems are invisible to that signal. The fix is a second lens — fulltext-extract the
   future-work / limitations / open-challenge sections of the load-bearing papers (verbatim spans,
   themed) and synthesize THAT alongside the internal coverage gaps. The nudge was decisive across
   the pair; make it the default for this answer shape.
+
+## EVIDENCE-TIER RUBRIC v0 (guidance, not gates — each row carries its evidence label)
+
+Before asserting a sentence in a deliverable, ask the LITMUS: **"what observation would make
+this sentence false, and which layer holds it?"** Then consult (at least) that layer. Tiers:
+T0 in-context · T1 derived/synthesized (reports, axes, verdicts) · T2 extracted rows ·
+T3 fulltext · T4 outside-corpus. Labels: **[measured]** = validated by designed tier-pair
+experiments; **[directional]** = one thread / small n; **[guidance]** = principled, unmeasured.
+
+- **Zeroth row — proportionality [guidance]:** these rules bind DELIVERABLE claims. Never
+  escalate conversational turns or trivial lookups; flow and budget are first-class.
+- **Absence / completeness / gaps → T4 (outside the derived layers) [measured]:** the
+  pre-registered pair above; derived layers only contain what was sampled.
+- **Per-paper content claims (what a paper actually reports) → T3 fulltext [measured, 3
+  threads]:** abstract-tier answers materially changed at fulltext 40% / 33% / 40% across
+  three different corpora. Abstracts name the topic; methods sections hold the truth.
+- **Source-stratum modifier [measured, initial — small strata]:** peer-reviewed items diverged
+  7% abstract-vs-fulltext; preprint-only items 31%. For preprint evidence, escalate one tier
+  sooner. (Record each item's stratum: peer-reviewed / preprint / non-indexed.)
+- **Aggregates / counts → T2 recompute from rows [measured]:** counts recompute exactly WHEN
+  the substrate is intact and the definition is documented; state the definition with the
+  number. The real risk is SUBSTRATE DRIFT (enrichment lost after the verdict was written —
+  observed live), not arithmetic: freshness-check the rows before trusting a stored count.
+- **Stored syntheses and disagreement axes → reusable [measured, sufficiency]:** blind
+  re-derivation produced 0 contradictions in 16 syntheses; 14/14 axes survived verbatim
+  re-pull. Trust the stored layer; spot-check by re-deriving a sample, don't redo.
+- **Relevance marks (membership) [directional, thread-dependent]:** fulltext re-judging
+  flipped 6.7% on one thread but 21% on another — do not treat mark-tier as universally
+  sufficient; re-judge at fulltext when the mark is load-bearing.
+- **Confidence-probe escalation [measured scoping]:** a cheap per-item confidence score is a
+  valid escalation trigger for membership / synthesis / disagreement judgments — and INVALID
+  for absence-like judgments, where judges are confident-but-wrong (absence-of-mention read as
+  absence). Absence keeps the unconditional T4 rule regardless of stated confidence.
+- **Freshness-sensitive claims → as-of check [directional]:** stored answers over changing
+  populations must state their as-of date and be re-derived on refresh.
