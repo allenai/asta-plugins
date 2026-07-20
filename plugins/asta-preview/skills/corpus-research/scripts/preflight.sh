@@ -59,7 +59,7 @@ if grep -Eq 'base_url *= *"http://localhost:[0-9]+"' "$CONF" 2>/dev/null; then
     || bad "asta.conf points at $URL but nothing is listening — start the local server or revert the override"
 else
   CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 https://asta-gateway.apps.allenai.org/ 2>/dev/null)
-  [ "$CODE" != "000" ] && ok "hosted gateway reachable (HTTP $CODE)" || bad "hosted gateway unreachable (network/VPN?)"
+  [ "$CODE" != "000" ] && ok "hosted gateway reachable (HTTP $CODE at bare root is expected — reachability is the test)" || bad "hosted gateway unreachable (network/VPN?)"
 fi
 
 echo

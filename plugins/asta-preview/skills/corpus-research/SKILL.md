@@ -276,7 +276,10 @@ collection view/anchor/lookup · `coverage_signals.py` the [T] estimators + `ver
 a verdict's default promises) + `strategy_decay` (strategy-relative saturation) ·
 `fulltext.py` fetch/extract (+`--local` pypdf) · `reviews.py` peer reviews by corpusId (OpenReview: ICLR/NeurIPS-2021+/TMLR/COLM/MIDL public; ACL+CV hosted-but-closed — coverage map in its docstring; other domains need other platforms) ·
 `report_gate.py` report number-tracing gate · `vault.py` init/rebuild/verify/`recall`
-(union-recall vs KNOWN)/`--amend`.
+(union-recall vs KNOWN)/`--amend` · `preflight.sh` portable environment check (tooling, install,
+thread layout, live S2-key validation, auth, hosted-vs-local endpoint autodetect) — run it from
+a thread dir before launching a session; machine-specific invariants belong in a caller wrapper,
+not in it.
 
 ## Known limits (say so, don't hide)
 Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching
