@@ -9,9 +9,15 @@ bibliography: references.bib
 website:
   title: "{{TITLE}}"
   sidebar:
+    tools:
+      - icon: github
+        href: "{{REPO_URL}}"
+        text: "GitHub repo"
+        target: _blank
     contents: auto
 
 format:
   html:
     theme: cosmo
     toc: true
+    toc-location: left
