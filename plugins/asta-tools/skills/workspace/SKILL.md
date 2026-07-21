@@ -44,7 +44,8 @@ Before writing any file in the steps below, check whether the target path alread
 
 ### Quarto build tool
 
-1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}`.
+1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}` and `{{REPO_URL}}`
+   (use the canonical GitHub URL, e.g. `https://github.com/{owner}/{repo}`).
 2. Create `index.qmd` with `title:` frontmatter.
 3. Create empty `references.bib`.
 4. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
