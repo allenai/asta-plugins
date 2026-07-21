@@ -44,7 +44,7 @@ Before writing any file in the steps below, check whether the target path alread
 
 ### Quarto build tool
 
-1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}`.
+1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}` and `{{REPO_URL}}`. `{{REPO_URL}}` is the source repo's web URL (e.g. `https://github.com/allenai/<repo>`), used for the sidebar GitHub icon that opens the repo in a new tab. Get it from `gh repo view --json url -q .url` or `git remote get-url origin` (normalize any SSH/`git@` form to `https://github.com/...`). If the repo has no remote yet, delete the `sidebar.tools:` block rather than leave the placeholder unfilled, and re-add it once a remote exists.
 2. Create `index.qmd` with `title:` frontmatter.
 3. Create empty `references.bib`.
 4. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
