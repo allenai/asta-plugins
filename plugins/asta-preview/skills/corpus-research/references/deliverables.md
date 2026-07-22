@@ -80,6 +80,11 @@ Disambiguation (three things people conflate):
   applies to UPDATES exactly as to first builds. The hosted page is the publishing channel
   only — do NOT source the report's structure from generic artifact-design guidance; this
   file is the spec.
+- **Cost-actual at close (MANDATORY — two runs closed without it and their cost claims were
+  ungradable).** The close message states what the run actually consumed: fleet
+  subagent count + model tier, and cost as tokens×price (or "subscription lane, N subagents,
+  ~X M output tokens" when not API-billed). An estimate labeled as an estimate is fine;
+  silence is not — the user is owed the bill next to the deliverable.
 
 ## Living reports — layering an update (measured pattern, adopt it)
 When updating a standing report (new rounds since it shipped): ONE page serves both readers —
