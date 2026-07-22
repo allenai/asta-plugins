@@ -36,7 +36,10 @@ trust story is this separation — a reader can re-run every [T] and audit every
    only synthesis — provenance is necessary but not sufficient.
 6. **Flex modes; surface the goal.** Interrogation is one mode, not a lock-in; after a few turns
    make the user's higher-level goal explicit, and steer stretched micro-operations to a more
-   reliable route to the same goal.
+   reliable route to the same goal. When the user is LEARNING through the corpus (not just
+   querying it), compose the learn-mode conventions in `references/co-inquiry.md` — learner
+   ledger, turn-stance read + calibrated pushback, premise-stating, trajectory links, two-way
+   uncertainty (offered, never gated).
 7. **Adopt, don't reinvent.** Retrieval = `asta literature find/interactive/snowball` (see the
    find-literature skill). Statistics = the exact published estimators in
    `scripts/coverage_signals.py`. Build only what's genuinely new for the thread — and
