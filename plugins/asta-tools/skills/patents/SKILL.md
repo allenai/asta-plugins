@@ -1,13 +1,13 @@
 ---
-name: patent
+name: patents
 description: Look up, BM25-search, and trace citations for USPTO patents (grants and applications) via the S2 public API. Use to pull patent context into a session — find patents on a topic, fetch a patent's full detail by UCID, or list patents that cite a given paper.
-allowed-tools: Bash(asta patent *)
+allowed-tools: Bash(asta patents *)
 ---
 
 # Patent Lookup
 
 Fast, targeted lookups over the USPTO patent corpus (grants and applications)
-using the `asta patent` commands. Patents are served by the same S2 public API
+using the `asta patents` commands. Patents are served by the same S2 public API
 as papers, so the auth and configuration are shared with the `semantic-scholar`
 skill.
 
@@ -25,14 +25,14 @@ queries as keywords, not natural-language questions.
 
 ### Search patents (BM25)
 
-**asta patent search** — lexical search over title, abstract, claims, specification.
+**asta patents search** — lexical search over title, abstract, claims, specification.
 
 ```bash
-asta patent search "graphene battery electrode"
+asta patents search "graphene battery electrode"
 
-asta patent search "mRNA lipid nanoparticle" --limit 20
+asta patents search "mRNA lipid nanoparticle" --limit 20
 
-asta patent search "solid state battery" --fields ucid,title,assignees --format text
+asta patents search "solid state battery" --fields ucid,title,assignees --format text
 ```
 
 Options:
@@ -43,18 +43,18 @@ Options:
 - `--format`: `json` (default) or `text`
 
 Note: `claims` and `specification` are searchable but **not** returned in search
-hits — fetch them per-patent with `asta patent get`.
+hits — fetch them per-patent with `asta patents get`.
 
 ### Get patent detail
 
-**asta patent get** — full metadata for one patent by its UCID.
+**asta patents get** — full metadata for one patent by its UCID.
 
 ```bash
-asta patent get US-10123456-B2
+asta patents get US-10123456-B2
 
-asta patent get US-10123456-B2 --fields ucid,title,claims,specification
+asta patents get US-10123456-B2 --fields ucid,title,claims,specification
 
-asta patent get US-10123456-B2 --format text
+asta patents get US-10123456-B2 --format text
 ```
 
 UCID (Unified Citation Identifier) form: `<office>-<docNumber>-<kind>`, e.g.
@@ -67,12 +67,12 @@ specification, citedPaperCorpusIds`.
 
 ### Forward citations (paper → patents)
 
-**asta patent forward-citations** — patents that cite a given paper.
+**asta patents forward-citations** — patents that cite a given paper.
 
 ```bash
-asta patent forward-citations 215416146
+asta patents forward-citations 215416146
 
-asta patent forward-citations 215416146 --limit 20 --format text
+asta patents forward-citations 215416146 --limit 20 --format text
 ```
 
 The argument is the S2 `corpusId` of the paper (an integer). Pair this with the

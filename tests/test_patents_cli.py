@@ -19,7 +19,7 @@ class TestPatentBasics:
     """Test basic patent CLI wiring."""
 
     def test_patent_help(self, runner):
-        result = runner.invoke(cli, ["patent", "--help"])
+        result = runner.invoke(cli, ["patents", "--help"])
         assert result.exit_code == 0
         assert "Patent" in result.output
         assert "search" in result.output
@@ -28,15 +28,15 @@ class TestPatentBasics:
 
 
 class TestPatentSearch:
-    """Test 'asta patent search'."""
+    """Test 'asta patents search'."""
 
     def test_search_help(self, runner):
-        result = runner.invoke(cli, ["patent", "search", "--help"])
+        result = runner.invoke(cli, ["patents", "search", "--help"])
         assert result.exit_code == 0
         assert "BM25" in result.output
 
     def test_search_missing_query(self, runner):
-        result = runner.invoke(cli, ["patent", "search"])
+        result = runner.invoke(cli, ["patents", "search"])
         assert result.exit_code != 0
         assert "Missing argument" in result.output
 
@@ -50,7 +50,7 @@ class TestPatentSearch:
             instance = MagicMock()
             instance.search.return_value = envelope
             MockClient.return_value = instance
-            result = runner.invoke(cli, ["patent", "search", "widget"])
+            result = runner.invoke(cli, ["patents", "search", "widget"])
 
         assert result.exit_code == 0
         assert json.loads(result.output) == envelope
@@ -77,7 +77,7 @@ class TestPatentSearch:
             instance.search.return_value = envelope
             MockClient.return_value = instance
             result = runner.invoke(
-                cli, ["patent", "search", "widget", "--format", "text"]
+                cli, ["patents", "search", "widget", "--format", "text"]
             )
 
         assert result.exit_code == 0
@@ -92,7 +92,7 @@ class TestPatentSearch:
             MockClient.return_value = instance
             result = runner.invoke(
                 cli,
-                ["patent", "search", "widget", "--limit", "25", "--offset", "5"],
+                ["patents", "search", "widget", "--limit", "25", "--offset", "5"],
             )
 
         assert result.exit_code == 0
@@ -102,15 +102,15 @@ class TestPatentSearch:
 
 
 class TestPatentGet:
-    """Test 'asta patent get'."""
+    """Test 'asta patents get'."""
 
     def test_get_help(self, runner):
-        result = runner.invoke(cli, ["patent", "get", "--help"])
+        result = runner.invoke(cli, ["patents", "get", "--help"])
         assert result.exit_code == 0
         assert "UCID" in result.output
 
     def test_get_missing_ucid(self, runner):
-        result = runner.invoke(cli, ["patent", "get"])
+        result = runner.invoke(cli, ["patents", "get"])
         assert result.exit_code != 0
         assert "Missing argument" in result.output
 
@@ -120,7 +120,7 @@ class TestPatentGet:
             instance = MagicMock()
             instance.get_patent.return_value = patent
             MockClient.return_value = instance
-            result = runner.invoke(cli, ["patent", "get", "US-10123456-B2"])
+            result = runner.invoke(cli, ["patents", "get", "US-10123456-B2"])
 
         assert result.exit_code == 0
         assert json.loads(result.output) == patent
@@ -140,7 +140,7 @@ class TestPatentGet:
             instance.get_patent.return_value = patent
             MockClient.return_value = instance
             result = runner.invoke(
-                cli, ["patent", "get", "US-10123456-B2", "--format", "text"]
+                cli, ["patents", "get", "US-10123456-B2", "--format", "text"]
             )
 
         assert result.exit_code == 0
@@ -152,15 +152,15 @@ class TestPatentGet:
 
 
 class TestPatentForwardCitations:
-    """Test 'asta patent forward-citations'."""
+    """Test 'asta patents forward-citations'."""
 
     def test_help(self, runner):
-        result = runner.invoke(cli, ["patent", "forward-citations", "--help"])
+        result = runner.invoke(cli, ["patents", "forward-citations", "--help"])
         assert result.exit_code == 0
         assert "cite a given paper" in result.output
 
     def test_requires_int_corpus_id(self, runner):
-        result = runner.invoke(cli, ["patent", "forward-citations", "not-a-number"])
+        result = runner.invoke(cli, ["patents", "forward-citations", "not-a-number"])
         assert result.exit_code != 0
 
     def test_json(self, runner):
@@ -173,7 +173,7 @@ class TestPatentForwardCitations:
             instance = MagicMock()
             instance.forward_citations.return_value = envelope
             MockClient.return_value = instance
-            result = runner.invoke(cli, ["patent", "forward-citations", "215416146"])
+            result = runner.invoke(cli, ["patents", "forward-citations", "215416146"])
 
         assert result.exit_code == 0
         assert json.loads(result.output) == envelope

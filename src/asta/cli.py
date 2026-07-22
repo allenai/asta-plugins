@@ -46,7 +46,7 @@ def papers():
 
 
 @cli.group()
-def patent():
+def patents():
     """Patent (USPTO) lookup, BM25 search, and forward citations"""
     pass
 
@@ -81,9 +81,9 @@ papers.add_command(citations)
 papers.add_command(author)
 
 # Register patent subcommands
-patent.add_command(patent_get, name="get")
-patent.add_command(patent_search, name="search")
-patent.add_command(forward_citations)
+patents.add_command(patent_get, name="get")
+patents.add_command(patent_search, name="search")
+patents.add_command(forward_citations)
 
 
 if __name__ == "__main__":

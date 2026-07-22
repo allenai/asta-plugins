@@ -42,9 +42,9 @@ def search(query: str, fields: str, limit: int, offset: int, output_format: str)
 
     Examples:
 
-        asta patent search "graphene battery electrode"
+        asta patents search "graphene battery electrode"
 
-        asta patent search "mRNA vaccine" --limit 20 --fields ucid,title,assignees
+        asta patents search "mRNA vaccine" --limit 20 --fields ucid,title,assignees
     """
     try:
         client = PatentClient()

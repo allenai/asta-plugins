@@ -1,9 +1,10 @@
 """S2 public-API patent client.
 
 Patents are served by the same s2-public-api service as papers, under the
-``/graph/v1/patent`` path prefix (see allenai/s2-public-api). This client
-therefore reuses the ``semantic_scholar`` base URL and auth token rather than
-introducing a separate endpoint config.
+``/graph/v1/patent`` path prefix (see allenai/s2-public-api). By default this
+client reuses the ``semantic_scholar`` base URL and auth token, but the
+``apis.patent.base_url`` config (overridable via ``ASTA_PATENT_URL``) lets you
+point it at a local s2-public-api, e.g. ``http://localhost:8089``.
 
 Endpoints (firs2#150 B4a/B4b):
   - GET /graph/v1/patent/search
@@ -32,17 +33,20 @@ class PatentClient:
         base_url: str | None = None,
         access_token: str | None = None,
     ):
-        # Patents live on the same service as papers (semantic_scholar base URL).
+        # Patents default to the papers service (semantic_scholar base URL) but
+        # can be pointed elsewhere via the `patent` config / ASTA_PATENT_URL.
         if base_url is None:
-            try:
-                config = get_api_config("semantic_scholar")
-                base_url = config.get("base_url")
-            except (KeyError, FileNotFoundError):
-                base_url = None
+            for api_name in ("patent", "semantic_scholar"):
+                try:
+                    base_url = get_api_config(api_name).get("base_url")
+                except (KeyError, FileNotFoundError):
+                    base_url = None
+                if base_url:
+                    break
 
         if not base_url:
             raise ValueError(
-                f"No value for apis.semantic_scholar.base_url in {get_config_path()}"
+                f"No value for apis.patent.base_url in {get_config_path()}"
             )
 
         # AuthenticationError will propagate with a helpful message.

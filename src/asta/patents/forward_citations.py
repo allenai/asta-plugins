@@ -45,9 +45,9 @@ def forward_citations(
 
     Examples:
 
-        asta patent forward-citations 215416146
+        asta patents forward-citations 215416146
 
-        asta patent forward-citations 215416146 --limit 20
+        asta patents forward-citations 215416146 --limit 20
     """
     try:
         client = PatentClient()

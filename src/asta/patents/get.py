@@ -36,9 +36,9 @@ def get(ucid: str, fields: str, output_format: str):
 
     Examples:
 
-        asta patent get US-10123456-B2
+        asta patents get US-10123456-B2
 
-        asta patent get US-10123456-B2 --fields ucid,title,claims,specification
+        asta patents get US-10123456-B2 --fields ucid,title,claims,specification
     """
     try:
         client = PatentClient()
