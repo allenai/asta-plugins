@@ -23,7 +23,7 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 For a headless agent (the user only sees results via deployed URL):
 
-- **Bootstrap `main` if the repo is empty.** On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
+- **Empty repo — resolve before the feature push below.** Check `git ls-remote --heads origin main`. If `main` exists, continue normally. If it's absent, `main` must be created first (repo created with a README, or — if permitted — `git push -u origin HEAD:main`). If you can't create `main`, **stop: do not push the feature branch** — the first branch pushed becomes the default, and repairing that needs repo-admin. Instead, report the blocker and hand off to an authorized operator to create `main`, then resume.
 - First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
