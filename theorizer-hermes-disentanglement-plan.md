@@ -1,18 +1,32 @@
 # Plan: Disentangle Theorizer's business logic from its infrastructure
 
 **Audience:** Claude Code (implement in phases)
-**Companion to:** `theorizer-hermes-port-plan.md` (the main port plan) and its
-`theorizer-hermes-port-phase0-findings.md`. Read those first.
+**Companion to:** `theorizer-hermes-port-plan.md` (the main port plan), its
+`theorizer-hermes-port-phase0-findings.md`, and `theorizer-bug-fixes-plan.md` (point fixes split
+out of this plan's D1/D2; lands first). Read those first.
 **Code pin:** all `file:line` citations are against `../asta-theorizer-internal` at
 commit **`b940c4a`** (`b940c4a306e5fc0b44c08eda4377e419901f22be`, `main`,
 "Merge branch 'simplified' into main", 2026-07-17). Line numbers drift on later commits
 — re-anchor against this SHA (`git show b940c4a:src/Theorizer1.py`) if they don't match.
 
-**Status:** Grounded. Every claim below is cited to a file:line in
-`../asta-theorizer-internal` at the commit above, from a full read of the engine
-(`Theorizer1.py`), the science layer (`TheorizerProcessing.py`,
-`SchemaExtractionQueue.py`, `EvaluationQualifiedNovelty.py`), the A2A adapter
-(`src/asta/*`), and the store/IO modules.
+**Status:** **ACTIVE** (scope decision revised 2026-07-27). Per-step Hermes driving — reorder,
+single-step invoke, intervene between any two steps, per-step checkpoint/resume — is a **confirmed
+requirement**, so D1–D6 are planned work, not a contingency. Every claim below is cited to a
+file:line in `../asta-theorizer-internal` at the commit above, from a full read of the engine
+(`Theorizer1.py`), the science layer (`TheorizerProcessing.py`, `SchemaExtractionQueue.py`,
+`EvaluationQualifiedNovelty.py`), the A2A adapter (`src/asta/*`), and the store/IO modules.
+
+**Scope decision (2026-07-27, revised).** Two carve-outs keep this plan minimal now that it is
+active:
+
+- **The point bug/config fixes formerly embedded in D1/D2 are split out** into
+  `theorizer-bug-fixes-plan.md` and land first, independently of any refactor. D1 and D2 below no
+  longer contain them and assume them done.
+- **Sequencing stays behind the port.** Port-plan Phases 1–2 (packaging + core extraction + A2A
+  re-homing) land first; D-phases are never interleaved with port phases. The capability boundary
+  keeps working throughout, and the Hermes plugin (port Phase 3) ships on the capability tools
+  first, upgrading its piecemeal choreography to `run_step` when D6 lands — harness integration is
+  not blocked behind the deepest refactor. See §6 for the full sequence.
 
 ---
 
@@ -260,7 +274,9 @@ Turn on `THEORIZER_FAKE_LLM` and write characterization tests for the four scien
 entry points and the six executors at the capability level. There are none today
 (`theorizer-hermes-port-plan.md` §7 "thin test floor"); the fake-LLM hook makes them
 free to write. This is the safety net the port plan says is missing, and it is a
-prerequisite for touching anything below `@asta.task`.
+prerequisite for touching anything below `@asta.task`. Land D0 **before port-plan
+Phase 1** — it is the capability-level test floor that phase needs, and it also backs
+the regression tests in `theorizer-bug-fixes-plan.md`.
 
 **Phase D1 — Type the science contract.** Give the four `TheorizerProcessing`
 functions typed inputs/outputs and *one* error convention. Today they disagree:
@@ -269,19 +285,17 @@ functions typed inputs/outputs and *one* error convention. Today they disagree:
 returns `None` (`:707-711`); `reflection4` also uses `"theory_response"`, has no
 try/except (raises), and silently drops `mission_statement` from its envelope
 (`:1624` vs `:698`). Normalize to dataclasses/`TypedDict` + a uniform result envelope.
-Fix the two latent bugs surfaced in review while here: `convert_*` ignores its
-`max_tokens`/`temperature` on the first call (`:178`), and both reflection functions
-reference an unbound `theory_candidate` in their empty-result fallbacks (`:626-644`,
-`:1558-1576`). Seed the subsampler's RNG (`:2077`). Replace `from X import *`
-(`:10-11`) with explicit imports.
+The latent bugs formerly fixed in this phase (ignored `max_tokens`/`temperature`,
+unbound `theory_candidate`, unseeded subsampler RNG, dropped `mission_statement`) are
+handled first by `theorizer-bug-fixes-plan.md` — D1 assumes them fixed and must not
+regress their tests. Replace `from X import *` (`:10-11`) with explicit imports.
 
 **Phase D2 — Extract the inline domain rules (§2) into a pure `rules.py`.** Cutoff
 filter, dedup/id-precedence, follow-on ranking, blank/full-text heuristics, license
 gate, and the cost table — each becomes a small pure function with unit tests. This is
 where the duplication gets collapsed (cutoff and full-text-threshold each live in two
-places) and where the hardcoded prod PaperFinder URL + `caller_actor_id="test"` /
-`cost_trace_id="test"` get fixed (`SemanticScholar.py:456-461`) — the port plan already
-calls this out as worth fixing regardless (§3.7).
+places). The PaperFinder URL / trace-id configurability formerly done here is delivered
+earlier by `theorizer-bug-fixes-plan.md`; D2 builds on it, it does not redo it.
 
 **Phase D3 — Make the LLM seam injectable.** Wrap `getLLMResponseJSON` behind the `LLM`
 port; thread cost through return values instead of the module-global `TOTAL_LLM_COST`
@@ -317,9 +331,10 @@ the port plan's AC#5.
 pure and typed, add a public `run_step(state) -> StepResult` entry (the missing
 "one step and return" primitive, §1.3), keeping the internal monitor-thread engine only
 for the A2A perimeter. The Hermes plugin (port-plan Phase 3) then drives the sequence
-step-by-step. **Per-step checkpointing (port-plan Phase 4) falls out for free**: each
-pure step's typed return *is* a checkpoint. Autodiscovery (port-plan Phase 7) can invoke
-a single step (e.g. novelty-only) rather than a coarse capability.
+step-by-step. **Per-step checkpointing falls out for free** (the port plan cut it as
+out-of-scope; it would return here at no extra cost): each pure step's typed return *is*
+a checkpoint. Autodiscovery (port-plan Phase 5) can invoke a single step (e.g.
+novelty-only) rather than a coarse capability.
 
 ---
 
@@ -328,11 +343,12 @@ a single step (e.g. novelty-only) rather than a coarse capability.
 1. **Fake-LLM floor.** The four science functions and six capabilities run under
    `THEORIZER_FAKE_LLM=1` with no network and no live model (D0).
 2. **Typed contract, one envelope.** All science entry points share a result type and a
-   single error convention; the `mission_statement`-drop and `max_tokens`-ignored and
-   unbound-`theory_candidate` bugs are fixed and regression-tested (D1).
+   single error convention (D1). The latent bugs in these functions are fixed and
+   regression-tested by `theorizer-bug-fixes-plan.md`, which lands first; D1 keeps those
+   tests green.
 3. **Rules are pure and de-duplicated.** Cutoff filter and full-text threshold each have
-   exactly one implementation, unit-tested; the PaperFinder URL and trace ids are
-   configurable, not hardcoded to prod/`"test"` (D2).
+   exactly one implementation, unit-tested (D2). URL/trace-id configurability is
+   delivered by the bug-fix plan, not re-verified here.
 4. **Injectable LLM.** A pure step can be unit-tested with a constructor-injected fake
    LLM; no test writes `prompts/*.txt` or mutates a global (D3).
 5. **A step is a pure function.** `build_schema` / `form_theories` / `score_statement_novelty`
@@ -360,29 +376,37 @@ novelty's threads-and-live-store worker, and it is one function.
 
 **Risks specific to this deeper refactor** (beyond the port plan's own §7):
 
-- **It crosses the port plan's stated non-goal.** §3.1 says don't factor below
-  `@asta.task`, citing no coverage and two star-import lineages. D0 removes the coverage
-  objection (the fake-LLM harness). The lineage objection stands — so **scope
-  discipline is mandatory**: make `core/` transport- and infra-free; do **not** try to
-  make it legacy-free (the `Theorizer.py` lineage pulled in via star imports). That is a
-  separate, unbounded fight.
+- **It goes below the port plan's boundary.** The port's §3.1 non-goal ("don't factor
+  below `@asta.task`") is scoped to the port itself and cited no coverage plus two
+  star-import lineages. D0 removes the coverage objection (the fake-LLM harness). The
+  lineage objection stands — so **scope discipline is mandatory**: make `core/`
+  transport- and infra-free; do **not** try to make it legacy-free (the `Theorizer.py`
+  lineage pulled in via star imports). That is a separate, unbounded fight.
 - **`import *` masks provenance** (`TheorizerProcessing.py:10-11`, `Struct.py:13`,
   `SchemaExtractionQueue.py:16-19`). Explicit imports (D1) are a prerequisite, not
   optional polish — you cannot safely move a function whose dependencies are invisible.
 - **Novelty is the schedule risk.** Budget D5's novelty untangle as its own increment;
   it is the one step that is TANGLED in the science, not just the envelope.
 
-**Recommendation — when to do this, and when not to.** If the only goal is
-"autodiscovery calls Theorizer in-process," the six capabilities are sufficient and this
-work is overkill — do the main port plan and stop. Do **this** plan only if the freedom
-it buys is actually wanted: per-step human/agent intervention, reordering, single-step
-reuse, and free per-step checkpointing — i.e. Hermes *driving* the core loop rather than
-invoking it. The request ("port the core loop into the Hermes harness") is exactly that
-case, so the recommended sequence is: **port-plan Phase 1–2 first (the minimum in-process
-port), then interleave D0–D3 as a low-risk hardening pass behind the capabilities, then
-D4–D6 to expose the steps.** D0–D3 are worth doing even if D4–D6 never happen — they fix
-real bugs, add the missing test floor, and untrace-fix the prod PaperFinder spend, all
-without changing the tool boundary.
+**Recommendation — sequencing, now that per-step driving is confirmed.** The requirement this plan
+exists to serve — Hermes driving the core loop step-by-step — is confirmed, so D1–D6 execute. The
+sequence that keeps risk low and never blocks the port:
+
+1. **D0 + `theorizer-bug-fixes-plan.md`** (D0 first — its fake-LLM tests back the bug-fix
+   regressions). Neither changes a contract or boundary.
+2. **Port-plan Phases 1–2** (packaging, core extraction, A2A re-homing). The capability boundary is
+   the stable floor every D-phase sits behind.
+3. **Port-plan Phase 3** ships the Hermes plugin on the **capability tools** as soon as Phase 2
+   lands — harness integration does not wait for the refactor. Port Phases 4–5 proceed on the same
+   boundary, unaffected.
+4. **D1–D3** as a hardening pass behind the capabilities (typing, rules, LLM injection).
+5. **D4–D6** to expose the steps — novelty last (the schedule risk). When D6 lands, the plugin
+   upgrades its piecemeal choreography from capability calls to `run_step`, and autodiscovery's
+   callback may target a single step.
+
+Never interleave a D-phase with a port phase; every phase lands with the e2e matrix green (AC#6).
+The port plan's "do not refactor the step executors" non-goal is scoped to the port itself — this
+plan is the sanctioned follow-on, entered only after the port's capability adapters are stable.
 
 ---
 
