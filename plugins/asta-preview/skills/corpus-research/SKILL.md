@@ -43,20 +43,18 @@ trust story is this separation — a reader can re-run every [T] and audit every
    ledger, turn-stance read + calibrated pushback, premise-stating, trajectory links, two-way
    uncertainty (offered, never gated).
 7. **Adopt, don't reinvent.** Retrieval = `asta literature find/interactive/snowball` (see the
-   find-literature skill). Statistics = the exact published estimators in
-   `scripts/coverage_signals.py`. Build only what's genuinely new for the thread — and
-   **scan the scripts index (bottom of this file) BEFORE writing a script** (measured: two
-   parallel rounds each hand-rolled sharding, sweep-driving, and recall equivalents that
-   already existed). Context-fitted one-offs are legitimate; rebuilding a stock capability
-   is not.
+   find-literature skill). Statistics = the exact published estimators in `scripts/coverage_signals.py`.
+   Build only what's genuinely new for the thread — and **scan the scripts index (bottom of this
+   file) BEFORE writing a script** (measured: two parallel rounds each hand-rolled sharding,
+   sweep-driving, and recall equivalents that already existed). Context-fitted one-offs are
+   legitimate; rebuilding a stock capability is not.
 
 ## Step 0 — derive the THREAD CONFIG (you must do this; nothing is pre-filled)
 **Phrasing sets defaults, never silent finals (measured: four paraphrases of one need all
 reproduced the charter skeleton, but casual phrasing silently narrowed scope and register
-shifted boundary calls):** the scope-charter beat MUST put the drift-prone boundaries to the
-user explicitly — the rigor/probing tier, adjacent-vs-core for method-genealogy work, and the
-breadth of the target concept (their thread's analogs) — even when the phrasing seems to have
-already decided them.
+shifted boundary calls):** the scope-charter beat MUST put the drift-prone boundaries to the user
+explicitly — the rigor/probing tier, adjacent-vs-core for method-genealogy work, and the breadth
+of the target concept (their thread's analogs) — even when the phrasing seems to have already decided them.
 From the user's question alone, write `<run>/thread.json`:
 ```json
 {"name": "<slug>", "question": "<verbatim>",
@@ -102,9 +100,8 @@ sizing probe — a single `find` call to gauge the space), STOP and present, in 
   quota", not a false-precise number.
   **STATE THE FLEET TIER the estimate assumes** (measured: an estimate quoted at mixed-tier
   prices, then run with an all-strong-model fleet, landed at ~3× — see workers.md Fleet MODEL
-  TIER; the default is a sonnet-class fleet). And say the fragmentation expectation out loud:
-  a build split across quota windows re-primes expired caches at full price (~1.3–1.5× extra) —
-  prefer one window.
+  TIER; the default is a sonnet-class fleet). And say the fragmentation expectation out loud: a
+  build split across quota windows re-primes expired caches at full price (~1.3–1.5× extra) — prefer one window.
 - **Lighter alternatives**: a plain find-literature search (~minutes), a targeted
   semantic-scholar lookup (a specific paper/author/citation, seconds), or a snowball-only
   quick pass — offer them honestly; some questions don't need a corpus.
@@ -114,8 +111,8 @@ the costed options at that beat renew the consent — never silently 2× the app
 
 ## The pipeline (each phase has a reference doc; RE-READ it when you get there)
 Re-read the phase's reference AT the phase even if you read it at session start — long runs span
-compactions, and measured: structurally-enforced requirements survive them but prose-only
-guidance decays (a run built its report 20h after its only read of the report reference and dropped exactly
+compactions, and measured: structurally-enforced requirements survive them but prose-only guidance
+decays (a run built its report 20h after its only read of the report reference and dropped exactly
 the prose-specified requirements; a sibling run re-read at the phase and dropped none).
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
@@ -144,6 +141,15 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    Tag every candidate with its modality (provenance). Mechanics live in `scripts/acquire.py`
    (resolve_titles — scored matching, never take the first hit; fetch_edges; pool_references;
    candidates_from_asta; merge_candidates). Cache everything via `scripts/s2.py`.
+   **QUERY SPECIFICATION (user ruling): paper-finder is a search AGENT, not a keyword box.**
+   Every find query is a rich specification — what the paper must DO (methods/targets), what does
+   NOT count (the charter's exclusions), era/model class — as ONE clear sentence whose criteria
+   are unambiguous, never a maximalist multi-clause paragraph. Keyword strings under-use the
+   agent and WASTE diligent mode (heavy compute per query; underspecified diligent = expensive
+   noise). Bad: "internal representations for syntactic reanalysis" (bare keywords — a real
+   round's diligent query). Also bad: a 60-word spec stuffing in every constraint. Good: "papers
+   analyzing the internal mechanisms (probing, patching, circuits) by which transformer LMs
+   recover from garden-path sentences — not behavioral surprisal comparisons".
    **Staged sweep policy (measured: fast is a truncated diligent, and blind fast cost a run
    most of its head recall):** (1) sweep ALL angles in `--mode fast`, each with
    `--include-rejected sample` (drop stats land in a `.rejected.json` SIDECAR — scripts read it,
@@ -181,13 +187,20 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    known-canon anchor** via `vault.py anchor` (playbook §4; absorbed from knowledge.py) — a
    verdict without it has a hole in it. Substrate queries are ad-hoc joins over the standard
    files (measured: that's what works); the anchor covers the membership-semantics cases.
-6. **Extract & answer** — extraction records follow the EVIDENCE CONTRACT: **re-read
-   `references/evidence.md` at this phase** (reasoning-first warrants because→unless→fit→
-   confidence, kind-typed fields never bare booleans, verbatim basis span, absence polarity;
-   pointers script-computed at rebuild, never LLM-emitted). Per-paper extraction (map) over the
+6. **Extract & answer** — extraction records follow the EVIDENCE CONTRACT — **MUST: read
+   `references/evidence.md` BEFORE designing any extraction schema or worker packet** (a warm
+   round never opened it; its 32 fulltext adjudication rows shipped with zero warrant fields).
+   The row, inline: `{corpusId · round · lens · claim_type · polarity: present|absent (absence is
+   a CLAIM, never a silent null) · claim: kind-typed fields, NO bare booleans · basis: {span
+   VERBATIM, source_tier} · scope_flag · because · unless · fit · judged_by · confidence}` —
+   warrants reasoning-first (because→unless→fit→confidence); pointers script-computed at
+   rebuild, never LLM-emitted. Per-paper extraction (map) over the
    evidence depth (`references/fulltext-at-scale.md` for fulltext threads), then aggregate
    (reduce) per sub-question with gates; claim queries run through the evidence index (vault.db
-   — one id-normalized surface; measured before it: 40+ hand-rolled re-joins per run). Extraction schemas include a **mentioned-entities field** WHEN the thread runs entity/mention-shadow signals — otherwise drop it (measured: consumed-by-nothing in a thread without those signals; a field earns its place by a consumer, per-thread) (the
+   — one id-normalized surface; measured before it: 40+ hand-rolled re-joins per run). For any
+   "where does X come from / do we have X" question, **`vault.py where` is the FIRST move —
+   before any grep** (a warm round left it at 0 uses and re-built that plumbing by hand:
+   custom verify scripts, raw jsonl walks). Extraction schemas include a **mentioned-entities field** WHEN the thread runs entity/mention-shadow signals — otherwise drop it (measured: consumed-by-nothing in a thread without those signals; a field earns its place by a consumer, per-thread) (the
    thread's pertinent entity types: models/methods/datasets the paper COMPARES AGAINST, not just
    its own subject) — nearly free at extraction time, and its inversion is a validated coverage
    signal (playbook §5: mention-shadow). TWO HARD OUTPUT REQUIREMENTS (not optional style):
@@ -201,7 +214,7 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    REPORT — shape and content requirements in `references/deliverables.md` Part B (index page,
    evidence in-body, distribution charts, self-contained rendering, the package). Do NOT source deliverable structure from generic artifact/design skills.
    **REPORT GATE [T] (HARD):** after building the report, run `python scripts/report_gate.py
-   <report_dir> --run <run> --questions <n>` and fix-and-rerun until PASS — number tracing,
+   <report_dir> --run <run> --questions <n>` and fix-and-rerun until PASS — number tracing, pooled-claim warrants (synthesis.json sidecar), structured cost_actual,
    boundary framing, method notes, links, self-containment. Produce-X-gate-X applied to the
    report; prose requirements decay, the gate does not.
 
@@ -245,11 +258,10 @@ where each beat collects a DECISION or a steer (never a mere status update):
       s2-cache/  fulltext-cache/  extract/  MANIFEST.md  README.md  <answers>.md
 ```
 **README.md = the run DASHBOARD (required; rewrite it at every beat/phase change, keep ≤25 lines):**
-phase · state counts (candidates/judged/rings + gate statuses) · NEXT action · BLOCKED-ON ·
-a MAP of where everything lives (deliverables vs state vs canonical inputs vs scratch vs caches) ·
-the decisions so far (scope charter, tier, deferrals) as one-liners. Keep deliverables findable;
-keep working/batch files in dedicated subfolders, not the run root — a flat 20+-entry root is
-unnavigable for the next reader.
+phase · state counts (candidates/judged/rings + gate statuses) · NEXT action · BLOCKED-ON · a MAP
+of where everything lives (deliverables vs state vs canonical inputs vs scratch vs caches) · the
+decisions so far (scope charter, tier, deferrals) as one-liners. Keep deliverables findable; keep
+working/batch files in dedicated subfolders, not the run root — a flat 20+-entry root is unnavigable for the next reader.
 **WIRE IT INTO THE HARNESS (required — README.md alone has NO special status; nothing auto-reads
 it):** at Step 0, write a stub **`CLAUDE.md`** (and **`AGENTS.md`** for Codex) at the session's
 working directory:
@@ -267,8 +279,8 @@ would otherwise land blind. The stub is written once; the dashboard stays the li
 thread continues past its first round)
 When a corpus outlives its first round — a later question batch in the SAME session counts
 exactly as much as a new session; the boundary is rounds-of-work, not sessions — it becomes a
-vault: prior rounds' canonical records
-(append-only, verbatim) + a derived union view + fetch-once caches. Later rounds start from
+vault: prior rounds' canonical records (append-only, verbatim) + a derived union view +
+fetch-once caches. Later rounds start from
 `vault/VAULT-MANIFEST.md`, work vault-first with inherited≠verified trust marks, scale the
 stack to the question shape (an answer round ≠ a corpus build), and CLOSE with the round
 contract — new/re-judged rows, durable trust-upgrades, question-log appends, and
@@ -289,7 +301,7 @@ is the one query surface) · `fulltext.py` fetch/extract (+`--local` pypdf).
 **GATES (fire mechanically at output boundaries, never inside conveniences):**
 `validate.py` machine-checked invariants + merge-time fleet-output check (salts/judgments) +
 derived-artifact gate (join completeness · catch-all budget · MANIFEST provenance line) — run
-after every merge/rebuild · `report_gate.py` report number-tracing gate ·
+after every merge/rebuild · `report_gate.py` report gate (number tracing · pooled-claim warrants · cost_actual · links · boundary framing) ·
 `coverage_signals.py` the [T] estimators + `verdict-gate` (checks a verdict's default promises)
 + `strategy_decay` (strategy-relative saturation) · `preflight.sh` portable environment check
 (tooling, install, thread layout, live S2-key validation, auth, endpoint autodetect) — run from
@@ -308,7 +320,6 @@ ICLR/NeurIPS-2021+/TMLR/COLM/MIDL public; ACL+CV hosted-but-closed — coverage 
 docstring; other domains need other platforms).
 
 ## Known limits (say so, don't hide)
-Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching
-is heuristic — verify digests aren't empty before extracting. No corpus-local semantic search yet
-(keyword + structure + citation only). S2 access MUST be serialized through `scripts/s2.py` —
-parallel direct fetching gets rate-limited.
+Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching is
+heuristic — verify digests aren't empty before extracting. No corpus-local semantic search yet
+(keyword + structure + citation only). S2 access MUST be serialized through `scripts/s2.py` — parallel direct fetching gets rate-limited.

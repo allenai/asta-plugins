@@ -88,6 +88,11 @@ conditions; risk-tiering data insufficient to skip safely — revisit after N ru
 unilaterally DISPUTE rows; tier/membership changes stay panel work. Budget: ~$1-3/pooled claim
 at the cheap-capable tier (measured: $0.9 for a 60-row axis, verdict YES-conditions-added);
 report-scale ≈ $15-40, funded by the extraction rebalance, not additive.
+**The pass leaves a MECHANICAL record — `report/data/synthesis.json`:** one entry per shipped
+pooled claim `{claim, because, unless, basis_note}`; every family/axis stat surfaced in
+keystats/charts must have an entry. `report_gate.py` FAILS a report whose sidecar is missing or
+whose surfaced stats lack entries (measured: a run's keystats were gate-gamed while its pass
+lived only in prose) — this file is where the doctrine above becomes checkable.
 **Unsynthesized pools:** an answer over a pool that never had its pass SAYS SO in the method
 note and offers the pass (~$2) — never presents a raw count as a synthesized finding.
 
@@ -114,10 +119,13 @@ Disambiguation (three things people conflate):
   only — do NOT source the report's structure from generic artifact-design guidance; this
   file is the spec.
 - **Cost-actual at close (MANDATORY — two runs closed without it and their cost claims were
-  ungradable).** The close message states what the run actually consumed: fleet
-  subagent count + model tier, and cost as tokens×price (or "subscription lane, N subagents,
-  ~X M output tokens" when not API-billed). An estimate labeled as an estimate is fine;
-  silence is not — the user is owed the bill next to the deliverable.
+  ungradable; a third read this paragraph and still skipped the number — so it is now
+  GATE-CHECKED, not just doctrine).** TWO carriers, both required: (1) the close MESSAGE
+  states what the run consumed (fleet subagent count + model tier, cost as tokens×price; or
+  the subscription-lane form: turns + subagents + fetch counts + "compute tokens eval-side");
+  (2) the round-manifest carries a STRUCTURED `cost_actual` field in the same form —
+  report_gate.py check 5 FAILS the report without it. An estimate labeled as an estimate is
+  fine; prose-only is not.
 
 ## Living reports — layering an update (measured pattern, adopt it)
 When updating a standing report (new rounds since it shipped): ONE page serves both readers —

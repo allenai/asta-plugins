@@ -68,9 +68,11 @@ lookup (`vault.py where <text-fragment>` is the helper).
   hyphenation-linebreak repair) → verified; (3) fuzzy ≥0.90 token-overlap → SOFT flag;
   ellipsis-composite quotes are graded PER-SEGMENT; (4) below → rung=fail, row FLAGGED
   `unverified` and counted loudly in the rebuild summary. Only genuinely-absent spans fail —
-  not every double space (user ruling). The rebuild REPORTS fails (legacy history tolerates
-  ~17%); hard-failing NEW rows at round-close merge is a NEXT-BATCH gate (banked with the
-  report_gate extension — doctrine without that gate is not yet mechanical, say so honestly).
+  not every double space (user ruling). LEGACY rows: fails are REPORTED (history tolerates
+  ~17%). **NEWLY FOLDED rounds: fails are a MERGE-TIME HARD-FAIL** — `vault.py rebuild`
+  refuses the fold (vault restored, nothing folded) unless `--allow-unverified "<reason>"`
+  records an auditable waiver (receipt: an UNVERIFIED-119 warning once fired into silence;
+  the gate now gates).
   Empirical calibration (8,436 claim rows, 5 threads): 65.5% exact / 17.8% normalized / 2.2%
   fuzzy / 14.5% fail ≈ 83% historical verified; the fail class decomposes into ellipsis
   composites + MathML-flattened equations — and a rung=fail is itself diagnostic (a MathML
@@ -89,10 +91,18 @@ lookup (`vault.py where <text-fragment>` is the helper).
   over the affected region; (c) deeper read / contradiction → supersede-in-depth / disputed —
   both rows kept, always.
 - **Basis-DAG staleness propagation is DESIGN, not yet built:** synthesis rows (basis =
-  row-id sets) and recursive flag-climbing arrive with synthesis-row ingestion (next batch,
-  with the report_gate extension). What ships NOW: claim-row index + ladder + regression
-  gate. The provenance walk (report line → synthesis → evidence → span → cached text) is the
-  standing recipe; today the synthesis hop is the report's data files, not an indexed row.
+  row-id sets) and recursive flag-climbing arrive with synthesis-row ingestion (a future
+  batch). What ships NOW: claim-row index + ladder + the merge/regression gates. The
+  provenance walk (report line → synthesis → evidence → span → cached text) is the standing
+  recipe; today the synthesis hop is the report's data files — specifically
+  `report/data/synthesis.json` (the warrants sidecar report_gate.py enforces), not an
+  indexed row.
+
+**Round-manifest REQUIRED fields (gate-checked):** `as_of` + charter provenance (fold
+refuses without them) + **`cost_actual`** — structured: numeric tokens/$ or the
+subscription-lane form (turns + subagents + fetch counts + compute-tokens-eval-side);
+report_gate.py FAILS a round without it (receipt: a live round's cost had to be
+reconstructed eval-side).
 
 **Application rule (the confidence consumer):** at round close, NEW evidence rows apply at
 confidence 2; ≤1 enters as proposed/triaged (never silently canonical) — the same 0-2 scale
@@ -105,6 +115,10 @@ record" — it was; "vault doesn't carry the claim" — it did) because it searc
 one round, and a path that didn't exist.
 1. **The provenance walk is THE recipe** for "where does X come from": rendered claim →
    synthesis row → evidence rows → spans → cached source. With the index: one query + the DAG.
+   **`vault.py where <workspace> <text-fragment>` is the FIRST move for ANY "where does X come
+   from / do we have X" question — before any grep** (measured: a warm round with the index
+   live made 0 uses of it and hand-rebuilt the walk — custom verify scripts, raw jsonl walks —
+   the exact plumbing the index already holds).
 2. **Absence claims carry a how-searched note** (scope + patterns + fields-vs-rendered):
    "not found in <scope>" is legal; "does not exist" requires the full walk.
 3. **Answers name their FRAME** (view + version + denominator) — interrogation is where the

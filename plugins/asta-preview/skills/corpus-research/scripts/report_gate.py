@@ -12,6 +12,15 @@ Checks (claims = numbers >= --min, excluding years and id-length ints):
   3. CHECKLIST — as-of date · refresh trigger · per-question "How performed" notes (>= number
      of answered questions) · working links present · no external CDN/script refs · data files
      exist and are non-empty.
+  4. POOLED-CLAIM WARRANTS — report/data/synthesis.json sidecar required (receipt: keystats
+     gate-gaming — stats can be planted to satisfy tracing): one entry per pooled claim
+     {claim, because, unless, basis_note}; every family/axis stat surfaced in keystats/charts
+     (axis rows + family/axis-named keys) must be covered by an entry. Missing sidecar or
+     uncovered stat = FAIL. (Doctrine home: references/deliverables.md synthesis-pass section.)
+  5. COST-ACTUAL — the round-manifest (--run dir or the report dir's parent) or keystats must
+     carry a STRUCTURED cost_actual: numeric content (tokens/$) or the subscription-lane form
+     (turns + subagents + fetch counts + compute-tokens-eval-side). Absent or prose-only =
+     FAIL (receipt: cost-actual failed live — cost was reconstructed eval-side).
 
 Usage: python report_gate.py <report_dir> [--run <run_dir>] [--min 10] [--questions 4]
 Exit 0 = PASS, 1 = FAIL (with the itemized reasons).
@@ -47,6 +56,77 @@ def _data_universe(report_dir, run_dir):
         except Exception:
             continue
     return nums, len(paths)
+
+
+_POOLED_KEY = re.compile(r"axis|axes|famil|stance|disagree", re.I)
+_WARRANT_FIELDS = ("claim", "because", "unless", "basis_note")
+
+
+def _canon(s):
+    """Match key for stat-name coverage: lowercase, -/_// as spaces, whitespace collapsed."""
+    return re.sub(r"\s+", " ", re.sub(r"[-_/]", " ", s.lower())).strip()
+
+
+def _pooled_stats(report_dir):
+    """The family/axis stats a report SURFACES to the reader: axis names in chart rows, row
+    labels of family/axis-named chart groups, and family/axis-named keystats keys. Mechanical
+    — these are the pooled aggregates the warrants sidecar must cover."""
+    out = set()
+    parse_fails = []
+    for p in (f"{report_dir}/data/keystats.json", f"{report_dir}/data/charts.json"):
+        try:
+            d = json.load(open(p))
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            # never degrade silently: a corrupt data file would otherwise reduce this
+            # check to "sidecar exists" (the catch-all anti-pattern)
+            parse_fails.append(f"{os.path.basename(p)}: {e}")
+            continue
+        if not isinstance(d, dict):
+            continue
+        for k, v in d.items():
+            if isinstance(v, list):
+                for row in v:
+                    if not isinstance(row, dict):
+                        continue
+                    if isinstance(row.get("axis"), str):
+                        out.add(row["axis"])
+                    elif _POOLED_KEY.search(k) and isinstance(row.get("label"), str):
+                        out.add(row["label"])
+            elif _POOLED_KEY.search(k):
+                out.add(k)
+    return out, parse_fails
+
+
+def _cost_actual_ok(v):
+    """Structured cost_actual only: a bare number, or a dict with numeric leaves keyed
+    tokens/cost/usd/$ (numeric lane), or the subscription-lane form — numeric turns +
+    subagents/workers + fetch counts plus a compute-tokens key. Prose strings never pass."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return v > 0  # a bare 0 is a placeholder, not an accounting
+    if not isinstance(v, dict):
+        return False  # string/list = prose-only, not structured
+    leaves = {}
+
+    def walk(d, pre=""):
+        for k, x in d.items():
+            kk = f"{pre}{k}".lower()
+            if isinstance(x, bool):
+                continue
+            if isinstance(x, (int, float)):
+                leaves[kk] = x
+            elif isinstance(x, dict):
+                walk(x, kk + ".")
+    walk(v)
+    if any(re.search(r"token|cost|usd|dollar|\$", k) and val > 0
+           for k, val in leaves.items()):
+        return True  # numeric lane: tokens/$ with a real (>0) number
+    sub = (r"turn", r"subagent|worker|agent", r"fetch")
+    return (all(any(re.search(pat, k) for k in leaves) for pat in sub)
+            and any("token" in k for k in leaves))  # subscription lane, nested-symmetric
 
 
 def gate(report_dir, run_dir=None, min_val=10, questions=4):
@@ -107,6 +187,72 @@ def gate(report_dir, run_dir=None, min_val=10, questions=4):
     data_files = [p for p in glob.glob(f"{report_dir}/data/*") if os.path.getsize(p) > 2]
     if not data_files:
         fails.append("report/data/ empty — prose aggregates have no data home")
+
+    # 4. pooled-claim warrants — the synthesis.json sidecar (one entry per pooled claim);
+    # numbers can be planted into keystats to satisfy tracing (measured), so every surfaced
+    # family/axis stat must also carry a warranted claim {claim, because, unless, basis_note}
+    sp = f"{report_dir}/data/synthesis.json"
+    entries = None
+    if os.path.isfile(sp):
+        try:
+            loaded = json.load(open(sp))
+            entries = loaded if isinstance(loaded, list) and loaded else None
+        except Exception:
+            entries = None
+    surfaced, parse_fails = _pooled_stats(report_dir)
+    for pf in parse_fails:
+        fails.append(f"pooled-claim warrants: data file unparseable ({pf}) — cannot "
+                     f"enumerate surfaced stats; fix the file (check 3 only tests non-empty)")
+    if entries is None and not surfaced:
+        notes.append("pooled-claim warrants: no surfaced family/axis stats and no sidecar — "
+                     "vacuously OK (an empty synthesis.json [] is also accepted)")
+    elif entries is None:
+        fails.append("pooled-claim warrants: report/data/synthesis.json missing (or not a "
+                     "JSON list) — one entry per pooled claim "
+                     "{claim, because, unless, basis_note}")
+    else:
+        bad = [i for i, e in enumerate(entries)
+               if not isinstance(e, dict) or any(
+                   not (isinstance(e.get(k), str) and e[k].strip()) for k in _WARRANT_FIELDS)]
+        if bad:
+            fails.append(f"pooled-claim warrants: {len(bad)} synthesis.json entries missing "
+                         f"required fields {list(_WARRANT_FIELDS)} (rows {bad[:10]})")
+        # PER-ENTRY matching (gate-gaming receipt: one entry name-dropping every axis in
+        # prose must NOT cover them all) — a stat is covered only if some entry's CLAIM
+        # names it.
+        claims = [_canon(str(e.get("claim") or "")) for e in entries if isinstance(e, dict)]
+        uncovered = sorted(s for s in surfaced if not any(_canon(s) in c for c in claims))
+        notes.append(f"pooled-claim warrants: {len(entries)} entries cover "
+                     f"{len(surfaced) - len(uncovered)}/{len(surfaced)} surfaced "
+                     f"family/axis stats")
+        if uncovered:
+            fails.append(f"pooled-claim warrants: surfaced family/axis stats with NO "
+                         f"synthesis entry: {uncovered[:10]}")
+
+    # 5. cost-actual — a structured cost record must ship with the round, mechanically
+    # checkable (prose decays; a live run's cost had to be reconstructed eval-side)
+    cost, cost_home = None, None
+    for p in ([f"{run_dir}/round-manifest.json"] if run_dir else []) + [
+            f"{os.path.dirname(os.path.abspath(report_dir))}/round-manifest.json",
+            f"{report_dir}/data/keystats.json"]:
+        if os.path.isfile(p):
+            try:
+                v = json.load(open(p)).get("cost_actual")
+            except Exception:
+                continue
+            if v is not None:
+                cost, cost_home = v, p
+                break
+    if cost is None:
+        fails.append("cost_actual absent — the round-manifest (or keystats) must carry it: "
+                     "numeric tokens/$ or the subscription-lane form (turns + subagents + "
+                     "fetch counts + compute-tokens-eval-side)")
+    elif not _cost_actual_ok(cost):
+        fails.append(f"cost_actual prose-only/unstructured in {cost_home} — need numeric "
+                     f"tokens/$ or the subscription-lane form (turns + subagents + fetch "
+                     f"counts + compute-tokens-eval-side)")
+    else:
+        notes.append(f"cost_actual: structured ({cost_home})")
     return fails, notes
 
 

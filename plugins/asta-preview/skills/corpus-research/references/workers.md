@@ -69,6 +69,16 @@ re-inventions converge (how sweep.py earned canon).
    identical failure 6×).
 7. `evidence_quote` MANDATORY on judgments — verbatim; a run that skipped quotes at judge time
    paid for it at every later adjudication.
+8. EXTRACTION packets carry the evidence-record contract VERBATIM (workers never read
+   references — the packet is the only surface they see; measured: a warm round whose packets
+   lacked it shipped 32 adjudication rows with zero warrant fields). Every record:
+   `{corpusId · round · lens · claim_type: finding|stance|classification|entity-mention ·
+   polarity: present|absent · claim: kind-typed fields, NO bare booleans · basis: {span:
+   VERBATIM, source_tier: abstract|fulltext|snippet} · scope_flag · because · unless ·
+   fit: explicit|rephrased|reframed|stretch · judged_by · confidence: 0-2}` — warrant fields
+   EMITTED reasoning-first (because → unless → fit → confidence); absence claims are rows too
+   (polarity=absent + a basis span showing what the paper does INSTEAD). Field semantics:
+   `references/evidence.md` — YOU read it before writing the packet (SKILL.md step 6 MUST).
 
 ## Fleet mechanics
 - **Probe-canary first**: run ONE worker per operation ~5 min ahead; inspect its output file

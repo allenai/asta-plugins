@@ -12,11 +12,17 @@ contract step; there is no human maintainer in the loop.
 Usage:
   python vault.py init <workspace> --from <run_dir> [--id <round_id>]
       create <workspace>/vault/ with <run_dir> folded in as the founding round.
-  python vault.py rebuild <workspace>
+  python vault.py rebuild <workspace> [--allow-unverified "<reason>"] [--acknowledge-regressions]
       fold any NEW <workspace>/round-*/ dirs (not yet in vault.json's registry) into
       vault/rounds/, merge their caches, and re-derive view/union.jsonl + vault.json
       + the vault.db EVIDENCE index (pointer ladder + regression/staleness gates run
       here, at the output boundary — see the evidence-layer block below).
+      MERGE GATE (hard-fail, NEW rounds only): unverified spans (ladder rung = fail) in a
+      round newly folded by THIS invocation REFUSE the merge — exit non-zero listing the
+      rows, vault restored, nothing folded — unless --allow-unverified "<reason>" (the
+      reason is recorded in vault.json). Regression pairs involving a newly folded round
+      likewise require --acknowledge-regressions when count > 0. Legacy/already-folded
+      rounds stay report-only, exactly as before.
   python vault.py where <workspace> <text-fragment>
       provenance-walk entry point: evidence rows whose quote/claim carries the fragment
       (round · kind · ladder rung · source file · cached text) — one query, no hand grep.
@@ -128,6 +134,8 @@ def _derive_aliases(obs_by_round):
 #   flag on the later row; NEVER overwritten.
 #   UNVERIFIED — a span that verifies against no reachable cache text → 'unverified' flag
 #   ('stale' is RESERVED for source-change invalidation events — a distinct, ratified event kind)
+#   — report-only for legacy rounds; for rounds NEWLY folded by the current rebuild it is a
+#   MERGE-TIME HARD-FAIL (receipt: UNVERIFIED-119 fired into silence) — see rebuild()
 #   (source change re-verify is mechanical: every rebuild re-runs the ladder, zero LLM).
 
 FUZZY_BAR = 0.90       # calibrated: verified = exact/normalized · soft-flag ≥ 0.90 · fail below
@@ -594,13 +602,42 @@ def _derive(vault, rounds):
     return layers
 
 
-def rebuild(workspace, amend=None):
+def _merge_gate(vault, new_ids):
+    """Merge-time evidence gate INPUTS for rounds newly folded by THIS rebuild (legacy rounds
+    stay report-only): unverified rows (ladder rung = fail) + regression pairs involving a
+    new round. Read from the just-derived vault.db — same ladder, no second grading pass."""
+    con = sqlite3.connect(f"{vault}/vault.db")
+    ph = ",".join("?" * len(new_ids))
+    bad = con.execute(
+        "SELECT corpusId, round, claim_kind, source_file, substr(coalesce(quote,''),1,110)"
+        f" FROM evidence WHERE ladder_rung='fail' AND round IN ({ph})"
+        " ORDER BY round, corpusId", new_ids).fetchall()
+    regs = con.execute(
+        f"SELECT COUNT(*) FROM gate_regression WHERE later_round IN ({ph})"
+        f" OR earlier_round IN ({ph})", new_ids * 2).fetchone()[0]
+    # no_cache is DELIBERATELY not a hard-fail (a distinct rung), but a new round that is
+    # 100% unreachable = the measured fetch-once breakage class — it must be LOUD at merge.
+    nocache = con.execute(
+        f"SELECT round, COUNT(*) FROM evidence WHERE ladder_rung='no_cache' AND round IN"
+        f" ({ph}) GROUP BY round", new_ids).fetchall()
+    con.close()
+    return bad, regs, nocache
+
+
+def rebuild(workspace, amend=None, allow_unverified=None, ack_regressions=False):
     """Prints its own BEFORE/AFTER delta (rows, agreement, 2x-layer) — every measured session
-    hand-wrapped rebuild with exactly these snapshots; the tool now provides them."""
+    hand-wrapped rebuild with exactly these snapshots; the tool now provides them.
+    MERGE GATE (newly folded rounds ONLY — legacy stays report-only): unverified spans refuse
+    the merge unless allow_unverified carries a reason (recorded in vault.json); regressions
+    involving a new round refuse it unless ack_regressions. A refused merge RESTORES the
+    vault — folded dirs removed, derived layers re-derived, vault.json untouched — so the
+    re-run (fixed rows, or with the flag) folds cleanly instead of hitting append-only."""
     vault = f"{workspace}/vault"
     vj = f"{vault}/vault.json"
     meta = json.load(open(vj)) if os.path.isfile(vj) else {"rounds": [], "layers": {}}
+    rounds_before = list(meta["rounds"])  # pre-invocation registry, for merge-gate rollback
     before = (meta.get("layers", {}) or {}).get("view", {})
+    stash = None
     if amend:
         # amendment semantics: ONLY the latest round may be re-folded (post-close fixes);
         # earlier rounds stay immutable (measured: a round's post-close report fixes left
@@ -608,7 +645,14 @@ def rebuild(workspace, amend=None):
         if not meta["rounds"] or meta["rounds"][0]["id"] != amend:
             raise SystemExit(f"--amend {amend}: only the LATEST round "
                              f"({meta['rounds'][0]['id'] if meta['rounds'] else 'none'}) is amendable")
-        shutil.rmtree(f"{vault}/rounds/{amend}", ignore_errors=True)
+        # stash (not delete) the old copy so a merge-gate refusal can restore it.
+        # CRASH WINDOW: between this move and a later restore, .amend-stash is the ONLY
+        # vault copy of the round; the next --amend rmtree's it unconditionally. Recoverable
+        # because the workspace source re-folds — but do not "clean up" the stash by hand.
+        stash = f"{vault}/rounds/.amend-stash"
+        shutil.rmtree(stash, ignore_errors=True)
+        if os.path.isdir(f"{vault}/rounds/{amend}"):
+            shutil.move(f"{vault}/rounds/{amend}", stash)
         meta["rounds"] = meta["rounds"][1:]
     # identity must survive a moved/copied workspace: match id, recorded path, OR the
     # recorded source's basename (a copied workspace re-folding its own rounds = 2x rows)
@@ -620,10 +664,15 @@ def rebuild(workspace, amend=None):
         # a closable round has at least a round-manifest; rows-less rounds (pure
         # consolidation/audit) still fold — their manifests + trust-upgrades are vault knowledge
         if (re.fullmatch(r"round-[\w.-]+", d) and os.path.isdir(p)
-                and os.path.realpath(p) not in known and d not in known
-                and (os.path.isfile(f"{p}/round-manifest.json")
-                     or os.path.isfile(f"{p}/standardized-relevance.jsonl"))):
-            new.append((d, p))
+                and os.path.realpath(p) not in known and d not in known):
+            if (os.path.isfile(f"{p}/round-manifest.json")
+                    or os.path.isfile(f"{p}/standardized-relevance.jsonl")):
+                new.append((d, p))
+            else:
+                # never skip silently (the silent-failure family): a round-shaped dir
+                # without its contract is loudly named, not ignored.
+                print(f"  ⚠ SKIPPED {d}: no round-manifest.json or standardized-relevance"
+                      f".jsonl — not a closable round; add the round contract to fold it")
     for rid, src in new:
         # contract-as-code (minimal fields only): a round without charter provenance and an
         # as-of date cannot fold — measured: charter rulings that lived only in transcripts
@@ -643,6 +692,54 @@ def rebuild(workspace, amend=None):
         meta["rounds"].insert(0, _fold_round(vault, rid, src))
         print(f"folded {rid} <- {src}")
     meta["layers"] = _derive(vault, meta["rounds"])
+    # ---- MERGE GATE: hard-fail on THIS invocation's newly folded rounds only (receipt:
+    # UNVERIFIED-119 fired into silence). Legacy/already-folded rounds stay report-only below.
+    if new:
+        new_ids = [rid for rid, _ in new]
+        bad, regs, nocache = _merge_gate(vault, new_ids)
+        for rid_nc, n_nc in nocache:
+            print(f"  ⚠ NEW ROUND {rid_nc}: {n_nc} span(s) have NO reachable cache text "
+                  f"(rung no_cache — not a merge fail, but if the round fetched sources "
+                  f"and they aren't in vault/cache, fetch-once fold-back is broken)")
+        refusals = []
+        if bad and not allow_unverified:
+            print(f"MERGE GATE (unverified): {len(bad)} span(s) from newly folded round(s) "
+                  f"{new_ids} verify against NO reachable cache text:")
+            for cid, rnd, kind, sf, q in bad[:20]:
+                print(f"  ✗ {cid} · {rnd} · {kind} · {sf} · {q!r}")
+            if len(bad) > 20:
+                print(f"  … and {len(bad) - 20} more")
+            refusals.append(f"{len(bad)} unverified span(s) — fix the extraction rows or "
+                            f"re-run with --allow-unverified \"<reason>\" (reason is recorded "
+                            f"in vault.json)")
+        if regs and not ack_regressions:
+            print(f"MERGE GATE (regression): {regs} regression pair(s) involve a newly folded "
+                  f"round — a new round knew LESS than an existing same-or-deeper-tier record "
+                  f"(standing legacy-only regressions stay report-only)")
+            refusals.append(f"{regs} new-round regression pair(s) — re-run with "
+                            f"--acknowledge-regressions to fold anyway")
+        if refusals:
+            # merge refused: restore the pre-invocation vault (nothing folded); merged cache
+            # files stay — caches are append-only fetch-once, harmless either way
+            for rid in new_ids:
+                shutil.rmtree(f"{vault}/rounds/{rid}", ignore_errors=True)
+            if stash and os.path.isdir(stash):
+                shutil.move(stash, f"{vault}/rounds/{amend}")
+            _derive(vault, rounds_before)  # leave derived layers consistent with rounds/
+            raise SystemExit("MERGE REFUSED (vault restored, nothing folded): "
+                             + " · ".join(refusals))
+        if bad:  # allow_unverified given — fold anyway; the waiver is an auditable record
+            import datetime
+            meta.setdefault("unverified_allowances", []).append(
+                {"rounds": new_ids, "rows": len(bad), "reason": allow_unverified,
+                 "at": datetime.datetime.now().isoformat(timespec="seconds")})
+            print(f"⚠ UNVERIFIED ALLOWED: {len(bad)} failing span(s) folded under "
+                  f"--allow-unverified {allow_unverified!r} (recorded in vault.json)")
+        if regs:
+            print(f"⚠ REGRESSIONS ACKNOWLEDGED: {regs} new-round regression pair(s) folded "
+                  f"under --acknowledge-regressions")
+    if stash:
+        shutil.rmtree(stash, ignore_errors=True)  # amend re-fold accepted; old copy retired
     json.dump(meta, open(vj, "w"), indent=1)
     after = meta["layers"]["view"]
     if before:
@@ -850,8 +947,17 @@ def _read_ids(path):
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "rebuild":
-        amend = sys.argv[sys.argv.index("--amend") + 1] if "--amend" in sys.argv else None
-        m = rebuild(sys.argv[2], amend=amend)
+        def _flagval(flag):
+            if flag not in sys.argv:
+                return None
+            i = sys.argv.index(flag)
+            v = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+            if not v.strip() or v.startswith("--"):
+                raise SystemExit(f'{flag} requires a non-empty value (e.g. {flag} "<reason>")')
+            return v
+        m = rebuild(sys.argv[2], amend=_flagval("--amend"),
+                    allow_unverified=_flagval("--allow-unverified"),
+                    ack_regressions="--acknowledge-regressions" in sys.argv)
     elif cmd == "recall":
         # C3: union-recall — a round's positives vs the vault's agreed-positive union.
         # STANDARD REPORTED SIGNAL (receipt: known truth ~doubles per new enumerator; recall
