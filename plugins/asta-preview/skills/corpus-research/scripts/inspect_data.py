@@ -9,7 +9,7 @@ exist to save the re-typing, not to gate anything. Uptake is measured; unused ve
   python inspect_data.py tally <file.jsonl> <field> [field2]  # value counts for a field (dotted ok)
   python inspect_data.py check <file.jsonl> --require f1,f2   # per-file integrity: parse, required
                                                           # fields non-null, corpusId unique+str
-next: for run-LEVEL invariants use validate.py; for membership/joins use knowledge.py.
+next: for run-LEVEL invariants use validate.py; for membership/joins use vault.py (evidence index / union view; knowledge.py is a deprecated stub).
 """
 from __future__ import annotations
 import json

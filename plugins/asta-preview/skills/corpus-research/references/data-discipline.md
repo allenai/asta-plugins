@@ -18,7 +18,9 @@ Every stage reports a coverage/quality number and REFUSES to feed downstream whe
   corroboration + capture-recapture).
 - Tags/judgments are applied as ORDERED batches (filename order, last-write-wins) with per-record
   `tag_batch` / `resolution` — so any label traces to the batch that set it.
-- Extractions carry `evidence_span`, `evidence_depth`, `confidence`, `extractor_batch`.
+- Extractions carry the evidence.md record contract (verbatim basis span + source tier,
+  warrants, confidence 0-2, judged_by) — see `references/evidence.md`; legacy rounds' field
+  names (`evidence_span`/`evidence_depth`/`extractor_batch`) remain valid history, ingested as-is.
 
 ## Run MANIFEST.md (the lineage ledger)
 Keep `<run>/MANIFEST.md` answering "what ran on what, current vs obsolete":

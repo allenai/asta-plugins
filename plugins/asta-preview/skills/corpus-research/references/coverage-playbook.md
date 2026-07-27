@@ -171,7 +171,7 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   modality hole) before averaging anything.
 
 ## 4. Recall anchors (you can't prove completeness from inside the set)
-- **Known-canon check**: enumerate the area's canon parametrically → `knowledge.anchor()` — the
+- **Known-canon check**: enumerate the area's canon parametrically → `vault.py anchor` — the
   corpus adjudicates (present? judged how?). OFFLINE-first: anchors are usually already in the
   store. A low recall-to-relevant with high judged-out is deliberate exclusion, NOT a miss.
 - **Persona-shifted canon check (measured: 1 of 3 shifted personas exposed a never-surfaced
@@ -195,6 +195,21 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   corpus and report BOTH resolve-rate and %-into-core. Calibration receipt: academic-only
   modalities captured just 38% of a maintained community roster on one thread — the list was the
   detector, and absorbing it was the fix.
+- **Librarian anchor (survey-consensus × ring membership)**: take the references cited by ≥k of
+  the area's own surveys (k=2 measured) and resolve them against the rings — then CLASSIFY every
+  miss as {charter-out | genuine-miss}; the classified split IS the signal, never the raw
+  fraction. This is a DIFFERENT signal than the canon anchor: not "did search find the famous
+  head" but "where does OUR scope boundary sit relative to what the field's own surveys
+  canonize." Measured (a run that used the survey ring for acquisition but never as a verdict
+  signal): 53/148 = 36% of survey-consensus refs sat in the rings; the 95 outs were dominated by
+  the field's GENERAL canon — the CHARTER boundary, not retrieval blindness — and the signal
+  would have surfaced a real scope edge earlier and more comprehensively than the canon anchor
+  did (which caught it as a side observation). Caveats, stated on the signal's card: (a)
+  SEMI-CIRCULAR FOR RETRIEVAL when survey-reference pooling seeded acquisition —
+  presence-in-candidates is by construction; a clean retrieval version holds out some surveys'
+  refs; (b) the boundary-vs-blindness split must be stated, not implied. Provenance row (every
+  signal artifact carries one, user ruling): inputs = the corpus's own surveys' reference lists —
+  human-authored, model-independent, triangulating the model-parametric canon anchor.
 
 ## 5. Localize gaps, prioritize closure
 - `citation_graph` missed-high-centrality: uncaptured nodes many core papers cite — TRIAGE

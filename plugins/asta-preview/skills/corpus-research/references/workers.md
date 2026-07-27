@@ -16,21 +16,45 @@ $132 for the same build). The salt/canary gates are the quality guard (fired cor
 directions: rejected a haiku fleet, passed sonnet and opus fleets). Override deliberately when
 a fleet task genuinely needs the strong model — and record the override in the round record.
 
-## Build shards with `scripts/shards.py` (structure does the enforcing)
-- **SALTS ARE A GATE**: `build_shards` now REFUSES to build an unsalted fleet (measured: a
-  warm round's hand-rolled shards silently dropped salts and lost per-judge calibration).
-  Deliberate exceptions declare `allow_unsalted="<reason>"`, recorded in salts.json.
+## RECIPES — sharding + panel assembly (patterns, with the gate at MERGE)
+Note: the retained `shards.py` convenience ALSO hard-refuses unsalted fleets at build time
+(belt-and-suspenders; SystemExit). A deliberate unsalted exception uses validate.py's
+`allow_unsalted` with a RECORDED reason — the merge gate is the boundary that counts.
+Why recipes, not mandated scripts (measured, then user-ruled): per-round orchestration
+conveniences get RE-DERIVED — sessions hand-rolled sharding and panel assembly repeatedly,
+documentation notwithstanding — and the one gate that rode INSIDE a convenience (the salt gate
+inside shards.py) is exactly the one that kept getting silently lost (a warm round's hand-rolled
+shards dropped salts; a headless round re-implemented sharding and the gate never fired). Ruling:
+gates fire at OUTPUT BOUNDARIES, never inside conveniences. So compose the recipes context-fitted
+or use `scripts/shards.py` (a CONVENIENCE that builds them for you) — either way **the trust
+boundary fires at MERGE: `validate.py`'s fleet-output check (judgments present + salts present
+OR an `allow_unsalted="<reason>"` recorded), regardless of how the shards were built.**
+Re-promotion rule: a recipe graduates back to a maintained script after 2 independent
+re-inventions converge (how sweep.py earned canon).
+
+### The SHARDING recipe (these elements ARE the recipe, however you build the files)
 - **Stratified-interleave assignment**: shards are exchangeable samples of the pool, so
   per-shard positive-rate spread becomes a judge-drift ALARM instead of composition noise
   (measured spreads of 4-87% across shards were unreadable without this).
 - **Salt items**: ~5 known-gold items (clear-in / clear-out / boundary) injected per judge
   shard, indistinguishable in-shard; the mapping lives in `salts.json` OUTSIDE the shard.
-  `score_salt()` grades each shard's judge: strictness, boundary-agreement, maybe-discipline —
-  drift alarms with evidence, re-judge triggers, and free tier-calibration data.
-- **k-chunked emission, enforced**: shard files are divided into sub-batches (~25). The worker
+  `shards.py score` grades each shard's judge: strictness, boundary-agreement, maybe-discipline —
+  drift alarms with evidence, re-judge triggers, and free tier-calibration data. An unsalted
+  fleet loses per-judge calibration silently — hence the merge gate.
+- **k-chunked emission**: shard files are divided into sub-batches (~25). The worker
   prompt template processes ONE sub-batch per emission — judge 25, append 25, verify count,
   next. This is the structural fix for the buffering attractor (extractors' k≈6 read/append
   loop survived every interruption; single-pass judges lost everything).
+
+### The PANEL-ASSEMBLY recipe (the genuine-borderline slice; curation.md owns WHEN)
+- 3 independent judges (fresh contexts, body text available, same shard structure as any
+  fleet — sub-batches, per-line `judged_by`) + an ADJUDICATOR that reads each judge's
+  REASONING — never bare majority vote. Escalate to body text only inside the panel (a lone
+  judge given body text can do WORSE than on the abstract).
+- **Merge gate**: the panel's merged output passes the same `validate.py` fleet-output check —
+  judgments present per assignment, salts or a declared exception, per-line lineage. A panel
+  merged without the gate is a hand-rolled fleet with its calibration silently lost (the
+  measured failure this section exists to prevent).
 
 ## The worker prompt contract (every fan-out prompt carries ALL of these)
 1. Inputs by PATH (rubric file + shard file); per-paper bodies by `digest_path` — NEVER inline

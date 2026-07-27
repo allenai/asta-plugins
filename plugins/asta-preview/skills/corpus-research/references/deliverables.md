@@ -20,6 +20,13 @@ reader trusts a number when they can see how it was derived and what its limits 
 **A single global "based on N papers" header does NOT satisfy this** — the note is per answered
 sub-question.
 
+## Every answer carries a FRAME line — HARD requirement (rides the how-performed note)
+The frame = **view + version + denominator**: which declared view/ring the number was computed
+over, under which tier_map/charter version, over how many members ("charter core under map v3,
+n=479"). Rings are DERIVED views (SKILL step 0); an answer that reaches outside the default
+view SAYS so here. Absence-flavored answers state their SEARCH SCOPE in the same line
+("not found in <scope>" vs "does not exist" — vault.md interrogation conventions).
+
 ## Paper links — HARD requirement
 Every paper reference in a user-facing artifact is a WORKING link — a bare corpusId is dead text;
 readers must reach the paper in one click (the user touches the sources). Default:
@@ -57,6 +64,32 @@ consensus with an outlier, exclude it).
    {axis, stance, VERBATIM quote} per contested axis per paper — the per-side counts become
    auditable claims, not tag tallies. Then [T]-aggregate the stances into a tally file BEFORE
    the [J] synthesis agent runs, so the synthesis quotes numbers it didn't compute.
+
+## The SYNTHESIS PASS — NO POOLED CLAIM SHIPS UN-RE-READ (HARD)
+A **pooled claim** is any claim whose basis is a SET of other rows — any aggregate derived over
+a view (codebook families, disagreement axes, distributions, trends, comparisons) AND
+syntheses-over-syntheses (a report narrative pooling family claims). Counting locally-assigned
+labels is not synthesis, and the counting script structurally cannot see conditional claims
+(measured, a real axis re-read: 8 rows filed "mixed" were EXCLUDED from the shipped 52-vs-8
+count, and two of them were the strongest evidence in the pool — the best-supported claim was
+CONDITIONAL on architecture and task difficulty and never surfaced).
+Before any pooled claim ships, re-read its basis set and run the audit:
+1. **Fit-mix audit** — decompose the count by fit strata (explicit/rephrased/reframed/stretch/
+   legacy-unwarranted; see references/evidence.md): "26% address X" becomes per-fit strata.
+2. **Confound hunt** — do the sides partly measure their instruments? (measured: circuit-
+   discovery methods are built to find sparse subgraphs, probing methods test full-vector
+   decodability — the axis's sides partly measured their tools). Is the pooled quantity
+   conflated ("localized-of-WHAT": neurons/heads/circuits/features/layers)?
+3. **REWRITE the pooled claim with its own because + unless** — both clauses are mandatory on
+   pooled claims (measured: that is where the warrant pays).
+4. **Ejections are DISPUTED marks** on the offending rows — never deletions (append-only).
+Fires on ALL shipped pooled claims (user ruling: even a surviving axis gained load-bearing
+conditions; risk-tiering data insufficient to skip safely — revisit after N runs). The pass may
+unilaterally DISPUTE rows; tier/membership changes stay panel work. Budget: ~$1-3/pooled claim
+at the cheap-capable tier (measured: $0.9 for a 60-row axis, verdict YES-conditions-added);
+report-scale ≈ $15-40, funded by the extraction rebalance, not additive.
+**Unsynthesized pools:** an answer over a pool that never had its pass SAYS SO in the method
+note and offers the pass (~$2) — never presents a raw count as a synthesized finding.
 
 ## Aggregation altitude
 Group/count at the altitude the question asks (families, not raw strings; techniques deduped by
@@ -99,9 +132,13 @@ items rather than silently re-deriving them. The report gate runs on the update 
    to every deliverable, a read-order, and honest notes. Readers start here.
 2. **Per-question method notes** + 3. **working links** — the two HARD requirements from Part A
    above apply to every report page.
-4. **Evidence in the body.** When the ask says "extract the paragraphs/passages", the verbatim
-   spans appear IN the report (linked to source), never only in data files. A reader who asked
-   for paragraphs and finds tallies experienced an omission, whatever the data files contain.
+4. **Evidence in the body — REPORT PROSE CARRIES SPANS.** When the ask says "extract the
+   paragraphs/passages", the verbatim spans appear IN the report (linked to source), never only
+   in data files. A reader who asked for paragraphs and finds tallies experienced an omission,
+   whatever the data files contain. And the rule binds the NARRATIVE, not just embeds
+   (measured: a report's 86.8% verbatim-surface rate was carried by dumping the catalog into a
+   CSV + a JS blob while its narrative prose contained ZERO verbatim extracted content — the
+   prose a reader actually reads touched no sources). The readable prose itself quotes spans.
 5. **Per-paper catalog view** grouped by the derived families, with tier/tags and a one-line
    grounded claim per paper — the view readers use to judge the corpus itself.
 6. **Honest coverage section**: verdict + estimators-used-vs-gated + explicit boundary + "what

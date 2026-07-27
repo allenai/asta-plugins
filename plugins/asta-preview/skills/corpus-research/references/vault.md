@@ -25,14 +25,16 @@ vault/
   VAULT-MANIFEST.md     the covenant: what exists, trust marks, the round contract (template below)
   vault.json            machine-readable: rounds registry (id, source, as_of, note), layer stats.
                         COUNTS AND FRESHNESS LIVE HERE, not in manifest prose (prose goes stale).
+  vault.db              membership + trust marks + the EVIDENCE table (one row per claim-
+                        instance across ALL rounds — derived, rebuilt; doctrine below).
   rounds/<id>/          each round's canonical record VERBATIM: thread.json (charter),
                         standardized-relevance.jsonl, observations/extractions, coverage verdict,
                         round-manifest.json. Schemas may DIFFER by round — deliberately not
                         normalized (primitives over schemas; the consumer controls joins).
   view/union.jsonl      one row per paper ever judged: per-round tiers side by side + agreement
                         (agreed-positive / agreed-negative / DISPUTED) + n_rounds_judged + trust
-                        mark. THE default query surface (same core fields as knowledge.py's
-                        collection view — the vault IS that view, persisted and growing).
+                        mark. THE default MEMBERSHIP query surface (the persisted collection
+                        view, growing; claim-grain queries go to vault.db's evidence table).
   cache/                fulltext-cache/ + s2-cache/, merged across rounds. Fetch-once.
   QUESTIONS.log         the question stream (asked / answered-by / spawned-by) — append-only;
                         itself vault knowledge.
@@ -51,6 +53,87 @@ vault/
 - Hand-written vault files a round touches: `QUESTIONS.log` (append) and the MANIFEST's
   narrative prose (a round MAY update the freshness note / header story — that's covenant
   text, not derived data; counts NEVER go in prose, they live in vault.json).
+
+## The EVIDENCE INDEX (vault.db `evidence` table — the one query surface for claims)
+One row per claim-instance (schema + warrant contract: references/evidence.md), REBUILT by
+`vault.py rebuild` from every round's `extract/*.jsonl` + `extractions.jsonl` — schema-tolerant
+ingest across rounds' differing schemas, corpusId dialect normalization (measured: 3 dialects
+in the wild), legacy pre-contract rows entering as `fit=legacy-unwarranted`. Derived, never
+hand-edited; the canonical extract files stay append-only per round. This is what makes
+evidence queryable across rounds in ONE place — measured on the founding incident: the
+provenance question that took a colleague's sessions three investigations resolves in one SQL
+lookup (`vault.py where <text-fragment>` is the helper).
+- **Pointer ladder (computed at rebuild — the extractor's only duty is the verbatim span):**
+  (1) exact match → verified; (2) normalized (whitespace collapse, unicode quotes/dashes, PDF
+  hyphenation-linebreak repair) → verified; (3) fuzzy ≥0.90 token-overlap → SOFT flag;
+  ellipsis-composite quotes are graded PER-SEGMENT; (4) below → rung=fail, row FLAGGED
+  `unverified` and counted loudly in the rebuild summary. Only genuinely-absent spans fail —
+  not every double space (user ruling). The rebuild REPORTS fails (legacy history tolerates
+  ~17%); hard-failing NEW rows at round-close merge is a NEXT-BATCH gate (banked with the
+  report_gate extension — doctrine without that gate is not yet mechanical, say so honestly).
+  Empirical calibration (8,436 claim rows, 5 threads): 65.5% exact / 17.8% normalized / 2.2%
+  fuzzy / 14.5% fail ≈ 83% historical verified; the fail class decomposes into ellipsis
+  composites + MathML-flattened equations — and a rung=fail is itself diagnostic (a MathML
+  rendering mechanically explained why a colleague's greps missed a real stored quote).
+- **Regression gate (as shipped):** a later round recording NOTHING (empty/null slots) for a
+  paper where an earlier round holds a substantive record → LINK + FLAG, never overwrite —
+  this catches the measured "round-8-knew-less-than-round-1" class exactly (107 regressions
+  on 87 papers at first build: the non-inheritance bug is ENDEMIC). The broader comparison
+  (later SUBSTANTIVE-but-shallower-tier vs earlier deeper record) is FORWARD work — the
+  shipped gate does not catch it; do not claim otherwise. Extraction stays BLIND — no
+  packet-feeding of prior evidence (user ruling: cost + anchoring degradation).
+- **Inheritance is read-time union — passive and FREE.** A valid row simply stays visible;
+  nothing happens per-round-per-thing. **Invalidation is EVENT-TRIGGERED** (design; the
+  shipped mechanical piece is the span re-verify at rebuild): (a) source change → span
+  re-verify, failing rows flagged `unverified`; (b) lens amendment → re-derive/re-judge flags
+  over the affected region; (c) deeper read / contradiction → supersede-in-depth / disputed —
+  both rows kept, always.
+- **Basis-DAG staleness propagation is DESIGN, not yet built:** synthesis rows (basis =
+  row-id sets) and recursive flag-climbing arrive with synthesis-row ingestion (next batch,
+  with the report_gate extension). What ships NOW: claim-row index + ladder + regression
+  gate. The provenance walk (report line → synthesis → evidence → span → cached text) is the
+  standing recipe; today the synthesis hop is the report's data files, not an indexed row.
+
+**Application rule (the confidence consumer):** at round close, NEW evidence rows apply at
+confidence 2; ≤1 enters as proposed/triaged (never silently canonical) — the same 0-2 scale
+evidence.md defines. This is where extracted calibration is READ.
+
+## INTERROGATION conventions (answering questions ABOUT the corpus/vault)
+Formalized from a real cross-team incident: an outside session probing a thread was RIGHT on
+substance (a mis-scoped card) and went 0-for-3 on its negative claims ("evidence in no stored
+record" — it was; "vault doesn't carry the claim" — it did) because it searched rendered text,
+one round, and a path that didn't exist.
+1. **The provenance walk is THE recipe** for "where does X come from": rendered claim →
+   synthesis row → evidence rows → spans → cached source. With the index: one query + the DAG.
+2. **Absence claims carry a how-searched note** (scope + patterns + fields-vs-rendered):
+   "not found in <scope>" is legal; "does not exist" requires the full walk.
+3. **Answers name their FRAME** (view + version + denominator) — interrogation is where the
+   measurements-and-views line bites.
+4. **Unsynthesized-pool flag**: answering over a pool that never had its synthesis pass says
+   so and offers it (deliverables.md).
+**Packaged threads SHIP the notes file**: every thread package includes an
+`INTERROGATION-NOTES.md` at the thread root (next to CLAUDE.md), instantiated from this
+template — it closes the traps the incident session hit:
+```markdown
+# INTERROGATION-NOTES — how to search this thread correctly
+1. LAYOUT. Evidence lives per round: vault/rounds/<round>/extract/*.jsonl (extraction records
+   with verbatim quotes), observations.jsonl + judgments/ (relevance). vault.db holds
+   membership, trust marks, and the rebuilt evidence index. Rendered reports
+   (report/index.html, artifact-src/) are DERIVED views.
+2. ROUNDS DIFFER. Rounds used different extraction schemas, and later rounds do NOT
+   automatically know what earlier rounds extracted. Before concluding a paper "has no data,"
+   query the evidence index (or check EVERY round's extract dir for its corpusId).
+3. SEARCH STORED FIELDS, NOT RENDERED TEXT. Report cards concatenate fields (gloss + quote);
+   grepping the rendered sentence against the jsonl will miss. Grep distinctive SUBSTRINGS
+   (a formula, a corpusId, a rare phrase) — and know the cache may render math as MathML.
+4. ABSENCE CLAIMS CARRY A METHOD NOTE. Never state "X is not in the corpus/vault" without
+   listing exactly what was searched (dirs, patterns, fields vs rendered). If the search
+   didn't cover every round's extract/ + the db + report sources, say "not found in <scope>",
+   not "does not exist."
+5. PROVENANCE CHAIN for any report card: rendered card → report data (same round) →
+   extract/*.jsonl record (corpusId + verbatim evidence) → cached fulltext. Walk it before
+   judging a card unbacked.
+```
 
 ## The eval boundary (audited 2026-07-12; state it precisely)
 A thread's OWN ground truth (its gold rows, adjudications, calibration docs) never enters that

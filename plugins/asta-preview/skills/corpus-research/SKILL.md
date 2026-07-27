@@ -20,7 +20,9 @@ trust story is this separation — a reader can re-run every [T] and audit every
 
 ## Principles (the north star — internalize before starting)
 1. **Corpus-first.** Build the corpus, then every operation queries the OWN store first
-   (`scripts/knowledge.py`); external fetch is the cache-miss fallback and every fetch folds back
+   (`scripts/vault.py` — vault.db is the one query surface FOR THREADS, post-init/rebuild;
+   a first-run build queries its run files directly — ad-hoc joins are legitimate [J] work
+   there, method-noted; the index arrives at vault init); external fetch is the cache-miss fallback and every fetch folds back
    into the corpus (cache everything: metadata, edges, full text). Parametric knowledge PROPOSES
    (seed candidates, canon lists); the corpus ADJUDICATES. Corpus-first is only trustworthy with
    an honest boundary signal — always pair it with coverage estimation, or it's a filter bubble.
@@ -67,6 +69,8 @@ From the user's question alone, write `<run>/thread.json`:
   in/relevant/maybe/not-relevant). Ask at Step 0 only what BLOCKS the first sweep; defer other
   scope-edge questions to the scope-charter beat — questions asked after first contact with the
   data are visibly better-informed (measured across runs).
+- **tier_map**: thread.json DECLARES the grade→tier map; rings are DERIVED (grades × tier_map),
+  never hand-set — and every answer carries a **FRAME line**: view + version + denominator.
 - **scope.axis**: `folded` when relevance IS the scope test; `separate` when a paper can be
   relevant-shaped but off-scope on an orthogonal axis (fill `out_of_scope_families` only AFTER
   codebook derivation exposes them). When the user says "include both X and Y" (eras, kinds,
@@ -74,7 +78,9 @@ From the user's question alone, write `<run>/thread.json`:
   computed per-stratum (or primary-stratum-only with the rest reported separately). Pooling
   strata the user explicitly distinguished corrupts every count downstream.
 - **extraction_schema**: design fields from the question's sub-questions (what does each paper
-  analyze/use/find/extend...). Include per-record: evidence span, confidence, and a `scope_flag`
+  analyze/use/find/extend...). Design records per `references/evidence.md` (THE record contract:
+  kind-typed fields, warrants because/unless/fit in reasoning-first order, polarity for absence
+  claims). Include per-record: VERBATIM evidence span, confidence (0-2), and a `scope_flag`
   escape (extraction reads deepest — it catches scope leaks nothing else sees).
 - **evidence_depth** (thread-level): decide per `references/fulltext-at-scale.md` — PILOT abstracts first; if the
   answer fields are systematically absent from abstracts, the thread is fulltext-mandatory.
@@ -172,22 +178,26 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
 5. **Coverage** — `scripts/coverage_signals.py` computes the [T] signals; YOU triangulate them
    into a verdict + confidence + ranked gaps (`references/coverage-playbook.md`), loop gaps back
    to Acquire until converged-or-bounded, and state the honest boundary. **REQUIRED signal: the
-   known-canon anchor** via `knowledge.anchor()` (playbook §4) — a verdict without it has a hole
-   in it. Substrate queries are ad-hoc joins over the standard files (measured: that's what
-   works); `knowledge.anchor/lookup` cover the membership-semantics cases.
-6. **Extract & answer** — FIRST materialize the collection view (`python scripts/knowledge.py
-   view <run>` → collection.jsonl): the canonical id-normalized join every answer queries —
-   ad-hoc joins run over the VIEW, never over the raw stage files (measured: 40+ hand-rolled
-   re-joins per run, each re-deciding normalization). Rebuild it after any stage change.
-   Then per-paper extraction (map) over the evidence depth
-   (`references/fulltext-at-scale.md` for fulltext threads), then aggregate (reduce) per
-   sub-question with gates. Extraction schemas include a **mentioned-entities field** (the
+   known-canon anchor** via `vault.py anchor` (playbook §4; absorbed from knowledge.py) — a
+   verdict without it has a hole in it. Substrate queries are ad-hoc joins over the standard
+   files (measured: that's what works); the anchor covers the membership-semantics cases.
+6. **Extract & answer** — extraction records follow the EVIDENCE CONTRACT: **re-read
+   `references/evidence.md` at this phase** (reasoning-first warrants because→unless→fit→
+   confidence, kind-typed fields never bare booleans, verbatim basis span, absence polarity;
+   pointers script-computed at rebuild, never LLM-emitted). Per-paper extraction (map) over the
+   evidence depth (`references/fulltext-at-scale.md` for fulltext threads), then aggregate
+   (reduce) per sub-question with gates; claim queries run through the evidence index (vault.db
+   — one id-normalized surface; measured before it: 40+ hand-rolled re-joins per run). Extraction schemas include a **mentioned-entities field** WHEN the thread runs entity/mention-shadow signals — otherwise drop it (measured: consumed-by-nothing in a thread without those signals; a field earns its place by a consumer, per-thread) (the
    thread's pertinent entity types: models/methods/datasets the paper COMPARES AGAINST, not just
    its own subject) — nearly free at extraction time, and its inversion is a validated coverage
    signal (playbook §5: mention-shadow). TWO HARD OUTPUT REQUIREMENTS (not optional style):
    per-answer "How performed" notes and working paper links on every reference — full spec in
    `references/deliverables.md` Part A, re-read at this phase. For "disagreement" questions: support-gated field-spanning axes + a synthesis pass, never
-   one-vs-two-paper spats (`references/deliverables.md`). The final user-facing deliverable is the
+   one-vs-two-paper spats (`references/deliverables.md`).
+   **SYNTHESIS PASS (HARD): no pooled claim ships un-re-read** — any claim whose basis is a
+   SET of rows (family counts, axis tallies, distributions, report narrative) gets the pass in
+   `references/deliverables.md` first; unsynthesized pools are flagged in the method note.
+   The final user-facing deliverable is the
    REPORT — shape and content requirements in `references/deliverables.md` Part B (index page,
    evidence in-body, distribution charts, self-contained rendering, the package). Do NOT source deliverable structure from generic artifact/design skills.
    **REPORT GATE [T] (HARD):** after building the report, run `python scripts/report_gate.py
@@ -196,9 +206,12 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    report; prose requirements decay, the gate does not.
 
 ## Worker discipline (HARD — every long-running subagent job, all phases)
-Full contract: `references/workers.md` (re-read before ANY fleet fan-out). Build judge shards
-with `scripts/shards.py` — stratified-interleave + salted gold items + k-chunked sub-batches:
-measured lesson, prompts do not change worker behavior; STRUCTURE does (append-as-produced +
+Full contract: `references/workers.md` (re-read before ANY fleet fan-out). Sharding and panel
+assembly are RECIPES there (stratified-interleave + salted gold items + k-chunked sub-batches;
+panel = 3 judges + reasoning-reading adjudicator) — compose them or use `scripts/shards.py` as
+the convenience; **the trust boundary fires at MERGE: `validate.py`'s fleet-output check
+(judgments + salts present, or a recorded allow_unsalted reason), however shards were built.**
+Measured lesson: prompts do not change worker behavior; STRUCTURE does (append-as-produced +
 skip-already-done still go in every worker prompt verbatim, but the sub-batch shard format is
 what actually enforces them). Score every judge wave with `shards.py score` (salt agreement =
 drift alarms with evidence). Probe-canary one worker per operation before fanning out.
@@ -264,25 +277,35 @@ hand-edited; growth is mechanical). `vault.py init` turns a finished run into a 
 workspace CLAUDE.md stub (above) is what makes future rounds load this skill — add the vault
 line to it when a thread goes long-running.
 
-## Scripts index (scan BEFORE writing your own; each is ground truth for its phase)
-CONVENIENCES, offered never required (inline python is always legitimate; NEVER gate on these):
-`inspect_data.py peek <file>` (shape/keys/first-record) · `tally <file> <field…>` (value counts) ·
-`check <file> --require f1,f2` (per-file integrity; run-level invariants stay validate.py's).
+## Scripts index (scan BEFORE writing your own; grouped by KIND — measured: uptake follows kind)
 Importing skill modules from run scripts is canonical:
 `sys.path.insert(0, "<skill>/scripts")` then e.g. `from s2 import S2` (the measured pattern). NOTE: a script here must NEVER be named after a stdlib module — sys.path.insert(0) makes such a name shadow the stdlib for every sibling (measured: an `inspect.py` broke fulltext.py's pypdf import).
+**SUBSTRATE (stateful infra — load-bearing, always through these):**
+`s2.py` ALL S2 access (serialized, cached) · `vault.py` init/rebuild/verify/`recall`
+(union-recall vs KNOWN)/`--amend` + the EVIDENCE INDEX (`evidence` table, pointer ladder,
+regression/staleness gates — vault.md), `anchor` + `where <text-fragment>` one-lookup
+provenance (absorbed knowledge.py — now a deprecated stub; collection view retired, vault.db
+is the one query surface) · `fulltext.py` fetch/extract (+`--local` pypdf).
+**GATES (fire mechanically at output boundaries, never inside conveniences):**
+`validate.py` machine-checked invariants + merge-time fleet-output check (salts/judgments) +
+derived-artifact gate (join completeness · catch-all budget · MANIFEST provenance line) — run
+after every merge/rebuild · `report_gate.py` report number-tracing gate ·
+`coverage_signals.py` the [T] estimators + `verdict-gate` (checks a verdict's default promises)
++ `strategy_decay` (strategy-relative saturation) · `preflight.sh` portable environment check
+(tooling, install, thread layout, live S2-key validation, auth, endpoint autodetect) — run from
+a thread dir before launching a session; machine-specific invariants belong in a caller wrapper.
+**RECIPES (documented patterns, not maintained scripts — workers.md; a recipe re-promotes to a
+script after 2 independent re-inventions):** judge-fleet sharding (stratified-interleave + salts
++ sub-batches) · panel assembly (3 judges + reasoning-reading adjudicator, merge-gated).
+**CONVENIENCES, offered never required (inline python is always legitimate; NEVER gate on these):**
 `acquire.py` resolve/edges/pool/merge candidates · `sweep.py` parallel find fan-outs from a
-queries.tsv + sidecars + escalation ranking · `s2.py` ALL S2 access (serialized, cached) ·
-`relevance.py` judgment files · `shards.py` judge-fleet shards (interleave+salt+sub-batches),
-`score` (salt agreement), `completeness` (expected-vs-got per shard) · `substrate.py` rings ·
-`validate.py` machine-checked invariants (run after every merge/rebuild) · `knowledge.py`
-collection view/anchor/lookup · `coverage_signals.py` the [T] estimators + `verdict-gate` (checks
-a verdict's default promises) + `strategy_decay` (strategy-relative saturation) ·
-`fulltext.py` fetch/extract (+`--local` pypdf) · `reviews.py` peer reviews by corpusId (OpenReview: ICLR/NeurIPS-2021+/TMLR/COLM/MIDL public; ACL+CV hosted-but-closed — coverage map in its docstring; other domains need other platforms) ·
-`report_gate.py` report number-tracing gate · `vault.py` init/rebuild/verify/`recall`
-(union-recall vs KNOWN)/`--amend` · `preflight.sh` portable environment check (tooling, install,
-thread layout, live S2-key validation, auth, hosted-vs-local endpoint autodetect) — run it from
-a thread dir before launching a session; machine-specific invariants belong in a caller wrapper,
-not in it.
+queries.tsv + sidecars + escalation ranking · `relevance.py` judgment files · `shards.py` builds
+the sharding recipe's shards, `score` (salt agreement), `completeness` (expected-vs-got per
+shard) — the salt GATE fires at merge via validate.py, however shards were built ·
+`substrate.py` rings · `inspect_data.py` peek/tally/check (per-file integrity; run-level
+invariants stay validate.py's) · `reviews.py` peer reviews by corpusId (OpenReview:
+ICLR/NeurIPS-2021+/TMLR/COLM/MIDL public; ACL+CV hosted-but-closed — coverage map in its
+docstring; other domains need other platforms).
 
 ## Known limits (say so, don't hide)
 Full-text reachability ~90% for arXiv-era corpora (report the residual). Section-digest matching

@@ -14,7 +14,15 @@ Usage:
       create <workspace>/vault/ with <run_dir> folded in as the founding round.
   python vault.py rebuild <workspace>
       fold any NEW <workspace>/round-*/ dirs (not yet in vault.json's registry) into
-      vault/rounds/, merge their caches, and re-derive view/union.jsonl + vault.json.
+      vault/rounds/, merge their caches, and re-derive view/union.jsonl + vault.json
+      + the vault.db EVIDENCE index (pointer ladder + regression/staleness gates run
+      here, at the output boundary — see the evidence-layer block below).
+  python vault.py where <workspace> <text-fragment>
+      provenance-walk entry point: evidence rows whose quote/claim carries the fragment
+      (round · kind · ladder rung · source file · cached text) — one query, no hand grep.
+  python vault.py anchor <workspace-or-run-dir> <ids-file> [--label <label>]
+      recall of a KNOWN-GOOD id list vs the store (folded here from knowledge.py per the
+      primitive-work ruling; ids-file = JSON list, jsonl with corpusId, or one id per line).
 
 Round discovery is by REGISTRY, not by name or mtime: a workspace round dir is new iff its
 realpath is not recorded as a source in vault.json. New rounds are prepended (newest first =
@@ -23,7 +31,7 @@ INVARIANT: vault.json rounds[] is NEWEST-FIRST — dispute-resolution and obs pr
 ride on it (a legacy oldest-first registry produced bogus resolution marks until reordered).
 """
 from __future__ import annotations
-import json, os, re, shutil, sqlite3, sys
+import glob, json, os, re, shutil, sqlite3, sys
 from collections import Counter
 
 FTS_SIZE_CAP = 2_000_000  # cache/fulltext-cache text files >= this are skipped by cache_fts
@@ -100,9 +108,345 @@ def _derive_aliases(obs_by_round):
     return alias
 
 
+# ------------------------------------------------------------- evidence layer
+# (S-C build ruling 2026-07-27; design = evidence-layer-design.md, calibration = the
+# sb-index-proto measurement.) The cross-round evidence INDEX is a DERIVED vault.db table:
+# one row per claim-instance from every round's extract/*.jsonl + extractions.jsonl,
+# rebuilt WHOLE on every rebuild (append-only facts; never hand-edited). Ingest is
+# SCHEMA-TOLERANT — extraction schemas vary by round/thread; records that don't parse are
+# COUNTED and reported, never fatal — and legacy records (no warrant fields) enter with
+# fit=legacy-unwarranted. The POINTER is computed HERE, never LLM-emitted: a leniency
+# ladder grades every verbatim span against the cached source text at rebuild time
+#   exact → normalized (whitespace/unicode/ligature/hyphenation) → per-segment for
+#   ellipsis composites (row rung = WORST segment) → fuzzy ≥ 0.90 (SOFT flag: measured,
+#   below 0.90 the fail class blends into genuine paraphrase) → fail (grounding gate);
+#   no_cache stays a SEPARATE rung — conflating it with fail tripled apparent staleness.
+# Two gates ride the rebuild (gates-at-output-boundary doctrine; extraction stays BLIND —
+# no packet-feeding of prior evidence):
+#   REGRESSION — a later round's EMPTY record where an earlier round holds a substantive
+#   same-or-deeper-tier record (r8-knew-less) → linked in gate_regression + 'regression'
+#   flag on the later row; NEVER overwritten.
+#   UNVERIFIED — a span that verifies against no reachable cache text → 'unverified' flag
+#   ('stale' is RESERVED for source-change invalidation events — a distinct, ratified event kind)
+#   (source change re-verify is mechanical: every rebuild re-runs the ladder, zero LLM).
+
+FUZZY_BAR = 0.90       # calibrated: verified = exact/normalized · soft-flag ≥ 0.90 · fail below
+_Q_KEYS = ("quote", "verbatim", "evidence_quote", "evidence_span", "finding_verbatim",
+           "evidence", "span")
+_C_KEYS = ("claim", "one_line_claim", "key_finding", "main_finding", "finding", "claim_text")
+_KIND_ALIAS = {"coverage_est": "coverage", "strategy_repair": "repair",
+               "failure_modes": "failure_mode", "positions": "stance"}
+_LIST_STR_KINDS = ("failure_modes",)      # lists of bare strings that are claims, not metadata
+_SKIP_EXTRACT_PREFIX = ("merged", "digest")   # round-internal derived copies of ex-* shards
+_SLOT_META = ("addressed", "confidence", "fit", "because", "unless", "judged_by",
+              "scope_flag", "lens", "polarity", "claim_type")
+_DEPTH_SQL = ("CASE lower(coalesce({c},'')) WHEN 'fulltext' THEN 3 WHEN 'snippet' THEN 2 "
+              "WHEN 'abstract' THEN 1 ELSE 0 END")
+_UNI = str.maketrans({"‘": "'", "’": "'", "‚": "'", "“": '"',
+                      "”": '"', "–": "-", "—": "-", "−": "-",
+                      "­": "", " ": " ", " ": " ", " ": " "})
+_LIG = {"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl"}
+
+
+def _norm_cid(v):
+    """corpusId normalization over the 3 measured dialects: numeric string / raw int (both
+    → canonical decimal string, whitespace + leading zeros killed) · web:Owner--Repo slugs
+    (and anything else) verbatim."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if re.fullmatch(r"\d+", s):
+        return str(int(s))
+    return s or None
+
+
+def _norm_text(s):
+    """Normalized-match text: unicode quotes/dashes/ligatures, whitespace collapse, ellipsis
+    → '...' (the same matcher shape the run6 flow-through audit used)."""
+    s = s.translate(_UNI)
+    for k, v in _LIG.items():
+        s = s.replace(k, v)
+    return re.sub(r"\s+", " ", s.replace("…", "...")).strip()
+
+
+def _fuzzy_hit(nq, nd, thresh=FUZZY_BAR):
+    """Sliding-window token-multiset overlap on normalized lowercased text — a cheap edit-
+    distance proxy; honest at >= 0.90, increasingly generous below (measured)."""
+    qt, dt = nq.lower().split(), nd.lower().split()
+    w = len(qt)
+    if w == 0 or len(dt) < w:
+        return False
+    need, window = Counter(qt), Counter(dt[:w])
+    matched = sum(min(window[t], c) for t, c in need.items())
+    goal = thresh * w
+    if matched >= goal:
+        return True
+    for i in range(w, len(dt)):
+        out_t, in_t = dt[i - w], dt[i]
+        if out_t == in_t:
+            continue
+        if window[out_t] <= need.get(out_t, 0):
+            matched -= 1
+        window[out_t] -= 1
+        window[in_t] += 1
+        if window[in_t] <= need.get(in_t, 0):
+            matched += 1
+        if matched >= goal:
+            return True
+    return False
+
+
+def _ladder(quote, raw, nds):
+    """One quote vs one cache text → rung or None (fail vs THIS text). nds = (normalized,
+    normalized-dehyphenated) precomputed once per document. Ellipsis composites grade
+    PER-SEGMENT (>= 20-char segments); the row's rung is the WORST segment rung — partial
+    verification stays visible instead of collapsing into an opaque fail."""
+    if quote in raw:
+        return "exact"
+    nq = _norm_text(quote)
+    nd, nd2 = nds
+    if nq and (nq in nd or nq in nd2):
+        return "normalized"
+    if "..." in nq:
+        segs = [s.strip(" .;,") for s in nq.split("...")]
+        segs = [s for s in segs if len(s) >= 20]
+        if segs:
+            worst = "normalized"
+            for s in segs:
+                if s in nd or s in nd2:
+                    continue
+                if _fuzzy_hit(s, nd):
+                    worst = "fuzzy"
+                else:
+                    return None
+            return worst
+    return "fuzzy" if _fuzzy_hit(nq, nd) else None
+
+
+def _kind(k):
+    """Claim-kind join key from a field name: strip question-slot prefixes (q1_stopping →
+    stopping) + alias table, so the regression gate can compare kinds ACROSS round schemas."""
+    k2 = re.sub(r"^q\d+_", "", k)
+    return _KIND_ALIAS.get(k, _KIND_ALIAS.get(k2, k2))
+
+
+def _slot_claim(d):
+    """Best-effort claim text from a slot dict: join non-quote, non-meta scalar/str-list
+    values (schema-tolerant — never guesses field semantics beyond quote-vs-not)."""
+    parts = []
+    for k, v in d.items():
+        if k in _Q_KEYS or k in _SLOT_META:
+            continue
+        if isinstance(v, str) and v.strip():
+            parts.append(v.strip())
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            parts.append(str(v))
+        elif isinstance(v, list) and v and all(isinstance(x, str) for x in v):
+            parts.append(", ".join(x for x in v if x.strip()))
+    return "; ".join(p for p in parts if p) or None
+
+
+def _slot_quote(d):
+    return next((d[k].strip() for k in _Q_KEYS
+                 if isinstance(d.get(k), str) and d[k].strip()), None)
+
+
+def _explode(rec, basis):
+    """Record → claim tuples (kind, claim_type, claim, quote, polarity). Absence claims are
+    FIRST-CLASS rows (addressed:false / null q-slots → claim+quote NULL, polarity=absent) —
+    the regression gate needs them; absence is a claim, never a silent drop."""
+    out = []
+    claim = next((rec[k].strip() for k in _C_KEYS
+                  if isinstance(rec.get(k), str) and rec[k].strip()), None)
+    quote = _slot_quote(rec) or _slot_quote(basis)
+    if claim or quote:
+        ctype = rec.get("claim_type")
+        out.append((ctype or "finding", ctype, claim, quote,
+                    rec.get("polarity") or "present"))
+    for k, v in rec.items():
+        if isinstance(v, dict) and k != "basis":
+            if "addressed" in v and not v["addressed"]:
+                out.append((_kind(k), None, None, None, "absent"))
+                continue
+            if "addressed" not in v and not any(qk in v for qk in _Q_KEYS):
+                continue                       # metadata dict, not a claim slot
+            out.append((_kind(k), None, _slot_claim(v), _slot_quote(v), "present"))
+        elif v is None and re.match(r"q\d+_", k):
+            out.append((_kind(k), None, None, None, "absent"))
+        elif isinstance(v, list) and v:
+            if all(isinstance(e, dict) for e in v):
+                for e in v:
+                    sc, sq = _slot_claim(e), _slot_quote(e)
+                    if sc or sq:
+                        out.append((_kind(k), None, sc, sq, "present"))
+            elif k in _LIST_STR_KINDS and all(isinstance(e, str) for e in v):
+                for e in v:
+                    if e.strip():
+                        out.append((_kind(k), None, e.strip(), None, "present"))
+    return out
+
+
+def _build_evidence(cur, vault, rounds):
+    """Ingest + ladder + gates (see the evidence-layer block comment). Called ONLY by
+    _build_db inside its single transaction; returns the stats dict for layers."""
+    for t in ("evidence", "gate_regression"):
+        cur.execute(f"DROP TABLE IF EXISTS {t}")
+    cur.execute("""CREATE TABLE evidence (
+        id INTEGER PRIMARY KEY, corpusId TEXT, corpusId_raw TEXT, round TEXT,
+        round_order INTEGER, source_file TEXT, claim_kind TEXT, claim_type TEXT,
+        polarity TEXT, claim_text TEXT, quote TEXT, text_source TEXT, lens TEXT,
+        fit TEXT, because TEXT, unless TEXT, scope_flag TEXT, confidence TEXT,
+        judged_by TEXT, ladder_rung TEXT, ladder_target TEXT, flags TEXT, raw_json TEXT)""")
+    cur.execute("CREATE INDEX idx_ev_cid ON evidence(corpusId)")
+    cur.execute("CREATE INDEX idx_ev_join ON evidence(corpusId, claim_kind, round_order)")
+    # registry is NEWEST-FIRST → round_order counts up from the oldest round = 1
+    order = {r["id"]: len(rounds) - i for i, r in enumerate(rounds)}
+    stats, rows, seen = Counter(), [], set()
+    for r in rounds:
+        rid = r["id"]
+        rdir = f"{vault}/rounds/{rid}"
+        files = [p for p in ([f"{rdir}/extractions.jsonl"]
+                             + sorted(glob.glob(f"{rdir}/extract/**/*.jsonl", recursive=True)))
+                 if os.path.isfile(p)
+                 and not os.path.basename(p).startswith(_SKIP_EXTRACT_PREFIX)]
+        for path in files:
+            sf = os.path.relpath(path, vault)
+            stats["files"] += 1
+            for line in open(path, errors="replace"):
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                    assert isinstance(rec, dict)
+                except Exception:
+                    stats["bad_json_lines"] += 1
+                    continue
+                cid_raw = rec.get("corpusId", rec.get("corpus_id", rec.get("paperId")))
+                cid = _norm_cid(cid_raw)
+                if not cid:
+                    stats["no_id_records"] += 1
+                    continue
+                stats["records"] += 1
+                basis = rec.get("basis") if isinstance(rec.get("basis"), dict) else {}
+                ts = (rec.get("text_source") or rec.get("evidence_depth")
+                      or rec.get("source_tier") or basis.get("source") or basis.get("tier"))
+                conf = rec.get("confidence")
+                for kind, ctype, claim, quote, pol in _explode(rec, basis):
+                    key = (rid, cid, kind, claim or "", quote or "")
+                    if key in seen:            # merged.jsonl / shard-copy duplicates
+                        stats["dup_rows"] += 1
+                        continue
+                    seen.add(key)
+                    rows.append((cid, str(cid_raw), rid, order.get(rid, 0), sf, kind, ctype,
+                                 pol, claim, quote, ts, rec.get("lens"),
+                                 rec.get("fit") or "legacy-unwarranted", rec.get("because"),
+                                 rec.get("unless"), rec.get("scope_flag"),
+                                 None if conf is None else str(conf),
+                                 rec.get("judged_by") or rec.get("extracted_by"),
+                                 json.dumps(rec, ensure_ascii=False)))
+    cur.executemany(
+        "INSERT INTO evidence (corpusId, corpusId_raw, round, round_order, source_file,"
+        " claim_kind, claim_type, polarity, claim_text, quote, text_source, lens, fit,"
+        " because, unless, scope_flag, confidence, judged_by, raw_json)"
+        " VALUES (" + ",".join("?" * 19) + ")", rows)
+    # ---- pointer ladder: fulltext cache first, stored abstract as fallback (never conflated)
+    ab_index = {}
+    s2dir = f"{vault}/cache/s2-cache"
+    if os.path.isdir(s2dir):
+        for f in os.listdir(s2dir):
+            m = re.match(r"paper-(\d+)[_.]", f)
+            if m and f.endswith(".json"):
+                ab_index.setdefault(m.group(1), []).append(f"{s2dir}/{f}")
+
+    def _abstract(cid):
+        for p in ab_index.get(cid, []):
+            try:
+                a = json.load(open(p)).get("abstract")
+            except Exception:
+                continue
+            if a and a.strip():
+                return a
+        return None
+
+    by_cid = {}
+    for rowid, cid, quote in cur.execute("SELECT id, corpusId, quote FROM evidence"):
+        by_cid.setdefault(cid, []).append((rowid, quote))
+    updates = []
+    for cid, items in sorted(by_cid.items()):
+        ftp = f"{vault}/cache/fulltext-cache/{cid}.md"
+        raw_ft = nds_ft = None
+        if os.path.isfile(ftp):
+            try:
+                raw_ft = open(ftp, encoding="utf-8", errors="replace").read()
+                nds_ft = (_norm_text(raw_ft), _norm_text(re.sub(r"-\n", "", raw_ft)))
+            except OSError:
+                raw_ft = None
+        raw_abs, nds_abs, abs_loaded = None, None, False
+        for rowid, quote in items:
+            if quote is None:
+                updates.append(("no_quote", None, None, rowid))
+                continue
+            rung = target = None
+            if raw_ft is not None:
+                rung = _ladder(quote, raw_ft, nds_ft)
+                if rung:
+                    target = "fulltext"
+            if rung is None:
+                if not abs_loaded:
+                    raw_abs = _abstract(cid)
+                    nds_abs = (_norm_text(raw_abs), _norm_text(raw_abs)) if raw_abs else None
+                    abs_loaded = True
+                if raw_abs:
+                    r2 = _ladder(quote, raw_abs, nds_abs)
+                    if r2:
+                        rung, target = r2, "abstract"
+            if rung is None:
+                if raw_ft is None and not raw_abs:
+                    rung, target = "no_cache", "none"
+                else:
+                    rung, target = "fail", ("fulltext" if raw_ft is not None else "abstract")
+            flag = {"fail": "unverified", "fuzzy": "soft-pointer"}.get(rung)
+            updates.append((rung, target, flag, rowid))
+    cur.executemany(
+        "UPDATE evidence SET ladder_rung=?, ladder_target=?, flags=? WHERE id=?", updates)
+    # ---- regression gate: link + flag, never overwrite
+    dep_e = _DEPTH_SQL.format(c="earlier.text_source")
+    dep_l = _DEPTH_SQL.format(c="later.text_source")
+    cur.execute(f"""CREATE TABLE gate_regression AS
+        SELECT later.corpusId, later.claim_kind,
+               earlier.round AS earlier_round, earlier.text_source AS earlier_text_source,
+               substr(earlier.claim_text, 1, 160) AS earlier_claim,
+               later.round AS later_round, later.text_source AS later_text_source,
+               later.source_file AS later_file,
+               earlier.id AS earlier_id, later.id AS later_id
+        FROM evidence later
+        JOIN evidence earlier
+          ON  earlier.corpusId    = later.corpusId
+          AND earlier.claim_kind  = later.claim_kind
+          AND earlier.round_order < later.round_order
+        WHERE later.claim_text IS NULL AND later.quote IS NULL
+          AND earlier.claim_text IS NOT NULL
+          AND {dep_e} >= {dep_l}""")
+    cur.execute("UPDATE evidence SET flags = coalesce(flags || ',', '') || 'regression'"
+                " WHERE id IN (SELECT later_id FROM gate_regression)")
+    ladder = dict(cur.execute("SELECT ladder_rung, COUNT(*) FROM evidence"
+                              " WHERE quote IS NOT NULL GROUP BY 1"))
+    reg_pairs = cur.execute("SELECT COUNT(DISTINCT corpusId || '|' || claim_kind)"
+                            " FROM gate_regression").fetchone()[0]
+    reg_papers = cur.execute("SELECT COUNT(DISTINCT corpusId) FROM gate_regression").fetchone()[0]
+    return {"rows": len(rows), "quoted": sum(1 for r in rows if r[9]),
+            "records": stats["records"], "files": stats["files"],
+            "skipped": {"bad_json_lines": stats["bad_json_lines"],
+                        "no_id_records": stats["no_id_records"],
+                        "dup_rows": stats["dup_rows"]},
+            "ladder": ladder, "unverified": ladder.get("fail", 0),
+            "regression": {"pairs": reg_pairs, "papers": reg_papers}}
+
+
 def _build_db(vault, rows, rounds):
     """Materialize <vault>/vault.db — a DISPOSABLE sqlite DERIVED INDEX over the union view
-    (+ questions, trust-upgrades, and an FTS5 index of the fulltext cache) for ad-hoc queries.
+    (+ questions, trust-upgrades, an FTS5 index of the fulltext cache, and the EVIDENCE
+    table + gate_regression via _build_evidence) for ad-hoc queries.
 
     NEVER CANONICAL. The source of truth is rounds/ + view/union.jsonl; vault.db is dropped and
     rebuilt WHOLE on every _derive, so it is always reconstructable and the corruption remedy is
@@ -172,6 +516,7 @@ def _build_db(vault, rows, rounds):
                         continue  # binary / unreadable — skipped
                     ftrows.append((os.path.splitext(fn)[0], body))
         cur.executemany("INSERT INTO cache_fts (corpusId, body) VALUES (?,?)", ftrows)
+        ev_stats = _build_evidence(cur, vault, rounds)
         cur.execute("COMMIT")
     except Exception:
         cur.execute("ROLLBACK")
@@ -179,7 +524,7 @@ def _build_db(vault, rows, rounds):
     finally:
         con.close()
     return {"rows": len(rows), "questions_file": os.path.isfile(f"{vault}/QUESTIONS.log"),
-            "fts_docs": len(ftrows), "trust_upgrades": len(turows)}
+            "fts_docs": len(ftrows), "trust_upgrades": len(turows), "evidence": ev_stats}
 
 
 def _derive(vault, rounds):
@@ -245,6 +590,7 @@ def _derive(vault, rounds):
         layers[cache] = {"files": len(os.listdir(cdir)) if os.path.isdir(cdir) else 0}
     # disposable sqlite derived index — materialized AFTER union.jsonl, from the same rows
     layers["db"] = _build_db(vault, rows, rounds)
+    layers["evidence"] = layers["db"].pop("evidence")  # top-level layer: it has its own gates
     return layers
 
 
@@ -306,6 +652,21 @@ def rebuild(workspace, amend=None):
                   if a_agr.get(k, 0) != b_agr.get(k, 0)}
         print(f"DELTA: rows {before.get('rows','?')}→{after['rows']} ({d_rows:+d}) · "
               f"agreement changes {deltas or 'none'}")
+    ev = meta["layers"].get("evidence") or {}
+    if ev.get("rows"):
+        print(f"EVIDENCE: {ev['rows']} claim rows ({ev['quoted']} quoted) from "
+              f"{ev['records']} records / {ev['files']} files · skipped {ev['skipped']} · "
+              f"ladder {ev['ladder']}")
+        reg = ev.get("regression") or {}
+        if reg.get("pairs"):
+            print(f"  ⚠ REGRESSION GATE FIRED: {reg['pairs']} (paper,kind) pairs on "
+                  f"{reg['papers']} papers — a later round knew LESS than an existing "
+                  f"deeper-tier record (linked in vault.db gate_regression + 'regression' "
+                  f"flags; earlier rows kept, nothing overwritten)")
+        if ev.get("unverified"):
+            print(f"  ⚠ UNVERIFIED: {ev['unverified']} spans verify against NO reachable cache text "
+                  f"('unverified' flag; 'stale' is reserved for source-change events; no_cache separate — "
+                  f"never conflate reachability with failure)")
     return meta
 
 
@@ -371,6 +732,121 @@ def verify(workspace):
     return 1 if fails else 0
 
 
+def where(workspace, frag, limit=20):
+    """Provenance-walk entry point (interrogation convention 1): rendered claim → evidence
+    row → span → cached source, one LIKE query over the evidence index. A zero-hit result is
+    'not found in <this index>', NEVER 'does not exist' — absence claims need the full walk."""
+    dbp = f"{workspace}/vault/vault.db"
+    if not os.path.isfile(dbp):
+        raise SystemExit(f"{dbp} missing — run `vault.py rebuild {workspace}` first "
+                         f"(the evidence index is derived, never hand-built)")
+    con = sqlite3.connect(dbp)
+    try:
+        total = con.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+    except sqlite3.OperationalError:
+        raise SystemExit("vault.db predates the evidence layer — rebuild to grow it")
+    esc = frag.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    pat = f"%{esc}%"
+    hits = con.execute(
+        "SELECT corpusId, round, claim_kind, coalesce(ladder_rung,'?'),"
+        " coalesce(ladder_target,''), coalesce(flags,''), source_file,"
+        " substr(coalesce(claim_text,''),1,140), substr(coalesce(quote,''),1,140)"
+        " FROM evidence WHERE quote LIKE ? ESCAPE '\\' OR claim_text LIKE ? ESCAPE '\\'"
+        " ORDER BY round_order DESC LIMIT ?", (pat, pat, limit + 1)).fetchall()
+    con.close()
+    more = len(hits) > limit
+    for cid, rnd, kind, rung, tgt, flags, sf, ct, qt in hits[:limit]:
+        cache = f"{workspace}/vault/cache/fulltext-cache/{cid}.md"
+        print(f"{cid} · {rnd} · {kind} · rung={rung}{'/' + tgt if tgt else ''}"
+              + (f" · FLAGS={flags}" if flags else ""))
+        if ct:
+            print(f"  claim: {ct}")
+        if qt:
+            print(f"  quote: {qt}")
+        print(f"  row source: {sf} · cached text: "
+              f"{cache if os.path.isfile(cache) else '(no fulltext cache for this id)'}")
+    n = len(hits[:limit])
+    print(f"{n}{'+' if more else ''} hit(s) for {frag!r} over {total} evidence rows "
+          f"(fields searched: claim_text + quote)"
+          + ("" if n else " — NOT-FOUND-IN-THIS-SCOPE, not proof of absence"))
+    return n
+
+
+def anchor(ids, tiers, obs=None, edges=None, label=""):
+    """Recall of a KNOWN-GOOD set (survey refs, expert list, enumerated canon) vs the store —
+    OFFLINE (folded from knowledge.py per primitive-work ruling 3). Interpret with care: low
+    recall→relevant is often deliberate exclusion, not a miss (check n_judged_out_of_scope).
+    Only never_seen are candidate gaps → hand to Acquire. Membership consults ALL layers
+    (tiers / observations / edges) or it lies about what was seen."""
+    obs, edges = obs or {}, edges or {}
+    ids = [str(i) for i in ids]
+    seen = [i for i in ids if (i in tiers or i in obs or i in edges)]
+    relevant = [i for i in seen if tiers.get(i) in POS]
+    judged_out = [i for i in seen if tiers.get(i) in ("not-relevant", "out")]
+    never_seen = [i for i in ids if i not in seen]
+    n = len(ids) or 1
+    return {"label": label, "n": len(ids),
+            "recall_relevant": len(relevant) / n, "recall_seen": len(seen) / n,
+            "n_relevant": len(relevant), "n_seen": len(seen),
+            "n_judged_out_of_scope": len(judged_out),
+            "n_never_seen": len(never_seen), "never_seen": never_seen}
+
+
+def anchor_layers(path):
+    """(tiers, obs, edges) membership layers for anchor() — from a WORKSPACE with a vault
+    (tier = the thread's current call: resolved tier, else the newest round's) or, legacy,
+    a run dir with the standard files (observations / standardized-relevance / edges-cache)."""
+    vault = f"{path}/vault" if os.path.isdir(f"{path}/vault") else path
+    up = f"{vault}/view/union.jsonl"
+    if os.path.isfile(up):
+        order = [r["id"] for r in json.load(open(f"{vault}/vault.json"))["rounds"]]
+        tiers, obs = {}, {}
+        for l in open(up):
+            r = json.loads(l)
+            cid = r["corpusId"]
+            obs[cid] = r
+            tbr = r.get("tiers_by_round") or {}
+            tiers[cid] = ((r.get("resolved_latest") or {}).get("tier")
+                          or next((tbr[rid] for rid in order if tbr.get(rid)), None))
+        edges = {}
+        s2dir = f"{vault}/cache/s2-cache"
+        if os.path.isdir(s2dir):
+            for f in os.listdir(s2dir):
+                m = re.match(r"edges-(\d+)[_.]", f)
+                if m:
+                    edges[m.group(1)] = True
+        return tiers, obs, edges
+    tiers = {str(r["corpusId"]): r.get("tier")
+             for r in map(json.loads, open(f"{path}/standardized-relevance.jsonl"))}
+    op = f"{path}/observations.jsonl"
+    obs = {str(r["corpusId"]): r for r in map(json.loads, open(op))} if os.path.isfile(op) else {}
+    ep = f"{path}/edges-cache.json"
+    edges = {str(k): v for k, v in json.load(open(ep)).items()} if os.path.isfile(ep) else {}
+    return tiers, obs, edges
+
+
+def _read_ids(path):
+    """ids-file tolerance: JSON list (of ids or dicts) · jsonl with corpusId · one id/line."""
+    text = open(path).read().strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [str(x.get("corpusId")) if isinstance(x, dict) else str(x) for x in data]
+    except json.JSONDecodeError:
+        pass
+    ids = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+            ids.append(str(r.get("corpusId")) if isinstance(r, dict) else str(r))
+        except json.JSONDecodeError:
+            ids.append(line)
+    return ids
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "rebuild":
@@ -396,6 +872,19 @@ if __name__ == "__main__":
         sys.exit(0)
     elif cmd == "verify":
         sys.exit(verify(sys.argv[2]))
+    elif cmd == "where":
+        if len(sys.argv) < 4 or not os.path.isdir(os.path.join(sys.argv[2], "vault")):
+            print("usage: vault.py where <workspace> <text-fragment>   "
+                  "(workspace = the dir containing vault/; searches claim_text + quote)")
+            sys.exit(2)
+        where(sys.argv[2], sys.argv[3])
+        sys.exit(0)
+    elif cmd == "anchor":
+        label = (sys.argv[sys.argv.index("--label") + 1] if "--label" in sys.argv
+                 else os.path.basename(sys.argv[3]))
+        print(json.dumps(anchor(_read_ids(sys.argv[3]), *anchor_layers(sys.argv[2]),
+                                label=label), indent=1))
+        sys.exit(0)
     elif cmd == "init":
         src = sys.argv[sys.argv.index("--from") + 1]
         rid = sys.argv[sys.argv.index("--id") + 1] if "--id" in sys.argv else "r1"

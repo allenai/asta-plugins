@@ -20,6 +20,23 @@ Checks:
      candidate record.
   7. ring ↔ tier consistency (not-relevant→out; unjudged tier→unjudged ring).
   8. Report (not gate): label-coverage, tag-coverage over the relevant set.
+ 11. FLEET-OUTPUT salt gate (merge-time; primitive-work ruling 1 — the trust boundary
+     moved OUT of shards.py, which sessions re-derive, to the output boundary where it
+     fires no matter how sharding was done): judgments present ⇒ salts.json present with
+     real salts that were actually judged, OR an allow-unsalted reason recorded
+     (salts.json "_unsalted_declared" / thread.json "allow_unsalted").
+ 12. UNJUDGED ≠ semantic bucket (a2-run6 F2: ring papers with no judgment row fell into
+     "other-*" — pipeline state absorbed into a verdict): unjudged rows must never sit in
+     a catch-all family bucket; "other" only ever means judged-but-matched-no-family.
+
+Derived-artifact gate (a2-run6 audit; run it on ANY table derived over the ring):
+  python validate.py derived <run-dir> <table.jsonl> [--key corpusId] [--bucket <field>]
+                                                     [--budget 0.10]
+  (a) JOIN COMPLETENESS — every live-ring member matched a row (missing → loud FAIL list);
+  (b) CATCH-ALL BUDGET — empty/"other" bucket over threshold → STOP with the bucket dumped;
+  (c) PROVENANCE — sidecar <table>.meta.json {"inputs": {path: n_rows}} listing inputs
+      ACTUALLY CONSUMED, re-counted now (an under-reading glob is visible);
+  plus UNJUDGED ≠ bucket inside the table (unjudged ids carrying a semantic value FAIL).
 
 Usage: python validate.py <run-dir>          (exit 0 = all gates pass)
 """
@@ -28,6 +45,10 @@ import glob, json, os, re, sys
 from collections import Counter
 
 RAW_MARKERS = ("-all.jsonl", "-raw.jsonl", ".raw.")
+# catch-all bucket values (empty counts too): only ever legal for JUDGED rows that matched
+# no family — never for pipeline gaps ("never hide a quality drop in a catch-all bucket")
+CATCHALL = re.compile(r"^(others?\b|misc\b|catch[- ]?all|uncategori[sz]ed|unknown\b)", re.I)
+LIVE_RING_EXCLUDED = (None, "", "out", "unjudged")
 
 
 def jl(p):
@@ -143,12 +164,132 @@ def validate(run):
         tagged = sum(1 for o in relevant if o.get("primary_family"))
         warnings.append(f"[report] tag-coverage over relevant {tagged}/{len(relevant)}")
 
+    # 11. fleet-output salt gate — fires at MERGE regardless of how shards were built
+    # (round-13 headless re-implemented sharding and the in-convenience gate never fired)
+    if judged:
+        sp = os.path.join(run, "judge-input", "salts.json")
+        salts = json.load(open(sp)) if os.path.exists(sp) else None
+        declared = (salts or {}).get("_unsalted_declared") or cfg.get("allow_unsalted")
+        planted = {c for m in (salts or {}).values() if isinstance(m, dict) for c in m}
+        if planted:
+            missing = planted - judged
+            if missing == planted:
+                failures.append(f"[fleet-salt] NONE of the {len(planted)} planted salt ids "
+                                f"appear in judgments — shards were rebuilt/judged without "
+                                f"their salts (per-judge calibration lost)")
+            elif missing:
+                warnings.append(f"[fleet-salt] {len(missing)}/{len(planted)} salt ids never "
+                                f"judged e.g. {sorted(missing)[:3]}")
+        elif declared:
+            warnings.append(f"[fleet-salt] unsalted fleet DECLARED: {declared}")
+        else:
+            failures.append("[fleet-salt] judgments present but no salts and no recorded "
+                            "reason — a fleet without planted calibration items is "
+                            "uncalibratable; re-shard with salts or declare "
+                            "allow_unsalted='<reason>' (salts.json or thread.json)")
+
+    # 12. UNJUDGED ≠ semantic bucket — pipeline state must stay loud, never absorbed
+    unj_catch = [str(o["corpusId"]) for o in obs_rows
+                 if tiers.get(str(o["corpusId"])) is None
+                 and CATCHALL.match(str(o.get("primary_family") or ""))]
+    if unj_catch:
+        failures.append(f"[unjudged-bucket] {len(unj_catch)} UNJUDGED rows sit in a "
+                        f"catch-all semantic bucket (missing-data absorbed into a verdict) "
+                        f"e.g. {unj_catch[:3]}")
+
+    return failures, warnings
+
+
+def validate_derived(run, table, key="corpusId", bucket=None, budget=0.10):
+    """Derived-artifact GATE at the output boundary (a2-run6 F1-F3: the extraction/tagging
+    stage had no gate, so a session-authored deriver silently mis-bucketed ring papers).
+    Constrains WHAT, not HOW — any table derived over the ring must pass:
+      (a) join completeness over the live ring (missing rows → loud FAIL with the list);
+      (b) catch-all budget (empty/"other"/misc over threshold → STOP, bucket dumped);
+      (c) a provenance sidecar listing inputs ACTUALLY CONSUMED, re-counted against disk;
+      (d) UNJUDGED ≠ bucket: rows for unjudged ids must not carry a semantic value."""
+    failures, warnings = [], []
+    rows = jl(table)
+    if not rows:
+        return [f"[derived] {table}: missing or empty — nothing to gate"], warnings
+    tids = {str(r.get(key)) for r in rows if r.get(key) is not None}
+    obs_rows = jl(os.path.join(run, "observations.jsonl"))
+    tiers = {str(r["corpusId"]): r.get("tier")
+             for r in jl(os.path.join(run, "standardized-relevance.jsonl"))}
+    # (a) join completeness — every live-ring member matched a source row
+    ring_ids = {str(o["corpusId"]) for o in obs_rows
+                if o.get("ring") not in LIVE_RING_EXCLUDED}
+    missing = sorted(ring_ids - tids)
+    if missing:
+        failures.append(f"[derived-join] {len(missing)}/{len(ring_ids)} live-ring ids have "
+                        f"NO row in {os.path.basename(table)} (the join under-read): "
+                        f"{missing[:20]}" + (f" (+{len(missing)-20} more)"
+                                             if len(missing) > 20 else ""))
+    elif ring_ids:
+        warnings.append(f"[report] derived-join complete: {len(ring_ids)}/{len(ring_ids)} "
+                        f"live-ring ids present")
+    # (b) catch-all budget + (d) UNJUDGED ≠ bucket
+    bfield = bucket or next((f for f in ("bucket", "family", "primary_family", "class",
+                                         "category", "tag") if f in rows[0]), None)
+    if bfield:
+        vals = [(str(r.get(key)), str(r.get(bfield) or "")) for r in rows]
+        catch = [c for c, v in vals if not v or CATCHALL.match(v)]
+        frac = len(catch) / len(vals)
+        if frac > budget:
+            failures.append(f"[derived-catchall] {bfield}: {len(catch)}/{len(vals)} rows "
+                            f"({frac:.0%}) in the empty/catch-all bucket > budget "
+                            f"{budget:.0%} — STOP; bucket dump: {catch[:50]}"
+                            + (f" (+{len(catch)-50} more)" if len(catch) > 50 else ""))
+        else:
+            warnings.append(f"[report] catch-all '{bfield}': {len(catch)}/{len(vals)} "
+                            f"({frac:.0%}) within budget {budget:.0%}")
+        unj = [c for c, v in vals if tiers.get(c) is None and v
+               and v.upper() not in ("UNJUDGED", "MISSING", "NONE")]
+        if unj:
+            failures.append(f"[derived-unjudged] {len(unj)} UNJUDGED ids carry a semantic "
+                            f"'{bfield}' value (pipeline state absorbed into a verdict) "
+                            f"e.g. {unj[:5]}")
+    else:
+        warnings.append("[derived] no bucket field found — catch-all budget UNCHECKED "
+                        "(name one with --bucket)")
+    # (c) provenance: inputs actually consumed, re-counted now
+    cands = [re.sub(r"\.jsonl$", "", table) + ".meta.json", table + ".meta.json"]
+    metap = next((p for p in cands if os.path.exists(p)), None)
+    if metap is None:
+        failures.append(f"[derived-provenance] no sidecar {os.path.basename(cands[0])} — a "
+                        f"derived table must record inputs ACTUALLY CONSUMED: "
+                        f'{{"inputs": {{"<path>": <n_rows_read>}}}}')
+    else:
+        inputs = (json.load(open(metap)) or {}).get("inputs") or {}
+        if not inputs:
+            failures.append(f"[derived-provenance] {os.path.basename(metap)}: 'inputs' "
+                            f"missing/empty — provenance line required")
+        for ip, n in inputs.items():
+            ap = ip if os.path.isabs(ip) else os.path.join(run, ip)
+            if not os.path.exists(ap):
+                failures.append(f"[derived-provenance] consumed input {ip} no longer exists")
+            elif isinstance(n, int):
+                now = sum(1 for l in open(ap) if l.strip())
+                if now != n:
+                    failures.append(f"[derived-provenance] {ip}: consumed {n} rows but the "
+                                    f"file now has {now} — under-reading glob or stale "
+                                    f"derivation; re-derive")
+        if inputs:
+            warnings.append("[report] provenance: consumed " +
+                            ", ".join(f"{p} ({n})" for p, n in inputs.items()))
     return failures, warnings
 
 
 if __name__ == "__main__":
-    run = sys.argv[1]
-    failures, warnings = validate(run)
+    if sys.argv[1] == "derived":
+        opt = lambda flag, default, cast=str: (cast(sys.argv[sys.argv.index(flag) + 1])
+                                               if flag in sys.argv else default)
+        failures, warnings = validate_derived(
+            sys.argv[2], sys.argv[3], key=opt("--key", "corpusId"),
+            bucket=opt("--bucket", None), budget=opt("--budget", 0.10, float))
+    else:
+        run = sys.argv[1]
+        failures, warnings = validate(run)
     for w in warnings:
         print("  ·", w)
     if failures:
