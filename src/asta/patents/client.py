@@ -103,7 +103,8 @@ class PatentClient:
         """Get detail metadata for a single patent by its UCID.
 
         Args:
-            ucid: Unified Citation Identifier, e.g. ``US-10123456-B2``.
+            ucid: Unified Citation Identifier -- office, document number, and
+                kind code concatenated with no separators, e.g. ``US10123456B2``.
             fields: Comma-separated patent fields to return. The detail endpoint
                 can return ``claims`` and ``specification``, which search omits.
         """

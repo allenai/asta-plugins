@@ -32,13 +32,14 @@ DEFAULT_FIELDS = (
 def get(ucid: str, fields: str, output_format: str):
     """Get detail metadata for a single patent by its UCID.
 
-    UCID is the Unified Citation Identifier, e.g. US-10123456-B2.
+    UCID is the Unified Citation Identifier: office, document number, and kind
+    code concatenated with no separators, e.g. US10123456B2.
 
     Examples:
 
-        asta patents get US-10123456-B2
+        asta patents get US10123456B2
 
-        asta patents get US-10123456-B2 --fields ucid,title,claims,specification
+        asta patents get US10123456B2 --fields ucid,title,claims,specification
     """
     try:
         client = PatentClient()

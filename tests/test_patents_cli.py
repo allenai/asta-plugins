@@ -44,7 +44,7 @@ class TestPatentSearch:
         envelope = {
             "total": 1,
             "offset": 0,
-            "data": [{"ucid": "US-10123456-B2", "title": "A Widget"}],
+            "data": [{"ucid": "US10123456B2", "title": "A Widget"}],
         }
         with patch("asta.patents.search.PatentClient") as MockClient:
             instance = MagicMock()
@@ -65,7 +65,7 @@ class TestPatentSearch:
             "offset": 0,
             "data": [
                 {
-                    "ucid": "US-10123456-B2",
+                    "ucid": "US10123456B2",
                     "title": "A Widget",
                     "assignees": ["Acme Corp"],
                     "publicationDate": "2020-01-01",
@@ -82,7 +82,7 @@ class TestPatentSearch:
 
         assert result.exit_code == 0
         assert "A Widget" in result.output
-        assert "US-10123456-B2" in result.output
+        assert "US10123456B2" in result.output
         assert "Acme Corp" in result.output
 
     def test_search_passes_options(self, runner):
@@ -115,12 +115,12 @@ class TestPatentGet:
         assert "Missing argument" in result.output
 
     def test_get_json(self, runner):
-        patent = {"ucid": "US-10123456-B2", "title": "A Widget"}
+        patent = {"ucid": "US10123456B2", "title": "A Widget"}
         with patch("asta.patents.get.PatentClient") as MockClient:
             instance = MagicMock()
             instance.get_patent.return_value = patent
             MockClient.return_value = instance
-            result = runner.invoke(cli, ["patents", "get", "US-10123456-B2"])
+            result = runner.invoke(cli, ["patents", "get", "US10123456B2"])
 
         assert result.exit_code == 0
         assert json.loads(result.output) == patent
@@ -128,7 +128,7 @@ class TestPatentGet:
 
     def test_get_text(self, runner):
         patent = {
-            "ucid": "US-10123456-B2",
+            "ucid": "US10123456B2",
             "title": "A Widget",
             "assignees": ["Acme Corp"],
             "inventors": ["Jane Doe"],
@@ -140,12 +140,12 @@ class TestPatentGet:
             instance.get_patent.return_value = patent
             MockClient.return_value = instance
             result = runner.invoke(
-                cli, ["patents", "get", "US-10123456-B2", "--format", "text"]
+                cli, ["patents", "get", "US10123456B2", "--format", "text"]
             )
 
         assert result.exit_code == 0
         assert "Title: A Widget" in result.output
-        assert "UCID: US-10123456-B2" in result.output
+        assert "UCID: US10123456B2" in result.output
         assert "Jane Doe" in result.output
         assert "111, 222" in result.output
         assert "A better widget." in result.output
@@ -167,7 +167,7 @@ class TestPatentForwardCitations:
         envelope = {
             "total": 1,
             "offset": 0,
-            "data": [{"ucid": "US-10123456-B2", "title": "A Widget"}],
+            "data": [{"ucid": "US10123456B2", "title": "A Widget"}],
         }
         with patch("asta.patents.forward_citations.PatentClient") as MockClient:
             instance = MagicMock()
@@ -202,9 +202,9 @@ class TestPatentClient:
     def test_get_quotes_ucid(self):
         client = self._client()
         with patch.object(client, "_request", return_value={}) as req:
-            client.get_patent("US-10123456-B2", fields="ucid,title")
+            client.get_patent("US10123456B2", fields="ucid,title")
         path = req.call_args[0][0]
-        assert path == "/graph/v1/patent/US-10123456-B2"
+        assert path == "/graph/v1/patent/US10123456B2"
 
     def test_forward_citations_path(self):
         client = self._client()

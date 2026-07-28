@@ -50,16 +50,19 @@ hits — fetch them per-patent with `asta patents get`.
 **asta patents get** — full metadata for one patent by its UCID.
 
 ```bash
-asta patents get US-10123456-B2
+asta patents get US10123456B2
 
-asta patents get US-10123456-B2 --fields ucid,title,claims,specification
+asta patents get US10123456B2 --fields ucid,title,claims,specification
 
-asta patents get US-10123456-B2 --format text
+asta patents get US10123456B2 --format text
 ```
 
-UCID (Unified Citation Identifier) form: `<office>-<docNumber>-<kind>`, e.g.
-`US-10123456-B2`. The detail endpoint can return the full `claims` and
-`specification` text (omitted by default because they are large).
+UCID (Unified Citation Identifier) form: `<office><docNumber><kind>` concatenated
+with **no separators**, e.g. `US10123456B2`. A dashed form like `US-10123456-B2`
+is a common display convention elsewhere, but the API does not accept it and will
+return 404. Copy the `ucid` verbatim from a search hit rather than assembling one.
+The detail endpoint can return the full `claims` and `specification` text
+(omitted by default because they are large).
 
 Available fields: `ucid, office, docNumber, kind, patentType, filingDate,
 publicationDate, assignees, inventors, cpcCodes, title, abstract, claims,
@@ -86,7 +89,7 @@ downstream patent impact.
 All commands return the standard S2 envelope:
 
 ```json
-{ "total": 42, "offset": 0, "next": 10, "data": [ { "ucid": "US-...", "title": "..." } ] }
+{ "total": 42, "offset": 0, "next": 10, "data": [ { "ucid": "US10123456B2", "title": "..." } ] }
 ```
 
 `get` returns a single patent object (no envelope).
