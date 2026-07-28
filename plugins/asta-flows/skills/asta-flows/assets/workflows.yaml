@@ -1,0 +1,543 @@
+version: 2
+
+workflows:
+
+  findings:
+    mission: Synthesize the finished session into a short, honest findings brief the report opens with. It composes onto any flow, reads the whole session, and names no inputs, so it runs last by id order.
+    children:
+      - findings:
+          mission: >-
+            The session is finished. Read all of it — which hypotheses actually held up on
+            independent data, which were left undecided for lack of power or data and why, the
+            theories, and the grounding literature. Write the report's front page for a general
+            audience AND the scientist synthesis beneath it.
+
+            The front page is an encyclopedia-style entry for someone outside the field.
+            Orient them to the domain first, in plain words, without giving away the discovery;
+            then state what the study found in plain terms; then separate what the field
+            already knew from what this work adds that may be new. Keep the voice neutral and
+            accessible but honest that these are new, provisional findings, not settled fact —
+            expand every acronym, no tool names, no statistics in this part. Give a short
+            at-a-glance list of the key findings, each one plain line, tagging each by whether
+            it reproduced on independent data, is a proposed theory not yet tested, or was
+            refuted. Fill the index fields that place this entry in an encyclopedia of
+            scientific discoveries, choosing the single best-fitting discovery type.
+
+            The scientist synthesis leads with the honest bottom line — the direct answer to
+            the question, stated plainly even when the answer is that the data could not decide
+            most of it — then what held up and what it means, what the work contributes read
+            against the literature (the novel, testable angle), why it could not answer more,
+            and the concrete data or single tests that would resolve the open questions. Here
+            the statistics belong. Author output_json only.
+          output: {findings: findings}
+
+  reflection:
+    mission: Capture the executing agent's feedback on how the session ran. It composes onto any flow, reads the whole session, and names no inputs, so it runs last by id order.
+    children:
+      - reflection:
+          mission: The session is finished. Look back over the run and record how it went, as feedback rather than science. Note where the flow, schema, or tools got in your way or cost you rework, and the concrete changes that would have made the run go better. Point at the real tasks, fields, and tools involved.
+          output: {reflection: reflection}
+
+  define:
+    mission: Distil the human's working brief into a clear, reader-facing statement of the research question. It composes onto any flow, reads mission.md, names no inputs, and runs first by id order.
+    children:
+      - define:
+          mission: >-
+            Read mission.md and state, for a scientist outside this subfield, the question the
+            study asks and why it matters. Keep only the science: drop the operational detail
+            written for the executing agents — file paths, dataset locations, tool and step
+            names, run budgets, sourcing modes, citation rules, planning checklists — none of it
+            belongs in the question. Expand every acronym on first use and write plainly, in the
+            voice of a research abstract, not a task list. Title it with the underlying scientific
+            question itself — why the phenomenon happens or what explains it — never with the study's
+            method or apparatus: no reference to reproduction, independent testing, holding up on
+            another cohort, or machine/automated/AI discovery. "Why do patients with seemingly
+            similar breast tumors experience dramatically different survival outcomes?" not "Which
+            machine-discovered subpopulations survive testing on an independent cohort?". Author
+            output_json only; the report renders it at the top.
+          output: {mission_brief: mission_brief}
+
+  theorizer:
+    mission: Explain the cross-cutting theories behind the reproduced hypotheses — anchored to the run's own stated intent and dataset context, grounded in the literature and the reproduction's verdicts and effect sizes — with a single novelty-focused Theorizer run, then triaging each theory for testability. Novelty is read from the Theorizer's own per-statement evaluation, never re-scored.
+    children:
+      - theory_formation:
+          mission: >-
+            Run one novelty-focused Theorizer branch (a single generation objective; there is
+            no per-objective fan-out).
+          replan: objective
+          children:
+            - theory_generation:
+                mission: >-
+                  Run the managed Theorizer once, focused on novelty. Reconstruct
+                  the original user's intent from the run's metadata — its stated intent and dataset
+                  descriptions — and distil it into the query and framing, so the theories serve what
+                  the user set out to learn. Generate novelty-focused theories — non-obvious mechanisms
+                  and new predictions — each cross-cutting (explaining
+                  several hypotheses), grounded in both the literature and the reproduction's verdicts and
+                  effect sizes. Ground theories on the hypotheses the reproduction supported; carry a
+                  hypothesis that did not reproduce as conflicting evidence rather than removing it;
+                  drop only a hypothesis whose audit flagged the source finding itself as an error.
+                  Preserve the Theorizer's own per-statement novelty evaluation verbatim — never
+                  re-score it — and account for the partial and untested hypotheses each theory
+                  leaves unexplained.
+                cli: [asta generate-theories]
+                input: [auto_discovery, audit, literature_search]
+                fan_in: true
+                output: {theories: [theory], run: run}
+      - novelty_assessment:
+          mission: >-
+            Triage each theory for testability against the independent data in hand. A theory is
+            testable now only if its prediction is empirically free in that data: a prediction that
+            is definitionally entailed by how the variables were constructed, or that needs transient
+            or time-resolved data, is not testable now even when the variables are present. Commit a
+            prespecified test for each testable theory; record the rest as needing new data, naming
+            the gap. Novelty is not re-scored here — the Theorizer's per-statement evaluation carries
+            through.
+          cli: [asta generate-theories]
+          input: [theory_generation, auto_discovery, evidence_gathering]
+          fan_in: true
+          output: {theory_evaluations: [theory_evaluation], run: run}
+
+  data_and_literature_grounded_theory_generation:
+    mission: Reproduce an existing AutoDiscovery run's hypotheses on independent data, then generate literature-grounded theories from them. First obtain the run's experiments (auto_discovery); then, in parallel, gather and coverage-assess the independent secondary data (evidence_gathering) and run the thematic + intent literature searches (literature_search); fan out one reproduction branch per selected hypothesis once selection and coverage are known; then theorize, write the findings, and reflect. Only independent data matters — the run's original dataset is never recovered.
+    children:
+      - define
+      - auto_discovery:
+          mission: >-
+            Execute AutoDiscovery, or — when the mission already provides a run directory — just load
+            its experiment log (the mcts_node_*.json nodes) and run no fresh discovery. This step only
+            obtains the experiments and makes a signal-based selection; it adds no scientific judgment.
+            SELECT the candidate hypotheses ONE-TO-ONE from the log — no grouping, clustering, merging,
+            splitting, or rewording: take every experiment whose `surprising` field is true, plus the
+            config theorizer_top_n experiments with the highest `posterior.mean` and the theorizer_top_n
+            with the lowest, deduplicated by node id. Each selected experiment becomes exactly one
+            candidate hypothesis: copy its `hypothesis` field VERBATIM as the statement (never reword —
+            a single changed word can invalidate it) and carry its `experiment_plan`, `code`, and run
+            signals (`surprising`, `posterior.mean`, `prior.mean`, `belief_change`, `normalized_surprisal`,
+            `creation_idx`) unchanged, writing `prior.mean` and `posterior.mean` as top-level `prior_mean`
+            and `posterior_mean` and the node's `creation_idx` as top-level `creation_idx` on each
+            experiment record — the report's belief badges and per-hypothesis `?exp=N` links read those two
+            fields at the top level. So experiment_design can hand the same experiment to DataVoyager.
+            Record the run's own outcome for each, from how its belief shifted (posterior.mean vs prior.mean). Write each
+            selected hypothesis to its own file and reference it by path, rather than inlining dozens
+            of records and offloading individual fields to stay under the metadata cap. Keep the raw
+            experiment nodes as artifacts.
+          cli: [asta autodiscovery]
+          output: {experiments: [ref(experiment)], autods_hypotheses: [ref(autods_hypothesis)], run: run}
+      - literature_search:
+          mission: >-
+            Ground the theories in the literature, in parallel with evidence_gathering. Cluster the
+            AutoDiscovery hypotheses into up to config n_thematic_searches themes and add one further
+            theme that is the run's overall intent (from the run metadata); this phase fans out one
+            branch per theme.
+          replan: theme
+          children:
+            - thematic_search:
+                mission: >-
+                  Search the literature for this one theme (a cluster of AutoDiscovery hypotheses, or
+                  the run's overall intent). Retrieve papers with the `asta-papers` PyPI package and,
+                  with the user's consent, computer-use for papers behind access friction. Emit the
+                  theme's review, preserving the evidence uuids that tie each finding back to its
+                  paper.
+                cli: [asta literature, asta papers]
+                input: [auto_discovery]
+                output: {literature_review: literature_review}
+      - evidence_gathering:
+          mission: >-
+            Get the independent (secondary) data the hypotheses are reproduced on, and assess its
+            coverage BEFORE any reproduction runs. If the mission provides or names a secondary
+            dataset, register that as the independent data and do not search further. Otherwise run
+            ONE open-ended search across all hypotheses: independent means a different instrument,
+            inventory, region, or method than the source; prefer the lightest product that carries
+            the needed variables, and record which independence axes each dataset varies. When a
+            hypothesis is a difference or ratio of variables, keep every term of that construct on
+            the SAME source and reference frame — mixing sources with different definitions,
+            reference frames, or units silently corrupts the construct and manufactures false nulls.
+            Exhaust the openly available options — repositories, products the source cites, lighter
+            per-entity or subset extracts, APIs, mirrors, and data reachable only through browser
+            automation — before deciding a hypothesis cannot be tested; a dataset being large or
+            awkward to obtain is never a reason to stop. Validate each acquired dataset against its
+            source (n, schema and variables, units, missingness) before registering it; one that
+            fails validation is a gap, not an input. A quantity available only as the same model's
+            output, with no independent measurement, is a gap, never a re-derivation. Then assess
+            coverage per hypothesis and dataset: what the data can and cannot decide, which source
+            covariates it lacks, and whether the usable sample — for a survival or event endpoint,
+            the event count per stratum — is adequate to detect the source effect. Count the events
+            up front, not at audit: a hypothesis can be partially testable when only one component
+            is decidable (the biology, say, while the survival endpoint is underpowered). Keep the
+            axes separate — whether a variable is a proxy is judged later at design time, and power
+            is its own call; never fold either into a free-text note. Validate the
+            data's endpoints with one shared positive control that recovers a known effect on this
+            data (stage or age on survival, say), so later nulls read as underpowered rather than
+            false. Every hypothesis is covered by a dataset or recorded as a gap with the avenues
+            tried; a later no-data verdict inherits that gap.
+          cli: [asta literature, asta papers, asta documents, asta autodiscovery]
+          input: [auto_discovery]
+          output: {datasets: [dataset], coverage: [coverage], gaps: [gap], "positive_control?": positive_control}
+          # The rubric must be SELF-CONTAINED: the critic sees only the bundle
+          # (rubric + mission + output_json + upstream inputs), never the preamble.
+          critic:
+            rubric: >-
+              Review this evidence_gathering closure. The standard: every hypothesis
+              gets its OWN data search — characterize its specific data need, search
+              that modality's sources exhaustively, attempt the proxy/partial/pooled
+              tier before any no-data verdict, and power-gate each candidate dataset.
+              Judge the RESOLUTION plus the selected hypotheses from auto_discovery.
+
+              THE PROXY TIER IS MANDATORY AND IS THE FIRST THING TO CHECK. A thorough
+              search for the IDEAL dataset does NOT substitute for it. For EVERY gap
+              that resolves to no_data / not_public / undecided(no_data), the
+              `avenues_tried` MUST contain ONE of:
+              (a) a concrete proxy/partial/pooled test that was actually attempted —
+              name the specific dataset or approach tried (a different platform,
+              tissue, cohort, population, or a partial test of one component / one
+              variable of the construct) and why it failed or was underpowered; OR
+              (b) an explicit, hypothesis-specific argument for why NO proxy is
+              constructible — i.e. the exposure or construct is so specific that no
+              approximate dataset could carry even a partial test (state which term
+              makes it unconstructible).
+              A gap that only documents searching for the ideal/exact dataset —
+              however many repositories or queries it lists — and then declares
+              no_data WITHOUT (a) or (b) is a REJECT. "We searched hard and the exact
+              cohort isn't open" is NOT sufficient; "aggregate/meta-analysis evidence
+              exists but no patient-level data" WITHOUT an attempted partial or pooled
+              test is a REJECT. Count the no_data gaps lacking both (a) and (b): if
+              that count is ≥1, reject and list them.
+
+              Reject (with specific, per-hypothesis fix instructions) if any of:
+              (1) Proxy/partial tier skipped (see above — the primary check): one or
+              more no_data gaps document neither an attempted proxy/partial/pooled test
+              nor a specific no-proxy-constructible argument.
+              (2) Boilerplate search: two or more gaps share a substantively identical
+              `avenues_tried` / `explanation`, or `avenues_tried` is empty/generic
+              — each hypothesis needs its own search log keyed to its own data need.
+              (3) In-hand covariate ignored: a `coverage.missing_covariates` entry is
+              actually listed in that dataset's `variables`.
+              (4) Access-gated reported as nonexistent: a `not_public` gap is explained
+              as "no data exists" rather than "the ideal dataset is access-gated;
+              freely-available proxies were tried." Access-gating is a valid limitation
+              ONLY when the gap ALSO shows the freely-available proxy attempt (a).
+              (5) Mislabeled construct: a by-construction / degenerate case (belongs in
+              construct_equivalence at design time, undecided_reason=not_identifiable)
+              is filed as a data gap.
+              Otherwise accept. A genuine no_data gap that honestly shows an attempted
+              proxy failing, or argues no proxy is constructible, is CORRECT and must
+              be accepted — do not reject honest, well-earned negatives. Advisory-only
+              concerns (thin but non-empty search, marginal power) are findings but do
+              not block.
+      - reproduction:
+          mission: One branch per selected hypothesis, created in full once auto_discovery has selected the set and evidence_gathering has assessed coverage. A hypothesis with covering data gets design, analysis, and audit; one with no covering data gets design and audit only. Each branch reproduces its hypothesis on the independent data; the verdict comes from the branch's audit.
+          replan: hypothesis
+          children:
+            - experiment_design:
+                mission: >-
+                  Adapt the AutoDiscovery experiment for the independent data — do not design a new
+                  one. Start from the hypothesis's carried record and re-express the SAME test on the
+                  secondary dataset, changing only what the new data requires (column names, units,
+                  the load step); keep the statistic, the direction, and the decision rule identical
+                  to the source experiment. State the source and independent operationalizations and
+                  judge their equivalence: the same quantity; a proxy that approximates or narrows the
+                  same claim — testable, stating what differs and the expected direction of bias; or a
+                  substitution that changes what is measured — including a quantity that is true by
+                  construction — which is not a reproduction to run. Keep every term of a derived
+                  construct on one source and reference frame, and vary a single independence axis per
+                  test so a non-reproduction is attributable to that axis. Before any analysis, commit
+                  the prespecified test: the statistic, the metric, and a success threshold naming
+                  both the significance criterion and the minimum meaningful effect size.
+                cli: [asta experiment]
+                input: [auto_discovery, evidence_gathering]
+                output: {experiment_design: experiment_design, "run?": run}
+            - analysis:
+                mission: >-
+                  Run the reproduction on the acquired data, exactly per the design's committed test.
+                  Local tools may find, validate, merge, and reshape the data sent to DataVoyager —
+                  deriving columns, fixing units, subsetting — but the reproduction test itself is
+                  executed by DataVoyager and its computed output is the result; never run the test
+                  locally and report that as the result. Make the first prompt imperative: instruct
+                  DataVoyager to write AND execute the analysis in its own code environment and return
+                  the computed numbers (effect size, p, n), its assumptions, the code it ran, and at
+                  least one figure; never ask the user to run anything. A reply that only returns
+                  code, asks you to run something, or ends without computed values is not a result —
+                  resubmit with a more directive rephrasing, up to config dv_max_attempts. A local
+                  computation may cross-check the numbers, but the reported result comes from the
+                  DataVoyager run. Extract the decisive numbers into the structured result rather
+                  than leaving them in prose, so the audit reads the verdict from typed fields (this
+                  is what stops a significant opposite effect being scored
+                  as support). Decode returned figures (imageb64) to PNGs under
+                  .asta/analyze-data/<slug>/figures/ and list them with captions. If the design judged
+                  the operationalization a mismatch, or the covering data cannot run the committed
+                  test, record explicitly that no test was run and why — do not
+                  improvise a different test.
+                cli: [asta analyze-data]
+                input: [experiment_design, evidence_gathering]
+                output: {analysis: analysis, figures: [ref(figure)], "run?": run}
+            - audit:
+                mission: >-
+                  Try to refute the analysis, then finalize the verdict. Run an artifact check
+                  suited to the design: a negative control for a positive effect; a positive control
+                  that recovers a known effect for a null or undecided result; a block or cluster
+                  permutation for time-series, spatial, or clustered data, where a naive shuffle
+                  understates the null. Probe sensitivity to influential observations and reasonable
+                  subset choices, and say when the verdict is sample-dependent rather than robust.
+                  Before finalizing a non-reproduction, rule out a setup artifact: confirm the
+                  independent operationalization kept every term of a derived construct on one source
+                  and varied only the intended independence axis; a null that appears only under a
+                  mismatched substitution is an artifact to fix and re-run, not a finding. Set the
+                  verdict on three axes that stay separate. Faithfulness comes from the design's
+                  equivalence judgment — a proxy is a caveat carried with the verdict, never a
+                  verdict itself. Record a decided outcome only when the test was decidable: the
+                  shared positive control shows the endpoints work and power is adequate for the
+                  source effect size. Otherwise record the verdict as undecided and say why: the
+                  test ran but had too few events to detect the source effect (a favorable estimate
+                  that missed the criterion is undecided, not support and not refutation); no
+                  covering independent data existed (inheriting the evidence_gathering gap); or the
+                  independent construct cannot isolate the claim (true by construction, or a
+                  construct mismatch).
+                  Reserve rejection for an adequately powered null — one where the positive control
+                  recovered known effects and the event count backs the call; a branch that never ran
+                  is undecided, with its reason. Read the outcome from the analysis's structured
+                  result — its direction relative to the hypothesis and its significance against the
+                  committed criterion — not from the prose: a significant effect in the opposite
+                  direction is never support. Flag the source finding as an error
+                  only when confident the run's own result is factually wrong. The hypothesis record
+                  itself is never re-emitted.
+                cli: [asta analyze-data]
+                input: [experiment_design, analysis, evidence_gathering]
+                output: {audit_report: audit_report, "run?": run}
+      - theorizer
+      - findings
+      - reflection
+
+config:
+  n_experiments: 10                # auto-ds experiments per discovery run
+  max_papers_to_retrieve: 100      # papers find-and-extract pulls from
+  theorizer_top_n: 10              # auto_discovery also grounds on the top and bottom N experiments by posterior belief
+  n_thematic_searches: 5           # literature_search fans out this many hypothesis-clustered themes (+1 run-intent theme)
+  dv_max_attempts: 3               # max DataVoyager resubmits when a run punts, errors, or returns no figure
+
+vocabulary:
+  construct_equivalence: [equivalent, proxy, mismatch]   # faithfulness axis: same quantity / approximates-narrows the claim (run it, carry the proxy caveat) / a different claim OR true by construction (do not run — not a reproduction)
+  independence_axis:     [region, instrument, method, construct, temporal, population]
+  generation_objective:  [novelty_focused]   # only novelty-focused generation runs; the loop over objectives was dropped
+  novelty:               [new, somewhat-related-to-existing, closely-related-to-existing, not_evaluated]  # Theorizer's native per-statement class; not_evaluated when it scored none
+  source_outcome:        [supported, rejected, mixed, unclear]
+  effect_direction:      [as_hypothesized, opposite, null_effect]   # the observed effect's direction RELATIVE TO THE HYPOTHESIS; the guard that stops a significant opposite effect being scored as support
+  # A reproduction test answers on three INDEPENDENT axes, kept separate so each concept lives in
+  # one place: FAITHFULNESS is construct_equivalence (a proxy is a caveat on any verdict, never a
+  # verdict of its own); DECIDABILITY is whether the test could decide, and if not why
+  # (undecided_reason); OUTCOME is what a decidable test concluded. The verdict carries the outcome
+  # (supported = criterion met in the hypothesised direction; supported_partial = one prespecified
+  # component met it; opposite_effect = significant in the OPPOSITE direction; rejected = an
+  # adequately powered null), or `undecided` with an explicit undecided_reason. `rejected` is
+  # warranted only when the endpoints are shown to work (positive_control) and power is adequate;
+  # otherwise an unmet criterion is undecided/underpowered, not a refutation, and a favorable
+  # estimate that missed the criterion is undecided, never support.
+  reproduction_verdict:  [supported, supported_partial, opposite_effect, rejected, undecided]
+  undecided_reason:      [underpowered, no_data, not_identifiable]   # why an `undecided` verdict could not decide: the test ran but had too few events to detect the source effect / no covering independent data (inherits the evidence_gathering gap) / the independent construct cannot isolate the claim (true by construction or a construct mismatch)
+  testability:           [testable, testable_partial, not_testable]  # coverage-time read: can the hypothesis be tested on this data at all (partial = only one prespecified component); the reason a not_testable case fails is its gap (gap_kind), and its power is adequacy — do not restate either here
+  control_kind:          [negative_control, positive_control, structured_permutation, sensitivity_only, none]
+  adequacy:              [adequate, marginal, inadequate]
+  gap_kind:              [not_public, model_output, transient_needed]   # data-availability reasons only; 'true by construction' is not a data gap — it is a construct mismatch (see construct_equivalence)
+  friction_kind:         [flow, schema, tool, mission, data]
+  severity:              [high, medium, low]
+  cite_kind:             [autodiscovery_run, theorizer_artifact, datavoyager_run]
+  finding_status:        [reproduced, proposed, refuted]   # how established a front-page key finding is
+  # controlled discovery-type taxonomy for the encyclopedia index (front-page infobox)
+  discovery_type:        ["New phenomenon", "Mechanistic explanation", "Mechanistic unification",
+                          "Predictive law", "Causal relationship", "New measurement or assay",
+                          "Classification or taxonomy", "Theoretical framework", "Computational method",
+                          "Dataset or resource", "Negative result / falsification", "Translational application"]
+
+outputs:
+
+  run:                             # a producing run/artifact; carries the wiki's deep links
+    kind: cite_kind
+    run_id: string
+    share_url?: string
+    agent?: string
+    a2a_task_id?: string
+    a2a_context_id?: string
+
+  figure:
+    caption: string
+    image: string
+
+  experiment:  # an auto-ds experiment node (mcts_node_*.json); paste the full record, extras preserved
+    experiment_id: string
+    status: string
+    hypothesis: string
+    experiment_plan: {objective: string, steps: string, deliverables: string}
+    code: string
+    code_output: string
+    analysis: string
+    surprising: boolean
+    posterior_mean: number       # posterior.mean from the node
+    "prior_mean?": number        # prior.mean from the node; the belief trajectory's START. compile-report.py reads this at the TOP LEVEL to render the prior->posterior belief badges — optional because unscored seed/EDA nodes have no prior
+    "creation_idx?": number      # the node's creation index, verbatim. compile-report.py reads this at the TOP LEVEL to build the per-hypothesis "?exp=N" deep link (N = creation_idx - 1) — optional for the same reason
+    belief_change: number
+    normalized_surprisal: number
+
+  autods_hypothesis:  # one AutoDiscovery experiment node, selected 1:1; the record spills to its own file (autods_hypotheses is a ref list), so every field stays inline and verbatim
+    id: string
+    statement: string            # the node's `hypothesis`, copied VERBATIM (never reworded)
+    source_node: string          # the mcts node id
+    experiment_plan: {objective: string, steps: string, deliverables: string}   # from the log, verbatim
+    code: string                 # the node's code, verbatim (what experiment_design adapts for DV)
+    effect_size_source: string   # the source effect from the node's analysis, verbatim and untruncated
+    source_outcome: source_outcome
+    mcts_provenance?: {surprising: boolean, posterior_mean: number, prior_mean: number, belief_change: number, normalized_surprisal: number, experiment_index: number}   # the auto-ds search-signal fields, verbatim; experiment_index is the run UI's ?exp=N (0-indexed = the node's creation_idx minus 1)
+
+  dataset:
+    id: string
+    definition: string
+    source: string
+    n: number
+    sampling: string
+    variables: [string]
+    independence_axes: [independence_axis]   # which axes this dataset varies vs the source
+    covers_hypotheses: [string]
+
+  coverage:   # per (hypothesis, dataset): whether the hypothesis can be decided on this data, known BEFORE any test runs
+    hypothesis_id: string
+    dataset_id: string
+    testability: testability     # can this hypothesis be tested on the data at all (partial = only one prespecified component)
+    missing_covariates: [string]
+    n_available: string          # usable sample and event counts, e.g. "1,089 patients, 142 events"
+    adequacy: adequacy           # is that enough to decide at the source effect size
+    note: string                 # the binding constraint in prose only — proxy belongs on construct_equivalence, power on adequacy, testability above; do not re-encode them as tags here
+
+  gap:
+    hypothesis_id: string
+    avenues_tried: [string]
+    gap_kind: gap_kind
+    explanation: string
+
+  experiment_design:   # the AutoDS experiment re-expressed for the independent data; source fields join via subject_id
+    subject_id: string
+    plain_language_description: string
+    source_operationalization: string
+    independent_operationalization: string   # the same test on the secondary data; states what differs and the expected bias direction when a proxy
+    construct_equivalence: construct_equivalence
+    prespecified:
+      test: string
+      metric: string
+      success_threshold: string   # commits BOTH the significance criterion and the minimum meaningful effect size
+
+  analysis:
+    final_answer: string
+    assumptions: string
+    code: string
+    result?:                       # DataVoyager's decisive computed numbers, extracted structured so the verdict is read from the data, not parsed from the final_answer prose (there is no fixed DataVoyager output schema; these are the fields a reproduction yields)
+      estimate: string             # the effect-size point estimate with its measure and CI, e.g. "HR 0.78 (95% CI 0.29-2.12)", "r=0.41", "diff=3.2 units"
+      p_value: string              # the decisive test's p-value against the design's prespecified criterion, e.g. "0.63" or "<0.001"
+      direction: effect_direction  # the observed direction relative to the hypothesis
+      n: number                    # analytic sample size after exclusions
+      events?: number              # event count when the endpoint is event-based (the survival power figure); omit otherwise
+
+  audit_report:                    # the refutation work plus the finalized verdict
+    subject_id: string
+    challenges: [{concern: string, check: string, outcome: string}]
+    control: control
+    reproduction_verdict: reproduction_verdict
+    effect_direction: effect_direction   # REQUIRED: observed direction RELATIVE TO THE HYPOTHESIS. Must be consistent with the verdict — `supported`/`supported_partial` requires `as_hypothesized`; a significant `opposite` effect is `opposite_effect`, never support. Enforced by close-task.sh.
+    undecided_reason?: undecided_reason   # REQUIRED when the verdict is `undecided`: why it could not decide, evidenced by the event count and the shared positive_control
+    effect_size_observed: string
+    prespecified_check: string     # the result compared against the design's committed criterion
+    evidence: string
+    recommended_adjustment: string
+    source_error?: boolean         # confident the source finding itself is a mistake; the theorizer drops it
+
+  control:                         # the artifact check that probed the result
+    kind: control_kind
+    description: string
+    passed: boolean
+
+  positive_control:                # shared endpoint validation: shows the independent data recovers KNOWN effects, so unmet criteria read as underpowered rather than false
+    description: string            # the known effects deliberately re-tested on the independent data
+    recovered: [string]            # each known effect the data recovered, with its number (e.g. "stage -> OS HR 1.40, p=1e-6")
+    passed: boolean                # the endpoints behaved as expected
+    run?: run
+
+  citation:
+    id: string
+    corpus_id: number
+    title: string
+    url: string
+    relevance: string
+
+  literature_review:
+    theme: string                                    # the search theme this review covers; the report groups the bibliography by it
+    summary: string
+    key_findings: [{text: string, uuids: [string]}]
+    open_gaps: [string]
+    citations: [citation]
+
+  theory:
+    id: string
+    name: string
+    description: string
+    theory_query: string
+    objective: generation_objective  # orchestrator annotation; the agent's own copy lives in theory_components
+    grounds_hypothesis_ids: [string]
+    components_path: ref(theory_components)
+
+  theory_components:  # the theorizer's record, carried verbatim; never flatten or edit
+    generation_objective: string
+    theory_statements:
+      - statement_name: string
+        theory_statement: string
+        novelty_evaluation: {likely_classification: novelty, "what_is_novel?": string}   # REQUIRED: carry the Theorizer's per-statement novelty verbatim (not_evaluated when it scored none)
+        supporting_evidence: [{text: string, uuids: [string]}]
+        conflicting_evidence: [{text: string, uuids: [string]}]
+    new_predictions_likely: [string]
+    new_predictions_unknown: [string]
+    unaccounted_for: [{text: string, uuids: [string]}]
+
+  theory_evaluation:               # the testability triage
+    theory_id: string
+    testable: boolean
+    required_data: string
+    proposed_test: {test: string, metric: string, success_threshold: string}   # prespecified; how the theory could be checked on the data in hand
+    gap: string
+    explanation: string
+
+  mission_brief:            # reader-facing framing distilled from mission.md; rendered at the top of the report
+    title: string           # the question as a short title — never a run name or tool name
+    question: string        # the research question, 1-3 sentences, every acronym expanded
+    significance: string    # why it matters, 1-2 sentences
+    scope?: string          # what is deliberately not addressed, when worth saying
+
+  findings:                 # the report's front page (encyclopedic lead + infobox) and scientist synthesis
+    # encyclopedia index / infobox metadata (also the report's keywords)
+    discipline: string
+    domain: string
+    topic: string
+    discovery_type: discovery_type
+    # infobox "key findings" list — each a plain one-line finding tagged by how established it is
+    key_findings:
+      - finding: string           # one plain-language line, no jargon or statistics
+        status: finding_status
+    # plain-language, layperson-facing lead (Wikipedia-style): orient, then the discovery, then novelty
+    background: string      # orient a layperson to the domain; do NOT state the discovery here
+    plain_summary: string   # the discovery in plain terms
+    already_known: string   # what the field already knew, in plain terms
+    whats_new: string       # what this work adds that may be new, in plain terms
+    # scientist-facing synthesis (the Findings section, below the front page)
+    bottom_line: string     # the honest answer to the research question, 1-2 sentences
+    what_held: [string]     # each finding that reproduced, in plain language, with what it means
+    contribution: string    # what the work adds, read against the literature; the novel, testable angle
+    limitations: string     # why the study could not answer more (power, coverage, proxy)
+    next_steps: [string]    # the data or single tests that would resolve the open questions
+
+  reflection:
+    session_intent: string
+    frictions:
+      - where: string
+        kind: friction_kind
+        observation: string
+        severity: severity
+    proposed_changes:
+      - target: string
+        change: string
+        rationale: string
+        severity: severity
