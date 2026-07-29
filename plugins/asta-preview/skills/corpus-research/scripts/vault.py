@@ -26,6 +26,9 @@ Usage:
   python vault.py where <workspace> <text-fragment>
       provenance-walk entry point: evidence rows whose quote/claim carries the fragment
       (round · kind · ladder rung · source file · cached text) — one query, no hand grep.
+  python vault.py verify <workspace>
+      derived-layer staleness/corruption check (recompute + diff); also WARNS on report
+      dirs absent from the VAULT-MANIFEST deliverables registry (§C — warn, never fail).
   python vault.py anchor <workspace-or-run-dir> <ids-file> [--label <label>]
       recall of a KNOWN-GOOD id list vs the store (folded here from knowledge.py per the
       primitive-work ruling; ids-file = JSON list, jsonl with corpusId, or one id per line).
@@ -764,6 +767,11 @@ def rebuild(workspace, amend=None, allow_unverified=None, ack_regressions=False)
             print(f"  ⚠ UNVERIFIED: {ev['unverified']} spans verify against NO reachable cache text "
                   f"('unverified' flag; 'stale' is reserved for source-change events; no_cache separate — "
                   f"never conflate reachability with failure)")
+        # manifest-ready: the round close MUST carry these (report_gate check 13); print the
+        # dict verbatim so the mapping is never guessed (pairs = the count; vault-wide spans)
+        cr = {"regression_gate_count": reg.get("pairs", 0),
+              "residual_unverified_spans": ev.get("unverified", 0)}
+        print(f"  closing_rebuild = {json.dumps(cr)}  (copy into round-manifest.json)")
     return meta
 
 
@@ -782,11 +790,52 @@ def init(workspace, run_dir, rid="r1"):
     return meta
 
 
+def _deliverables_registry(workspace):
+    """The VAULT-MANIFEST deliverables registry (vault.md §Deliverables registry; colleague-incident
+    class — an unregistered stale report is what gets sent): the section of VAULT-MANIFEST.md
+    whose heading names deliverables/registry, one entry per shipped artifact
+    {path, deployed URL, built-by round, last-refreshed, status current/stale/superseded}.
+    Returns (registry_block_text or None, manifest_path or None)."""
+    for mp in (f"{workspace}/vault/VAULT-MANIFEST.md", f"{workspace}/VAULT-MANIFEST.md"):
+        if os.path.isfile(mp):
+            text = open(mp, errors="ignore").read()
+            m = re.search(r"(?ims)^#{1,6}[^\n]*\b(?:deliverables?|registry)\b[^\n]*\n"
+                          r"(.*?)(?=^#{1,6}\s|\Z)", text)
+            return (m.group(1) if m else None), mp
+    return None, None
+
+
+def _report_dirs(workspace):
+    """Report-shaped directories in the workspace (the deliverables the registry must
+    cover): a dir named *report*, or one holding index.html, or holding *.html + data/.
+    Caches/derived layers are skipped; a matched dir is not descended into."""
+    out = []
+    skip = {"cache", "view", "s2-cache", "fulltext-cache", "judge-input", "__pycache__",
+            ".git", ".amend-stash"}
+    for base, dirs, files in os.walk(workspace):
+        rel = os.path.relpath(base, workspace)
+        dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".")]
+        if rel != "." and rel.count(os.sep) >= 3:
+            dirs[:] = []
+            continue
+        if rel == ".":
+            continue
+        if ("report" in os.path.basename(base).lower()
+                or "index.html" in files
+                or (any(f.endswith(".html") for f in files)
+                    and os.path.isdir(os.path.join(base, "data")))):
+            out.append(rel)
+            dirs[:] = []
+    return sorted(out)
+
+
 def verify(workspace):
     """Staleness/corruption check for the DERIVED layers (the vault analog of validate.py's
     collection.meta check): recompute the derivation in memory and diff against what's on
     disk; also compare each round's current row count against the registry's fold-time count.
-    Exit non-zero on any drift — run before trusting the view after any manual surgery."""
+    Exit non-zero on any drift — run before trusting the view after any manual surgery.
+    Also WARNS (never fails) on report dirs missing from the VAULT-MANIFEST deliverables
+    registry — supersession lives there; an unregistered report is invisible to it."""
     vault = f"{workspace}/vault"
     meta = json.load(open(f"{vault}/vault.json"))
     fails = []
@@ -822,6 +871,34 @@ def verify(workspace):
     if db_before != len(after):
         fails.append(f"vault.db was STALE/missing: {db_before} rows != union {len(after)} "
                      f"(disposable index rebuilt by this check)")
+    # deliverables registry (WARN-only, vault.md §Deliverables registry): every report dir must hold a registry
+    # entry or supersession has no ledger — the exact colleague-incident class
+    reports = _report_dirs(workspace)
+    reg, mp = _deliverables_registry(workspace)
+    if reg is None:
+        print(f"  ⚠ REGISTRY: no VAULT-MANIFEST deliverables registry found "
+              + (f"({mp} has no deliverables/registry-titled section)" if mp
+                 else "(no VAULT-MANIFEST.md in vault/ or the workspace)")
+              + f" — {len(reports)} report dir(s) unregistered; doctrine: every shipped "
+              f"artifact gets an entry {{path, deployed URL, built-by round, "
+              f"last-refreshed, status current/stale/superseded}} kept current by the "
+              f"round contract (references/vault.md deliverables registry)")
+    else:
+        missing, seen = [], set()
+        # membership = the dir's WORKSPACE-RELATIVE path in the registry text (a bare
+        # basename like 'report' matches any registry line containing the word — vacuous)
+        def _registered(x):
+            rel = os.path.relpath(x, workspace).replace(os.sep, "/")
+            return rel in reg or f"./{rel}" in reg or f"{rel}/" in reg
+        for r in sorted((x for x in reports if not _registered(x)), key=len):
+            if os.path.basename(r) not in seen:     # vault/rounds copies dedupe by basename
+                seen.add(os.path.basename(r))
+                missing.append(r)
+        for r in missing:
+            print(f"  ⚠ REGISTRY: report dir '{r}' not in the VAULT-MANIFEST deliverables "
+                  f"registry ({mp}) — register it {{path, deployed URL, built-by round, "
+                  f"last-refreshed, status}} or mark it superseded (an unregistered report "
+                  f"is what gets sent stale)")
     for f in fails:
         print("STALE:", f)
     print("VAULT VERIFY:", "FAIL (refreshed)" if fails else "OK",
@@ -945,6 +1022,9 @@ def _read_ids(path):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__)
+        sys.exit(0)
     cmd = sys.argv[1]
     if cmd == "rebuild":
         def _flagval(flag):

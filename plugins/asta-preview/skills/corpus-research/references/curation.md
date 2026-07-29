@@ -64,7 +64,7 @@ salt scores are what make every calibration below measurable on THIS thread.
    (A lone judge GIVEN body text can do WORSE than on the abstract — query-conditioned snippets
    mislead without cross-check; escalate to body only inside the panel.)
 
-## Graduated judging for large candidate pools (designed from measured runs)
+## Graduated judging for large candidate pools (promoted from a measured run — conditions attached)
 When the judged tail is big (typically ~60% of judging spend goes to rejects), don't judge in
 arrival order and don't defer all-or-nothing at the end:
 1. **Prior-ordered queue ([T], free):** order candidates by the priors you already hold —
@@ -79,6 +79,23 @@ arrival order and don't defer all-or-nothing at the end:
    against the strong tier on a sample of THIS thread; adjudication/escalation always strong-tier.
    Mechanical stages (tagging, chart data) go to the cheapest tier; extraction needs a tier that
    preserves VERBATIM quotes — verify it doesn't paraphrase before delegating.
+
+**The promoted end-to-end form:** deterministic composite prior → deciles → head deciles judged
+in FULL + tail covered by a RANDOM SAMPLE + the sidecar false-negative probe (the ~50-item
+rejected-pool judge, SKILL step 1). Deferral becomes a measured claim instead of a hope
+(measured, one full run: +7.8pts recall against the same gold ruler at −22% cost/paper; the
+tail sample exonerated its own deferral — 43/476 sampled tail items judged relevant; −33%
+wall-clock at a 2.25× candidate pool). TWO WRITTEN CONDITIONS — the promotion is void without
+both:
+1. **The tail sample is DECILE-STRATIFIED with per-stratum floors.** The sizing math comes from
+   the conformal literature: a per-stratum guarantee at miscoverage α needs **n_g ≥ ⌈1/α⌉−1**
+   rows in EVERY stratum or the guarantee is vacuous; empirical stability of a ±5% estimate
+   needs on the order of **~600/stratum**; size to **min_g** — the smallest stratum — never to
+   the total [CorpusId:287071827]. A pooled (unstratified) tail sample smears the yield
+   gradient across deciles and certifies nothing per-decile.
+2. **The escalation rule is NUMERIC and PRE-STATED** — written down BEFORE the sample is scored
+   (e.g. "if sampled-tail yield exceeds Y%, deciles k–n get judged in full"); a threshold
+   chosen after seeing the number is a rationalization, not a rule.
 
 ## Evidence: reuse snippets, escalate deliberately
 - `asta literature` returns snippets/contexts — KEEP them on the candidate; judge on

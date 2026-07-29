@@ -6,6 +6,14 @@ never buffer" instruction yet written — every judge still buffered, and when a
 killed the fleet, 8 shards died with zero lines on disk (~344 judgments re-paid). Encode
 expectations as task structure and [T] checks, not as requests.
 
+## A fleet is COST ISOLATION, not just parallelism (right-sizing rule)
+Workers run small FRESH contexts at cheaper tiers; the main loop re-reads its whole session
+every call — the same rows processed in-loop pay context × call-count at the strong tier.
+Rule of thumb: **>~50 rows of extraction/judging work is fleet-shaped even in an answer-typed
+round** (measured: a solo-lane answer round landed at ~2× the cost bar on row work a fleet
+had run at −22%/paper). Right-sizing the machinery to the question shape (vault.md round
+types) does not mean dropping the fleet — it means a SMALL fleet.
+
 ## Fleet MODEL TIER (measured at three levels — a DEFAULT with override, not a mandate)
 Judge/worker fleets default to the **cheap-capable tier (sonnet-class)**; main-loop synthesis
 stays on the strong model. Measured on the same gold ruler: sonnet fleet vs opus fleet showed
@@ -74,11 +82,24 @@ re-inventions converge (how sweep.py earned canon).
    lacked it shipped 32 adjudication rows with zero warrant fields). Every record:
    `{corpusId · round · lens · claim_type: finding|stance|classification|entity-mention ·
    polarity: present|absent · claim: kind-typed fields, NO bare booleans · basis: {span:
-   VERBATIM, source_tier: abstract|fulltext|snippet} · scope_flag · because · unless ·
-   fit: explicit|rephrased|reframed|stretch · judged_by · confidence: 0-2}` — warrant fields
-   EMITTED reasoning-first (because → unless → fit → confidence); absence claims are rows too
-   (polarity=absent + a basis span showing what the paper does INSTEAD). Field semantics:
-   `references/evidence.md` — YOU read it before writing the packet (SKILL.md step 6 MUST).
+   VERBATIM, source_tier: abstract|fulltext|snippet, support_kind: own-experiment|own-ablation|
+   benchmark-result|qualitative-analysis|theoretical-argument|citation-to-other-work|
+   position-assertion|other:<specific> — what the paper offers BEHIND the claim, judged from
+   the span's context (suggested vocab + the open-coding escape, never force-fit),
+   validation: validated-isolated|validated-endtoend|described|proposed — OPTIONAL,
+   method-shaped claims only (does the paper validate what it claims, and how),
+   strength_note: 1-2 free-text sentences of weighing nuance — scale/n, conditions, controls,
+   directness, the authors' own caveat; always written, trivially short when little to say}
+   · scope_flag · because · unless · fit: explicit|rephrased|reframed|stretch · judged_by ·
+   confidence: 0-2}` — warrant fields EMITTED reasoning-first (because → unless → fit →
+   confidence); absence claims are rows too (polarity=absent + a basis span showing what the
+   paper does INSTEAD). Field semantics: `references/evidence.md` — YOU read it before writing
+   the packet (SKILL.md step 6 MUST).
+9. **Identical-unless lives at FILE grain:** when an `unless`/scope disclaimer applies
+   identically to EVERY row a worker emits, it is recorded ONCE as a file-level header/sidecar
+   note, never duplicated per row (measured: 20/20 rows shipped one identical boilerplate
+   clause — per-row duplication buries the rows whose unless is real). A row-level unless is
+   for THAT row's specific escape.
 
 ## Fleet mechanics
 - **Probe-canary first**: run ONE worker per operation ~5 min ahead; inspect its output file
@@ -87,8 +108,15 @@ re-inventions converge (how sweep.py earned canon).
   cheap (resume from the last append); plan reruns into the schedule, don't be surprised.
 - Model tier: bulk = the cheap strong tier; calibrate anything cheaper against salt items on
   THIS thread before trusting it (never assume transfer).
-- Synthesis workers (disagreement axes etc.): support-gated prompt — ≥2 papers with verbatim
-  quotes per side, reject uncontested axes, self-validate the gate before writing output.
+- Synthesis workers (disagreement axes etc.): support-gated prompt — ≥2 papers per side at
+  strength ≥ the declared floor (strength-v1, deliverables.md §disagreement; stretch-fit rows
+  never count), CLASSIFY on share (contested / dissent / outlier) instead of excluding on it,
+  emit the per-side strength profile + support-kind mix, self-validate the gate before writing
+  output.
+- **Aggregation dedupes by corpusId (extraction idempotency):** the reduce step dedupes rows
+  by corpusId (+ lens/field) before any count (measured: a slice extracted twice silently
+  inflated its aggregates — idempotent resume protects the worker's FILE; only merge-side
+  dedupe protects the COUNTS).
 
 ## Anti-patterns (each observed, each expensive)
 one giant Write at the end · results held in context across sub-batches · multi-shard workers
@@ -106,7 +134,10 @@ until [ -f <run>/judgments/shard-07.jsonl ] && [ $(wc -l < <run>/judgments/shard
 For many shards, one background waiter over the set beats per-shard polls. After the wait,
 ALWAYS run the completeness check (shards.py) — a worker stopping one sub-batch early is a
 measured failure mode; recover the missing ids with a small single-judge tail, don't re-run
-the shard.
+the shard. **A fleet-completion claim cites the completeness gate's output, never line counts**
+(measured: a "fleet complete" self-account rode on file line counts; the gate is what sees a
+missing sub-batch or a double-written shard) — the round's self-account carries the gate's
+numbers (vault.md round-manifest fields).
 
 ## Worker scratch is PER-WORKER (measured collision: one worker's scratch file was overwritten
 mid-run by a sibling targeting a different shard)

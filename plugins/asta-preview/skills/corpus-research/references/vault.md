@@ -97,12 +97,36 @@ lookup (`vault.py where <text-fragment>` is the helper).
   recipe; today the synthesis hop is the report's data files — specifically
   `report/data/synthesis.json` (the warrants sidecar report_gate.py enforces), not an
   indexed row.
+- **Declared views over evidence rows** (e.g. strength-v1 — fit × evidence tier × source
+  stratum × validation grade; definition in deliverables.md §disagreement) are computed at
+  read time from columns the rows already carry — versioned, sliceable, never stored as
+  hand-edits; an answer citing one names it in its FRAME line.
 
 **Round-manifest REQUIRED fields (gate-checked):** `as_of` + charter provenance (fold
 refuses without them) + **`cost_actual`** — structured: numeric tokens/$ or the
 subscription-lane form (turns + subagents + fetch counts + compute-tokens-eval-side);
 report_gate.py FAILS a round without it (receipt: a live round's cost had to be
-reconstructed eval-side).
+reconstructed eval-side) + **the closing rebuild's regression-gate count** and **the
+vault-wide residual unverified-span debt** — the rebuild already PRINTS both; the close must
+CARRY them (measured: a closing rebuild's regression gate fired and the round's self-account
+never mentioned it — a gate that fires into an unread terminal is silent absorption).
+report_gate checks it at report close (the round fails without the dict). Field mapping,
+so it is never guessed: `closing_rebuild.regression_gate_count` = the rebuild's regression
+PAIR count; `residual_unverified_spans` = the vault-wide unverified count — the rebuild
+prints the manifest-ready dict verbatim; copy it. And **fleet-completion claims cite the completeness
+gate** (shards.py completeness / validate.py fleet-output check), never line counts — a line
+count cannot see a worker that stopped one sub-batch early.
+
+## Deliverables registry (in VAULT-MANIFEST — supersession made first-class)
+The manifest carries a **first-class entry per shipped user-facing artifact**:
+`{path, deployed URL, built-by round, last-refreshed, status: current|stale|superseded}`.
+The round contract UPDATES it (contract item 4c below); `vault.py verify` warns on report
+dirs with no registry entry. **One-standing-report rule:** a thread keeps ONE current report
+per deliverable shape; a replaced page is never deleted — it gets a **SUPERSEDED banner** at
+the top of the page itself, linking the current URL, and its registry status flips to
+superseded (the class this repairs: a reader lands on a stale deployed page with no signal
+that a newer one exists — supersession must be visible ON the page, not only in a registry
+the reader never opens).
 
 **Application rule (the confidence consumer):** at round close, NEW evidence rows apply at
 confidence 2; ≤1 enters as proposed/triaged (never silently canonical) — the same 0-2 scale
@@ -204,6 +228,10 @@ Before finishing, a round leaves, under `round-<id>/` in the workspace:
    the STANDING answers and any deployed report — refresh what your delta touched (redeploy
    same-URL) or flag it in QUESTIONS.log. The report's own "refresh trigger" line IS this
    obligation; a corpus-changing round is the trigger firing.
+4c. **Deliverables-registry update:** any report built, refreshed, or replaced this round gets
+   its manifest registry entry updated (status + last-refreshed + URL); a replaced page gets
+   its SUPERSEDED banner the SAME round (registry doctrine above) — never leave two pages both
+   presenting as current.
 5. **Deliverable gate (measured to decay when left to memory — this line is the durable
    trigger):** before building OR UPDATING any user-facing report, re-read deliverables.md and
    run `report_gate.py` to PASS; sharing-shaped asks ship DEPLOYED with the URL recorded in
@@ -258,6 +286,8 @@ without it, rounds run on base ability and the manifest alone.
 You are working WITHIN an accumulated research vault: <founding round, date, charter owner>
 plus <answer/audit rounds folded in>. Read this manifest before anything else.
 ## What's here            <the Layout section above, instantiated; counts → "see vault.json">
+## Deliverables           <the registry: one line per shipped artifact — path · deployed URL ·
+                           built-by round · last-refreshed · status current/stale/superseded>
 ## Trust marks            <the marks above + any round-specific caveats (e.g. "r2 has no
                            evidence quotes"; "r1 +relevant slice is abstract-judged")>
 ## Freshness              complete as-of <date, per vault.json>; this field moves in <weeks|

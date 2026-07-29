@@ -28,6 +28,12 @@ Checks:
  12. UNJUDGED ≠ semantic bucket (a2-run6 F2: ring papers with no judgment row fell into
      "other-*" — pipeline state absorbed into a verdict): unjudged rows must never sit in
      a catch-all family bucket; "other" only ever means judged-but-matched-no-family.
+ 13. EXTRACTION IDEMPOTENCY (report, extraction hygiene; receipt: a run double-extracted papers):
+     the same corpusId in MULTIPLE extraction batches double-counts at aggregation —
+     loud warning listing the ids and the batches carrying them.
+ 14. IDENTICAL-UNLESS AT FILE GRAIN (report, extraction hygiene; receipt: 20/20 boilerplate):
+     >80% identical `unless` strings in one extraction/audit file = a file-wide caveat
+     masquerading as per-row reasoning — warning suggesting a file-grain scope note.
 
 Derived-artifact gate (a2-run6 audit; run it on ANY table derived over the ring):
   python validate.py derived <run-dir> <table.jsonl> [--key corpusId] [--bucket <field>]
@@ -197,6 +203,71 @@ def validate(run):
                         f"catch-all semantic bucket (missing-data absorbed into a verdict) "
                         f"e.g. {unj_catch[:3]}")
 
+    # 13. + 14. extraction batches (both TOLERANT readers — extraction schemas vary by
+    # round; bad lines are skipped, absent extract/ dirs skip both checks entirely, so
+    # LEGACY runs without these structures pass untouched)
+    exfiles = [p for p in ([os.path.join(run, "extractions.jsonl")]
+                           + sorted(glob.glob(os.path.join(run, "extract", "**", "*.jsonl"),
+                                              recursive=True)))
+               if os.path.isfile(p)
+               and not os.path.basename(p).startswith(("merged", "digest"))]
+
+    def _jl_tolerant(p):
+        rows = []
+        for l in open(p, errors="replace"):
+            if not l.strip():
+                continue
+            try:
+                r = json.loads(l)
+            except Exception:
+                continue
+            if isinstance(r, dict):
+                rows.append(r)
+        return rows
+
+    # 13. extraction idempotency — same corpusId in >=2 batches inflates every aggregate
+    seen_in = {}
+    for p in exfiles:
+        rel = os.path.relpath(p, run)
+        for r in _jl_tolerant(p):
+            cid = r.get("corpusId", r.get("corpus_id", r.get("paperId")))
+            if cid is not None:
+                seen_in.setdefault(str(cid), set()).add(rel)
+    multi = {c: fs for c, fs in seen_in.items() if len(fs) >= 2}
+    if multi:
+        ex = "; ".join(f"{c} ({', '.join(sorted(fs))})"
+                       for c, fs in sorted(multi.items())[:5])
+        warnings.append(f"[extract-dup] {len(multi)} corpusIds appear in >=2 extraction "
+                        f"batches — double-extraction inflates aggregates; dedupe by "
+                        f"corpusId at aggregation (ids: "
+                        f"{sorted(multi)[:10]}{'…' if len(multi) > 10 else ''}) e.g. {ex}")
+
+    # 14. identical-unless at file grain — a caveat copied onto >80% of a file's rows is a
+    # FILE property, not row reasoning; move it to a file-grain scope note
+    for p in exfiles + sorted(glob.glob(os.path.join(run, "*audit*.jsonl"))):
+        vals = []
+
+        def _collect(x):
+            if isinstance(x, dict):
+                u = x.get("unless")
+                if isinstance(u, str) and u.strip():
+                    vals.append(re.sub(r"\s+", " ", u.strip().lower()))
+                for v in x.values():
+                    _collect(v)
+            elif isinstance(x, list):
+                for v in x:
+                    _collect(v)
+        for r in _jl_tolerant(p):
+            _collect(r)
+        if len(vals) >= 10:
+            top, n = Counter(vals).most_common(1)[0]
+            if n / len(vals) > 0.80:
+                warnings.append(f"[unless-boilerplate] {os.path.relpath(p, run)}: "
+                                f"{n}/{len(vals)} unless strings identical ({top[:80]!r}) "
+                                f"— a file-wide caveat belongs in a file-grain scope note, "
+                                f"not copied per row (per-row unless is specific-and-"
+                                f"checkable or it is boilerplate)")
+
     return failures, warnings
 
 
@@ -281,6 +352,9 @@ def validate_derived(run, table, key="corpusId", bucket=None, budget=0.10):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__)
+        sys.exit(0)
     if sys.argv[1] == "derived":
         opt = lambda flag, default, cast=str: (cast(sys.argv[sys.argv.index(flag) + 1])
                                                if flag in sys.argv else default)

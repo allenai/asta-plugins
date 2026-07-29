@@ -129,6 +129,13 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   eventual relevant captures; the ledger refused to stop and named the two under-filled cells —
   the thread's later dedicated sweeps confirmed one was corpus-thin (+12 core) and earned the
   other's field-thin declaration.
+- **Stopping predicates carry STATED CONSTANTS + observable signals (literature-backed):**
+  a stopping rule is written as "utility < δ for m consecutive steps" with δ and m stated
+  BEFORE the sweep, never as an unquantified "yield flattened" [CorpusId:285271297]; and
+  "exhaustion" is a CONJUNCTION of observable trajectory signals — cells filled-or-declared,
+  frontier dry, a fresh decomposition also dry — never the sweeping agent's self-report
+  [CorpusId:288110907]. A stopping rule stated once and never ablated is a PROPOSAL — label it
+  as one, don't cite it as established [CorpusId:279999763].
 
 ## 3. Estimate what's missing (the [T] signals; `scripts/coverage_signals.py`)
 - **Capture-recapture across modalities** (`capture_recapture_modalities`): treat two capture
@@ -160,6 +167,12 @@ Expect title-search name-collisions in sweeps — curation strips them; judge th
   pairs (topic sweep vs curation) under-state it. Diagnose the pair's shared latent vs
   disjoint reach BEFORE quoting; when pairs disagree in direction, report the SPREAD as the
   uncertainty.**
+  **Stops read the CI UPPER bound, never the point estimate (literature-backed):** any
+  stop/"converged enough" call driven by a capture-recapture estimate uses the interval's
+  UPPER bound on missing — the estimator is weakest exactly at high recall targets, precisely
+  where stop decisions live [CorpusId:268820012]. This compounds with the ψ note above: the
+  point estimate is already biased optimistic by dependence, and its interval is narrowest
+  just when you most want to believe it.
 - **Many-occasion Chao1 on real citation incidence** (`unseen_class_incidence`) for the
   backward axis. GATE: label_coverage < 1 ⇒ lower bound; judge every capture (relevance-as-you-go).
 - **STRATIFY, never quote a flat "% missing"** (`reference_pool_recall`): recall by

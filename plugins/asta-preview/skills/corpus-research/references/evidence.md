@@ -17,7 +17,15 @@ synthesis pass (deliverables.md); the cross-round index is vault.md.
  polarity: present|absent                                   (absence is a CLAIM, never a silent
                                                              null/dropped field) ·
  claim: kind-typed fields                                   (NO bare booleans) ·
- basis: {span: VERBATIM, source_tier: abstract|fulltext|snippet} ·
+ basis: {span: VERBATIM, source_tier: abstract|fulltext|snippet,
+         support_kind: own-experiment|own-ablation|benchmark-result|qualitative-analysis|
+                       theoretical-argument|citation-to-other-work|position-assertion|
+                       other:<specific>                          (suggested vocab, not a closed
+                                                                  enum — semantics below),
+         strength_note: 1-2 free-text sentences                  (the weighing nuance — below),
+         validation: validated-isolated|validated-endtoend|
+                     described|proposed                          (OPTIONAL — method-shaped
+                                                                  claims only; below)} ·
  scope_flag · because · unless · fit · judged_by · confidence}
 ```
 - **Pointer is COMPUTED BY SCRIPT, never LLM-emitted.** The extractor's only grounding duty is
@@ -55,6 +63,31 @@ Fit-honesty 80% strict / 93% under the lenient read, vs 80% strict for judgment-
   the measured failure this repairs: 227 stored scores read by no gate, calibration ignored.
 - **basis.source_tier** — abstract|fulltext|snippet; the regression gate (vault.md) compares
   tiers across rounds, so record it honestly.
+- **basis.support_kind** — what the paper itself offers BEHIND the claim: own-experiment ·
+  own-ablation · benchmark-result · qualitative-analysis · theoretical-argument ·
+  citation-to-other-work · position-assertion. A SUGGESTED vocabulary, not a closed enum —
+  the open-coding escape (`other: <specific>`) is legitimate; the vocabulary grows bottom-up
+  like the codebook and gets reviewed at close under the singleton-tail policy
+  (deliverables.md aggregation altitude) — primitives over schemas. Judged from the span's
+  context at extraction time, same grain as because/unless; EXTRACTION RECORDS ONLY (judgment
+  rows stay light — the overwork boundary holds). This is the study-design axis of GRADE-style
+  evidence hierarchies in generic form; synthesis consumes it as a weighing input
+  (deliverables.md synthesis pass), never as a score to aggregate.
+- **basis.validation** (OPTIONAL; method-shaped claims only) — does the paper VALIDATE the
+  mechanism/criterion it claims, and how: validated-isolated (an experiment isolates the
+  claimed component) · validated-endtoend (works inside a system, component not isolated) ·
+  described (specified, never tested) · proposed (suggested only) — plus the open escape.
+  Absent on non-method claims. Extraction records only, same grain as support_kind. This is
+  the standard lens the strength view's third clause reads (strength.py): without it, a
+  method-shaped position paper at fulltext/explicit-fit grades strong.
+- **basis.strength_note** — the nuance carrier: one or two FREE-TEXT sentences distilling what
+  matters for WEIGHING this evidence — scale/n, models/conditions covered, controls or their
+  absence, directness to the claim, the caveat the authors themselves state. What a systematic
+  reviewer jots in the margin. Same writing convention as because/unless: ALWAYS written,
+  trivially short when there is little to say. Distinct role from `because` (because = why the
+  span supports the claim; strength_note = how strong/limited the underlying evidence is).
+  Extraction-record grain only; the synthesis pass's re-read GATHERS these notes — they are
+  what it weighs over.
 
 ## Absence claims (polarity=absent)
 "Paper does NOT do X" is a first-class row: polarity=absent + **basis showing what the paper

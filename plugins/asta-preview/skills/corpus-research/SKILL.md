@@ -102,6 +102,8 @@ sizing probe — a single `find` call to gauge the space), STOP and present, in 
   prices, then run with an all-strong-model fleet, landed at ~3× — see workers.md Fleet MODEL
   TIER; the default is a sonnet-class fleet). And say the fragmentation expectation out loud: a
   build split across quota windows re-primes expired caches at full price (~1.3–1.5× extra) — prefer one window.
+  **A fleet is COST ISOLATION, not just parallelism** — >~50 rows of extraction/judging work is
+  fleet-shaped even in an answer-typed round (measured: a solo-lane round ran ~2× the cost bar; workers.md).
 - **Lighter alternatives**: a plain find-literature search (~minutes), a targeted
   semantic-scholar lookup (a specific paper/author/citation, seconds), or a snowball-only
   quick pass — offer them honestly; some questions don't need a corpus.
@@ -114,6 +116,8 @@ Re-read the phase's reference AT the phase even if you read it at session start 
 compactions, and measured: structurally-enforced requirements survive them but prose-only guidance
 decays (a run built its report 20h after its only read of the report reference and dropped exactly
 the prose-specified requirements; a sibling run re-read at the phase and dropped none).
+**Mirror the phase gates into the harness task list at Step 0** (one task per phase gate) —
+prose-only phase obligations decay across compactions (measured: two runs each mirrored zero).
 1. **Acquire** — FIRST write a ~5-line **habitat note** into the run dir: where does this
    population live (academia / industry / practice / code), WHO ELSE ALREADY KEEPS A LIST of it
    ("find the librarians": registries, leaderboards, review tables, curated lists, trial
@@ -192,7 +196,8 @@ the prose-specified requirements; a sibling run re-read at the phase and dropped
    round never opened it; its 32 fulltext adjudication rows shipped with zero warrant fields).
    The row, inline: `{corpusId · round · lens · claim_type · polarity: present|absent (absence is
    a CLAIM, never a silent null) · claim: kind-typed fields, NO bare booleans · basis: {span
-   VERBATIM, source_tier} · scope_flag · because · unless · fit · judged_by · confidence}` —
+   VERBATIM, source_tier, support_kind, strength_note, validation?} · scope_flag · because · unless · fit ·
+   judged_by · confidence}` (support_kind/strength_note/validation: extraction records only) —
    warrants reasoning-first (because→unless→fit→confidence); pointers script-computed at
    rebuild, never LLM-emitted. Per-paper extraction (map) over the
    evidence depth (`references/fulltext-at-scale.md` for fulltext threads), then aggregate
@@ -248,6 +253,9 @@ where each beat collects a DECISION or a steer (never a mere status update):
   deep extraction — lets the user start learning immediately and steer emphasis ("more X, skip Y").
 - **Background the long work** (fetch sweeps, judging waves, extraction batches) and return to
   the user while it runs; fold results in at the next beat.
+- **Beat text speaks the USER's vocabulary**: internal edge/register/lens labels and file/gate
+  names never appear in beat headers or prose (machinery-backstage, deliverables.md — measured:
+  all four headers of one shipped beat carried internal lens tags).
 - For explicitly batch-shaped asks ("just deliver the full thing"), compress the beats — but the
   scope-charter beat and the coverage-verdict beat are never skipped.
 
