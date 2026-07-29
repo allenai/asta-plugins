@@ -35,6 +35,13 @@ npx skills add allenai/asta-plugins --all -g
 > /plugin install asta-preview
 ```
 
+- **Corpus Research** (this branch only, preview) - Build and interrogate a curated,
+  evidence-linked literature corpus over multiple rounds (acquisition, judging, extraction,
+  reports). Dev setup: `make install`, then launch Claude Code with the plugin loaded
+  (see DEVELOPER.md for the recommended alias). Before a session, run the environment
+  check from your working folder:
+  `bash <repo>/plugins/asta-preview/skills/corpus-research/scripts/preflight.sh feat/corpus-research`
+  (validates the asta CLI, your `S2_API_KEY`, auth token, and the paper-finder endpoint).
 - **Find Literature** - General paper searching and citation finding
 - **Literature Report Generation** - Comprehensive report writing with synthesis
 - **Run Experiment** - Computational experiments with automated report generation
