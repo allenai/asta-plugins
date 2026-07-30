@@ -9,6 +9,7 @@ from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
 from asta.documents import documents
 from asta.experiment import experiment
+from asta.feedback import feedback
 from asta.literature.find import find
 from asta.literature.interactive import interactive
 from asta.papers.author import author
@@ -50,6 +51,9 @@ cli.add_command(generate_theories)
 
 # Register analyze-data commands
 cli.add_command(analyze_data)
+
+# Register feedback commands
+cli.add_command(feedback)
 
 # Register artifacts command
 cli.add_command(artifacts, name="artifacts")
