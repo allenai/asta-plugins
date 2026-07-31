@@ -19,6 +19,9 @@ A core set of skills for individual research tasks. Core capabilities include:
 - **Theory/Hypothesis Generation** - 
   - Synthesize theoretical explanations for phenomena described in the literature
   - Example request: _What drives lung adenocarcinomas without known RTK/RAS/RAF pathway driver alterations_ 
+- **Feedback**
+  - Interview-driven narrative report on how using Asta went, submitted (with optional supporting reports) to the Asta team
+  - Example request: _Send the Asta team feedback about how this project went_
 
 ### asta-flows
 A library of multi-step workflows. The agent will select an appropriate workflow and execute a series of actions using the `asta-tools` skills and other tools in the environment 
