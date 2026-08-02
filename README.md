@@ -56,7 +56,7 @@ npx skills add allenai/asta-plugins -g
 Once installed, for information about how to use the plugins simply ask the LLM (e.g., Claude), e.g.,
 * "Tell me about the asta-plugins"
 * "How do I use the asta-plugins?"
-* 
+  
 ## Asta CLI
 
 The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
