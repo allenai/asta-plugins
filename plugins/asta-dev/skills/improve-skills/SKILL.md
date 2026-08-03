@@ -26,6 +26,11 @@ Two groups:
 - **Cases for the behavior** (skip if regression-checking only). Reuse existing cases that fit; otherwise add new entries on a branch in `asta-bench-private` (see the [`asta_skills` eval README](https://github.com/allenai/asta-bench-private/blob/main/astabench/ai2/evals/asta_skills/README.md) for case format and metric handlers).
 - **Regression guards.** Existing cases that could be affected. Start by searching the suite's `data.json` for cases referencing the changed skill(s), but use judgment — cross-skill effects matter (a description change can shift routing on cases targeting *other* skills; see asta-plugins#67 for a routing-competition example).
 
+For each case you add or reuse, note two things you'll surface to reviewers in step 7 — capture them now while you have the case open:
+
+- **Prompt.** The verbatim task prompt the agent receives, and the README usage guidance it exercises (which skill's documented trigger this stands in for). A reviewer can't judge whether the metric is measuring the right behavior without seeing what was actually asked.
+- **Fixture / project setup.** What the sandbox looks like when the agent starts — the `setup:` script the case runs (or its absence → empty `/app`). Make the fixture match the prompt: a case phrased as *continuing* an existing project must start from a seeded project (e.g. `setups/existing_project.sh`), not an empty dir, or the case is unrealistic and its score is misleading. Only cases that genuinely *bootstrap from nothing* should start empty.
+
 ## 3. Run baseline
 
 Set up a clean `origin/main` worktree for the baseline:
@@ -125,10 +130,14 @@ A drop from the PR arm means that part is load-bearing — keep it. No drop mean
 
 ## 7. Open the PR(s)
 
-Draft a body per repo you touched, in `<project-root>/.asta/improve-skills/` as `<slug>-<repo>-pr.md` — concise, linking the companion rather than restating it:
+Draft a body per repo you touched, in `<project-root>/.asta/improve-skills/` as `<slug>-<repo>-pr.md` — concise, linking the companion rather than restating it. Write it so a reviewer understands the change from **the first post alone**, without scrolling into comments: put every reviewer-facing fact in the PR description and update *that* on re-runs (don't append a comment).
 
-- **asta-plugins** (always): what it fixes — `Resolves #<issue>` if one exists, else the gap and the behavior it addresses — plus **Validation**: pinned setup (agent version, model, image tag + `@sha256:`), an arms table (baseline, PR, and ablation if you ran one) across cases and metrics, and the transcript read.
-- **asta-bench-private** (only if you changed cases): the case(s) and what they measure; defer results to the companion.
+- **asta-plugins** (always): what it fixes — `Resolves #<issue>` if one exists, else the gap and the behavior it addresses — plus **Validation**, which must let a reviewer judge the evidence without cloning anything:
+  - **Per-case context** — for each case, the *verbatim prompt* the agent received and the README usage guidance it stands in for, plus its *fixture / project setup* (the `setup:` script or empty `/app`, and why that fixture is realistic for the prompt — see step 2). A score is not interpretable without the prompt and fixture behind it.
+  - **Pinned setup** — agent version, model, image tag + `@sha256:` (so the arms are reproducible from the body).
+  - **Arms table** — baseline, PR, and ablation if you ran one, across cases and metrics, with per-case-per-epoch values (`e0=…, e1=…`) not just the mean, and a **fixture** column so seeded-vs-empty cases are distinguishable at a glance.
+  - **Transcript read** — one or two sentences per arm confirming the metric reflects the intended behavior, not a coincidence (the gap reproduced on baseline; any lift is real; a held guard isn't masking change). If a fixture changed, say which epochs were measured under the new fixture so a stale-fixture number isn't read as current.
+- **asta-bench-private** (only if you changed cases): the case(s), what they measure, and each case's prompt + fixture; defer results to the companion.
 
 Create each with `gh pr create --repo allenai/<repo> --body-file <project-root>/.asta/improve-skills/<slug>-<repo>-pr.md`, then cross-link their numbers with `gh pr edit`.
 
