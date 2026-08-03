@@ -24,12 +24,13 @@ A core set of skills for individual research tasks. Core capabilities include:
   - Example request: _Send the Asta team feedback about how this project went_
 
 ### asta-flows
-A library of multi-step workflows. The agent will select an appropriate workflow and execute a series of actions using the `asta-tools` skills and other tools in the environment 
+A library of structured, multi-step research workflows. Give the agent a `mission.md` describing the
+research to run; it plans and executes the work as a graph of typed, dependency-tracked tasks.
 
 ### asta-assistant
-A long-range autonomous research assistant. Point the agent to a mission document containing background and directions to explore.
-The agent will coordinate with the
-user to pursue open questions in a long-range research plan.
+A long-range autonomous research assistant for open-ended, human-steered investigations. It works from a
+`project.md` — a free-form project brief with background and open questions — and helps choose and pursue
+the next unit of work with you.
 
 ### asta-dev
 Skills for developers wishing to contribute to the `asta-tools` or `asta-flows` plugins 
@@ -57,6 +58,23 @@ Once installed, for information about how to use the plugins simply ask the LLM 
 * "Tell me about the asta-plugins"
 * "How do I use the asta-plugins?"
   
+
+## Getting started
+
+Once installed, put the appropriate starting artifact in the workspace and prompt the agent:
+
+- **Structured, multi-step research → `asta-flows`.** Give the agent a `mission.md` describing what to
+  investigate and say _"Here's my mission document, begin."_ It routes to `asta-flows` and executes the
+  work as a dependency-tracked task graph.
+- **Open-ended, human-steered research → `asta-assistant`.** Give the agent a `project.md` project brief
+  and ask _"What should I work on next on this project?"_ It routes to asta-assistant's `brainstorm`
+  skill to select the next unit of work with you.
+
+These entry points are pinned by the `asta_skills` routing eval in
+[asta-bench-private#235](https://github.com/allenai/asta-bench-private/pull/235): `mission.md` must route
+to `asta-flows` and `project.md` to `asta-assistant`, so the guidance above stays honest as the skills
+evolve.
+
 ## Asta CLI
 
 The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
