@@ -15,6 +15,7 @@ to your project in GitHub.
  1. In your Slack channel `/invite @gas2own`
  1. Bind the Slack channel to a GitHub repo: `/topic repo:<your-research-repo-url>`
  1. In your GitHub repo add the `@gas2own` user as a collaborator with maintain permissions
+    (Goto GitHub repo Web page -> Settings -> Collaborators and teams -> Add people -> gas2own -> check "Maintain")
  1. Tag the agent in Slack: `@gas2own show me related literature as an asta workspace`
 
 ### Workspaces
