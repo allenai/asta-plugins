@@ -56,6 +56,8 @@ npx skills add allenai/asta-plugins -g
 Once installed, for information about how to use the plugins simply ask the LLM (e.g., Claude), e.g.,
 * "Tell me about the asta-plugins"
 * "How do I use the asta-plugins?"
+
+For GitHub/Slack integration, see [here](https://github.com/allenai/asta-plugins/tree/main/plugins/asta-dev) (Ai2 internal users only)
   
 ## Asta CLI
 
