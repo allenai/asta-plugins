@@ -63,6 +63,15 @@ Before writing any file in the steps below, check whether the target path alread
    EOF
    ```
 
+On every PR the reusable workflow also publishes a `changes.html` into the PR
+preview and leads the preview comment with a **What changed** link: a single
+rendered page that word-diffs each changed page against the live site, with
+insertions and deletions highlighted inline (`assets/render-pr-diff.py`). A
+reviewer clicks one link to see exactly what changed where, instead of hunting
+through the site root. Pages that differ only in the auto build timestamp are
+omitted; a new page is shown in full as an insertion. It's best-effort — if the
+diff can't be produced the comment falls back to the plain preview link.
+
 ### Dev container
 
 Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`, then pick the flow that matches the user's intent:

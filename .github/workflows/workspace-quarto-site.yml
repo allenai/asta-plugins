@@ -101,6 +101,19 @@ jobs:
           name: site
           path: _site
 
+      # Fetch the highlighted-diff generator at this workflow's own commit (same
+      # provenance model as the drift check above). Best-effort: if it can't be
+      # fetched or lxml won't install, the publish step just skips the diff page
+      # and posts the plain preview link.
+      - name: Set up PR-diff tooling
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check lxml \
+            || { echo "::warning::could not install lxml; skipping highlighted PR diff"; exit 0; }
+          curl -fsSL "https://raw.githubusercontent.com/allenai/asta-plugins/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/render-pr-diff.py" \
+            -o /tmp/render-pr-diff.py \
+            || echo "::warning::could not fetch render-pr-diff.py; skipping highlighted PR diff"
+
       - name: Publish to gh-pages
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -125,6 +138,23 @@ jobs:
             rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
             mkdir -p "$tmp/pr-preview/pr-$PR_NUMBER"
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/pr-preview/pr-$PR_NUMBER/"
+            # Highlighted diff of this PR's pages vs. the live (main) site. Base
+            # is the gh-pages root we just checked out; head is the freshly
+            # copied preview. Writes changes.html into the preview and a
+            # manifest of changed pages for the comment below. Best-effort:
+            # relative links (--preview-base '.') resolve on any served domain,
+            # and a failure never blocks the publish.
+            if [ -f /tmp/render-pr-diff.py ]; then
+              python3 /tmp/render-pr-diff.py \
+                --base-dir "$tmp" \
+                --head-dir "$tmp/pr-preview/pr-$PR_NUMBER" \
+                --out "$tmp/pr-preview/pr-$PR_NUMBER/changes.html" \
+                --preview-base "." \
+                --pr-number "$PR_NUMBER" \
+                --repo "${{ github.repository }}" \
+                > /tmp/changes-manifest.json \
+                || { echo "::warning::PR diff generation failed"; rm -f /tmp/changes-manifest.json; }
+            fi
             # Keep previews out of search indexes. A project Pages site can't use
             # a path-scoped robots.txt (only the host-root one is honored), so
             # inject a noindex meta tag into the preview's pages (main is left
@@ -169,12 +199,29 @@ jobs:
               *) base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" ;;
             esac
             url="$base/pr-preview/pr-$PR_NUMBER/"
-            body="📄 Preview: $url"
+            # Hidden marker identifies this bot's preview comment for idempotent
+            # update, independent of which body variant (plain vs. diff) we post.
+            marker="<!-- quarto-pr-preview -->"
+            body="📄 Preview: $url"$'\n'"$marker"
+            # If the highlighted-diff page was generated and found real changes,
+            # lead with a direct link to it plus a per-page list anchored into
+            # the diff — so a reviewer sees exactly what changed where instead
+            # of hunting through the site root. jq is preinstalled on the runner;
+            # if the manifest is missing/empty/unparseable we keep the plain link.
+            if [ -s /tmp/changes-manifest.json ] \
+               && n=$(jq 'length' /tmp/changes-manifest.json 2>/dev/null) \
+               && [ "${n:-0}" -gt 0 ]; then
+              list=$(jq -r --arg u "$url" \
+                '.[] | "- [\(.title)](\($u)changes.html#\(.anchor))\(if .new then " — new page" else "" end)"' \
+                /tmp/changes-manifest.json)
+              body=$(printf '🔍 **What changed** (%s page(s), highlighted): %schanges.html\n\n%s\n\n📄 Full preview: %s\n%s' \
+                "$n" "$url" "$list" "$url" "$marker")
+            fi
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
             existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty' 2>/dev/null)
+              --jq 'map(select(.body | contains("<!-- quarto-pr-preview -->") or startswith("📄 Preview:"))) | .[0].id // empty' 2>/dev/null)
             if [ -n "$existing" ]; then
               gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
                 || echo "::warning::could not update preview comment"

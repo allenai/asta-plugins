@@ -32,7 +32,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 
 ## Auto-deploy (`.github/workflows/docs.yml`)
 
-Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment.
+Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment. That comment leads with a **What changed** link to a `changes.html` page in the preview that highlights, inline, exactly which pages changed and how (added/removed text) versus the live site — so reviewers don't have to hunt through the site root.
 
 `docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/main/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying (pin its ref to a tag if you prefer explicit upgrades).
 
