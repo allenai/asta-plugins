@@ -20,6 +20,7 @@ Design notes:
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 """
+
 import argparse
 import difflib
 import html
@@ -32,9 +33,33 @@ import sys
 # inside <ins>/<del> where its parent won't allow it (e.g. <ins> as a child of
 # <ul>).
 INLINE_TAGS = {
-    "a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em",
-    "i", "kbd", "mark", "q", "s", "samp", "small", "span", "strong", "sub",
-    "sup", "time", "u", "var", "wbr", "img",
+    "a",
+    "abbr",
+    "b",
+    "bdi",
+    "bdo",
+    "br",
+    "cite",
+    "code",
+    "data",
+    "dfn",
+    "em",
+    "i",
+    "kbd",
+    "mark",
+    "q",
+    "s",
+    "samp",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "time",
+    "u",
+    "var",
+    "wbr",
+    "img",
 }
 
 TOKEN_RE = re.compile(r"<[^>]+>|[^<]+")
@@ -61,7 +86,9 @@ def normalize(content):
     content = re.sub(
         r'(?is)<div class="quarto-title-meta-heading">\s*Modified\s*</div>\s*'
         r'<div class="quarto-title-meta-contents">.*?</div>',
-        "", content)
+        "",
+        content,
+    )
     # Bare date-modified paragraph, if the theme renders one.
     content = re.sub(r'(?is)<p class="date-modified">.*?</p>', "", content)
     return content
@@ -110,13 +137,13 @@ def emit_run(tokens, wrapper):
     def close():
         nonlocal open_wrap
         if open_wrap:
-            out.append("</%s>" % wrapper)
+            out.append(f"</{wrapper}>")
             open_wrap = False
 
     def open_():
         nonlocal open_wrap
         if not open_wrap:
-            out.append("<%s>" % wrapper)
+            out.append(f"<{wrapper}>")
             open_wrap = True
 
     for kind, text in tokens:
@@ -232,8 +259,12 @@ def build(old_root, new_root, preview_url, title):
     sections = []
     toc = []
     for rel in sorted(set(old_pages) | set(new_pages)):
-        new_doc = open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
-        old_doc = open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
+        new_doc = (
+            open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
+        )
+        old_doc = (
+            open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
+        )
         if new_doc is not None and old_doc is not None:
             old_c = normalize(extract_main(old_doc))
             new_c = normalize(extract_main(new_doc))
@@ -258,54 +289,69 @@ def build(old_root, new_root, preview_url, title):
         link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
         h2 = html.escape(title_txt)
         if state != "removed":
-            h2 = '<a href="%s">%s</a>' % (html.escape(link), h2)
+            h2 = f'<a href="{html.escape(link)}">{h2}</a>'
+        state_class = "new" if state == "new" else state
         sections.append(
-            '<section class="page-diff %s" id="%s">\n'
-            '<h2>%s <span class="tag %s">%s</span></h2>\n'
-            '<p class="legend"><code>%s</code></p>\n'
-            '<div class="diff-body">%s</div>\n</section>'
-            % (state, aid, h2, "new" if state == "new" else state,
-               label, html.escape(rel), body))
-        toc.append('<a href="#%s">%s <span class="tag %s">%s</span></a>'
-                   % (aid, html.escape(title_txt),
-                      "new" if state == "new" else state, label))
+            f'<section class="page-diff {state}" id="{aid}">\n'
+            f'<h2>{h2} <span class="tag {state_class}">{label}</span></h2>\n'
+            f'<p class="legend"><code>{html.escape(rel)}</code></p>\n'
+            f'<div class="diff-body">{body}</div>\n</section>'
+        )
+        toc.append(
+            f'<a href="#{aid}">{html.escape(title_txt)} '
+            f'<span class="tag {state_class}">{label}</span></a>'
+        )
 
     if sections:
         n = len(sections)
-        summary = "%d page%s changed" % (n, "" if n == 1 else "s")
-        toc_html = '<nav class="toc">%s</nav>' % "".join(toc)
+        summary = f"{n} page{'s' if n != 1 else ''} changed"
+        toc_html = f'<nav class="toc">{"".join(toc)}</nav>'
         body_html = "\n".join(sections)
     else:
         summary = "No rendered content changed"
         toc_html = ""
-        body_html = ('<p class="empty">This PR changes no rendered page content '
-                     "relative to the deployed site. (It may still change source "
-                     "files, config, or metadata.)</p>")
+        body_html = (
+            '<p class="empty">This PR changes no rendered page content '
+            "relative to the deployed site. (It may still change source "
+            "files, config, or metadata.)</p>"
+        )
 
-    legend = ('<p class="legend">Legend: <ins>added</ins> &middot; '
-              "<del>removed</del>. Page titles link to the full preview.</p>")
+    legend = (
+        '<p class="legend">Legend: <ins>added</ins> &middot; '
+        "<del>removed</del>. Page titles link to the full preview.</p>"
+    )
+    escaped_title = html.escape(title)
     return (
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        "<title>What changed &middot; %s</title><style>%s</style></head><body>"
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>What changed &middot; {escaped_title}</title>"
+        f"<style>{PAGE_STYLE}</style></head><body>"
         '<header class="diff-head"><h1>What changed</h1>'
-        "<p>%s &middot; %s</p>%s</header>%s\n%s</body></html>"
-        % (html.escape(title), PAGE_STYLE, html.escape(title), summary,
-           legend, toc_html, body_html))
+        f"<p>{escaped_title} &middot; {summary}</p>{legend}</header>{toc_html}\n"
+        f"{body_html}</body></html>"
+    )
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--old", required=True, help="baseline rendered site root (deployed main)")
-    ap.add_argument("--new", required=True, help="candidate rendered site root (this PR's _site)")
+    ap.add_argument(
+        "--old", required=True, help="baseline rendered site root (deployed main)"
+    )
+    ap.add_argument(
+        "--new", required=True, help="candidate rendered site root (this PR's _site)"
+    )
     ap.add_argument("--out", required=True, help="output HTML path")
-    ap.add_argument("--preview-url", default="", help="base URL of the PR preview (for deep links)")
-    ap.add_argument("--title", default="PR preview diff", help="site/PR label for the header")
+    ap.add_argument(
+        "--preview-url", default="", help="base URL of the PR preview (for deep links)"
+    )
+    ap.add_argument(
+        "--title", default="PR preview diff", help="site/PR label for the header"
+    )
     args = ap.parse_args(argv)
     doc = build(args.old, args.new, args.preview_url, args.title)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
-    print("wrote %s (%d bytes)" % (args.out, len(doc)), file=sys.stderr)
+    print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)
 
 
 if __name__ == "__main__":
