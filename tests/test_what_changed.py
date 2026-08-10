@@ -90,6 +90,11 @@ def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):
     assert "details.wc-fold" in result
     assert "Expand all unchanged" in result
     assert "DOMContentLoaded" in result
+    # A single rendered element can hold a whole section, so long singleton
+    # blocks and oversized neighboring context are folded by default.
+    assert "var MIN_BLOCKS = 1" in result
+    assert "var MAX_CONTEXT_CHARS = 500" in result
+    assert "kids[j].textContent.length <= MAX_CONTEXT_CHARS" in result
     # ...but the server never pre-collapses, so no-JS reviewers still get
     # every unchanged paragraph verbatim.
     assert "Untouched paragraph number 7" in result

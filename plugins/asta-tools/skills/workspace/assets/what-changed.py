@@ -294,8 +294,9 @@ FOLD_JS = r"""
 (function () {
   "use strict";
   var MIN_CHARS = 260;   // don't bother folding a small gap
-  var MIN_BLOCKS = 2;    // need at least this many consecutive unchanged blocks
+  var MIN_BLOCKS = 1;    // a rendered block can contain an entire long section
   var CONTEXT = 1;       // unchanged blocks kept visible beside a change
+  var MAX_CONTEXT_CHARS = 500; // fold large neighbors instead of treating them as context
 
   function hasChange(el) {
     return el.tagName === "INS" || el.tagName === "DEL" ||
@@ -343,7 +344,11 @@ FOLD_JS = r"""
     kids.forEach(function (el, k) {
       if (!changed[k]) return;
       for (var j = Math.max(0, k - CONTEXT);
-           j <= Math.min(kids.length - 1, k + CONTEXT); j++) keep[j] = true;
+           j <= Math.min(kids.length - 1, k + CONTEXT); j++) {
+        // Rendered blocks are not source lines: a single sibling can contain a
+        // whole section. Keep compact neighbors as context, but fold large ones.
+        keep[j] = changed[j] || kids[j].textContent.length <= MAX_CONTEXT_CHARS;
+      }
     });
     // Recurse into changed containers before moving sibling runs.
     kids.forEach(function (el, k) {
