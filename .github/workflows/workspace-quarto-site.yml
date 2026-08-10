@@ -48,7 +48,13 @@ jobs:
       - name: Check vendored quarto-check.sh for drift
         run: |
           [ -f scripts/quarto-check.sh ] || exit 0
-          canonical="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
+          # Fetch from the reusable workflow's own repo@sha. In a called
+          # reusable workflow, github.job_workflow_ref is "<owner>/<repo>/<path>@<ref>"
+          # and github.job_workflow_sha is that workflow file's commit; the plain
+          # `job` context has no workflow_repository/workflow_sha (those resolve empty).
+          wf_ref="${{ github.job_workflow_ref }}"
+          wf_repo="${wf_ref%%/.github/*}"
+          canonical="https://raw.githubusercontent.com/${wf_repo}/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
           if curl -fsSL "$canonical" -o /tmp/quarto-check.canonical; then
             if ! diff -u scripts/quarto-check.sh /tmp/quarto-check.canonical > /tmp/quarto-check.diff; then
               echo "::warning::scripts/quarto-check.sh differs from the workspace skill's canonical copy — re-copy assets/quarto-check.sh to update (or ignore if intentionally customized)"
@@ -137,7 +143,9 @@ jobs:
             baseline=$(mktemp -d)
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git \
               -exec cp -r {} "$baseline/" \;
-            gen="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
+            wf_ref="${{ github.job_workflow_ref }}"
+            wf_repo="${wf_ref%%/.github/*}"
+            gen="https://raw.githubusercontent.com/${wf_repo}/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
             if curl -fsSL "$gen" -o /tmp/what-changed.py; then
               python3 /tmp/what-changed.py \
                 --old "$baseline" \
