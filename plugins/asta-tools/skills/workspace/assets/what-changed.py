@@ -199,45 +199,113 @@ def list_pages(root):
     return pages
 
 
-PAGE_STYLE = """
-:root { color-scheme: light dark; }
-body { font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-       margin: 0; padding: 0 1.5rem 4rem; max-width: 60rem; margin-inline: auto;
-       color: #1b1b1b; }
-header.diff-head { padding: 1.5rem 0 0.5rem; }
-header.diff-head h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
-header.diff-head p { margin: .25rem 0; color: #555; }
-.legend { font-size: .85rem; color: #555; }
-.legend ins, .legend del { padding: 0 .2em; }
-.empty { color: #555; font-style: italic; }
-nav.toc { font-size: .9rem; margin: 1rem 0 2rem; }
-nav.toc a { display: inline-block; margin-right: 1rem; }
-section.page-diff { border-top: 3px solid #0f6cbd; margin-top: 2.5rem;
-                    padding-top: .5rem; }
-section.page-diff.new { border-top-color: #107c10; }
-section.page-diff.removed { border-top-color: #d13438; }
-section.page-diff > h2 { font-size: 1.15rem; }
-section.page-diff > h2 .tag { font-size: .7em; font-weight: 600; padding: .1em .5em;
-    border-radius: 1em; vertical-align: middle; margin-left: .5em; }
-.tag.changed { background: #0f6cbd; color: #fff; }
-.tag.new { background: #107c10; color: #fff; }
-.tag.removed { background: #d13438; color: #fff; }
-.diff-body { overflow-wrap: break-word; }
-.diff-body table { border-collapse: collapse; }
-.diff-body td, .diff-body th { border: 1px solid #ccc; padding: .3em .5em; }
-ins { background: #d4f7d4; text-decoration: none; box-shadow: 0 0 0 1px #a3e0a3; }
-del { background: #ffd7d5; text-decoration: line-through; box-shadow: 0 0 0 1px #f1b0ad; }
-ins img, del img { outline: 3px solid; }
-ins img { outline-color: #107c10; }
-del img { outline-color: #d13438; opacity: .6; }
+# Chrome for the diff scaffolding (header, TOC, per-page section banners) and
+# the added/removed highlighting. This is layered *after* the site theme when
+# one is available, so it only styles our own wrapper classes and the
+# <ins>/<del> runs — the page content keeps the site's real typography, colors,
+# code highlighting, and dark/light palette.
+#
+# Highlight colors are the GitHub-diff palette: high enough contrast to read the
+# text on top and to distinguish added from removed at a glance, and never
+# color-only (added is underlined, removed is struck through) so the diff is
+# legible to color-blind reviewers too.
+DIFF_STYLE = """
+.wc-scope { --wc-ins-bg: #d7f5dd; --wc-ins-line: #1a7f37; --wc-ins-fg: #032b13;
+            --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
+            --wc-muted: #57606a; --wc-changed: #0969da; --wc-new: #1a7f37;
+            --wc-removed: #cf222e; --wc-border: #d0d7de; }
 @media (prefers-color-scheme: dark) {
-  body { background: #1b1b1b; color: #e6e6e6; }
-  header.diff-head p, .legend, .empty { color: #aaa; }
-  ins { background: #133a13; box-shadow: 0 0 0 1px #2a5a2a; }
-  del { background: #4a1513; box-shadow: 0 0 0 1px #7a2a27; }
-  .diff-body td, .diff-body th { border-color: #444; }
+  .wc-scope { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
+              --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
+              --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
+              --wc-removed: #f85149; --wc-border: #30363d; }
 }
+.wc-scope header.diff-head { padding: 1.25rem 0 0.5rem; margin-bottom: 1rem;
+    border-bottom: 1px solid var(--wc-border); }
+.wc-scope header.diff-head h1 { margin: 0 0 .25rem; }
+.wc-scope header.diff-head p, .wc-scope .legend, .wc-scope .empty {
+    color: var(--wc-muted); }
+.wc-scope .legend { font-size: .9rem; }
+.wc-scope .legend ins, .wc-scope .legend del { padding: 0 .25em; }
+.wc-scope .empty { font-style: italic; }
+.wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
+    border: 1px solid var(--wc-border); border-radius: 6px; }
+.wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
+.wc-scope section.page-diff { margin-top: 2.5rem; padding: .75rem 1rem 1rem;
+    border: 1px solid var(--wc-border); border-left: 4px solid var(--wc-changed);
+    border-radius: 6px; }
+.wc-scope section.page-diff.new { border-left-color: var(--wc-new); }
+.wc-scope section.page-diff.removed { border-left-color: var(--wc-removed); }
+.wc-scope section.page-diff > h2 { margin-top: .25rem; }
+.wc-scope section.page-diff > h2 .tag { font-size: .65em; font-weight: 600;
+    padding: .15em .6em; border-radius: 1em; vertical-align: middle;
+    margin-left: .5em; color: #fff; }
+.wc-scope .tag.changed { background: var(--wc-changed); }
+.wc-scope .tag.new { background: var(--wc-new); }
+.wc-scope .tag.removed { background: var(--wc-removed); }
+.wc-scope .diff-body { overflow-wrap: break-word; }
+.wc-scope ins { background: var(--wc-ins-bg); color: var(--wc-ins-fg);
+    text-decoration: underline; text-decoration-color: var(--wc-ins-line);
+    text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+.wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
+    text-decoration: line-through; text-decoration-color: var(--wc-del-line);
+    text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+.wc-scope ins img, .wc-scope del img { outline: 3px solid; }
+.wc-scope ins img { outline-color: var(--wc-ins-line); }
+.wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }
 """
+
+# Body typography for the fallback path, when no site theme could be reused.
+STANDALONE_STYLE = """
+:root { color-scheme: light dark; }
+body { font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+       Helvetica, Arial, sans-serif; margin: 0; padding: 0 1.5rem 4rem;
+       max-width: 60rem; margin-inline: auto; color: #1b1b1b; }
+.wc-scope section.page-diff table { border-collapse: collapse; }
+.wc-scope section.page-diff td, .wc-scope section.page-diff th {
+    border: 1px solid var(--wc-border); padding: .3em .5em; }
+@media (prefers-color-scheme: dark) { body { background: #0d1117; color: #e6edf3; } }
+"""
+
+
+def extract_theme_css(doc, depth):
+    """Pull the site theme's stylesheets out of a rendered page's <head>.
+
+    We reuse only <link rel="stylesheet"> and inline <style> — never the theme's
+    scripts — so the diff content renders with the real site typography, colors,
+    and code highlighting, without dragging in navbar/toggle JS that expects DOM
+    we don't reproduce. Relative asset URLs are rebased from the template page's
+    depth up to the preview root, where what-changed.html lives.
+    """
+    head_m = re.search(r"(?is)<head\b[^>]*>(.*?)</head>", doc)
+    if not head_m:
+        return None
+    head = head_m.group(1)
+    parts = []
+    for m in re.finditer(r"(?is)<link\b[^>]*>", head):
+        tag = m.group(0)
+        if re.search(r'rel\s*=\s*["\']?[^"\'>]*stylesheet', tag, re.I):
+            parts.append(rebase_urls(tag, depth))
+    for m in re.finditer(r"(?is)<style\b[^>]*>.*?</style>", head):
+        parts.append(rebase_urls(m.group(0), depth))
+    return "\n".join(parts) if parts else None
+
+
+def rebase_urls(text, depth):
+    """Strip `depth` leading `../` from href/src/url() so root-relative links
+    resolve from the preview root instead of the template page's subdirectory."""
+    if depth <= 0:
+        return text
+    prefix = "../" * depth
+
+    def fix(m):
+        attr, quote, url = m.group(1), m.group(2), m.group(3)
+        if url.startswith(prefix):
+            url = url[len(prefix):]
+        return f"{attr}={quote}{url}{quote}"
+
+    text = re.sub(r'(href|src)\s*=\s*(["\'])([^"\']*)\2', fix, text, flags=re.I)
+    return text
 
 
 def page_title(doc, rel):
@@ -251,6 +319,22 @@ def page_title(doc, rel):
 
 def anchor_id(rel):
     return "p-" + re.sub(r"[^a-zA-Z0-9]+", "-", rel).strip("-")
+
+
+def pick_template(new_pages):
+    """Choose the shallowest rendered page to borrow the site theme from.
+
+    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase.
+    Returns (doc_html, depth) or (None, 0) if nothing suitable exists.
+    """
+    if not new_pages:
+        return None, 0
+    rel = min(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r))
+    depth = rel.replace(os.sep, "/").count("/")
+    try:
+        return open(new_pages[rel], encoding="utf-8").read(), depth
+    except OSError:
+        return None, 0
 
 
 def build(old_root, new_root, preview_url, title):
@@ -321,14 +405,35 @@ def build(old_root, new_root, preview_url, title):
         "<del>removed</del>. Page titles link to the full preview.</p>"
     )
     escaped_title = html.escape(title)
+
+    template_doc, depth = pick_template(new_pages)
+    theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+
+    inner = (
+        '<header class="diff-head"><h1>What changed</h1>'
+        f"<p>{escaped_title} &middot; {summary}</p>{legend}</header>{toc_html}\n"
+        f"{body_html}"
+    )
+
+    if theme_css:
+        # Reuse the site theme, then wrap our content in Quarto's article
+        # container so it inherits the real content width and typography.
+        head = f'{theme_css}\n<style>{DIFF_STYLE}</style>'
+        body = (
+            '<div class="page-columns page-rows-contents page-layout-article '
+            'wc-scope">\n'
+            '<main class="content" id="quarto-document-content">\n'
+            f"{inner}\n</main>\n</div>"
+        )
+    else:
+        head = f"<style>{STANDALONE_STYLE}{DIFF_STYLE}</style>"
+        body = f'<div class="wc-scope">{inner}</div>'
+
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>What changed &middot; {escaped_title}</title>"
-        f"<style>{PAGE_STYLE}</style></head><body>"
-        '<header class="diff-head"><h1>What changed</h1>'
-        f"<p>{escaped_title} &middot; {summary}</p>{legend}</header>{toc_html}\n"
-        f"{body_html}</body></html>"
+        f"{head}</head><body>{body}</body></html>"
     )
 
 
