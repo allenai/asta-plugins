@@ -301,7 +301,7 @@ def rebase_urls(text, depth):
     def fix(m):
         attr, quote, url = m.group(1), m.group(2), m.group(3)
         if url.startswith(prefix):
-            url = url[len(prefix):]
+            url = url[len(prefix) :]
         return f"{attr}={quote}{url}{quote}"
 
     text = re.sub(r'(href|src)\s*=\s*(["\'])([^"\']*)\2', fix, text, flags=re.I)
@@ -418,7 +418,7 @@ def build(old_root, new_root, preview_url, title):
     if theme_css:
         # Reuse the site theme, then wrap our content in Quarto's article
         # container so it inherits the real content width and typography.
-        head = f'{theme_css}\n<style>{DIFF_STYLE}</style>'
+        head = f"{theme_css}\n<style>{DIFF_STYLE}</style>"
         body = (
             '<div class="page-columns page-rows-contents page-layout-article '
             'wc-scope">\n'
