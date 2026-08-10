@@ -48,7 +48,7 @@ jobs:
       - name: Check vendored quarto-check.sh for drift
         run: |
           [ -f scripts/quarto-check.sh ] || exit 0
-          canonical="https://raw.githubusercontent.com/allenai/asta-plugins/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
+          canonical="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
           if curl -fsSL "$canonical" -o /tmp/quarto-check.canonical; then
             if ! diff -u scripts/quarto-check.sh /tmp/quarto-check.canonical > /tmp/quarto-check.diff; then
               echo "::warning::scripts/quarto-check.sh differs from the workspace skill's canonical copy — re-copy assets/quarto-check.sh to update (or ignore if intentionally customized)"
@@ -137,7 +137,7 @@ jobs:
             baseline=$(mktemp -d)
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git \
               -exec cp -r {} "$baseline/" \;
-            gen="https://raw.githubusercontent.com/allenai/asta-plugins/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
+            gen="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
             if curl -fsSL "$gen" -o /tmp/what-changed.py; then
               python3 /tmp/what-changed.py \
                 --old "$baseline" \
