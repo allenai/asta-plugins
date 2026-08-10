@@ -52,3 +52,19 @@ def test_nested_template_stylesheet_is_rebased_to_preview_root(tmp_path):
 
     assert depth == 1
     assert 'href="site_libs/theme.css"' in theme
+
+
+def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = """<html><head><link id="quarto-bootstrap" data-mode="dark"
+      rel="stylesheet" href="site_libs/bootstrap.css"></head>
+      <body><main><p>{text}</p></main></body></html>"""
+    (old / "index.html").write_text(shell.format(text="Old"))
+    (new / "index.html").write_text(shell.format(text="New"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    assert "wc-scope wc-dark" in result

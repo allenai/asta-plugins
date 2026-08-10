@@ -214,8 +214,15 @@ DIFF_STYLE = """
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
             --wc-muted: #57606a; --wc-changed: #0969da; --wc-new: #1a7f37;
             --wc-removed: #cf222e; --wc-border: #d0d7de; }
+/* Follow Quarto's rendered theme mode when a theme is reused. The media-query
+   fallback is only for standalone output, where no Quarto mode is available. */
+.wc-scope.wc-dark { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
+                    --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
+                    --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
+                    --wc-removed: #f85149; --wc-border: #30363d; }
 @media (prefers-color-scheme: dark) {
-  .wc-scope { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
+  .wc-scope.wc-standalone {
+              --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
               --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
               --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
               --wc-removed: #f85149; --wc-border: #30363d; }
@@ -289,6 +296,19 @@ def extract_theme_css(doc, depth):
     for m in re.finditer(r"(?is)<style\b[^>]*>.*?</style>", head):
         parts.append(rebase_urls(m.group(0), depth))
     return "\n".join(parts) if parts else None
+
+
+def extract_theme_mode(doc):
+    """Return Quarto's compiled Bootstrap mode (light or dark), if present."""
+    bootstrap = re.search(
+        r'(?is)<link\b(?=[^>]*\bid\s*=\s*["\']quarto-bootstrap["\'])[^>]*>', doc
+    )
+    if not bootstrap:
+        return None
+    mode = re.search(
+        r'\bdata-mode\s*=\s*["\'](light|dark)["\']', bootstrap.group(0), re.I
+    )
+    return mode.group(1).lower() if mode else None
 
 
 def rebase_urls(text, depth):
@@ -419,15 +439,20 @@ def build(old_root, new_root, preview_url, title):
         # Reuse the site theme, then wrap our content in Quarto's article
         # container so it inherits the real content width and typography.
         head = f"{theme_css}\n<style>{DIFF_STYLE}</style>"
+        scope_class = (
+            "wc-scope wc-dark"
+            if extract_theme_mode(template_doc) == "dark"
+            else "wc-scope"
+        )
         body = (
             '<div class="page-columns page-rows-contents page-layout-article '
-            'wc-scope">\n'
+            f'{scope_class}">\n'
             '<main class="content" id="quarto-document-content">\n'
             f"{inner}\n</main>\n</div>"
         )
     else:
         head = f"<style>{STANDALONE_STYLE}{DIFF_STYLE}</style>"
-        body = f'<div class="wc-scope">{inner}</div>'
+        body = f'<div class="wc-scope wc-standalone">{inner}</div>'
 
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
