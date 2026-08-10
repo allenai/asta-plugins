@@ -35,6 +35,12 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     assert "<ins>New</ins>" in result
     assert "text-decoration: underline" in result
     assert "text-decoration: line-through" in result
+    assert "--wc-tag-fg: #fff" in result
+    assert ".wc-scope nav.toc .tag" in result
+    assert (
+        ".wc-scope .tag.changed { background: var(--wc-changed); "
+        "color: var(--wc-tag-fg); }" in result
+    )
 
 
 def test_nested_template_stylesheet_is_rebased_to_preview_root(tmp_path):
@@ -68,6 +74,7 @@ def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
     assert "wc-scope wc-dark" in result
+    assert "--wc-tag-fg: #0d1117" in result
 
 
 def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):

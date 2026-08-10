@@ -218,19 +218,19 @@ DIFF_STYLE = """
 .wc-scope { --wc-ins-bg: #d7f5dd; --wc-ins-line: #1a7f37; --wc-ins-fg: #032b13;
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
             --wc-muted: #57606a; --wc-changed: #0969da; --wc-new: #1a7f37;
-            --wc-removed: #cf222e; --wc-border: #d0d7de; }
+            --wc-removed: #cf222e; --wc-tag-fg: #fff; --wc-border: #d0d7de; }
 /* Follow Quarto's rendered theme mode when a theme is reused. The media-query
    fallback is only for standalone output, where no Quarto mode is available. */
 .wc-scope.wc-dark { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
                     --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
                     --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
-                    --wc-removed: #f85149; --wc-border: #30363d; }
+                    --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
 @media (prefers-color-scheme: dark) {
   .wc-scope.wc-standalone {
               --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
               --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
               --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
-              --wc-removed: #f85149; --wc-border: #30363d; }
+              --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
 }
 .wc-scope header.diff-head { padding: 1.25rem 0 0.5rem; margin-bottom: 1rem;
     border-bottom: 1px solid var(--wc-border); }
@@ -249,12 +249,14 @@ DIFF_STYLE = """
 .wc-scope section.page-diff.new { border-left-color: var(--wc-new); }
 .wc-scope section.page-diff.removed { border-left-color: var(--wc-removed); }
 .wc-scope section.page-diff > h2 { margin-top: .25rem; }
-.wc-scope section.page-diff > h2 .tag { font-size: .65em; font-weight: 600;
+.wc-scope .tag { font-weight: 600;
     padding: .15em .6em; border-radius: 1em; vertical-align: middle;
-    margin-left: .5em; color: #fff; }
-.wc-scope .tag.changed { background: var(--wc-changed); }
-.wc-scope .tag.new { background: var(--wc-new); }
-.wc-scope .tag.removed { background: var(--wc-removed); }
+    margin-left: .5em; color: var(--wc-tag-fg); }
+.wc-scope section.page-diff > h2 .tag { font-size: .65em; }
+.wc-scope nav.toc .tag { font-size: .75em; }
+.wc-scope .tag.changed { background: var(--wc-changed); color: var(--wc-tag-fg); }
+.wc-scope .tag.new { background: var(--wc-new); color: var(--wc-tag-fg); }
+.wc-scope .tag.removed { background: var(--wc-removed); color: var(--wc-tag-fg); }
 .wc-scope .diff-body { overflow-wrap: break-word; }
 .wc-scope ins { background: var(--wc-ins-bg); color: var(--wc-ins-fg);
     text-decoration: underline; text-decoration-color: var(--wc-ins-line);
