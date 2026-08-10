@@ -17,6 +17,11 @@ Design notes:
     words and inline formatting tags. Block/structural tags are emitted outside
     the wrapper (insertions) or dropped with their fully-deleted subtree
     (deletions), so list/table/section nesting is never corrupted.
+  * Long stretches of unchanged content are folded into GitHub-style "N
+    unchanged blocks" toggles, so a reviewer lands on the changes instead of a
+    wall of context. Folding is progressive enhancement done client-side on the
+    already-parsed DOM (it only moves balanced element nodes, so it cannot break
+    markup); with JS off, the full rendered diff is shown.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 """
@@ -260,6 +265,130 @@ DIFF_STYLE = """
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }
+/* GitHub-style collapsed hunks: runs of unchanged blocks are folded client-side
+   into disclosure widgets so a reviewer lands on the changes, not context. */
+.wc-scope .wc-toolbar { margin: -.5rem 0 1.5rem; }
+.wc-scope .wc-toolbar button { font: inherit; font-size: .85rem; cursor: pointer;
+    color: var(--wc-changed); background: transparent; padding: .35em .9em;
+    border: 1px solid var(--wc-border); border-radius: 6px; }
+.wc-scope .wc-toolbar button:hover { border-color: var(--wc-changed); }
+.wc-scope details.wc-fold { margin: .85rem 0; border: 1px dashed var(--wc-border);
+    border-radius: 6px; }
+.wc-scope details.wc-fold > summary { cursor: pointer; list-style: none;
+    display: flex; align-items: baseline; gap: .55em; padding: .5em .85em;
+    color: var(--wc-muted); font-size: .85rem; user-select: none; }
+.wc-scope details.wc-fold > summary::-webkit-details-marker { display: none; }
+.wc-scope details.wc-fold > summary::before { content: "\\25B8"; }
+.wc-scope details.wc-fold[open] > summary::before { content: "\\25BE"; }
+.wc-scope details.wc-fold > summary:hover { color: var(--wc-changed); }
+.wc-scope details.wc-fold[open] > summary { border-bottom: 1px dashed var(--wc-border); }
+.wc-scope .wc-fold-body { padding: .25rem 1rem .35rem; }
+"""
+
+# Client-side progressive enhancement: fold runs of unchanged block elements
+# (recursively, at every nesting level) into collapsible <details>, keeping a
+# block of context next to each change — the GitHub "hidden unchanged lines"
+# affordance. It runs on the already-parsed DOM and only *moves* balanced element
+# nodes, so it cannot corrupt markup; with JS disabled the full content is shown.
+FOLD_JS = r"""
+(function () {
+  "use strict";
+  var MIN_CHARS = 260;   // don't bother folding a small gap
+  var MIN_BLOCKS = 2;    // need at least this many consecutive unchanged blocks
+  var CONTEXT = 1;       // unchanged blocks kept visible beside a change
+
+  function hasChange(el) {
+    return el.tagName === "INS" || el.tagName === "DEL" ||
+           !!el.querySelector("ins, del");
+  }
+  function words(str) { var m = str.trim().match(/\S+/g); return m ? m.length : 0; }
+  function headingText(el) {
+    if (/^H[1-6]$/.test(el.tagName)) return el.textContent.trim();
+    var h = el.querySelector("h1, h2, h3, h4, h5, h6");
+    return h ? h.textContent.trim() : "";
+  }
+  function summaryText(run) {
+    var titles = [], w = 0;
+    run.forEach(function (el) {
+      var t = headingText(el);
+      if (t) titles.push(t.length > 60 ? t.slice(0, 57) + "…" : t);
+      w += words(el.textContent);
+    });
+    var n = run.length;
+    var label = n + " unchanged " + (n === 1 ? "block" : "blocks");
+    if (titles.length) {
+      var shown = titles.slice(0, 3).join(", ");
+      if (titles.length > 3) shown += ", …";
+      label += ": " + shown;
+    }
+    return label + " · " + w + " words hidden";
+  }
+  function collapse(container, run) {
+    var d = document.createElement("details");
+    d.className = "wc-fold";
+    var s = document.createElement("summary");
+    s.textContent = summaryText(run);
+    var wrap = document.createElement("div");
+    wrap.className = "wc-fold-body";
+    container.insertBefore(d, run[0]);
+    d.appendChild(s);
+    run.forEach(function (el) { wrap.appendChild(el); });
+    d.appendChild(wrap);
+  }
+  function fold(container) {
+    var kids = Array.prototype.slice.call(container.children);
+    if (!kids.length) return;
+    var changed = kids.map(hasChange);
+    var keep = kids.map(function () { return false; });
+    kids.forEach(function (el, k) {
+      if (!changed[k]) return;
+      for (var j = Math.max(0, k - CONTEXT);
+           j <= Math.min(kids.length - 1, k + CONTEXT); j++) keep[j] = true;
+    });
+    // Recurse into changed containers before moving sibling runs.
+    kids.forEach(function (el, k) {
+      if (changed[k] && el.children.length) fold(el);
+    });
+    var start = 0;
+    while (start < kids.length) {
+      if (keep[start]) { start++; continue; }
+      var end = start;
+      while (end < kids.length && !keep[end]) end++;
+      var run = kids.slice(start, end);
+      var chars = run.reduce(function (a, el) { return a + el.textContent.length; }, 0);
+      if (run.length >= MIN_BLOCKS && chars >= MIN_CHARS) collapse(container, run);
+      start = end;
+    }
+  }
+  function addToolbar() {
+    if (!document.querySelector("details.wc-fold")) return;
+    var anchor = document.querySelector("section.page-diff");
+    if (!anchor) return;
+    var bar = document.createElement("div");
+    bar.className = "wc-toolbar";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Expand all unchanged";
+    btn.addEventListener("click", function () {
+      var open = btn.getAttribute("data-open") === "1";
+      document.querySelectorAll("details.wc-fold").forEach(function (d) {
+        d.open = !open;
+      });
+      btn.setAttribute("data-open", open ? "0" : "1");
+      btn.textContent = open ? "Expand all unchanged" : "Collapse all unchanged";
+    });
+    bar.appendChild(btn);
+    anchor.parentNode.insertBefore(bar, anchor);
+  }
+  function run() {
+    document.querySelectorAll("section.page-diff.changed .diff-body")
+      .forEach(fold);
+    addToolbar();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else { run(); }
+})();
 """
 
 # Body typography for the fallback path, when no site theme could be reused.
@@ -458,7 +587,7 @@ def build(old_root, new_root, preview_url, title):
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>What changed &middot; {escaped_title}</title>"
-        f"{head}</head><body>{body}</body></html>"
+        f"{head}</head><body>{body}<script>{FOLD_JS}</script></body></html>"
     )
 
 

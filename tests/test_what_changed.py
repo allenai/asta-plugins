@@ -68,3 +68,32 @@ def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
     assert "wc-scope wc-dark" in result
+
+
+def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    filler = "".join(
+        f"<p>Untouched paragraph number {i} with enough words to matter.</p>"
+        for i in range(8)
+    )
+    shell = "<html><head></head><body><main>{body}</main></body></html>"
+    (old / "index.html").write_text(shell.format(body=filler + "<p>original line</p>"))
+    (new / "index.html").write_text(shell.format(body=filler + "<p>replaced line</p>"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    # The folding is progressive enhancement: the script ships and the styling
+    # for the collapsed hunks is present.
+    assert "details.wc-fold" in result
+    assert "Expand all unchanged" in result
+    assert "DOMContentLoaded" in result
+    # ...but the server never pre-collapses, so no-JS reviewers still get
+    # every unchanged paragraph verbatim.
+    assert "Untouched paragraph number 7" in result
+    # The server never pre-collapses; the DOM ships flat and JS folds it, so a
+    # no-JS reviewer still sees every block and the markup stays valid.
+    assert "<details" not in result
+    assert "\\25B8" in result  # CSS chevron escape survives, not mangled to octal
