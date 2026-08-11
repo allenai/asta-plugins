@@ -64,6 +64,74 @@ jobs:
       - name: Run docs checks
         run: make check
 
+      # Render a self-contained "what changed" page for PR previews: a
+      # highlighted diff of the PR's source content against its base branch, so
+      # a reviewer lands on exactly what the PR modifies with unchanged sections
+      # collapsed to diff context, instead of having to re-scan the whole
+      # rendered site. It's written into `_site/` so it rides the same
+      # artifact/preview publish path as the rest of the render, and served at
+      # `<preview>/what-changed.html`. Only produced for pull requests — on a
+      # main push it would diff the base against itself. Best-effort: a failure
+      # here must not fail an otherwise-green build, so it never exits non-zero.
+      - name: Render "what changed" diff
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          # base...HEAD = merge-base(base, PR head)..HEAD = exactly the PR's own
+          # changes (the checked-out ref for a PR event is the merge commit).
+          git diff --unified=3 "$BASE_SHA...HEAD" -- \
+            '*.qmd' '*.md' '*.markdown' '*.ipynb' '*.qmd.md' > /tmp/what-changed.diff 2>/dev/null
+          python3 - "$PR_NUMBER" /tmp/what-changed.diff > _site/what-changed.html <<'PY'
+          import html, sys
+          pr = sys.argv[1]
+          try:
+              diff = open(sys.argv[2], encoding="utf-8", errors="replace").read()
+          except OSError:
+              diff = ""
+          rows = []
+          for line in diff.splitlines():
+              e = html.escape(line)
+              if line.startswith(("diff --git", "index ", "--- ", "+++ ", "new file", "deleted file", "rename ", "similarity ")):
+                  cls = "file"
+              elif line.startswith("@@"):
+                  cls = "hunk"
+              elif line.startswith("+"):
+                  cls = "add"
+              elif line.startswith("-"):
+                  cls = "del"
+              else:
+                  cls = "ctx"
+              rows.append(f'<div class="l {cls}">{e or "&nbsp;"}</div>')
+          body = "\n".join(rows) if rows else (
+              '<p class="empty">No source content (<code>.qmd</code>/<code>.md</code>/'
+              '<code>.ipynb</code>) changed in this PR.</p>')
+          print(f"""<!doctype html><html lang="en"><head>
+          <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta name="robots" content="noindex, nofollow">
+          <title>What changed — PR #{html.escape(pr)}</title>
+          <style>
+            body{{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1b1817;background:#faf2e9}}
+            header{{padding:16px 20px;border-bottom:1px solid #e0d8cf;background:#fff}}
+            header h1{{font-size:16px;margin:0 0 4px}}
+            header a{{color:#0fcb8c;text-decoration:none}}
+            main{{padding:12px 0}}
+            .l{{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;
+               word-break:break-word;padding:0 20px}}
+            .file{{color:#6b6560;background:#f0e9e0;font-weight:600;padding-top:10px}}
+            .hunk{{color:#8a6d3b;background:#f7efe1}}
+            .add{{background:#e5f6ec}} .del{{background:#fbe7e7}}
+            .ctx{{color:#4a4540}}
+            .empty{{padding:24px 20px;color:#6b6560}}
+          </style></head><body>
+          <header><h1>What changed in this PR</h1>
+          <a href="./index.html">← full rendered preview</a></header>
+          <main>{body}</main></body></html>""")
+          PY
+          set -e
+
       - name: Prepare Pages artifact
         run: touch _site/.nojekyll  # serve asset dirs verbatim (no Jekyll)
 
@@ -169,12 +237,17 @@ jobs:
               *) base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" ;;
             esac
             url="$base/pr-preview/pr-$PR_NUMBER/"
-            body="📄 Preview: $url"
+            # Lead with the rendered diff (drops the reviewer on exactly what
+            # changed); keep the full-preview link alongside it.
+            body="🔎 What changed: ${url}what-changed.html · 📄 Full preview: $url"
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
+            # Match on the preview path, not a prefix string, so the bot keeps
+            # updating its single comment even across wording changes (older
+            # comments led with "📄 Preview:").
             existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty' 2>/dev/null)
+              --jq "map(select(.body | test(\"/pr-preview/pr-$PR_NUMBER/\") or startswith(\"📄 Preview:\"))) | .[0].id // empty" 2>/dev/null)
             if [ -n "$existing" ]; then
               gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
                 || echo "::warning::could not update preview comment"

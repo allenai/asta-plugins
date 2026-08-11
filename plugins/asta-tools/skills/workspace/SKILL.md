@@ -63,6 +63,14 @@ Before writing any file in the steps below, check whether the target path alread
    EOF
    ```
 
+On every PR the workflow publishes a full rendered preview under
+`<pages>/pr-preview/pr-<N>/` **and** a `what-changed.html` beside it — a
+highlighted diff of the PR's changed source content (`.qmd`/`.md`/`.ipynb`)
+against its base branch, with unchanged sections collapsed to diff context. The
+single preview comment links both (What changed first, then the full preview),
+so a reviewer can land on exactly what a PR modifies instead of re-scanning the
+whole site.
+
 ### Dev container
 
 Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`, then pick the flow that matches the user's intent:
