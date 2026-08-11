@@ -63,6 +63,13 @@ Before writing any file in the steps below, check whether the target path alread
    EOF
    ```
 
+On every PR the workflow publishes a full rendered preview under
+`<pages>/pr-preview/pr-<N>/` and a `what-changed.html` beside it. The latter
+highlights rendered additions and removals against the deployed base site and
+collapses unchanged sections. The single preview comment links to the changes
+first and the full preview second, so reviewers can inspect the affected
+content directly.
+
 ### Dev container
 
 Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`, then pick the flow that matches the user's intent:
