@@ -48,7 +48,13 @@ jobs:
       - name: Check vendored quarto-check.sh for drift
         run: |
           [ -f scripts/quarto-check.sh ] || exit 0
-          canonical="https://raw.githubusercontent.com/allenai/asta-plugins/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
+          # Fetch from the reusable workflow's own repo@sha. In a called
+          # reusable workflow, github.job_workflow_ref is "<owner>/<repo>/<path>@<ref>"
+          # and github.job_workflow_sha is that workflow file's commit; the plain
+          # `job` context has no workflow_repository/workflow_sha (those resolve empty).
+          wf_ref="${{ github.job_workflow_ref }}"
+          wf_repo="${wf_ref%%/.github/*}"
+          canonical="https://raw.githubusercontent.com/${wf_repo}/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
           if curl -fsSL "$canonical" -o /tmp/quarto-check.canonical; then
             if ! diff -u scripts/quarto-check.sh /tmp/quarto-check.canonical > /tmp/quarto-check.diff; then
               echo "::warning::scripts/quarto-check.sh differs from the workspace skill's canonical copy — re-copy assets/quarto-check.sh to update (or ignore if intentionally customized)"
@@ -125,6 +131,33 @@ jobs:
             rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
             mkdir -p "$tmp/pr-preview/pr-$PR_NUMBER"
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/pr-preview/pr-$PR_NUMBER/"
+
+            # "What changed" page: a single link that lands reviewers on exactly
+            # the rendered content this PR adds/removes, highlighted inline,
+            # instead of the site root to hunt through. The baseline is the site
+            # as currently deployed to the gh-pages root (i.e. main), which is
+            # already checked out here — so this is a diff of two rendered trees,
+            # no re-render. Best-effort: a generator hiccup must not fail an
+            # otherwise-good publish.
+            set +e
+            baseline=$(mktemp -d)
+            find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git \
+              -exec cp -r {} "$baseline/" \;
+            wf_ref="${{ github.job_workflow_ref }}"
+            wf_repo="${wf_ref%%/.github/*}"
+            gen="https://raw.githubusercontent.com/${wf_repo}/${{ github.job_workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
+            if curl -fsSL "$gen" -o /tmp/what-changed.py; then
+              python3 /tmp/what-changed.py \
+                --old "$baseline" \
+                --new "$GITHUB_WORKSPACE/_site" \
+                --out "$tmp/pr-preview/pr-$PR_NUMBER/what-changed.html" \
+                --title "PR #$PR_NUMBER" \
+                || echo "::warning::what-changed page generation failed; preview still published"
+            else
+              echo "::warning::could not fetch what-changed.py; skipping the diff page"
+            fi
+            set -e
+
             # Keep previews out of search indexes. A project Pages site can't use
             # a path-scoped robots.txt (only the host-root one is honored), so
             # inject a noindex meta tag into the preview's pages (main is left
@@ -169,7 +202,12 @@ jobs:
               *) base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" ;;
             esac
             url="$base/pr-preview/pr-$PR_NUMBER/"
-            body="📄 Preview: $url"
+            # Link the "what changed" page only if it was actually generated.
+            if [ -f "$tmp/pr-preview/pr-$PR_NUMBER/what-changed.html" ]; then
+              body=$(printf '📄 Preview: %s\n🔎 What changed: %swhat-changed.html' "$url" "$url")
+            else
+              body="📄 Preview: $url"
+            fi
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
