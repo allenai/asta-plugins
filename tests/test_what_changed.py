@@ -162,6 +162,45 @@ def test_computed_page_with_only_volatile_rerender_is_skipped(tmp_path):
     assert "computed page" not in result
 
 
+def test_partly_changed_inline_tag_never_wraps_a_lone_tag(tmp_path):
+    # A bold wrapper added around text that already existed: the <strong> open
+    # and close land in *insert* runs while the word between them stays *equal*.
+    # The wrapper must not emit `<ins><strong></ins>` (a lone tag inside <ins>,
+    # invalid even if browsers recover) — the half-in tag is emitted bare.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = "<html><head></head><body><main><p>{body}</p></main></body></html>"
+    (old / "index.html").write_text(shell.format(body="Guide to research"))
+    (new / "index.html").write_text(
+        shell.format(body="<strong>Guide</strong> to research")
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    assert "<ins><strong></ins>" not in result
+    assert "<ins></strong></ins>" not in result
+    # The bold markup is still applied around the word, just not highlighted.
+    assert "<strong>Guide</strong>" in result
+
+
+def test_fully_inserted_inline_pair_is_still_highlighted(tmp_path):
+    # When both halves of an inline pair fall inside the same inserted run, the
+    # pair is balanced and stays highlighted inside <ins> (valid nesting).
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = "<html><head></head><body><main><p>Intro. {body}</p></main></body></html>"
+    (old / "index.html").write_text(shell.format(body=""))
+    (new / "index.html").write_text(shell.format(body="<em>Brand new clause.</em>"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    assert "<ins><em>Brand new clause.</em></ins>" in result
+
+
 def test_has_computed_output_detects_widgets_and_ignores_prose():
     assert WHAT_CHANGED.has_computed_output('<div class="cell-output">x</div>')
     assert WHAT_CHANGED.has_computed_output('<div class="observablehq"></div>')

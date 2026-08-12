@@ -167,19 +167,52 @@ def is_inline_tag(tok):
     return tag_name(tok) in INLINE_TAGS
 
 
+def balanced_inline(tokens):
+    """Indices of inline tags whose matching partner is inside this same run.
+
+    An inline pair (`<strong>`…`</strong>`) that is only *partly* inside a
+    changed run — the open tag changed but its close sits in unchanged content,
+    or vice versa — cannot be highlighted without producing a lone tag inside
+    an <ins>/<del> (e.g. `<ins><strong></ins>`), which is invalid markup even
+    if browsers recover from it. Such half-in tags are excluded here so
+    emit_run treats them as structural (emitted bare / dropped) instead.
+    Self-closing/void inline tags (<br>, <img>, <wbr>) are self-balanced.
+    """
+    balanced = set()
+    stack = []
+    for idx, (kind, text) in enumerate(tokens):
+        if kind != "tag" or not is_inline_tag(text):
+            continue
+        name = tag_name(text)
+        if text.startswith("</"):
+            for si in range(len(stack) - 1, -1, -1):
+                if stack[si][0] == name:
+                    _, open_idx = stack.pop(si)
+                    balanced.add(open_idx)
+                    balanced.add(idx)
+                    break
+        elif text.rstrip().rstrip(">").endswith("/") or name in ("br", "wbr", "img"):
+            balanced.add(idx)  # void/self-closing: needs no partner
+        else:
+            stack.append((name, idx))
+    return balanced
+
+
 def emit_run(tokens, wrapper):
     """Render a changed run.
 
-    wrapper is 'ins' or 'del'. Structural tags close/skip the wrapper so the
-    result stays well-formed:
-      * ins: structural tags are emitted verbatim (outside the wrapper); words
-        and inline tags are highlighted inside <ins>.
+    wrapper is 'ins' or 'del'. Structural tags — and inline tags whose partner
+    falls outside this run — close/skip the wrapper so the result stays
+    well-formed:
+      * ins: such tags are emitted verbatim (outside the wrapper); words and
+        balanced inline tags are highlighted inside <ins>.
       * del: a fully-deleted subtree's structural tags are dropped (open+close
         both fall in the deleted run, so nesting stays balanced); deleted words
-        and inline tags are shown struck-through inside <del>.
+        and balanced inline tags are shown struck-through inside <del>.
     """
     out = []
     open_wrap = False
+    inline_ok = balanced_inline(tokens)
 
     def close():
         nonlocal open_wrap
@@ -193,16 +226,18 @@ def emit_run(tokens, wrapper):
             out.append(f"<{wrapper}>")
             open_wrap = True
 
-    for kind, text in tokens:
-        if kind == "tag" and not is_inline_tag(text):
+    for idx, (kind, text) in enumerate(tokens):
+        highlightable = kind == "word" or (
+            kind == "tag" and is_inline_tag(text) and idx in inline_ok
+        )
+        if kind == "tag" and not highlightable:
             close()
             if wrapper == "ins":
                 out.append(text)  # keep structure for inserted blocks
-            # deleted structural tags are dropped with their subtree
+            # deleted structural / half-in inline tags are dropped with subtree
         elif kind == "space":
-            # ride whitespace inside an open wrapper, else emit bare
-            (out.append(text) if not open_wrap else out.append(text))
-        else:  # word or inline tag
+            out.append(text)  # rides along whether or not a wrapper is open
+        else:  # word or balanced inline tag
             open_()
             out.append(text)
     close()
