@@ -109,3 +109,65 @@ def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):
     # no-JS reviewer still sees every block and the markup stays valid.
     assert "<details" not in result
     assert "\\25B8" in result  # CSS chevron escape survives, not mangled to octal
+
+
+def test_computed_page_is_shown_whole_not_word_diffed(tmp_path):
+    # A page carrying computed output (here a Plotly widget) must not be
+    # word-diffed: that path is fragile against volatile rendered markup. When
+    # its visible text changes it is shown whole and flagged as a computed page.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = (
+        "<html><head></head><body><main>"
+        "<p>Revenue was {figure}.</p>"
+        '<div class="plotly-graph-div" id="{wid}"></div>'
+        '<script type="application/json" data-for="{wid}">{{"x":[{x}]}}</script>'
+        "</main></body></html>"
+    )
+    (old / "index.html").write_text(shell.format(figure="$1M", wid="a1b2", x="1,2,3"))
+    (new / "index.html").write_text(shell.format(figure="$2M", wid="z9y8", x="4,5,6"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    # Shown as a computed page in full, not word-diffed: the current rendered
+    # content is present verbatim and the old value is simply gone (not kept as
+    # a struck-through <del> run the way an inline diff would).
+    assert "computed page (shown in full)" in result
+    assert "Revenue was $2M." in result
+    assert "$1M" not in result
+
+
+def test_computed_page_with_only_volatile_rerender_is_skipped(tmp_path):
+    # Same visible text, only regenerated widget ids / payload ordering differ:
+    # the page must not appear as changed.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = (
+        "<html><head></head><body><main>"
+        "<p>Stable prose.</p>"
+        '<div class="plotly-graph-div" id="{wid}"></div>'
+        '<script type="application/json" data-for="{wid}">{{"id":"{wid}"}}</script>'
+        "</main></body></html>"
+    )
+    (old / "index.html").write_text(shell.format(wid="a1b2c3"))
+    (new / "index.html").write_text(shell.format(wid="z9y8x7"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    assert "No rendered content changed" in result
+    assert "computed page" not in result
+
+
+def test_has_computed_output_detects_widgets_and_ignores_prose():
+    assert WHAT_CHANGED.has_computed_output('<div class="cell-output">x</div>')
+    assert WHAT_CHANGED.has_computed_output('<div class="observablehq"></div>')
+    assert WHAT_CHANGED.has_computed_output(
+        '<script type="application/json">{}</script>'
+    )
+    assert not WHAT_CHANGED.has_computed_output(
+        "<p>Just prose with <a href='x'>a link</a> and <code>code</code>.</p>"
+    )

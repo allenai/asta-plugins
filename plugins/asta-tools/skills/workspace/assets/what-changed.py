@@ -22,6 +22,13 @@ Design notes:
     wall of context. Folding is progressive enhancement done client-side on the
     already-parsed DOM (it only moves balanced element nodes, so it cannot break
     markup); with JS off, the full rendered diff is shown.
+  * Word-level inline diffing is scoped to *prose* pages. Pages that embed
+    computed output (Plotly/Bokeh/Vega widgets, Observable cells, notebook cell
+    outputs, JSON payloads) re-render to volatile markup — regenerated DOM ids,
+    reordered payloads, reformatted floats — that a word diff would light up as
+    spurious change and can't diff meaningfully anyway. Those pages are shown
+    whole (only when their visible text actually changed), keeping the fragile
+    HTML-surgery path off content it was never validated for.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 """
@@ -97,6 +104,41 @@ def normalize(content):
     # Bare date-modified paragraph, if the theme renders one.
     content = re.sub(r'(?is)<p class="date-modified">.*?</p>', "", content)
     return content
+
+
+# Markers that a rendered page carries *computed* output — Plotly/Bokeh/Vega/
+# leaflet widgets, Observable/OJS cells, Jupyter widget mounts, or notebook cell
+# outputs. Such output re-renders to volatile markup (regenerated DOM ids,
+# reordered JSON payloads, reformatted floats), so a word-level HTML diff of it
+# is noise; those pages are shown whole instead of inline-diffed.
+COMPUTED_MARKERS = re.compile(
+    r"(?is)"
+    r"class\s*=\s*[\"'][^\"']*\b(?:"
+    r"cell-output|cell-output-display|plotly-graph-div|js-plotly-plot|bk-root|"
+    r"observablehq|ojs-in-a-box|jupyter-widgets|widget-subarea|leaflet-container|"
+    r"vega-embed|vega-vis|dygraph|htmlwidget"
+    r")\b"
+    r"|<script\b[^>]*\btype\s*=\s*[\"']application/(?:json|vnd\.[^\"']+)[\"']"
+    r"|\brequire\(\s*\[\s*[\"']plotly"
+)
+
+
+def has_computed_output(content):
+    """True when the rendered content embeds executable/computed output."""
+    return bool(COMPUTED_MARKERS.search(content))
+
+
+def visible_text(content):
+    """Plain visible text of a content fragment.
+
+    Drops <script>/<style> subtrees and every tag, unescapes entities, and
+    collapses whitespace. Used to decide whether a computed page *really*
+    changed, ignoring the volatile widget markup and script payloads that a
+    re-render regenerates even when the source is untouched.
+    """
+    text = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", content)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 def tokenize(content):
@@ -508,13 +550,28 @@ def build(old_root, new_root, preview_url, title):
         if new_doc is not None and old_doc is not None:
             old_c = normalize(extract_main(old_doc))
             new_c = normalize(extract_main(new_doc))
-            if re.sub(r"\s+", " ", old_c).strip() == re.sub(r"\s+", " ", new_c).strip():
-                continue  # unchanged
-            body, changed = diff_content(old_c, new_c)
-            if not changed:
-                continue
-            state, label = "changed", "changed"
-            title_txt = page_title(new_doc, rel)
+            if has_computed_output(old_c) or has_computed_output(new_c):
+                # Computed page: word-diffing its volatile rendered markup is
+                # noise, so scope it out. Compare only the stable visible text;
+                # if that changed, show the new page whole rather than an
+                # unreliable inline diff.
+                if visible_text(old_c) == visible_text(new_c):
+                    continue  # only volatile rendering differs
+                state = "changed"
+                label = "changed · computed page (shown in full)"
+                body = normalize(extract_main(new_doc))
+                title_txt = page_title(new_doc, rel)
+            else:
+                if (
+                    re.sub(r"\s+", " ", old_c).strip()
+                    == re.sub(r"\s+", " ", new_c).strip()
+                ):
+                    continue  # unchanged
+                body, changed = diff_content(old_c, new_c)
+                if not changed:
+                    continue
+                state, label = "changed", "changed"
+                title_txt = page_title(new_doc, rel)
         elif new_doc is not None:
             state, label = "new", "new page"
             body = extract_main(new_doc)
