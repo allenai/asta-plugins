@@ -91,6 +91,10 @@ claude plugin install asta-tools
 npx skills add /opt/asta-plugins -g --yes
 ```
 
+## Giving feedback
+
+These plugins are publicly available, and we appreciate knowing how you use them. Tell your agent to "submit feedback to the Asta team" to let us know!
+
 ## Development
 
 See [DEVELOPER.md](DEVELOPER.md) for contributor guidelines, architecture details, and development setup.
