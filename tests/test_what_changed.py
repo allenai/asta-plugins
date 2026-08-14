@@ -275,6 +275,85 @@ def test_fully_inserted_inline_pair_is_still_highlighted(tmp_path):
     assert "<ins><em>Brand new clause.</em></ins>" in result
 
 
+def test_own_output_is_never_diffed_as_a_page(tmp_path):
+    # A previous run's what-changed.html left in the tree (matched by basename)
+    # or any page carrying the generator marker (matched by signature) must not
+    # appear as a page in the diff — the generator never diffs its own output.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = "<html><head></head><body><main><p>{t}</p></main></body></html>"
+    (old / "index.html").write_text(shell.format(t="Same prose."))
+    (new / "index.html").write_text(shell.format(t="Same prose."))
+    # A stale artifact from an earlier run, by conventional name...
+    (new / "what-changed.html").write_text(
+        f"<html><head>{WHAT_CHANGED.WHAT_CHANGED_META}"
+        "<title>What changed &middot; PR #4</title></head>"
+        '<body><div class="wc-scope"><main>diff</main></div></body></html>'
+    )
+    # ...and one renamed but still self-identifying by its generator marker.
+    (new / "old-diff.html").write_text(
+        f"<html><head>{WHAT_CHANGED.WHAT_CHANGED_META}<title>What changed</title>"
+        "</head><body><main>stale diff</main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #5", out_name="what-changed.html")
+
+    assert "No rendered content changed" in result
+    assert "PR #4" not in result
+    assert 'id="p-what-changed"' not in result
+    assert "old-diff.html" not in result
+    # And the page it emits self-identifies so a later run skips it too.
+    assert WHAT_CHANGED.is_what_changed_artifact(result)
+
+
+def test_markup_only_change_is_annotated_not_embedded(tmp_path):
+    # PR #4's only edit to proposal.qmd was inserting an invisible cross-ref
+    # anchor `[]{#contributions}` -> an empty <span id="contributions">. The
+    # rendered text is unchanged, so the page must be annotated (naming the
+    # anchor) and linked, not embedded whole tagged "changed" with nothing lit.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    body = "<h2>Overview</h2><p>Lots of unchanged prose here.</p>"
+    shell = "<html><head></head><body><main>{b}</main></body></html>"
+    (old / "proposal.html").write_text(shell.format(b=body + "<p>Our contributions:</p>"))
+    (new / "proposal.html").write_text(
+        shell.format(b=body + '<p><span id="contributions"></span>Our contributions:</p>')
+    )
+
+    result = WHAT_CHANGED.build(old, new, "https://x/pr-5", "PR #5")
+
+    assert "non-visible markup only" in result
+    assert "anchor added: #contributions" in result
+    assert "open the full page" in result
+    # It is NOT rendered as a word-level prose diff: the page's own text is not
+    # embedded, and the section body carries no highlighted runs.
+    assert result.count("Lots of unchanged prose here.") == 0
+    section = result.split('id="p-proposal-html"', 1)[1].split("</section>", 1)[0]
+    assert "<ins>" not in section and "<del>" not in section
+
+
+def test_visible_text_change_still_gets_a_full_word_diff(tmp_path):
+    # Guard the branch boundary: a real visible edit on a prose page must still
+    # produce an inline word diff, not the markup-only annotation.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = "<html><head></head><body><main><p>{t}</p></main></body></html>"
+    (old / "index.html").write_text(shell.format(t="Synced 2026-05-17 today."))
+    (new / "index.html").write_text(shell.format(t="Synced 2026-08-14 today."))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #5")
+
+    assert "<del>2026-05-17</del>" in result
+    assert "<ins>2026-08-14</ins>" in result
+    assert "non-visible markup only" not in result
+
+
 def test_has_computed_output_detects_widgets_and_ignores_prose():
     assert WHAT_CHANGED.has_computed_output('<div class="cell-output">x</div>')
     assert WHAT_CHANGED.has_computed_output('<div class="observablehq"></div>')

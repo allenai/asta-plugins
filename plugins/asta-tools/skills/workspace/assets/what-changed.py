@@ -86,6 +86,32 @@ INLINE_TAGS = {
 TOKEN_RE = re.compile(r"<[^>]+>|[^<]+")
 WORD_RE = re.compile(r"\s+|[^\s]+")
 TAG_NAME_RE = re.compile(r"</?\s*([a-zA-Z0-9]+)")
+ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
+
+# The generator stamps this into its own output's <head> so a later run can
+# recognise — and refuse to diff — a "What changed" page it produced earlier.
+# Diffing our own artifact is never meaningful: a stale what-changed.html left in
+# the deployed tree (or a pr-preview tree fed in as an input) would otherwise show
+# up as a spurious "new"/"changed" page in the very diff it is the output of.
+WHAT_CHANGED_MARKER = "asta-what-changed"
+WHAT_CHANGED_META = f'<meta name="generator" content="{WHAT_CHANGED_MARKER}">'
+_MARKER_RE = re.compile(
+    r'(?is)<meta\b[^>]*\bname\s*=\s*["\']generator["\'][^>]*'
+    r'\bcontent\s*=\s*["\']' + re.escape(WHAT_CHANGED_MARKER) + r'["\']'
+)
+_LEGACY_WC_TITLE_RE = re.compile(r"(?is)<title>\s*What changed\s*(?:&middot;|·)")
+
+
+def is_what_changed_artifact(doc):
+    """True when `doc` is a "What changed" page this generator produced.
+
+    Detected by the self-identifying generator meta tag, with a fallback to the
+    legacy title/wrapper signature for pages generated before the marker existed.
+    Only the document head is needed, so callers may pass a truncated prefix.
+    """
+    if _MARKER_RE.search(doc):
+        return True
+    return bool(_LEGACY_WC_TITLE_RE.search(doc)) and "wc-scope" in doc
 
 
 def extract_main(doc):
@@ -193,6 +219,63 @@ def summary_card(main_content, link, note):
     if len(text) > 600:
         snippet = snippet.rsplit(" ", 1)[0] + " …"
     return head + f'<p class="wc-preview">{html.escape(snippet)}</p>'
+
+
+_ID_ATTR_RE = re.compile(r'(?is)\s+id\s*=\s*["\'][^"\']*["\']')
+_EMPTY_EL_RE = re.compile(r"(?is)<([a-zA-Z0-9]+)\b[^>]*>\s*</\1>")
+
+
+def markup_signature(content):
+    """A page's *reader-visible* signature: text plus visible formatting.
+
+    Keeps inline/structural tags and their content (so wrapping a word in
+    `<strong>` — a visible formatting change — still registers) but drops the
+    markup a reader never sees: `<script>`/`<style>`, `id="..."` attributes, and
+    empty elements (an anchor span `<span id="x"></span>` renders nothing). Two
+    pages with equal signatures but differing raw HTML changed only non-visible
+    markup — the case that should be annotated, not word-diffed.
+    """
+    s = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", content)
+    s = _ID_ATTR_RE.sub("", s)
+    prev = None
+    while prev != s:  # collapse nested empties too
+        prev = s
+        s = _EMPTY_EL_RE.sub("", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def markup_only_summary(old_content, new_content, link):
+    """Annotate a prose page whose only change is non-visible markup.
+
+    The rendered text a reader sees is identical; only invisible markup differs —
+    most commonly a Quarto cross-reference anchor (`[]{#id}` renders to an empty
+    `<span id="id"></span>`), or an id/attribute-only edit. Embedding the whole
+    page tagged "changed" would highlight nothing (an empty anchor has no visible
+    text), which reads as a dropped diff. Describe the change and link out instead.
+    """
+    old_ids = set(ID_RE.findall(old_content))
+    new_ids = set(ID_RE.findall(new_content))
+    added = sorted(new_ids - old_ids)
+    removed = sorted(old_ids - new_ids)
+    bits = []
+    if added:
+        bits.append(
+            ("anchors added: " if len(added) > 1 else "anchor added: ")
+            + ", ".join("#" + a for a in added)
+        )
+    if removed:
+        bits.append(
+            ("anchors removed: " if len(removed) > 1 else "anchor removed: ")
+            + ", ".join("#" + r for r in removed)
+        )
+    detail = "; ".join(bits) if bits else "attribute/markup-only change"
+    note = f"No visible text changed on this page — only non-visible markup ({detail})"
+    if link:
+        return (
+            f'<p class="wc-note">{html.escape(note)} — '
+            f'<a href="{html.escape(link)}">open the full page</a>.</p>'
+        )
+    return f'<p class="wc-note">{html.escape(note)}.</p>'
 
 
 def visible_text(content):
@@ -336,13 +419,27 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root):
+def list_pages(root, out_name=None):
+    """Map rel-path -> abs-path for every rendered `.html` under `root`.
+
+    Skips any page that is itself a "What changed" artifact — matched by output
+    basename (`out_name`, e.g. `what-changed.html`) or by the generator's
+    self-identifying marker — so the generator never diffs its own output.
+    """
     pages = {}
     for dirpath, _dirs, files in os.walk(root):
         for f in files:
             if not f.endswith(".html"):
                 continue
+            if out_name and f == out_name:
+                continue
             full = os.path.join(dirpath, f)
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    if is_what_changed_artifact(fh.read(4096)):
+                        continue
+            except OSError:
+                continue
             rel = os.path.relpath(full, root)
             pages[rel] = full
     return pages
@@ -641,9 +738,9 @@ def pick_template(new_pages):
         return None, 0
 
 
-def build(old_root, new_root, preview_url, title):
-    old_pages = list_pages(old_root)
-    new_pages = list_pages(new_root)
+def build(old_root, new_root, preview_url, title, out_name=None):
+    old_pages = list_pages(old_root, out_name)
+    new_pages = list_pages(new_root, out_name)
     sections = []
     toc = []
     for rel in sorted(set(old_pages) | set(new_pages)):
@@ -680,13 +777,23 @@ def build(old_root, new_root, preview_url, title):
                     == re.sub(r"\s+", " ", new_c).strip()
                 ):
                     continue  # unchanged
-                body, changed = diff_content(
-                    strip_volatile(old_c), strip_volatile(new_c)
-                )
-                if not changed:
-                    continue
-                state, label = "changed", "changed"
-                title_txt = page_title(new_doc, rel)
+                if markup_signature(old_c) == markup_signature(new_c):
+                    # Only non-visible markup changed (a Quarto cross-ref anchor,
+                    # an id/attribute edit): the rendered text is identical, so an
+                    # inline word diff would highlight nothing and embedding the
+                    # whole page reads as a dropped diff. Annotate + link instead.
+                    state = "changed"
+                    label = "changed · non-visible markup only (linked)"
+                    body = markup_only_summary(old_c, new_c, link)
+                    title_txt = page_title(new_doc, rel)
+                else:
+                    body, changed = diff_content(
+                        strip_volatile(old_c), strip_volatile(new_c)
+                    )
+                    if not changed:
+                        continue
+                    state, label = "changed", "changed"
+                    title_txt = page_title(new_doc, rel)
         elif new_doc is not None:
             new_c = normalize(extract_main(new_doc))
             title_txt = page_title(new_doc, rel)
@@ -780,6 +887,7 @@ def build(old_root, new_root, preview_url, title):
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body>{body}<script>{FOLD_JS}</script></body></html>"
     )
@@ -801,7 +909,13 @@ def main(argv=None):
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
     args = ap.parse_args(argv)
-    doc = build(args.old, args.new, args.preview_url, args.title)
+    doc = build(
+        args.old,
+        args.new,
+        args.preview_url,
+        args.title,
+        out_name=os.path.basename(args.out),
+    )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
     print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)
