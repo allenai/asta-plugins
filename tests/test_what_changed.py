@@ -111,10 +111,11 @@ def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):
     assert "\\25B8" in result  # CSS chevron escape survives, not mangled to octal
 
 
-def test_computed_page_is_shown_whole_not_word_diffed(tmp_path):
+def test_computed_page_is_linked_not_word_diffed_or_embedded(tmp_path):
     # A page carrying computed output (here a Plotly widget) must not be
-    # word-diffed: that path is fragile against volatile rendered markup. When
-    # its visible text changes it is shown whole and flagged as a computed page.
+    # word-diffed (fragile against volatile rendered markup) nor embedded whole
+    # (that would run its scripts in the diff page). When its visible text
+    # changes it is shown as a linked summary card with a static-text preview.
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -131,17 +132,90 @@ def test_computed_page_is_shown_whole_not_word_diffed(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
-    # Shown as a computed page in full, not word-diffed: the current rendered
-    # content is present verbatim and the old value is simply gone (not kept as
-    # a struck-through <del> run the way an inline diff would).
-    assert "computed page (shown in full)" in result
+    # Linked as an interactive page, not word-diffed: the current visible text
+    # shows in the preview, the old value is gone, and none of the page's own
+    # <script> is embedded into the diff document.
+    assert "interactive page (linked)" in result
     assert "Revenue was $2M." in result
     assert "$1M" not in result
+    assert "open the full page" in result
+    assert 'type="application/json"' not in result
 
 
-def test_computed_page_with_only_volatile_rerender_is_skipped(tmp_path):
-    # Same visible text, only regenerated widget ids / payload ordering differ:
-    # the page must not appear as changed.
+def test_new_self_contained_page_is_linked_and_carries_no_foreign_script(tmp_path):
+    # A brand-new self-contained report (an empty container filled by one large
+    # inline data payload — no framework marker) must be linked with a card, not
+    # dumped whole: embedding its multi-KB script would bloat the page and, with
+    # several such pages, collide.
+    new = tmp_path / "new"
+    new.mkdir()
+    payload = "const DATA_B64='%s';" % ("A" * 40000)
+    (new / "report.html").write_text(
+        "<html><head></head><body>"
+        '<h1>Trajectories</h1><div class="tiles" id="tiles"></div>'
+        f"<script>{payload}document.getElementById('tiles').textContent='x';</script>"
+        "</body></html>"
+    )
+
+    result = WHAT_CHANGED.build(tmp_path / "old", new, "", "PR #1")
+    (tmp_path / "old").mkdir(exist_ok=True)
+
+    assert "new page · interactive (linked)" in result
+    assert "DATA_B64" not in result  # the payload is not embedded
+    assert "Trajectories" in result  # static text still previewed
+    assert len(result) < 20000
+
+
+def test_two_self_contained_pages_do_not_collide(tmp_path):
+    # The core failure: two self-contained pages that declare the same top-level
+    # identifiers and reuse the same element ids. Embedded whole they would throw
+    # "identifier already declared" and leave duplicate ids; linked as cards they
+    # carry no script and no widget ids, so nothing collides.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    page = (
+        "<html><head></head><body>"
+        '<h1>Report {n}</h1><div id="tiles"></div>'
+        "<script>const DATA_B64='{blob}';const renderTiles=()=>{{}};</script>"
+        "</body></html>"
+    )
+    (new / "a.html").write_text(page.format(n="A", blob="A" * 40000))
+    (new / "b.html").write_text(page.format(n="B", blob="B" * 40000))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    assert result.count('id="tiles"') == 0
+    assert "const DATA_B64" not in result
+    assert result.count('class="page-diff new"') == 2
+    assert "interactive (linked)" in result
+
+
+def test_embedded_new_prose_page_is_stripped_of_scripts(tmp_path):
+    # An ordinary new prose page is embedded inline (good) but any incidental
+    # <script>/<style> it carries is stripped — the diff page runs only its own.
+    new = tmp_path / "new"
+    new.mkdir()
+    (tmp_path / "old").mkdir()
+    (new / "page.html").write_text(
+        "<html><head></head><body><main>"
+        "<p>Fresh prose paragraph.</p>"
+        "<script>console.log('should not survive')</script>"
+        "<style>.x{color:red}</style>"
+        "</main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(tmp_path / "old", new, "", "PR #1")
+
+    assert "Fresh prose paragraph." in result
+    assert "should not survive" not in result
+    assert ".x{color:red}" not in result
+
+
+def test_computed_page_data_change_is_reported_even_when_static_text_is_same(tmp_path):
+    # Same static text, but changed widget ids / payload: it must be reported.
+    # Static text equality cannot prove that client-rendered output is unchanged.
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -158,8 +232,8 @@ def test_computed_page_with_only_volatile_rerender_is_skipped(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
-    assert "No rendered content changed" in result
-    assert "computed page" not in result
+    assert "changed · interactive page (linked)" in result
+    assert "open the full page" in result
 
 
 def test_partly_changed_inline_tag_never_wraps_a_lone_tag(tmp_path):
@@ -199,6 +273,151 @@ def test_fully_inserted_inline_pair_is_still_highlighted(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
     assert "<ins><em>Brand new clause.</em></ins>" in result
+
+
+def test_own_output_is_never_diffed_as_a_page(tmp_path):
+    # A previous run's what-changed.html left in the tree (matched by basename)
+    # or any page carrying the generator marker (matched by signature) must not
+    # appear as a page in the diff — the generator never diffs its own output.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = "<html><head></head><body><main><p>{t}</p></main></body></html>"
+    (old / "index.html").write_text(shell.format(t="Same prose."))
+    (new / "index.html").write_text(shell.format(t="Same prose."))
+    # A stale artifact from an earlier run, by conventional name...
+    (new / "what-changed.html").write_text(
+        f"<html><head>{WHAT_CHANGED.WHAT_CHANGED_META}"
+        "<title>What changed &middot; PR #4</title></head>"
+        '<body><div class="wc-scope"><main>diff</main></div></body></html>'
+    )
+    # ...and one renamed but still self-identifying by its generator marker.
+    (new / "old-diff.html").write_text(
+        f"<html><head>{WHAT_CHANGED.WHAT_CHANGED_META}<title>What changed</title>"
+        "</head><body><main>stale diff</main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR #5", out_path=new / "what-changed.html"
+    )
+
+    assert "No rendered content changed" in result
+    assert "PR #4" not in result
+    assert 'id="p-what-changed"' not in result
+    assert "old-diff.html" not in result
+    # And the page it emits self-identifies so a later run skips it too.
+    assert WHAT_CHANGED.is_what_changed_artifact(result)
+
+
+def test_same_named_legitimate_page_in_subdirectory_is_not_suppressed(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    (old / "guide").mkdir(parents=True)
+    (new / "guide").mkdir(parents=True)
+    shell = "<html><head></head><body><main><p>{t}</p></main></body></html>"
+    (old / "guide" / "what-changed.html").write_text(shell.format(t="Before"))
+    (new / "guide" / "what-changed.html").write_text(shell.format(t="After"))
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR #5", out_path=new / "what-changed.html"
+    )
+
+    assert "guide/what-changed.html" in result
+    assert "<del>Before</del>" in result
+    assert "<ins>After</ins>" in result
+
+
+def test_embedded_markup_is_strictly_sanitized(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        """<html><head></head><body><main>
+        <p id="duplicate" onclick="alert(1)">Safe <strong>prose</strong>.</p>
+        <a href="java&#x73;cript:alert(1)">bad link</a>
+        <img src="https://example.org/chart.png" onerror="alert(1)" alt="chart">
+        <iframe srcdoc="<script>alert(1)</script>">hidden</iframe>
+        <svg onload="alert(1)"><a href="javascript:alert(1)">svg</a></svg>
+        <script src="https://evil.example/x.js">alert(1)</script>
+        <style>@import url(https://evil.example/x.css)</style>
+        </main></body></html>"""
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #5")
+    section = result.split('id="p-index-html"', 1)[1].split("</section>", 1)[0]
+
+    assert "Safe <strong>prose</strong>." in section
+    assert 'src="https://example.org/chart.png"' in section
+    for forbidden in (
+        "onclick",
+        "onerror",
+        "javascript:",
+        "<iframe",
+        "<svg",
+        "<script",
+        "<style",
+        'id="duplicate"',
+        "evil.example",
+    ):
+        assert forbidden not in section
+
+
+def test_large_inline_style_does_not_make_static_page_interactive():
+    content = "<style>" + ("x" * 25_000) + "</style><p>Static prose.</p>"
+
+    assert not WHAT_CHANGED.is_script_heavy(content)
+
+
+def test_markup_only_change_is_annotated_not_embedded(tmp_path):
+    # PR #4's only edit to proposal.qmd was inserting an invisible cross-ref
+    # anchor `[]{#contributions}` -> an empty <span id="contributions">. The
+    # rendered text is unchanged, so the page must be annotated (naming the
+    # anchor) and linked, not embedded whole tagged "changed" with nothing lit.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    body = "<h2>Overview</h2><p>Lots of unchanged prose here.</p>"
+    shell = "<html><head></head><body><main>{b}</main></body></html>"
+    (old / "proposal.html").write_text(
+        shell.format(b=body + "<p>Our contributions:</p>")
+    )
+    (new / "proposal.html").write_text(
+        shell.format(
+            b=body + '<p><span id="contributions"></span>Our contributions:</p>'
+        )
+    )
+
+    result = WHAT_CHANGED.build(old, new, "https://x/pr-5", "PR #5")
+
+    assert "non-visible markup only" in result
+    assert "anchor added: #contributions" in result
+    assert "open the full page" in result
+    # It is NOT rendered as a word-level prose diff: the page's own text is not
+    # embedded, and the section body carries no highlighted runs.
+    assert result.count("Lots of unchanged prose here.") == 0
+    section = result.split('id="p-proposal-html"', 1)[1].split("</section>", 1)[0]
+    assert "<ins>" not in section and "<del>" not in section
+
+
+def test_visible_text_change_still_gets_a_full_word_diff(tmp_path):
+    # Guard the branch boundary: a real visible edit on a prose page must still
+    # produce an inline word diff, not the markup-only annotation.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = "<html><head></head><body><main><p>{t}</p></main></body></html>"
+    (old / "index.html").write_text(shell.format(t="Synced 2026-05-17 today."))
+    (new / "index.html").write_text(shell.format(t="Synced 2026-08-14 today."))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #5")
+
+    assert "<del>2026-05-17</del>" in result
+    assert "<ins>2026-08-14</ins>" in result
+    assert "non-visible markup only" not in result
 
 
 def test_has_computed_output_detects_widgets_and_ignores_prose():

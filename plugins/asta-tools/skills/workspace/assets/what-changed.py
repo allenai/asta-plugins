@@ -22,13 +22,22 @@ Design notes:
     wall of context. Folding is progressive enhancement done client-side on the
     already-parsed DOM (it only moves balanced element nodes, so it cannot break
     markup); with JS off, the full rendered diff is shown.
-  * Word-level inline diffing is scoped to *prose* pages. Pages that embed
-    computed output (Plotly/Bokeh/Vega widgets, Observable cells, notebook cell
-    outputs, JSON payloads) re-render to volatile markup — regenerated DOM ids,
-    reordered payloads, reformatted floats — that a word diff would light up as
-    spurious change and can't diff meaningfully anyway. Those pages are shown
-    whole (only when their visible text actually changed), keeping the fragile
-    HTML-surgery path off content it was never validated for.
+  * The diff page never embeds or executes a source page's own <script>/<style>.
+    Those are stripped from every embedded body. Executing foreign page markup
+    is both wrong (the page's nav/widget JS expects DOM we don't reproduce) and
+    actively harmful when a PR touches several such pages: two self-contained
+    reports embedded in one document collide on duplicate element ids and
+    duplicate top-level JS identifiers, so the second one throws and renders
+    blank — the exact failure this generator exists to avoid.
+  * Word-level inline diffing is scoped to *prose* pages. A page whose visible
+    content is produced by client-side script — Plotly/Bokeh/Vega widgets,
+    Observable cells, notebook cell outputs, or a bespoke data-driven report
+    (an empty container filled by a large inline data payload) — cannot be shown
+    by embedding its stripped body (that leaves an empty shell) and re-renders to
+    volatile markup a word diff would light up as spurious change. Such pages are
+    represented by a compact summary card (state + title + a static-text preview)
+    that links to the full rendered page, for every state (new/removed/changed),
+    rather than embedded inline.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 """
@@ -39,6 +48,8 @@ import html
 import os
 import re
 import sys
+from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 # Inline formatting tags may live *inside* an <ins>/<del>; anything else is
 # treated as structural and closes the wrapper so we never nest a block element
@@ -77,6 +88,32 @@ INLINE_TAGS = {
 TOKEN_RE = re.compile(r"<[^>]+>|[^<]+")
 WORD_RE = re.compile(r"\s+|[^\s]+")
 TAG_NAME_RE = re.compile(r"</?\s*([a-zA-Z0-9]+)")
+ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
+
+# The generator stamps this into its own output's <head> so a later run can
+# recognise — and refuse to diff — a "What changed" page it produced earlier.
+# Diffing our own artifact is never meaningful: a stale what-changed.html left in
+# the deployed tree (or a pr-preview tree fed in as an input) would otherwise show
+# up as a spurious "new"/"changed" page in the very diff it is the output of.
+WHAT_CHANGED_MARKER = "asta-what-changed"
+WHAT_CHANGED_META = f'<meta name="generator" content="{WHAT_CHANGED_MARKER}">'
+_MARKER_RE = re.compile(
+    r'(?is)<meta\b[^>]*\bname\s*=\s*["\']generator["\'][^>]*'
+    r'\bcontent\s*=\s*["\']' + re.escape(WHAT_CHANGED_MARKER) + r'["\']'
+)
+_LEGACY_WC_TITLE_RE = re.compile(r"(?is)<title>\s*What changed\s*(?:&middot;|·)")
+
+
+def is_what_changed_artifact(doc):
+    """True when `doc` is a "What changed" page this generator produced.
+
+    Detected by the self-identifying generator meta tag, with a fallback to the
+    legacy title/wrapper signature for pages generated before the marker existed.
+    Only the document head is needed, so callers may pass a truncated prefix.
+    """
+    if _MARKER_RE.search(doc):
+        return True
+    return bool(_LEGACY_WC_TITLE_RE.search(doc)) and "wc-scope" in doc
 
 
 def extract_main(doc):
@@ -126,6 +163,306 @@ COMPUTED_MARKERS = re.compile(
 def has_computed_output(content):
     """True when the rendered content embeds executable/computed output."""
     return bool(COMPUTED_MARKERS.search(content))
+
+
+SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b[^>]*>.*?</\1>")
+SCRIPT_RE = re.compile(r"(?is)<script\b[^>]*>.*?</script>")
+
+SAFE_TAGS = {
+    "a",
+    "abbr",
+    "address",
+    "article",
+    "aside",
+    "b",
+    "bdi",
+    "bdo",
+    "blockquote",
+    "br",
+    "caption",
+    "cite",
+    "code",
+    "col",
+    "colgroup",
+    "dd",
+    "del",
+    "details",
+    "dfn",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "i",
+    "img",
+    "ins",
+    "kbd",
+    "li",
+    "main",
+    "mark",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "q",
+    "s",
+    "samp",
+    "section",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "tr",
+    "u",
+    "ul",
+    "var",
+    "wbr",
+}
+DROP_CONTENT_TAGS = {
+    "applet",
+    "audio",
+    "base",
+    "button",
+    "canvas",
+    "embed",
+    "form",
+    "iframe",
+    "input",
+    "link",
+    "math",
+    "meta",
+    "object",
+    "option",
+    "script",
+    "select",
+    "style",
+    "svg",
+    "template",
+    "textarea",
+    "video",
+}
+GLOBAL_SAFE_ATTRS = {"class", "dir", "lang", "role", "title"}
+TAG_SAFE_ATTRS = {
+    "a": {"href"},
+    "blockquote": {"cite"},
+    "col": {"span"},
+    "colgroup": {"span"},
+    "details": {"open"},
+    "img": {"alt", "height", "loading", "src", "width"},
+    "ol": {"reversed", "start", "type"},
+    "q": {"cite"},
+    "td": {"colspan", "headers", "rowspan"},
+    "th": {"abbr", "colspan", "headers", "rowspan", "scope"},
+    "time": {"datetime"},
+}
+URL_ATTRS = {"cite", "href", "src"}
+
+
+def safe_url(value):
+    """Allow ordinary links/resources, never executable URL schemes."""
+    compact = re.sub(r"[\x00-\x20\x7f]+", "", html.unescape(value))
+    scheme = urlsplit(compact).scheme.lower()
+    return not scheme or scheme in {"http", "https", "mailto"}
+
+
+class _SafeFragmentParser(HTMLParser):
+    """Small strict-allowlist sanitizer for rendered page fragments."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.out = []
+        self.drop_stack = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if self.drop_stack:
+            if tag in DROP_CONTENT_TAGS:
+                self.drop_stack.append(tag)
+            return
+        if tag in DROP_CONTENT_TAGS:
+            self.drop_stack.append(tag)
+            return
+        if tag not in SAFE_TAGS:
+            return
+        allowed = GLOBAL_SAFE_ATTRS | TAG_SAFE_ATTRS.get(tag, set())
+        clean = []
+        for name, value in attrs:
+            name = name.lower()
+            if name not in allowed and not name.startswith("aria-"):
+                continue
+            if value is None:
+                clean.append(name)
+                continue
+            if name in URL_ATTRS and not safe_url(value):
+                continue
+            clean.append(f'{name}="{html.escape(value, quote=True)}"')
+        suffix = (" " + " ".join(clean)) if clean else ""
+        self.out.append(f"<{tag}{suffix}>")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag.lower() in DROP_CONTENT_TAGS:
+            return
+        self.handle_starttag(tag, attrs)
+        if not self.drop_stack and tag.lower() in SAFE_TAGS:
+            self.out[-1] = self.out[-1][:-1] + ">"
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if self.drop_stack:
+            if tag == self.drop_stack[-1]:
+                self.drop_stack.pop()
+            return
+        if tag in SAFE_TAGS:
+            self.out.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if not self.drop_stack:
+            self.out.append(html.escape(data, quote=False))
+
+    def handle_entityref(self, name):
+        if not self.drop_stack:
+            self.out.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if not self.drop_stack:
+            self.out.append(f"&#{name};")
+
+
+def sanitize_fragment(content):
+    """Return inert static HTML suitable for embedding in the diff page."""
+    parser = _SafeFragmentParser()
+    parser.feed(content)
+    parser.close()
+    return "".join(parser.out)
+
+
+def strip_volatile(content):
+    """Sanitize an embedded body to inert, allowlisted static HTML.
+
+    The diff page ships its own single script and styles. Source markup must not
+    execute here through scripts, event handlers, active elements, SVG, CSS, or
+    executable URLs; duplicate source ids are omitted as well.
+    """
+    return sanitize_fragment(content)
+
+
+def is_script_heavy(content):
+    """True when inline <script> is the bulk of a page.
+
+    Catches bespoke client-rendered pages that carry no framework marker
+    `has_computed_output` would recognise — e.g. a self-contained report that is
+    an empty container plus one large inline data payload the script expands on
+    load. A prose page's content region carries essentially no script, so the
+    ratio cleanly separates the two.
+    """
+    script_bytes = sum(len(m.group(0)) for m in SCRIPT_RE.finditer(content))
+    return script_bytes >= 20_000 and script_bytes >= 0.5 * max(len(content), 1)
+
+
+def is_self_contained(content):
+    """True when a page's visible content depends on running its own scripts.
+
+    Such a page can't be faithfully embedded in the diff (stripping its scripts
+    leaves an empty shell; keeping them collides with every other embedded page),
+    so it is shown as a summary card that links to the full rendered page.
+    """
+    return has_computed_output(content) or is_script_heavy(content)
+
+
+def summary_card(main_content, link, note):
+    """Compact stand-in for a self-contained page: a note (with a link to the
+    full page when one exists) plus a short static-text preview of whatever the
+    page renders without scripts, so the reviewer knows what the page is."""
+    if link:
+        head = (
+            f'<p class="wc-note">{html.escape(note)} — '
+            f'<a href="{html.escape(link)}">open the full page</a> to view it.</p>'
+        )
+    else:
+        head = f'<p class="wc-note">{html.escape(note)}.</p>'
+    text = visible_text(main_content)
+    if not text:
+        return head
+    snippet = text[:600]
+    if len(text) > 600:
+        snippet = snippet.rsplit(" ", 1)[0] + " …"
+    return head + f'<p class="wc-preview">{html.escape(snippet)}</p>'
+
+
+_ID_ATTR_RE = re.compile(r'(?is)\s+id\s*=\s*["\'][^"\']*["\']')
+_EMPTY_EL_RE = re.compile(r"(?is)<([a-zA-Z0-9]+)\b[^>]*>\s*</\1>")
+
+
+def markup_signature(content):
+    """A page's *reader-visible* signature: text plus visible formatting.
+
+    Keeps inline/structural tags and their content (so wrapping a word in
+    `<strong>` — a visible formatting change — still registers) but drops the
+    markup a reader never sees: `<script>`/`<style>`, `id="..."` attributes, and
+    empty elements (an anchor span `<span id="x"></span>` renders nothing). Two
+    pages with equal signatures but differing raw HTML changed only non-visible
+    markup — the case that should be annotated, not word-diffed.
+    """
+    s = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", content)
+    s = _ID_ATTR_RE.sub("", s)
+    prev = None
+    while prev != s:  # collapse nested empties too
+        prev = s
+        s = _EMPTY_EL_RE.sub("", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def markup_only_summary(old_content, new_content, link):
+    """Annotate a prose page whose only change is non-visible markup.
+
+    The rendered text a reader sees is identical; only invisible markup differs —
+    most commonly a Quarto cross-reference anchor (`[]{#id}` renders to an empty
+    `<span id="id"></span>`), or an id/attribute-only edit. Embedding the whole
+    page tagged "changed" would highlight nothing (an empty anchor has no visible
+    text), which reads as a dropped diff. Describe the change and link out instead.
+    """
+    old_ids = set(ID_RE.findall(old_content))
+    new_ids = set(ID_RE.findall(new_content))
+    added = sorted(new_ids - old_ids)
+    removed = sorted(old_ids - new_ids)
+    bits = []
+    if added:
+        bits.append(
+            ("anchors added: " if len(added) > 1 else "anchor added: ")
+            + ", ".join("#" + a for a in added)
+        )
+    if removed:
+        bits.append(
+            ("anchors removed: " if len(removed) > 1 else "anchor removed: ")
+            + ", ".join("#" + r for r in removed)
+        )
+    detail = "; ".join(bits) if bits else "attribute/markup-only change"
+    note = f"No visible text changed on this page — only non-visible markup ({detail})"
+    if link:
+        return (
+            f'<p class="wc-note">{html.escape(note)} — '
+            f'<a href="{html.escape(link)}">open the full page</a>.</p>'
+        )
+    return f'<p class="wc-note">{html.escape(note)}.</p>'
 
 
 def visible_text(content):
@@ -269,13 +606,29 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root):
+def list_pages(root, out_path=None):
+    """Map rel-path -> abs-path for every rendered `.html` under `root`.
+
+    Skips any page that is itself a "What changed" artifact — matched by output
+    exact output path (when it falls under this input root) or by the generator's
+    self-identifying marker — so the generator never diffs its own output while
+    preserving a legitimate same-named page in another directory.
+    """
     pages = {}
+    excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, _dirs, files in os.walk(root):
         for f in files:
             if not f.endswith(".html"):
                 continue
             full = os.path.join(dirpath, f)
+            if excluded and os.path.realpath(full) == excluded:
+                continue
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    if is_what_changed_artifact(fh.read(4096)):
+                        continue
+            except OSError:
+                continue
             rel = os.path.relpath(full, root)
             pages[rel] = full
     return pages
@@ -317,6 +670,10 @@ DIFF_STYLE = """
 .wc-scope .legend { font-size: .9rem; }
 .wc-scope .legend ins, .wc-scope .legend del { padding: 0 .25em; }
 .wc-scope .empty { font-style: italic; }
+.wc-scope .wc-note { margin: .25rem 0 .5rem; }
+.wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
+    padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
+    white-space: pre-wrap; overflow-wrap: break-word; }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -570,9 +927,9 @@ def pick_template(new_pages):
         return None, 0
 
 
-def build(old_root, new_root, preview_url, title):
-    old_pages = list_pages(old_root)
-    new_pages = list_pages(new_root)
+def build(old_root, new_root, preview_url, title, out_path=None):
+    old_pages = list_pages(old_root, out_path)
+    new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
     for rel in sorted(set(old_pages) | set(new_pages)):
@@ -582,19 +939,30 @@ def build(old_root, new_root, preview_url, title):
         old_doc = (
             open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
         )
+        # The generated page lives inside the preview dir, so a bare relative
+        # path deep-links to a sibling page without needing the absolute base.
+        link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
         if new_doc is not None and old_doc is not None:
             old_c = normalize(extract_main(old_doc))
             new_c = normalize(extract_main(new_doc))
-            if has_computed_output(old_c) or has_computed_output(new_c):
-                # Computed page: word-diffing its volatile rendered markup is
-                # noise, so scope it out. Compare only the stable visible text;
-                # if that changed, show the new page whole rather than an
-                # unreliable inline diff.
-                if visible_text(old_c) == visible_text(new_c):
-                    continue  # only volatile rendering differs
+            if is_self_contained(old_c) or is_self_contained(new_c):
+                # Self-contained/computed page: its visible content is produced
+                # by its own scripts, so an inline word diff is meaningless and
+                # embedding it would run foreign markup here. Any normalized
+                # content difference is material enough to report: comparing
+                # static text alone can hide changed data or client-side logic.
+                if (
+                    re.sub(r"\s+", " ", old_c).strip()
+                    == re.sub(r"\s+", " ", new_c).strip()
+                ):
+                    continue
                 state = "changed"
-                label = "changed · computed page (shown in full)"
-                body = normalize(extract_main(new_doc))
+                label = "changed · interactive page (linked)"
+                body = summary_card(
+                    new_c,
+                    link,
+                    "This page renders its content with client-side scripts",
+                )
                 title_txt = page_title(new_doc, rel)
             else:
                 if (
@@ -602,23 +970,50 @@ def build(old_root, new_root, preview_url, title):
                     == re.sub(r"\s+", " ", new_c).strip()
                 ):
                     continue  # unchanged
-                body, changed = diff_content(old_c, new_c)
-                if not changed:
-                    continue
-                state, label = "changed", "changed"
-                title_txt = page_title(new_doc, rel)
+                if markup_signature(old_c) == markup_signature(new_c):
+                    # Only non-visible markup changed (a Quarto cross-ref anchor,
+                    # an id/attribute edit): the rendered text is identical, so an
+                    # inline word diff would highlight nothing and embedding the
+                    # whole page reads as a dropped diff. Annotate + link instead.
+                    state = "changed"
+                    label = "changed · non-visible markup only (linked)"
+                    body = markup_only_summary(old_c, new_c, link)
+                    title_txt = page_title(new_doc, rel)
+                else:
+                    body, changed = diff_content(
+                        strip_volatile(old_c), strip_volatile(new_c)
+                    )
+                    if not changed:
+                        continue
+                    state, label = "changed", "changed"
+                    title_txt = page_title(new_doc, rel)
         elif new_doc is not None:
-            state, label = "new", "new page"
-            body = extract_main(new_doc)
+            new_c = normalize(extract_main(new_doc))
             title_txt = page_title(new_doc, rel)
+            if is_self_contained(new_c):
+                state, label = "new", "new page · interactive (linked)"
+                body = summary_card(
+                    new_c,
+                    link,
+                    "New page; renders its content with client-side scripts",
+                )
+            else:
+                state, label = "new", "new page"
+                body = strip_volatile(new_c)
         else:
-            state, label = "removed", "removed"
-            body = normalize(extract_main(old_doc))
+            old_c = normalize(extract_main(old_doc))
             title_txt = page_title(old_doc, rel)
+            if is_self_contained(old_c):
+                state, label = "removed", "removed · interactive page"
+                body = summary_card(
+                    old_c,
+                    "",
+                    "Removed page; had rendered its content with client-side scripts",
+                )
+            else:
+                state, label = "removed", "removed"
+                body = strip_volatile(old_c)
         aid = anchor_id(rel)
-        # The generated page lives inside the preview dir, so a bare relative
-        # path deep-links to a sibling page without needing the absolute base.
-        link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
         h2 = html.escape(title_txt)
         if state != "removed":
             h2 = f'<a href="{html.escape(link)}">{h2}</a>'
@@ -685,6 +1080,7 @@ def build(old_root, new_root, preview_url, title):
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body>{body}<script>{FOLD_JS}</script></body></html>"
     )
@@ -706,7 +1102,13 @@ def main(argv=None):
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
     args = ap.parse_args(argv)
-    doc = build(args.old, args.new, args.preview_url, args.title)
+    doc = build(
+        args.old,
+        args.new,
+        args.preview_url,
+        args.title,
+        out_path=args.out,
+    )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
     print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)
