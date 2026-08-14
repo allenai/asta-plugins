@@ -319,9 +319,13 @@ def test_markup_only_change_is_annotated_not_embedded(tmp_path):
     new.mkdir()
     body = "<h2>Overview</h2><p>Lots of unchanged prose here.</p>"
     shell = "<html><head></head><body><main>{b}</main></body></html>"
-    (old / "proposal.html").write_text(shell.format(b=body + "<p>Our contributions:</p>"))
+    (old / "proposal.html").write_text(
+        shell.format(b=body + "<p>Our contributions:</p>")
+    )
     (new / "proposal.html").write_text(
-        shell.format(b=body + '<p><span id="contributions"></span>Our contributions:</p>')
+        shell.format(
+            b=body + '<p><span id="contributions"></span>Our contributions:</p>'
+        )
     )
 
     result = WHAT_CHANGED.build(old, new, "https://x/pr-5", "PR #5")
