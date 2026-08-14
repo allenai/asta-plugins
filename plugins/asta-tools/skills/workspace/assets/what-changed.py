@@ -22,13 +22,22 @@ Design notes:
     wall of context. Folding is progressive enhancement done client-side on the
     already-parsed DOM (it only moves balanced element nodes, so it cannot break
     markup); with JS off, the full rendered diff is shown.
-  * Word-level inline diffing is scoped to *prose* pages. Pages that embed
-    computed output (Plotly/Bokeh/Vega widgets, Observable cells, notebook cell
-    outputs, JSON payloads) re-render to volatile markup — regenerated DOM ids,
-    reordered payloads, reformatted floats — that a word diff would light up as
-    spurious change and can't diff meaningfully anyway. Those pages are shown
-    whole (only when their visible text actually changed), keeping the fragile
-    HTML-surgery path off content it was never validated for.
+  * The diff page never embeds or executes a source page's own <script>/<style>.
+    Those are stripped from every embedded body. Executing foreign page markup
+    is both wrong (the page's nav/widget JS expects DOM we don't reproduce) and
+    actively harmful when a PR touches several such pages: two self-contained
+    reports embedded in one document collide on duplicate element ids and
+    duplicate top-level JS identifiers, so the second one throws and renders
+    blank — the exact failure this generator exists to avoid.
+  * Word-level inline diffing is scoped to *prose* pages. A page whose visible
+    content is produced by client-side script — Plotly/Bokeh/Vega widgets,
+    Observable cells, notebook cell outputs, or a bespoke data-driven report
+    (an empty container filled by a large inline data payload) — cannot be shown
+    by embedding its stripped body (that leaves an empty shell) and re-renders to
+    volatile markup a word diff would light up as spurious change. Such pages are
+    represented by a compact summary card (state + title + a static-text preview)
+    that links to the full rendered page, for every state (new/removed/changed),
+    rather than embedded inline.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 """
@@ -126,6 +135,64 @@ COMPUTED_MARKERS = re.compile(
 def has_computed_output(content):
     """True when the rendered content embeds executable/computed output."""
     return bool(COMPUTED_MARKERS.search(content))
+
+
+SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b[^>]*>.*?</\1>")
+
+
+def strip_volatile(content):
+    """Drop <script>/<style> subtrees so an embedded body carries no executable
+    code or foreign styling.
+
+    The diff page ships its own single script (folding) and its own styles; a
+    source page's scripts must never run here — they collide with each other and
+    with ours (duplicate element ids, re-declared top-level identifiers) and only
+    bloat the output (a data-driven report's payload can be multiple MB).
+    """
+    return SCRIPT_STYLE_RE.sub("", content)
+
+
+def is_script_heavy(content):
+    """True when inline <script> is the bulk of a page.
+
+    Catches bespoke client-rendered pages that carry no framework marker
+    `has_computed_output` would recognise — e.g. a self-contained report that is
+    an empty container plus one large inline data payload the script expands on
+    load. A prose page's content region carries essentially no script, so the
+    ratio cleanly separates the two.
+    """
+    script_bytes = sum(len(m.group(0)) for m in SCRIPT_STYLE_RE.finditer(content))
+    return script_bytes >= 20_000 and script_bytes >= 0.5 * max(len(content), 1)
+
+
+def is_self_contained(content):
+    """True when a page's visible content depends on running its own scripts.
+
+    Such a page can't be faithfully embedded in the diff (stripping its scripts
+    leaves an empty shell; keeping them collides with every other embedded page),
+    so it is shown as a summary card that links to the full rendered page.
+    """
+    return has_computed_output(content) or is_script_heavy(content)
+
+
+def summary_card(main_content, link, note):
+    """Compact stand-in for a self-contained page: a note (with a link to the
+    full page when one exists) plus a short static-text preview of whatever the
+    page renders without scripts, so the reviewer knows what the page is."""
+    if link:
+        head = (
+            f'<p class="wc-note">{html.escape(note)} — '
+            f'<a href="{html.escape(link)}">open the full page</a> to view it.</p>'
+        )
+    else:
+        head = f'<p class="wc-note">{html.escape(note)}.</p>'
+    text = visible_text(main_content)
+    if not text:
+        return head
+    snippet = text[:600]
+    if len(text) > 600:
+        snippet = snippet.rsplit(" ", 1)[0] + " …"
+    return head + f'<p class="wc-preview">{html.escape(snippet)}</p>'
 
 
 def visible_text(content):
@@ -317,6 +384,10 @@ DIFF_STYLE = """
 .wc-scope .legend { font-size: .9rem; }
 .wc-scope .legend ins, .wc-scope .legend del { padding: 0 .25em; }
 .wc-scope .empty { font-style: italic; }
+.wc-scope .wc-note { margin: .25rem 0 .5rem; }
+.wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
+    padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
+    white-space: pre-wrap; overflow-wrap: break-word; }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -582,19 +653,26 @@ def build(old_root, new_root, preview_url, title):
         old_doc = (
             open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
         )
+        # The generated page lives inside the preview dir, so a bare relative
+        # path deep-links to a sibling page without needing the absolute base.
+        link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
         if new_doc is not None and old_doc is not None:
             old_c = normalize(extract_main(old_doc))
             new_c = normalize(extract_main(new_doc))
-            if has_computed_output(old_c) or has_computed_output(new_c):
-                # Computed page: word-diffing its volatile rendered markup is
-                # noise, so scope it out. Compare only the stable visible text;
-                # if that changed, show the new page whole rather than an
-                # unreliable inline diff.
+            if is_self_contained(old_c) or is_self_contained(new_c):
+                # Self-contained/computed page: its visible content is produced
+                # by its own scripts, so an inline word diff is meaningless and
+                # embedding it would run foreign markup here. Compare only the
+                # stable visible text; if that changed, link it with a card.
                 if visible_text(old_c) == visible_text(new_c):
                     continue  # only volatile rendering differs
                 state = "changed"
-                label = "changed · computed page (shown in full)"
-                body = normalize(extract_main(new_doc))
+                label = "changed · interactive page (linked)"
+                body = summary_card(
+                    new_c,
+                    link,
+                    "This page renders its content with client-side scripts",
+                )
                 title_txt = page_title(new_doc, rel)
             else:
                 if (
@@ -602,23 +680,40 @@ def build(old_root, new_root, preview_url, title):
                     == re.sub(r"\s+", " ", new_c).strip()
                 ):
                     continue  # unchanged
-                body, changed = diff_content(old_c, new_c)
+                body, changed = diff_content(
+                    strip_volatile(old_c), strip_volatile(new_c)
+                )
                 if not changed:
                     continue
                 state, label = "changed", "changed"
                 title_txt = page_title(new_doc, rel)
         elif new_doc is not None:
-            state, label = "new", "new page"
-            body = extract_main(new_doc)
+            new_c = normalize(extract_main(new_doc))
             title_txt = page_title(new_doc, rel)
+            if is_self_contained(new_c):
+                state, label = "new", "new page · interactive (linked)"
+                body = summary_card(
+                    new_c,
+                    link,
+                    "New page; renders its content with client-side scripts",
+                )
+            else:
+                state, label = "new", "new page"
+                body = strip_volatile(new_c)
         else:
-            state, label = "removed", "removed"
-            body = normalize(extract_main(old_doc))
+            old_c = normalize(extract_main(old_doc))
             title_txt = page_title(old_doc, rel)
+            if is_self_contained(old_c):
+                state, label = "removed", "removed · interactive page"
+                body = summary_card(
+                    old_c,
+                    "",
+                    "Removed page; had rendered its content with client-side scripts",
+                )
+            else:
+                state, label = "removed", "removed"
+                body = strip_volatile(old_c)
         aid = anchor_id(rel)
-        # The generated page lives inside the preview dir, so a bare relative
-        # path deep-links to a sibling page without needing the absolute base.
-        link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
         h2 = html.escape(title_txt)
         if state != "removed":
             h2 = f'<a href="{html.escape(link)}">{h2}</a>'
