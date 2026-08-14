@@ -213,9 +213,9 @@ def test_embedded_new_prose_page_is_stripped_of_scripts(tmp_path):
     assert ".x{color:red}" not in result
 
 
-def test_computed_page_with_only_volatile_rerender_is_skipped(tmp_path):
-    # Same visible text, only regenerated widget ids / payload ordering differ:
-    # the page must not appear as changed.
+def test_computed_page_data_change_is_reported_even_when_static_text_is_same(tmp_path):
+    # Same static text, but changed widget ids / payload: it must be reported.
+    # Static text equality cannot prove that client-rendered output is unchanged.
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -232,8 +232,8 @@ def test_computed_page_with_only_volatile_rerender_is_skipped(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
-    assert "No rendered content changed" in result
-    assert "computed page" not in result
+    assert "changed · interactive page (linked)" in result
+    assert "open the full page" in result
 
 
 def test_partly_changed_inline_tag_never_wraps_a_lone_tag(tmp_path):
@@ -298,7 +298,9 @@ def test_own_output_is_never_diffed_as_a_page(tmp_path):
         "</head><body><main>stale diff</main></body></html>"
     )
 
-    result = WHAT_CHANGED.build(old, new, "", "PR #5", out_name="what-changed.html")
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR #5", out_path=new / "what-changed.html"
+    )
 
     assert "No rendered content changed" in result
     assert "PR #4" not in result
@@ -306,6 +308,66 @@ def test_own_output_is_never_diffed_as_a_page(tmp_path):
     assert "old-diff.html" not in result
     # And the page it emits self-identifies so a later run skips it too.
     assert WHAT_CHANGED.is_what_changed_artifact(result)
+
+
+def test_same_named_legitimate_page_in_subdirectory_is_not_suppressed(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    (old / "guide").mkdir(parents=True)
+    (new / "guide").mkdir(parents=True)
+    shell = "<html><head></head><body><main><p>{t}</p></main></body></html>"
+    (old / "guide" / "what-changed.html").write_text(shell.format(t="Before"))
+    (new / "guide" / "what-changed.html").write_text(shell.format(t="After"))
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR #5", out_path=new / "what-changed.html"
+    )
+
+    assert "guide/what-changed.html" in result
+    assert "<del>Before</del>" in result
+    assert "<ins>After</ins>" in result
+
+
+def test_embedded_markup_is_strictly_sanitized(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        """<html><head></head><body><main>
+        <p id="duplicate" onclick="alert(1)">Safe <strong>prose</strong>.</p>
+        <a href="java&#x73;cript:alert(1)">bad link</a>
+        <img src="https://example.org/chart.png" onerror="alert(1)" alt="chart">
+        <iframe srcdoc="<script>alert(1)</script>">hidden</iframe>
+        <svg onload="alert(1)"><a href="javascript:alert(1)">svg</a></svg>
+        <script src="https://evil.example/x.js">alert(1)</script>
+        <style>@import url(https://evil.example/x.css)</style>
+        </main></body></html>"""
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #5")
+    section = result.split('id="p-index-html"', 1)[1].split("</section>", 1)[0]
+
+    assert "Safe <strong>prose</strong>." in section
+    assert 'src="https://example.org/chart.png"' in section
+    for forbidden in (
+        "onclick",
+        "onerror",
+        "javascript:",
+        "<iframe",
+        "<svg",
+        "<script",
+        "<style",
+        'id="duplicate"',
+        "evil.example",
+    ):
+        assert forbidden not in section
+
+
+def test_large_inline_style_does_not_make_static_page_interactive():
+    content = "<style>" + ("x" * 25_000) + "</style><p>Static prose.</p>"
+
+    assert not WHAT_CHANGED.is_script_heavy(content)
 
 
 def test_markup_only_change_is_annotated_not_embedded(tmp_path):

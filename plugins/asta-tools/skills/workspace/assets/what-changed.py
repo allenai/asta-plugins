@@ -48,6 +48,8 @@ import html
 import os
 import re
 import sys
+from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 # Inline formatting tags may live *inside* an <ins>/<del>; anything else is
 # treated as structural and closes the wrapper so we never nest a block element
@@ -164,18 +166,203 @@ def has_computed_output(content):
 
 
 SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b[^>]*>.*?</\1>")
+SCRIPT_RE = re.compile(r"(?is)<script\b[^>]*>.*?</script>")
+
+SAFE_TAGS = {
+    "a",
+    "abbr",
+    "address",
+    "article",
+    "aside",
+    "b",
+    "bdi",
+    "bdo",
+    "blockquote",
+    "br",
+    "caption",
+    "cite",
+    "code",
+    "col",
+    "colgroup",
+    "dd",
+    "del",
+    "details",
+    "dfn",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "i",
+    "img",
+    "ins",
+    "kbd",
+    "li",
+    "main",
+    "mark",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "q",
+    "s",
+    "samp",
+    "section",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "summary",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "tr",
+    "u",
+    "ul",
+    "var",
+    "wbr",
+}
+DROP_CONTENT_TAGS = {
+    "applet",
+    "audio",
+    "base",
+    "button",
+    "canvas",
+    "embed",
+    "form",
+    "iframe",
+    "input",
+    "link",
+    "math",
+    "meta",
+    "object",
+    "option",
+    "script",
+    "select",
+    "style",
+    "svg",
+    "template",
+    "textarea",
+    "video",
+}
+GLOBAL_SAFE_ATTRS = {"class", "dir", "lang", "role", "title"}
+TAG_SAFE_ATTRS = {
+    "a": {"href"},
+    "blockquote": {"cite"},
+    "col": {"span"},
+    "colgroup": {"span"},
+    "details": {"open"},
+    "img": {"alt", "height", "loading", "src", "width"},
+    "ol": {"reversed", "start", "type"},
+    "q": {"cite"},
+    "td": {"colspan", "headers", "rowspan"},
+    "th": {"abbr", "colspan", "headers", "rowspan", "scope"},
+    "time": {"datetime"},
+}
+URL_ATTRS = {"cite", "href", "src"}
+
+
+def safe_url(value):
+    """Allow ordinary links/resources, never executable URL schemes."""
+    compact = re.sub(r"[\x00-\x20\x7f]+", "", html.unescape(value))
+    scheme = urlsplit(compact).scheme.lower()
+    return not scheme or scheme in {"http", "https", "mailto"}
+
+
+class _SafeFragmentParser(HTMLParser):
+    """Small strict-allowlist sanitizer for rendered page fragments."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.out = []
+        self.drop_stack = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if self.drop_stack:
+            if tag in DROP_CONTENT_TAGS:
+                self.drop_stack.append(tag)
+            return
+        if tag in DROP_CONTENT_TAGS:
+            self.drop_stack.append(tag)
+            return
+        if tag not in SAFE_TAGS:
+            return
+        allowed = GLOBAL_SAFE_ATTRS | TAG_SAFE_ATTRS.get(tag, set())
+        clean = []
+        for name, value in attrs:
+            name = name.lower()
+            if name not in allowed and not name.startswith("aria-"):
+                continue
+            if value is None:
+                clean.append(name)
+                continue
+            if name in URL_ATTRS and not safe_url(value):
+                continue
+            clean.append(f'{name}="{html.escape(value, quote=True)}"')
+        suffix = (" " + " ".join(clean)) if clean else ""
+        self.out.append(f"<{tag}{suffix}>")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag.lower() in DROP_CONTENT_TAGS:
+            return
+        self.handle_starttag(tag, attrs)
+        if not self.drop_stack and tag.lower() in SAFE_TAGS:
+            self.out[-1] = self.out[-1][:-1] + ">"
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if self.drop_stack:
+            if tag == self.drop_stack[-1]:
+                self.drop_stack.pop()
+            return
+        if tag in SAFE_TAGS:
+            self.out.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if not self.drop_stack:
+            self.out.append(html.escape(data, quote=False))
+
+    def handle_entityref(self, name):
+        if not self.drop_stack:
+            self.out.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if not self.drop_stack:
+            self.out.append(f"&#{name};")
+
+
+def sanitize_fragment(content):
+    """Return inert static HTML suitable for embedding in the diff page."""
+    parser = _SafeFragmentParser()
+    parser.feed(content)
+    parser.close()
+    return "".join(parser.out)
 
 
 def strip_volatile(content):
-    """Drop <script>/<style> subtrees so an embedded body carries no executable
-    code or foreign styling.
+    """Sanitize an embedded body to inert, allowlisted static HTML.
 
-    The diff page ships its own single script (folding) and its own styles; a
-    source page's scripts must never run here — they collide with each other and
-    with ours (duplicate element ids, re-declared top-level identifiers) and only
-    bloat the output (a data-driven report's payload can be multiple MB).
+    The diff page ships its own single script and styles. Source markup must not
+    execute here through scripts, event handlers, active elements, SVG, CSS, or
+    executable URLs; duplicate source ids are omitted as well.
     """
-    return SCRIPT_STYLE_RE.sub("", content)
+    return sanitize_fragment(content)
 
 
 def is_script_heavy(content):
@@ -187,7 +374,7 @@ def is_script_heavy(content):
     load. A prose page's content region carries essentially no script, so the
     ratio cleanly separates the two.
     """
-    script_bytes = sum(len(m.group(0)) for m in SCRIPT_STYLE_RE.finditer(content))
+    script_bytes = sum(len(m.group(0)) for m in SCRIPT_RE.finditer(content))
     return script_bytes >= 20_000 and script_bytes >= 0.5 * max(len(content), 1)
 
 
@@ -419,21 +606,23 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_name=None):
+def list_pages(root, out_path=None):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
     Skips any page that is itself a "What changed" artifact — matched by output
-    basename (`out_name`, e.g. `what-changed.html`) or by the generator's
-    self-identifying marker — so the generator never diffs its own output.
+    exact output path (when it falls under this input root) or by the generator's
+    self-identifying marker — so the generator never diffs its own output while
+    preserving a legitimate same-named page in another directory.
     """
     pages = {}
+    excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, _dirs, files in os.walk(root):
         for f in files:
             if not f.endswith(".html"):
                 continue
-            if out_name and f == out_name:
-                continue
             full = os.path.join(dirpath, f)
+            if excluded and os.path.realpath(full) == excluded:
+                continue
             try:
                 with open(full, encoding="utf-8") as fh:
                     if is_what_changed_artifact(fh.read(4096)):
@@ -738,9 +927,9 @@ def pick_template(new_pages):
         return None, 0
 
 
-def build(old_root, new_root, preview_url, title, out_name=None):
-    old_pages = list_pages(old_root, out_name)
-    new_pages = list_pages(new_root, out_name)
+def build(old_root, new_root, preview_url, title, out_path=None):
+    old_pages = list_pages(old_root, out_path)
+    new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
     for rel in sorted(set(old_pages) | set(new_pages)):
@@ -759,10 +948,14 @@ def build(old_root, new_root, preview_url, title, out_name=None):
             if is_self_contained(old_c) or is_self_contained(new_c):
                 # Self-contained/computed page: its visible content is produced
                 # by its own scripts, so an inline word diff is meaningless and
-                # embedding it would run foreign markup here. Compare only the
-                # stable visible text; if that changed, link it with a card.
-                if visible_text(old_c) == visible_text(new_c):
-                    continue  # only volatile rendering differs
+                # embedding it would run foreign markup here. Any normalized
+                # content difference is material enough to report: comparing
+                # static text alone can hide changed data or client-side logic.
+                if (
+                    re.sub(r"\s+", " ", old_c).strip()
+                    == re.sub(r"\s+", " ", new_c).strip()
+                ):
+                    continue
                 state = "changed"
                 label = "changed · interactive page (linked)"
                 body = summary_card(
@@ -914,7 +1107,7 @@ def main(argv=None):
         args.new,
         args.preview_url,
         args.title,
-        out_name=os.path.basename(args.out),
+        out_path=args.out,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
