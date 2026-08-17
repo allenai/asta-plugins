@@ -10,6 +10,7 @@ asta literature find --help >/dev/null
 asta auth login --help >/dev/null
 asta auth print-token --help >/dev/null
 quarto --version
+python3 --version
 
 test -f /opt/asta-plugins/.claude-plugin/marketplace.json
 
