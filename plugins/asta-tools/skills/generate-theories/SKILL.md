@@ -121,7 +121,7 @@ A vague question that fires through the full pipeline can burn 15–25 minutes a
 
    **Escape hatch:** End the poll with a one-line note that the user can say *"skip that,"* *"use what I gave you,"* or *"let Theorizer figure it out"* to skip shaping and submit the question as given. Some advanced users prefer under-specifying deliberately. Respect that signal. The user can also opt out in their original message (before any poll happens); if so, skip the poll entirely and submit as given.
 
-3. **Refuse** if the question isn't a causal hypothesis testable against scientific literature (e.g., "what should I name my startup," "summarize this paper"). State plainly that Theorizer's domain is causal scientific theories grounded in published evidence, and offer to reframe the question into that form or hand off to another skill.
+3. **Refuse** if the question isn't a hypothesis testable against scientific literature (e.g., "what should I name my startup," "summarize this paper"). State plainly that Theorizer's domain is scientific theories grounded in published evidence, and offer to reframe the question into that form or hand off to another skill.
 
 #### Route 2 (Poll for what's missing):
 
@@ -150,7 +150,7 @@ _Approve, edit, or revise?_
 ```
 **Your question:** What should I name my startup?
 
-Theorizer generates causal scientific theories grounded in the published literature — questions of the form "how does X affect Y, via what mechanism, in what population." Naming a startup isn't a testable causal hypothesis I can ground in papers.
+Theorizer generates scientific theories grounded in the published literature — questions of the form "how does X affect Y, via what mechanism, in what population." Naming a startup isn't a testable hypothesis I can ground in papers.
 ```
 
 ## How to dispatch
