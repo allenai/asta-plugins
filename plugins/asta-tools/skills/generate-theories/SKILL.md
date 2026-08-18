@@ -17,7 +17,7 @@ This skill is in two halves. The **first** describes what Theorizer is — its t
 
 ## What this skill is good for
 
-- Generating literature-grounded scientific theories about causal questions ("how does X affect Y, via what mechanism, in what domain").
+- Generating literature-grounded scientific theories about research questions ("how does X affect Y, via what mechanism, in what domain").
 - Finding evidence in published papers to support or contradict a hypothesis.
 - Scoring theory novelty against existing literature.
 - Surveying what's known and unknown in a research area through extracted variables and findings.
