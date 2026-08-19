@@ -17,7 +17,7 @@ This skill is in two halves. The **first** describes what Theorizer is — its t
 
 ## What this skill is good for
 
-- Generating literature-grounded scientific theories about causal questions ("how does X affect Y, via what mechanism, in what domain").
+- Generating literature-grounded scientific theories about research questions ("how does X affect Y, via what mechanism, in what domain").
 - Finding evidence in published papers to support or contradict a hypothesis.
 - Scoring theory novelty against existing literature.
 - Surveying what's known and unknown in a research area through extracted variables and findings.
@@ -91,67 +91,74 @@ If the user picks **Stop** at any stage, hand off to Asta Artifacts as usual to 
 
 This applies **only when the next call generates or forms theories** — specifically `literature-theory-generation` (full pipeline) or `form-theory` (standalone or continuation). **Do NOT** shape the query when the next call triggers `find-and-extract`, `evaluate-novelty`, or `resume-extraction`.
 
-A good Theorizer theory question covers four dimensions, and the agent works dramatically better when they're explicit:
+**Theorizer works with both broad and specific questions.** A lot of its value comes from taking a broad or exploratory question and searching broadly through the literature — surfacing variables, mechanisms, and scopes the user didn't think to name. A tightly-specified question is useful too, when the user already knows what they want, but it isn't a prerequisite. Don't treat under-specification as a problem to be fixed before the run can happen.
+
+A Theorizer theory question might name some or all of the following four dimensions, and giving them helps the agent aim more precisely when the user already has opinions about them:
 
 1. **Intervention** — the independent variable being varied (e.g., *source citations*, *response latency*, *anthropomorphic phrasing*).
 2. **Outcomes** — concrete dependent variables (e.g., *trust*, *retention*, *task completion*).
 3. **Mediating mechanism** *(optional)* — the hypothesized driver of the effect (e.g., *perceived transparency*, *cognitive load*, *anchoring*). Theorizer can run without one; include it only when the user supplies it.
 4. **Scope** — the domain the theory should apply to (e.g., *consumer chatbots*, *enterprise search*, *coding agents*).
 
-Three well-formed examples (the second one includes an optional mechanism):
+Three examples of fully-specified questions (the second includes an optional mechanism) — these are illustrations of one style Theorizer accepts, not a template every question must match:
 
 - Build a theory of how *spaced retrieval practice* affects *long-term retention* in *undergraduate STEM courses*.
 - Build a theory of how *intermittent fasting* affects *insulin sensitivity*, via *autophagy upregulation*, in *adults with metabolic syndrome*.
 - Build a theory of how *prescribed burns* affect *grassland biodiversity* in *temperate North American prairies*.
 
-A vague question that fires through the full pipeline can burn 15–25 minutes and several dollars producing theories that don't answer what the user actually meant. Shaping costs ~30 seconds and protects that investment.
+A broad question like "what makes people trust AI?" is a perfectly valid input on its own. The offer to narrow it is a courtesy, not a gate.
 
 **Within a session**, don't re-shape on subsequent runs unless the user changes their question substantively. Repeating the dance is friction.
 
 ### How to handle the user's question — audit, then route:
 
-**Don't guess** the required dimensions (Intervention, Outcome, Scope) on the user's behalf. Silently picking one commits the whole run to an angle the user never chose, and Theorizer will dutifully narrow further. Inferred dimensions consistently produce off-target theories.
+**Don't guess** the dimensions (Intervention, Outcome, Scope) on the user's behalf and silently narrow the question — that commits the whole run to an angle the user never chose. If you want the question narrowed or changed in any way, ask; don't infer.
 
-**Audit first:** Determine whether the user's question contains the three required dimensions (Intervention, Outcome, Scope). Each is either present, missing, or ambiguous. Note whether a mechanism is also present, but its absence is not a gap.
+**Audit first:** Determine whether the user's question already names Intervention, Outcome, and Scope, or is broad/exploratory (one or more of those left open).
 
 **Then route:**
 
-1. **Proceed silently** if all three required dimensions are present. Don't announce the audit result, don't tell the user the question is "well-formed," don't name the dimensions — move directly to the next dispatch step. Add the "Build a theory of how..." framing yourself.
-2. **Poll for what's missing** if any required dimension is missing or ambiguous. In a single message, ask the user about every required gap. Remember that the user does not know about the dimensions. Then reformulate the query as a "Build a theory of how..." statement using their answers and show it for confirmation before submitting.
+1. **Proceed silently** if the dimensions are already present, or if the user has indicated (now or earlier) that they want to proceed as given. Don't announce the audit result, don't tell the user the question is "well-formed" — move directly to the next dispatch step. Add the "Build a theory of how..." framing yourself if the question already has the substance for it; otherwise submit their question as given.
+2. **Offer, don't gate** if the question is broad or a required dimension is left open and you haven't offered yet. In a single message, note that the question reads as broad/exploratory, that Theorizer can work well with that as-is, and ask whether they'd like to keep it broad or add detail on a specific dimension. Make clear that running it as-is is the default if they don't want to spend time on this — never imply the run is blocked until they answer. You could also let the user know that they might get utility starting broad to explore, then subsequently narrowing their focus as they discover theories they'd like to further explore or refine.
+3. **Refuse** only if the question isn't a question answerable with the scientific literature (e.g., "what should I name my startup," "summarize this paper"). State plainly that Theorizer's domain is generating scientific theories grounded in published evidence, and offer to reframe the question into that form or hand off to another skill. This is the only route that withholds a run.
 
-   **Escape hatch:** End the poll with a one-line note that the user can say *"skip that,"* *"use what I gave you,"* or *"let Theorizer figure it out"* to skip shaping and submit the question as given. Some advanced users prefer under-specifying deliberately. Respect that signal. The user can also opt out in their original message (before any poll happens); if so, skip the poll entirely and submit as given.
-
-3. **Refuse** if the question isn't a causal hypothesis testable against scientific literature (e.g., "what should I name my startup," "summarize this paper"). State plainly that Theorizer's domain is causal scientific theories grounded in published evidence, and offer to reframe the question into that form or hand off to another skill.
-
-#### Route 2 (Poll for what's missing):
+#### Route 2 (Offer to narrow):
 
 ```
 **Your question:** What makes people trust AI?
 
-I need a few details to shape this into a good theory question:
+That reads as a broad, exploratory question — Theorizer can work well with that; it'll dig through the literature and surface the variables and mechanisms that seem to matter. If you'd rather narrow it yourself first, I can factor in specifics like:
 
-- **Intervention** — what variable do you want to vary? (e.g., source citations, response latency, anthropomorphic phrasing)
-- **Scope** — what domain should the theory apply to? (e.g., consumer chatbots, medical AI, search assistants)
+- **Intervention** — a variable you want to vary (e.g., source citations, response latency, anthropomorphic phrasing)
+- **Scope** — a domain to focus on (e.g., consumer chatbots, medical AI, search assistants)
 
-Or I can send your query verbatim, and Theorizer will work with what you've given me. It can often infer the rest from the literature.
+Want to keep it broad, or add some detail?  You can also start broad, then narrow later based on what Theorizer finds.
 ```
 
-After they answer, reformulate and confirm:
+If they add detail, reformulate and confirm:
 
 ```
 **Reshaped:**
 Build a theory of how source citations affect user trust in consumer AI chatbots.
 
-_Approve, edit, or revise?_
+_Approve, edit, or keep the original broad question?_
 ```
+
+If they say to keep it broad, or don't engage with the offer, proceed with their original question verbatim.
 
 #### Route 3 (Refuse):
 
 ```
 **Your question:** What should I name my startup?
 
-Theorizer generates causal scientific theories grounded in the published literature — questions of the form "how does X affect Y, via what mechanism, in what population." Naming a startup isn't a testable causal hypothesis I can ground in papers.
+Theorizer generates scientific theories grounded in the published literature — questions like "how does X affect Y" that can be tested against evidence. Naming a startup isn't a testable hypothesis I can ground in papers.
 ```
+
+### Additional context and steerability
+
+Users may include additional steering context alongside their core research question. For example: "Please build theories about X. I'm particularly interested in Y, or Z. For additional context, I'm interested in A, B, and C."
+
+This additional information helps steer the theory generation process — **pass it all through verbatim in the query you submit**, rather than truncating to just the core question. The only exception is when the question is not already framed as theory building: in that case, you may reframe the query to start with "Please build theories about...", but keep edits light and do not alter the substance or additional context provided.
 
 ## How to dispatch
 
