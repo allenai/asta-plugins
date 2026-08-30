@@ -42,13 +42,22 @@
     max-width: min(360px, 92vw);
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.12s ease;
+    /* Hiding is DELAYED by a short grace period; showing is immediate. A claim
+       that wraps onto several lines has tiny leading gaps BETWEEN its line boxes
+       where `:hover` is momentarily false. Without the delay the popover flips
+       off and back on as the pointer brushes across those gaps (a visible
+       flash). With it, the pointer re-enters the next line well inside the grace
+       window, so the hide transition never starts and the popover holds steady.
+       Keep the grace modest so moving to a *different* claim doesn't leave two
+       popovers overlapping for long. */
+    transition: opacity 0.12s ease 0.2s, visibility 0s linear 0.32s;
   }
   .ev:hover > .ev-pop,
   .ev:focus > .ev-pop,
   .ev:focus-within > .ev-pop {
     opacity: 1;
     visibility: visible;
+    transition: opacity 0.12s ease 0s, visibility 0s linear 0s;
   }
   /* Near the right viewport edge the optional script adds `.ev-flip`, opening
      the popover leftward instead. Base behaviour (no script) opens rightward. */
