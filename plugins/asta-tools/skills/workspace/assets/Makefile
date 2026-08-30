@@ -26,7 +26,8 @@ workspace-assets:
 		rm -rf "$$tmp"; \
 		exit "$$status"; \
 	}; \
-	trap cleanup 0 1 2 15; \
+	trap cleanup 0; \
+	trap 'exit 1' 1 2 15; \
 	curl -fsSL "$(ASTA_PLUGINS_ARCHIVE_URL)" -o "$$tmp/asta-plugins.tar.gz"; \
 	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
