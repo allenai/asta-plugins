@@ -1,7 +1,9 @@
 import os
+import re
 import shutil
 import subprocess
 import tarfile
+import tomllib
 from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
@@ -14,6 +16,18 @@ def test_workspace_assets_use_called_workflow_identity() -> None:
     assert workflow.count("${{ job.workflow_repository }}") == 2
     assert workflow.count("${{ job.workflow_sha }}") == 2
     assert "github.job_workflow" not in workflow
+
+
+def test_scaffolded_workflow_ref_matches_project_version() -> None:
+    """Release-managed workspace assets must advance under one version tag."""
+    project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][
+        "version"
+    ]
+    scaffold = (WORKSPACE_ASSETS / "docs.yml").read_text()
+    match = re.search(r"workspace-quarto-site\.yml@v([0-9.]+)", scaffold)
+
+    assert match is not None
+    assert match.group(1) == project_version
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:

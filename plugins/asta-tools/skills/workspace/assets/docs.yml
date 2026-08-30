@@ -28,7 +28,7 @@ jobs:
     # co-located deploy assets (what-changed.py, and the quarto-check.sh drift
     # baseline) are fetched at this workflow's own commit, so pinning the ref
     # here pins them too. GitHub Actions `uses:` takes a literal ref and can't
-    # resolve "latest" itself, so upgrading is a one-line bump to the newest tag
-    # (e.g. @v0.103.0) — the manual counterpart to the extension's auto-resolve.
-    # Track @main only to trial in-flight changes before a release.
-    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@main
+    # resolve "latest" itself. `make set-version` keeps this ref aligned with
+    # each release tag; existing projects receive the one-line bump when their
+    # workspace assets are upgraded.
+    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.102.0

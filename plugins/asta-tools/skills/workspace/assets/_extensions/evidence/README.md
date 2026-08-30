@@ -242,9 +242,9 @@ never collapses popover content.
 
 The workspace scaffold fetches this directory from `asta-plugins` before each
 render and wires it in `_quarto.yml` (see the `workspace` skill). The generated
-directory is ignored rather than committed, so projects following `main` receive
-the same current extension as the reusable docs workflow. To wire it by hand
-into an existing project, add:
+directory is ignored rather than committed. By default the render-time fetch
+uses the latest release tag; projects can set `ASTA_PLUGINS_REF=main` to trial
+the in-flight extension. To wire it by hand into an existing project, add:
 
 ```yaml
 metadata-files:
