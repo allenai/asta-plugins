@@ -1,9 +1,31 @@
-.PHONY: preview render clean dev deployed-url check
+.PHONY: preview render clean dev deployed-url check workspace-assets
 
-preview:
+# Follow the workspace assets on asta-plugins main by default, matching the
+# reusable docs workflow below. Set ASTA_PLUGINS_REF to pin both when a project
+# prefers explicit upgrades.
+ASTA_PLUGINS_REF ?= main
+ASTA_PLUGINS_ARCHIVE_URL ?= https://github.com/allenai/asta-plugins/archive/$(ASTA_PLUGINS_REF).tar.gz
+
+# The evidence extension is maintained with the workspace skill rather than
+# vendored into every report. Replace it only after a complete download and
+# extraction so a network failure cannot leave a partial extension behind.
+workspace-assets:
+	@set -eu; \
+	tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
+	curl -fsSL "$(ASTA_PLUGINS_ARCHIVE_URL)" -o "$$tmp/asta-plugins.tar.gz"; \
+	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
+	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
+	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$(ASTA_PLUGINS_REF)" >&2; exit 1; }; \
+	cp -R "$$source_dir" "$$tmp/evidence"; \
+	mkdir -p _extensions; \
+	rm -rf _extensions/evidence; \
+	mv "$$tmp/evidence" _extensions/evidence
+
+preview: workspace-assets
 	quarto preview --no-browser
 
-render:
+render: workspace-assets
 	quarto render
 
 # Run the same quality gates CI runs, in one place so local and CI can't
@@ -11,7 +33,7 @@ render:
 # gate, add it here (or as a prerequisite target), never as an inline workflow
 # step. The shared render/validate logic is vendored in scripts/quarto-check.sh
 # (from the workspace skill; update by re-copying, don't hand-edit).
-check:
+check: workspace-assets
 	sh scripts/quarto-check.sh
 
 clean:

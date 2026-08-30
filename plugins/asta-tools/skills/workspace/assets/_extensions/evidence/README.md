@@ -240,8 +240,11 @@ never collapses popover content.
 
 ## Wiring
 
-The workspace scaffold wires this in `_quarto.yml` for you (see the `workspace`
-skill). To wire it by hand into an existing project, add:
+The workspace scaffold fetches this directory from `asta-plugins` before each
+render and wires it in `_quarto.yml` (see the `workspace` skill). The generated
+directory is ignored rather than committed, so projects following `main` receive
+the same current extension as the reusable docs workflow. To wire it by hand
+into an existing project, add:
 
 ```yaml
 metadata-files:
