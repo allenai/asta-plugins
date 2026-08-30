@@ -734,13 +734,14 @@ FOLD_JS = r"""
   var CONTEXT = 1;       // unchanged blocks kept visible beside a change
   var MAX_CONTEXT_CHARS = 500; // fold large neighbors instead of treating them as context
 
-  // Elements whose content model allows only specific children (a table row
-  // takes only cells; a list only list items): inserting a fold disclosure as a
-  // direct child would be invalid and visibly break the table/list. We still
-  // recurse THROUGH them to fold within a changed cell/item, but never fold
-  // their own child runs.
-  var NO_FOLD_CHILDREN = { TABLE: 1, THEAD: 1, TBODY: 1, TFOOT: 1, TR: 1,
-    UL: 1, OL: 1, DL: 1, MENU: 1, SELECT: 1, OPTGROUP: 1, COLGROUP: 1, PICTURE: 1 };
+  // Be conservative about where we insert the block-level disclosure wrapper.
+  // A denylist is unsafe here: besides tables/lists, phrasing-only containers
+  // such as paragraphs, headings, and summaries cannot contain one. Unknown
+  // containers are therefore traversal-only. This allowlist covers the ordinary
+  // flow-content containers emitted by Quarto in which a disclosure is valid.
+  var FOLD_CONTAINERS = { BODY: 1, DIV: 1, MAIN: 1, ARTICLE: 1, SECTION: 1,
+    NAV: 1, ASIDE: 1, HEADER: 1, FOOTER: 1, BLOCKQUOTE: 1, FIGURE: 1,
+    FIGCAPTION: 1, LI: 1, DD: 1, TD: 1, TH: 1 };
 
   // Out-of-flow or hidden subtrees — an absolutely-positioned hover popover /
   // tooltip, a display:none or visibility:hidden aside — are not part of the
@@ -822,9 +823,10 @@ FOLD_JS = r"""
       if (changed[k] && flow[k] && el.children.length &&
           el.tagName !== "INS" && el.tagName !== "DEL") fold(el);
     });
-    // Only collapse sibling runs where a fold-wrapper is a valid child — never
-    // between a table's rows/cells or a list's items.
-    if (NO_FOLD_CHILDREN[container.tagName]) return;
+    // Only collapse sibling runs where a block-level disclosure is a valid
+    // child. Still recurse through other containers so a changed table cell or
+    // list item can fold its own flow-content children.
+    if (!FOLD_CONTAINERS[container.tagName]) return;
     var start = 0;
     while (start < kids.length) {
       if (keep[start]) { start++; continue; }
