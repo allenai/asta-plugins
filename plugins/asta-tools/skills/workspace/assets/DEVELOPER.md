@@ -4,7 +4,7 @@ Edit, preview, and save this research project.
 
 ## Preview locally
 
-With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts.
+With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. The render targets fetch the workspace evidence extension from the latest `asta-plugins` version tag by default; set `ASTA_PLUGINS_REF` to pin a specific release (e.g. `v0.103.0`) or to track `main`. The CI-side deploy assets (the workflow in `docs.yml`, `what-changed.py`, and the `quarto-check.sh` drift baseline) follow the same version-tag policy: the scaffold's literal workflow ref is advanced by the `asta-plugins` release process, and existing projects receive that one-line bump when their workspace assets are upgraded. Offline is tolerated: if the fetch can't reach `asta-plugins` but a previously fetched `_extensions/evidence/` is present, the render keeps that cached copy and warns instead of failing; only a first fetch with no cache is a hard error.
 
 ## Devcontainer (`.devcontainer/devcontainer.json`)
 
@@ -23,7 +23,7 @@ A factual claim can carry the source quote that backs it. Add a keyed entry to
 `[90 tasks]{.ev key="naturebench-count"}`. The claim gets a subtle dotted
 underline; hovering it shows the quote and a body-style citation, and the same
 popover appears on the `what-changed` diff so a reviewer can check the backing.
-Full reference: [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
+Full reference (available after the first render or `make workspace-assets`): [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
 
 ## Edit without preview
 
@@ -37,6 +37,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make render` | build to `_site/` |
 | `make check` | run the same quality gates CI runs (render + warning validation) |
 | `make clean` | wipe build artifacts |
+| `make workspace-assets` | refresh the evidence extension from `asta-plugins` (latest version tag by default) |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
 

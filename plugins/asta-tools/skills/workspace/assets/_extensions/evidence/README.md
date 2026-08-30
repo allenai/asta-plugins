@@ -240,8 +240,11 @@ never collapses popover content.
 
 ## Wiring
 
-The workspace scaffold wires this in `_quarto.yml` for you (see the `workspace`
-skill). To wire it by hand into an existing project, add:
+The workspace scaffold fetches this directory from `asta-plugins` before each
+render and wires it in `_quarto.yml` (see the `workspace` skill). The generated
+directory is ignored rather than committed. By default the render-time fetch
+uses the latest release tag; projects can set `ASTA_PLUGINS_REF=main` to trial
+the in-flight extension. To wire it by hand into an existing project, add:
 
 ```yaml
 metadata-files:

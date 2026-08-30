@@ -28,6 +28,15 @@ HOOK_FILE = PROJECT_ROOT / "plugins" / "asta-tools" / "hooks" / "sync-cli-versio
 ASTA_CLI_SKILL_FILE = (
     PROJECT_ROOT / "plugins" / "asta-tools" / "skills" / "asta-cli" / "SKILL.md"
 )
+WORKSPACE_DOCS_WORKFLOW_FILE = (
+    PROJECT_ROOT
+    / "plugins"
+    / "asta-tools"
+    / "skills"
+    / "workspace"
+    / "assets"
+    / "docs.yml"
+)
 
 # Matches the asta package's version line in uv.lock. The asta package is the
 # editable root, so `name = "asta"` is unique within the lockfile.
@@ -81,6 +90,19 @@ def get_asta_cli_skill_versions() -> list[str]:
     return sorted(set(re.findall(r"PLUGIN_VERSION=([0-9.]+)", content)))
 
 
+def get_workspace_workflow_version() -> str:
+    """Read the asta-plugins tag from the scaffolded docs workflow."""
+    content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
+    match = re.search(
+        r"uses: allenai/asta-plugins/\.github/workflows/"
+        r"workspace-quarto-site\.yml@v([0-9.]+)",
+        content,
+    )
+    if not match:
+        raise ValueError("Could not find versioned workspace workflow ref in docs.yml")
+    return match.group(1)
+
+
 def check_version_consistency() -> bool:
     """Check if all version locations have the same version.
 
@@ -93,6 +115,7 @@ def check_version_consistency() -> bool:
     lock_version = get_lock_version()
     hook_version = get_hook_version()
     asta_cli_skill_versions = get_asta_cli_skill_versions()
+    workspace_workflow_version = get_workspace_workflow_version()
 
     mismatch = False
 
@@ -117,6 +140,11 @@ def check_version_consistency() -> bool:
     if len(asta_cli_skill_versions) != 1 or asta_cli_skill_versions[0] != init_version:
         mismatch = True
 
+    # Keep the reusable workflow used by newly scaffolded workspaces aligned
+    # with the release-managed CLI and render-time assets.
+    if workspace_workflow_version != init_version:
+        mismatch = True
+
     if mismatch:
         print(f"{RED}Error: Version mismatch detected:{NC}")
         print(f"  src/asta/__init__.py:            {init_version}")
@@ -129,6 +157,7 @@ def check_version_consistency() -> bool:
         print(
             f"  skills/asta-cli/SKILL.md:        {', '.join(asta_cli_skill_versions)}"
         )
+        print(f"  workspace/assets/docs.yml:       {workspace_workflow_version}")
         print()
         print("Run 'make set-version VERSION=x.y.z' to sync versions")
         return False
@@ -215,6 +244,23 @@ def set_version(new_version: str) -> bool:
         r"PLUGIN_VERSION=\d+\.\d+\.\d+", f"PLUGIN_VERSION={new_version}", content
     )
     ASTA_CLI_SKILL_FILE.write_text(content)
+
+    # Advance the scaffolded reusable workflow with the same release tag.
+    print("Updating workspace docs workflow...")
+    content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
+    content, replacements = re.subn(
+        r"(uses: allenai/asta-plugins/\.github/workflows/"
+        r"workspace-quarto-site\.yml@v)\d+\.\d+\.\d+",
+        rf"\g<1>{new_version}",
+        content,
+    )
+    if replacements != 1:
+        print(
+            f"{RED}Error: expected one versioned workspace workflow ref, "
+            f"found {replacements}{NC}"
+        )
+        return False
+    WORKSPACE_DOCS_WORKFLOW_FILE.write_text(content)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()
