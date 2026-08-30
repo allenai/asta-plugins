@@ -22,6 +22,13 @@ permissions:
 
 jobs:
   docs:
-    # Tracks main so fixes flow automatically; pin to a tag (e.g. @v0.101.0)
-    # if you prefer explicit upgrades.
+    # Upgrade policy — the same one the render-time assets use (see the Makefile
+    # `workspace-assets` target and DEVELOPER.md): track the latest published
+    # asta-plugins version tag, so all workspace assets move together. The
+    # co-located deploy assets (what-changed.py, and the quarto-check.sh drift
+    # baseline) are fetched at this workflow's own commit, so pinning the ref
+    # here pins them too. GitHub Actions `uses:` takes a literal ref and can't
+    # resolve "latest" itself, so upgrading is a one-line bump to the newest tag
+    # (e.g. @v0.103.0) — the manual counterpart to the extension's auto-resolve.
+    # Track @main only to trial in-flight changes before a release.
     uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@main

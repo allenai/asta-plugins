@@ -4,7 +4,7 @@ Edit, preview, and save this research project.
 
 ## Preview locally
 
-With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. The render targets fetch the workspace evidence extension from the latest `asta-plugins` version tag by default; set `ASTA_PLUGINS_REF` to pin a specific release (e.g. `v0.103.0`) or to track `main`.
+With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. The render targets fetch the workspace evidence extension from the latest `asta-plugins` version tag by default; set `ASTA_PLUGINS_REF` to pin a specific release (e.g. `v0.103.0`) or to track `main`. The CI-side deploy assets (the workflow in `docs.yml`, `what-changed.py`, and the `quarto-check.sh` drift baseline) follow the same version-tag policy — they move with the ref `docs.yml` pins — so all workspace assets upgrade together. Offline is tolerated: if the fetch can't reach `asta-plugins` but a previously fetched `_extensions/evidence/` is present, the render keeps that cached copy and warns instead of failing; only a first fetch with no cache is a hard error.
 
 ## Devcontainer (`.devcontainer/devcontainer.json`)
 

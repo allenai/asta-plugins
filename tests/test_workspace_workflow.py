@@ -90,6 +90,67 @@ def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> N
     assert sentinel.read_text() == "keep me"
 
 
+def test_workspace_makefile_keeps_cache_when_offline(tmp_path: Path) -> None:
+    # A download failure (no network) with a previously fetched extension must
+    # warn and keep the cached copy rather than fail — so a render works offline
+    # (e.g. on a plane). Point the archive URL at a file that does not exist to
+    # simulate an unreachable upstream.
+    project = tmp_path / "project"
+    cache = project / "_extensions/evidence"
+    cache.mkdir(parents=True)
+    sentinel = cache / "snippet.lua"
+    sentinel.write_text("cached copy")
+
+    env = {
+        "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "keeping the cached" in result.stderr
+    assert sentinel.read_text() == "cached copy"
+
+
+def test_workspace_makefile_fails_offline_without_cache(tmp_path: Path) -> None:
+    # A download failure with no cached extension is a hard error: the first
+    # fetch genuinely needs the network.
+    project = tmp_path / "project"
+    project.mkdir()
+
+    env = {
+        "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "no cached" in result.stderr
+    assert not (project / "_extensions/evidence").exists()
+
+
 def _make_evidence_archive(archive: Path) -> None:
     """Write a tarball whose layout mirrors an asta-plugins source archive."""
     archive_root = archive.parent / "asta-plugins-test"
