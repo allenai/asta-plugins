@@ -1,0 +1,19 @@
+# Supporting-evidence store for the `.ev` hover-snippet extension
+# (see _extensions/evidence/README.md). Each factual claim in the prose can carry
+# a verbatim supporting quote, viewable on hover and reviewable in the
+# `what-changed` diff. Reference an entry from the prose by its key:
+#
+#     NatureBench has [90 tasks]{.ev key="naturebench-count"}.
+#
+# Keep this file even when empty — `_quarto.yml` merges it via `metadata-files:`.
+# Add entries under `evidence:` (delete the example below once you have your own):
+evidence: {}
+  # example-claim:
+  #   quote: "a verbatim quotation copied exactly from the source"
+  #   cite: somekey            # a key in references.bib -> body-style (Author Year) link
+  #   locator: "p. 4"          # optional native citeproc locator (p./pp./sec./abstract/…)
+  #   provenance:              # optional; retained, shown behind a "Source details" disclosure
+  #     method: asta papers snippet-search  # exact producer invocation; omit if unknown
+  #     query: "the search that surfaced the quote"
+  #     corpus_id: 289622360
+  #     retrieved: 2026-08-30

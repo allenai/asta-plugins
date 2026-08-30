@@ -48,10 +48,23 @@ Before writing any file in the steps below, check whether the target path alread
    (use the canonical GitHub URL, e.g. `https://github.com/{owner}/{repo}`).
 2. Create `index.qmd` with `title:` frontmatter.
 3. Create empty `references.bib`.
-4. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
-5. Copy `assets/Makefile` to project root, and `assets/quarto-check.sh` to `scripts/quarto-check.sh` (vendored verbatim — the Makefile's `check` target runs it; to update it later, re-copy rather than hand-edit). CI warns when the vendored copy drifts from the canonical one; on that warning, re-copy the asset.
-6. Copy `assets/README.md`; fill `{{TITLE}}` and `{{DESCRIPTION}}` from the user.
-7. Copy `assets/DEVELOPER.md` to project root. User owns it — only update later with explicit user permission.
+4. Copy `assets/_extensions/evidence/` to `_extensions/evidence/` (the hover-snippet extension, wired by the `_quarto.yml` you copied in step 1), and `assets/evidence.yml` to the project root (the keyed quote store — keep it even while empty). See **Back claims with supporting evidence** below.
+5. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
+6. Copy `assets/Makefile` to project root, and `assets/quarto-check.sh` to `scripts/quarto-check.sh` (vendored verbatim — the Makefile's `check` target runs it; to update it later, re-copy rather than hand-edit). CI warns when the vendored copy drifts from the canonical one; on that warning, re-copy the asset.
+7. Copy `assets/README.md`; fill `{{TITLE}}` and `{{DESCRIPTION}}` from the user.
+8. Copy `assets/DEVELOPER.md` to project root. User owns it — only update later with explicit user permission.
+
+### Back claims with supporting evidence
+
+The scaffold ships a small Quarto extension (`_extensions/evidence/`) that lets a factual claim in the prose carry the evidence backing it: the claim gets a subtle dotted underline, and hovering (or keyboard-focusing) it reveals a verbatim quote plus a body-style citation. It renders with pure CSS — so it also survives onto the `what-changed` diff page, where a reviewer can check each claim's backing without leaving the diff.
+
+When you write a claim you looked up, back it: add a keyed entry to `evidence.yml` with the **verbatim** quote, its `cite` key (add the paper to `references.bib`), an optional native citeproc `locator` (`p. 4`, `sec. 3.2`, `abstract`, …), and optional `provenance:`. Provenance must record only observed facts: use the exact CLI subcommand (for example, `asta papers snippet-search`) as `method`, use the canonical `asta://` URI returned for an indexed Asta document as `url`, and omit unknown fields rather than inferring a skill or producer name. Then mark the claim in the `.qmd`:
+
+```markdown
+NatureBench has [90 tasks]{.ev key="naturebench-count"}.
+```
+
+Only ever put a **verbatim** quotation in `quote:` — there is no paraphrase mode; state your own wording in the prose. Full field reference and design notes are in `_extensions/evidence/README.md`.
 
 ### GitHub Pages deploy
 

@@ -6,6 +6,17 @@ project:
 
 bibliography: references.bib
 
+# Supporting-evidence store for the `.ev` hover snippets (see
+# _extensions/evidence/README.md). Merged into document metadata so a claim can
+# back itself with a verbatim quote by key: `[90 tasks]{.ev key="…"}`.
+metadata-files:
+  - evidence.yml
+
+# Hover-viewable supporting quotes for claims (see _extensions/evidence/). The
+# filter is a no-op when a document has no `.ev` spans, so it is safe to leave on.
+filters:
+  - _extensions/evidence/snippet.lua
+
 website:
   title: "{{TITLE}}"
   sidebar:
@@ -21,3 +32,7 @@ format:
     theme: cosmo
     toc: true
     toc-location: left
+    include-in-header:
+      - _extensions/evidence/evidence.head.html
+    include-after-body:
+      - _extensions/evidence/evidence.body.html

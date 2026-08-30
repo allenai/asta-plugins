@@ -1,0 +1,162 @@
+<style>
+  /* ---- evidence: hover-viewable supporting quotes --------------------------
+     A claim marked `.ev` gets a subtle dotted underline; hovering or
+     keyboard-focusing it reveals a styled popover (`.ev-pop > .ev-card`) that
+     holds the supporting VERBATIM QUOTE and its REFERENCE (with an optional
+     citeproc locator). The popover is a real DOM child of the claim and is
+     shown purely with CSS (`:hover` / `:focus-within`), so it works
+     identically on the full site and on the workspace "what-changed" diff page
+     (which strips <script> but keeps this head <style>, class/role/aria/title
+     attributes, <a href>, and <details>/<summary>). No JavaScript is required
+     for the popover to appear; the optional script only nudges position near
+     the viewport edge. */
+
+  /* Subtle affordance: a light dotted underline that says "there is evidence
+     here to hover" without pulling the eye away from reading. */
+  .ev {
+    position: relative;
+    border-bottom: 1px dotted rgba(0, 0, 0, 0.32);
+    cursor: help;
+    text-decoration: none;
+  }
+  .ev:hover,
+  .ev:focus-visible {
+    border-bottom-color: rgba(13, 110, 253, 0.75);
+    background: rgba(13, 110, 253, 0.06);
+    outline: none;
+  }
+
+  /* The popover wrapper is transparent and positioned just below the claim. Its
+     top padding is a hover "bridge" that overlaps the claim's bottom edge, so
+     moving the pointer from the claim into the box never crosses a dead zone —
+     and because the wrapper is a DESCENDANT of `.ev`, hovering anywhere in it
+     keeps `.ev:hover` true, so the popover stays open with no timers. */
+  .ev-pop {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 1080;
+    padding-top: 0.4rem;
+    display: block;
+    width: max-content;
+    max-width: min(360px, 92vw);
+    opacity: 0;
+    visibility: hidden;
+    /* Hiding is DELAYED by a short grace period; showing is immediate. A claim
+       that wraps onto several lines has tiny leading gaps BETWEEN its line boxes
+       where `:hover` is momentarily false. Without the delay the popover flips
+       off and back on as the pointer brushes across those gaps (a visible
+       flash). With it, the pointer re-enters the next line well inside the grace
+       window, so the hide transition never starts and the popover holds steady.
+       Keep the grace modest so moving to a *different* claim doesn't leave two
+       popovers overlapping for long. */
+    transition: opacity 0.12s ease 0.2s, visibility 0s linear 0.32s;
+  }
+  .ev:hover > .ev-pop,
+  .ev:focus > .ev-pop,
+  .ev:focus-within > .ev-pop {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.12s ease 0s, visibility 0s linear 0s;
+  }
+  /* Near the right viewport edge the optional script adds `.ev-flip`, opening
+     the popover leftward instead. Base behaviour (no script) opens rightward. */
+  .ev.ev-flip > .ev-pop {
+    left: auto;
+    right: 0;
+  }
+
+  /* The visible card. */
+  .ev-card {
+    display: block;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    font-style: normal;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    color: #1a1a1a;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.14);
+    border-radius: 6px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+  }
+
+  /* The verbatim quote: real typographic quotes + italics and a thin accent
+     rule so it reads as exact wording, not a gloss. */
+  .ev-pop-text {
+    display: block;
+  }
+  .ev-pop-text.ev-quote {
+    padding-left: 0.6rem;
+    border-left: 3px solid rgba(13, 110, 253, 0.5);
+    color: #2b2b2b;
+  }
+
+  /* The reference line: the same author–year citation format as the body text,
+     rendered by citeproc (locator and all). */
+  .ev-pop-src {
+    display: block;
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    font-size: 0.78rem;
+    color: #444;
+  }
+  .ev-pop-src a {
+    color: #0d6efd;
+  }
+
+  /* Provenance — HOW the quote was obtained — is retained but NOT shown by
+     default: it sits behind a small "Source details" disclosure so a reader can
+     open it on demand without the popover becoming a wall of metadata. The
+     disclosure is built from PLAIN INLINE SPANS (no <details>/<div>) and revealed
+     with pure CSS on hover/focus. This matters: the popover lives inside the
+     claim's inline <span>, and the what-changed diff wraps inserted claims in
+     <ins>; a block element here would force a </ins> mid-nesting that ejects the
+     disclosure out of the hidden popover. Inline-only markup keeps the whole
+     popover one valid phrasing subtree, so it survives the diff intact. */
+  .ev-src {
+    display: block;
+    margin-top: 0.4rem;
+  }
+  .ev-src-label {
+    display: inline-block;
+    cursor: pointer;
+    font-size: 0.72rem;
+    color: #6a6a6a;
+    user-select: none;
+    outline: none;
+  }
+  /* A small disclosure triangle we control, so it reads the same in every theme. */
+  .ev-src-label::before {
+    content: "▸ ";
+    color: #9a9a9a;
+  }
+  .ev-src:hover .ev-src-label::before,
+  .ev-src:focus-within .ev-src-label::before {
+    content: "▾ ";
+  }
+  .ev-src-label:hover,
+  .ev-src-label:focus-visible {
+    color: #0d6efd;
+  }
+  /* Hidden until the disclosure is hovered or focused. Because the body is a
+     descendant of `.ev-src`, hovering it keeps `.ev-src:hover` true, so it stays
+     open with no gap. */
+  .ev-prov-body {
+    display: none;
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: #6a6a6a;
+  }
+  .ev-src:hover .ev-prov-body,
+  .ev-src:focus-within .ev-prov-body {
+    display: block;
+  }
+  .ev-prov-body a {
+    color: #0d6efd;
+  }
+</style>
