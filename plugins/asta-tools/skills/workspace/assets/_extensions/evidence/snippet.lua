@@ -94,18 +94,33 @@ end
 -- pandoc inline lists / MetaString, so each field is stringified to plain text.
 local function load_store(meta)
   local ev = meta and meta.evidence
-  if ev == nil then return end
+  -- An empty YAML key (`evidence:`) is null rather than a map. Treat absent or
+  -- malformed stores as empty so a freshly scaffolded workspace still renders.
+  if type(ev) ~= 'table' then return end
   for key, entry in pairs(ev) do
-    local rec = {}
-    for _, f in ipairs(FIELDS) do
-      if entry[f] ~= nil then
-        local s = pandoc.utils.stringify(entry[f])
-        if s ~= '' then rec[f] = s end
+    if type(entry) == 'table' then
+      local rec = {}
+      for _, f in ipairs(FIELDS) do
+        if entry[f] ~= nil then
+          local s = pandoc.utils.stringify(entry[f])
+          if s ~= '' then rec[f] = s end
+        end
       end
+      rec.provenance = load_prov(entry.provenance)
+      store[key] = rec
     end
-    rec.provenance = load_prov(entry.provenance)
-    store[key] = rec
   end
+end
+
+-- Convert a plain-text locator into Pandoc inlines without adding Markdown's
+-- citation separator. Citeproc owns the comma/spacing before the locator.
+local function locator_inlines(locator)
+  local inlines = {}
+  for word in locator:gmatch('%S+') do
+    if #inlines > 0 then inlines[#inlines + 1] = pandoc.Space() end
+    inlines[#inlines + 1] = pandoc.Str(word)
+  end
+  return inlines
 end
 
 local function html_escape(s)
@@ -234,7 +249,7 @@ local function transform(el)
   local srcInlines = nil
   if cite then
     local citation = pandoc.Citation(cite, 'NormalCitation')
-    if locator then citation.suffix = { pandoc.Str(', '), pandoc.Str(locator) } end
+    if locator then citation.suffix = locator_inlines(locator) end
     local citeEl = pandoc.Cite({ pandoc.Str('[' .. cite .. ']') }, { citation })
     srcInlines = { pandoc.Str('— '), citeEl }
   elseif source then

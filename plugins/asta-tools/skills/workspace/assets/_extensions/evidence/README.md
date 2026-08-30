@@ -74,7 +74,7 @@ field for one claim; inline wins field by field.
 | `quote`   | yes | a **verbatim** quotation from the source — rendered in “curly quotes” and italic so the reader can see it is exact wording |
 | `cite`    | no | a bibliography key from `references.bib`; rendered as a real citation in the **same author–year format used in the body text**, linked to the reference entry |
 | `source`  | no | free-text citation for a source that has no bib key |
-| `url`     | no | link for a `source` that has no bib key (opens in a new tab) |
+| `url`     | no | link for a `source` that has no bib key |
 | `locator` | no | a **native Pandoc/citeproc locator** appended to the citation — see below |
 
 Everything shown is a **verbatim quote**; there is no "paraphrase" mode. If you

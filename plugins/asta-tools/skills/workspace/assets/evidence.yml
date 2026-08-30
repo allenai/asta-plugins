@@ -7,7 +7,7 @@
 #
 # Keep this file even when empty — `_quarto.yml` merges it via `metadata-files:`.
 # Add entries under `evidence:` (delete the example below once you have your own):
-evidence:
+evidence: {}
   # example-claim:
   #   quote: "a verbatim quotation copied exactly from the source"
   #   cite: somekey            # a key in references.bib -> body-style (Author Year) link
