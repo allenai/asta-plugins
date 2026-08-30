@@ -734,6 +734,28 @@ FOLD_JS = r"""
   var CONTEXT = 1;       // unchanged blocks kept visible beside a change
   var MAX_CONTEXT_CHARS = 500; // fold large neighbors instead of treating them as context
 
+  // Elements whose content model allows only specific children (a table row
+  // takes only cells; a list only list items): inserting a fold disclosure as a
+  // direct child would be invalid and visibly break the table/list. We still
+  // recurse THROUGH them to fold within a changed cell/item, but never fold
+  // their own child runs.
+  var NO_FOLD_CHILDREN = { TABLE: 1, THEAD: 1, TBODY: 1, TFOOT: 1, TR: 1,
+    UL: 1, OL: 1, DL: 1, MENU: 1, SELECT: 1, OPTGROUP: 1, COLGROUP: 1, PICTURE: 1 };
+
+  // Out-of-flow or hidden subtrees — an absolutely-positioned hover popover /
+  // tooltip, a display:none or visibility:hidden aside — are not part of the
+  // readable diff flow. Folding their "unchanged" inner blocks is pointless and
+  // corrupting: e.g. an inline hover-popover attached to a claim would have its
+  // quote collapsed behind a fold that only appears once the reader hovers. Skip
+  // such subtrees entirely (don't recurse into them, never fold them).
+  function inFlow(el) {
+    var view = el.ownerDocument.defaultView;
+    var s = view && view.getComputedStyle ? view.getComputedStyle(el) : null;
+    if (!s) return true;
+    if (s.display === "none" || s.visibility === "hidden") return false;
+    if (s.position === "absolute" || s.position === "fixed") return false;
+    return true;
+  }
   function hasChange(el) {
     return el.tagName === "INS" || el.tagName === "DEL" ||
            !!el.querySelector("ins, del");
@@ -776,6 +798,7 @@ FOLD_JS = r"""
     var kids = Array.prototype.slice.call(container.children);
     if (!kids.length) return;
     var changed = kids.map(hasChange);
+    var flow = kids.map(inFlow);
     var keep = kids.map(function () { return false; });
     kids.forEach(function (el, k) {
       if (!changed[k]) return;
@@ -786,10 +809,22 @@ FOLD_JS = r"""
         keep[j] = changed[j] || kids[j].textContent.length <= MAX_CONTEXT_CHARS;
       }
     });
-    // Recurse into changed containers before moving sibling runs.
+    // Out-of-flow/hidden children are never folded and act as run boundaries.
+    // (After the context pass so it can't be undone by a neighbor's window.)
+    kids.forEach(function (el, k) { if (!flow[k]) keep[k] = true; });
+    // Recurse into changed, in-flow containers before moving sibling runs — but
+    // never into an <ins>/<del> wrapper. Those wrap a run of inserted/deleted
+    // inline content, inside which nothing is "unchanged"; recursing there makes
+    // hasChange() see every child as unchanged (no ins/del *descendant*) and fold
+    // real inserted text — e.g. collapsing a claim's hover-popover quote behind a
+    // bogus "N unchanged blocks" toggle.
     kids.forEach(function (el, k) {
-      if (changed[k] && el.children.length) fold(el);
+      if (changed[k] && flow[k] && el.children.length &&
+          el.tagName !== "INS" && el.tagName !== "DEL") fold(el);
     });
+    // Only collapse sibling runs where a fold-wrapper is a valid child — never
+    // between a table's rows/cells or a list's items.
+    if (NO_FOLD_CHILDREN[container.tagName]) return;
     var start = 0;
     while (start < kids.length) {
       if (keep[start]) { start++; continue; }
