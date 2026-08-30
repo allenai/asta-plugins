@@ -12,14 +12,32 @@ ASTA_PLUGINS_ARCHIVE_URL ?= https://github.com/allenai/asta-plugins/archive/$(AS
 workspace-assets:
 	@set -eu; \
 	tmp=$$(mktemp -d); \
-	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
+	lock=_extensions/.evidence-install.lock; \
+	backup="$$tmp/previous-evidence"; \
+	lock_held=0; \
+	cleanup() { \
+		status=$$?; \
+		trap - 0 1 2 15; \
+		if [ "$$status" -ne 0 ] && { [ -e "$$backup" ] || [ -L "$$backup" ]; }; then \
+			rm -rf _extensions/evidence; \
+			mv "$$backup" _extensions/evidence || status=1; \
+		fi; \
+		[ "$$lock_held" -eq 0 ] || rmdir "$$lock" 2>/dev/null || true; \
+		rm -rf "$$tmp"; \
+		exit "$$status"; \
+	}; \
+	trap cleanup 0 1 2 15; \
 	curl -fsSL "$(ASTA_PLUGINS_ARCHIVE_URL)" -o "$$tmp/asta-plugins.tar.gz"; \
 	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$(ASTA_PLUGINS_REF)" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
 	mkdir -p _extensions; \
-	rm -rf _extensions/evidence; \
+	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
+	lock_held=1; \
+	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
+		mv _extensions/evidence "$$backup"; \
+	fi; \
 	mv "$$tmp/evidence" _extensions/evidence
 
 preview: workspace-assets
