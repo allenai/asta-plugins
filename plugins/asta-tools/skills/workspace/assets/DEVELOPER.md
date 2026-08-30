@@ -4,7 +4,7 @@ Edit, preview, and save this research project.
 
 ## Preview locally
 
-With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. The render targets fetch the workspace evidence extension from `asta-plugins@main`, matching the default docs workflow; set `ASTA_PLUGINS_REF` only if the project deliberately pins both.
+With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. The render targets fetch the workspace evidence extension from the latest `asta-plugins` version tag by default; set `ASTA_PLUGINS_REF` to pin a specific release (e.g. `v0.103.0`) or to track `main`.
 
 ## Devcontainer (`.devcontainer/devcontainer.json`)
 
@@ -37,7 +37,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make render` | build to `_site/` |
 | `make check` | run the same quality gates CI runs (render + warning validation) |
 | `make clean` | wipe build artifacts |
-| `make workspace-assets` | refresh the evidence extension from `asta-plugins` (`main` by default) |
+| `make workspace-assets` | refresh the evidence extension from `asta-plugins` (latest version tag by default) |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
 

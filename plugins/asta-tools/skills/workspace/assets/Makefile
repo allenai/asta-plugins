@@ -1,16 +1,34 @@
 .PHONY: preview render clean dev deployed-url check workspace-assets
 
-# Follow the workspace assets on asta-plugins main by default, matching the
-# reusable docs workflow below. Set ASTA_PLUGINS_REF to pin both when a project
-# prefers explicit upgrades.
-ASTA_PLUGINS_REF ?= main
-ASTA_PLUGINS_ARCHIVE_URL ?= https://github.com/allenai/asta-plugins/archive/$(ASTA_PLUGINS_REF).tar.gz
+# Which asta-plugins ref to fetch the workspace evidence extension from.
+# The default (empty ASTA_PLUGINS_REF) resolves to the latest published version
+# tag, so projects pick up new releases automatically — the same way other
+# asta-plugins consumers upgrade, rather than tracking the mutable main branch.
+# Pin a specific release with ASTA_PLUGINS_REF=v0.103.0, or track the in-flight
+# branch with ASTA_PLUGINS_REF=main.
+ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
+ASTA_PLUGINS_REF ?=
+# Derived from the repo + resolved ref unless set explicitly (tests point it at
+# a local archive). When set, it is used verbatim and ref resolution is skipped.
+ASTA_PLUGINS_ARCHIVE_URL ?=
 
 # The evidence extension is maintained with the workspace skill rather than
 # vendored into every report. Replace it only after a complete download and
 # extraction so a network failure cannot leave a partial extension behind.
 workspace-assets:
 	@set -eu; \
+	ref="$(ASTA_PLUGINS_REF)"; \
+	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
+	if [ -z "$$url" ]; then \
+		if [ -z "$$ref" ]; then \
+			ref=$$(git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' \
+				| awk -F/ '{print $$NF}' \
+				| grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' \
+				| sort -V | tail -n 1); \
+			[ -n "$$ref" ] || { echo "could not resolve the latest asta-plugins version tag from $(ASTA_PLUGINS_REPO)" >&2; exit 1; }; \
+		fi; \
+		url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
+	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
 	backup="$$tmp/previous-evidence"; \
@@ -28,10 +46,10 @@ workspace-assets:
 	}; \
 	trap cleanup 0; \
 	trap 'exit 1' 1 2 15; \
-	curl -fsSL "$(ASTA_PLUGINS_ARCHIVE_URL)" -o "$$tmp/asta-plugins.tar.gz"; \
+	curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz"; \
 	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
-	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$(ASTA_PLUGINS_REF)" >&2; exit 1; }; \
+	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
@@ -39,7 +57,8 @@ workspace-assets:
 	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
 		mv _extensions/evidence "$$backup"; \
 	fi; \
-	mv "$$tmp/evidence" _extensions/evidence
+	mv "$$tmp/evidence" _extensions/evidence; \
+	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
 
 preview: workspace-assets
 	quarto preview --no-browser

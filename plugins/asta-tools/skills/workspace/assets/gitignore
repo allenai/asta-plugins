@@ -4,6 +4,6 @@ _site/
 .quarto/
 quarto-render.*
 
-# Fetched from the workspace skill before each render (tracks asta-plugins main
-# by default; see the workspace-assets target in Makefile).
+# Fetched from the workspace skill before each render (tracks the latest
+# asta-plugins version tag by default; see the workspace-assets target in Makefile).
 _extensions/evidence/
