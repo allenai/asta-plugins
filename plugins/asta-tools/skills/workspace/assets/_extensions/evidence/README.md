@@ -116,9 +116,8 @@ precise page or section (e.g. a full-text body snippet with no returned section)
 
 ## Provenance — retained, but not shown by default
 
-Backing a claim with a quote answers *what* supports it; **provenance** answers
-*how that support was obtained* — was the quote returned by an Asta snippet
-search, or read straight out of the paper? A store entry can carry a nested
+Backing a claim with a quote answers *what* supports it; **provenance** records
+*how that support was obtained*, when that is known. A store entry can carry a nested
 `provenance:` map. It is **recorded in `evidence.yml` (and so is diff-reviewable)
 but not shown by default** in the popover — the primary view is just the quote
 and its reference. Provenance sits behind a small **“Source details”** disclosure
@@ -128,13 +127,12 @@ of metadata.
 
 ```yaml
 evidence:
-  # Read directly from the paper's abstract.
+  # The retrieval command was not recorded, so method is omitted.
   naturebench-count:
     quote: "a cross-discipline benchmark of 90 tasks distilled from …"
     cite: naturebench2026
     locator: abstract
     provenance:
-      method: paper
       corpus_id: 289622360
       retrieved: 2026-08-29
 
@@ -147,36 +145,25 @@ evidence:
     quote: "Across 90 tasks, NatureBench spans six scientific domains …"
     cite: naturebench2026
     provenance:
-      method: asta-snippet-search
+      method: asta papers snippet-search
       query: "NatureBench NatureGym containerized environment scientific discovery agent"
       corpus_id: 289622360
       retrieved: 2026-08-29
 ```
 
-The schema is deliberately **small and open**: `method` is free text and every
-field is optional, rendered only when present. An unrecognised `method` renders
-its own string as the label. That is enough to grow to new kinds of derived
-evidence *without committing now to fields we don't yet need*: a claim backed by
-a **theorizer** run points `url` at the report's citable URI (an `asta://…`
-document URI from `asta documents`, or the A2A task-artifact URL that
-`asta artifacts` exports) and sets `method: theorizer` — no schema or filter
-change:
-
-```yaml
-  some-derived-claim:
-    quote: "…exact wording from the produced report…"
-    provenance:
-      method: theorizer
-      url: asta://reports/run-8f2c   # citable URI — no need to commit the artifact
-      retrieved: 2026-08-29
-```
+The schema is deliberately **small and open**, but its values should be narrow:
+record the exact producer invocation (for example, `asta papers snippet-search`),
+not a skill name or broad category. If a tool output is indexed by Asta Documents,
+store the canonical `asta://` URI it returns in `url`; do not invent another
+artifact name or duplicate metadata encoded by that URI. Every field is optional:
+when the retrieval route was not recorded, omit `method` rather than infer it.
 
 | provenance field | meaning |
 |---|---|
-| `method` | how it was obtained — `paper`, `asta-snippet-search`, `theorizer`, … (any string; known values get a friendlier label) |
+| `method` | exact producer invocation, such as `asta papers snippet-search`; omit when unknown |
 | `query` | the search query that surfaced the quote (search methods) |
 | `corpus_id` | S2 corpusId of the source paper (rendered as an S2 link) |
-| `url` | canonical `http:`, `https:`, or `asta:` link to the source or a produced artifact/report URI |
+| `url` | canonical `http:`, `https:`, or `asta:` source/document URI |
 | `retrieved` | ISO date the evidence was obtained |
 | `note` | free text |
 

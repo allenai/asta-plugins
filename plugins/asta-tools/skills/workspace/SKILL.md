@@ -58,7 +58,7 @@ Before writing any file in the steps below, check whether the target path alread
 
 The scaffold ships a small Quarto extension (`_extensions/evidence/`) that lets a factual claim in the prose carry the evidence backing it: the claim gets a subtle dotted underline, and hovering (or keyboard-focusing) it reveals a verbatim quote plus a body-style citation. It renders with pure CSS — so it also survives onto the `what-changed` diff page, where a reviewer can check each claim's backing without leaving the diff.
 
-When you write a claim you looked up — e.g. a fact you pulled from `asta papers snippet-search`, `find-literature`, or read from a paper — back it: add a keyed entry to `evidence.yml` with the **verbatim** quote, its `cite` key (add the paper to `references.bib`), an optional native citeproc `locator` (`p. 4`, `sec. 3.2`, `abstract`, …), and optional `provenance:` (how you obtained it — `method`, `query`, `corpus_id`, …). Then mark the claim in the `.qmd`:
+When you write a claim you looked up, back it: add a keyed entry to `evidence.yml` with the **verbatim** quote, its `cite` key (add the paper to `references.bib`), an optional native citeproc `locator` (`p. 4`, `sec. 3.2`, `abstract`, …), and optional `provenance:`. Provenance must record only observed facts: use the exact CLI subcommand (for example, `asta papers snippet-search`) as `method`, use the canonical `asta://` URI returned for an indexed Asta document as `url`, and omit unknown fields rather than inferring a skill or producer name. Then mark the claim in the `.qmd`:
 
 ```markdown
 NatureBench has [90 tasks]{.ev key="naturebench-count"}.

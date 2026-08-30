@@ -13,7 +13,7 @@ evidence:
   #   cite: somekey            # a key in references.bib -> body-style (Author Year) link
   #   locator: "p. 4"          # optional native citeproc locator (p./pp./sec./abstract/…)
   #   provenance:              # optional; retained, shown behind a "Source details" disclosure
-  #     method: asta-snippet-search
+  #     method: asta papers snippet-search  # exact producer invocation; omit if unknown
   #     query: "the search that surfaced the quote"
   #     corpus_id: 289622360
   #     retrieved: 2026-08-30

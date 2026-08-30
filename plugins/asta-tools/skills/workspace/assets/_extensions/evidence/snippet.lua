@@ -41,18 +41,16 @@
              style; we do NOT re-invent a locator format. See README.
   Inline attributes take precedence over the stored entry field by field.
 
-  PROVENANCE — how the quote was obtained (an Asta snippet search vs. read from
-  the paper vs. a produced artifact) is RETAINED per entry under `provenance:`
+  PROVENANCE — how the quote was obtained is RETAINED per entry under `provenance:`
   and reviewable in the evidence.yml diff, but is NOT shown by default in the
   popover: the primary view is just the quote and its reference. Provenance sits
   behind a small, collapsed “Source details” disclosure so it is available on
   demand without overwhelming the read. The schema is deliberately small and
-  open — `method` is a free string and the few optional fields render only when
-  present, so a new derived-evidence kind (e.g. a Theorizer report cited by its
-  asta:// URI) needs no code change:
+  open. Record only facts the producer actually returned: use the exact CLI
+  subcommand for `method`, and the canonical URI returned by an indexed Asta
+  document for `url`. Omit fields that are unknown:
     provenance:
-      method     how it was obtained, free text — e.g. "asta-snippet-search",
-                 "paper", "theorizer" (a known value gets a friendlier label)
+      method     exact producer invocation — e.g. "asta papers snippet-search"
       query      the search query that surfaced the quote (for search methods)
       corpus_id  S2 corpusId of the source paper (rendered as an S2 link)
       url        canonical link to the source or a produced artifact/report URI
@@ -110,19 +108,6 @@ local function load_store(meta)
   end
 end
 
--- Friendly labels for the known provenance methods. An unknown method renders
--- its own string verbatim, so a new derivation kind needs no code change here.
-local METHOD_LABELS = {
-  ['paper'] = 'read from paper',
-  ['asta-snippet-search'] = 'Asta snippet search',
-  ['snippet-search'] = 'snippet search',
-  ['semantic-scholar'] = 'Semantic Scholar snippet search',
-  ['find-literature'] = 'Asta Paper Finder',
-  ['theorizer'] = 'Theorizer report',
-  ['literature-report'] = 'literature report',
-  ['manual'] = 'author-entered',
-}
-
 local function html_escape(s)
   return (s:gsub('[&<>"]', {
     ['&'] = '&amp;', ['<'] = '&lt;', ['>'] = '&gt;', ['"'] = '&quot;',
@@ -158,7 +143,7 @@ end
 -- there is no provenance to show.
 local function build_prov_details(prov)
   if prov == nil then return nil end
-  local method = prov.method and (METHOD_LABELS[prov.method] or prov.method) or nil
+  local method = prov.method
   local summary = method and ('Source details — ' .. method) or 'Source details'
 
   local rows = {}
