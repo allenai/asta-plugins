@@ -50,6 +50,25 @@ jobs:
       - name: Run tests
         run: make test
 
+  dom-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: tests/dom/package-lock.json
+
+      - name: Install DOM test dependencies
+        working-directory: tests/dom
+        run: npm ci
+
+      - name: Exercise what-changed folding in a DOM
+        working-directory: tests/dom
+        run: npm test
+
   docker:
     runs-on: ubuntu-latest
     steps:
