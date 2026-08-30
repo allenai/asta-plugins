@@ -15,6 +15,16 @@ Based on `ghcr.io/allenai/asta:latest` — Quarto and [Asta](https://asta.allen.
 
 Asta auth: set `ASTA_TOKEN` env var locally before launching, or `asta auth login` in the container. For Codespaces: add `ASTA_TOKEN` as a secret.
 
+## Back a claim with supporting evidence
+
+A factual claim can carry the source quote that backs it. Add a keyed entry to
+`evidence.yml` (verbatim `quote`, a `cite` key from `references.bib`, an optional
+`locator` like `p. 4`/`sec. 3.2`/`abstract`), then mark the claim in the `.qmd`:
+`[90 tasks]{.ev key="naturebench-count"}`. The claim gets a subtle dotted
+underline; hovering it shows the quote and a body-style citation, and the same
+popover appears on the `what-changed` diff so a reviewer can check the backing.
+Full reference: [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
+
 ## Edit without preview
 
 Edit `.qmd` files on GitHub directly or in any editor.

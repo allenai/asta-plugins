@@ -1,0 +1,37 @@
+<script>
+  /* evidence — optional progressive enhancement only.
+
+     The popover itself is shown entirely with CSS (:hover / :focus-within in
+     evidence.head.html), so evidence works with no JavaScript at all — including
+     on the workspace "what-changed" diff page, where <script> is stripped. This
+     script's ONLY job is to flip the popover leftward when it would otherwise
+     spill past the right edge of the viewport. It is theme- and
+     framework-independent so the same bundle drops into any Quarto project. */
+  (function () {
+    function place(ev) {
+      var pop = ev.querySelector(".ev-pop");
+      if (!pop) return;
+      ev.classList.remove("ev-flip");
+      // Measure with the popover momentarily visible but not painted.
+      var prev = pop.style.visibility;
+      pop.style.visibility = "hidden";
+      pop.style.opacity = "0";
+      var card = pop.querySelector(".ev-card") || pop;
+      var right = card.getBoundingClientRect().right;
+      pop.style.visibility = prev;
+      pop.style.opacity = "";
+      var vw = document.documentElement.clientWidth;
+      if (right > vw - 8) ev.classList.add("ev-flip");
+    }
+
+    function wire() {
+      document.querySelectorAll(".ev").forEach(function (ev) {
+        ev.addEventListener("mouseenter", function () { place(ev); });
+        ev.addEventListener("focusin", function () { place(ev); });
+      });
+    }
+
+    if (document.readyState !== "loading") wire();
+    else document.addEventListener("DOMContentLoaded", wire);
+  })();
+</script>
