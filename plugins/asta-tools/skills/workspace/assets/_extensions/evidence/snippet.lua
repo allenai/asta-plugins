@@ -65,8 +65,8 @@
   page, and a pure-CSS `:hover`/`:focus-within` reveal shows it (no JavaScript
   required). Because the popover is a DOM descendant of the claim, hovering it
   keeps the claim's `:hover` alive, so the tooltip never drops out from a gap
-  between the claim and the box. For non-HTML output the class and attributes
-  are simply ignored, so the claim text still renders normally.
+  between the claim and the box. For non-HTML output the filter leaves the
+  document unchanged.
 ]]
 
 -- The keyed evidence store, populated from document metadata in Pandoc(doc)
@@ -129,6 +129,19 @@ local function html_escape(s)
   }))
 end
 
+-- Evidence URLs are author-controlled data that ultimately become hrefs. Keep
+-- the supported set explicit so a malformed store cannot introduce an active
+-- scheme such as javascript:. `asta:` is the one custom scheme this extension
+-- intentionally supports for citable Asta document URIs.
+local function safe_url(url)
+  if url == nil then return nil end
+  local scheme = url:match('^([%a][%w+%.%-]*):')
+  if scheme == nil then return nil end
+  scheme = scheme:lower()
+  if scheme == 'https' or scheme == 'http' or scheme == 'asta' then return url end
+  return nil
+end
+
 -- Build the collapsed "Source details" disclosure as one raw-HTML inline.
 --
 -- It MUST be phrasing (inline) content only — plain <span>s, no <details>/<div>
@@ -157,7 +170,10 @@ local function build_prov_details(prov)
       .. html_escape(prov.corpus_id) .. '">S2 #' .. html_escape(prov.corpus_id) .. '</a>'
   end
   if prov.url then
-    rows[#rows + 1] = '<a href="' .. html_escape(prov.url) .. '">source ↗</a>'
+    local href = safe_url(prov.url)
+    if href then
+      rows[#rows + 1] = '<a href="' .. html_escape(href) .. '">source ↗</a>'
+    end
   end
   if prov.retrieved then rows[#rows + 1] = 'retrieved ' .. html_escape(prov.retrieved) end
   if prov.note then rows[#rows + 1] = html_escape(prov.note) end
@@ -210,6 +226,7 @@ local function transform(el)
   local cite = resolve(el, entry, 'cite')
   local source = resolve(el, entry, 'source')
   local url = resolve(el, entry, 'url')
+  local href = safe_url(url)
   local locator = resolve(el, entry, 'locator')
   local prov = entry and entry.provenance or nil
 
@@ -237,11 +254,11 @@ local function transform(el)
     srcInlines = { pandoc.Str('— '), citeEl }
   elseif source then
     local label = pandoc.Str(source)
-    local srcNode = url and pandoc.Link({ label }, url) or label
+    local srcNode = href and pandoc.Link({ label }, href) or label
     srcInlines = { pandoc.Str('— '), srcNode }
     if locator then srcInlines[#srcInlines + 1] = pandoc.Str(', ' .. locator) end
-  elseif url then
-    srcInlines = { pandoc.Str('— '), pandoc.Link({ pandoc.Str(url) }, url) }
+  elseif href then
+    srcInlines = { pandoc.Str('— '), pandoc.Link({ pandoc.Str(href) }, href) }
   end
 
   local cardChildren = { textSpan }
@@ -267,7 +284,13 @@ local function transform(el)
   el.attributes['tabindex'] = '0'
   el.attributes['role'] = 'note'
   local aria = '“' .. quote .. '”'
-  if source then aria = aria .. ' — ' .. source end
+  if cite then
+    aria = aria .. ' — citation ' .. cite
+  elseif source then
+    aria = aria .. ' — ' .. source
+  elseif href then
+    aria = aria .. ' — source ' .. href
+  end
   if locator then aria = aria .. ' (' .. locator .. ')' end
   el.attributes['aria-description'] = aria
 
@@ -278,6 +301,7 @@ end
 -- after element functions, so we drive the whole transform from Pandoc(doc)
 -- where doc.meta is already available.
 function Pandoc(doc)
+  if not FORMAT:match('html') then return doc end
   load_store(doc.meta)
   return doc:walk({ Span = transform })
 end

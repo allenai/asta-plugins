@@ -176,7 +176,7 @@ change:
 | `method` | how it was obtained — `paper`, `asta-snippet-search`, `theorizer`, … (any string; known values get a friendlier label) |
 | `query` | the search query that surfaced the quote (search methods) |
 | `corpus_id` | S2 corpusId of the source paper (rendered as an S2 link) |
-| `url` | canonical link to the source or a produced artifact/report URI |
+| `url` | canonical `http:`, `https:`, or `asta:` link to the source or a produced artifact/report URI |
 | `retrieved` | ISO date the evidence was obtained |
 | `note` | free text |
 
@@ -285,4 +285,6 @@ of the file's location.
   and the diff page, so behaviour doesn't diverge; JS is optional edge-flip only.
 - **No framework, accessible.** A hand-rolled popover portable to any theme;
   claims are `tabindex=0` / `role="note"`, open on focus as well as hover, and
-  carry the evidence in `aria-description` for screen readers.
+  carry the quote and citation key in `aria-description` for screen readers.
+  The full report supports keyboard focus; the current `what-changed` sanitizer
+  strips `tabindex`, so its embedded diff view is hover-only.
