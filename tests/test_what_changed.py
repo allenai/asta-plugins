@@ -43,6 +43,35 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     )
 
 
+def test_evidence_claim_underline_is_distinguishable_on_the_diff(tmp_path):
+    """On the diff every insertion is underlined green (the colorblind cue), which
+    swamps an evidence claim's faint 1px dotted underline. The generator must add
+    a distinct accent-blue evidence underline so a reviewer can still tell which
+    claims are evidence-backed, and the `.ev` claim itself must survive intact."""
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(
+        "<html><head></head><body><main><p>Baseline.</p></main></body></html>"
+    )
+    (new / "index.html").write_text(
+        "<html><head></head><body><main>"
+        '<p>NatureBench has <span class="ev" title="evidence">90 tasks</span>.</p>'
+        "</main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #2")
+
+    # The distinct evidence underline is emitted, using the accent (not the green
+    # insertion) color, and the insertion cue itself is preserved.
+    assert ".wc-scope .ev { border-bottom: 2px dotted var(--wc-changed); }" in result
+    assert "text-decoration: underline" in result
+    # The claim survives the word-diff with its class intact.
+    assert 'class="ev"' in result
+    assert "90 tasks" in result
+
+
 def test_nested_template_stylesheet_is_rebased_to_preview_root(tmp_path):
     new = tmp_path / "new"
     new.mkdir()

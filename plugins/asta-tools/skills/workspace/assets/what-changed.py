@@ -698,6 +698,15 @@ DIFF_STYLE = """
 .wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
     text-decoration: line-through; text-decoration-color: var(--wc-del-line);
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+/* Evidence claims (`.ev`) carry a light 1px dotted underline on the live site.
+   But here every insertion is already underlined green (the colorblind cue
+   above), which swamps that faint affordance — so a reviewer can't tell which
+   claims are evidence-backed. Strengthen the evidence underline ON THE DIFF into
+   a distinct accent-blue 2px dotted rule. It's a `border-bottom` (drawn at the
+   element box's bottom edge, below the green baseline insertion underline), so
+   the two read as two separate lines — green solid "inserted" over blue dotted
+   "has evidence" — instead of merging. Live-site styling is untouched. */
+.wc-scope .ev { border-bottom: 2px dotted var(--wc-changed); }
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }
