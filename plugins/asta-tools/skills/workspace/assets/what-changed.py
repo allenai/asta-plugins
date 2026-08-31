@@ -640,10 +640,16 @@ def list_pages(root, out_path=None):
 # <ins>/<del> runs — the page content keeps the site's real typography, colors,
 # code highlighting, and dark/light palette.
 #
-# Highlight colors are the GitHub-diff palette: high enough contrast to read the
-# text on top and to distinguish added from removed at a glance, and never
-# color-only (added is underlined, removed is struck through) so the diff is
-# legible to color-blind reviewers too.
+# Highlight colors are the GitHub-diff palette: a green background for added
+# text and a red background + strikethrough for removed text — the same channels
+# GitHub uses for word-level diffs. We deliberately do NOT underline insertions:
+# in an additive document (a growing survey) almost every run is an insertion, so
+# underlining them all paints the page with lines and drowns out any other
+# underline cue — including an evidence claim's own dotted underline. Removed
+# text keeps its strikethrough (a sparse, meaningful cue that also gives
+# color-blind reviewers a non-color signal on the del side). Insertions use a
+# slim leading edge instead of an underline, so they remain identifiable without
+# recreating the field of horizontal lines that obscured evidence claims.
 DIFF_STYLE = """
 .wc-scope { --wc-ins-bg: #d7f5dd; --wc-ins-line: #1a7f37; --wc-ins-fg: #032b13;
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
@@ -693,11 +699,31 @@ DIFF_STYLE = """
 .wc-scope .tag.removed { background: var(--wc-removed); color: var(--wc-tag-fg); }
 .wc-scope .diff-body { overflow-wrap: break-word; }
 .wc-scope ins { background: var(--wc-ins-bg); color: var(--wc-ins-fg);
-    text-decoration: underline; text-decoration-color: var(--wc-ins-line);
-    text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+    text-decoration: none; border-inline-start: 2px solid var(--wc-ins-line);
+    border-radius: 2px; padding: 0 .1em; }
 .wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
     text-decoration: line-through; text-decoration-color: var(--wc-del-line);
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+/* Links: no resting underline on the diff (GitHub's diff view does the same).
+   The reused theme carries Bootstrap's default `a { text-decoration: underline }`,
+   which otherwise underlines every citation, crossref (e.g. "Table 1") and bare
+   URL in the change — and inside an inserted run those links pick up the green
+   ins colour, reading as green underlines scattered across the page. A modest
+   weight change keeps a persistent non-colour cue without adding another field
+   of lines; the underline returns on hover or keyboard focus. */
+.wc-scope a { text-decoration: none; font-weight: 600; }
+.wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }
+/* Evidence claims (`.ev`) need a visible cue on the diff. The extension's
+   default 1px black border at 32% opacity is intentionally subtle on a normal
+   report, but becomes effectively invisible against the green insertion tint.
+   Use an information-blue 2px dotted rule here: it remains an underline rather
+   than adding another background, while being perceptible in the change-review
+   context. */
+.wc-scope .ev { border-bottom: 2px dotted #2a88ef; }
+/* Insertions are background-only: the `ins` rule above sets
+   `text-decoration: none` to suppress the browser UA-default `ins {
+   text-decoration: underline }` (otherwise every added run keeps a green
+   underline even with no explicit underline rule in this stylesheet). */
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }
