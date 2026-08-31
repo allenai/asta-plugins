@@ -647,8 +647,9 @@ def list_pages(root, out_path=None):
 # underlining them all paints the page with lines and drowns out any other
 # underline cue — including an evidence claim's own dotted underline. Removed
 # text keeps its strikethrough (a sparse, meaningful cue that also gives
-# color-blind reviewers a non-color signal on the del side); insertions rely on
-# the background tint's lightness contrast, which reads without hue perception.
+# color-blind reviewers a non-color signal on the del side). Insertions use a
+# slim leading edge instead of an underline, so they remain identifiable without
+# recreating the field of horizontal lines that obscured evidence claims.
 DIFF_STYLE = """
 .wc-scope { --wc-ins-bg: #d7f5dd; --wc-ins-line: #1a7f37; --wc-ins-fg: #032b13;
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
@@ -698,7 +699,8 @@ DIFF_STYLE = """
 .wc-scope .tag.removed { background: var(--wc-removed); color: var(--wc-tag-fg); }
 .wc-scope .diff-body { overflow-wrap: break-word; }
 .wc-scope ins { background: var(--wc-ins-bg); color: var(--wc-ins-fg);
-    text-decoration: none; border-radius: 2px; padding: 0 .1em; }
+    text-decoration: none; border-inline-start: 2px solid var(--wc-ins-line);
+    border-radius: 2px; padding: 0 .1em; }
 .wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
     text-decoration: line-through; text-decoration-color: var(--wc-del-line);
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
@@ -706,9 +708,10 @@ DIFF_STYLE = """
    The reused theme carries Bootstrap's default `a { text-decoration: underline }`,
    which otherwise underlines every citation, crossref (e.g. "Table 1") and bare
    URL in the change — and inside an inserted run those links pick up the green
-   ins colour, reading as green underlines scattered across the page. Colour
-   alone keeps links identifiable; the underline returns on hover. */
-.wc-scope a { text-decoration: none; }
+   ins colour, reading as green underlines scattered across the page. A modest
+   weight change keeps a persistent non-colour cue without adding another field
+   of lines; the underline returns on hover or keyboard focus. */
+.wc-scope a { text-decoration: none; font-weight: 600; }
 .wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }
 /* Evidence claims (`.ev`) need a visible cue on the diff. The extension's
    default 1px black border at 32% opacity is intentionally subtle on a normal

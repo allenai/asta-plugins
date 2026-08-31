@@ -17,7 +17,10 @@ def _underline_contexts(css):
 
 def _only_underline_on_hover(css):
     """No resting underline anywhere — underline is only ever a :hover/:focus cue."""
-    return all(":hover" in ctx or ":focus" in ctx for ctx in _underline_contexts(css))
+    return all(
+        all(":hover" in selector or ":focus" in selector for selector in ctx.split(","))
+        for ctx in _underline_contexts(css)
+    )
 
 
 SCRIPT = (
@@ -53,7 +56,10 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     # Insertions are background-only (no underline); deletions keep strikethrough.
     # The only `text-decoration: underline` allowed is the :hover/:focus link
     # affordance — never a resting underline on insertions or links.
-    assert _only_underline_on_hover(result), _underline_contexts(result)
+    underline_contexts = _underline_contexts(result)
+    assert underline_contexts
+    assert _only_underline_on_hover(result), underline_contexts
+    assert "border-inline-start: 2px solid var(--wc-ins-line)" in result
     assert "text-decoration: line-through" in result
     assert "--wc-tag-fg: #fff" in result
     assert ".wc-scope nav.toc .tag" in result
@@ -93,7 +99,9 @@ def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
     # evidence cue. The diff strengthens only the evidence claim's dotted rule.
     assert "--wc-ev-bg" not in result
     assert "box-shadow: inset 0 -2px 0" not in result
-    assert _only_underline_on_hover(result), _underline_contexts(result)
+    underline_contexts = _underline_contexts(result)
+    assert underline_contexts
+    assert _only_underline_on_hover(result), underline_contexts
     assert ".wc-scope .ev { border-bottom: 2px dotted #2a88ef; }" in result
     # The extension's own `.ev` styling still survives via the reused head CSS.
     assert ".ev { border-bottom: 1px dotted rgba(0, 0, 0, 0.32); }" in result
@@ -126,11 +134,13 @@ def test_links_are_not_underlined_at_rest_on_the_diff(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR #3")
 
     # Resting link underline is suppressed, restored only on hover/focus.
-    assert ".wc-scope a { text-decoration: none; }" in result
+    assert ".wc-scope a { text-decoration: none; font-weight: 600; }" in result
     assert (
         ".wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }" in result
     )
-    assert _only_underline_on_hover(result), _underline_contexts(result)
+    underline_contexts = _underline_contexts(result)
+    assert underline_contexts
+    assert _only_underline_on_hover(result), underline_contexts
     # The links themselves still render (identifiable by colour), just not underlined.
     assert 'href="#tbl-x"' in result
 
