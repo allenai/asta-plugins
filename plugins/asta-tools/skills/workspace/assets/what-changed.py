@@ -648,19 +648,22 @@ DIFF_STYLE = """
 .wc-scope { --wc-ins-bg: #d7f5dd; --wc-ins-line: #1a7f37; --wc-ins-fg: #032b13;
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
             --wc-muted: #57606a; --wc-changed: #0969da; --wc-new: #1a7f37;
-            --wc-removed: #cf222e; --wc-tag-fg: #fff; --wc-border: #d0d7de; }
+            --wc-removed: #cf222e; --wc-tag-fg: #fff; --wc-border: #d0d7de;
+            --wc-ev-bg: #fde6a8; --wc-ev-line: #9a6700; }
 /* Follow Quarto's rendered theme mode when a theme is reused. The media-query
    fallback is only for standalone output, where no Quarto mode is available. */
 .wc-scope.wc-dark { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
                     --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
                     --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
-                    --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
+                    --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d;
+                    --wc-ev-bg: #5a4300; --wc-ev-line: #e3b341; }
 @media (prefers-color-scheme: dark) {
   .wc-scope.wc-standalone {
               --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
               --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
               --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
-              --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
+              --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d;
+              --wc-ev-bg: #5a4300; --wc-ev-line: #e3b341; }
 }
 .wc-scope header.diff-head { padding: 1.25rem 0 0.5rem; margin-bottom: 1rem;
     border-bottom: 1px solid var(--wc-border); }
@@ -700,13 +703,19 @@ DIFF_STYLE = """
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
 /* Evidence claims (`.ev`) carry a light 1px dotted underline on the live site.
    But here every insertion is already underlined green (the colorblind cue
-   above), which swamps that faint affordance — so a reviewer can't tell which
-   claims are evidence-backed. Strengthen the evidence underline ON THE DIFF into
-   a distinct accent-blue 2px dotted rule. It's a `border-bottom` (drawn at the
-   element box's bottom edge, below the green baseline insertion underline), so
-   the two read as two separate lines — green solid "inserted" over blue dotted
-   "has evidence" — instead of merging. Live-site styling is untouched. */
-.wc-scope .ev { border-bottom: 2px dotted var(--wc-changed); }
+   above), so a thin evidence underline — whatever its color — reads as just one
+   more line in a page full of underlines and can't be picked out. So ON THE DIFF
+   mark evidence claims with an ORTHOGONAL cue instead of another underline: an
+   amber highlighter background plus a 2px amber underbar. Background is a
+   different visual channel from the green underline, so a highlighted claim pops
+   out of the surrounding inserted (green) text at a glance — the `.ev` selector
+   (two classes) outranks `.wc-scope ins` (one class, one element) so it wins the
+   background on inserted claims. The green insertion underline still shows
+   through, so "inserted" and "has evidence" both remain legible. Live-site
+   styling is untouched (this rule is scoped to `.wc-scope`). */
+.wc-scope .ev { background: var(--wc-ev-bg);
+    box-shadow: inset 0 -2px 0 var(--wc-ev-line); border-radius: 2px;
+    padding: 0 .12em; }
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }

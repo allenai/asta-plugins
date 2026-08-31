@@ -45,9 +45,10 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
 
 def test_evidence_claim_underline_is_distinguishable_on_the_diff(tmp_path):
     """On the diff every insertion is underlined green (the colorblind cue), which
-    swamps an evidence claim's faint 1px dotted underline. The generator must add
-    a distinct accent-blue evidence underline so a reviewer can still tell which
-    claims are evidence-backed, and the `.ev` claim itself must survive intact."""
+    swamps any thin evidence underline. The generator must mark evidence claims
+    with an orthogonal amber highlight background (a different visual channel from
+    the green underline) so a reviewer can still pick out which claims are
+    evidence-backed, and the `.ev` claim itself must survive intact."""
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -63,9 +64,12 @@ def test_evidence_claim_underline_is_distinguishable_on_the_diff(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR #2")
 
-    # The distinct evidence underline is emitted, using the accent (not the green
-    # insertion) color, and the insertion cue itself is preserved.
-    assert ".wc-scope .ev { border-bottom: 2px dotted var(--wc-changed); }" in result
+    # The orthogonal evidence highlight is emitted (amber background + underbar
+    # in its own channel, not another underline), and the insertion underline cue
+    # itself is preserved.
+    assert ".wc-scope .ev { background: var(--wc-ev-bg);" in result
+    assert "box-shadow: inset 0 -2px 0 var(--wc-ev-line);" in result
+    assert "--wc-ev-bg: #fde6a8; --wc-ev-line: #9a6700;" in result
     assert "text-decoration: underline" in result
     # The claim survives the word-diff with its class intact.
     assert 'class="ev"' in result
