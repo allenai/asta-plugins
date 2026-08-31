@@ -710,14 +710,17 @@ DIFF_STYLE = """
    alone keeps links identifiable; the underline returns on hover. */
 .wc-scope a { text-decoration: none; }
 .wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }
-/* Evidence claims (`.ev`) carry their own light dotted underline from the
-   evidence extension, which the diff preserves through the reused theme <head>
-   styles. Insertions are background-only: the `ins` rule above sets
+/* Evidence claims (`.ev`) need a visible cue on the diff. The extension's
+   default 1px black border at 32% opacity is intentionally subtle on a normal
+   report, but becomes effectively invisible against the green insertion tint.
+   Use an information-blue 2px dotted rule here: it remains an underline rather
+   than adding another background, while being perceptible in the change-review
+   context. */
+.wc-scope .ev { border-bottom: 2px dotted #2a88ef; }
+/* Insertions are background-only: the `ins` rule above sets
    `text-decoration: none` to suppress the browser UA-default `ins {
    text-decoration: underline }` (otherwise every added run keeps a green
-   underline even with no explicit underline rule in this stylesheet). With
-   link underlines suppressed too, the dotted `.ev` underline is the only
-   resting underline on the page, so a backed claim is legible on its own. */
+   underline even with no explicit underline rule in this stylesheet). */
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }

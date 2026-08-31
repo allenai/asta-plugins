@@ -17,9 +17,8 @@ def _underline_contexts(css):
 
 def _only_underline_on_hover(css):
     """No resting underline anywhere — underline is only ever a :hover/:focus cue."""
-    return all(
-        ":hover" in ctx or ":focus" in ctx for ctx in _underline_contexts(css)
-    )
+    return all(":hover" in ctx or ":focus" in ctx for ctx in _underline_contexts(css))
+
 
 SCRIPT = (
     Path(__file__).parents[1]
@@ -65,12 +64,13 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
 
 
 def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
-    """Insertions are background-only on the diff (no underline), so an evidence
-    claim's own dotted underline — carried in through the reused theme <head>
-    styles from the evidence extension — is the only underline on the page and
-    reads on its own. The generator must NOT impose a diff-specific override
-    (the old amber highlight), must preserve the extension's `.ev` style, and the
-    `.ev` claim itself must survive the word-diff intact."""
+    """Evidence gets a perceptible dotted rule without restoring insertion lines.
+
+    The extension's default 1px, 32%-opacity border is too subtle against the
+    diff's green insertion tint, so the generator strengthens that one cue with
+    an information-blue rule. The claim itself must also survive the word-diff
+    intact.
+    """
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -89,12 +89,13 @@ def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR #2")
 
-    # No diff-specific evidence override (the old amber highlight is gone), and no
-    # resting insertion/link underline to compete with the claim's dotted underline.
+    # No old amber highlight or resting insertion/link underline competes with the
+    # evidence cue. The diff strengthens only the evidence claim's dotted rule.
     assert "--wc-ev-bg" not in result
     assert "box-shadow: inset 0 -2px 0" not in result
     assert _only_underline_on_hover(result), _underline_contexts(result)
-    # The extension's own `.ev` dotted underline survives via the reused head CSS.
+    assert ".wc-scope .ev { border-bottom: 2px dotted #2a88ef; }" in result
+    # The extension's own `.ev` styling still survives via the reused head CSS.
     assert ".ev { border-bottom: 1px dotted rgba(0, 0, 0, 0.32); }" in result
     # The claim survives the word-diff with its class intact.
     assert 'class="ev"' in result
@@ -126,7 +127,9 @@ def test_links_are_not_underlined_at_rest_on_the_diff(tmp_path):
 
     # Resting link underline is suppressed, restored only on hover/focus.
     assert ".wc-scope a { text-decoration: none; }" in result
-    assert ".wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }" in result
+    assert (
+        ".wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }" in result
+    )
     assert _only_underline_on_hover(result), _underline_contexts(result)
     # The links themselves still render (identifiable by colour), just not underlined.
     assert 'href="#tbl-x"' in result
