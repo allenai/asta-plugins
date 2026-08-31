@@ -698,16 +698,18 @@ DIFF_STYLE = """
 .wc-scope .tag.removed { background: var(--wc-removed); color: var(--wc-tag-fg); }
 .wc-scope .diff-body { overflow-wrap: break-word; }
 .wc-scope ins { background: var(--wc-ins-bg); color: var(--wc-ins-fg);
-    border-radius: 2px; padding: 0 .1em; }
+    text-decoration: none; border-radius: 2px; padding: 0 .1em; }
 .wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
     text-decoration: line-through; text-decoration-color: var(--wc-del-line);
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
 /* Evidence claims (`.ev`) carry their own light dotted underline from the
    evidence extension, which the diff preserves through the reused theme <head>
-   styles. Now that insertions are background-only (no underline), that dotted
-   underline is the only underline on the page, so a backed claim is legible on
-   its own — no diff-specific override is needed. We intentionally add nothing
-   here; layering another cue on top only re-creates the noise we just removed. */
+   styles. Insertions are background-only: the rule above sets
+   `text-decoration: none` to suppress the browser UA-default `ins {
+   text-decoration: underline }` (otherwise every added run keeps a green
+   underline even with no explicit underline rule in this stylesheet). So the
+   dotted `.ev` underline is the only underline on the page, and a backed claim
+   is legible on its own — no diff-specific override is needed. */
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }
