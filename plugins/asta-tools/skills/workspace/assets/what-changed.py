@@ -702,14 +702,22 @@ DIFF_STYLE = """
 .wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
     text-decoration: line-through; text-decoration-color: var(--wc-del-line);
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+/* Links: no resting underline on the diff (GitHub's diff view does the same).
+   The reused theme carries Bootstrap's default `a { text-decoration: underline }`,
+   which otherwise underlines every citation, crossref (e.g. "Table 1") and bare
+   URL in the change — and inside an inserted run those links pick up the green
+   ins colour, reading as green underlines scattered across the page. Colour
+   alone keeps links identifiable; the underline returns on hover. */
+.wc-scope a { text-decoration: none; }
+.wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }
 /* Evidence claims (`.ev`) carry their own light dotted underline from the
    evidence extension, which the diff preserves through the reused theme <head>
-   styles. Insertions are background-only: the rule above sets
+   styles. Insertions are background-only: the `ins` rule above sets
    `text-decoration: none` to suppress the browser UA-default `ins {
    text-decoration: underline }` (otherwise every added run keeps a green
-   underline even with no explicit underline rule in this stylesheet). So the
-   dotted `.ev` underline is the only underline on the page, and a backed claim
-   is legible on its own — no diff-specific override is needed. */
+   underline even with no explicit underline rule in this stylesheet). With
+   link underlines suppressed too, the dotted `.ev` underline is the only
+   resting underline on the page, so a backed claim is legible on its own. */
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }

@@ -1,7 +1,25 @@
 """Tests for the rendered Quarto preview diff generator."""
 
 import importlib.util
+import re
 from pathlib import Path
+
+
+def _underline_contexts(css):
+    """Selector text preceding every `text-decoration: underline` in the output.
+
+    CSS comments (which document the rules and quote CSS verbatim) are stripped
+    first so prose about underlines isn't mistaken for an actual rule.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    return re.findall(r"([^{}]*)\{[^{}]*text-decoration:\s*underline", css)
+
+
+def _only_underline_on_hover(css):
+    """No resting underline anywhere — underline is only ever a :hover/:focus cue."""
+    return all(
+        ":hover" in ctx or ":focus" in ctx for ctx in _underline_contexts(css)
+    )
 
 SCRIPT = (
     Path(__file__).parents[1]
@@ -34,7 +52,9 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     assert "<del>Old</del>" in result
     assert "<ins>New</ins>" in result
     # Insertions are background-only (no underline); deletions keep strikethrough.
-    assert "text-decoration: underline" not in result
+    # The only `text-decoration: underline` allowed is the :hover/:focus link
+    # affordance — never a resting underline on insertions or links.
+    assert _only_underline_on_hover(result), _underline_contexts(result)
     assert "text-decoration: line-through" in result
     assert "--wc-tag-fg: #fff" in result
     assert ".wc-scope nav.toc .tag" in result
@@ -70,15 +90,46 @@ def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR #2")
 
     # No diff-specific evidence override (the old amber highlight is gone), and no
-    # insertion underline to compete with the claim's dotted underline.
+    # resting insertion/link underline to compete with the claim's dotted underline.
     assert "--wc-ev-bg" not in result
     assert "box-shadow: inset 0 -2px 0" not in result
-    assert "text-decoration: underline" not in result
+    assert _only_underline_on_hover(result), _underline_contexts(result)
     # The extension's own `.ev` dotted underline survives via the reused head CSS.
     assert ".ev { border-bottom: 1px dotted rgba(0, 0, 0, 0.32); }" in result
     # The claim survives the word-diff with its class intact.
     assert 'class="ev"' in result
     assert "90 tasks" in result
+
+
+def test_links_are_not_underlined_at_rest_on_the_diff(tmp_path):
+    """The reused theme carries Bootstrap's default `a { text-decoration: underline }`.
+    On the diff that underlines every citation, crossref (e.g. "Table 1") and bare
+    URL, and inside an inserted run those links take the green ins colour — reading
+    as green underlines scattered across the page. The generator suppresses the
+    resting link underline (GitHub's diff view does the same) so the dotted `.ev`
+    cue is the only resting underline; the underline returns on hover/focus."""
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(
+        "<html><head></head><body><main><p>Baseline.</p></main></body></html>"
+    )
+    (new / "index.html").write_text(
+        "<html><head></head><body><main>"
+        '<p>See <a href="#tbl-x">Table 1</a> and '
+        '<a href="https://arxiv.org/abs/1">the paper</a>.</p>'
+        "</main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #3")
+
+    # Resting link underline is suppressed, restored only on hover/focus.
+    assert ".wc-scope a { text-decoration: none; }" in result
+    assert ".wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }" in result
+    assert _only_underline_on_hover(result), _underline_contexts(result)
+    # The links themselves still render (identifiable by colour), just not underlined.
+    assert 'href="#tbl-x"' in result
 
 
 def test_nested_template_stylesheet_is_rebased_to_preview_root(tmp_path):
