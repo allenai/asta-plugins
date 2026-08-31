@@ -640,30 +640,32 @@ def list_pages(root, out_path=None):
 # <ins>/<del> runs — the page content keeps the site's real typography, colors,
 # code highlighting, and dark/light palette.
 #
-# Highlight colors are the GitHub-diff palette: high enough contrast to read the
-# text on top and to distinguish added from removed at a glance, and never
-# color-only (added is underlined, removed is struck through) so the diff is
-# legible to color-blind reviewers too.
+# Highlight colors are the GitHub-diff palette: a green background for added
+# text and a red background + strikethrough for removed text — the same channels
+# GitHub uses for word-level diffs. We deliberately do NOT underline insertions:
+# in an additive document (a growing survey) almost every run is an insertion, so
+# underlining them all paints the page with lines and drowns out any other
+# underline cue — including an evidence claim's own dotted underline. Removed
+# text keeps its strikethrough (a sparse, meaningful cue that also gives
+# color-blind reviewers a non-color signal on the del side); insertions rely on
+# the background tint's lightness contrast, which reads without hue perception.
 DIFF_STYLE = """
 .wc-scope { --wc-ins-bg: #d7f5dd; --wc-ins-line: #1a7f37; --wc-ins-fg: #032b13;
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
             --wc-muted: #57606a; --wc-changed: #0969da; --wc-new: #1a7f37;
-            --wc-removed: #cf222e; --wc-tag-fg: #fff; --wc-border: #d0d7de;
-            --wc-ev-bg: #fde6a8; --wc-ev-line: #9a6700; }
+            --wc-removed: #cf222e; --wc-tag-fg: #fff; --wc-border: #d0d7de; }
 /* Follow Quarto's rendered theme mode when a theme is reused. The media-query
    fallback is only for standalone output, where no Quarto mode is available. */
 .wc-scope.wc-dark { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
                     --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
                     --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
-                    --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d;
-                    --wc-ev-bg: #5a4300; --wc-ev-line: #e3b341; }
+                    --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
 @media (prefers-color-scheme: dark) {
   .wc-scope.wc-standalone {
               --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
               --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
               --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
-              --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d;
-              --wc-ev-bg: #5a4300; --wc-ev-line: #e3b341; }
+              --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
 }
 .wc-scope header.diff-head { padding: 1.25rem 0 0.5rem; margin-bottom: 1rem;
     border-bottom: 1px solid var(--wc-border); }
@@ -696,26 +698,16 @@ DIFF_STYLE = """
 .wc-scope .tag.removed { background: var(--wc-removed); color: var(--wc-tag-fg); }
 .wc-scope .diff-body { overflow-wrap: break-word; }
 .wc-scope ins { background: var(--wc-ins-bg); color: var(--wc-ins-fg);
-    text-decoration: underline; text-decoration-color: var(--wc-ins-line);
-    text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+    border-radius: 2px; padding: 0 .1em; }
 .wc-scope del { background: var(--wc-del-bg); color: var(--wc-del-fg);
     text-decoration: line-through; text-decoration-color: var(--wc-del-line);
     text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
-/* Evidence claims (`.ev`) carry a light 1px dotted underline on the live site.
-   But here every insertion is already underlined green (the colorblind cue
-   above), so a thin evidence underline — whatever its color — reads as just one
-   more line in a page full of underlines and can't be picked out. So ON THE DIFF
-   mark evidence claims with an ORTHOGONAL cue instead of another underline: an
-   amber highlighter background plus a 2px amber underbar. Background is a
-   different visual channel from the green underline, so a highlighted claim pops
-   out of the surrounding inserted (green) text at a glance — the `.ev` selector
-   (two classes) outranks `.wc-scope ins` (one class, one element) so it wins the
-   background on inserted claims. The green insertion underline still shows
-   through, so "inserted" and "has evidence" both remain legible. Live-site
-   styling is untouched (this rule is scoped to `.wc-scope`). */
-.wc-scope .ev { background: var(--wc-ev-bg);
-    box-shadow: inset 0 -2px 0 var(--wc-ev-line); border-radius: 2px;
-    padding: 0 .12em; }
+/* Evidence claims (`.ev`) carry their own light dotted underline from the
+   evidence extension, which the diff preserves through the reused theme <head>
+   styles. Now that insertions are background-only (no underline), that dotted
+   underline is the only underline on the page, so a backed claim is legible on
+   its own — no diff-specific override is needed. We intentionally add nothing
+   here; layering another cue on top only re-creates the noise we just removed. */
 .wc-scope ins img, .wc-scope del img { outline: 3px solid; }
 .wc-scope ins img { outline-color: var(--wc-ins-line); }
 .wc-scope del img { outline-color: var(--wc-del-line); opacity: .6; }

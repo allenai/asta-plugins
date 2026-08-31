@@ -33,7 +33,8 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     )
     assert "<del>Old</del>" in result
     assert "<ins>New</ins>" in result
-    assert "text-decoration: underline" in result
+    # Insertions are background-only (no underline); deletions keep strikethrough.
+    assert "text-decoration: underline" not in result
     assert "text-decoration: line-through" in result
     assert "--wc-tag-fg: #fff" in result
     assert ".wc-scope nav.toc .tag" in result
@@ -43,12 +44,13 @@ def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     )
 
 
-def test_evidence_claim_underline_is_distinguishable_on_the_diff(tmp_path):
-    """On the diff every insertion is underlined green (the colorblind cue), which
-    swamps any thin evidence underline. The generator must mark evidence claims
-    with an orthogonal amber highlight background (a different visual channel from
-    the green underline) so a reviewer can still pick out which claims are
-    evidence-backed, and the `.ev` claim itself must survive intact."""
+def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
+    """Insertions are background-only on the diff (no underline), so an evidence
+    claim's own dotted underline — carried in through the reused theme <head>
+    styles from the evidence extension — is the only underline on the page and
+    reads on its own. The generator must NOT impose a diff-specific override
+    (the old amber highlight), must preserve the extension's `.ev` style, and the
+    `.ev` claim itself must survive the word-diff intact."""
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -56,21 +58,24 @@ def test_evidence_claim_underline_is_distinguishable_on_the_diff(tmp_path):
     (old / "index.html").write_text(
         "<html><head></head><body><main><p>Baseline.</p></main></body></html>"
     )
+    # The evidence extension injects its `.ev` styling into the page <head>; the
+    # diff reuses the template page's head styles, so it must carry through.
     (new / "index.html").write_text(
-        "<html><head></head><body><main>"
+        "<html><head><style>.ev { border-bottom: 1px dotted rgba(0, 0, 0, 0.32); }"
+        "</style></head><body><main>"
         '<p>NatureBench has <span class="ev" title="evidence">90 tasks</span>.</p>'
         "</main></body></html>"
     )
 
     result = WHAT_CHANGED.build(old, new, "", "PR #2")
 
-    # The orthogonal evidence highlight is emitted (amber background + underbar
-    # in its own channel, not another underline), and the insertion underline cue
-    # itself is preserved.
-    assert ".wc-scope .ev { background: var(--wc-ev-bg);" in result
-    assert "box-shadow: inset 0 -2px 0 var(--wc-ev-line);" in result
-    assert "--wc-ev-bg: #fde6a8; --wc-ev-line: #9a6700;" in result
-    assert "text-decoration: underline" in result
+    # No diff-specific evidence override (the old amber highlight is gone), and no
+    # insertion underline to compete with the claim's dotted underline.
+    assert "--wc-ev-bg" not in result
+    assert "box-shadow: inset 0 -2px 0" not in result
+    assert "text-decoration: underline" not in result
+    # The extension's own `.ev` dotted underline survives via the reused head CSS.
+    assert ".ev { border-bottom: 1px dotted rgba(0, 0, 0, 0.32); }" in result
     # The claim survives the word-diff with its class intact.
     assert 'class="ev"' in result
     assert "90 tasks" in result
