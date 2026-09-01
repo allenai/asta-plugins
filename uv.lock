@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "asta"
-version = "0.102.0"
+version = "0.103.0"
 source = { editable = "." }
 dependencies = [
     { name = "asta-agent", extra = ["a2a-client"] },
@@ -88,7 +88,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "asta-agent", extras = ["a2a-client"], specifier = ">=1.0.7" },
-    { name = "asta-artifact", specifier = ">=1.0.6" },
+    { name = "asta-artifact", specifier = ">=1.0.10" },
     { name = "click", specifier = ">=8.0" },
     { name = "httpx", specifier = ">=0.26.0" },
     { name = "keyring", specifier = ">=24.3.0" },
@@ -127,7 +127,7 @@ a2a-client = [
 
 [[package]]
 name = "asta-artifact"
-version = "1.0.7"
+version = "1.0.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asta-types" },
@@ -135,9 +135,9 @@ dependencies = [
     { name = "markdown" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/d5/82489e9bb29dbcaf8cbdb5fad09d1497d4b45ee80f5a3839faa71142e6d7/asta_artifact-1.0.7.tar.gz", hash = "sha256:5ad8948b9f7fa643d8d26f449b06399a31a2b069da93e281903b0c8fe2ee406d", size = 25243, upload-time = "2026-04-28T16:28:26.492Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/4e/55c397081a4e2d9c9e0bb00e897dba7b6dc5216aa03c0e80ceadc0f8ae89/asta_artifact-1.0.10.tar.gz", hash = "sha256:c94c7cf49241454d2be998aa3511df616eda90132e959032e8cdaa21df18bcc6", size = 27713, upload-time = "2026-08-31T22:43:46.279Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/00/4f7b0367dc1ed113447bc11e9061c27a10d828c180f9a0ab0085c9e05797/asta_artifact-1.0.7-py3-none-any.whl", hash = "sha256:c07e283df7a9bec9fe93cb26007fea9172218021e65ddfd25c03cbbc10a6b81b", size = 27730, upload-time = "2026-04-28T16:28:24.973Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/a1/4b51626cdde419ec5ba747bc0ef131acd14b4053027645ca3baef88bbbbe/asta_artifact-1.0.10-py3-none-any.whl", hash = "sha256:82e1e9b26646872f0492c6b82e265295d661f1b0c88bb7a73120ca02be5a0717", size = 28694, upload-time = "2026-08-31T22:43:45.361Z" },
 ]
 
 [[package]]
