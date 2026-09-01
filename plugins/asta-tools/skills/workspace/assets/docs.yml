@@ -31,4 +31,4 @@ jobs:
     # resolve "latest" itself. `make set-version` keeps this ref aligned with
     # each release tag; existing projects receive the one-line bump when their
     # workspace assets are upgraded.
-    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.102.0
+    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.103.0
