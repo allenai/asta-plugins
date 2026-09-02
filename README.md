@@ -24,12 +24,14 @@ A core set of skills for individual research tasks. Core capabilities include:
   - Example request: _Send the Asta team feedback about how this project went_
 
 ### asta-flows
-A library of multi-step workflows. The agent will select an appropriate workflow and execute a series of actions using the `asta-tools` skills and other tools in the environment 
+A library of structured, multi-step research workflows. Best when you want the work planned and executed
+as a graph of typed, dependency-tracked tasks with structured outputs. It works from a `mission.md`,
+which it will help you draft if you don't have one.
 
 ### asta-assistant
-A long-range autonomous research assistant. Point the agent to a mission document containing background and directions to explore.
-The agent will coordinate with the
-user to pursue open questions in a long-range research plan.
+A long-range autonomous research assistant for open-ended, human-steered investigations. Best when you
+want to steer the work conversationally and decide the next unit of work as you go. It works from a
+free-form `project.md` project brief, which it bootstraps from your conversation if one doesn't exist.
 
 ### asta-dev
 Skills for developers wishing to contribute to the `asta-tools` or `asta-flows` plugins 
@@ -59,6 +61,28 @@ Once installed, for information about how to use the plugins simply ask the LLM 
 
 For GitHub/Slack integration, see [here](https://github.com/allenai/asta-plugins/tree/main/plugins/asta-dev) (Ai2 internal users only)
   
+
+## Getting started
+
+`asta-flows` and `asta-assistant` are alternative research drivers layered on top of `asta-tools` —
+install the one that matches how you want to work, then describe your intent to the agent:
+
+- **Structured, multi-step research → `asta-flows`.** When you want the work planned and executed as a
+  dependency-tracked graph of typed tasks with structured outputs, ask the agent to _"drive this
+  research as a graph of typed tasks with explicit dependencies."_ It routes to `asta-flows`, which will
+  draft a `mission.md` with you if you don't already have one.
+- **Open-ended, human-steered research → `asta-assistant`.** When you want to steer an investigation
+  conversationally, ask the agent to _"help me plan what to work on next for my research."_ It routes to
+  asta-assistant's `brainstorm` skill, which bootstraps a `project.md` from the conversation if one
+  doesn't exist yet.
+
+Routing is driven by your **intent**, not by a filename: the artifacts (`mission.md`, `project.md`) are
+things the plugins create for you, not things you need to prepare first. These entry points are pinned by
+the intent-based `asta_skills` routing eval in
+[asta-bench-private#235](https://github.com/allenai/asta-bench-private/pull/235) — structured/multi-step
+intent must reach `asta-flows`, and plan-what-to-do-next intent must reach `brainstorm` — so the guidance
+above stays honest as the skills evolve.
+
 ## Asta CLI
 
 The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
