@@ -91,13 +91,27 @@ asta papers search "RLHF" --date 2023- --limit 10
 asta papers search "neural networks" --fields title,year,abstract,authors
 
 asta papers search "LLM safety" --date 2024-01-01:2024-12-31
+
+asta papers search "protein folding" --fields-of-study "Computer Science"
 ```
 
 Options:
 - `--fields`: Comma-separated fields to return
 - `--limit`: Number of results (default 20, max 100)
 - `--date`: Publication date or year filter. Accepts years (`2020`, `2020-2024`, `2020-`) or date ranges (`2024-01-01:2024-12-31`). Maps to the S2 `publicationDateOrYear` parameter.
+- `--fields-of-study`: Comma-separated field-of-study filter — see [Filtering by field of study](#filtering-by-field-of-study).
 - `--format`: Output as `json` or `text`
+
+### Filtering by field of study
+
+`asta papers search` and `asta papers snippet-search` both accept `--fields-of-study`, which maps to the S2 `fieldsOfStudy` query parameter. A paper matches if S2 classified it into *any* of the listed fields, so multiple values are an OR, not an AND.
+
+Values come from S2's fixed 23-value vocabulary: `Computer Science`, `Medicine`, `Chemistry`, `Biology`, `Materials Science`, `Physics`, `Geology`, `Psychology`, `Art`, `History`, `Geography`, `Sociology`, `Business`, `Political Science`, `Economics`, `Philosophy`, `Mathematics`, `Engineering`, `Environmental Science`, `Agricultural and Food Sciences`, `Education`, `Law`, `Linguistics`.
+
+Two behaviours to know:
+
+- **Matching is case-insensitive but otherwise exact.** `computer science` works; `computer-science` does not. An unrecognized value yields zero results rather than an error, so check spelling first if a filtered query comes back empty.
+- **The filter keys on S2's classifier labels, not on the `fieldsOfStudy` value returned in `--fields`.** The returned `fieldsOfStudy` is the externally-sourced label set and is often narrower; the filter is applied against the classifier-derived `s2FieldsOfStudy`. So a paper returned under `--fields-of-study "Computer Science"` can come back showing `fieldsOfStudy: ["Medicine"]`, and a paper with no external label at all can still match. Request `s2FieldsOfStudy` in `--fields` to see what the filter actually matched on.
 
 ### Snippet Search
 
@@ -133,7 +147,7 @@ Options:
 - `--date`: Date/year filter, same as standard search
 - `--limit`: Max results (default 20, max 1000 — higher ceiling than standard search)
 - `--inserted-before`: Only include papers indexed before this date (`YYYY-MM-DD`, `YYYY-MM`, or `YYYY`). Typically used for consistency in benchmarking — pinning a cutoff date ensures the same set of papers is returned across repeated runs, even as new papers are continuously indexed.
-- `--fields-of-study`: Comma-separated field-of-study filter, mapping to the S2 `fieldsOfStudy` parameter. A paper matches if it carries *any* of the listed fields. Values come from S2's fixed 23-value vocabulary — `Computer Science`, `Medicine`, `Chemistry`, `Biology`, `Materials Science`, `Physics`, `Geology`, `Psychology`, `Art`, `History`, `Geography`, `Sociology`, `Business`, `Political Science`, `Economics`, `Philosophy`, `Mathematics`, `Engineering`, `Environmental Science`, `Agricultural and Food Sciences`, `Education`, `Law`, `Linguistics`. Matching is case-insensitive but otherwise exact (`computer science` works, `computer-science` does not); an unrecognized value silently yields zero results rather than an error, so check spelling if a filtered query comes back empty. Field labels are externally sourced, so a paper carrying no field label is not returned by a filtered query.
+- `--fields-of-study`: Comma-separated field-of-study filter, same as standard search — see [Filtering by field of study](#filtering-by-field-of-study).
 - `--format`: Output as `json` or `text`
 
 ### Get Citations

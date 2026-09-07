@@ -75,6 +75,7 @@ class SemanticScholarClient:
         fields: str | None = None,
         limit: int = 50,
         publication_date_or_year: str | None = None,
+        fields_of_study: str | None = None,
     ) -> dict[str, Any]:
         """Search papers by keyword
 
@@ -84,12 +85,16 @@ class SemanticScholarClient:
             limit: Max results (default 50, max 100)
             publication_date_or_year: Year or date range filter
                 (e.g., "2020", "2020-2024", "2024-01-01:2024-12-31", "2020-")
+            fields_of_study: Comma-separated field-of-study filter
+                (e.g., "Computer Science,Medicine"); a paper matches if S2
+                classified it into any of the listed fields
         """
         params = {
             "query": query,
             "fields": fields,
             "limit": min(limit, 100),
             "publicationDateOrYear": publication_date_or_year,
+            "fieldsOfStudy": fields_of_study,
         }
         return self._request("/graph/v1/paper/search", params)
 
@@ -112,8 +117,8 @@ class SemanticScholarClient:
                 (e.g., "2020", "2020-2024", "2024-01-01:2024-12-31", "2020-")
             inserted_before: Only include papers indexed before this date (YYYY-MM-DD, YYYY-MM, or YYYY)
             fields_of_study: Comma-separated field-of-study filter
-                (e.g., "Computer Science,Medicine"); a paper matches if it carries
-                any of the listed fields
+                (e.g., "Computer Science,Medicine"); a paper matches if S2
+                classified it into any of the listed fields
         """
         params = {
             "query": query,

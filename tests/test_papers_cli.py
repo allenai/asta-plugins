@@ -282,6 +282,42 @@ class TestSnippetSearchFieldsOfStudy:
         assert mock_instance.snippet_search.call_args[1]["fields_of_study"] is None
 
 
+class TestSearchFieldsOfStudy:
+    """``--fields-of-study`` restricts standard search results to S2's
+    field-of-study vocabulary, mapping to the ``fieldsOfStudy`` query
+    parameter — the same filter ``snippet-search`` exposes."""
+
+    def test_flag_passed_through(self, runner):
+        with patch("asta.papers.search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.search_papers.return_value = {"total": 0, "data": []}
+            MockClient.return_value = mock_instance
+            result = runner.invoke(
+                cli,
+                [
+                    "papers",
+                    "search",
+                    "q",
+                    "--fields-of-study",
+                    "Computer Science,Medicine",
+                ],
+            )
+        assert result.exit_code == 0
+        assert (
+            mock_instance.search_papers.call_args[1]["fields_of_study"]
+            == "Computer Science,Medicine"
+        )
+
+    def test_omitted_by_default(self, runner):
+        with patch("asta.papers.search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.search_papers.return_value = {"total": 0, "data": []}
+            MockClient.return_value = mock_instance
+            result = runner.invoke(cli, ["papers", "search", "q"])
+        assert result.exit_code == 0
+        assert mock_instance.search_papers.call_args[1]["fields_of_study"] is None
+
+
 class TestPapersSearch:
     """Test 'asta papers search' command."""
 
