@@ -184,6 +184,7 @@ class SemanticScholarClient:
         fields: str | None = None,
         limit: int = 100,
         publication_date_or_year: str | None = None,
+        fields_of_study: str | None = None,
     ) -> dict[str, Any]:
         """Get papers by an author
 
@@ -192,10 +193,14 @@ class SemanticScholarClient:
             fields: Comma-separated fields to return
             limit: Max results (default 100, max 1000)
             publication_date_or_year: Date range filter (e.g., ":2024-12-31")
+            fields_of_study: Comma-separated field-of-study filter
+                (e.g., "Computer Science,Medicine"); a paper matches if S2
+                classified it into any of the listed fields
         """
         params = {
             "fields": fields,
             "limit": min(limit, 1000),
             "publicationDateOrYear": publication_date_or_year,
+            "fieldsOfStudy": fields_of_study,
         }
         return self._request(f"/graph/v1/author/{author_id}/papers", params)
