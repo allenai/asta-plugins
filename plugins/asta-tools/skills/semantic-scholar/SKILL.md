@@ -112,6 +112,10 @@ asta papers snippet-search "sparse mixture of experts" --fields snippet.text,sni
 
 # Pin results to papers indexed before a date (useful for reproducible benchmarks)
 asta papers snippet-search "chain-of-thought" --inserted-before 2024-01-01
+
+# Restrict to one or more fields of study
+asta papers snippet-search "graph neural networks" --fields-of-study "Computer Science"
+asta papers snippet-search "protein folding" --fields-of-study "Biology,Chemistry"
 ```
 
 The `--fields` option accepts **snippet fields**:
@@ -129,6 +133,7 @@ Options:
 - `--date`: Date/year filter, same as standard search
 - `--limit`: Max results (default 20, max 1000 — higher ceiling than standard search)
 - `--inserted-before`: Only include papers indexed before this date (`YYYY-MM-DD`, `YYYY-MM`, or `YYYY`). Typically used for consistency in benchmarking — pinning a cutoff date ensures the same set of papers is returned across repeated runs, even as new papers are continuously indexed.
+- `--fields-of-study`: Comma-separated field-of-study filter, mapping to the S2 `fieldsOfStudy` parameter. A paper matches if it carries *any* of the listed fields. Values come from S2's fixed 23-value vocabulary — `Computer Science`, `Medicine`, `Chemistry`, `Biology`, `Materials Science`, `Physics`, `Geology`, `Psychology`, `Art`, `History`, `Geography`, `Sociology`, `Business`, `Political Science`, `Economics`, `Philosophy`, `Mathematics`, `Engineering`, `Environmental Science`, `Agricultural and Food Sciences`, `Education`, `Law`, `Linguistics`. Matching is case-insensitive but otherwise exact (`computer science` works, `computer-science` does not); an unrecognized value silently yields zero results rather than an error, so check spelling if a filtered query comes back empty. Field labels are externally sourced, so a paper carrying no field label is not returned by a filtered query.
 - `--format`: Output as `json` or `text`
 
 ### Get Citations

@@ -100,6 +100,7 @@ class SemanticScholarClient:
         limit: int = 10,
         publication_date_or_year: str | None = None,
         inserted_before: str | None = None,
+        fields_of_study: str | None = None,
     ) -> dict[str, Any]:
         """Search papers with full-text snippet matching
 
@@ -110,6 +111,9 @@ class SemanticScholarClient:
             publication_date_or_year: Year or date range filter
                 (e.g., "2020", "2020-2024", "2024-01-01:2024-12-31", "2020-")
             inserted_before: Only include papers indexed before this date (YYYY-MM-DD, YYYY-MM, or YYYY)
+            fields_of_study: Comma-separated field-of-study filter
+                (e.g., "Computer Science,Medicine"); a paper matches if it carries
+                any of the listed fields
         """
         params = {
             "query": query,
@@ -117,6 +121,7 @@ class SemanticScholarClient:
             "limit": min(limit, 1000),
             "publicationDateOrYear": publication_date_or_year,
             "insertedBefore": inserted_before,
+            "fieldsOfStudy": fields_of_study,
         }
         return self._request("/graph/v1/snippet/search", params)
 
