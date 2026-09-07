@@ -111,7 +111,7 @@ Values come from S2's fixed 23-value vocabulary: `Computer Science`, `Medicine`,
 Two behaviours to know:
 
 - **Matching is case-insensitive but otherwise exact.** `computer science` works; `computer-science` does not. An unrecognized value yields zero results rather than an error, so check spelling first if a filtered query comes back empty.
-- **The filter keys on S2's classifier labels, not on the `fieldsOfStudy` value returned in `--fields`.** The returned `fieldsOfStudy` is the externally-sourced label set and is often narrower; the filter is applied against the classifier-derived `s2FieldsOfStudy`. So a paper returned under `--fields-of-study "Computer Science"` can come back showing `fieldsOfStudy: ["Medicine"]`, and a paper with no external label at all can still match. Request `s2FieldsOfStudy` in `--fields` to see what the filter actually matched on.
+- **The filter keys on S2's classifier labels, not on the `fieldsOfStudy` value returned in `--fields`.** The returned `fieldsOfStudy` is the externally-sourced label set and is often narrower; the filter is applied against the classifier-derived `s2FieldsOfStudy`. So a paper returned under `--fields-of-study "Computer Science"` can come back showing `fieldsOfStudy: ["Medicine"]`, and a paper with no external label at all can still match. With `asta papers search`, request `s2FieldsOfStudy` in `--fields` to see what the filter actually matched on. Snippet search cannot return these classifier labels because its `--fields` option accepts only snippet fields.
 
 ### Snippet Search
 
