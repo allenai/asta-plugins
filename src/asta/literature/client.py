@@ -12,6 +12,7 @@ from typing import Any
 
 from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config, get_config_path
+from asta.utils.headers import identity_headers
 
 
 class AstaPaperFinder:
@@ -40,6 +41,7 @@ class AstaPaperFinder:
         self.base_url = base_url
         self.access_token = access_token
         self.headers = {
+            **identity_headers(),
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.access_token}",
         }

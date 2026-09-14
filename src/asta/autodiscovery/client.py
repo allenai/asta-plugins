@@ -10,6 +10,7 @@ from typing import Any
 
 from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config, get_config_path
+from asta.utils.headers import identity_headers
 
 
 class AutoDiscoveryClient:
@@ -37,6 +38,7 @@ class AutoDiscoveryClient:
         self.access_token = access_token
         self.user_id = self._extract_user_id()
         self.headers = {
+            **identity_headers(),
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
         }
