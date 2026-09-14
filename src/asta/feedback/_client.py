@@ -17,6 +17,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from asta.utils.headers import identity_headers
+
 BUNDLE_CONTENT_TYPE = "application/gzip"
 
 _POST_TIMEOUT = 30  # seconds
@@ -55,7 +57,11 @@ def create_submission(
             "num_files": num_files,
         }
     ).encode()
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {
+        **identity_headers(),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
