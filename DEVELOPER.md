@@ -98,12 +98,15 @@ The version lives in three places:
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
 5. `make push-version-tag` — verifies all three version files match, fails if the
-   tag already exists, then creates and pushes the git tag. Prints a URL for the
-   GitHub release page.
-6. Open the URL, add release notes, publish the release. This triggers
-   `docker.yml`, which publishes `ghcr.io/allenai/asta:<tag>`.
-7. *(Optional)* Publish to PyPI: `make publish` (or `make publish-test` for
+   tag already exists, then creates and pushes the git tag. **Pushing the tag is
+   what triggers `docker.yml`**, which builds and publishes
+   `ghcr.io/allenai/asta:<tag>` and `:latest`. Nothing further is required for the
+   image.
+6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
+7. *(Future)* Create a GitHub release from the tag for human-readable notes.
+   This is bookkeeping only — the Docker image is already published by step 5, so
+   a release is not a prerequisite for anything.
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
