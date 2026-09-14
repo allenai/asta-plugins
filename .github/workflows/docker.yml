@@ -22,4 +22,3 @@ jobs:
           tags: |
             ghcr.io/allenai/asta:${{ github.ref_name }}
             ghcr.io/allenai/asta:latest
-x
