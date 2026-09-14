@@ -102,9 +102,9 @@ The version lives in three places:
    what triggers `docker.yml`**, which builds and publishes
    `ghcr.io/allenai/asta:<tag>` and `:latest`. Nothing further is required for the
    image.
-6. *(Optional)* Publish to PyPI: `make publish` (or `make publish-test` for
+6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
-7. *(Optional)* Create a GitHub release from the tag for human-readable notes.
+7. *(Future)* Create a GitHub release from the tag for human-readable notes.
    This is bookkeeping only — the Docker image is already published by step 5, so
    a release is not a prerequisite for anything.
 
