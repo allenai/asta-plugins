@@ -163,6 +163,7 @@ def _is_generated(path, root):
 def discover(root, report=None):
     """Resolve store, bibliography and prose paths from _quarto.yml."""
     root = os.path.abspath(root)
+    real_root = os.path.realpath(root)
     report = report or Report()
     cfg = {}
     quarto = os.path.join(root, "_quarto.yml")
@@ -192,16 +193,37 @@ def discover(root, report=None):
     render = [p for p in _as_list(project.get("render")) if isinstance(p, str)]
     includes = [p for p in render if not p.startswith("!")] or ["**/*.qmd"]
     excludes = [p[1:] for p in render if p.startswith("!")]
+
+    def project_glob(pattern):
+        if os.path.isabs(pattern):
+            report.error(
+                "_quarto.yml",
+                0,
+                f"`project.render` pattern must be relative to the project root: {pattern}",
+            )
+            return []
+        target = os.path.abspath(os.path.join(root, pattern))
+        if os.path.commonpath((root, target)) != root:
+            report.error(
+                "_quarto.yml",
+                0,
+                f"`project.render` pattern escapes the project root: {pattern}",
+            )
+            return []
+        return glob.glob(target, recursive=True)
+
     qmds = {
         os.path.abspath(path)
         for pattern in includes
-        for path in glob.glob(os.path.join(root, pattern), recursive=True)
+        for path in project_glob(pattern)
         if path.endswith(".qmd")
+        and os.path.commonpath((real_root, os.path.realpath(path))) == real_root
     }
     for pattern in excludes:
         excluded = [
             os.path.abspath(path)
-            for path in glob.glob(os.path.join(root, pattern), recursive=True)
+            for path in project_glob(pattern)
+            if os.path.commonpath((real_root, os.path.realpath(path))) == real_root
         ]
         qmds = {
             path
@@ -265,10 +287,12 @@ def bib_keys(paths):
 # is tolerated inside the claim.
 SPAN = re.compile(r"\[(?P<text>(?:[^\[\]]|\[[^\[\]]*\])*)\]\{(?P<attrs>[^{}]*)\}")
 ATTR = re.compile(
-    r'(?P<name>[A-Za-z_][\w-]*)\s*=\s*(?P<q>["\'])(?P<val>.*?)(?P=q)', re.S
+    r"(?P<name>[A-Za-z_][\w-]*)\s*=\s*"
+    r'(?:(?P<q>["\'])(?P<val>.*?)(?P=q)|(?P<uval>[^\s}"\']+))',
+    re.S,
 )
 FENCE = re.compile(r"^ {0,3}(?P<mark>`{3,}|~{3,})")
-INLINE_CODE = re.compile(r"(?P<mark>`+).*?(?P=mark)")
+INLINE_CODE = re.compile(r"(?P<mark>`+).*?(?P=mark)", re.S)
 
 
 def _blank_nonprose(text, warning=None):
@@ -329,7 +353,12 @@ def spans(path, report=None, rel=None):
         yield {
             "line": prose.count("\n", 0, m.start()) + 1,
             "claim": " ".join(m.group("text").split()),
-            "attrs": {a.group("name"): a.group("val") for a in ATTR.finditer(attrs)},
+            "attrs": {
+                a.group("name"): (
+                    a.group("val") if a.group("val") is not None else a.group("uval")
+                )
+                for a in ATTR.finditer(attrs)
+            },
         }
 
 

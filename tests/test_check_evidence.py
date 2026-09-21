@@ -87,6 +87,40 @@ def test_discover_follows_included_partials(tmp_path: Path) -> None:
     assert qmds == [str(partial.resolve()), str(index.resolve())]
 
 
+def test_discover_rejects_render_patterns_outside_root(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    internal = project / "index.qmd"
+    internal.write_text("internal\n")
+    outside = tmp_path / "outside.qmd"
+    outside.write_text("outside\n")
+    (project / "_quarto.yml").write_text(
+        f'''project:
+  render:
+    - "*.qmd"
+    - "{outside}"
+    - "!../outside.qmd"
+'''
+    )
+    report = check_evidence.Report()
+
+    _, _, qmds = check_evidence.discover(project, report)
+
+    assert qmds == [str(internal.resolve())]
+    assert report.errors == [
+        (
+            "_quarto.yml",
+            0,
+            f"`project.render` pattern must be relative to the project root: {outside}",
+        ),
+        (
+            "_quarto.yml",
+            0,
+            "`project.render` pattern escapes the project root: ../outside.qmd",
+        ),
+    ]
+
+
 def test_fallback_store_discovery_uses_path_components(tmp_path: Path) -> None:
     project = tmp_path / "research_site" / "project"
     project.mkdir(parents=True)
@@ -115,6 +149,31 @@ def test_spans_ignore_code_and_comments(tmp_path: Path) -> None:
 
     assert list(check_evidence.spans(page)) == [
         {"line": 1, "claim": "real claim", "attrs": {"key": "real"}}
+    ]
+
+
+def test_spans_accept_unquoted_attrs_and_ignore_multiline_inline_code(
+    tmp_path: Path,
+) -> None:
+    page = tmp_path / "index.qmd"
+    page.write_text(
+        """[real claim]{.ev key=real quote="supporting text" cite=source}
+
+`[multiline example]{.ev
+key=ignored}`
+"""
+    )
+
+    assert list(check_evidence.spans(page)) == [
+        {
+            "line": 1,
+            "claim": "real claim",
+            "attrs": {
+                "key": "real",
+                "quote": "supporting text",
+                "cite": "source",
+            },
+        }
     ]
 
 
