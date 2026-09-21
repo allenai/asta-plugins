@@ -166,7 +166,9 @@ local function build_prov_details(prov)
     rows[#rows + 1] = 'query: <em>“' .. html_escape(prov.query) .. '”</em>'
   end
   if prov.corpus_id then
-    rows[#rows + 1] = '<a href="https://www.semanticscholar.org/paper/CorpusID:'
+    -- Link on api.semanticscholar.org: it takes a prefixed external ID and
+    -- redirects to the paper page, while the www route takes a paperId only.
+    rows[#rows + 1] = '<a href="https://api.semanticscholar.org/CorpusID:'
       .. html_escape(prov.corpus_id) .. '">S2 #' .. html_escape(prov.corpus_id) .. '</a>'
   end
   if prov.url then
