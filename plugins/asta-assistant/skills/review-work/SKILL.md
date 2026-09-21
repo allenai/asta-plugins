@@ -1,7 +1,7 @@
 ---
 name: review-work
 description: Critic skill. Given an executed work item (status pending-assessment), assess whether the Goal was actually accomplished. Identify the root cause when it was not (incorrect assumption, technical blocker, missing data). Updates work/<slug>/README.md Assessment section.
-allowed-tools: Read(work/**) Read(project.md) Edit(work/**) Bash(ls work/**) Bash(jq *)
+allowed-tools: Read(work/**) Read(project.md) Edit(work/**) Bash(ls work/**) Bash(jq *) Skill(asta-tools:check-claims)
 ---
 
 # Review Work
@@ -24,7 +24,7 @@ Same README, updated:
 1. **Goal vs Results.** Re-read the `# Goal` section. Compare against `# Results`. Does the work actually answer the goal, or only adjacent questions?
 2. **Artifacts exist.** For every artifact named in `# Results`, verify it is present under `work/<slug>/data/`.
 3. **Plan adherence.** Did execution follow the plan? Documented deviations are acceptable; undocumented substitution is a red flag.
-4. **Evidence quality.** Are claims in `# Results` supported by the artifacts? Spot-check by reading a sample. For prose claims backed by `.ev` evidence entries, apply the `check-claims` rubric rather than a second opinion of your own.
+4. **Evidence quality.** Are claims in `# Results` supported by the artifacts? Spot-check by reading a sample. For prose claims backed by `.ev` evidence entries, load the `asta-tools:check-claims` skill and apply its rubric rather than a second opinion of your own.
 
 ## Assessment template
 
