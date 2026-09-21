@@ -110,9 +110,8 @@ deployed-url:
 	fi
 
 # Preview readiness, for automated callers that report a preview link: mark the
-# Pages branch before pushing, then block until this push's deployment is live.
-# An unchanged tip means the render published nothing, so the wait returns at
-# once. Vendored from the workspace skill — update by re-copying.
+# latest docs run before pushing, then block until this push's deployment is
+# live. Vendored from the workspace skill — update by re-copying.
 preview-baseline:
 	sh scripts/wait-for-preview.sh baseline
 

@@ -165,6 +165,147 @@ def test_workspace_makefile_fails_offline_without_cache(tmp_path: Path) -> None:
     assert not (project / "_extensions/evidence").exists()
 
 
+def _write_fake_gh(bin_dir: Path) -> None:
+    fake = bin_dir / "gh"
+    fake.write_text(
+        """#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$GH_LOG"
+case "$1 $2" in
+  "repo view") echo owner/project ;;
+  "run list")
+    count=0
+    [ ! -f "$GH_RUN_COUNT" ] || count=$(cat "$GH_RUN_COUNT")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$GH_RUN_COUNT"
+    [ "${GH_RUN_FAIL_ON:-0}" != "$count" ] || exit 1
+    if [ "$count" -eq 1 ]; then
+      echo "${GH_BEFORE_RUN:-100}"
+    elif [ "$count" -ge "${GH_RUN_ON:-2}" ]; then
+      echo "101 pull_request"
+    fi
+    ;;
+  "run watch") exit 0 ;;
+  "api repos/owner/project/commits?sha=gh-pages&per_page=100") cat "$GH_PUBLISHED" ;;
+  "api repos/owner/project/pages/builds?per_page=10") echo "${GH_BUILT:-1}" ;;
+  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
+esac
+"""
+    )
+    fake.chmod(0o755)
+
+
+def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "seed",
+            "--no-gpg-sign",
+        ],
+        cwd=project,
+        check=True,
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_gh(bin_dir)
+    published = tmp_path / "published"
+    published.touch()
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "GH_LOG": str(tmp_path / "gh.log"),
+        "GH_PUBLISHED": str(published),
+        "GH_RUN_COUNT": str(tmp_path / "run-count"),
+        "WORKFLOW_TIMEOUT": "3",
+        "PAGES_TIMEOUT": "2",
+        "POLL": "1",
+    }
+    return project, env
+
+
+def test_preview_wait_retries_lookup_from_detached_head(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    subprocess.run(["git", "checkout", "--detach", "-q"], cwd=project, check=True)
+    env.update(GH_RUN_ON="3", GH_RUN_FAIL_ON="2")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "published preview is already current" in result.stdout
+    run_lookups = [
+        line
+        for line in Path(env["GH_LOG"]).read_text().splitlines()
+        if "run list" in line
+    ]
+    assert "--branch" in run_lookups[0]
+    assert all("--branch" not in line for line in run_lookups[1:])
+
+
+def test_preview_wait_matches_pages_build_to_workflow_deployment(
+    tmp_path: Path,
+) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    Path(env["GH_PUBLISHED"]).write_text("published-sha\\n")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    log = Path(env["GH_LOG"]).read_text()
+    assert "commits?sha=gh-pages" in log
+    assert "pages/builds?per_page=10" in log
+
+
+def test_preview_wait_preserves_baseline_for_retry(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_RUN_ON="3", WORKFLOW_TIMEOUT="1")
+    first = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+    assert first.returncode == 1
+    assert (project / ".git/preview-run-before").exists()
+
+    second = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+    assert second.returncode == 0, second.stderr
+    assert not (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_rejects_invalid_timing(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    env["POLL"] = "0"
+
+    result = subprocess.run(
+        [script, "baseline"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 2
+    assert "POLL must be a positive integer" in result.stderr
+
+
 def _make_evidence_archive(archive: Path) -> None:
     """Write a tarball whose layout mirrors an asta-plugins source archive."""
     archive_root = archive.parent / "asta-plugins-test"
