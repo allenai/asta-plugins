@@ -9,6 +9,10 @@ set -u
 # cheaper to report than to hunt for in render output. Judging whether a quote
 # supports its claim is not scriptable — see the `check-claims` skill.
 if [ -f scripts/check-evidence.py ]; then
+  command -v python3 >/dev/null || {
+    echo "check-evidence: python3 not found" >&2
+    exit 1
+  }
   python3 scripts/check-evidence.py || exit 1
 fi
 

@@ -25,15 +25,25 @@ def _load_yaml(text):
         import yaml  # noqa: PLC0415
     except ImportError:
         return _load_yaml_minimal(text)
-    return yaml.safe_load(text) or {}
+    try:
+        result = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"invalid YAML: {exc}") from exc
+    if result is None:
+        return {}
+    if not isinstance(result, dict):
+        raise ValueError("top-level YAML document must be a mapping")
+    return result
 
 
-_KV = re.compile(r"^(?P<indent> *)(?P<key>[^\s#:][^:]*):\s*(?P<val>.*?)\s*$")
+_KV = re.compile(r"^(?P<indent> *)(?!-\s)(?P<key>[^\s#:][^:]*):\s*(?P<val>.*?)\s*$")
 _BLOCK = re.compile(r"^[|>](?:[1-9][+-]?|[+-][1-9]?)?$")
 
 
 def _scalar(raw):
     """Unquote the small set of plain YAML scalars used by workspace config."""
+    if raw[:1] not in "\"'":
+        raw = re.sub(r"\s+#.*$", "", raw).rstrip()
     if raw in ("~", "null"):
         return None
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
@@ -96,6 +106,8 @@ def _load_yaml_minimal(text):
                         stack.pop()
                 parent[key].append(_scalar(stripped[2:].strip()))
                 continue
+        if stripped.startswith("- ") and len(line) == len(stripped):
+            raise ValueError("top-level YAML document must be a mapping")
         pending = None
         m = _KV.match(line)
         if not m:
@@ -116,6 +128,10 @@ def _load_yaml_minimal(text):
             stack.append((indent, child))
             pending = (indent, parent, key)
         else:
+            if raw.startswith(("[", "{")):
+                raise ValueError(
+                    "flow-style YAML requires PyYAML; use block mappings/lists instead"
+                )
             parent[key] = _scalar(raw)
     return root
 
@@ -129,14 +145,29 @@ def _as_list(value):
     return value if isinstance(value, list) else [value]
 
 
-def discover(root):
+def _load_yaml_file(path, root, report):
+    rel = os.path.relpath(path, root)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return _load_yaml(fh.read())
+    except (OSError, ValueError) as exc:
+        report.error(rel, 0, str(exc))
+        return {}
+
+
+def _is_generated(path, root):
+    components = os.path.relpath(path, root).split(os.sep)
+    return "_site" in components or ".quarto" in components
+
+
+def discover(root, report=None):
     """Resolve store, bibliography and prose paths from _quarto.yml."""
     root = os.path.abspath(root)
+    report = report or Report()
     cfg = {}
     quarto = os.path.join(root, "_quarto.yml")
     if os.path.exists(quarto):
-        with open(quarto, encoding="utf-8") as fh:
-            cfg = _load_yaml(fh.read()) or {}
+        cfg = _load_yaml_file(quarto, root, report)
 
     stores = [
         p
@@ -147,18 +178,18 @@ def discover(root):
         stores = sorted(
             p
             for p in glob.glob(os.path.join(root, "**", "evidence.yml"), recursive=True)
-            if "_site" not in p and ".quarto" not in p
+            if not _is_generated(p, root)
         )
 
     bibs = [p for p in _as_list(cfg.get("bibliography")) if isinstance(p, str)]
     if not bibs:
         bibs = sorted(glob.glob(os.path.join(root, "*.bib")))
 
-    render = [
-        p
-        for p in _as_list((cfg.get("project") or {}).get("render"))
-        if isinstance(p, str)
-    ]
+    project = cfg.get("project") or {}
+    if not isinstance(project, dict):
+        report.error("_quarto.yml", 0, "`project:` must be a mapping")
+        project = {}
+    render = [p for p in _as_list(project.get("render")) if isinstance(p, str)]
     includes = [p for p in render if not p.startswith("!")] or ["**/*.qmd"]
     excludes = [p[1:] for p in render if p.startswith("!")]
     qmds = {
@@ -180,12 +211,33 @@ def discover(root):
                 for item in excluded
             )
         }
-    qmds = sorted(
-        path
-        for path in qmds
-        if "_site" not in os.path.relpath(path, root).split(os.sep)
-        and ".quarto" not in os.path.relpath(path, root).split(os.sep)
-    )
+    qmds = sorted(path for path in qmds if not _is_generated(path, root))
+
+    # Quarto render lists omit partials pulled in with `{{< include ... >}}`.
+    # Follow those includes transitively so their spans count as real uses.
+    pending = list(qmds)
+    seen = set(qmds)
+    include_re = re.compile(r"\{\{<\s*include\s+([^\s>]+)")
+    while pending:
+        source = pending.pop()
+        try:
+            with open(source, encoding="utf-8") as fh:
+                text = _blank_nonprose(fh.read())
+        except OSError:
+            continue
+        for match in include_re.finditer(text):
+            target = match.group(1).strip("\"'")
+            path = os.path.abspath(os.path.join(os.path.dirname(source), target))
+            if (
+                path.endswith(".qmd")
+                and os.path.commonpath((root, path)) == root
+                and os.path.isfile(path)
+                and not _is_generated(path, root)
+                and path not in seen
+            ):
+                seen.add(path)
+                pending.append(path)
+    qmds = sorted(seen)
 
     def absolute(paths):
         return [
@@ -202,7 +254,8 @@ def bib_keys(paths):
         if not os.path.exists(path):
             continue
         with open(path, encoding="utf-8") as fh:
-            keys |= set(re.findall(r"^\s*@\w+\s*\{\s*([^,\s]+)\s*,", fh.read(), re.M))
+            text = "\n".join(line for line in fh if not line.lstrip().startswith("%"))
+            keys |= set(re.findall(r"^\s*@\w+\s*\{\s*([^,\s}]+)\s*(?:,|})", text, re.M))
     return keys
 
 
@@ -218,7 +271,7 @@ FENCE = re.compile(r"^ {0,3}(?P<mark>`{3,}|~{3,})")
 INLINE_CODE = re.compile(r"(?P<mark>`+).*?(?P=mark)")
 
 
-def _blank_nonprose(text):
+def _blank_nonprose(text, warning=None):
     """Blank comments and code while preserving offsets and line numbers."""
     chars = list(text)
 
@@ -233,7 +286,8 @@ def _blank_nonprose(text):
     masked = "".join(chars)
     offset = 0
     fence = None
-    for line in masked.splitlines(keepends=True):
+    fence_line = 0
+    for line_number, line in enumerate(masked.splitlines(keepends=True), start=1):
         match = FENCE.match(line)
         if fence:
             blank(offset, offset + len(line))
@@ -246,8 +300,12 @@ def _blank_nonprose(text):
                 fence = None
         elif match:
             fence = match.group("mark")
+            fence_line = line_number
             blank(offset, offset + len(line))
         offset += len(line)
+
+    if fence and warning:
+        warning(fence_line, "unclosed fenced code block; evidence after it was skipped")
 
     masked = "".join(chars)
     for match in INLINE_CODE.finditer(masked):
@@ -255,10 +313,15 @@ def _blank_nonprose(text):
     return "".join(chars)
 
 
-def spans(path):
+def spans(path, report=None, rel=None):
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
-    prose = _blank_nonprose(text)
+    prose = _blank_nonprose(
+        text,
+        (lambda line, message: report.warning(rel or str(path), line, message))
+        if report
+        else None,
+    )
     for m in SPAN.finditer(prose):
         attrs = m.group("attrs")
         if not re.search(r"(^|\s)\.ev(\s|$)", attrs):
@@ -276,15 +339,26 @@ def spans(path):
 class Report:
     def __init__(self):
         self.errors = []
+        self.warnings = []
 
     def error(self, path, line, message):
         self.errors.append((path, line, message))
 
+    def warning(self, path, line, message):
+        self.warnings.append((path, line, message))
+
     def emit(self):
+        for path, line, message in self.warnings:
+            where = f"{path}:{line}" if line else path
+            loc = f" file={path},line={line}" if line else f" file={path}"
+            if os.environ.get("GITHUB_ACTIONS"):
+                print(f"::warning{loc}::{message}")
+            print(f"  {where}: warning: {message}", file=sys.stderr)
         for path, line, message in self.errors:
             where = f"{path}:{line}" if line else path
             loc = f" file={path},line={line}" if line else f" file={path}"
-            print(f"::error{loc}::{message}")
+            if os.environ.get("GITHUB_ACTIONS"):
+                print(f"::error{loc}::{message}")
             print(f"  {where}: {message}", file=sys.stderr)
         return 1 if self.errors else 0
 
@@ -300,8 +374,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     root = os.path.abspath(args.root)
-    stores, bibs, qmds = discover(root)
     report = Report()
+    stores, bibs, qmds = discover(root, report)
 
     store = {}
     origin = {}
@@ -310,8 +384,7 @@ def main(argv=None):
         if not os.path.exists(path):
             report.error(rel, 0, f"evidence store not found: {rel}")
             continue
-        with open(path, encoding="utf-8") as fh:
-            data = _load_yaml(fh.read()) or {}
+        data = _load_yaml_file(path, root, report)
         entries = data.get("evidence") or {}
         if not isinstance(entries, dict):
             report.error(
@@ -325,7 +398,10 @@ def main(argv=None):
                     0,
                     f'evidence key "{key}" is defined twice (also in {origin[key]})',
                 )
-            store[key] = entry if isinstance(entry, dict) else {}
+            if not isinstance(entry, dict):
+                report.error(rel, 0, f'evidence entry "{key}" must be a mapping')
+                entry = {}
+            store[key] = entry
             origin[key] = rel
 
     keys = bib_keys(bibs)
@@ -334,7 +410,7 @@ def main(argv=None):
 
     for path in qmds:
         rel = os.path.relpath(path, root)
-        for span in spans(path):
+        for span in spans(path, report, rel):
             n_spans += 1
             attrs, line = span["attrs"], span["line"]
             claim = span["claim"][:60] or "(empty claim text)"
@@ -391,7 +467,8 @@ def main(argv=None):
 
     status = report.emit()
     if status:
-        print(f"::error::check-evidence: {len(report.errors)} problem(s) found")
+        message = f"check-evidence: {len(report.errors)} problem(s) found"
+        print(f"::error::{message}" if os.environ.get("GITHUB_ACTIONS") else message)
     else:
         print(
             f"✓ evidence OK ({n_spans} claim span(s), {len(used)} key(s), "
