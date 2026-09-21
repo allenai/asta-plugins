@@ -7,6 +7,7 @@ and that no stored entry is orphaned. Whether a quote actually *supports* the
 claim is a reading task — see the `check-claims` skill.
 
 Stdlib-only (PyYAML is used when present); run from the Quarto project root.
+Put `.ev` examples in inline or fenced code; indented code is treated as prose.
 """
 
 from __future__ import annotations
