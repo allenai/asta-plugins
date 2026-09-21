@@ -26,13 +26,17 @@ def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:
         "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
         in workflow
     )
-    assert "for asset in quarto-check.sh wait-for-preview.sh check-evidence.py" in workflow
+    assert (
+        "for asset in quarto-check.sh wait-for-preview.sh check-evidence.py" in workflow
+    )
 
 
 def test_workspace_checks_vendored_scripts_for_drift() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert "for asset in quarto-check.sh wait-for-preview.sh check-evidence.py" in workflow
+    assert (
+        "for asset in quarto-check.sh wait-for-preview.sh check-evidence.py" in workflow
+    )
 
 
 def test_scaffolded_workflow_ref_matches_project_version() -> None:
