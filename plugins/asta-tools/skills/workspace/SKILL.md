@@ -50,7 +50,7 @@ Before writing any file in the steps below, check whether the target path alread
 3. Create empty `references.bib`.
 4. Copy `assets/evidence.yml` to the project root (the keyed quote store — keep it even while empty). The Makefile fetches the hover-snippet extension from this repository before each render, so do not vendor `assets/_extensions/evidence/` into the project. See **Back claims with supporting evidence** below.
 5. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
-6. Copy `assets/Makefile` to project root, and `assets/quarto-check.sh` + `assets/wait-for-preview.sh` to `scripts/` (vendored verbatim — the Makefile's `check` target runs `quarto-check.sh`, while `preview-baseline` / `preview-ready` run `wait-for-preview.sh`; to update either later, re-copy rather than hand-edit). CI warns when a vendored copy drifts from the canonical one; on that warning, re-copy the asset.
+6. Copy `assets/Makefile` to project root, and `assets/quarto-check.sh` + `assets/wait-for-preview.sh` + `assets/check-evidence.py` to `scripts/` (vendored verbatim — the Makefile's `check` target runs `quarto-check.sh`, which in turn runs `check-evidence.py`, while `preview-baseline` / `preview-ready` run `wait-for-preview.sh`; to update either later, re-copy rather than hand-edit). CI warns when a vendored copy drifts from the canonical one; on that warning, re-copy the asset.
 7. Copy `assets/README.md`; fill `{{TITLE}}` and `{{DESCRIPTION}}` from the user.
 8. Copy `assets/DEVELOPER.md` to project root. User owns it — only update later with explicit user permission.
 

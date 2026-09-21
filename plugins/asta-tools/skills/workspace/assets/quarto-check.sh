@@ -5,6 +5,13 @@
 # update by re-copying from the skill's assets.
 set -u
 
+# Structural evidence check first: it is fast, and a dangling `.ev` key is
+# cheaper to report than to hunt for in render output. Judging whether a quote
+# supports its claim is not scriptable — see the `check-claims` skill.
+if [ -f scripts/check-evidence.py ]; then
+  python3 scripts/check-evidence.py || exit 1
+fi
+
 rm -f _site/index.html  # stale output must not satisfy the checks below
 
 # Stream the render through tee but keep quarto's exit code (a plain pipe
