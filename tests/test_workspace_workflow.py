@@ -187,7 +187,10 @@ case "$1 $2" in
     [ ! -f "$GH_RUN_COUNT" ] || count=$(cat "$GH_RUN_COUNT")
     count=$((count + 1))
     printf '%s\\n' "$count" > "$GH_RUN_COUNT"
-    [ "${GH_RUN_FAIL_ON:-0}" != "$count" ] || exit 1
+    [ "${GH_RUN_FAIL_ON:-0}" != "$count" ] || {
+      echo '{"message":"temporary failure"}'
+      exit 1
+    }
     if [ "$count" -eq 1 ]; then
       echo "${GH_BEFORE_RUN:-100}"
     elif [ "$count" -ge "${GH_RUN_ON:-2}" ]; then
@@ -202,7 +205,13 @@ case "$1 $2" in
     printf '%s\\n' "$count" > "$GH_TIP_COUNT"
     if [ "$count" -eq 1 ]; then echo before; else echo "${GH_AFTER_TIP:-before}"; fi
     ;;
-  "api repos/owner/project/compare/before..."*) echo "${GH_COMPARISON:-ahead 1 1 published-sha}" ;;
+  "api repos/owner/project/compare/before..."*)
+    [ "${GH_COMPARE_FAIL:-0}" != 1 ] || {
+      echo '{"message":"temporary failure"}'
+      exit 1
+    }
+    echo "${GH_COMPARISON:-ahead 1 1 published-sha}"
+    ;;
   "api repos/owner/project/pages/builds?per_page=10") echo "${GH_BUILT:-1}" ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
@@ -235,12 +244,9 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _write_fake_gh(bin_dir)
-    published = tmp_path / "published"
-    published.touch()
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GH_LOG": str(tmp_path / "gh.log"),
-        "GH_PUBLISHED": str(published),
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
         "GH_TIP_COUNT": str(tmp_path / "tip-count"),
         "WORKFLOW_TIMEOUT": "3",
@@ -287,7 +293,39 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     assert "Pages published published-sha" in result.stdout
     log = Path(env["GH_LOG"]).read_text()
     assert "compare/before...after" in log
+    assert "(run 101)" in log
     assert "pages/builds?per_page=10" in log
+
+
+def test_preview_wait_ignores_an_unrelated_pages_update(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_COMPARISON="ahead 1 1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "unrelated Pages updates were ignored" in result.stdout
+
+
+def test_preview_wait_preserves_baseline_when_correlation_fails(
+    tmp_path: Path,
+) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_COMPARE_FAIL="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Could not correlate" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def test_preview_wait_preserves_baseline_for_retry(tmp_path: Path) -> None:
