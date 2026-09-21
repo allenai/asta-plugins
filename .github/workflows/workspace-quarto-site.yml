@@ -166,7 +166,9 @@ jobs:
           if git diff --cached --quiet; then
             echo "gh-pages already up to date"
           else
-            git commit -m "Deploy ${{ github.event_name }} ${{ github.sha }}"
+            # The run ID gives external readiness checks a stable way to match
+            # this commit even when github.sha is a synthetic PR merge commit.
+            git commit -m "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
             for i in 1 2 3 4 5; do
               git push origin gh-pages && break
               [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }

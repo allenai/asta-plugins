@@ -18,6 +18,15 @@ def test_workspace_assets_use_called_workflow_identity() -> None:
     assert "github.job_workflow" not in workflow
 
 
+def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:
+    workflow = WORKFLOW.read_text()
+
+    assert (
+        "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
+        in workflow
+    )
+
+
 def test_scaffolded_workflow_ref_matches_project_version() -> None:
     """Release-managed workspace assets must advance under one version tag."""
     project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][
@@ -182,11 +191,18 @@ case "$1 $2" in
     if [ "$count" -eq 1 ]; then
       echo "${GH_BEFORE_RUN:-100}"
     elif [ "$count" -ge "${GH_RUN_ON:-2}" ]; then
-      echo "101 pull_request"
+      echo "101"
     fi
     ;;
   "run watch") exit 0 ;;
-  "api repos/owner/project/commits?sha=gh-pages&per_page=100") cat "$GH_PUBLISHED" ;;
+  "api repos/owner/project/commits/gh-pages")
+    count=0
+    [ ! -f "$GH_TIP_COUNT" ] || count=$(cat "$GH_TIP_COUNT")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$GH_TIP_COUNT"
+    if [ "$count" -eq 1 ]; then echo before; else echo "${GH_AFTER_TIP:-before}"; fi
+    ;;
+  "api repos/owner/project/compare/before..."*) echo "${GH_COMPARISON:-ahead 1 1 published-sha}" ;;
   "api repos/owner/project/pages/builds?per_page=10") echo "${GH_BUILT:-1}" ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
@@ -226,6 +242,7 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "GH_LOG": str(tmp_path / "gh.log"),
         "GH_PUBLISHED": str(published),
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
+        "GH_TIP_COUNT": str(tmp_path / "tip-count"),
         "WORKFLOW_TIMEOUT": "3",
         "PAGES_TIMEOUT": "2",
         "POLL": "1",
@@ -251,8 +268,7 @@ def test_preview_wait_retries_lookup_from_detached_head(tmp_path: Path) -> None:
         for line in Path(env["GH_LOG"]).read_text().splitlines()
         if "run list" in line
     ]
-    assert "--branch" in run_lookups[0]
-    assert all("--branch" not in line for line in run_lookups[1:])
+    assert all("--branch" not in line for line in run_lookups)
 
 
 def test_preview_wait_matches_pages_build_to_workflow_deployment(
@@ -262,7 +278,7 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
 
     subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
-    Path(env["GH_PUBLISHED"]).write_text("published-sha\\n")
+    env["GH_AFTER_TIP"] = "after"
     result = subprocess.run(
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
@@ -270,7 +286,7 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     assert result.returncode == 0, result.stderr
     assert "Pages published published-sha" in result.stdout
     log = Path(env["GH_LOG"]).read_text()
-    assert "commits?sha=gh-pages" in log
+    assert "compare/before...after" in log
     assert "pages/builds?per_page=10" in log
 
 

@@ -2,13 +2,15 @@
 # Wait for the Pages deployment started by the current push, so a preview link
 # is only reported once it is actually live.
 #
-#   baseline  record the newest docs workflow run before pushing
-#   wait      wait for a newer run for HEAD, then for the Pages build of the
-#             gh-pages commit that run published
+#   baseline  record the Pages branch tip and latest docs run before pushing
+#   wait      wait for the docs workflow for HEAD, then for the Pages build of
+#             the commit it published
 #
-# The shared workflow names each deployment commit `Deploy <event> <source-sha>`.
-# That identity prevents a concurrent deployment from satisfying this wait.
-# When no such commit exists, the render was unchanged and no Pages build starts.
+# A render whose output is identical creates no deployment commit and no Pages
+# build. Concurrent workflows can still move the branch, so `wait` identifies
+# this workflow's deployment by its run-ID commit message instead of treating
+# the branch tip as its own. Transient `errored` builds are common, so a bad
+# status is never fatal on its own — only the timeout is.
 set -eu
 
 REPO=${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
@@ -20,31 +22,41 @@ POLL=${POLL:-10}
 
 state=$(git rev-parse --git-path preview-run-before)
 
-positive_int() {
-  name=$1 value=$2
-  case "$value" in ''|*[!0-9]*) value=0 ;; esac
-  [ "$value" -gt 0 ] 2>/dev/null || {
-    echo "$name must be a positive integer" >&2
-    exit 2
-  }
+positive_integer() {
+  case "$2" in
+    ''|*[!0-9]*|0)
+      echo "$1 must be a positive integer (got '$2')" >&2
+      exit 2
+      ;;
+  esac
 }
 
-positive_int WORKFLOW_TIMEOUT "$WORKFLOW_TIMEOUT"
-positive_int PAGES_TIMEOUT "$PAGES_TIMEOUT"
-positive_int POLL "$POLL"
+positive_integer WORKFLOW_TIMEOUT "$WORKFLOW_TIMEOUT"
+positive_integer PAGES_TIMEOUT "$PAGES_TIMEOUT"
+positive_integer POLL "$POLL"
+
+pages_tip() {
+  value=$(gh api "repos/$REPO/commits/$PAGES_BRANCH" --jq .sha 2>/dev/null) || value=
+  printf '%s\n' "$value"
+}
+
+latest_workflow_run() {
+  gh run list --repo "$REPO" --workflow "$WORKFLOW" --limit 1 \
+    --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null
+}
 
 case "${1:-wait}" in
 baseline)
-  branch=$(git branch --show-current)
-  set --
-  [ -z "$branch" ] || set -- --branch "$branch"
-  before=$(gh run list --repo "$REPO" "$@" --workflow "$WORKFLOW" --limit 1 \
-    --json databaseId --jq '.[0].databaseId // 0')
-  case "$before" in ''|*[!0-9]*)
-    echo "Could not read the latest docs workflow run on $REPO" >&2
+  tip=$(pages_tip)
+  [ -n "$tip" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
+  run_id=$(latest_workflow_run) || {
+    echo "Could not read workflow runs for '$WORKFLOW' on $REPO" >&2
     exit 1
+  }
+  case "$run_id" in
+    ''|*[!0-9]*) echo "Invalid workflow run id: '$run_id'" >&2; exit 1 ;;
   esac
-  printf '%s\n' "$before" > "$state"
+  printf '%s\n%s\n' "$tip" "$run_id" > "$state"
   echo "Preview baseline recorded"
   ;;
 wait)
@@ -52,45 +64,71 @@ wait)
     echo "No baseline — run 'make preview-baseline' before pushing" >&2
     exit 1
   }
-  before=$(cat "$state")
-  case "$before" in ''|*[!0-9]*)
-    echo "Invalid preview baseline — run 'make preview-baseline' again" >&2
-    exit 1
+  before=$(sed -n '1p' "$state")
+  before_run=$(sed -n '2p' "$state")
+  case "$before_run" in
+    ''|*[!0-9]*) echo "Invalid preview baseline — run 'make preview-baseline' again" >&2; exit 1 ;;
   esac
   branch=$(git branch --show-current)
   sha=$(git rev-parse HEAD)
 
   set --
   [ -z "$branch" ] || set -- --branch "$branch"
-  elapsed=0 run= run_id= run_event=
+  elapsed=0 run_id=
   while [ "$elapsed" -lt "$WORKFLOW_TIMEOUT" ]; do
-    run=$(gh run list --repo "$REPO" "$@" --workflow "$WORKFLOW" --limit 100 \
-      --json databaseId,event,headSha --jq \
-      "([.[] | select(.headSha==\"$sha\" and .databaseId>$before)][0] // empty) | \"\\(.databaseId) \\( .event)\"" \
-      2>/dev/null || true)
-    if [ -n "$run" ]; then
-      run_id=${run%% *}
-      run_event=${run#* }
-      break
+    if ! run_id=$(gh run list --repo "$REPO" "$@" \
+      --workflow "$WORKFLOW" --limit 100 \
+      --json databaseId,headSha --jq \
+      "[.[] | select(.headSha==\"$sha\" and .databaseId>$before_run)][0].databaseId // empty" \
+      2>/dev/null); then
+      run_id=
     fi
+    [ -n "$run_id" ] && break
     sleep "$POLL"
     elapsed=$((elapsed + POLL))
   done
   [ -n "$run_id" ] || { echo "No docs workflow run for $sha" >&2; exit 1; }
   gh run watch "$run_id" --repo "$REPO" --exit-status
 
-  published=$(gh api "repos/$REPO/commits?sha=$PAGES_BRANCH&per_page=100" --jq \
-    "[.[] | select(.commit.message==\"Deploy $run_event $sha\")][0].sha // empty")
-  if [ -z "$published" ]; then
+  after=$(pages_tip)
+  [ -n "$after" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
+  if [ "$after" = "$before" ]; then
     rm -f "$state"
     echo "Rendered output unchanged — the published preview is already current"
     exit 0
   fi
 
+  comparison=$(gh api "repos/$REPO/compare/$before...$after" --jq \
+    "[.status, (.total_commits|tostring), (.commits|length|tostring), ([.commits[] | select(.commit.message | endswith(\" (run $run_id)\"))][-1].sha // \"\")] | join(\" \")" \
+    2>/dev/null) || {
+      echo "Could not correlate $WORKFLOW with $PAGES_BRANCH" >&2
+      exit 1
+    }
+  set -- $comparison
+  compare_status=${1:-}
+  total_commits=${2:-}
+  returned_commits=${3:-}
+  published=${4:-}
+  [ "$compare_status" = ahead ] || {
+    echo "$PAGES_BRANCH no longer descends from the recorded baseline" >&2
+    exit 1
+  }
+  [ "$total_commits" = "$returned_commits" ] || {
+    echo "Too many concurrent $PAGES_BRANCH updates to identify this deployment safely" >&2
+    exit 1
+  }
+  if [ -z "$published" ]; then
+    rm -f "$state"
+    echo "Rendered output unchanged — unrelated Pages updates were ignored"
+    exit 0
+  fi
+
   elapsed=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
-    built=$(gh api "repos/$REPO/pages/builds?per_page=10" --jq \
-      "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length" 2>/dev/null || echo 0)
+    if ! built=$(gh api "repos/$REPO/pages/builds?per_page=10" --jq \
+      "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length" 2>/dev/null); then
+      built=0
+    fi
     if [ "$built" -gt 0 ]; then
       rm -f "$state"
       echo "Pages published $published"
