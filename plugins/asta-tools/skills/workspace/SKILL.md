@@ -66,7 +66,7 @@ NatureBench has [90 tasks]{.ev key="naturebench-count"}.
 
 Only ever put a **verbatim** quotation in `quote:` — there is no paraphrase mode; state your own wording in the prose. Full field reference and design notes are in `_extensions/evidence/README.md`.
 
-`make check` validates the *structure* of these entries. Whether a claim needs evidence at all, and whether a quote actually supports the claim as worded, is a judgement call — load the `check-claims` skill for that, both before you open a PR and when reviewing one.
+Structural validation of these entries belongs in deterministic build tooling. Whether a claim needs evidence at all, and whether a quote actually supports the claim as worded, is a judgement call — load the `check-claims` skill for that, both before you open a PR and when reviewing one.
 
 ### GitHub Pages deploy
 
