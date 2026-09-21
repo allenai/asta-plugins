@@ -367,7 +367,7 @@ Recent citations:
 - Use `snippet-search` when searching for specific claims, methods, or evidence within paper bodies
 - Use `search` for topic-level paper discovery
 - For comprehensive research, suggest Literature Report Generation skill instead
-- Provide Semantic Scholar URLs when helpful: request and use the `url` field, or link a corpus ID as `https://api.semanticscholar.org/CorpusID:<id>`
+- Provide Semantic Scholar URLs when helpful: request and use the `url` field, or build the link from whichever ID you have — `https://www.semanticscholar.org/paper/<paperId>` for a `paperId`, `https://api.semanticscholar.org/CorpusID:<corpusId>` for a corpus ID (the `api` host resolves any prefixed external ID, e.g. `DOI:`, `arXiv:`)
 
 ## API Key
 
