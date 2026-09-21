@@ -15,5 +15,6 @@ evidence: {}
   #   provenance:              # optional; retained, shown behind a "Source details" disclosure
   #     method: asta papers snippet-search  # exact producer invocation; omit if unknown
   #     query: "the search that surfaced the quote"
-  #     corpus_id: 289622360
+  #     paper_id: 476356bf86b393fb16321bccec54c23a902ac137  # S2 SHA paperId
+  #     corpus_id: 289622360   # used when paper_id is absent
   #     retrieved: 2026-08-30

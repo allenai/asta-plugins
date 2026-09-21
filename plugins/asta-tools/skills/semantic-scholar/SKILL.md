@@ -77,6 +77,29 @@ Supported ID formats:
 - `PMID:19872477`
 - `URL:https://arxiv.org/abs/2106.15928`
 
+### Linking to a paper
+
+Never build a link by splicing an ID into `https://www.semanticscholar.org/paper/{id}`.
+That route accepts a **bare 40-hex `paperId` only**; a prefixed external ID such as
+`CorpusID:272986926` in that path returns the app shell with HTTP 202, so it looks
+alive to a link checker but shows the reader nothing.
+
+In order of preference:
+
+1. **Request `--fields url` and use the returned `url` verbatim.** It is the paper's
+   own canonical page and costs nothing extra.
+2. **Otherwise link through the resolver host `api.semanticscholar.org`,** which
+   accepts every ID flavor above and 301s to the canonical page:
+
+   | You have | Link |
+   |---|---|
+   | `paperId` (40-hex SHA) | `https://api.semanticscholar.org/476356bf86b393fb16321bccec54c23a902ac137` — **bare, no prefix** (`SHA:`/`PaperId:` both 404) |
+   | `corpusId` | `https://api.semanticscholar.org/CorpusID:272986926` (`CorpusId:`/`corpusid:` also work) |
+   | arXiv / DOI / PMID / ACL / MAG | `https://api.semanticscholar.org/arXiv:1705.10311`, `DOI:10.1038/nrn3241`, … |
+
+The SHA and `CorpusID:` forms are the dependable ones for constructing a link;
+other external IDs resolve only when S2 has that ID indexed for the paper.
+
 Common fields: `title,abstract,authors,year,venue,citationCount,publicationDate,url,isOpenAccess,fieldsOfStudy`
 
 ### Search Papers
@@ -367,7 +390,7 @@ Recent citations:
 - Use `snippet-search` when searching for specific claims, methods, or evidence within paper bodies
 - Use `search` for topic-level paper discovery
 - For comprehensive research, suggest Literature Report Generation skill instead
-- Provide Semantic Scholar URLs when helpful (`https://semanticscholar.org/paper/{paperId}`)
+- Provide Semantic Scholar URLs when helpful — use the API's own `url` field, or the resolver host (see [Linking to a paper](#linking-to-a-paper)); never splice an ID into `www.semanticscholar.org/paper/`
 
 ## API Key
 

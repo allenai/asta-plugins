@@ -41,5 +41,8 @@ Generate a BibTeX entry from the result. Conventions:
 - **Key**: `{firstAuthorSurname}{year}` lowercased, ASCII only (e.g., `wei2022`). Append a letter for conflicts (`wei2022a`).
 - **`corpus_id`**: Include `corpus_id = {<id>}` for stable identification (survives key renames).
 - **Append** to the `.bib` — never rewrite existing entries.
+- **Links**: use the paper's own `url` field. With only a corpus ID, link
+  `https://api.semanticscholar.org/CorpusID:<id>`; `www.semanticscholar.org/paper/CorpusID:<id>`
+  is not a valid route (the website path takes a bare 40-hex `paperId` only).
 
 **Verification**: Use the **Preview** skill to render and verify all citations resolve.

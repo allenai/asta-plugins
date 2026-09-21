@@ -134,7 +134,9 @@ The output is a `LiteratureSearchResult` with the following structure:
 - `year`: int | null - publication year
 - `authors`: array of {name: string, id: string}
 - `venue`: string | null - publication venue
-- `url`: string | null - Semantic Scholar URL
+- `url`: string | null - Semantic Scholar URL; **use this verbatim when linking a paper.**
+  With only a `corpusId`, link `https://api.semanticscholar.org/CorpusID:<id>` — never
+  `www.semanticscholar.org/paper/CorpusID:<id>`, which is not a valid route
 - `citationCount`: int | null - number of citations
 - `relevanceScore`: float - 0-1 (higher = more relevant to query)
 - `relevanceJudgement`: object with:

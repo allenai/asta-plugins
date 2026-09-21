@@ -162,10 +162,16 @@ when the retrieval route was not recorded, omit `method` rather than infer it.
 |---|---|
 | `method` | exact producer invocation, such as `asta papers snippet-search`; omit when unknown |
 | `query` | the search query that surfaced the quote (search methods) |
-| `corpus_id` | S2 corpusId of the source paper (rendered as an S2 link) |
+| `paper_id` | S2 paperId (40-hex SHA) of the source paper (rendered as an S2 link) |
+| `corpus_id` | S2 corpusId of the source paper (rendered as an S2 link when there is no `paper_id`) |
 | `url` | canonical `http:`, `https:`, or `asta:` source/document URI |
 | `retrieved` | ISO date the evidence was obtained |
 | `note` | free text |
+
+Both IDs render as a link on `api.semanticscholar.org` — the only host that
+resolves either flavor (it 301s to the canonical paper page). The website's
+`www.semanticscholar.org/paper/<...>` route accepts a bare SHA *only*, so a
+prefixed `CorpusID:` spliced into it is a dead link (see allenai/asta-plugins#139).
 
 Deliberately **not** modelled (kept out to stay timeless): a paraphrase mode,
 snippet char-offsets/scores/section labels, and a per-artifact `kind` enum. Those
