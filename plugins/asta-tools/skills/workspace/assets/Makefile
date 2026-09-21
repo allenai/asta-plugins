@@ -110,8 +110,8 @@ deployed-url:
 	fi
 
 # Preview readiness, for automated callers that report a preview link: mark the
-# latest docs run before pushing, then block until this push's deployment is
-# live. Vendored from the workspace skill — update by re-copying.
+# Pages tip and latest docs run before pushing, then block until this push's
+# deployment is live. Vendored from the workspace skill — update by re-copying.
 preview-baseline:
 	sh scripts/wait-for-preview.sh baseline
 

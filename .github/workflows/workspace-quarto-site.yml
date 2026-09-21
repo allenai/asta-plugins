@@ -162,19 +162,15 @@ jobs:
 
           cd "$tmp"
           git add -A
-          if git diff --cached --quiet; then
-            echo "gh-pages already up to date"
-          else
-            # The run ID gives external readiness checks a stable way to match
-            # this commit even when github.sha is a synthetic PR merge commit.
-            git commit -m "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
-            for i in 1 2 3 4 5; do
-              git push origin gh-pages && break
-              [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
-              echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
-              git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
-            done
-          fi
+          # Always publish a run-ID marker commit. Even byte-identical renders
+          # then produce an observable Pages build for readiness checks.
+          git commit --allow-empty -m "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
+          for i in 1 2 3 4 5; do
+            git push origin gh-pages && break
+            [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
+            echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
+            git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
+          done
 
           # For a PR, ensure exactly one preview-link comment (create or update),
           # independent of whether the content changed. Best-effort — a comment

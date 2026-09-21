@@ -6,18 +6,17 @@
 #   wait      wait for the docs workflow for HEAD, then for the Pages build of
 #             the commit it published
 #
-# A render whose output is identical creates no deployment commit and no Pages
-# build. Concurrent workflows can still move the branch, so `wait` identifies
-# this workflow's deployment by its run-ID commit message instead of treating
-# the branch tip as its own. Transient `errored` builds are common, so a bad
-# status is never fatal on its own — only the timeout is.
+# Each successful workflow publishes a run-ID marker commit, including for a
+# byte-identical render. The marker identifies this workflow's deployment even
+# when concurrent workflows move the Pages branch. Transient `errored` Pages
+# builds are not fatal on their own; only an API failure or timeout is.
 set -eu
 
 REPO=${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 PAGES_BRANCH=${PAGES_BRANCH:-gh-pages}
 WORKFLOW=${WORKFLOW:-Build and Deploy Docs}
-WORKFLOW_TIMEOUT=${WORKFLOW_TIMEOUT:-120}   # seconds to wait for the run to appear
-RUN_TIMEOUT=${RUN_TIMEOUT:-600}              # seconds to wait for the run to finish
+WORKFLOW_TIMEOUT=${WORKFLOW_TIMEOUT:-300}   # seconds to wait for the run to appear
+RUN_TIMEOUT=${RUN_TIMEOUT:-600}             # seconds to wait for the run to finish
 PAGES_TIMEOUT=${PAGES_TIMEOUT:-600}         # seconds to wait for the Pages build
 POLL=${POLL:-10}
 
@@ -90,14 +89,14 @@ wait)
     elapsed=$((elapsed + POLL))
   done
   [ -n "$run_id" ] || {
-    echo "No docs workflow run for $sha — was the baseline recorded before pushing?" >&2
+    echo "No newer docs workflow run for $sha — was preview-baseline run after pushing?" >&2
     exit 1
   }
 
   elapsed=0 conclusion=
   while [ "$elapsed" -lt "$RUN_TIMEOUT" ]; do
     if run=$(gh run view "$run_id" --repo "$REPO" --json status,conclusion \
-      --jq '[.status, .conclusion] | join(" ")' 2>/dev/null); then
+      --jq '[.status, (.conclusion // "")] | join(" ")' 2>/dev/null); then
       set -- $run
       if [ "${1:-}" = completed ]; then
         conclusion=${2:-}
@@ -119,9 +118,8 @@ wait)
   after=$(pages_tip)
   [ -n "$after" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
   if [ "$after" = "$before" ]; then
-    rm -f "$state"
-    echo "Rendered output unchanged — the published preview is already current"
-    exit 0
+    echo "Docs workflow $run_id published no run-ID marker; update its workspace workflow" >&2
+    exit 1
   fi
 
   comparison=$(gh api "repos/$REPO/compare/$before...$after" --jq \
@@ -143,19 +141,17 @@ wait)
     echo "Too many concurrent $PAGES_BRANCH updates to identify this deployment safely" >&2
     exit 1
   }
-  if [ -z "$published" ]; then
-    rm -f "$state"
-    echo "Rendered output unchanged — unrelated Pages updates were ignored"
-    exit 0
-  fi
+  [ -n "$published" ] || {
+    echo "Docs workflow $run_id published no identifiable run-ID marker" >&2
+    exit 1
+  }
 
-  elapsed=0 pages_api_seen=0
+  elapsed=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
     if ! built=$(gh api "repos/$REPO/pages/builds?per_page=10" --jq \
-      "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length" 2>/dev/null); then
-      built=0
-    else
-      pages_api_seen=1
+      "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length"); then
+      echo "Could not read Pages builds for $REPO; verify Pages API access" >&2
+      exit 1
     fi
     if [ "$built" -gt 0 ]; then
       rm -f "$state"
@@ -165,10 +161,6 @@ wait)
     sleep "$POLL"
     elapsed=$((elapsed + POLL))
   done
-  if [ "$pages_api_seen" -eq 0 ]; then
-    echo "Could not read Pages builds for $REPO within ${PAGES_TIMEOUT}s — check Pages read access" >&2
-    exit 1
-  fi
   echo "Pages did not publish $published within ${PAGES_TIMEOUT}s" >&2
   exit 1
   ;;

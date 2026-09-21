@@ -21,10 +21,12 @@ def test_workspace_assets_use_called_workflow_identity() -> None:
 def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:
     workflow = WORKFLOW.read_text()
 
+    assert "git commit --allow-empty" in workflow
     assert (
         "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
         in workflow
     )
+    assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
 
 
 def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
@@ -272,13 +274,13 @@ def test_preview_wait_retries_lookup_from_detached_head(tmp_path: Path) -> None:
 
     subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
     subprocess.run(["git", "checkout", "--detach", "-q"], cwd=project, check=True)
-    env.update(GH_RUN_ON="3", GH_RUN_FAIL_ON="2")
+    env.update(GH_RUN_ON="3", GH_RUN_FAIL_ON="2", GH_AFTER_TIP="after")
     result = subprocess.run(
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
 
     assert result.returncode == 0, result.stderr
-    assert "published preview is already current" in result.stdout
+    assert "Pages published published-sha" in result.stdout
     run_lookups = [
         line
         for line in Path(env["GH_LOG"]).read_text().splitlines()
@@ -307,7 +309,7 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     assert "pages/builds?per_page=10" in log
 
 
-def test_preview_wait_ignores_an_unrelated_pages_update(tmp_path: Path) -> None:
+def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> None:
     project, env = _preview_project(tmp_path)
     script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
 
@@ -317,8 +319,9 @@ def test_preview_wait_ignores_an_unrelated_pages_update(tmp_path: Path) -> None:
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
 
-    assert result.returncode == 0, result.stderr
-    assert "unrelated Pages updates were ignored" in result.stdout
+    assert result.returncode == 1
+    assert "no identifiable run-ID marker" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def test_preview_wait_preserves_baseline_when_correlation_fails(
@@ -343,7 +346,7 @@ def test_preview_wait_preserves_baseline_for_retry(tmp_path: Path) -> None:
     script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
 
     subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
-    env.update(GH_RUN_ON="3", WORKFLOW_TIMEOUT="1")
+    env.update(GH_RUN_ON="3", WORKFLOW_TIMEOUT="1", GH_AFTER_TIP="after")
     first = subprocess.run(
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
@@ -384,7 +387,7 @@ def test_preview_wait_reports_unreadable_pages_api(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "Could not read Pages builds" in result.stderr
-    assert "check Pages read access" in result.stderr
+    assert "verify Pages API access" in result.stderr
     assert (project / ".git/preview-run-before").exists()
 
 
@@ -399,6 +402,34 @@ def test_preview_wait_rejects_invalid_timing(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "POLL must be a positive integer" in result.stderr
+
+
+def test_preview_baseline_surfaces_run_lookup_failure(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    env["GH_RUN_FAIL_ON"] = "1"
+
+    result = subprocess.run(
+        [script, "baseline"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Could not read workflow runs" in result.stderr
+
+
+def test_preview_wait_bounds_pages_poll_and_preserves_baseline(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_BUILT="0", PAGES_TIMEOUT="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Pages did not publish" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def _make_evidence_archive(archive: Path) -> None:
