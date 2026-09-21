@@ -66,6 +66,8 @@ NatureBench has [90 tasks]{.ev key="naturebench-count"}.
 
 Only ever put a **verbatim** quotation in `quote:` — there is no paraphrase mode; state your own wording in the prose. Full field reference and design notes are in `_extensions/evidence/README.md`.
 
+`make check` validates the *structure* of these entries. Whether a claim needs evidence at all, and whether a quote actually supports the claim as worded, is a judgement call — load the `check-claims` skill for that, both before you open a PR and when reviewing one.
+
 ### GitHub Pages deploy
 
 1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — via `gh api` if the token has admin on the repo, otherwise ask the user.

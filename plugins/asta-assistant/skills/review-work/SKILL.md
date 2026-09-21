@@ -24,7 +24,7 @@ Same README, updated:
 1. **Goal vs Results.** Re-read the `# Goal` section. Compare against `# Results`. Does the work actually answer the goal, or only adjacent questions?
 2. **Artifacts exist.** For every artifact named in `# Results`, verify it is present under `work/<slug>/data/`.
 3. **Plan adherence.** Did execution follow the plan? Documented deviations are acceptable; undocumented substitution is a red flag.
-4. **Evidence quality.** Are claims in `# Results` supported by the artifacts? Spot-check by reading a sample.
+4. **Evidence quality.** Are claims in `# Results` supported by the artifacts? Spot-check by reading a sample. For prose claims backed by `.ev` evidence entries, apply the `check-claims` rubric rather than a second opinion of your own.
 
 ## Assessment template
 
