@@ -52,9 +52,7 @@
     provenance:
       method     exact producer invocation — e.g. "asta papers snippet-search"
       query      the search query that surfaced the quote (for search methods)
-      paper_id   S2 paperId (40-hex SHA) of the source paper (rendered as an S2 link)
-      corpus_id  S2 corpusId of the source paper (rendered as an S2 link when
-                 there is no paper_id)
+      corpus_id  S2 corpusId of the source paper (rendered as an S2 link)
       url        canonical link to the source or a produced artifact/report URI
       retrieved  ISO date the evidence was obtained
       note       free text
@@ -74,7 +72,7 @@
 local store = {}
 
 local FIELDS = { 'quote', 'cite', 'source', 'url', 'locator' }
-local PROV_FIELDS = { 'method', 'query', 'paper_id', 'corpus_id', 'url', 'retrieved', 'note' }
+local PROV_FIELDS = { 'method', 'query', 'corpus_id', 'url', 'retrieved', 'note' }
 
 -- Parse an entry's nested `provenance:` map into a plain lua table. Returns nil
 -- when there is nothing to show, so callers can treat provenance as optional.
@@ -144,24 +142,6 @@ local function safe_url(url)
   return nil
 end
 
--- Resolver link + label for the S2 paper a quote came from, or nil when the
--- provenance carries no usable ID. `www.semanticscholar.org/paper/<...>` is a
--- SHA-only route, so a prefixed corpusId spliced into it is a dead link
--- (allenai/asta-plugins#139); `api.semanticscholar.org` resolves both flavors
--- and 301s to the canonical page. Both IDs are shape-checked, so only digits
--- or hex ever reach the href.
-local function s2_link(prov)
-  local sha = prov.paper_id and prov.paper_id:lower():match('^%x+$')
-  if sha and #sha == 40 then
-    return 'https://api.semanticscholar.org/' .. sha, 'S2 ' .. sha:sub(1, 8)
-  end
-  local corpus = prov.corpus_id and prov.corpus_id:match('^%d+$')
-  if corpus then
-    return 'https://api.semanticscholar.org/CorpusID:' .. corpus, 'S2 #' .. corpus
-  end
-  return nil
-end
-
 -- Build the collapsed "Source details" disclosure as one raw-HTML inline.
 --
 -- It MUST be phrasing (inline) content only — plain <span>s, no <details>/<div>
@@ -185,9 +165,9 @@ local function build_prov_details(prov)
   if prov.query then
     rows[#rows + 1] = 'query: <em>“' .. html_escape(prov.query) .. '”</em>'
   end
-  local s2_href, s2_label = s2_link(prov)
-  if s2_href then
-    rows[#rows + 1] = '<a href="' .. s2_href .. '">' .. s2_label .. '</a>'
+  if prov.corpus_id then
+    rows[#rows + 1] = '<a href="https://api.semanticscholar.org/CorpusID:'
+      .. html_escape(prov.corpus_id) .. '">S2 #' .. html_escape(prov.corpus_id) .. '</a>'
   end
   if prov.url then
     local href = safe_url(prov.url)
