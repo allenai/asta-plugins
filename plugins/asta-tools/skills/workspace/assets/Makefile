@@ -1,4 +1,4 @@
-.PHONY: preview render clean dev deployed-url check workspace-assets
+.PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
 
 # Which asta-plugins ref to fetch the workspace evidence extension from.
 # The default (empty ASTA_PLUGINS_REF) resolves to the latest published version
@@ -108,3 +108,12 @@ deployed-url:
 		preview=$$(gh pr view --json comments -q '.comments[] | select(.body | test("Preview:")) | .body' 2>/dev/null | tail -1); \
 		[ -n "$$preview" ] && echo "$$preview" || echo "(Preview URL not posted yet — CI may still be running.)"; \
 	fi
+
+# Preview readiness, for automated callers that report a preview link: mark the
+# Pages tip and latest docs run before pushing, then block until this push's
+# deployment is live. Vendored from the workspace skill — update by re-copying.
+preview-baseline:
+	sh scripts/wait-for-preview.sh baseline
+
+preview-ready:
+	sh scripts/wait-for-preview.sh wait

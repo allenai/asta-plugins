@@ -41,25 +41,24 @@ jobs:
 
       - uses: quarto-dev/quarto-actions/setup@v2
 
-      # The shared render/validate logic is vendored into each project as
-      # scripts/quarto-check.sh. Surface (never fail on) drift between that
-      # copy and the canonical one shipped at this workflow's own commit, so
-      # stale or hand-edited copies get noticed on every run.
-      - name: Check vendored quarto-check.sh for drift
+      # Shared scripts are vendored into each project. Surface (never fail on)
+      # drift from the canonical copies shipped at this workflow's own commit.
+      - name: Check vendored workspace scripts for drift
         run: |
-          [ -f scripts/quarto-check.sh ] || exit 0
-          # Fetch from the reusable workflow's own repo@sha. The `github`
-          # context belongs to the caller; `job.workflow_*` identifies the
-          # called workflow and keeps co-located assets on the same commit.
-          canonical="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
-          if curl -fsSL "$canonical" -o /tmp/quarto-check.canonical; then
-            if ! diff -u scripts/quarto-check.sh /tmp/quarto-check.canonical > /tmp/quarto-check.diff; then
-              echo "::warning::scripts/quarto-check.sh differs from the workspace skill's canonical copy — re-copy assets/quarto-check.sh to update (or ignore if intentionally customized)"
-              { echo "## quarto-check.sh drift (vendored → canonical)"; echo '```diff'; cat /tmp/quarto-check.diff; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          for asset in quarto-check.sh wait-for-preview.sh; do
+            [ -f "scripts/$asset" ] || continue
+            # `github` belongs to the caller; `job.workflow_*` identifies the
+            # called workflow and keeps co-located assets on the same commit.
+            canonical="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/$asset"
+            if curl -fsSL "$canonical" -o "/tmp/$asset.canonical"; then
+              if ! diff -u "scripts/$asset" "/tmp/$asset.canonical" > "/tmp/$asset.diff"; then
+                echo "::warning::scripts/$asset differs from the workspace skill's canonical copy — re-copy assets/$asset to update (or ignore if intentionally customized)"
+                { echo "## $asset drift (vendored → canonical)"; echo '```diff'; cat "/tmp/$asset.diff"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              echo "could not fetch canonical $asset; skipping drift check"
             fi
-          else
-            echo "could not fetch canonical quarto-check.sh; skipping drift check"
-          fi
+          done
 
       # All quality gates live in the repo's `check` Makefile target — the
       # single source of truth shared with local runs, so CI and local can't
@@ -163,17 +162,15 @@ jobs:
 
           cd "$tmp"
           git add -A
-          if git diff --cached --quiet; then
-            echo "gh-pages already up to date"
-          else
-            git commit -m "Deploy ${{ github.event_name }} ${{ github.sha }}"
-            for i in 1 2 3 4 5; do
-              git push origin gh-pages && break
-              [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
-              echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
-              git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
-            done
-          fi
+          # Always publish a run-ID marker commit. Even byte-identical renders
+          # then produce an observable Pages build for readiness checks.
+          git commit --allow-empty -m "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
+          for i in 1 2 3 4 5; do
+            git push origin gh-pages && break
+            [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
+            echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
+            git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
+          done
 
           # For a PR, ensure exactly one preview-link comment (create or update),
           # independent of whether the content changed. Best-effort — a comment
