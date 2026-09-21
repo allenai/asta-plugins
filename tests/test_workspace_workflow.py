@@ -206,11 +206,15 @@ case "$1 $2" in
     fi
     ;;
   "run view") echo "${GH_RUN_STATUS:-completed} ${GH_RUN_CONCLUSION:-success}" ;;
-  "api repos/owner/project/commits/gh-pages")
+  "api repos/owner/project/branches/gh-pages")
     count=0
     [ ! -f "$GH_TIP_COUNT" ] || count=$(cat "$GH_TIP_COUNT")
     count=$((count + 1))
     printf '%s\\n' "$count" > "$GH_TIP_COUNT"
+    if [ "$count" -eq 1 ] && [ "${GH_NO_BASELINE_BRANCH:-0}" = 1 ]; then
+      echo 'gh: Not Found (HTTP 404)' >&2
+      exit 1
+    fi
     if [ "$count" -eq 1 ]; then echo before; else echo "${GH_AFTER_TIP:-before}"; fi
     ;;
   "api repos/owner/project/compare/before..."*)
@@ -218,7 +222,22 @@ case "$1 $2" in
       echo '{"message":"temporary failure"}'
       exit 1
     }
-    echo "${GH_COMPARISON:-ahead 1 1 published-sha}"
+    jq_filter=
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --jq ]; then jq_filter=$2; break; fi
+      shift
+    done
+    marker_run=${GH_MARKER_RUN:-101}
+    printf '{"status":"ahead","total_commits":1,"commits":[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]}\\n' "$marker_run" | jq -r "$jq_filter"
+    ;;
+  "api repos/owner/project/commits?sha=gh-pages&per_page=100")
+    jq_filter=
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --jq ]; then jq_filter=$2; break; fi
+      shift
+    done
+    marker_run=${GH_MARKER_RUN:-101}
+    printf '[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]\\n' "$marker_run" | jq -r "$jq_filter"
     ;;
   "api repos/owner/project/pages/builds?per_page=10")
     [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
@@ -314,7 +333,7 @@ def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> No
     script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
 
     subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
-    env.update(GH_AFTER_TIP="after", GH_COMPARISON="ahead 1 1")
+    env.update(GH_AFTER_TIP="after", GH_MARKER_RUN="999")
     result = subprocess.run(
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
@@ -322,6 +341,24 @@ def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> No
     assert result.returncode == 1
     assert "no identifiable run-ID marker" in result.stderr
     assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_supports_initial_pages_deployment(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    env.update(GH_NO_BASELINE_BRANCH="1", GH_AFTER_TIP="first-pages-tip")
+
+    baseline = subprocess.run(
+        [script, "baseline"], cwd=project, env=env, text=True, capture_output=True
+    )
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert baseline.returncode == 0, baseline.stderr
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    assert "commits?sha=gh-pages&per_page=100" in Path(env["GH_LOG"]).read_text()
 
 
 def test_preview_wait_preserves_baseline_when_correlation_fails(

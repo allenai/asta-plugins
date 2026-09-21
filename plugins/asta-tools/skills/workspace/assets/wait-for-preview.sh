@@ -37,8 +37,7 @@ positive_integer PAGES_TIMEOUT "$PAGES_TIMEOUT"
 positive_integer POLL "$POLL"
 
 pages_tip() {
-  value=$(gh api "repos/$REPO/commits/$PAGES_BRANCH" --jq .sha 2>/dev/null) || value=
-  printf '%s\n' "$value"
+  gh api "repos/$REPO/branches/$PAGES_BRANCH" --jq .commit.sha
 }
 
 latest_workflow_run() {
@@ -48,8 +47,18 @@ latest_workflow_run() {
 
 case "${1:-wait}" in
 baseline)
-  tip=$(pages_tip)
-  [ -n "$tip" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
+  error="$state.pages-error.$$"
+  if ! tip=$(pages_tip 2>"$error"); then
+    if grep -q '(HTTP 404)' "$error"; then
+      tip=
+    else
+      cat "$error" >&2
+      rm -f "$error"
+      echo "Could not read $PAGES_BRANCH on $REPO" >&2
+      exit 1
+    fi
+  fi
+  rm -f "$error"
   run_id=$(latest_workflow_run) || {
     echo "Could not read workflow runs for '$WORKFLOW' on $REPO" >&2
     exit 1
@@ -122,25 +131,40 @@ wait)
     exit 1
   fi
 
-  comparison=$(gh api "repos/$REPO/compare/$before...$after" --jq \
-    "[.status, (.total_commits|tostring), (.commits|length|tostring), ([.commits[] | select(.commit.message | endswith(\" (run $run_id)\"))][-1].sha // \"\")] | join(\" \")" \
-    2>/dev/null) || {
-      echo "Could not correlate $WORKFLOW with $PAGES_BRANCH" >&2
+  if [ -n "$before" ]; then
+    comparison=$(gh api "repos/$REPO/compare/$before...$after" --jq \
+      "[.status, (.total_commits|tostring), (.commits|length|tostring), ([.commits[] | select(.commit.message | rtrimstr(\"\\n\") | endswith(\" (run $run_id)\"))][-1].sha // \"\")] | join(\" \")" \
+      2>/dev/null) || {
+        echo "Could not correlate $WORKFLOW with $PAGES_BRANCH" >&2
+        exit 1
+      }
+    set -- $comparison
+    compare_status=${1:-}
+    total_commits=${2:-}
+    returned_commits=${3:-}
+    published=${4:-}
+    [ "$compare_status" = ahead ] || {
+      echo "$PAGES_BRANCH no longer descends from the recorded baseline" >&2
       exit 1
     }
-  set -- $comparison
-  compare_status=${1:-}
-  total_commits=${2:-}
-  returned_commits=${3:-}
-  published=${4:-}
-  [ "$compare_status" = ahead ] || {
-    echo "$PAGES_BRANCH no longer descends from the recorded baseline" >&2
-    exit 1
-  }
-  [ "$total_commits" = "$returned_commits" ] || {
-    echo "Too many concurrent $PAGES_BRANCH updates to identify this deployment safely" >&2
-    exit 1
-  }
+    [ "$total_commits" = "$returned_commits" ] || {
+      echo "Too many concurrent $PAGES_BRANCH updates to identify this deployment safely" >&2
+      exit 1
+    }
+  else
+    comparison=$(gh api "repos/$REPO/commits?sha=$PAGES_BRANCH&per_page=100" --jq \
+      "[([.[] | select(.commit.message | rtrimstr(\"\\n\") | endswith(\" (run $run_id)\"))] | length | tostring), ([.[] | select(.commit.message | rtrimstr(\"\\n\") | endswith(\" (run $run_id)\"))][0].sha // \"\")] | join(\" \")" \
+      2>/dev/null) || {
+        echo "Could not correlate $WORKFLOW with the new $PAGES_BRANCH branch" >&2
+        exit 1
+      }
+    set -- $comparison
+    [ "${1:-}" = 1 ] || {
+      echo "Could not uniquely identify this deployment on new $PAGES_BRANCH branch" >&2
+      exit 1
+    }
+    published=${2:-}
+  fi
   [ -n "$published" ] || {
     echo "Docs workflow $run_id published no identifiable run-ID marker" >&2
     exit 1
