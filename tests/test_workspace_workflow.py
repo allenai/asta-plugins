@@ -27,6 +27,12 @@ def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:
     )
 
 
+def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
+    workflow = WORKFLOW.read_text()
+
+    assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
+
+
 def test_scaffolded_workflow_ref_matches_project_version() -> None:
     """Release-managed workspace assets must advance under one version tag."""
     project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][
@@ -197,7 +203,7 @@ case "$1 $2" in
       echo "101"
     fi
     ;;
-  "run watch") exit 0 ;;
+  "run view") echo "${GH_RUN_STATUS:-completed} ${GH_RUN_CONCLUSION:-success}" ;;
   "api repos/owner/project/commits/gh-pages")
     count=0
     [ ! -f "$GH_TIP_COUNT" ] || count=$(cat "$GH_TIP_COUNT")
@@ -212,7 +218,10 @@ case "$1 $2" in
     }
     echo "${GH_COMPARISON:-ahead 1 1 published-sha}"
     ;;
-  "api repos/owner/project/pages/builds?per_page=10") echo "${GH_BUILT:-1}" ;;
+  "api repos/owner/project/pages/builds?per_page=10")
+    [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
+    echo "${GH_BUILT:-1}"
+    ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
 """
@@ -250,6 +259,7 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
         "GH_TIP_COUNT": str(tmp_path / "tip-count"),
         "WORKFLOW_TIMEOUT": "3",
+        "RUN_TIMEOUT": "2",
         "PAGES_TIMEOUT": "2",
         "POLL": "1",
     }
@@ -345,6 +355,37 @@ def test_preview_wait_preserves_baseline_for_retry(tmp_path: Path) -> None:
     )
     assert second.returncode == 0, second.stderr
     assert not (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_bounds_workflow_completion(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_RUN_STATUS="queued", RUN_TIMEOUT="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "did not complete within 1s" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_reports_unreadable_pages_api(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_PAGES_API_FAIL="1", PAGES_TIMEOUT="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Could not read Pages builds" in result.stderr
+    assert "check Pages read access" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def test_preview_wait_rejects_invalid_timing(tmp_path: Path) -> None:

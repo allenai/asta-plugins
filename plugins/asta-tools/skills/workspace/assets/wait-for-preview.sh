@@ -17,6 +17,7 @@ REPO=${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 PAGES_BRANCH=${PAGES_BRANCH:-gh-pages}
 WORKFLOW=${WORKFLOW:-Build and Deploy Docs}
 WORKFLOW_TIMEOUT=${WORKFLOW_TIMEOUT:-120}   # seconds to wait for the run to appear
+RUN_TIMEOUT=${RUN_TIMEOUT:-600}              # seconds to wait for the run to finish
 PAGES_TIMEOUT=${PAGES_TIMEOUT:-600}         # seconds to wait for the Pages build
 POLL=${POLL:-10}
 
@@ -32,6 +33,7 @@ positive_integer() {
 }
 
 positive_integer WORKFLOW_TIMEOUT "$WORKFLOW_TIMEOUT"
+positive_integer RUN_TIMEOUT "$RUN_TIMEOUT"
 positive_integer PAGES_TIMEOUT "$PAGES_TIMEOUT"
 positive_integer POLL "$POLL"
 
@@ -87,8 +89,32 @@ wait)
     sleep "$POLL"
     elapsed=$((elapsed + POLL))
   done
-  [ -n "$run_id" ] || { echo "No docs workflow run for $sha" >&2; exit 1; }
-  gh run watch "$run_id" --repo "$REPO" --exit-status
+  [ -n "$run_id" ] || {
+    echo "No docs workflow run for $sha — was the baseline recorded before pushing?" >&2
+    exit 1
+  }
+
+  elapsed=0 conclusion=
+  while [ "$elapsed" -lt "$RUN_TIMEOUT" ]; do
+    if run=$(gh run view "$run_id" --repo "$REPO" --json status,conclusion \
+      --jq '[.status, .conclusion] | join(" ")' 2>/dev/null); then
+      set -- $run
+      if [ "${1:-}" = completed ]; then
+        conclusion=${2:-}
+        break
+      fi
+    fi
+    sleep "$POLL"
+    elapsed=$((elapsed + POLL))
+  done
+  [ -n "$conclusion" ] || {
+    echo "Docs workflow $run_id did not complete within ${RUN_TIMEOUT}s" >&2
+    exit 1
+  }
+  [ "$conclusion" = success ] || {
+    echo "Docs workflow $run_id completed with conclusion '$conclusion'" >&2
+    exit 1
+  }
 
   after=$(pages_tip)
   [ -n "$after" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
@@ -123,11 +149,13 @@ wait)
     exit 0
   fi
 
-  elapsed=0
+  elapsed=0 pages_api_seen=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
     if ! built=$(gh api "repos/$REPO/pages/builds?per_page=10" --jq \
       "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length" 2>/dev/null); then
       built=0
+    else
+      pages_api_seen=1
     fi
     if [ "$built" -gt 0 ]; then
       rm -f "$state"
@@ -137,6 +165,10 @@ wait)
     sleep "$POLL"
     elapsed=$((elapsed + POLL))
   done
+  if [ "$pages_api_seen" -eq 0 ]; then
+    echo "Could not read Pages builds for $REPO within ${PAGES_TIMEOUT}s — check Pages read access" >&2
+    exit 1
+  fi
   echo "Pages did not publish $published within ${PAGES_TIMEOUT}s" >&2
   exit 1
   ;;
