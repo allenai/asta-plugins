@@ -605,6 +605,27 @@ def test_added_evidence_is_chipped_and_its_popover_stays_a_direct_child(tmp_path
     assert "<ins>" not in quote and "<del>" not in quote
 
 
+def test_single_quoted_evidence_popover_is_extracted():
+    content = (
+        "<span class='ev-pop extra' role='note'>"
+        "<span class='ev-card'>quote</span></span>"
+    )
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted.startswith('<wc-evpop data-k="')
+    assert list(store.values()) == [content]
+
+
+def test_similar_class_name_is_not_extracted_as_evidence_popover():
+    content = '<span class="ev-pop-text">quote</span>'
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted == content
+    assert store == {}
+
+
 def test_unchanged_evidence_is_not_rediffed_when_prose_changes(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     old.mkdir()

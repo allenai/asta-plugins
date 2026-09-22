@@ -599,7 +599,7 @@ def emit_run(tokens, wrapper):
 # marked only inside that hidden popover, i.e. invisibly. So each popover is
 # swapped for one opaque placeholder tag before the diff and restored after.
 EV_POP_OPEN_RE = re.compile(
-    r'(?is)<span\b[^>]*\bclass\s*=\s*"[^"]*\bev-pop\b[^"]*"[^>]*>'
+    r"""(?is)<span\b[^>]*\bclass\s*=\s*(?P<quote>["'])(?P<classes>.*?)(?P=quote)[^>]*>"""
 )
 # `wc-evpop` is deliberately not an inline tag: emit_run then treats it as
 # structural and emits it OUTSIDE any <ins>, which is what restores the
@@ -632,6 +632,8 @@ def extract_ev_popovers(content):
     """Swap every evidence popover subtree for a placeholder; return both."""
     out, store, pos = [], {}, 0
     for m in EV_POP_OPEN_RE.finditer(content):
+        if "ev-pop" not in m.group("classes").split():
+            continue
         if m.start() < pos:
             continue
         end = _matching_close(content, m.end(), "span")
