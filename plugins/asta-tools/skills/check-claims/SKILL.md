@@ -10,12 +10,12 @@ Covers only what needs reading: is a claim backed, and does its quote say what t
 
 ## Procedure
 
-1. **Take the scope from the request, and state what you covered.** A change under review: `gh pr diff <n>`. Your own change: `git diff` and `git status`, covering committed, staged and unstaged. A file or a whole project: read it. If the request names no scope, use the change in hand; audit beyond it only when asked.
-2. **Collect the claim set.** For a change: the changed prose, every changed `evidence.yml` entry plus the claims referencing it (`grep -rn 'key="<key>"' docs/`), and the evidence entries citing a changed `.bib` entry. For a file or project: every prose sentence in it. Claims outside the scope — note them once, in one line; don't work them.
-3. **Per sentence, ask: could a reader be wrong about this by reading the source?** Yes for a quantity or date, a benchmark result, a capability or limitation attributed to a system or paper, a comparison or causal claim, a characterization of what a cited work found, a novelty claim ("the first", "no prior work"). No for definitions, the write-up's own framing and argument, pointers to files in this repo, and flagged opinion or open questions.
+1. **Read what the request scopes.** A change under review: `gh pr diff <n>`. Your own change: `git diff` and `git status`, covering committed, staged and unstaged. A file or a whole project: read it one file at a time. No scope named → the change in hand; don't widen it unasked.
+2. **For a change, the scope is wider than the changed prose.** A changed `evidence.yml` or `references.bib` entry changes what unchanged prose asserts, so also read the spans citing it: `grep -rn 'key="<key>"' docs/`.
+3. **Judge each sentence: does it assert something a source could confirm or refute?** Yes for a quantity or date, a benchmark result, a capability or limitation attributed to a system or paper, a comparison or causal claim, a characterization of what a cited work found, a novelty claim ("the first", "no prior work"). No for definitions, the write-up's own framing and argument, pointers to files in this repo, and flagged opinion or open questions.
 4. **If yes, is evidence attached?** An `.ev` span whose key resolves in `evidence.yml`, or a plain citation where the claim *is* that source's headline result. Neither → `unsubstantiated`; name the clause that is the claim, not the whole sentence.
 5. **If a quote is attached, read it against the highlighted span.** The span must not claim more than the quote does — in scope, in number, or in certainty. `supported` / `weak` / `unsupported`. A `weak` verdict is usually fixed by editing the prose down to the quote, not by hunting a stronger one.
-6. **Author: fix. Reviewer: report.** Either way each finding has to be actionable: where it is, the claim, the verdict, and the fix. No finding without a fix. Nothing wrong: say the claims in scope are backed; don't invent findings to look thorough.
+6. **Author: fix. Reviewer: report.** Emit findings as you read, and hold nothing else — no claim inventory, no running list of what passed. Each finding needs where it is, the claim, the verdict, and the fix; no finding without a fix. Nothing wrong: say what you covered and that its claims are backed; don't invent findings to look thorough.
 
 ## Author and reviewer differ in two ways
 
