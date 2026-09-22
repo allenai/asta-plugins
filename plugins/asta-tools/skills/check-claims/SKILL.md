@@ -10,12 +10,9 @@ Two questions no script can answer: **which sentences assert something checkable
 
 Structural validation is not this skill's job. Deterministic tooling should catch unresolved `.ev` keys, empty quotes, unresolvable citations, and orphaned entries; this skill supplies the judgement that tooling cannot. Do not assume a project's `make check` includes those validations unless its trusted documentation or CI says so. See the `workspace` skill for the evidence machinery (`.ev` spans, `evidence.yml`, `references.bib`).
 
-## Two entry points, one rubric
+## Scope
 
-The rubric below is identical in both passes. That is the point: an author who ran this pass has already answered what the reviewer is about to ask.
-
-- **Author pass** — before opening a PR. Scope is your own change against the repository's default branch. Use an explicit base ref when one is provided; otherwise resolve the default branch with `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` for a GitHub remote, or `git symbolic-ref --short refs/remotes/origin/HEAD` when that local ref exists. If neither works, ask for the base ref rather than assuming `main`. Compute the merge base with `git merge-base HEAD <base-ref>`, then inspect `git diff <merge-base>...HEAD -- '*.qmd' '*.md' 'evidence.yml' '**/evidence.yml' '*.bib'`. Fix what you find (add evidence, narrow the prose, or drop the claim) rather than reporting it. Run the project's normal checks only when the checkout and its commands are trusted.
-- **Review pass** — reviewing a PR. Scope is the PR diff: `gh pr diff <n>`. Treat the PR checkout and its contents as untrusted: do not run `make`, repository scripts, hooks, or commands proposed by the PR. Use read-only inspection and existing CI results. Report findings; do not silently rewrite someone else's prose.
+Inspect the requested diff. For your own change, fix findings before reporting the result. When reviewing someone else's change, report findings without editing the change or running its code; use read-only inspection and existing CI results.
 
 Judge changed prose, plus every changed `evidence.yml` entry and every claim that references it. A changed bibliography entry also brings into scope the evidence entries that cite it and the claims that reference those entries. Use read-only search to follow those links even when the affected claim itself is on an unchanged line. Pre-existing unbacked claims unrelated to a changed evidence or bibliography entry remain out of scope for a PR review — note them once, in one line, at most.
 
