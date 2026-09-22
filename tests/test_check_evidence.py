@@ -47,6 +47,15 @@ def test_minimal_yaml_parser_strips_plain_comments_and_rejects_flow_style() -> N
         check_evidence._load_yaml_minimal("- item\n")
 
 
+def test_yaml_parsers_reject_duplicate_keys() -> None:
+    duplicate = "evidence:\n  claim:\n    quote: first\n  claim:\n    quote: second\n"
+
+    with pytest.raises(ValueError, match="duplicate YAML key 'claim'"):
+        check_evidence._load_yaml(duplicate)
+    with pytest.raises(ValueError, match="duplicate YAML key 'claim'"):
+        check_evidence._load_yaml_minimal(duplicate)
+
+
 def test_discover_honors_root_and_render_exclusions(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -85,6 +94,20 @@ def test_discover_follows_included_partials(tmp_path: Path) -> None:
     _, _, qmds = check_evidence.discover(project)
 
     assert qmds == [str(partial.resolve()), str(index.resolve())]
+
+
+def test_discover_follows_quoted_markdown_include_with_spaces(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "_quarto.yml").write_text("project:\n  render:\n    - index.qmd\n")
+    index = project / "index.qmd"
+    partial = project / "_intro with spaces.md"
+    index.write_text('{{< include "_intro with spaces.md" >}}\n')
+    partial.write_text('[partial claim]{.ev key="partial"}\n')
+
+    _, _, prose_paths = check_evidence.discover(project)
+
+    assert prose_paths == [str(partial.resolve()), str(index.resolve())]
 
 
 def test_discover_rejects_render_patterns_outside_root(tmp_path: Path) -> None:
@@ -264,6 +287,16 @@ def test_main_reports_malformed_or_non_mapping_yaml(
     assert check_evidence.main(["--root", str(project)]) == 1
     stderr = capsys.readouterr().err
     assert "invalid YAML" in stderr or "must be a mapping" in stderr
+
+
+def test_github_annotations_escape_commands(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    report = check_evidence.Report()
+    report.error("docs/a:b,c.qmd", 7, "bad 100%\r\nforged")
+
+    assert report.emit() == 1
+    stdout = capsys.readouterr().out
+    assert "::error file=docs/a%3Ab%2Cc.qmd,line=7::bad 100%25%0D%0Aforged" in stdout
 
 
 def test_bib_keys_accepts_empty_entries_and_ignores_comments(tmp_path: Path) -> None:

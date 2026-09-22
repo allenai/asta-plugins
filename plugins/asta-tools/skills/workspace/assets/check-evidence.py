@@ -26,8 +26,25 @@ def _load_yaml(text):
         import yaml  # noqa: PLC0415
     except ImportError:
         return _load_yaml_minimal(text)
+
+    class UniqueKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            self.flatten_mapping(node)
+            mapping = {}
+            for key_node, value_node in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in mapping:
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping",
+                        node.start_mark,
+                        f"duplicate YAML key {key!r}",
+                        key_node.start_mark,
+                    )
+                mapping[key] = self.construct_object(value_node, deep=deep)
+            return mapping
+
     try:
-        result = yaml.safe_load(text)
+        result = yaml.load(text, Loader=UniqueKeyLoader)
     except yaml.YAMLError as exc:
         raise ValueError(f"invalid YAML: {exc}") from exc
     if result is None:
@@ -118,6 +135,8 @@ def _load_yaml_minimal(text):
             stack.pop()
         parent = stack[-1][1]
         key = _scalar(m.group("key").strip())
+        if key in parent:
+            raise ValueError(f"duplicate YAML key {key!r} on line {index}")
         raw = m.group("val")
         if raw.startswith("#"):
             raw = ""
@@ -213,11 +232,11 @@ def discover(root, report=None):
             return []
         return glob.glob(target, recursive=True)
 
-    qmds = {
+    prose_paths = {
         os.path.abspath(path)
         for pattern in includes
         for path in project_glob(pattern)
-        if path.endswith(".qmd")
+        if os.path.splitext(path)[1].lower() in {".qmd", ".md"}
         and os.path.commonpath((real_root, os.path.realpath(path))) == real_root
     }
     for pattern in excludes:
@@ -226,21 +245,23 @@ def discover(root, report=None):
             for path in project_glob(pattern)
             if os.path.commonpath((real_root, os.path.realpath(path))) == real_root
         ]
-        qmds = {
+        prose_paths = {
             path
-            for path in qmds
+            for path in prose_paths
             if not any(
                 path == item or path.startswith(item.rstrip(os.sep) + os.sep)
                 for item in excluded
             )
         }
-    qmds = sorted(path for path in qmds if not _is_generated(path, root))
+    prose_paths = sorted(path for path in prose_paths if not _is_generated(path, root))
 
     # Quarto render lists omit partials pulled in with `{{< include ... >}}`.
     # Follow those includes transitively so their spans count as real uses.
-    pending = list(qmds)
-    seen = set(qmds)
-    include_re = re.compile(r"\{\{<\s*include\s+([^\s>]+)")
+    pending = list(prose_paths)
+    seen = set(prose_paths)
+    include_re = re.compile(
+        r"""\{\{<\s*include\s+(?:"([^"]+)"|'([^']+)'|([^\s>]+))\s*>\}\}"""
+    )
     while pending:
         source = pending.pop()
         try:
@@ -249,18 +270,18 @@ def discover(root, report=None):
         except OSError:
             continue
         for match in include_re.finditer(text):
-            target = match.group(1).strip("\"'")
+            target = next(group for group in match.groups() if group is not None)
             path = os.path.abspath(os.path.join(os.path.dirname(source), target))
             if (
-                path.endswith(".qmd")
-                and os.path.commonpath((root, path)) == root
+                os.path.splitext(path)[1].lower() in {".qmd", ".md"}
+                and os.path.commonpath((real_root, os.path.realpath(path))) == real_root
                 and os.path.isfile(path)
                 and not _is_generated(path, root)
                 and path not in seen
             ):
                 seen.add(path)
                 pending.append(path)
-    qmds = sorted(seen)
+    prose_paths = sorted(seen)
 
     def absolute(paths):
         return [
@@ -268,7 +289,7 @@ def discover(root, report=None):
             for p in paths
         ]
 
-    return absolute(stores), absolute(bibs), qmds
+    return absolute(stores), absolute(bibs), prose_paths
 
 
 def bib_keys(paths):
@@ -377,18 +398,31 @@ class Report:
     def warning(self, path, line, message):
         self.warnings.append((path, line, message))
 
+    @staticmethod
+    def _workflow_escape(value, *, property_value=False):
+        escaped = (
+            str(value).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        )
+        if property_value:
+            escaped = escaped.replace(":", "%3A").replace(",", "%2C")
+        return escaped
+
+    def _annotation(self, level, path, line, message):
+        location = f"file={self._workflow_escape(path, property_value=True)}"
+        if line:
+            location += f",line={line}"
+        print(f"::{level} {location}::{self._workflow_escape(message)}")
+
     def emit(self):
         for path, line, message in self.warnings:
             where = f"{path}:{line}" if line else path
-            loc = f" file={path},line={line}" if line else f" file={path}"
             if os.environ.get("GITHUB_ACTIONS"):
-                print(f"::warning{loc}::{message}")
+                self._annotation("warning", path, line, message)
             print(f"  {where}: warning: {message}", file=sys.stderr)
         for path, line, message in self.errors:
             where = f"{path}:{line}" if line else path
-            loc = f" file={path},line={line}" if line else f" file={path}"
             if os.environ.get("GITHUB_ACTIONS"):
-                print(f"::error{loc}::{message}")
+                self._annotation("error", path, line, message)
             print(f"  {where}: {message}", file=sys.stderr)
         return 1 if self.errors else 0
 
