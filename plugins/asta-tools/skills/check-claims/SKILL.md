@@ -1,7 +1,7 @@
 ---
 name: check-claims
 description: Judge whether factual claims in an evidence-backed research write-up are substantiated — which claims assert something checkable with no evidence attached, and whether an attached quote supports the claim as worded. Works over whatever scope the request names — a pull request diff, your own uncommitted change, one file, or a whole project audited end to end. Triggers on "check my claims", "is this claim supported", "evidence review", "audit the evidence", or review of research prose using `.ev` evidence.
-allowed-tools: Read Grep Glob Bash(git diff *) Bash(git status) Bash(gh pr diff *) Bash(gh pr view *) Edit Skill(asta-tools:semantic-scholar) Skill(asta-tools:find-literature) Skill(asta-tools:workspace)
+allowed-tools: Read Grep Glob Bash(git diff *) Bash(git status) Bash(gh pr diff *) Bash(gh pr view *) Edit Skill(asta-tools:*)
 ---
 
 # Check claims
@@ -20,4 +20,4 @@ Covers only what needs reading: is a claim backed, and does its quote say what t
 ## Author and reviewer differ in two ways
 
 - **Authors fix; reviewers report.** Reviewing someone else's change, don't edit their files or run their code — read-only inspection and existing CI results.
-- **Authors may retrieve; reviewers may not.** Needing a quote you don't have, load `semantic-scholar` (specific paper or snippet) or `find-literature` (a question), then add the entry per `workspace`: `quote` pasted verbatim from the source, `cite` a `references.bib` key, `provenance` recording only the retrieval you actually ran. Reviewing, recommend the evidence or wording instead.
+- **Authors may retrieve; reviewers may not.** Needing a quote you don't have, retrieve it with whatever retrieval skill fits the gap, then add the entry per `workspace`: `quote` pasted verbatim from the source, `cite` a `references.bib` key, `provenance` recording only the retrieval you actually ran. Reviewing, recommend the evidence or wording instead.
