@@ -44,6 +44,7 @@ Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 
 import argparse
 import difflib
+import hashlib
 import html
 import os
 import re
@@ -569,7 +570,16 @@ def emit_run(tokens, wrapper):
         )
         if kind == "tag" and not highlightable:
             close()
-            if wrapper == "ins":
+            pop = EV_POP_RE.match(text)
+            if pop:
+                # Stamp the op so the restore pass can chip the claim. A removed
+                # popover is kept as a placeholder (it becomes a chip) rather
+                # than being dropped with the rest of the deleted run.
+                out.append(
+                    EV_POP_OP_PLACEHOLDER
+                    % (pop.group(1), "add" if wrapper == "ins" else "del")
+                )
+            elif wrapper == "ins":
                 out.append(text)  # keep structure for inserted blocks
             # deleted structural / half-in inline tags are dropped with subtree
         elif kind == "space":
@@ -581,8 +591,81 @@ def emit_run(tokens, wrapper):
     return "".join(out)
 
 
+# Evidence popovers (`<span class="ev-pop">…</span>`, injected by the workspace
+# evidence extension) are hover-only payloads, not prose, and word-diffing them
+# broke twice on real PRs: an inserted popover landed *inside* the `<ins>`
+# wrapper, so it stopped being the direct child `.ev:hover > .ev-pop` needs and
+# the hover showed nothing; and evidence added to otherwise-unchanged prose was
+# marked only inside that hidden popover, i.e. invisibly. So each popover is
+# swapped for one opaque placeholder tag before the diff and restored after.
+EV_POP_OPEN_RE = re.compile(
+    r"""(?is)<span(?=\s|/|>)[^>]*?\sclass\s*=\s*(?P<quote>["'])(?P<classes>.*?)(?P=quote)[^>]*>"""
+)
+# `wc-evpop` is deliberately not an inline tag: emit_run then treats it as
+# structural and emits it OUTSIDE any <ins>, which is what restores the
+# direct-child relationship the popover CSS depends on.
+EV_POP_PLACEHOLDER = '<wc-evpop data-k="%s">'
+EV_POP_OP_PLACEHOLDER = '<wc-evpop data-k="%s" data-op="%s">'
+EV_POP_RE = re.compile(r'<wc-evpop data-k="([0-9a-f]+)"(?: data-op="(add|del)")?>')
+
+EV_CHIP = {
+    "add": '<span class="wc-ev-chip wc-ev-add">evidence added</span>',
+    "del": '<span class="wc-ev-chip wc-ev-del">evidence removed</span>',
+}
+
+
+def _matching_close(content, start, name):
+    """Index just past the `</name>` that closes the element open at `start`."""
+    pat = re.compile(rf"(?is)<(/?){re.escape(name)}(?=\s|/|>)[^>]*>")
+    depth, pos = 1, start
+    while True:
+        m = pat.search(content, pos)
+        if not m:
+            return None
+        pos = m.end()
+        depth += -1 if m.group(1) else 1
+        if depth == 0:
+            return m.end()
+
+
+def extract_ev_popovers(content):
+    """Swap every evidence popover subtree for a placeholder; return both."""
+    out, store, pos = [], {}, 0
+    for m in EV_POP_OPEN_RE.finditer(content):
+        if "ev-pop" not in m.group("classes").split():
+            continue
+        if m.start() < pos:
+            continue
+        end = _matching_close(content, m.end(), "span")
+        if end is None:
+            continue
+        frag = content[m.start() : end]
+        key = hashlib.sha1(frag.encode("utf-8")).hexdigest()[:16]
+        store[key] = frag
+        out.append(content[pos : m.start()])
+        out.append(EV_POP_PLACEHOLDER % key)
+        pos = end
+    out.append(content[pos:])
+    return "".join(out), store
+
+
+def restore_ev_popovers(content, store):
+    """Put the popovers back, chipping the ones this change added or removed."""
+
+    def sub(m):
+        key, op = m.group(1), m.group(2)
+        chip = EV_CHIP.get(op, "")
+        if op == "del":
+            return chip  # the quote itself is gone; only the fact of it remains
+        return chip + store.get(key, "")
+
+    return EV_POP_RE.sub(sub, content)
+
+
 def diff_content(old, new):
     """Inline word-level diff of two content-HTML strings."""
+    old, old_pops = extract_ev_popovers(old)
+    new, new_pops = extract_ev_popovers(new)
     a, b = tokenize(old), tokenize(new)
     # Align on the visible string of each token.
     ak = [t[1] for t in a]
@@ -603,7 +686,7 @@ def diff_content(old, new):
             changed = True
             out.append(emit_run(a[i1:i2], "del"))
             out.append(emit_run(b[j1:j2], "ins"))
-    return "".join(out), changed
+    return restore_ev_popovers("".join(out), {**old_pops, **new_pops}), changed
 
 
 def list_pages(root, out_path=None):
@@ -720,6 +803,13 @@ DIFF_STYLE = """
    than adding another background, while being perceptible in the change-review
    context. */
 .wc-scope .ev { border-bottom: 2px dotted #2a88ef; }
+/* Evidence added or removed by this change. The popover is hover-only, so
+   without a chip on the claim an added quote reads as no change at all. */
+.wc-scope .wc-ev-chip { font-size: .7em; font-weight: 600; white-space: nowrap;
+    padding: .1em .5em; margin-inline-start: .35em; border-radius: 1em;
+    vertical-align: .15em; color: var(--wc-tag-fg); }
+.wc-scope .wc-ev-chip.wc-ev-add { background: var(--wc-new); }
+.wc-scope .wc-ev-chip.wc-ev-del { background: var(--wc-removed); }
 /* Insertions are background-only: the `ins` rule above sets
    `text-decoration: none` to suppress the browser UA-default `ins {
    text-decoration: underline }` (otherwise every added run keeps a green

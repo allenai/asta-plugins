@@ -531,3 +531,153 @@ def test_has_computed_output_detects_widgets_and_ignores_prose():
     assert not WHAT_CHANGED.has_computed_output(
         "<p>Just prose with <a href='x'>a link</a> and <code>code</code>.</p>"
     )
+
+
+def _ev_popover_parents(doc):
+    """(tag, class) of the direct parent of every `.ev-pop` in `doc`."""
+    from html.parser import HTMLParser
+
+    void = {"br", "img", "meta", "link", "hr", "input", "wbr", "source", "col"}
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack = []
+            self.parents = []
+
+        def handle_starttag(self, tag, attrs):
+            cls = dict(attrs).get("class", "")
+            if "ev-pop" in cls.split():
+                self.parents.append(self.stack[-1] if self.stack else (None, None))
+            if tag not in void:
+                self.stack.append((tag, cls))
+
+        def handle_endtag(self, tag):
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i][0] == tag:
+                    del self.stack[i:]
+                    break
+
+    p = P()
+    p.feed(doc)
+    return p.parents
+
+
+def _ev_page(claim, popover=""):
+    pop = (
+        f'<span class="ev-pop" role="note"><span class="ev-card">'
+        f'<span class="ev-pop-text ev-quote">“<em>{popover}</em>”</span>'
+        f"</span></span>"
+        if popover
+        else ""
+    )
+    return (
+        "<html><head></head><body><main><p>Kosmos averages "
+        f'<span class="ev" role="note">{claim}{pop}</span> per run.</p>'
+        "</main></body></html>"
+    )
+
+
+def test_added_evidence_is_chipped_and_its_popover_stays_a_direct_child(tmp_path):
+    """An added quote must be visible and must still hover.
+
+    Both halves failed on a real PR: the inserted popover was word-diffed into
+    the `<ins>` wrapper, which breaks `.ev:hover > .ev-pop` so nothing appeared,
+    and the only marker of the addition lived inside that hidden popover.
+    """
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(_ev_page("42,000 lines of code"))
+    (new / "index.html").write_text(
+        _ev_page("42,000 lines of code", "executing an average of 42,000 lines")
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #9")
+
+    assert "wc-ev-add" in result
+    assert "evidence added" in result
+    assert ".wc-scope .wc-ev-chip.wc-ev-add { background: var(--wc-new); }" in result
+    # The popover is restored outside the <ins> wrapper, as a child of `.ev`.
+    assert _ev_popover_parents(result) == [("span", "ev")]
+    # Its quote is not word-diffed into hidden <ins>/<del> runs.
+    quote = re.search(r'<span class="ev-pop".*?</em>', result, re.S).group(0)
+    assert "<ins>" not in quote and "<del>" not in quote
+
+
+def test_single_quoted_evidence_popover_is_extracted():
+    content = (
+        "<span class='ev-pop extra' role='note'>"
+        "<span class='ev-card'>quote</span></span>"
+    )
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted.startswith('<wc-evpop data-k="')
+    assert list(store.values()) == [content]
+
+
+def test_similar_class_name_is_not_extracted_as_evidence_popover():
+    content = '<span class="ev-pop-text">quote</span>'
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted == content
+    assert store == {}
+
+
+def test_data_class_is_not_extracted_as_evidence_popover():
+    content = '<span data-class="ev-pop">quote</span>'
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted == content
+    assert store == {}
+
+
+def test_custom_span_element_does_not_affect_popover_depth():
+    content = (
+        '<span class="ev-pop"><span-foo />quote</span>'
+        '<span-foo class="ev-pop">not evidence</span-foo>'
+    )
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted.startswith('<wc-evpop data-k="')
+    assert extracted.endswith('<span-foo class="ev-pop">not evidence</span-foo>')
+    assert list(store.values()) == [content.split("<span-foo class", 1)[0]]
+
+
+def test_unchanged_evidence_is_not_rediffed_when_prose_changes(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
+    (new / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
+    (new / "about.html").write_text(
+        "<html><head></head><body><main><p>New page.</p></main></body></html>"
+    )
+    (old / "about.html").write_text(
+        "<html><head></head><body><main><p>Old page.</p></main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #10")
+
+    assert "wc-ev-chip" not in result.split("DIFF_STYLE")[-1].split("<body")[-1]
+    assert "evidence added" not in result
+    assert "evidence removed" not in result
+
+
+def test_removed_evidence_is_reported_on_the_claim(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
+    (new / "index.html").write_text(_ev_page("42,000 lines"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #11")
+
+    assert "evidence removed" in result
+    # The stale quote is not carried into the new state.
+    assert "an average of 42,000" not in result
+    assert _ev_popover_parents(result) == []
