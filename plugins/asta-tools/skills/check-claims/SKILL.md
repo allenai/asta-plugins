@@ -1,7 +1,7 @@
 ---
 name: check-claims
-description: Judge whether factual claims in a research write-up are substantiated — which changed sentences assert something checkable with no evidence attached, and whether an attached quote supports the claim as worded. Run as an author pass over your own diff before opening a PR on a Quarto/workspace project, and as a review pass over someone else's. Triggers on "check my claims", "is this claim supported", "evidence review", or any review of changed `.qmd`/Markdown prose.
-allowed-tools: Read Grep Glob Bash(git diff *) Bash(git log *) Bash(git status) Bash(git symbolic-ref *) Bash(git merge-base *) Bash(gh repo view *) Bash(gh pr diff *) Bash(gh pr view *) Edit Skill(asta-tools:semantic-scholar) Skill(asta-tools:find-literature) Skill(asta-tools:workspace)
+description: Judge whether factual claims in an evidence-backed research write-up are substantiated — which changed sentences assert something checkable with no evidence attached, and whether an attached quote supports the claim as worded. Run as an author pass over your own change before opening a PR on a Quarto/workspace project, and as a review pass over someone else's. Triggers on "check my claims", "is this claim supported", "evidence review", or review of research prose using `.ev` evidence.
+allowed-tools: Read Grep Glob Bash(git diff *) Bash(git status) Bash(gh pr diff *) Bash(gh pr view *) Edit Skill(asta-tools:semantic-scholar) Skill(asta-tools:find-literature) Skill(asta-tools:workspace)
 ---
 
 # Check claims
@@ -10,7 +10,7 @@ Covers only what needs reading: is a changed claim backed, and does its quote sa
 
 ## Procedure
 
-1. **Get the diff.** Own branch: `git diff $(git merge-base HEAD origin/main)...HEAD -- '*.qmd' '*.md' '*evidence.yml' '*.bib'`. Someone else's: `gh pr diff <n>`.
+1. **Get the full change.** Own work: inspect committed, staged, and unstaged changes with `git diff` and `git status`. Someone else's: `gh pr diff <n>`.
 2. **Set scope.** Changed prose; every changed `evidence.yml` entry plus the claims referencing it (`grep -rn 'key="<key>"' docs/`); a changed `.bib` entry pulls in the evidence entries citing it. Pre-existing unbacked claims elsewhere are out of scope — note them once, in one line.
 3. **Per changed sentence, ask: could a reader be wrong about this by reading the source?** Yes for a quantity or date, a benchmark result, a capability or limitation attributed to a system or paper, a comparison or causal claim, a characterization of what a cited work found, a novelty claim ("the first", "no prior work"). No for definitions, the write-up's own framing and argument, pointers to files in this repo, and flagged opinion or open questions.
 4. **If yes, is evidence attached?** An `.ev` span whose key resolves in `evidence.yml`, or a plain citation where the claim *is* that source's headline result. Neither → `unsubstantiated`; name the clause that is the claim, not the whole sentence.
