@@ -45,7 +45,7 @@ jobs:
       # drift from the canonical copies shipped at this workflow's own commit.
       - name: Check vendored workspace scripts for drift
         run: |
-          for asset in quarto-check.sh wait-for-preview.sh; do
+          for asset in quarto-check.sh wait-for-preview.sh check-evidence.py; do
             [ -f "scripts/$asset" ] || continue
             # `github` belongs to the caller; `job.workflow_*` identifies the
             # called workflow and keeps co-located assets on the same commit.
