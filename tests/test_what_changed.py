@@ -626,6 +626,28 @@ def test_similar_class_name_is_not_extracted_as_evidence_popover():
     assert store == {}
 
 
+def test_data_class_is_not_extracted_as_evidence_popover():
+    content = '<span data-class="ev-pop">quote</span>'
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted == content
+    assert store == {}
+
+
+def test_custom_span_element_does_not_affect_popover_depth():
+    content = (
+        '<span class="ev-pop"><span-foo />quote</span>'
+        '<span-foo class="ev-pop">not evidence</span-foo>'
+    )
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted.startswith('<wc-evpop data-k="')
+    assert extracted.endswith('<span-foo class="ev-pop">not evidence</span-foo>')
+    assert list(store.values()) == [content.split("<span-foo class", 1)[0]]
+
+
 def test_unchanged_evidence_is_not_rediffed_when_prose_changes(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     old.mkdir()

@@ -599,7 +599,7 @@ def emit_run(tokens, wrapper):
 # marked only inside that hidden popover, i.e. invisibly. So each popover is
 # swapped for one opaque placeholder tag before the diff and restored after.
 EV_POP_OPEN_RE = re.compile(
-    r"""(?is)<span\b[^>]*\bclass\s*=\s*(?P<quote>["'])(?P<classes>.*?)(?P=quote)[^>]*>"""
+    r"""(?is)<span(?=\s|/|>)[^>]*?\sclass\s*=\s*(?P<quote>["'])(?P<classes>.*?)(?P=quote)[^>]*>"""
 )
 # `wc-evpop` is deliberately not an inline tag: emit_run then treats it as
 # structural and emits it OUTSIDE any <ins>, which is what restores the
@@ -616,7 +616,7 @@ EV_CHIP = {
 
 def _matching_close(content, start, name):
     """Index just past the `</name>` that closes the element open at `start`."""
-    pat = re.compile(rf"(?is)<(/?){re.escape(name)}\b[^>]*>")
+    pat = re.compile(rf"(?is)<(/?){re.escape(name)}(?=\s|/|>)[^>]*>")
     depth, pos = 1, start
     while True:
         m = pat.search(content, pos)

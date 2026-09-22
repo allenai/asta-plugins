@@ -52,18 +52,16 @@
        popovers overlapping for long. */
     transition: opacity 0.12s ease 0.2s, visibility 0s linear 0.32s;
   }
-  /* Descendant, not child: a diff view can wrap part of a claim in <ins>/<del>,
-     which would break a `>` combinator and silently kill the hover. */
-  .ev:hover .ev-pop,
-  .ev:focus .ev-pop,
-  .ev:focus-within .ev-pop {
+  .ev:hover > .ev-pop,
+  .ev:focus > .ev-pop,
+  .ev:focus-within > .ev-pop {
     opacity: 1;
     visibility: visible;
     transition: opacity 0.12s ease 0s, visibility 0s linear 0s;
   }
   /* Near the right viewport edge the optional script adds `.ev-flip`, opening
      the popover leftward instead. Base behaviour (no script) opens rightward. */
-  .ev.ev-flip .ev-pop {
+  .ev.ev-flip > .ev-pop {
     left: auto;
     right: 0;
   }
