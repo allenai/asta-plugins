@@ -961,6 +961,16 @@ def rebase_urls(text, depth):
     return text
 
 
+def link_citations(body, link):
+    """Point Quarto citation links (`#ref-<key>`) at the full page, whose
+    bibliography holds the target; the excerpt here has no such anchor."""
+    return re.sub(
+        r'href="#(ref-[^"]*)"',
+        lambda m: f'href="{html.escape(link)}#{m.group(1)}"',
+        body,
+    )
+
+
 def page_title(doc, rel):
     m = re.search(r"(?is)<title>(.*?)</title>", doc)
     if m:
@@ -1079,6 +1089,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         aid = anchor_id(rel)
         h2 = html.escape(title_txt)
         if state != "removed":
+            body = link_citations(body, link)
             h2 = f'<a href="{html.escape(link)}">{h2}</a>'
         state_class = "new" if state == "new" else state
         sections.append(
