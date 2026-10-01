@@ -64,6 +64,37 @@ def test_paper_diff_fallback_links_current_pdf(tmp_path):
     assert 'href="paper/what-changed.pdf"' not in result
 
 
+def test_new_paper_is_labeled_as_added(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "new": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Paper added" in result
+    assert 'class="page-diff new"' in result
+    assert 'href="paper/main.pdf"' in result
+    assert "The LaTeX diff could not be built" not in result
+
+
+def test_invalid_paper_manifest_keeps_quarto_changes(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text("{invalid")
+    (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-index-html"' in result
+    assert 'id="paper-diff"' not in result
+
+
 def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

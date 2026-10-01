@@ -14,7 +14,10 @@ test -n "$base" || exit 0
 if git diff --quiet "$base" HEAD -- paper references.bib; then exit 0; fi
 printf '{"changed":true,"diff":false}\n' > _site/paper/preview.json
 
-if ! git cat-file -e "$base:paper/main.tex" 2>/dev/null; then exit 0; fi
+if ! git cat-file -e "$base:paper/main.tex" 2>/dev/null; then
+  printf '{"changed":true,"diff":false,"new":true}\n' > _site/paper/preview.json
+  exit 0
+fi
 old=$(mktemp -d)
 cleanup() {
   git worktree remove --force "$old" 2>/dev/null || true
@@ -27,7 +30,10 @@ git worktree add --detach "$old" "$base" >/dev/null
 if latexdiff --flatten "$old/paper/main.tex" paper/main.tex > paper/what-changed.tex \
   && (cd paper && latexmk -pdf -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build what-changed.tex); then
   cp paper/build/what-changed.pdf _site/paper/what-changed.pdf
-  pdftoppm -png -r 54 _site/paper/what-changed.pdf _site/paper/diff-page >/dev/null 2>&1
+  if ! pdftoppm -png -r 54 _site/paper/what-changed.pdf _site/paper/diff-page >/dev/null 2>&1; then
+    rm -f _site/paper/diff-page-*.png
+    echo '::warning::Could not render paper diff thumbnails; the diff PDF remains available'
+  fi
   printf '{"changed":true,"diff":true}\n' > _site/paper/preview.json
 else
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'

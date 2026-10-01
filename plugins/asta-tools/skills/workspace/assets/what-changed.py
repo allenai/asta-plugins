@@ -1000,16 +1000,23 @@ def paper_preview(new_root):
     manifest = os.path.join(new_root, "paper", "preview.json")
     if not os.path.isfile(manifest):
         return None
-    with open(manifest, encoding="utf-8") as f:
-        state = json.load(f)
+    try:
+        with open(manifest, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(state, dict):
+        return None
     if not state.get("changed"):
         return None
     pdf = "paper/what-changed.pdf" if state.get("diff") else "paper/main.pdf"
-    note = (
-        "LaTeX edits are highlighted in the diff PDF."
-        if state.get("diff")
-        else "The LaTeX diff could not be built; the current paper PDF is available."
-    )
+    if state.get("new"):
+        note = "Paper added; the current paper PDF is available."
+    elif state.get("diff"):
+        note = "LaTeX edits are highlighted in the diff PDF."
+    else:
+        note = "The LaTeX diff could not be built; the current paper PDF is available."
+    status = "new" if state.get("new") else "changed"
     thumbs = []
     if state.get("diff"):
         for path in sorted(
@@ -1024,12 +1031,13 @@ def paper_preview(new_root):
                 f'<a href="{pdf}#page={page}"><img src="paper/{filename}" '
                 f'alt="Paper diff page {page}" loading="lazy"></a>'
             )
-    return (
-        '<section class="page-diff changed" id="paper-diff">'
-        '<h2>Paper <span class="tag changed">changed</span></h2>'
+    section = (
+        f'<section class="page-diff {status}" id="paper-diff">'
+        f'<h2>Paper <span class="tag {status}">{status}</span></h2>'
         f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
         f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
     )
+    return section, status
 
 
 def build(old_root, new_root, preview_url, title, out_path=None):
@@ -1039,9 +1047,11 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     toc = []
     paper_section = paper_preview(new_root)
     if paper_section:
-        sections.append(paper_section)
+        section, paper_status = paper_section
+        sections.append(section)
         toc.append(
-            '<a href="#paper-diff">Paper <span class="tag changed">changed</span></a>'
+            f'<a href="#paper-diff">Paper <span class="tag {paper_status}">'
+            f"{paper_status}</span></a>"
         )
     for rel in sorted(set(old_pages) | set(new_pages)):
         new_doc = (
