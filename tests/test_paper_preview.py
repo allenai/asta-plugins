@@ -39,7 +39,7 @@ def paper_repo(tmp_path, old_paper=True):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     commands = {
-        "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\n',
+        "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
         "latexdiff": "#!/bin/bash\nprintf 'diff source\\n'\n",
         "pdftoppm": '#!/bin/bash\nname="${@: -1}"\nprintf png > "${name}-1.png"\n',
     }
@@ -63,6 +63,7 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
         "changed": True,
         "diff": True,
+        "other_inputs": False,
     }
     assert not (repo / "paper/what-changed.tex").exists()
 
@@ -101,6 +102,7 @@ def test_latexdiff_failure_keeps_current_pdf(tmp_path):
     assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
         "changed": True,
         "diff": False,
+        "other_inputs": False,
     }
 
 
@@ -116,4 +118,46 @@ def test_thumbnail_failure_keeps_diff_pdf(tmp_path):
     assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
         "changed": True,
         "diff": True,
+        "other_inputs": False,
+    }
+
+
+def test_root_level_tex_input_is_detected_without_false_diff_highlights(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    (repo / "shared.tex").write_text("old")
+    run("git", "add", "shared.tex", cwd=repo)
+    run("git", "commit", "-qm", "add shared input", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "shared.tex").write_text("new")
+    run("git", "commit", "-qam", "edit shared input", cwd=repo)
+    env["FAKE_LATEX_INPUT"] = "../shared.tex"
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert not (repo / "_site/paper/what-changed.pdf").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": True,
+        "diff": False,
+        "other_inputs": True,
+    }
+
+
+def test_bibliography_only_edit_links_unmarked_current_pdf(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    (repo / "references.bib").write_text("old")
+    run("git", "add", "references.bib", cwd=repo)
+    run("git", "commit", "-qm", "add bibliography", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "references.bib").write_text("new")
+    run("git", "commit", "-qam", "edit bibliography", cwd=repo)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert not (repo / "_site/paper/what-changed.pdf").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": True,
+        "diff": False,
+        "other_inputs": True,
     }

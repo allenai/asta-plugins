@@ -49,6 +49,37 @@ def test_paper_diff_appears_before_quarto_changes(tmp_path):
     assert 'src="paper/diff-page-1.png"' in result
 
 
+def test_paper_diff_thumbnails_follow_page_number(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(json.dumps({"changed": True, "diff": True}))
+    for page in (10, 2):
+        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert result.index('src="paper/diff-page-2.png"') < result.index(
+        'src="paper/diff-page-10.png"'
+    )
+
+
+def test_non_tex_paper_inputs_link_current_pdf_without_highlight_claim(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "other_inputs": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "current PDF is available without highlights" in result
+    assert 'href="paper/main.pdf"' in result
+
+
 def test_paper_diff_fallback_links_current_pdf(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

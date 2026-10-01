@@ -1012,21 +1012,25 @@ def paper_preview(new_root):
     pdf = "paper/what-changed.pdf" if state.get("diff") else "paper/main.pdf"
     if state.get("new"):
         note = "Paper added; the current paper PDF is available."
+    elif state.get("diff") and state.get("other_inputs"):
+        note = "LaTeX edits are highlighted; other paper inputs may not be."
     elif state.get("diff"):
         note = "LaTeX edits are highlighted in the diff PDF."
+    elif state.get("other_inputs"):
+        note = "Paper inputs changed; the current PDF is available without highlights."
     else:
         note = "The LaTeX diff could not be built; the current paper PDF is available."
     status = "new" if state.get("new") else "changed"
     thumbs = []
     if state.get("diff"):
-        for path in sorted(
-            glob.glob(os.path.join(new_root, "paper", "diff-page-*.png"))
-        ):
+        pages = []
+        for path in glob.glob(os.path.join(new_root, "paper", "diff-page-*.png")):
             filename = os.path.basename(path)
             match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
             if not match:
                 continue
-            page = int(match.group(1))
+            pages.append((int(match.group(1)), filename))
+        for page, filename in sorted(pages):
             thumbs.append(
                 f'<a href="{pdf}#page={page}"><img src="paper/{filename}" '
                 f'alt="Paper diff page {page}" loading="lazy"></a>'
