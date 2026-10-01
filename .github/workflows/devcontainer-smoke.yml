@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - Dockerfile
+      - image/skills-cli/**
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - tests/fixtures/devcontainer-smoke/**
       - .github/workflows/devcontainer-smoke.yml
