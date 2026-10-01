@@ -33,10 +33,19 @@ def test_preview_port_opens_in_simple_browser():
     )
 
 
-def test_quarto_and_latex_workshop_extensions_listed():
+def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
     extensions = _devcontainer()["customizations"]["vscode"]["extensions"]
     assert "quarto.quarto" in extensions
-    assert "james-yu.latex-workshop" in extensions
+    assert "james-yu.latex-workshop" not in extensions
+    stages = DOCKERFILE.read_text().split("\nFROM ")
+    tex_stage = next(s for s in stages if s.startswith("asta AS tex"))
+    label = re.search(r"^LABEL devcontainer\.metadata='(.+)'$", tex_stage, re.M)
+    assert label, "tex stage must carry devcontainer.metadata"
+    metadata = json.loads(label.group(1))
+    assert "james-yu.latex-workshop" in json.dumps(metadata)
+    assert "devcontainer.metadata" not in "".join(
+        s for s in stages if not s.startswith("asta AS tex")
+    )
 
 
 def test_agent_gets_the_asta_skills():
@@ -50,6 +59,9 @@ def _packages(text: str) -> set[str]:
 def test_tex_image_matches_ci_paper_lane():
     dockerfile = DOCKERFILE.read_text()
     tex_stage = dockerfile.split("FROM asta AS tex", 1)[1].split("\nFROM ", 1)[0]
+    tex_stage = "\n".join(
+        line for line in tex_stage.splitlines() if not line.startswith("LABEL ")
+    )
     if not WORKFLOW.exists():
         pytest.skip("Paper preview workflow is not present yet")
     workflow = WORKFLOW.read_text()

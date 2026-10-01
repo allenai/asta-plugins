@@ -32,6 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       texlive-luatex texlive-xetex texlive-publishers \
       texlive-science texlive-pictures biber \
     && rm -rf /var/lib/apt/lists/*
+# Dev containers merge this into devcontainer.json, so LaTeX Workshop
+# arrives with TeX and Quarto-only projects never get it.
+LABEL devcontainer.metadata='[{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"]}}}]'
 
 # A plain `docker build .` still produces the slim image.
 FROM asta
