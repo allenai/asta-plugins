@@ -49,7 +49,7 @@ def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
 
 
 def test_agent_gets_the_asta_skills():
-    assert "skills@1.7.0 add /opt/asta-plugins" in _devcontainer()["postCreateCommand"]
+    assert "skills@latest add /opt/asta-plugins" in _devcontainer()["postCreateCommand"]
 
 
 def _packages(text: str) -> set[str]:
@@ -87,4 +87,4 @@ def test_codespaces_persists_asta_login() -> None:
     assert "CODESPACES" in cmd
     assert "cp -an" in cmd
     assert "ln -sfnT /workspaces/.asta-auth" in cmd
-    assert cmd.index("ln -sfnT") < cmd.index("skills@1.7.0 add")
+    assert cmd.index("ln -sfnT") < cmd.index("skills@latest add")
