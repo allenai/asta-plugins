@@ -13,7 +13,9 @@ SCRIPT = (
 
 
 def run(*args, cwd, env=None):
-    return subprocess.run(args, cwd=cwd, env=env, check=True, capture_output=True, text=True)
+    return subprocess.run(
+        args, cwd=cwd, env=env, check=True, capture_output=True, text=True
+    )
 
 
 def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
