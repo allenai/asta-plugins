@@ -217,6 +217,14 @@ jobs:
             else
               body="📄 Preview: $url"
             fi
+            # Surface the paper directly; it is otherwise one click deep.
+            pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
+            if [ -f "$pr_dir/paper/main.pdf" ]; then
+              body=$(printf '%s\n📑 Paper PDF: %spaper/main.pdf' "$body" "$url")
+            fi
+            if [ -f "$pr_dir/paper/what-changed.pdf" ]; then
+              body=$(printf '%s\n🖍️ Paper diff: %spaper/what-changed.pdf' "$body" "$url")
+            fi
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
