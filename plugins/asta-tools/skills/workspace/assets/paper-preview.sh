@@ -7,7 +7,7 @@ mkdir -p paper/build _site/paper
 
 export BIBINPUTS="$PWD:$PWD/paper:${BIBINPUTS:-}"
 export TEXINPUTS="$PWD/paper:$PWD:${TEXINPUTS:-}"
-# A project latexmkrc can select XeLaTeX or LuaLaTeX; use pdfLaTeX only by default.
+# Preserve a configured engine; request a PDF when no rc selected one.
 (cd paper && latexmk -e '$pdf_mode ||= 1;' -recorder -deps-out=build/main.dep \
   -deps-escape=unix \
   -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)
