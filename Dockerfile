@@ -4,7 +4,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
     && rm -rf /var/lib/apt/lists/*
 
 COPY image/skills-cli/package.json image/skills-cli/package-lock.json /opt/skills-cli/
-RUN npm ci --prefix /opt/skills-cli --omit=dev \
+RUN npm ci --prefix /opt/skills-cli --omit=dev --engine-strict \
+    && npm cache clean --force \
     && ln -s /opt/skills-cli/node_modules/.bin/skills /usr/local/bin/skills
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -22,7 +23,7 @@ ENV PATH="/root/.local/bin:$PATH"
 
 # Source repo at /opt/asta-plugins — use with:
 #   claude plugin marketplace add /opt/asta-plugins   (Claude Code)
-#   npx skills add /opt/asta-plugins                  (any agent)
+#   skills add /opt/asta-plugins                      (any agent)
 
 # Codespaces runs this on create, alongside the project's own postCreateCommand,
 # so project devcontainer.json files carry no auth setup.

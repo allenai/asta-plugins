@@ -4,3 +4,7 @@ updates:
     directory: /image/skills-cli
     schedule:
       interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
