@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:20-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
@@ -21,3 +21,17 @@ ENV PATH="/root/.local/bin:$PATH"
 #   npx skills add /opt/asta-plugins                  (any agent)
 
 WORKDIR /app
+
+# Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
+# Keep this package list identical to the paper lane in
+# workspace-quarto-site.yml so a paper that builds in CI builds in the container.
+FROM asta AS tex
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      latexmk latexdiff poppler-utils texlive-latex-base \
+      texlive-latex-recommended texlive-latex-extra \
+      texlive-fonts-recommended texlive-bibtex-extra \
+      texlive-luatex texlive-xetex biber \
+    && rm -rf /var/lib/apt/lists/*
+
+# A plain `docker build .` still produces the slim image.
+FROM asta

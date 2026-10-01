@@ -1,0 +1,40 @@
+name: Dev container smoke
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - plugins/asta-tools/skills/workspace/assets/devcontainer.json
+      - tests/fixtures/devcontainer-smoke/**
+      - .github/workflows/devcontainer-smoke.yml
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [asta, tex]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --target ${{ matrix.target }} -t asta-smoke .
+      - name: Check CLI, skills install and Quarto
+        run: |
+          docker run --rm asta-smoke bash -euc '
+            asta --help >/dev/null
+            npx --yes skills@latest add /opt/asta-plugins --all -g --yes >/dev/null
+            find ~ -maxdepth 4 -type d -path '*skills/workspace' | grep -q .
+            quarto check >/dev/null'
+      - name: Preview answers on port 4848
+        run: |
+          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke bash -euc '
+            quarto preview --no-browser --port 4848 >/tmp/preview.log 2>&1 &
+            for _ in $(seq 60); do curl -sf http://127.0.0.1:4848/ >/dev/null && exit 0; sleep 2; done
+            cat /tmp/preview.log; exit 1'
+      - name: Sample paper compiles with the CI latexmk command
+        if: matrix.target == 'tex'
+        run: |
+          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
+            latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode -halt-on-error \
+              -file-line-error -outdir=build main.tex
+          test -s tests/fixtures/devcontainer-smoke/paper/build/main.pdf

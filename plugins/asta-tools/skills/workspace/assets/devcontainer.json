@@ -1,8 +1,15 @@
 {
   "name": "Asta",
   "image": "ghcr.io/allenai/asta:latest",
-  "remoteEnv": {
-    "ASTA_TOKEN": "${localEnv:ASTA_TOKEN}"
+  "runArgs": [
+    "--env",
+    "ASTA_TOKEN"
+  ],
+  "secrets": {
+    "ASTA_TOKEN": {
+      "description": "Asta API token used by the asta CLI and skills.",
+      "documentationUrl": "https://github.com/allenai/asta-plugins#readme"
+    }
   },
   "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
   "postAttachCommand": {
@@ -11,15 +18,18 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "quarto.quarto"
+        "quarto.quarto",
+        "james-yu.latex-workshop"
       ]
     }
   },
-  "forwardPorts": [4848],
+  "forwardPorts": [
+    4848
+  ],
   "portsAttributes": {
     "4848": {
       "label": "Quarto Preview",
-      "onAutoForward": "notify"
+      "onAutoForward": "openPreview"
     }
   }
 }

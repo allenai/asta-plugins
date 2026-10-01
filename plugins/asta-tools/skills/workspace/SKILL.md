@@ -87,7 +87,7 @@ content directly.
 
 ### Dev container
 
-Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`, then pick the flow that matches the user's intent:
+Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`. If the project has a `paper/`, change `image` to the `-tex` variant (`ghcr.io/allenai/asta:latest-tex`, or `<version>-tex` when pinned) so LaTeX Workshop builds with the same TeX packages as the PR preview. Then pick the flow that matches the user's intent:
 
 - **Local container** (working on their machine without installs): run `make dev` to open VS Code attached to the local container.
-- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed), then `gh codespace create` and give the user the URL.
+- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed), then `gh codespace create` and give the user the URL. Codespaces prompts for the `ASTA_TOKEN` secret on creation, and the Quarto preview opens in VS Code's Simple Browser.
