@@ -1,0 +1,60 @@
+name: Agent baselines compatibility
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - pyproject.toml
+      - plugins/**/skills/**
+      - plugins/asta-tools/hooks/sync-cli-version.sh
+      - .github/workflows/agent-baselines-compat.yml
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-swe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the proposed Asta image
+        run: docker build --target asta -t asta-baselines-compat .
+      - uses: actions/checkout@v4
+        with:
+          repository: allenai/agent-baselines
+          path: agent-baselines
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v4
+      - name: Test the current inspect_swe solver contract
+        working-directory: agent-baselines
+        env:
+          PYTHONPATH: ${{ github.workspace }}/agent-baselines
+        run: |
+          uv run --project solvers/inspect-swe --with pytest --frozen -- \
+            python -m pytest -q \
+            tests/solvers/test_inspect_swe_image_version.py \
+            tests/solvers/test_inspect_swe_solver.py
+      - name: Resolve skills from the proposed image with agent-baselines
+        run: |
+          version=$(sed -n 's/^PLUGIN_VERSION=//p' plugins/asta-tools/hooks/sync-cli-version.sh | head -n 1)
+          test -n "$version"
+          docker run --rm -i \
+            -v "$PWD/agent-baselines:/agent-baselines:ro" \
+            -e PYTHONPATH=/agent-baselines \
+            -e ASTA_IMAGE="ghcr.io/allenai/asta:v${version}" \
+            asta-baselines-compat python3 - <<'PY'
+          from agent_baselines.skills.image_version import _check_plugin_image_version_match
+          from agent_baselines.skills.resolver import resolve_skills
+
+          root = "/opt/asta-plugins/plugins/asta-tools/skills"
+          resolved = resolve_skills([root])
+          assert resolved.skill_dirs, f"no skills found under {root}"
+          assert any(path.name == "workspace" for path in resolved.skill_dirs)
+          assert any(path.name == "asta-cli" for path in resolved.skill_dirs)
+          _check_plugin_image_version_match(resolved.skill_dirs)
+          print(f"agent-baselines resolved {len(resolved.skill_dirs)} image skills")
+          PY
