@@ -1,6 +1,7 @@
 """Tests for the rendered Quarto preview diff generator."""
 
 import importlib.util
+import json
 import re
 from pathlib import Path
 
@@ -30,6 +31,171 @@ SCRIPT = (
 SPEC = importlib.util.spec_from_file_location("what_changed", SCRIPT)
 WHAT_CHANGED = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(WHAT_CHANGED)
+
+
+def test_paper_diff_appears_before_quarto_changes(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(json.dumps({"changed": True, "diff": True}))
+    (new / "paper/diff-page-1.png").write_bytes(b"png")
+    (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert result.index('id="paper-diff"') < result.index('id="p-index-html"')
+    assert 'href="paper/what-changed.pdf#page=1"' in result
+    assert 'src="paper/diff-page-1.png"' in result
+
+
+def test_paper_diff_thumbnails_follow_page_number(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(json.dumps({"changed": True, "diff": True}))
+    for page in (10, 2):
+        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert result.index('src="paper/diff-page-2.png"') < result.index(
+        'src="paper/diff-page-10.png"'
+    )
+
+
+def test_paper_diff_explains_thumbnail_limit(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps(
+            {"changed": True, "diff": True, "thumbnail_limit": 2, "page_count": 3}
+        )
+    )
+    for page in (1, 2):
+        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Thumbnails show at most the first 2 pages" in result
+    assert "the PDF includes every page" in result
+
+
+def test_paper_diff_does_not_claim_truncation_at_exact_limit(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps(
+            {"changed": True, "diff": True, "thumbnail_limit": 2, "page_count": 2}
+        )
+    )
+    for page in (1, 2):
+        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Thumbnails show at most" not in result
+
+
+def test_non_tex_paper_inputs_link_current_pdf_without_highlight_claim(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "other_inputs": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "current PDF is available without highlights" in result
+    assert 'href="paper/main.pdf"' in result
+
+
+def test_unmarked_latex_change_links_current_pdf_without_highlight_claim(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "unhighlighted": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "diff has no marked text" in result
+    assert 'href="paper/main.pdf"' in result
+    assert 'href="paper/what-changed.pdf"' not in result
+
+
+def test_paper_diff_fallback_links_current_pdf(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'href="paper/main.pdf"' in result
+    assert 'href="paper/what-changed.pdf"' not in result
+
+
+def test_new_paper_is_labeled_as_added(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "new": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Paper added" in result
+    assert 'class="page-diff new"' in result
+    assert 'href="paper/main.pdf"' in result
+    assert "The LaTeX diff could not be built" not in result
+
+
+def test_removed_paper_has_notice_without_broken_pdf_link(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "removed": True})
+    )
+    (new / "index.html").write_text("<main><p>Quarto remains available</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Paper removed" in result
+    assert 'class="page-diff removed"' in result
+    assert 'href="#paper-diff">Paper <span class="tag removed">' in result
+    assert 'href="paper/main.pdf"' not in result
+    assert 'id="p-index-html"' in result
+
+
+def test_invalid_paper_manifest_keeps_quarto_changes(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text("{invalid")
+    (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-index-html"' in result
+    assert 'id="paper-diff"' not in result
 
 
 def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):

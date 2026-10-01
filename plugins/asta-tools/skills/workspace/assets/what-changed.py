@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate a "What changed" page for a Quarto site preview.
+"""Generate a "What changed" page for a Quarto and paper preview.
 
 Given two rendered site trees — a baseline (what's live on the site's gh-pages
 root, i.e. `main`) and a candidate (this PR's freshly rendered `_site/`) — emit
 a single self-contained HTML page that shows, per document, the rendered content
-with inline additions/removals highlighted. Reviewers get one link that lands
-them on exactly what changed, instead of the site root to hunt through.
+with inline additions/removals highlighted. A changed LaTeX paper is linked as a
+diff PDF above the Quarto sections. Reviewers get one link that lands them on
+the changes instead of the site root to hunt through.
 
 Design notes:
   * Compares the rendered `<main>` content of each page, not the source `.qmd`,
@@ -44,7 +45,9 @@ Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 
 import argparse
 import difflib
+import glob
 import html
+import json
 import os
 import re
 import sys
@@ -680,6 +683,9 @@ DIFF_STYLE = """
 .wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
     padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
     white-space: pre-wrap; overflow-wrap: break-word; }
+.wc-scope .paper-thumbs { display: flex; flex-wrap: wrap; gap: .75rem; }
+.wc-scope .paper-thumbs img { max-width: 160px; height: auto;
+    border: 1px solid var(--wc-border); }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -990,11 +996,87 @@ def pick_template(new_pages):
         return None, 0
 
 
+def paper_preview(new_root):
+    manifest = os.path.join(new_root, "paper", "preview.json")
+    if not os.path.isfile(manifest):
+        return None
+    try:
+        with open(manifest, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    if not state.get("changed"):
+        return None
+    if state.get("removed"):
+        section = (
+            '<section class="page-diff removed" id="paper-diff">'
+            '<h2>Paper <span class="tag removed">removed</span></h2>'
+            '<p class="wc-note">Paper removed; no paper PDF is published in this preview.</p>'
+            "</section>"
+        )
+        return section, "removed"
+    pdf = "paper/what-changed.pdf" if state.get("diff") else "paper/main.pdf"
+    if state.get("new"):
+        note = "Paper added; the current paper PDF is available."
+    elif state.get("diff") and state.get("other_inputs"):
+        note = "LaTeX edits are highlighted; other paper inputs may not be."
+    elif state.get("diff"):
+        note = "LaTeX edits are highlighted in the diff PDF."
+    elif state.get("unhighlighted"):
+        note = "LaTeX inputs changed, but the diff has no marked text; the current PDF is available without highlights."
+    elif state.get("other_inputs"):
+        note = "Paper inputs changed; the current PDF is available without highlights."
+    else:
+        note = "The LaTeX diff could not be built; the current paper PDF is available."
+    status = "new" if state.get("new") else "changed"
+    thumbs = []
+    if state.get("diff"):
+        pages = []
+        for path in glob.glob(os.path.join(new_root, "paper", "diff-page-*.png")):
+            filename = os.path.basename(path)
+            match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
+            if not match:
+                continue
+            pages.append((int(match.group(1)), filename))
+        for page, filename in sorted(pages):
+            thumbs.append(
+                f'<a href="{pdf}#page={page}"><img src="paper/{filename}" '
+                f'alt="Paper diff page {page}" loading="lazy"></a>'
+            )
+        limit = state.get("thumbnail_limit")
+        page_count = state.get("page_count")
+        if (
+            isinstance(limit, int)
+            and limit > 0
+            and isinstance(page_count, int)
+            and page_count > limit
+            and len(thumbs) >= limit
+        ):
+            note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
+    section = (
+        f'<section class="page-diff {status}" id="paper-diff">'
+        f'<h2>Paper <span class="tag {status}">{status}</span></h2>'
+        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
+        f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
+    )
+    return section, status
+
+
 def build(old_root, new_root, preview_url, title, out_path=None):
     old_pages = list_pages(old_root, out_path)
     new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
+    paper_section = paper_preview(new_root)
+    if paper_section:
+        section, paper_status = paper_section
+        sections.append(section)
+        toc.append(
+            f'<a href="#paper-diff">Paper <span class="tag {paper_status}">'
+            f"{paper_status}</span></a>"
+        )
     for rel in sorted(set(old_pages) | set(new_pages)):
         new_doc = (
             open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None

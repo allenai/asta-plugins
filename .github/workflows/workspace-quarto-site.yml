@@ -24,6 +24,8 @@ jobs:
   build:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    outputs:
+      paper: ${{ steps.paper.outcome }}
     permissions:
       contents: read
     concurrency:
@@ -65,6 +67,63 @@ jobs:
       # drift. Warnings are surfaced to the step summary from inside the target.
       - name: Run docs checks
         run: make check
+
+      # A broken paper must not hold back the Quarto preview: publish the rest,
+      # say so in the PR comment, and fail the check only after deploy.
+      - name: Build paper preview
+        id: paper
+        continue-on-error: true
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -f paper/main.tex ]; then
+            if ! sudo apt-get update -qq; then
+              mkdir -p _site/paper
+              echo 'Could not update LaTeX package lists.' > _site/paper/build-failed.txt
+              exit 1
+            fi
+            if ! sudo apt-get install -y --no-install-recommends \
+              latexmk latexdiff poppler-utils texlive-latex-base \
+              texlive-latex-recommended texlive-latex-extra \
+              texlive-fonts-recommended texlive-bibtex-extra \
+              texlive-luatex texlive-xetex texlive-publishers \
+              texlive-science texlive-pictures biber; then
+              mkdir -p _site/paper
+              echo 'Could not install the LaTeX toolchain.' > _site/paper/build-failed.txt
+              exit 1
+            fi
+            script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
+            if ! curl -fsSL "$script" -o /tmp/paper-preview.sh; then
+              mkdir -p _site/paper
+              echo 'Could not download the paper preview script.' > _site/paper/build-failed.txt
+              exit 1
+            fi
+            base=""
+            if [ -n "$PR_BASE" ] && ! base=$(git merge-base "$PR_BASE" HEAD); then
+              echo '::warning::Could not find the PR base; publishing the current paper without a diff'
+              base=""
+            fi
+            bash /tmp/paper-preview.sh "$base"
+          elif [ -n "$PR_BASE" ] && git cat-file -e "$PR_BASE:paper/main.tex" 2>/dev/null; then
+            mkdir -p _site/paper
+            printf '{"changed":true,"removed":true}\n' > _site/paper/preview.json
+          fi
+
+      - name: Record paper build failure
+        if: steps.paper.outcome == 'failure'
+        run: |
+          mkdir -p _site/paper
+          if [ ! -f _site/paper/build-failed.txt ]; then
+            {
+              echo "The paper failed to build; the rest of the preview was published without it."
+              echo
+              if [ -f paper/build/main.log ]; then tail -n 200 paper/build/main.log; fi
+              for log in paper/build/*.blg; do
+                if [ -f "$log" ]; then tail -n 100 "$log"; fi
+              done
+            } > _site/paper/build-failed.txt
+          fi
+          echo "::error file=paper/main.tex::Paper preview failed; the rest of the preview will still publish"
 
       - name: Prepare Pages artifact
         run: touch _site/.nojekyll  # serve asset dirs verbatim (no Jekyll)
@@ -200,6 +259,23 @@ jobs:
             else
               body="📄 Preview: $url"
             fi
+            # Surface the paper directly; it is otherwise one click deep.
+            pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
+            if [ -f "$pr_dir/paper/main.pdf" ]; then
+              body=$(printf '%s\n📑 Paper PDF: %spaper/main.pdf' "$body" "$url")
+            fi
+            if [ -f "$pr_dir/paper/main.bbl" ]; then
+              body=$(printf '%s\n📚 Paper bibliography (arXiv): %spaper/main.bbl' "$body" "$url")
+            fi
+            if [ -f "$pr_dir/paper/what-changed.pdf" ]; then
+              body=$(printf '%s\n🖍️ Paper diff: %spaper/what-changed.pdf' "$body" "$url")
+            fi
+            if [ -f "$pr_dir/paper/build-failed.txt" ]; then
+              body=$(printf '%s\n⚠️ Paper build failed (preview published without it): %spaper/build-failed.txt' "$body" "$url")
+            fi
+            if [ -f "$pr_dir/paper/preview.json" ] && grep -q '"removed":true' "$pr_dir/paper/preview.json"; then
+              body=$(printf '%s\n🗑️ Paper removed' "$body")
+            fi
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
@@ -214,6 +290,18 @@ jobs:
             fi
             set -e
           fi
+
+
+  # Report a paper failure even if publishing is skipped or fails first.
+  paper-gate:
+    needs: [build, deploy]
+    if: always() && needs.build.outputs.paper == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail the check if the paper did not build
+        run: |
+          echo "::error::The paper failed to build. See the build job's 'Build paper preview' log."
+          exit 1
 
   # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
   # (keyed on the PR number) so it cancels any still-running build/deploy for the
