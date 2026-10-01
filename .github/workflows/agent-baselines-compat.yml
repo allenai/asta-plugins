@@ -6,6 +6,8 @@ on:
       - Dockerfile
       - .dockerignore
       - pyproject.toml
+      - uv.lock
+      - src/**
       - plugins/**/skills/**
       - plugins/asta-tools/hooks/sync-cli-version.sh
       - .github/workflows/agent-baselines-compat.yml
@@ -19,6 +21,7 @@ permissions:
 jobs:
   inspect-swe:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Build the proposed Asta image
@@ -28,8 +31,10 @@ jobs:
           repository: allenai/agent-baselines
           path: agent-baselines
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && '2d426deac51ad74381319bcfd77066c6e222ba30' || 'main' }}
       - uses: astral-sh/setup-uv@v4
       - name: Test the current inspect_swe solver contract
+        if: github.event_name != 'pull_request'
         working-directory: agent-baselines
         env:
           PYTHONPATH: ${{ github.workspace }}/agent-baselines
@@ -40,13 +45,13 @@ jobs:
             tests/solvers/test_inspect_swe_solver.py
       - name: Resolve skills from the proposed image with agent-baselines
         run: |
-          version=$(sed -n 's/^PLUGIN_VERSION=//p' plugins/asta-tools/hooks/sync-cli-version.sh | head -n 1)
+          version=$(sed -nE 's/^PLUGIN_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' plugins/asta-tools/hooks/sync-cli-version.sh)
           test -n "$version"
           docker run --rm -i \
             -v "$PWD/agent-baselines:/agent-baselines:ro" \
             -e PYTHONPATH=/agent-baselines \
             -e ASTA_IMAGE="ghcr.io/allenai/asta:v${version}" \
-            asta-baselines-compat python3 - <<'PY'
+            asta-baselines-compat python3 -S - <<'PY'
           from agent_baselines.skills.image_version import _check_plugin_image_version_match
           from agent_baselines.skills.resolver import resolve_skills
 
