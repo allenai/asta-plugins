@@ -264,6 +264,9 @@ jobs:
             if [ -f "$pr_dir/paper/main.pdf" ]; then
               body=$(printf '%s\n📑 Paper PDF: %spaper/main.pdf' "$body" "$url")
             fi
+            if [ -f "$pr_dir/paper/main.bbl" ]; then
+              body=$(printf '%s\n📚 Paper bibliography (arXiv): %spaper/main.bbl' "$body" "$url")
+            fi
             if [ -f "$pr_dir/paper/what-changed.pdf" ]; then
               body=$(printf '%s\n🖍️ Paper diff: %spaper/what-changed.pdf' "$body" "$url")
             fi

@@ -39,7 +39,7 @@ def paper_repo(tmp_path, old_paper=True):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     commands = {
-        "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
+        "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "%s\\n" "${FAKE_LATEX_LOG:-}" > build/main.log\nif [ -n "${FAKE_BIBTEX_LOG:-}" ]; then printf "%s\\n" "$FAKE_BIBTEX_LOG" > build/main.blg; fi\nif [ -n "${FAKE_BBL:-}" ]; then printf "%s\\n" "$FAKE_BBL" > build/main.bbl; fi\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
         "latexdiff": "#!/bin/bash\nprintf '\\\\begin{document}\\n\\\\DIFadd{new}\\n'\n",
         "pdftoppm": '#!/bin/bash\nname="${@: -1}"\nprintf png > "${name}-1.png"\n',
     }
@@ -90,6 +90,40 @@ def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
         "diff": False,
         "new": True,
     }
+
+
+def test_paper_preview_rejects_unresolved_citations(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    env["FAKE_BIBTEX_LOG"] = 'Warning--I didn\'t find a database entry for "missing"'
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode != 0
+    assert "Unresolved paper citations" in result.stdout
+    assert not (repo / "_site/paper/main.pdf").exists()
+
+
+def test_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode != 0
+    assert not (repo / "_site/paper/main.pdf").exists()
+
+
+def test_paper_preview_publishes_arxiv_bibliography(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    env["FAKE_BBL"] = r"\begin{thebibliography}{1}"
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (repo / "_site/paper/main.bbl").read_text().strip() == env["FAKE_BBL"]
 
 
 def test_unchanged_paper_has_no_diff_manifest(tmp_path):

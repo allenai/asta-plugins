@@ -11,7 +11,19 @@ export TEXINPUTS="$PWD/paper:$PWD:${TEXINPUTS:-}"
 (cd paper && latexmk -e '$pdf_mode ||= 1;' -recorder -deps-out=build/main.dep \
   -deps-escape=unix \
   -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)
+if [ ! -f paper/build/main.log ]; then
+  echo '::error file=paper/main.tex::LaTeX did not write paper/build/main.log'
+  exit 1
+fi
+if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' paper/build/main.log || \
+   { [ -f paper/build/main.blg ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' paper/build/main.blg; }; then
+  echo '::error file=paper/main.tex::Unresolved paper citations or missing bibliography'
+  exit 1
+fi
 cp paper/build/main.pdf _site/paper/main.pdf
+if [ -s paper/build/main.bbl ]; then
+  cp paper/build/main.bbl _site/paper/main.bbl
+fi
 
 test -n "$base" || exit 0
 fallback() {
