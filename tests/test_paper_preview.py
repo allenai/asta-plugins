@@ -5,7 +5,6 @@ import os
 import subprocess
 from pathlib import Path
 
-
 SCRIPT = (
     Path(__file__).parents[1]
     / "plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
