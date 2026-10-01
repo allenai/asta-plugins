@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:20-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
@@ -21,3 +21,20 @@ ENV PATH="/root/.local/bin:$PATH"
 #   npx skills add /opt/asta-plugins                  (any agent)
 
 WORKDIR /app
+
+# Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
+# Match the paper preview's TeX packages so local and CI builds agree.
+FROM asta AS tex
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      latexmk latexdiff poppler-utils texlive-latex-base \
+      texlive-latex-recommended texlive-latex-extra \
+      texlive-fonts-recommended texlive-bibtex-extra \
+      texlive-luatex texlive-xetex texlive-publishers \
+      texlive-science texlive-pictures biber \
+    && rm -rf /var/lib/apt/lists/*
+# Dev containers merge this into devcontainer.json, so LaTeX Workshop
+# arrives with TeX and Quarto-only projects never get it.
+LABEL devcontainer.metadata='[{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"]}}}]'
+
+# A plain `docker build .` still produces the slim image.
+FROM asta
