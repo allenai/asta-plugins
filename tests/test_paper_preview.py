@@ -64,8 +64,9 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
         "changed": True,
         "diff": True,
         "other_inputs": False,
+        "thumbnail_limit": 12,
     }
-    assert not (repo / "paper/what-changed.tex").exists()
+    assert not list((repo / "paper").glob("what-changed.*.tex"))
 
 
 def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
@@ -86,6 +87,15 @@ def test_unchanged_paper_has_no_diff_manifest(tmp_path):
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert not (repo / "_site/paper/preview.json").exists()
+
+
+def test_missing_comparison_base_still_builds_current_pdf(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+
+    run("bash", str(SCRIPT), "", cwd=repo, env=env)
 
     assert (repo / "_site/paper/main.pdf").exists()
     assert not (repo / "_site/paper/preview.json").exists()
@@ -119,7 +129,52 @@ def test_thumbnail_failure_keeps_diff_pdf(tmp_path):
         "changed": True,
         "diff": True,
         "other_inputs": False,
+        "thumbnail_limit": 12,
     }
+
+
+def test_diff_does_not_delete_a_tracked_paper_file(tmp_path):
+    repo, base, env, _ = paper_repo(tmp_path)
+    tracked = repo / "paper/what-changed.tex"
+    tracked.write_text("keep this file")
+    run("git", "add", "paper/what-changed.tex", cwd=repo)
+    run("git", "commit", "-qm", "add tracked file", cwd=repo)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert tracked.read_text() == "keep this file"
+    assert not list((repo / "paper").glob("what-changed.*.tex"))
+
+
+def test_unread_paper_file_does_not_claim_paper_changed(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "paper/README.md").write_text("new notes")
+    run("git", "add", "paper/README.md", cwd=repo)
+    run("git", "commit", "-qm", "add paper notes", cwd=repo)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert not (repo / "_site/paper/preview.json").exists()
+
+
+def test_changed_included_subdirectory_tex_builds_diff(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    subdir = repo / "paper/sections"
+    subdir.mkdir()
+    section = subdir / "intro.tex"
+    section.write_text("old")
+    run("git", "add", "paper/sections/intro.tex", cwd=repo)
+    run("git", "commit", "-qm", "add section", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    section.write_text("new")
+    run("git", "commit", "-qam", "edit section", cwd=repo)
+    env["FAKE_LATEX_INPUT"] = "sections/intro.tex"
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (repo / "_site/paper/what-changed.pdf").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text())["diff"] is True
 
 
 def test_root_level_tex_input_is_detected_without_false_diff_highlights(tmp_path):

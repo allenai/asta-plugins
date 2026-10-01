@@ -38,7 +38,7 @@ changed = subprocess.check_output(
 ).decode().rstrip("\0").split("\0")
 relevant = [
     path for path in changed
-    if path.startswith("paper/") or path.endswith(".bib") or path in inputs
+    if path in inputs or path.endswith(".bib") or path in {"latexmkrc", "paper/latexmkrc"}
 ]
 print(int(any(path.startswith("paper/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith("paper/") and path.endswith(".tex")) for path in relevant)))
@@ -54,22 +54,25 @@ if ! git cat-file -e "$base:paper/main.tex" 2>/dev/null; then
 fi
 if [ "$tex_changed" = 0 ]; then exit 0; fi
 old=$(mktemp -d)
+diff_tex=$(mktemp paper/what-changed.XXXXXXXX.tex)
+diff_name=${diff_tex##*/}
+diff_stem=${diff_name%.tex}
 cleanup() {
   git worktree remove --force "$old" 2>/dev/null || true
   rm -rf "$old"
-  rm -f paper/what-changed.tex
+  rm -f "$diff_tex"
 }
 trap cleanup EXIT
 git worktree add --detach "$old" "$base" >/dev/null
 
-if latexdiff --flatten "$old/paper/main.tex" paper/main.tex > paper/what-changed.tex \
-  && (cd paper && latexmk -pdf -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build what-changed.tex); then
-  cp paper/build/what-changed.pdf _site/paper/what-changed.pdf
-  if ! pdftoppm -png -r 54 _site/paper/what-changed.pdf _site/paper/diff-page >/dev/null 2>&1; then
+if latexdiff --flatten "$old/paper/main.tex" paper/main.tex > "$diff_tex" \
+  && (cd paper && latexmk -pdf -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$diff_name"); then
+  cp "paper/build/$diff_stem.pdf" _site/paper/what-changed.pdf
+  if ! pdftoppm -f 1 -l 12 -png -r 54 _site/paper/what-changed.pdf _site/paper/diff-page >/dev/null 2>&1; then
     rm -f _site/paper/diff-page-*.png
     echo '::warning::Could not render paper diff thumbnails; the diff PDF remains available'
   fi
-  printf '{"changed":true,"diff":true,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > _site/paper/preview.json
+  printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > _site/paper/preview.json
 else
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
 fi

@@ -79,7 +79,10 @@ jobs:
             script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
             curl -fsSL "$script" -o /tmp/paper-preview.sh
             base=""
-            if [ -n "$PR_BASE" ]; then base=$(git merge-base "$PR_BASE" HEAD); fi
+            if [ -n "$PR_BASE" ] && ! base=$(git merge-base "$PR_BASE" HEAD); then
+              echo '::warning::Could not find the PR base; publishing the current paper without a diff'
+              base=""
+            fi
             bash /tmp/paper-preview.sh "$base"
           fi
 

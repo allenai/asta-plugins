@@ -1035,6 +1035,9 @@ def paper_preview(new_root):
                 f'<a href="{pdf}#page={page}"><img src="paper/{filename}" '
                 f'alt="Paper diff page {page}" loading="lazy"></a>'
             )
+        limit = state.get("thumbnail_limit")
+        if isinstance(limit, int) and limit > 0 and len(thumbs) >= limit:
+            note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
     section = (
         f'<section class="page-diff {status}" id="paper-diff">'
         f'<h2>Paper <span class="tag {status}">{status}</span></h2>'
