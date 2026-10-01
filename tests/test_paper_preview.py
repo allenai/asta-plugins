@@ -105,6 +105,21 @@ def test_paper_preview_rejects_unresolved_citations(tmp_path):
     assert not (repo / "_site/paper/main.pdf").exists()
 
 
+def test_paper_preview_rejects_missing_bibliography_command(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    env["FAKE_BIBTEX_LOG"] = (
+        r"I found no \bibdata command---while reading file main.aux"
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode != 0
+    assert "Unresolved paper citations" in result.stdout
+    assert not (repo / "_site/paper/main.pdf").exists()
+
+
 def test_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
     env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
