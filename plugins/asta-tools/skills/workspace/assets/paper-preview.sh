@@ -14,7 +14,12 @@ export TEXINPUTS="$PWD/paper:$PWD:${TEXINPUTS:-}"
 cp paper/build/main.pdf _site/paper/main.pdf
 
 test -n "$base" || exit 0
-flags=$(python3 - "$base" <<'PY'
+fallback() {
+  rm -f _site/paper/preview.json _site/paper/what-changed.pdf _site/paper/diff-page-*.png
+  printf '{"changed":true,"diff":false}\n' > _site/paper/preview.json
+  echo '::warning::Could not compare paper versions; the current paper PDF remains available'
+}
+if ! flags=$(python3 - "$base" <<'PY'
 import pathlib
 import shlex
 import subprocess
@@ -41,7 +46,10 @@ for line in fls.read_text(errors="replace").splitlines():
 deps = root / "paper/build/main.dep"
 if not deps.is_file():
     raise SystemExit("LaTeX did not record paper dependencies in paper/build/main.dep")
-dep_text = deps.read_text(errors="replace").replace("\\\n", " ")
+dep_text = "\n".join(
+    line for line in deps.read_text(errors="replace").splitlines()
+    if not line.lstrip().startswith("#")
+).replace("\\\n", " ")
 if ":" not in dep_text:
     raise SystemExit("LaTeX wrote an invalid paper dependency list")
 for name in shlex.split(dep_text.partition(":")[2]):
@@ -56,12 +64,15 @@ changed = subprocess.check_output(
 ).decode().rstrip("\0").split("\0")
 relevant = [
     path for path in changed
-    if path in inputs or path in {"latexmkrc", "paper/latexmkrc"}
+    if path in inputs or path in {"latexmkrc", "paper/latexmkrc", ".latexmkrc", "paper/.latexmkrc"}
 ]
 print(int(any(path.startswith("paper/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith("paper/") and path.endswith(".tex")) for path in relevant)))
 PY
-)
+); then
+  fallback
+  exit 0
+fi
 read -r tex_changed other_changed <<< "$flags"
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
 printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > _site/paper/preview.json
@@ -71,8 +82,19 @@ if ! git cat-file -e "$base:paper/main.tex" 2>/dev/null; then
   exit 0
 fi
 if [ "$tex_changed" = 0 ]; then exit 0; fi
-old=$(mktemp -d)
-diff_tex=$(mktemp paper/what-changed.XXXXXXXX.tex)
+if ! old=$(mktemp -d); then fallback; exit 0; fi
+if ! diff_tmp=$(mktemp paper/what-changed.XXXXXXXX); then
+  rm -rf "$old"
+  fallback
+  exit 0
+fi
+diff_tex="$diff_tmp.tex"
+if ! mv "$diff_tmp" "$diff_tex"; then
+  rm -f "$diff_tmp"
+  rm -rf "$old"
+  fallback
+  exit 0
+fi
 diff_name=${diff_tex##*/}
 diff_stem=${diff_name%.tex}
 cleanup() {
@@ -81,7 +103,10 @@ cleanup() {
   rm -f "$diff_tex"
 }
 trap cleanup EXIT
-git worktree add --detach "$old" "$base" >/dev/null
+if ! git worktree add --detach "$old" "$base" >/dev/null; then
+  fallback
+  exit 0
+fi
 
 if ! latexdiff --flatten "$old/paper/main.tex" paper/main.tex > "$diff_tex"; then
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
@@ -107,7 +132,12 @@ if (cd paper && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
     rm -f _site/paper/diff-page-*.png
     echo '::warning::Could not render paper diff thumbnails; the diff PDF remains available'
   fi
-  printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > _site/paper/preview.json
+  pages=$(pdfinfo _site/paper/what-changed.pdf 2>/dev/null | awk '/^Pages:/ {print $2; exit}') || pages=""
+  if [[ "$pages" =~ ^[0-9]+$ ]]; then
+    printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12,"page_count":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" "$pages" > _site/paper/preview.json
+  else
+    printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > _site/paper/preview.json
+  fi
 else
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
 fi

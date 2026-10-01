@@ -1038,7 +1038,14 @@ def paper_preview(new_root):
                 f'alt="Paper diff page {page}" loading="lazy"></a>'
             )
         limit = state.get("thumbnail_limit")
-        if isinstance(limit, int) and limit > 0 and len(thumbs) >= limit:
+        page_count = state.get("page_count")
+        if (
+            isinstance(limit, int)
+            and limit > 0
+            and isinstance(page_count, int)
+            and page_count > limit
+            and len(thumbs) >= limit
+        ):
             note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
     section = (
         f'<section class="page-diff {status}" id="paper-diff">'

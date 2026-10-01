@@ -111,6 +111,31 @@ def test_missing_comparison_base_still_builds_current_pdf(tmp_path):
     assert not (repo / "_site/paper/preview.json").exists()
 
 
+def test_missing_recorder_keeps_current_pdf_without_failing_build(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("rm -f build/main.fls\n")
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert "Could not compare paper versions" in result.stdout
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": True,
+        "diff": False,
+    }
+
+
+def test_missing_git_base_keeps_current_pdf_without_failing_build(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+
+    result = run("bash", str(SCRIPT), "missing-base", cwd=repo, env=env)
+
+    assert "Could not compare paper versions" in result.stdout
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text())["diff"] is False
+
+
 def test_latexdiff_failure_keeps_current_pdf(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     (bin_dir / "latexdiff").write_text("#!/bin/bash\nexit 1\n")
@@ -141,6 +166,18 @@ def test_thumbnail_failure_keeps_diff_pdf(tmp_path):
         "other_inputs": False,
         "thumbnail_limit": 12,
     }
+
+
+def test_diff_records_actual_page_count_for_thumbnail_note(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    (bin_dir / "pdfinfo").write_text("#!/bin/sh\necho 'Pages: 13'\n")
+    (bin_dir / "pdfinfo").chmod(0o755)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (
+        json.loads((repo / "_site/paper/preview.json").read_text())["page_count"] == 13
+    )
 
 
 def test_diff_does_not_delete_a_tracked_paper_file(tmp_path):
@@ -241,6 +278,40 @@ def test_unused_bibliography_edit_does_not_mark_paper_changed(tmp_path):
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
     assert not (repo / "_site/paper/preview.json").exists()
+
+
+def test_dependency_comment_does_not_mark_unused_bibliography_changed(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    (repo / "unused.bib").write_text("old")
+    run("git", "add", "unused.bib", cwd=repo)
+    run("git", "commit", "-qm", "add unused bibliography", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "unused.bib").write_text("new")
+    run("git", "commit", "-qam", "edit unused bibliography", cwd=repo)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('sed -i "1i# Header: ../unused.bib" build/main.dep\n')
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert not (repo / "_site/paper/preview.json").exists()
+
+
+def test_latexmkrc_change_is_a_paper_input(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    (repo / "paper/.latexmkrc").write_text("old")
+    run("git", "add", "paper/.latexmkrc", cwd=repo)
+    run("git", "commit", "-qm", "add configuration", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "paper/.latexmkrc").write_text("new")
+    run("git", "commit", "-qam", "edit configuration", cwd=repo)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": True,
+        "diff": False,
+        "other_inputs": True,
+    }
 
 
 def test_preamble_only_edit_links_pdf_without_highlights(tmp_path):
