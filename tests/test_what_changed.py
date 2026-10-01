@@ -165,6 +165,25 @@ def test_new_paper_is_labeled_as_added(tmp_path):
     assert "The LaTeX diff could not be built" not in result
 
 
+def test_removed_paper_has_notice_without_broken_pdf_link(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "removed": True})
+    )
+    (new / "index.html").write_text("<main><p>Quarto remains available</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Paper removed" in result
+    assert 'class="page-diff removed"' in result
+    assert 'href="#paper-diff">Paper <span class="tag removed">' in result
+    assert 'href="paper/main.pdf"' not in result
+    assert 'id="p-index-html"' in result
+
+
 def test_invalid_paper_manifest_keeps_quarto_changes(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

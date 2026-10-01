@@ -1009,6 +1009,14 @@ def paper_preview(new_root):
         return None
     if not state.get("changed"):
         return None
+    if state.get("removed"):
+        section = (
+            '<section class="page-diff removed" id="paper-diff">'
+            '<h2>Paper <span class="tag removed">removed</span></h2>'
+            '<p class="wc-note">Paper removed; no paper PDF is published in this preview.</p>'
+            "</section>"
+        )
+        return section, "removed"
     pdf = "paper/what-changed.pdf" if state.get("diff") else "paper/main.pdf"
     if state.get("new"):
         note = "Paper added; the current paper PDF is available."
