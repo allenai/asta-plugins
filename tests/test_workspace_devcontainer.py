@@ -53,8 +53,9 @@ def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
 
 def test_agent_gets_the_asta_skills():
     command = _devcontainer()["postCreateCommand"]
+    assert "if command -v skills" in command
     assert "skills add /opt/asta-plugins" in command
-    assert "npx" not in command
+    assert "npx --yes skills@1.5.0 add /opt/asta-plugins" in command
 
 
 def test_skills_cli_is_pinned_in_the_image():
@@ -64,8 +65,8 @@ def test_skills_cli_is_pinned_in_the_image():
     assert re.fullmatch(r"\d+\.\d+\.\d+", version)
     assert lock["packages"]["node_modules/skills"]["version"] == version
     dockerfile = DOCKERFILE.read_text()
-    assert "FROM node:22-slim AS asta" in dockerfile
     assert "npm ci --prefix /opt/skills-cli" in dockerfile
+    assert "--engine-strict" in dockerfile
     assert "node_modules/.bin/skills /usr/local/bin/skills" in dockerfile
 
 

@@ -11,7 +11,7 @@
       "documentationUrl": "https://github.com/allenai/asta-plugins#readme"
     }
   },
-  "postCreateCommand": "skills add /opt/asta-plugins --all -g --yes",
+  "postCreateCommand": "if command -v skills >/dev/null 2>&1; then skills add /opt/asta-plugins --all -g --yes; else npx --yes skills@1.5.0 add /opt/asta-plugins --all -g --yes; fi",
   "postAttachCommand": {
     "preview": "exec asta workspace preview"
   },
