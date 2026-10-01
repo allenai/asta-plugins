@@ -13,7 +13,7 @@
   },
   "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes && if [ \"$CODESPACES\" = true ]; then mkdir -p /workspaces/.asta-auth ~/.config && chmod 700 /workspaces/.asta-auth && ln -sfn /workspaces/.asta-auth ~/.config/asta-cli; fi",
   "postAttachCommand": {
-    "preview": "curl -s -o /dev/null http://127.0.0.1:4848/ || { [ -f Makefile ] && make preview; } || { [ -f _quarto.yml ] && quarto preview --no-browser; } || true"
+    "preview": "curl -sf -o /dev/null http://127.0.0.1:4848/ || { [ -f Makefile ] && make preview; } || { [ -f _quarto.yml ] && quarto preview --no-browser; } || true"
   },
   "customizations": {
     "vscode": {
