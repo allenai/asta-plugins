@@ -6,7 +6,14 @@
   },
   "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
   "postAttachCommand": {
-    "preview": "[ -f Makefile ] && make preview || [ -f _quarto.yml ] && quarto preview --no-browser || true"
+    "preview": "curl -s -o /dev/null http://127.0.0.1:4848/ || { [ -f Makefile ] && make preview; } || { [ -f _quarto.yml ] && quarto preview --no-browser; } || true"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "quarto.quarto"
+      ]
+    }
   },
   "forwardPorts": [4848],
   "portsAttributes": {
