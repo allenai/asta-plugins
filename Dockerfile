@@ -1,7 +1,11 @@
-FROM node:20-slim AS asta
+FROM node:22-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY image/skills-cli/package.json image/skills-cli/package-lock.json /opt/skills-cli/
+RUN npm ci --prefix /opt/skills-cli --omit=dev \
+    && ln -s /opt/skills-cli/node_modules/.bin/skills /usr/local/bin/skills
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
