@@ -1,6 +1,7 @@
 """Tests for the rendered Quarto preview diff generator."""
 
 import importlib.util
+import json
 import re
 from pathlib import Path
 
@@ -30,6 +31,37 @@ SCRIPT = (
 SPEC = importlib.util.spec_from_file_location("what_changed", SCRIPT)
 WHAT_CHANGED = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(WHAT_CHANGED)
+
+
+def test_paper_diff_appears_before_quarto_changes(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(json.dumps({"changed": True, "diff": True}))
+    (new / "paper/diff-page-1.png").write_bytes(b"png")
+    (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert result.index('id="paper-diff"') < result.index('id="p-index-html"')
+    assert 'href="paper/what-changed.pdf#page=1"' in result
+    assert 'src="paper/diff-page-1.png"' in result
+
+
+def test_paper_diff_fallback_links_current_pdf(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'href="paper/main.pdf"' in result
+    assert 'href="paper/what-changed.pdf"' not in result
 
 
 def test_build_reuses_quarto_theme_and_marks_changes_accessibly(tmp_path):

@@ -66,6 +66,23 @@ jobs:
       - name: Run docs checks
         run: make check
 
+      - name: Build paper preview
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -f paper/main.tex ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends \
+              latexmk latexdiff poppler-utils texlive-latex-base \
+              texlive-latex-recommended texlive-latex-extra \
+              texlive-fonts-recommended texlive-bibtex-extra
+            script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
+            curl -fsSL "$script" -o /tmp/paper-preview.sh
+            base=""
+            if [ -n "$PR_BASE" ]; then base=$(git merge-base "$PR_BASE" HEAD); fi
+            bash /tmp/paper-preview.sh "$base"
+          fi
+
       - name: Prepare Pages artifact
         run: touch _site/.nojekyll  # serve asset dirs verbatim (no Jekyll)
 

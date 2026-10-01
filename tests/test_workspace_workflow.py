@@ -13,8 +13,8 @@ WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 2
-    assert workflow.count("${{ job.workflow_sha }}") == 2
+    assert workflow.count("${{ job.workflow_repository }}") == 3
+    assert workflow.count("${{ job.workflow_sha }}") == 3
     assert "github.job_workflow" not in workflow
 
 

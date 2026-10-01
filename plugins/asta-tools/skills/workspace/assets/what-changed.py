@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate a "What changed" page for a Quarto site preview.
+"""Generate a "What changed" page for a Quarto and paper preview.
 
 Given two rendered site trees — a baseline (what's live on the site's gh-pages
 root, i.e. `main`) and a candidate (this PR's freshly rendered `_site/`) — emit
 a single self-contained HTML page that shows, per document, the rendered content
-with inline additions/removals highlighted. Reviewers get one link that lands
-them on exactly what changed, instead of the site root to hunt through.
+with inline additions/removals highlighted. A changed LaTeX paper is linked as a
+diff PDF above the Quarto sections. Reviewers get one link that lands them on
+the changes instead of the site root to hunt through.
 
 Design notes:
   * Compares the rendered `<main>` content of each page, not the source `.qmd`,
@@ -44,7 +45,9 @@ Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 
 import argparse
 import difflib
+import glob
 import html
+import json
 import os
 import re
 import sys
@@ -680,6 +683,9 @@ DIFF_STYLE = """
 .wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
     padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
     white-space: pre-wrap; overflow-wrap: break-word; }
+.wc-scope .paper-thumbs { display: flex; flex-wrap: wrap; gap: .75rem; }
+.wc-scope .paper-thumbs img { max-width: 160px; height: auto;
+    border: 1px solid var(--wc-border); }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -990,11 +996,53 @@ def pick_template(new_pages):
         return None, 0
 
 
+def paper_preview(new_root):
+    manifest = os.path.join(new_root, "paper", "preview.json")
+    if not os.path.isfile(manifest):
+        return None
+    with open(manifest, encoding="utf-8") as f:
+        state = json.load(f)
+    if not state.get("changed"):
+        return None
+    pdf = "paper/what-changed.pdf" if state.get("diff") else "paper/main.pdf"
+    note = (
+        "LaTeX edits are highlighted in the diff PDF."
+        if state.get("diff")
+        else "The LaTeX diff could not be built; the current paper PDF is available."
+    )
+    thumbs = []
+    if state.get("diff"):
+        for path in sorted(
+            glob.glob(os.path.join(new_root, "paper", "diff-page-*.png"))
+        ):
+            filename = os.path.basename(path)
+            match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
+            if not match:
+                continue
+            page = int(match.group(1))
+            thumbs.append(
+                f'<a href="{pdf}#page={page}"><img src="paper/{filename}" '
+                f'alt="Paper diff page {page}" loading="lazy"></a>'
+            )
+    return (
+        '<section class="page-diff changed" id="paper-diff">'
+        '<h2>Paper <span class="tag changed">changed</span></h2>'
+        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
+        f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
+    )
+
+
 def build(old_root, new_root, preview_url, title, out_path=None):
     old_pages = list_pages(old_root, out_path)
     new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
+    paper_section = paper_preview(new_root)
+    if paper_section:
+        sections.append(paper_section)
+        toc.append(
+            '<a href="#paper-diff">Paper <span class="tag changed">changed</span></a>'
+        )
     for rel in sorted(set(old_pages) | set(new_pages)):
         new_doc = (
             open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
