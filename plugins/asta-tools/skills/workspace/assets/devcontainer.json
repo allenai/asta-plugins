@@ -7,11 +7,11 @@
   ],
   "secrets": {
     "ASTA_TOKEN": {
-      "description": "Asta API token used by the asta CLI and skills.",
+      "description": "Optional Asta API token for the asta CLI and skills; leave blank and run `asta auth login` instead.",
       "documentationUrl": "https://github.com/allenai/asta-plugins#readme"
     }
   },
-  "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
+  "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes && if [ \"$CODESPACES\" = true ]; then mkdir -p /workspaces/.asta-auth ~/.config && chmod 700 /workspaces/.asta-auth && ln -sfn /workspaces/.asta-auth ~/.config/asta-cli; fi",
   "postAttachCommand": {
     "preview": "curl -s -o /dev/null http://127.0.0.1:4848/ || { [ -f Makefile ] && make preview; } || { [ -f _quarto.yml ] && quarto preview --no-browser; } || true"
   },

@@ -55,3 +55,9 @@ def test_tex_image_matches_ci_paper_lane():
     }
     lane = workflow.split("apt-get install", 1)[1].split("\n\n", 1)[0]
     assert _packages(tex_stage) == _packages(lane)
+
+
+def test_codespaces_persists_asta_login() -> None:
+    cmd = _devcontainer()["postCreateCommand"]
+    assert "CODESPACES" in cmd
+    assert "ln -sfn /workspaces/.asta-auth ~/.config/asta-cli" in cmd
