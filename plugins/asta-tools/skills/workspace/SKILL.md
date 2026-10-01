@@ -1,7 +1,7 @@
 ---
 name: workspace
 description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
-allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
 # Workspace
@@ -65,6 +65,8 @@ NatureBench has [90 tasks]{.ev key="naturebench-count"}.
 ```
 
 Only ever put a **verbatim** quotation in `quote:` — there is no paraphrase mode; state your own wording in the prose. Full field reference and design notes are in `_extensions/evidence/README.md`.
+
+Structural validation of these entries belongs in deterministic build tooling. Whether a claim needs evidence at all, and whether a quote actually supports the claim as worded, is a judgement call — load the `check-claims` skill for that, both before you open a PR and when reviewing one.
 
 ### GitHub Pages deploy
 
