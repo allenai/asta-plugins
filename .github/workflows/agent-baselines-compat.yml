@@ -55,11 +55,21 @@ jobs:
           from agent_baselines.skills.image_version import _check_plugin_image_version_match
           from agent_baselines.skills.resolver import resolve_skills
 
-          root = "/opt/asta-plugins/plugins/asta-tools/skills"
-          resolved = resolve_skills([root])
-          assert resolved.skill_dirs, f"no skills found under {root}"
-          assert any(path.name == "workspace" for path in resolved.skill_dirs)
-          assert any(path.name == "asta-cli" for path in resolved.skill_dirs)
-          _check_plugin_image_version_match(resolved.skill_dirs)
-          print(f"agent-baselines resolved {len(resolved.skill_dirs)} image skills")
+          root = "/opt/asta-plugins/plugins"
+          stacks = {
+              "assistant": ("asta-tools", "asta-assistant"),
+              "flows": ("asta-tools", "asta-flows"),
+              "assistant+dev": ("asta-tools", "asta-assistant", "asta-dev"),
+          }
+          expected = {
+              "assistant": {"workspace", "asta-cli", "run"},
+              "flows": {"workspace", "asta-cli", "asta-flows"},
+              "assistant+dev": {"workspace", "asta-cli", "run", "improve-skills"},
+          }
+          for label, groups in stacks.items():
+              resolved = resolve_skills([f"{root}/{group}/skills" for group in groups])
+              names = {path.name for path in resolved.skill_dirs}
+              assert expected[label] <= names, f"{label} missing {expected[label] - names}"
+              _check_plugin_image_version_match(resolved.skill_dirs)
+              print(f"agent-baselines resolved {len(resolved.skill_dirs)} {label} skills")
           PY
