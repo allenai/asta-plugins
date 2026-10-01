@@ -23,14 +23,14 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 
 # Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
-# Keep this package list identical to the paper lane in
-# workspace-quarto-site.yml so a paper that builds in CI builds in the container.
+# Match the paper preview's TeX packages so local and CI builds agree.
 FROM asta AS tex
 RUN apt-get update && apt-get install -y --no-install-recommends \
       latexmk latexdiff poppler-utils texlive-latex-base \
       texlive-latex-recommended texlive-latex-extra \
       texlive-fonts-recommended texlive-bibtex-extra \
-      texlive-luatex texlive-xetex biber \
+      texlive-luatex texlive-xetex texlive-publishers \
+      texlive-science texlive-pictures biber \
     && rm -rf /var/lib/apt/lists/*
 
 # A plain `docker build .` still produces the slim image.

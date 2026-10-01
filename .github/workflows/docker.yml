@@ -5,11 +5,17 @@ on:
     tags: ['v*']
 
 jobs:
+  validate:
+    uses: ./.github/workflows/devcontainer-smoke.yml
+
   publish:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: asta
