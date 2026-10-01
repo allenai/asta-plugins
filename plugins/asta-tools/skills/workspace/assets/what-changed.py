@@ -1016,6 +1016,8 @@ def paper_preview(new_root):
         note = "LaTeX edits are highlighted; other paper inputs may not be."
     elif state.get("diff"):
         note = "LaTeX edits are highlighted in the diff PDF."
+    elif state.get("unhighlighted"):
+        note = "LaTeX inputs changed, but the diff has no marked text; the current PDF is available without highlights."
     elif state.get("other_inputs"):
         note = "Paper inputs changed; the current PDF is available without highlights."
     else:

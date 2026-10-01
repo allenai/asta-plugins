@@ -97,6 +97,22 @@ def test_non_tex_paper_inputs_link_current_pdf_without_highlight_claim(tmp_path)
     assert 'href="paper/main.pdf"' in result
 
 
+def test_unmarked_latex_change_links_current_pdf_without_highlight_claim(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper").mkdir(parents=True)
+    (new / "paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "unhighlighted": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "diff has no marked text" in result
+    assert 'href="paper/main.pdf"' in result
+    assert 'href="paper/what-changed.pdf"' not in result
+
+
 def test_paper_diff_fallback_links_current_pdf(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

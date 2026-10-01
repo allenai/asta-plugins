@@ -75,7 +75,8 @@ jobs:
             sudo apt-get install -y --no-install-recommends \
               latexmk latexdiff poppler-utils texlive-latex-base \
               texlive-latex-recommended texlive-latex-extra \
-              texlive-fonts-recommended texlive-bibtex-extra
+              texlive-fonts-recommended texlive-bibtex-extra \
+              texlive-luatex texlive-xetex biber
             script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
             curl -fsSL "$script" -o /tmp/paper-preview.sh
             base=""

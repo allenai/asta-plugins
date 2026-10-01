@@ -40,15 +40,21 @@ def paper_repo(tmp_path, old_paper=True):
     bin_dir.mkdir()
     commands = {
         "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
-        "latexdiff": "#!/bin/bash\nprintf 'diff source\\n'\n",
+        "latexdiff": "#!/bin/bash\nprintf '\\\\begin{document}\\n\\\\DIFadd{new}\\n'\n",
         "pdftoppm": '#!/bin/bash\nname="${@: -1}"\nprintf png > "${name}-1.png"\n',
     }
     for name, contents in commands.items():
         path = bin_dir / name
         path.write_text(contents)
         path.chmod(0o755)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('printf "%s\\n" "$*" >> latexmk-args.txt\n')
+        mock.write(
+            'printf "build/main.pdf: main.tex %s\\n" "$FAKE_LATEX_DEPS" > build/main.dep\n'
+        )
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_LATEX_DEPS"] = ""
     return repo, base, env, bin_dir
 
 
@@ -67,6 +73,10 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
         "thumbnail_limit": 12,
     }
     assert not list((repo / "paper").glob("what-changed.*.tex"))
+    commands = (repo / "paper/latexmk-args.txt").read_text().splitlines()
+    assert len(commands) == 2
+    assert all("-pdf" not in command for command in commands)
+    assert all("$pdf_mode ||= 1;" in command for command in commands)
 
 
 def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
@@ -206,6 +216,7 @@ def test_bibliography_only_edit_links_unmarked_current_pdf(tmp_path):
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
     (repo / "references.bib").write_text("new")
     run("git", "commit", "-qam", "edit bibliography", cwd=repo)
+    env["FAKE_LATEX_DEPS"] = "../references.bib"
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
@@ -215,4 +226,35 @@ def test_bibliography_only_edit_links_unmarked_current_pdf(tmp_path):
         "changed": True,
         "diff": False,
         "other_inputs": True,
+    }
+
+
+def test_unused_bibliography_edit_does_not_mark_paper_changed(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    (repo / "unused.bib").write_text("old")
+    run("git", "add", "unused.bib", cwd=repo)
+    run("git", "commit", "-qm", "add unused bibliography", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "unused.bib").write_text("new")
+    run("git", "commit", "-qam", "edit unused bibliography", cwd=repo)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert not (repo / "_site/paper/preview.json").exists()
+
+
+def test_preamble_only_edit_links_pdf_without_highlights(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    (bin_dir / "latexdiff").write_text(
+        "#!/bin/bash\nprintf '\\\\usepackage{new}\\n\\\\begin{document}\\nbody\\n'\n"
+    )
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert not (repo / "_site/paper/what-changed.pdf").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": True,
+        "diff": False,
+        "other_inputs": False,
+        "unhighlighted": True,
     }
