@@ -41,7 +41,10 @@
         "research",
         "workflows"
       ],
-      "strict": false
+      "strict": false,
+      "dependencies": [
+        "asta-tools"
+      ]
     },
     {
       "name": "asta-assistant",
@@ -58,7 +61,10 @@
         "research",
         "autonomous"
       ],
-      "strict": false
+      "strict": false,
+      "dependencies": [
+        "asta-tools"
+      ]
     },
     {
       "name": "asta-dev",
@@ -75,7 +81,10 @@
         "development",
         "contributing"
       ],
-      "strict": false
+      "strict": false,
+      "dependencies": [
+        "asta-tools"
+      ]
     }
   ]
 }
