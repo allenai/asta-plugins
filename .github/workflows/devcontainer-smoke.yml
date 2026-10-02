@@ -33,13 +33,14 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+        if: inputs.image-tag-prefix != ''
       - name: Build image
         if: inputs.image-tag-prefix == ''
         run: docker build --target ${{ matrix.target }} -t asta-smoke .
       - name: Pull published image by digest
         if: inputs.image-tag-prefix != ''
         run: |
-          docker buildx version
           suffix=''
           if [ '${{ matrix.target }}' = tex ]; then suffix=-tex; fi
           tag='${{ inputs.image-tag-prefix }}'"$suffix"
