@@ -97,11 +97,17 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. `make push-version-tag` — verifies all three version files match, fails if the
-   tag already exists, then creates and pushes the git tag. **Pushing the tag is
-   what triggers `docker.yml`**, which builds and publishes
-   `ghcr.io/allenai/asta:<tag>` and `:latest`. Nothing further is required for the
-   image.
+5. `make push-version-tag` — verifies all three version files match and that
+   `HEAD` is on `origin/main`, then waits for the `Docker` workflow run on that
+   commit to succeed (`scripts/wait-for-main-image.sh`, needs `gh`) before it
+   creates and pushes the git tag. It exits without tagging if that run failed
+   or none exists. Every `main` push publishes run-specific candidates
+   (`ghcr.io/allenai/asta:sha-<commit>-run-<id>-attempt-<n>` and `…-tex`) and
+   smoke-tests them by digest; candidates never move `:latest`. The tag does not
+   rebuild: `docker.yml` promotes the validated candidate digests to `:<tag>` /
+   `:<tag>-tex`, and a final `vX.Y.Z` tag (not `-rc.N`) then moves `:latest` /
+   `:latest-tex` to the highest final release. Promotion reads the candidate
+   run's artifacts, so tag within the repository's artifact-retention window.
 6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.

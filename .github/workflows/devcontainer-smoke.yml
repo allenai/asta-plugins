@@ -9,9 +9,14 @@ on:
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
   workflow_call:
+    inputs:
+      published-images:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   smoke:
@@ -29,10 +34,41 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+        if: inputs.published-images == true
+      - uses: docker/login-action@v3
+        if: inputs.published-images == true
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build image
+        if: inputs.published-images != true
         run: docker build --target ${{ matrix.target }} -t asta-smoke .
+      - uses: actions/download-artifact@v4
+        if: inputs.published-images == true
+        with:
+          name: published-${{ matrix.target }}
+          path: ${{ runner.temp }}/published-${{ matrix.target }}
+      - name: Pull published image by digest
+        if: inputs.published-images == true
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/published-$TARGET/published.json"
+          tag=$(jq -er .tag "$manifest")
+          digest=$(jq -er .digest "$manifest")
+          test "$(jq -er .revision "$manifest")" = "$GITHUB_SHA"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          test "$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
+          image="ghcr.io/allenai/asta@$digest"
+          docker pull "$image"
+          test "$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
+          docker tag "$image" asta-smoke
       - name: LaTeX Workshop only in the tex image's dev container metadata
         run: |
+          set -euo pipefail
           meta=$(docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' asta-smoke)
           if [ "${{ matrix.target }}" = tex ]; then
             echo "$meta" | jq -e 'any(.[]; .customizations.vscode.extensions | index("james-yu.latex-workshop"))'
