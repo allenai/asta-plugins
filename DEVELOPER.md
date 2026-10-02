@@ -97,15 +97,21 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. `make push-version-tag` — verifies all three version files match, fails if the
-   tag already exists, then creates and pushes the git tag. **Pushing the tag is
-   what triggers `docker.yml`**, which builds and publishes
-   `ghcr.io/allenai/asta:<tag>` and `:latest`. Nothing further is required for the
-   image.
-6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
+5. Wait for the `Docker` workflow run on that `main` commit to succeed. Every
+   `main` push publishes run-specific candidates
+   (`ghcr.io/allenai/asta:sha-<commit>-run-<id>-attempt-<n>` and `…-tex`) and
+   smoke-tests them by digest; candidates never move `:latest`.
+6. `make push-version-tag` — verifies all three version files match, fails if the
+   tag already exists, then creates and pushes the git tag. The tag must point at
+   that `main` commit: `docker.yml` does not rebuild, it promotes the validated
+   candidate digests to `:<tag>` / `:<tag>-tex`, and a final `vX.Y.Z` tag (not
+   `-rc.N`) then moves `:latest` / `:latest-tex` to the highest final release.
+   Promotion reads the candidate run's artifacts, so tag within the repository's
+   artifact-retention window.
+7. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
-7. *(Future)* Create a GitHub release from the tag for human-readable notes.
-   This is bookkeeping only — the Docker image is already published by step 5, so
+8. *(Future)* Create a GitHub release from the tag for human-readable notes.
+   This is bookkeeping only — the Docker image is already published by step 6, so
    a release is not a prerequisite for anything.
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
