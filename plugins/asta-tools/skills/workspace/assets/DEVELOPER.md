@@ -15,6 +15,22 @@ Based on `ghcr.io/allenai/asta:latest` — Quarto and [Asta](https://asta.allen.
 
 Asta auth: run `asta auth login` in the container terminal (device-code flow: open the printed URL in any browser). The VS Code agent and CLI share that login, and in Codespaces it survives container rebuilds. Alternatively set an `ASTA_TOKEN` env var locally or as a Codespaces secret. To get the recommended-secret prompt, create the codespace through **Code → Codespaces → New with options**; CLI creation does not prompt. `ASTA_TOKEN` overrides the login when set, so unset a stale one before logging in.
 
+## Editing `.qmd` files in VS Code
+
+- **First open:** the Quarto extension may ask whether to configure Lua support for the evidence filter in `_extensions/`. Answer it (either choice); citation and YAML completions don't start until you do. Check the notification bell if you missed it.
+- **Citations:** in a `.qmd` file, type `@` or `[@` to pick keys from `references.bib`. Completions work in `.qmd` files and `_quarto.yml`, not plain `.md`.
+- **Visual editor:** Command Palette → **Quarto: Edit in Visual Mode**, or Ctrl+Shift+F4 (Cmd+Shift+F4 on macOS) to toggle. It adds **Insert → Citation** and WYSIWYG tables. Add `editor: visual` to a page's front matter to open it in visual mode by default.
+- **Simple Browser (local VS Code only):** with `make preview` running, Command Palette → **Simple Browser: Show** → `http://localhost:4848`, or **Ports → Preview in Editor**. In a browser-based codespace use the separate tab described above.
+
+## Getting a LaTeX PDF
+
+| You want… | Path |
+|-----------|------|
+| A PDF of the Quarto write-up itself (e.g. to post on arXiv), with the `.qmd` staying primary | Quarto renders the `.qmd` through LaTeX: `quarto render index.qmd --to pdf` for a PDF, or `--to latex` for the `.tex` source. Citations come from the same `references.bib`. Not yet a `make` target or part of the PR preview. |
+| A separately written LaTeX paper that reuses the project bibliography | Write `paper/main.tex` citing `../references.bib`. `make paper` builds it, and every PR preview publishes its PDF and a LaTeX diff. In VS Code, LaTeX Workshop (in the `-tex` image) builds on save with SyncTeX. |
+
+The first path is one-way: Quarto writes LaTeX, nothing converts LaTeX back to `.qmd`. If the paper needs to diverge from the site (venue template, heavy hand edits), switch to the second path and let `paper/main.tex` become the primary copy.
+
 ## Back a claim with supporting evidence
 
 A factual claim can carry the source quote that backs it. Add a keyed entry to
