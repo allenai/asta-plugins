@@ -94,13 +94,6 @@ jobs:
             if [ "$target" = tex ]; then suffix=-tex; fi
             docker buildx imagetools create -t "$image:$GITHUB_REF_NAME$suffix" "${sources[$target]}"
           done
-          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            for target in asta tex; do
-              suffix=''
-              if [ "$target" = tex ]; then suffix=-tex; fi
-              docker buildx imagetools create -t "$image:latest$suffix" "${sources[$target]}"
-            done
-          fi
           for target in asta tex; do
             suffix=''
             if [ "$target" = tex ]; then suffix=-tex; fi
@@ -108,3 +101,13 @@ jobs:
             actual=$(docker buildx imagetools inspect "$image:$GITHUB_REF_NAME$suffix" --format '{{json .Manifest}}' | jq -er .digest)
             test "$actual" = "$expected"
           done
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            for target in asta tex; do
+              suffix=''
+              if [ "$target" = tex ]; then suffix=-tex; fi
+              docker buildx imagetools create -t "$image:latest$suffix" "${sources[$target]}"
+              expected="${sources[$target]##*@}"
+              actual=$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)
+              test "$actual" = "$expected"
+            done
+          fi
