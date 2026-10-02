@@ -75,13 +75,20 @@ jobs:
           else
             ! echo "$meta" | grep -q latex-workshop
           fi
-      - name: Check CLI, skills install and Quarto
+      - name: Check CLI, skills install, Codespaces rebuild and Quarto
         run: |
-          docker run --rm asta-smoke bash -euc '
+          mkdir -p "$RUNNER_TEMP/codespace-storage"
+          docker run --rm \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+            -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke bash -euc '
             asta --help >/dev/null
-            python3 /opt/asta-plugins/tests/fixtures/devcontainer-smoke/check-post-create.py
+            python3 /w/check-post-create.py initial
             find ~ -maxdepth 4 -type d -path "*skills/workspace" | grep -q .
             quarto check >/dev/null'
+          docker run --rm \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+            -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke \
+            python3 /w/check-post-create.py rebuild
       - name: Preview answers on port 4848
         run: |
           docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
