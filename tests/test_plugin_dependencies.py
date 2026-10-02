@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).parent.parent
 PLUGINS_ROOT = REPO_ROOT / "plugins"
 MARKETPLACE = json.loads(
@@ -73,118 +75,31 @@ def test_reference_pattern_catches_long_plugin_names():
     ]
 
 
-def test_layers_check_asta_tools_at_session_start_and_prompt():
-    scripts = []
-    for name in ("asta-assistant", "asta-flows", "asta-dev"):
-        hook_dir = PLUGINS_ROOT / name / "hooks"
-        script = hook_dir / "require-asta-tools.sh"
-        config = json.loads((hook_dir / "hooks.json").read_text())["hooks"]
-        assert script.is_file(), name
-        scripts.append(script.read_bytes())
-        for event, suffix in (("SessionStart", ""), ("UserPromptSubmit", " block")):
-            commands = [
-                hook["command"] for group in config[event] for hook in group["hooks"]
-            ]
-            assert (
-                f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/require-asta-tools.sh"{suffix}'
-                in commands
-            )
-    assert len(set(scripts)) == 1, "layer dependency checks must stay identical"
+def test_claude_selective_install_includes_asta_tools(tmp_path):
+    if not shutil.which("claude"):
+        pytest.skip("Claude Code CLI is not installed")
 
+    env = {
+        **os.environ,
+        "CLAUDE_CONFIG_DIR": str(tmp_path / "claude-config"),
+        "DISABLE_TELEMETRY": "1",
+    }
+    for command in (
+        ["claude", "plugin", "marketplace", "add", str(REPO_ROOT)],
+        ["claude", "plugin", "install", "asta-assistant@asta-plugins", "--yes"],
+    ):
+        subprocess.run(
+            command, env=env, check=True, capture_output=True, text=True, timeout=90
+        )
 
-def test_missing_asta_tools_blocks_prompt(tmp_path):
-    root = tmp_path / "plugins/cache/marketplace/asta-assistant/version"
-    root.mkdir(parents=True)
-    script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
-    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}
-    startup = subprocess.run(
-        ["bash", str(script)], env=env, capture_output=True, text=True
-    )
-    assert startup.returncode == 0
-    assert "asta-tools is required" in startup.stdout
     result = subprocess.run(
-        ["bash", str(script), "block"], env=env, capture_output=True, text=True
-    )
-    assert result.returncode == 2
-    assert "asta-tools is required" in result.stderr
-    assert result.stdout == ""
-
-    skills = tmp_path / "plugins/cache/marketplace/asta-tools/version/skills"
-    skills.mkdir(parents=True)
-    result = subprocess.run(
-        ["bash", str(script), "block"], env=env, capture_output=True, text=True
-    )
-    assert result.returncode == 0
-    assert result.stdout == result.stderr == ""
-
-
-def test_unknown_layout_does_not_block_prompt(tmp_path):
-    script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
-    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(tmp_path / "custom-layout/layer")}
-    result = subprocess.run(
-        ["bash", str(script), "block"],
+        ["claude", "plugin", "list", "--json"],
         env=env,
-        input='{"prompt":"write code"}',
+        check=True,
         capture_output=True,
         text=True,
+        timeout=90,
     )
-    assert result.returncode == 0
-    assert result.stdout == result.stderr == ""
-
-    env.pop("CLAUDE_PLUGIN_ROOT")
-    env.pop("PLUGIN_ROOT", None)
-    result = subprocess.run(
-        ["bash", str(script), "block"],
-        env=env,
-        input='{"prompt":"write code"}',
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert result.stdout == result.stderr == ""
-
-
-def test_guard_handles_windows_separators_and_spaced_hook_path(tmp_path):
-    root = tmp_path / "space dir/plugins/cache/marketplace/asta-assistant/version"
-    hook_dir = root / "hooks"
-    hook_dir.mkdir(parents=True)
-    shutil.copy2(PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh", hook_dir)
-    command = json.loads(
-        (PLUGINS_ROOT / "asta-assistant/hooks/hooks.json").read_text()
-    )["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root).replace("/", "\\")}
-    result = subprocess.run(
-        ["bash", str(hook_dir / "require-asta-tools.sh"), "block"],
-        env=env,
-        input='{"prompt":"write code"}',
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 2
-
-    env["CLAUDE_PLUGIN_ROOT"] = str(root)
-    result = subprocess.run(
-        ["bash", "-c", command],
-        env=env,
-        input='{"prompt":"write code"}',
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 2
-    assert "asta-tools is required" in result.stderr
-
-
-def test_plugin_install_command_remains_available(tmp_path):
-    root = tmp_path / "plugins/cache/marketplace/asta-assistant/version"
-    root.mkdir(parents=True)
-    script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
-    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}
-    result = subprocess.run(
-        ["bash", str(script), "block"],
-        env=env,
-        input='{"prompt":"/plugin install asta-tools"}',
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert result.stdout == result.stderr == ""
+    plugins = {plugin["id"]: plugin for plugin in json.loads(result.stdout)}
+    assert set(plugins) == {"asta-assistant@asta-plugins", "asta-tools@asta-plugins"}
+    assert all(plugin["enabled"] for plugin in plugins.values())

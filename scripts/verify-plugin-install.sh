@@ -80,21 +80,6 @@ for plugin in asta-tools asta-flows asta-assistant asta-dev; do
       fail=1
     fi
   fi
-  if [ "$plugin" != asta-tools ]; then
-    guard="$(find "$CACHE" -type f -path "*/$plugin/*/hooks/require-asta-tools.sh" -print -quit 2>/dev/null || true)"
-    if [ -n "$guard" ]; then
-      plugin_root="$(dirname "$(dirname "$guard")")"
-      if guard_output="$(CLAUDE_PLUGIN_ROOT="$plugin_root" bash "$guard" block 2>&1)" && [ -z "$guard_output" ]; then
-        echo "  ✓ $plugin: dependency guard accepts installed asta-tools"
-      else
-        echo "  ✗ $plugin: dependency guard failed with asta-tools installed: $guard_output" >&2
-        fail=1
-      fi
-    else
-      echo "  ✗ $plugin: dependency guard missing" >&2
-      fail=1
-    fi
-  fi
 done
 
 # Sanity-check that the agent recorded the plugins in its own registry.
