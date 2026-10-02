@@ -31,7 +31,9 @@ def test_preview_port_notifies_and_prints_link():
     assert config["portsAttributes"]["4848"]["onAutoForward"] == "notify"
     preview = config["postAttachCommand"]["preview"]
     assert "quarto preview --no-browser --port 4848" in preview
-    assert "${CODESPACE_NAME}-4848.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN" in preview
+    assert (
+        "${CODESPACE_NAME}-4848.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN" in preview
+    )
     assert preview.index('echo "Quarto preview: $url"') < preview.index("make preview")
 
 
