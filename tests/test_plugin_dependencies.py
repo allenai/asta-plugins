@@ -20,7 +20,9 @@ MARKETPLACE = json.loads(
     (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
 )
 ENTRIES = {e["name"]: e for e in MARKETPLACE["plugins"]}
-REF = re.compile(r"(?<![\w/.-])(asta-[a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9*][a-z0-9*-]*)")
+REF = re.compile(
+    r"(?<![\w/.-])/?(asta-[a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9*][a-z0-9*-]*)"
+)
 
 
 def _skill_names(plugin: str) -> set[str]:
@@ -73,6 +75,7 @@ def test_reference_pattern_catches_long_plugin_names():
     assert REF.findall("Skill(asta-paper-flow2:render)") == [
         ("asta-paper-flow2", "render")
     ]
+    assert REF.findall("/asta-paper-flow2:render") == [("asta-paper-flow2", "render")]
 
 
 def test_claude_selective_install_includes_asta_tools(tmp_path):
@@ -119,10 +122,10 @@ def test_claude_selective_install_includes_asta_tools(tmp_path):
         text=True,
         timeout=90,
     )
-    if disable.returncode:
-        assert (
-            "required by asta-assistant" in (disable.stdout + disable.stderr).lower()
-        ), disable.stdout + disable.stderr
+    assert disable.returncode != 0, disable.stdout + disable.stderr
+    assert "required by asta-assistant" in (disable.stdout + disable.stderr).lower(), (
+        disable.stdout + disable.stderr
+    )
     result = subprocess.run(
         ["claude", "plugin", "list", "--json"],
         env=env,
@@ -136,7 +139,4 @@ def test_claude_selective_install_includes_asta_tools(tmp_path):
         "enabled", False
     )
     tools_enabled = plugins.get("asta-tools@asta-plugins", {}).get("enabled", False)
-    if disable.returncode:
-        assert assistant_enabled and tools_enabled
-    else:
-        assert not assistant_enabled and not tools_enabled
+    assert assistant_enabled and tools_enabled
