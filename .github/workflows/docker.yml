@@ -50,7 +50,6 @@ jobs:
           path: ${{ runner.temp }}/published.json
           if-no-files-found: error
           overwrite: true
-          retention-days: 90
 
   verify:
     if: github.ref == 'refs/heads/main'
