@@ -103,3 +103,24 @@ def test_claude_selective_install_includes_asta_tools(tmp_path):
     plugins = {plugin["id"]: plugin for plugin in json.loads(result.stdout)}
     assert set(plugins) == {"asta-assistant@asta-plugins", "asta-tools@asta-plugins"}
     assert all(plugin["enabled"] for plugin in plugins.values())
+
+    subprocess.run(
+        ["claude", "plugin", "disable", "asta-tools@asta-plugins"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    result = subprocess.run(
+        ["claude", "plugin", "list", "--json"],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    plugins = {plugin["id"]: plugin for plugin in json.loads(result.stdout)}
+    assert not (
+        plugins["asta-assistant@asta-plugins"]["enabled"]
+        and not plugins["asta-tools@asta-plugins"]["enabled"]
+    )
