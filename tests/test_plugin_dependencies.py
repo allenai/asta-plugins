@@ -68,3 +68,19 @@ def test_reference_pattern_catches_long_plugin_names():
     assert REF.findall("Skill(asta-paper-flow2:render)") == [
         ("asta-paper-flow2", "render")
     ]
+
+
+GUARD = "## Requires asta-tools"
+
+
+def test_layer_skills_calling_asta_tools_carry_guard():
+    # npx plugins/skills ignore `dependencies`, so a hand-picked install can
+    # omit asta-tools; the guard makes the skill stop with the install command.
+    missing = []
+    for md in PLUGINS_ROOT.glob("*/skills/*/SKILL.md"):
+        if md.parts[-4] == "asta-tools":
+            continue
+        text = md.read_text()
+        if "Skill(asta-tools:" in text and GUARD not in text:
+            missing.append(str(md.relative_to(REPO_ROOT)))
+    assert not missing, f"add the '{GUARD}' section to: {missing}"
