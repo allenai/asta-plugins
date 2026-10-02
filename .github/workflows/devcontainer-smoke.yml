@@ -85,8 +85,8 @@ jobs:
       - name: Preview answers on port 4848
         run: |
           docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
-            python3 /opt/asta-plugins/tests/fixtures/devcontainer-smoke/check-post-attach.py
-      - name: Sample paper compiles with the CI latexmk command
+            python3 /w/check-post-attach.py
+      - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |
           docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
