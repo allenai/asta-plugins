@@ -15,9 +15,7 @@ MARKETPLACE = json.loads(
     (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
 )
 ENTRIES = {e["name"]: e for e in MARKETPLACE["plugins"]}
-REF = re.compile(
-    r"(?<![\w/.-])(asta-[a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9*][a-z0-9*-]*)"
-)
+REF = re.compile(r"(?<![\w/.-])(asta-[a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9*][a-z0-9*-]*)")
 
 
 def _skill_names(plugin: str) -> set[str]:
