@@ -75,23 +75,29 @@ jobs:
           else
             ! echo "$meta" | grep -q latex-workshop
           fi
-      - name: Check CLI, skills install and Quarto
+      - name: Check CLI, skills install, Codespaces rebuild and Quarto
         run: |
-          docker run --rm asta-smoke bash -euc '
+          mkdir -p "$RUNNER_TEMP/codespace-storage"
+          docker run --rm \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+            -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke bash -euc '
             asta --help >/dev/null
-            python3 /opt/asta-plugins/tests/fixtures/devcontainer-smoke/check-post-create.py
+            python3 /w/check-post-create.py initial
             find ~ -maxdepth 4 -type d -path "*skills/workspace" | grep -q .
             quarto check >/dev/null'
+          docker run --rm \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+            -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke \
+            python3 /w/check-post-create.py rebuild
       - name: Preview answers on port 4848
         run: |
-          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke bash -euc '
-            quarto preview --no-browser --port 4848 >/tmp/preview.log 2>&1 &
-            for _ in $(seq 60); do curl -sf http://127.0.0.1:4848/ >/dev/null && exit 0; sleep 2; done
-            cat /tmp/preview.log; exit 1'
-      - name: Sample paper compiles with the CI latexmk command
+          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
+            python3 /w/check-post-attach.py
+      - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |
           docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
-            latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode -halt-on-error \
+            latexmk -synctex=1 -e '$pdf_mode ||= 1;' -interaction=nonstopmode -halt-on-error \
               -file-line-error -outdir=build main.tex
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.pdf
+          test -s tests/fixtures/devcontainer-smoke/paper/build/main.synctex.gz
