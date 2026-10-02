@@ -26,12 +26,12 @@ Asta auth: run `asta auth login` in the container terminal (device-code flow: op
 
 | You want… | Path |
 |-----------|------|
-| A PDF of the Quarto write-up itself (to share, print, or submit), with the `.qmd` staying primary | Run `quarto render index.qmd --to pdf` with a TeX toolchain such as the `-tex` image. Quarto builds this PDF through LaTeX, so the same source can also emit the `.tex` that an arXiv or venue submission needs (command below) without maintaining a separate paper. This path is not yet a `make` target or part of the PR preview. |
+| A PDF of the Quarto write-up itself (to share, print, or submit), with the `.qmd` staying primary | Run `quarto render index.qmd --to pdf` with a TeX toolchain such as the `-tex` image. Quarto builds this PDF through LaTeX, so the same source can also emit the `.tex` source that preprint servers and venues ask for (command below) without maintaining a separate paper. This path is not yet a `make` target or part of the PR preview. |
 | A separately written LaTeX paper that reuses the project bibliography | Write `paper/main.tex` citing `../references.bib`. `make paper` builds it, and every PR preview publishes its PDF and a LaTeX diff. In VS Code, LaTeX Workshop (in the `-tex` image) builds on save with SyncTeX. |
 
 The first path is one-way: Quarto writes LaTeX, nothing converts LaTeX back to `.qmd`. If the paper needs to diverge from the site (venue template, heavy hand edits), switch to the second path and let `paper/main.tex` become the primary copy.
 
-Keeping that intermediate LaTeX is useful even when you only want a PDF: arXiv asks for the TeX source rather than the PDF of a LaTeX-produced paper, and the `.tex` is the starting point if the paper later moves to the second path. For LaTeX source, run `quarto render index.qmd --to latex -M cite-method:natbib`. This writes `_site/index.tex` with citation commands and a `\bibliography{references.bib}` line. Plain `--to latex` uses citeproc and writes formatted citations into the source instead. The generated `.tex` still needs the bibliography and a successful PDF build before it is ready to submit.
+Keeping that intermediate LaTeX is useful even when you only want a PDF: preprint servers such as arXiv ask for the TeX source rather than the PDF of a LaTeX-produced paper, journals and conferences often do too, and the `.tex` is the starting point if the paper later moves to the second path. For LaTeX source, run `quarto render index.qmd --to latex -M cite-method:natbib`. This writes `_site/index.tex` with citation commands and a `\bibliography{references.bib}` line. Plain `--to latex` uses citeproc and writes formatted citations into the source instead. The generated `.tex` still needs the bibliography and a successful PDF build before it is ready to submit.
 
 ## Back a claim with supporting evidence
 
