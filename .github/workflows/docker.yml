@@ -38,12 +38,19 @@ jobs:
           labels: org.opencontainers.image.revision=${{ github.sha }}
           tags: ghcr.io/allenai/asta:sha-${{ github.sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}${{ matrix.suffix }}
       - name: Record published index digest
-        run: echo '${{ steps.build.outputs.digest }}' > "$RUNNER_TEMP/published-digest"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG: ghcr.io/allenai/asta:sha-${{ github.sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}${{ matrix.suffix }}
+        run: |
+          jq -n --arg digest "$DIGEST" --arg tag "$TAG" --arg revision "$GITHUB_SHA" \
+            '{digest: $digest, tag: $tag, revision: $revision}' > "$RUNNER_TEMP/published.json"
       - uses: actions/upload-artifact@v4
         with:
-          name: published-${{ matrix.target }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/published-digest
+          name: published-${{ matrix.target }}
+          path: ${{ runner.temp }}/published.json
           if-no-files-found: error
+          overwrite: true
+          retention-days: 90
 
   verify:
     if: github.ref == 'refs/heads/main'
@@ -53,14 +60,15 @@ jobs:
       packages: read
     uses: ./.github/workflows/devcontainer-smoke.yml
     with:
-      image-tag-prefix: ghcr.io/allenai/asta:sha-${{ github.sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+      published-images: true
 
   promote:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     concurrency:
-      group: docker-release-promote
+      group: docker-release-promote-${{ github.ref }}
       cancel-in-progress: false
+    timeout-minutes: 100
     permissions:
       actions: read
       contents: read
@@ -87,11 +95,18 @@ jobs:
           fi
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           run=''
-          for attempt in {1..60}; do
-            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/runs?head_sha=$GITHUB_SHA&branch=main&per_page=100")
+          for attempt in {1..360}; do
+            if ! runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/runs?head_sha=$GITHUB_SHA&branch=main&per_page=100"); then
+              sleep 15
+              continue
+            fi
             run=$(jq -r --arg sha "$GITHUB_SHA" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main" and .conclusion == "success")] | sort_by(.run_started_at) | (last // empty) | "\(.id) \(.run_attempt)"' <<< "$runs")
+              '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main" and .conclusion == "success")] | sort_by(.run_started_at) | (last // empty) | .id // empty' <<< "$runs")
             if [ -n "$run" ]; then break; fi
+            if [ "$attempt" -ge 8 ] && jq -e '.total_count == 0' <<< "$runs" >/dev/null; then
+              echo 'No main-push image build exists for this commit; tag a commit with its own main push run' >&2
+              exit 1
+            fi
             if [ "$attempt" -gt 4 ] && jq -e --arg sha "$GITHUB_SHA" \
               '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main")] | length > 0 and all(.[]; .status == "completed")' \
               <<< "$runs" >/dev/null; then
@@ -101,24 +116,30 @@ jobs:
             sleep 15
           done
           test -n "$run" || { echo 'Timed out waiting for a successful main build' >&2; exit 1; }
-          read -r run_id run_attempt <<< "$run"
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run" >> "$GITHUB_OUTPUT"
       - name: Promote validated images
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN: ${{ steps.candidate.outputs.run_id }}
-          CANDIDATE_ATTEMPT: ${{ steps.candidate.outputs.run_attempt }}
         run: |
           set -euo pipefail
           image=ghcr.io/allenai/asta
           declare -A sources
           for target in asta tex; do
-            gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" \
-              --name "published-$target-attempt-$CANDIDATE_ATTEMPT" --dir "$RUNNER_TEMP/published-$target"
-            digest=$(cat "$RUNNER_TEMP/published-$target/published-digest")
+            if ! gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" \
+              --name "published-$target" --dir "$RUNNER_TEMP/published-$target"; then
+              echo 'Validated build artifacts are unavailable; release within the artifact retention window' >&2
+              exit 1
+            fi
+            manifest="$RUNNER_TEMP/published-$target/published.json"
+            digest=$(jq -er .digest "$manifest")
+            tag=$(jq -er .tag "$manifest")
+            test "$(jq -er .revision "$manifest")" = "$GITHUB_SHA"
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            test "$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
             test "$(docker buildx imagetools inspect "$image@$digest" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
+            docker pull "$image@$digest"
+            test "$(docker image inspect "$image@$digest" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$GITHUB_SHA"
             sources["$target"]="$image@$digest"
           done
           for target in asta tex; do
@@ -133,19 +154,43 @@ jobs:
             actual=$(docker buildx imagetools inspect "$image:$GITHUB_REF_NAME$suffix" --format '{{json .Manifest}}' | jq -er .digest)
             test "$actual" = "$expected"
           done
-          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            git fetch --tags --force origin
-            newest=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
-            if [ "$GITHUB_REF_NAME" != "$newest" ]; then
-              echo "Skipping latest: $newest is newer than $GITHUB_REF_NAME"
-              exit 0
+
+  latest:
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
+    needs: promote
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-release-latest
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Point latest at the highest published final release
+        run: |
+          set -euo pipefail
+          image=ghcr.io/allenai/asta
+          git fetch --tags --force origin
+          newest=''
+          while read -r version; do
+            if docker buildx imagetools inspect "$image:$version" >/dev/null 2>&1 && \
+               docker buildx imagetools inspect "$image:$version-tex" >/dev/null 2>&1; then
+              newest="$version"
+              break
             fi
-            for target in asta tex; do
-              suffix=''
-              if [ "$target" = tex ]; then suffix=-tex; fi
-              docker buildx imagetools create -t "$image:latest$suffix" "${sources[$target]}"
-              expected="${sources[$target]##*@}"
-              actual=$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)
-              test "$actual" = "$expected"
-            done
-          fi
+          done < <(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr)
+          test -n "$newest" || { echo 'No complete final release pair is published' >&2; exit 1; }
+          for suffix in '' -tex; do
+            digest=$(docker buildx imagetools inspect "$image:$newest$suffix" --format '{{json .Manifest}}' | jq -er .digest)
+            docker buildx imagetools create -t "$image:latest$suffix" "$image@$digest"
+            test "$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
+          done
