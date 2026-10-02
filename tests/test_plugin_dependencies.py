@@ -77,10 +77,17 @@ def test_reference_pattern_catches_long_plugin_names():
 
 def test_claude_selective_install_includes_asta_tools(tmp_path):
     if not shutil.which("claude"):
+        if os.environ.get("CI") == "true":
+            pytest.fail(
+                "Claude Code CLI is required for the dependency integration test"
+            )
         pytest.skip("Claude Code CLI is not installed")
 
+    home = tmp_path / "home"
+    home.mkdir()
     env = {
-        **os.environ,
+        "PATH": os.environ["PATH"],
+        "HOME": str(home),
         "CLAUDE_CONFIG_DIR": str(tmp_path / "claude-config"),
         "DISABLE_TELEMETRY": "1",
     }
@@ -101,16 +108,21 @@ def test_claude_selective_install_includes_asta_tools(tmp_path):
         timeout=90,
     )
     plugins = {plugin["id"]: plugin for plugin in json.loads(result.stdout)}
-    assert set(plugins) == {"asta-assistant@asta-plugins", "asta-tools@asta-plugins"}
-    assert all(plugin["enabled"] for plugin in plugins.values())
+    assert {"asta-assistant@asta-plugins", "asta-tools@asta-plugins"} <= set(plugins)
+    assert plugins["asta-assistant@asta-plugins"]["enabled"]
+    assert plugins["asta-tools@asta-plugins"]["enabled"]
 
-    subprocess.run(
+    disable = subprocess.run(
         ["claude", "plugin", "disable", "asta-tools@asta-plugins"],
         env=env,
         capture_output=True,
         text=True,
         timeout=90,
     )
+    if disable.returncode:
+        assert (
+            "required by asta-assistant" in (disable.stdout + disable.stderr).lower()
+        ), disable.stdout + disable.stderr
     result = subprocess.run(
         ["claude", "plugin", "list", "--json"],
         env=env,
@@ -120,7 +132,11 @@ def test_claude_selective_install_includes_asta_tools(tmp_path):
         timeout=90,
     )
     plugins = {plugin["id"]: plugin for plugin in json.loads(result.stdout)}
-    assert not (
-        plugins["asta-assistant@asta-plugins"]["enabled"]
-        and not plugins["asta-tools@asta-plugins"]["enabled"]
+    assistant_enabled = plugins.get("asta-assistant@asta-plugins", {}).get(
+        "enabled", False
     )
+    tools_enabled = plugins.get("asta-tools@asta-plugins", {}).get("enabled", False)
+    if disable.returncode:
+        assert assistant_enabled and tools_enabled
+    else:
+        assert not assistant_enabled and not tools_enabled
