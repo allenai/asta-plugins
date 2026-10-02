@@ -82,11 +82,12 @@ def test_layers_check_asta_tools_at_session_start_and_prompt():
         scripts.append(script.read_bytes())
         for event, suffix in (("SessionStart", ""), ("UserPromptSubmit", " block")):
             commands = [
-                hook["command"]
-                for group in config[event]
-                for hook in group["hooks"]
+                hook["command"] for group in config[event] for hook in group["hooks"]
             ]
-            assert f"bash ${{CLAUDE_PLUGIN_ROOT}}/hooks/require-asta-tools.sh{suffix}" in commands
+            assert (
+                f"bash ${{CLAUDE_PLUGIN_ROOT}}/hooks/require-asta-tools.sh{suffix}"
+                in commands
+            )
     assert len(set(scripts)) == 1, "layer dependency checks must stay identical"
 
 
@@ -95,16 +96,22 @@ def test_missing_asta_tools_blocks_prompt(tmp_path):
     root.mkdir(parents=True)
     script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
     env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}
-    startup = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+    startup = subprocess.run(
+        ["bash", str(script)], env=env, capture_output=True, text=True
+    )
     assert startup.returncode == 0
     assert "asta-tools is required" in startup.stdout
-    result = subprocess.run(["bash", str(script), "block"], env=env, capture_output=True, text=True)
+    result = subprocess.run(
+        ["bash", str(script), "block"], env=env, capture_output=True, text=True
+    )
     assert result.returncode == 2
     assert "asta-tools is required" in result.stderr
     assert result.stdout == ""
 
     skills = tmp_path / "plugins/cache/marketplace/asta-tools/version/skills/workspace"
     skills.mkdir(parents=True)
-    result = subprocess.run(["bash", str(script), "block"], env=env, capture_output=True, text=True)
+    result = subprocess.run(
+        ["bash", str(script), "block"], env=env, capture_output=True, text=True
+    )
     assert result.returncode == 0
     assert result.stdout == result.stderr == ""
