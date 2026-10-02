@@ -13,7 +13,7 @@ Based on `ghcr.io/allenai/asta:latest` — Quarto and [Asta](https://asta.allen.
 - **VS Code locally:** `make dev`, or open folder → Command Palette → **Reopen in Container**. Needs [Docker Desktop](https://www.docker.com/products/docker-desktop/) and the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
 - **Codespaces:** green **`<> Code`** button → **Codespaces** tab → **Create codespace on main**, or `gh codespace create --web` from the CLI.
 
-The Quarto preview (port 4848) opens once in a browser tab. To view it inside VS Code instead, use the **Ports** panel → **Preview in Editor** (Simple Browser). In Codespaces, open the browser tab first: the private port's sign-in cookie is set there, and Simple Browser shows a broken page until it is.
+VS Code attempts to open the Quarto preview (port 4848) once; depending on your settings, it may open an embedded browser. In Codespaces, use the **Ports** panel → **Open in Browser** for port 4848 to sign in to the private port, then **Preview in Editor** to view it in Simple Browser. If the editor preview later shows a sign-in or error page, reopen the port in a browser and reload the editor preview; private-port authentication expires.
 
 Asta auth: run `asta auth login` in the container terminal (device-code flow: open the printed URL in any browser). The VS Code agent and CLI share that login, and in Codespaces it survives container rebuilds. Alternatively set an `ASTA_TOKEN` env var locally or as a Codespaces secret. To get the recommended-secret prompt, create the codespace through **Code → Codespaces → New with options**; CLI creation does not prompt. `ASTA_TOKEN` overrides the login when set, so unset a stale one before logging in.
 

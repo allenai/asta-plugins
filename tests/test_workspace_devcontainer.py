@@ -23,11 +23,11 @@ def test_asta_token_is_a_codespaces_secret():
     assert "localEnv:ASTA_TOKEN" not in json.dumps(config)
 
 
-def test_preview_port_opens_in_browser_once():
+def test_preview_port_requests_browser_once():
     config = _devcontainer()
     assert 4848 in config["forwardPorts"]
-    # Codespaces' private-port sign-in cookie is not sent from Simple Browser's
-    # iframe, so the first open must be a real browser tab.
+    # VS Code may choose an embedded browser; the manual sign-in path is in
+    # DEVELOPER.md for Codespaces users.
     assert config["portsAttributes"]["4848"]["onAutoForward"] == "openBrowserOnce"
     assert (
         "quarto preview --no-browser --port 4848"
