@@ -26,10 +26,12 @@ Asta auth: run `asta auth login` in the container terminal (device-code flow: op
 
 | You want… | Path |
 |-----------|------|
-| A PDF of the Quarto write-up itself (e.g. to post on arXiv), with the `.qmd` staying primary | Quarto renders the `.qmd` through LaTeX: `quarto render index.qmd --to pdf` for a PDF, or `--to latex` for the `.tex` source. Citations come from the same `references.bib`. Not yet a `make` target or part of the PR preview. |
+| A PDF of the Quarto write-up itself, with the `.qmd` staying primary | Run `quarto render index.qmd --to pdf` with a TeX toolchain. To prepare LaTeX source for a submission, use the natbib command below. This path is not yet a `make` target or part of the PR preview. |
 | A separately written LaTeX paper that reuses the project bibliography | Write `paper/main.tex` citing `../references.bib`. `make paper` builds it, and every PR preview publishes its PDF and a LaTeX diff. In VS Code, LaTeX Workshop (in the `-tex` image) builds on save with SyncTeX. |
 
 The first path is one-way: Quarto writes LaTeX, nothing converts LaTeX back to `.qmd`. If the paper needs to diverge from the site (venue template, heavy hand edits), switch to the second path and let `paper/main.tex` become the primary copy.
+
+For LaTeX source, run `quarto render index.qmd --to latex -M cite-method:natbib`. This writes `_site/index.tex` with citation commands and a `\bibliography{references.bib}` line. Plain `--to latex` uses citeproc and writes formatted citations into the source instead. The generated `.tex` still needs the bibliography and a successful PDF build before it is ready to submit.
 
 ## Back a claim with supporting evidence
 
