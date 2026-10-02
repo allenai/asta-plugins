@@ -26,8 +26,7 @@ def test_asta_token_is_a_codespaces_secret():
 def test_preview_port_notifies_and_prints_link():
     config = _devcontainer()
     assert 4848 in config["forwardPorts"]
-    # Auto-opened tabs are popup-blocked in the Codespaces browser client and
-    # openPreview frames a private port without its auth cookie.
+    # Browser Codespaces needs its forwarded URL; private ports may fail in a frame.
     assert config["portsAttributes"]["4848"]["onAutoForward"] == "notify"
     preview = config["postAttachCommand"]["preview"]
     assert "quarto preview --no-browser --port 4848" in preview
