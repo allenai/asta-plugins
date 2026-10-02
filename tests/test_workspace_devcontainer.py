@@ -23,14 +23,16 @@ def test_asta_token_is_a_codespaces_secret():
     assert "localEnv:ASTA_TOKEN" not in json.dumps(config)
 
 
-def test_preview_port_requests_browser_once():
+def test_preview_port_notifies_and_prints_link():
     config = _devcontainer()
     assert 4848 in config["forwardPorts"]
-    assert config["portsAttributes"]["4848"]["onAutoForward"] == "openBrowserOnce"
-    assert (
-        "quarto preview --no-browser --port 4848"
-        in config["postAttachCommand"]["preview"]
-    )
+    # Auto-opened tabs are popup-blocked in the Codespaces browser client and
+    # openPreview frames a private port without its auth cookie.
+    assert config["portsAttributes"]["4848"]["onAutoForward"] == "notify"
+    preview = config["postAttachCommand"]["preview"]
+    assert "quarto preview --no-browser --port 4848" in preview
+    assert "${CODESPACE_NAME}-4848.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN" in preview
+    assert preview.index('echo "Quarto preview: $url"') < preview.index("make preview")
 
 
 def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
