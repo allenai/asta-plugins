@@ -6,7 +6,9 @@ otherwise `/plugin install <layer>` installs skills whose calls fail.
 """
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -70,17 +72,39 @@ def test_reference_pattern_catches_long_plugin_names():
     ]
 
 
-GUARD = "## Requires asta-tools"
+def test_layers_check_asta_tools_at_session_start_and_prompt():
+    scripts = []
+    for name in ("asta-assistant", "asta-flows", "asta-dev"):
+        hook_dir = PLUGINS_ROOT / name / "hooks"
+        script = hook_dir / "require-asta-tools.sh"
+        config = json.loads((hook_dir / "hooks.json").read_text())["hooks"]
+        assert script.is_file(), name
+        scripts.append(script.read_bytes())
+        for event, suffix in (("SessionStart", ""), ("UserPromptSubmit", " block")):
+            commands = [
+                hook["command"]
+                for group in config[event]
+                for hook in group["hooks"]
+            ]
+            assert f"bash ${{CLAUDE_PLUGIN_ROOT}}/hooks/require-asta-tools.sh{suffix}" in commands
+    assert len(set(scripts)) == 1, "layer dependency checks must stay identical"
 
 
-def test_layer_skills_calling_asta_tools_carry_guard():
-    # npx plugins/skills ignore `dependencies`, so a hand-picked install can
-    # omit asta-tools; the guard makes the skill stop with the install command.
-    missing = []
-    for md in PLUGINS_ROOT.glob("*/skills/*/SKILL.md"):
-        if md.parts[-4] == "asta-tools":
-            continue
-        text = md.read_text()
-        if "Skill(asta-tools:" in text and GUARD not in text:
-            missing.append(str(md.relative_to(REPO_ROOT)))
-    assert not missing, f"add the '{GUARD}' section to: {missing}"
+def test_missing_asta_tools_blocks_prompt(tmp_path):
+    root = tmp_path / "plugins/cache/marketplace/asta-assistant/version"
+    root.mkdir(parents=True)
+    script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}
+    startup = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+    assert startup.returncode == 0
+    assert "asta-tools is required" in startup.stdout
+    result = subprocess.run(["bash", str(script), "block"], env=env, capture_output=True, text=True)
+    assert result.returncode == 2
+    assert "asta-tools is required" in result.stderr
+    assert result.stdout == ""
+
+    skills = tmp_path / "plugins/cache/marketplace/asta-tools/version/skills/workspace"
+    skills.mkdir(parents=True)
+    result = subprocess.run(["bash", str(script), "block"], env=env, capture_output=True, text=True)
+    assert result.returncode == 0
+    assert result.stdout == result.stderr == ""

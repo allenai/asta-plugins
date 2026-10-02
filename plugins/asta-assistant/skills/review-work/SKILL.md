@@ -8,10 +8,6 @@ allowed-tools: Read(work/**) Read(project.md) Edit(work/**) Bash(ls work/**) Bas
 
 Independent assessment of executed work. Reads only what is on disk; it does not see the executor's reasoning, by design.
 
-## Requires asta-tools
-
-This skill calls `asta-tools` skills. If they are not available in this session (look for `find-literature` or `workspace`, named `asta-tools:<skill>` in plugin installs), stop before doing any work and tell the user to install them with `npx plugins add allenai/asta-plugins`, or `/plugin install asta-tools@asta-plugins` in Claude Code. Do not substitute other tools for them.
-
 ## Input
 
 `work/<slug>/README.md` with `status: pending-assessment`, plus the artifacts under `work/<slug>/data/`.

@@ -8,10 +8,6 @@ allowed-tools: Read(work/**) Read(project.md) Edit(work/**) Write(work/**) Bash(
 
 Executes a single ready work item end-to-end. The plan in `# Instructions` is the contract; this skill follows it rather than redesigning it.
 
-## Requires asta-tools
-
-This skill calls `asta-tools` skills. If they are not available in this session (look for `find-literature` or `workspace`, named `asta-tools:<skill>` in plugin installs), stop before doing any work and tell the user to install them with `npx plugins add allenai/asta-plugins`, or `/plugin install asta-tools@asta-plugins` in Claude Code. Do not substitute other tools for them.
-
 ## Input
 
 `work/<slug>/README.md` with `status: ready` and a populated `# Instructions` section.

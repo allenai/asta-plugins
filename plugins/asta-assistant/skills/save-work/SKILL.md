@@ -8,10 +8,6 @@ allowed-tools: Read(project.md) Read(work/**) Edit(project.md) Bash(git status) 
 
 Closes out finished work: updates `project.md`, indexes the work READMEs so they are searchable, and commits everything to git.
 
-## Requires asta-tools
-
-This skill calls `asta-tools` skills. If they are not available in this session (look for `find-literature` or `workspace`, named `asta-tools:<skill>` in plugin installs), stop before doing any work and tell the user to install them with `npx plugins add allenai/asta-plugins`, or `/plugin install asta-tools@asta-plugins` in Claude Code. Do not substitute other tools for them.
-
 ## Inputs
 
 - `project.md` with Pending Work entries.

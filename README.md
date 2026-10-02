@@ -51,10 +51,11 @@ npx skills add allenai/asta-plugins -g
 > /plugin install asta-dev        # optional, for contributors
 ```
 
-`asta-flows`, `asta-assistant` and `asta-dev` are layers on top of `asta-tools`
-and call its skills. Every install path above includes it by default. If you
-leave it out when picking groups or skills by hand, the layer skills stop and
-tell you how to install it.
+`asta-flows`, `asta-assistant` and `asta-dev` require `asta-tools`. Claude Code
+installs it as a dependency. When plugin hooks are enabled, they check for it
+at session start and block prompts if it is missing. For selective
+`npx skills add --skill` installs, include the `asta-tools` skills too:
+skills-only installs do not carry plugin hooks.
 
 ## Documentation and Usage
 
