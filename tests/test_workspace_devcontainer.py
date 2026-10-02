@@ -26,8 +26,6 @@ def test_asta_token_is_a_codespaces_secret():
 def test_preview_port_requests_browser_once():
     config = _devcontainer()
     assert 4848 in config["forwardPorts"]
-    # VS Code may choose an embedded browser; the manual sign-in path is in
-    # DEVELOPER.md for Codespaces users.
     assert config["portsAttributes"]["4848"]["onAutoForward"] == "openBrowserOnce"
     assert (
         "quarto preview --no-browser --port 4848"
