@@ -8,6 +8,7 @@ otherwise `/plugin install <layer>` installs skills whose calls fail.
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -85,7 +86,7 @@ def test_layers_check_asta_tools_at_session_start_and_prompt():
                 hook["command"] for group in config[event] for hook in group["hooks"]
             ]
             assert (
-                f"bash ${{CLAUDE_PLUGIN_ROOT}}/hooks/require-asta-tools.sh{suffix}"
+                f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/require-asta-tools.sh"{suffix}'
                 in commands
             )
     assert len(set(scripts)) == 1, "layer dependency checks must stay identical"
@@ -108,10 +109,82 @@ def test_missing_asta_tools_blocks_prompt(tmp_path):
     assert "asta-tools is required" in result.stderr
     assert result.stdout == ""
 
-    skills = tmp_path / "plugins/cache/marketplace/asta-tools/version/skills/workspace"
+    skills = tmp_path / "plugins/cache/marketplace/asta-tools/version/skills"
     skills.mkdir(parents=True)
     result = subprocess.run(
         ["bash", str(script), "block"], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    assert result.stdout == result.stderr == ""
+
+
+def test_unknown_layout_does_not_block_prompt(tmp_path):
+    script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(tmp_path / "custom-layout/layer")}
+    result = subprocess.run(
+        ["bash", str(script), "block"],
+        env=env,
+        input='{"prompt":"write code"}',
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == result.stderr == ""
+
+    env.pop("CLAUDE_PLUGIN_ROOT")
+    env.pop("PLUGIN_ROOT", None)
+    result = subprocess.run(
+        ["bash", str(script), "block"],
+        env=env,
+        input='{"prompt":"write code"}',
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == result.stderr == ""
+
+
+def test_guard_handles_windows_separators_and_spaced_hook_path(tmp_path):
+    root = tmp_path / "space dir/plugins/cache/marketplace/asta-assistant/version"
+    hook_dir = root / "hooks"
+    hook_dir.mkdir(parents=True)
+    shutil.copy2(PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh", hook_dir)
+    command = json.loads(
+        (PLUGINS_ROOT / "asta-assistant/hooks/hooks.json").read_text()
+    )["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root).replace("/", "\\")}
+    result = subprocess.run(
+        ["bash", str(hook_dir / "require-asta-tools.sh"), "block"],
+        env=env,
+        input='{"prompt":"write code"}',
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+
+    env["CLAUDE_PLUGIN_ROOT"] = str(root)
+    result = subprocess.run(
+        ["bash", "-c", command],
+        env=env,
+        input='{"prompt":"write code"}',
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "asta-tools is required" in result.stderr
+
+
+def test_plugin_install_command_remains_available(tmp_path):
+    root = tmp_path / "plugins/cache/marketplace/asta-assistant/version"
+    root.mkdir(parents=True)
+    script = PLUGINS_ROOT / "asta-assistant/hooks/require-asta-tools.sh"
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(root)}
+    result = subprocess.run(
+        ["bash", str(script), "block"],
+        env=env,
+        input='{"prompt":"/plugin install asta-tools"}',
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
     assert result.stdout == result.stderr == ""
