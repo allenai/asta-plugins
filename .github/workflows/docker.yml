@@ -5,18 +5,9 @@ on:
     branches: [main]
     tags: ['v*']
 
-# Pushes to main publish :main / :main-tex for pre-release validation; only a
-# final vX.Y.Z tag moves :latest, which every new devcontainer and eval pulls.
-concurrency:
-  group: docker-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
-
 jobs:
-  validate:
-    uses: ./.github/workflows/devcontainer-smoke.yml
-
   publish:
-    needs: validate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,6 +34,77 @@ jobs:
           push: true
           target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/allenai/asta:${{ github.ref_name }}${{ matrix.suffix }}
-            ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') && format('ghcr.io/allenai/asta:latest{0}', matrix.suffix) || '' }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          tags: ghcr.io/allenai/asta:sha-${{ github.sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}${{ matrix.suffix }}
+
+  verify:
+    if: github.ref == 'refs/heads/main'
+    needs: publish
+    uses: ./.github/workflows/devcontainer-smoke.yml
+    with:
+      image-tag-prefix: ghcr.io/allenai/asta:sha-${{ github.sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+
+  promote:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check tag and validated main build
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo 'Expected a final or rc version tag' >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/runs?head_sha=$GITHUB_SHA&branch=main&status=success" \
+            | jq -er --arg sha "$GITHUB_SHA" \
+              '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | "\(.id)-attempt-\(.run_attempt)"')
+          echo "candidate_prefix=sha-$GITHUB_SHA-run-$run" >> "$GITHUB_OUTPUT"
+      - name: Promote validated images
+        env:
+          CANDIDATE_PREFIX: ${{ steps.candidate.outputs.candidate_prefix }}
+        run: |
+          declare -A sources
+          for target in asta tex; do
+            image=ghcr.io/allenai/asta
+            suffix=''
+            if [ "$target" = tex ]; then suffix=-tex; fi
+            candidate="$image:$CANDIDATE_PREFIX$suffix"
+            digest=$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest}}' | jq -er .digest)
+            case "$digest" in sha256:*) ;; *) exit 1 ;; esac
+            sources["$target"]="$image@$digest"
+          done
+          for target in asta tex; do
+            suffix=''
+            if [ "$target" = tex ]; then suffix=-tex; fi
+            docker buildx imagetools create -t "$image:$GITHUB_REF_NAME$suffix" "${sources[$target]}"
+          done
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            for target in asta tex; do
+              suffix=''
+              if [ "$target" = tex ]; then suffix=-tex; fi
+              docker buildx imagetools create -t "$image:latest$suffix" "${sources[$target]}"
+            done
+          fi
+          for target in asta tex; do
+            suffix=''
+            if [ "$target" = tex ]; then suffix=-tex; fi
+            expected="${sources[$target]##*@}"
+            actual=$(docker buildx imagetools inspect "$image:$GITHUB_REF_NAME$suffix" --format '{{json .Manifest}}' | jq -er .digest)
+            test "$actual" = "$expected"
+          done
