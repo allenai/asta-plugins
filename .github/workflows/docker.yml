@@ -73,7 +73,7 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/runs?head_sha=$GITHUB_SHA&branch=main&status=success" \
             | jq -er --arg sha "$GITHUB_SHA" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id')
+              '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id // error("no successful main build for tag commit")')
           echo "candidate_prefix=sha-$GITHUB_SHA-run-$run" >> "$GITHUB_OUTPUT"
       - name: Promote validated images
         env:
