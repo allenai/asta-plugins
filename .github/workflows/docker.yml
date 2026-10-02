@@ -90,12 +90,12 @@ jobs:
           for attempt in {1..60}; do
             runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/runs?head_sha=$GITHUB_SHA&branch=main&per_page=100")
             run=$(jq -r --arg sha "$GITHUB_SHA" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main" and .conclusion == "success")] | sort_by(.run_started_at) | last // empty | "\(.id) \(.run_attempt)"' <<< "$runs")
+              '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main" and .conclusion == "success")] | sort_by(.run_started_at) | (last // empty) | "\(.id) \(.run_attempt)"' <<< "$runs")
             if [ -n "$run" ]; then break; fi
-            if jq -e --arg sha "$GITHUB_SHA" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main" and .status != "completed")] | length == 0' \
-              <<< "$runs" >/dev/null && [ "$attempt" -gt 4 ]; then
-              echo 'No successful or running main build for tag commit' >&2
+            if [ "$attempt" -gt 4 ] && jq -e --arg sha "$GITHUB_SHA" \
+              '[.workflow_runs[] | select(.head_sha == $sha and .event == "push" and .head_branch == "main")] | length > 0 and all(.[]; .status == "completed")' \
+              <<< "$runs" >/dev/null; then
+              echo 'Main build for tag commit completed without success' >&2
               exit 1
             fi
             sleep 15
