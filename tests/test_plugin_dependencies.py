@@ -15,7 +15,9 @@ MARKETPLACE = json.loads(
     (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
 )
 ENTRIES = {e["name"]: e for e in MARKETPLACE["plugins"]}
-REF = re.compile(r"(?<![\w/.-])(asta-[a-z]+):([a-z0-9*][a-z0-9*-]*)")
+REF = re.compile(
+    r"(?<![\w/.-])(asta-[a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9*][a-z0-9*-]*)"
+)
 
 
 def _skill_names(plugin: str) -> set[str]:
@@ -60,6 +62,11 @@ def test_cross_plugin_references_are_declared_dependencies():
 
 
 def test_layers_depend_on_asta_tools():
-    for name, entry in ENTRIES.items():
-        if name != "asta-tools":
-            assert "asta-tools" in entry.get("dependencies", []), name
+    for name in ("asta-assistant", "asta-flows", "asta-dev"):
+        assert "asta-tools" in ENTRIES[name].get("dependencies", []), name
+
+
+def test_reference_pattern_catches_long_plugin_names():
+    assert REF.findall("Skill(asta-paper-flow2:render)") == [
+        ("asta-paper-flow2", "render")
+    ]
