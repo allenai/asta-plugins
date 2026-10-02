@@ -23,10 +23,12 @@ def test_asta_token_is_a_codespaces_secret():
     assert "localEnv:ASTA_TOKEN" not in json.dumps(config)
 
 
-def test_preview_port_opens_in_simple_browser():
+def test_preview_port_opens_in_browser_once():
     config = _devcontainer()
     assert 4848 in config["forwardPorts"]
-    assert config["portsAttributes"]["4848"]["onAutoForward"] == "openPreview"
+    # Codespaces' private-port sign-in cookie is not sent from Simple Browser's
+    # iframe, so the first open must be a real browser tab.
+    assert config["portsAttributes"]["4848"]["onAutoForward"] == "openBrowserOnce"
     assert (
         "quarto preview --no-browser --port 4848"
         in config["postAttachCommand"]["preview"]

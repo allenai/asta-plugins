@@ -28,7 +28,7 @@
   "portsAttributes": {
     "4848": {
       "label": "Quarto Preview",
-      "onAutoForward": "openPreview"
+      "onAutoForward": "openBrowserOnce"
     }
   }
 }
