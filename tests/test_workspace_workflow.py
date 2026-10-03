@@ -270,9 +270,12 @@ case "$1 $2" in
     marker_run=${GH_MARKER_RUN:-101}
     printf '[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]\\n' "$marker_run" | jq -r "$jq_filter"
     ;;
-  "api repos/owner/project/pages/builds?per_page=10")
+  "api repos/owner/project/pages/builds?per_page=100")
     [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
-    echo "${GH_BUILT:-1}"
+    if [ "${GH_BUILT:-1}" != 0 ]; then echo "${GH_BUILD_COMMIT:-published-sha}"; fi
+    ;;
+  "api repos/owner/project/compare/published-sha..."*)
+    echo "${GH_BUILD_RELATION:-ahead}"
     ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
@@ -357,7 +360,21 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     log = Path(env["GH_LOG"]).read_text()
     assert "compare/before...after" in log
     assert "(run 101)" in log
-    assert "pages/builds?per_page=10" in log
+    assert "pages/builds?per_page=100" in log
+
+
+def test_preview_wait_accepts_coalesced_pages_build(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_BUILD_COMMIT="later-tip")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "compare/published-sha...later-tip" in Path(env["GH_LOG"]).read_text()
 
 
 def test_preview_wait_rejects_pr_closed_during_deployment(tmp_path: Path) -> None:
