@@ -35,7 +35,9 @@ def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
     assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
 
 
-def test_wait_for_preview_rejects_closed_pr_before_deployment_lookup(tmp_path: Path) -> None:
+def test_wait_for_preview_rejects_closed_pr_before_deployment_lookup(
+    tmp_path: Path,
+) -> None:
     subprocess.run(["git", "init", "-q", "-b", "preview", str(tmp_path)], check=True)
     subprocess.run(
         ["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "test"],
@@ -52,13 +54,19 @@ def test_wait_for_preview_rejects_closed_pr_before_deployment_lookup(tmp_path: P
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
-    gh.write_text("#!/bin/sh\n[ \"$1 $2\" = 'pr view' ] || exit 99\nprintf 'CLOSED\\n'\n")
+    gh.write_text(
+        "#!/bin/sh\n[ \"$1 $2\" = 'pr view' ] || exit 99\nprintf 'CLOSED\\n'\n"
+    )
     gh.chmod(0o755)
 
     result = subprocess.run(
         ["sh", str((WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()), "wait"],
         cwd=tmp_path,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "REPO": "owner/repo"},
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "REPO": "owner/repo",
+        },
         text=True,
         capture_output=True,
     )
