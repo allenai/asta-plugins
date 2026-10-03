@@ -6,15 +6,89 @@ import tarfile
 import tomllib
 from pathlib import Path
 
+import yaml
+
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
+
+
+def _run_paper_step(tmp_path: Path, *, download_fails: bool = False):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    source = WORKSPACE_ASSETS / "paper-discovery.py"
+    project = tmp_path / "project"
+    paper = project / "paper"
+    paper.mkdir(parents=True)
+    (paper / "main.tex").write_text("paper")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(
+        '#!/bin/sh\n[ "${FAIL_CURL:-0}" != 1 ] || exit 1\ncp "$DISCOVERY_SOURCE" "$4"\n'
+    )
+    curl.chmod(0o755)
+    sudo = bin_dir / "sudo"
+    sudo.write_text("#!/bin/sh\nexit 1\n")
+    sudo.chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PR_BASE": "",
+        "DISCOVERY_SOURCE": str(source.resolve()),
+        "FAIL_CURL": "1" if download_fails else "0",
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return project, result
+
+
+def test_paper_toolchain_failure_keeps_preview_diagnostic(tmp_path: Path) -> None:
+    project, result = _run_paper_step(tmp_path)
+
+    assert result.returncode != 0
+    assert (
+        project / "_site/paper-previews/paper/build-failed.txt"
+    ).read_text().strip() == ("Could not update LaTeX package lists.")
+    assert (
+        project / "_site/paper-previews/paper/preview.json"
+    ).read_text().strip() == ('{"changed":false}')
+
+
+def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
+    project, result = _run_paper_step(tmp_path, download_fails=True)
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-previews/build-failed.txt").read_text().strip() == (
+        "Could not download the paper discovery script."
+    )
+
+
+def test_workspace_can_pin_quarto_for_generated_sources() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    assert workflow["on"]["workflow_call"]["inputs"]["quarto-version"]["default"] == (
+        "release"
+    )
+    setup = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("uses") == "quarto-dev/quarto-actions/setup@v2"
+    )
+    assert setup["with"]["version"] == "${{ inputs.quarto-version }}"
 
 
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 3
-    assert workflow.count("${{ job.workflow_sha }}") == 3
+    assert workflow.count("${{ job.workflow_repository }}") == 4
+    assert workflow.count("${{ job.workflow_sha }}") == 4
     assert "github.job_workflow" not in workflow
 
 

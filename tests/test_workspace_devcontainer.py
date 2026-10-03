@@ -75,6 +75,7 @@ def test_tex_image_matches_ci_paper_lane():
         "biber",
         "texlive-luatex",
         "texlive-xetex",
+        "texlive-plain-generic",
     }
     lane = workflow.split("- name: Build paper preview", 1)[1].split(
         "\n      - name:", 1

@@ -37,31 +37,266 @@ def test_paper_diff_appears_before_quarto_changes(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(json.dumps({"changed": True, "diff": True}))
-    (new / "paper/diff-page-1.png").write_bytes(b"png")
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True})
+    )
+    (new / "paper-previews/paper/diff-page-1.png").write_bytes(b"png")
     (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert result.index('id="paper-diff"') < result.index('id="p-index-html"')
-    assert 'href="paper/what-changed.pdf#page=1"' in result
-    assert 'src="paper/diff-page-1.png"' in result
+    assert 'href="paper-previews/paper/what-changed.pdf#page=1"' in result
+    assert 'src="paper-previews/paper/diff-page-1.png"' in result
+
+
+def test_multiple_papers_have_distinct_diff_sections(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    for name in ("paper", "latex"):
+        directory = new / "paper-previews" / name
+        directory.mkdir(parents=True)
+        (directory / "preview.json").write_text(
+            json.dumps({"changed": True, "diff": False, "html_diff": True})
+        )
+        (directory / "main.pdf").write_bytes(b"pdf")
+    (new / "paper-previews/latex/html").mkdir()
+    (new / "paper-previews/latex/html-diff").mkdir()
+    (new / "paper-previews/latex/html/index.html").write_text(
+        "<main>Converted paper</main>"
+    )
+    (new / "paper-previews/latex/html-diff/index.html").write_text(
+        "<main>Highlighted paper</main>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="paper-diff"' in result
+    assert 'id="paper-diff-6c61746578"' in result
+    assert 'href="paper-previews/latex/main.pdf"' in result
+    assert 'href="#paper-diff-6c61746578"' in result
+    assert 'href="paper-previews/latex/html-diff/index.html"' in result
+    assert 'src="paper-previews/latex/html-diff/index.html"' in result
+    assert 'id="p-latex-html-index-html"' not in result
+
+
+def test_rendered_html_changes_replace_failed_latexml_diff(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    rel = "paper-previews/lit-review/latex/html/index.html"
+    for root, body, timestamp in (
+        (old, "Old claim", "01:00"),
+        (new, "New claim", "02:00"),
+    ):
+        page = root / rel
+        page.parent.mkdir(parents=True)
+        page.write_text(
+            f"<html><body><main><p>{body}</p></main>"
+            f'<footer class="ltx_page_footer">Generated at {timestamp}</footer>'
+            "</body></html>"
+        )
+    preview = new / "paper-previews/lit-review/latex/preview.json"
+    preview.write_text(json.dumps({"changed": True, "diff": True, "html_diff": False}))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Rendered HTML changes" in result
+    assert "<del>Old</del><ins>New</ins> claim" in result
+    assert 'id="p-paper-previews-lit-review-latex-html-index-html"' not in result
+    assert "Generated at 01:00" not in result
+    assert "Generated at 02:00" not in result
+
+
+def test_top_level_paper_fallback_shows_rendered_diff_in_its_section(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, text in ((old, "Old claim"), (new, "New claim")):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text(f"<main><p>{text}</p></main>")
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True, "html_diff": False})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    section = result.split('id="paper-diff"', 1)[1].split("</section>", 1)[0]
+    assert "<del>Old</del><ins>New</ins> claim" in section
+    assert 'href="#p-paper-previews-paper-html-index-html"' not in result
+    assert 'id="p-paper-previews-paper-html-index-html"' not in result
+
+
+def test_paper_fallback_links_current_html_when_old_html_is_invalid(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root in (old, new):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+    (old / "paper-previews/paper/html/index.html").write_bytes(b"\xff")
+    (new / "paper-previews/paper/html/index.html").write_text(
+        "<main><p>Current paper</p></main>"
+    )
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True, "html_diff": False})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'src="paper-previews/paper/html/index.html"' in result
+    assert "Open the current HTML paper" in result
+
+
+def test_large_paper_html_uses_link_instead_of_inline_diff(tmp_path, monkeypatch):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, text in ((old, "Old claim"), (new, "New claim")):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text(f"<main><p>{text}</p></main>")
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True, "html_diff": False})
+    )
+    monkeypatch.setattr(WHAT_CHANGED, "MAX_INLINE_PAPER_HTML_BYTES", 1)
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'src="paper-previews/paper/html/index.html"' in result
+    assert "Rendered HTML changes" not in result
+
+
+def test_paper_section_ids_distinguish_dash_from_path_separator(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    for name in ("foo-bar", "foo/bar"):
+        directory = new / "paper-previews" / name
+        directory.mkdir(parents=True)
+        (directory / "preview.json").write_text(
+            json.dumps({"changed": True, "new": True})
+        )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    for section_id in ("paper-diff-666f6f2d626172", "paper-diff-666f6f2f626172"):
+        assert result.count(f'id="{section_id}"') == 1
+        assert result.count(f'href="#{section_id}"') == 1
+
+
+def test_latexml_build_time_alone_does_not_create_a_page_diff(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, timestamp in ((old, "01:00"), (new, "02:00")):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text(
+            "<html><body><main><p>Same paper</p></main>"
+            f'<footer class="ltx_page_footer">Generated at {timestamp}</footer>'
+            "</body></html>"
+        )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-paper-previews-paper-html-index-html"' not in result
+
+
+def test_paper_directory_is_encoded_in_links_and_escaped_in_attributes(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    name = 'draft &" #1'
+    directory = new / "paper-previews" / name
+    (directory / "html-diff").mkdir(parents=True)
+    (directory / "preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "html_diff": True})
+    )
+    (directory / "html-diff/index.html").write_text("<main>diff</main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'href="paper-previews/draft%20%26%22%20%231/main.pdf"' in result
+    assert 'src="paper-previews/draft%20%26%22%20%231/html-diff/index.html"' in result
+    assert 'title="Draft &amp;&quot; #1 HTML diff"' in result
+    assert 'href="draft &"' not in result
+
+
+def test_nested_paper_appears_with_source_path(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    directory = new / "paper-previews/lit-review/latex"
+    directory.mkdir(parents=True)
+    (directory / "preview.json").write_text(json.dumps({"changed": True, "new": True}))
+    (directory / "main.pdf").write_bytes(b"pdf")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Lit Review / LaTeX" in result
+    assert 'href="paper-previews/lit-review/latex/main.pdf"' in result
+
+
+def test_site_section_with_main_pdf_remains_in_what_changed(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, body in ((old, "old"), (new, "new")):
+        (root / "docs").mkdir(parents=True)
+        (root / "docs/main.pdf").write_bytes(b"pdf")
+        (root / "docs/index.html").write_text(f"<main><p>{body}</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-docs-index-html"' in result
+    assert "new" in result
+
+
+def test_paper_preview_does_not_hide_quarto_section_with_same_name(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, body in ((old, "old"), (new, "new")):
+        (root / "latex").mkdir(parents=True)
+        (root / "latex/index.html").write_text(f"<main><p>{body}</p></main>")
+    paper = new / "paper-previews/latex"
+    paper.mkdir(parents=True)
+    (paper / "preview.json").write_text(json.dumps({"changed": True, "diff": False}))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-latex-index-html"' in result
+    assert 'id="paper-diff-6c61746578"' in result
+
+
+def test_removed_second_paper_has_its_own_notice(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "paper-previews/latex").mkdir(parents=True)
+    (new / "paper-previews/latex/preview.json").write_text(
+        json.dumps({"changed": True, "removed": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="paper-diff-6c61746578"' in result
+    assert "LaTeX" in result
+    assert 'href="paper-previews/latex/main.pdf"' not in result
 
 
 def test_paper_diff_thumbnails_follow_page_number(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(json.dumps({"changed": True, "diff": True}))
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True})
+    )
     for page in (10, 2):
-        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+        (new / f"paper-previews/paper/diff-page-{page}.png").write_bytes(b"png")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
-    assert result.index('src="paper/diff-page-2.png"') < result.index(
-        'src="paper/diff-page-10.png"'
+    assert result.index('src="paper-previews/paper/diff-page-2.png"') < result.index(
+        'src="paper-previews/paper/diff-page-10.png"'
     )
 
 
@@ -69,14 +304,14 @@ def test_paper_diff_explains_thumbnail_limit(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps(
             {"changed": True, "diff": True, "thumbnail_limit": 2, "page_count": 3}
         )
     )
     for page in (1, 2):
-        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+        (new / f"paper-previews/paper/diff-page-{page}.png").write_bytes(b"png")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
@@ -88,14 +323,14 @@ def test_paper_diff_does_not_claim_truncation_at_exact_limit(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps(
             {"changed": True, "diff": True, "thumbnail_limit": 2, "page_count": 2}
         )
     )
     for page in (1, 2):
-        (new / f"paper/diff-page-{page}.png").write_bytes(b"png")
+        (new / f"paper-previews/paper/diff-page-{page}.png").write_bytes(b"png")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
@@ -106,54 +341,54 @@ def test_non_tex_paper_inputs_link_current_pdf_without_highlight_claim(tmp_path)
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": False, "other_inputs": True})
     )
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert "current PDF is available without highlights" in result
-    assert 'href="paper/main.pdf"' in result
+    assert 'href="paper-previews/paper/main.pdf"' in result
 
 
 def test_unmarked_latex_change_links_current_pdf_without_highlight_claim(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": False, "unhighlighted": True})
     )
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert "diff has no marked text" in result
-    assert 'href="paper/main.pdf"' in result
-    assert 'href="paper/what-changed.pdf"' not in result
+    assert 'href="paper-previews/paper/main.pdf"' in result
+    assert 'href="paper-previews/paper/what-changed.pdf"' not in result
 
 
 def test_paper_diff_fallback_links_current_pdf(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": False})
     )
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
-    assert 'href="paper/main.pdf"' in result
-    assert 'href="paper/what-changed.pdf"' not in result
+    assert 'href="paper-previews/paper/main.pdf"' in result
+    assert 'href="paper-previews/paper/what-changed.pdf"' not in result
 
 
 def test_new_paper_is_labeled_as_added(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": False, "new": True})
     )
 
@@ -161,7 +396,7 @@ def test_new_paper_is_labeled_as_added(tmp_path):
 
     assert "Paper added" in result
     assert 'class="page-diff new"' in result
-    assert 'href="paper/main.pdf"' in result
+    assert 'href="paper-previews/paper/main.pdf"' in result
     assert "The LaTeX diff could not be built" not in result
 
 
@@ -169,8 +404,8 @@ def test_removed_paper_has_notice_without_broken_pdf_link(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text(
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "removed": True})
     )
     (new / "index.html").write_text("<main><p>Quarto remains available</p></main>")
@@ -180,7 +415,7 @@ def test_removed_paper_has_notice_without_broken_pdf_link(tmp_path):
     assert "Paper removed" in result
     assert 'class="page-diff removed"' in result
     assert 'href="#paper-diff">Paper <span class="tag removed">' in result
-    assert 'href="paper/main.pdf"' not in result
+    assert 'href="paper-previews/paper/main.pdf"' not in result
     assert 'id="p-index-html"' in result
 
 
@@ -188,8 +423,8 @@ def test_invalid_paper_manifest_keeps_quarto_changes(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
-    (new / "paper").mkdir(parents=True)
-    (new / "paper/preview.json").write_text("{invalid")
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text("{invalid")
     (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
