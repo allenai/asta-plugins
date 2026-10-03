@@ -60,7 +60,11 @@ workspace-assets:
 		GIT_INDEX_FILE="$$tmp/evidence-index" git --git-dir="$$tmp/evidence-git/.git" --work-tree="$$base" -c core.filemode=true add -f -- evidence || return 1; \
 		files=$$(GIT_INDEX_FILE="$$tmp/evidence-index" git --git-dir="$$tmp/evidence-git/.git" write-tree) || return 1; \
 		dirs=$$(cd "$$base" && find evidence -type d -print | LC_ALL=C sort | git hash-object --stdin) || return 1; \
-		printf '%s\n%s\n' "$$files" "$$dirs" | git hash-object --stdin; \
+		if ! (cd "$$base" && find evidence ! -type l -exec stat -c '%a %n' {} + > "$$tmp/evidence-modes" 2>/dev/null); then \
+			(cd "$$base" && find evidence ! -type l -exec stat -f '%Lp %N' {} + > "$$tmp/evidence-modes") || return 1; \
+		fi; \
+		modes=$$(LC_ALL=C sort "$$tmp/evidence-modes" | git hash-object --stdin) || return 1; \
+		printf '%s\n%s\n%s\n' "$$files" "$$dirs" "$$modes" | git hash-object --stdin; \
 	}; \
 	backup=; \
 	lock_held=0; \
@@ -80,13 +84,15 @@ workspace-assets:
 	trap cleanup 0; \
 	trap 'exit 1' 1 2 15; \
 	curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz" || offline_ok "download from $$url failed"; \
-	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
-	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
+	mkdir "$$tmp/archive"; \
+	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp/archive"; \
+	source_dir=$$(find "$$tmp/archive" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
 	have_git=0; \
 	if command -v git >/dev/null 2>&1; then \
 		have_git=1; \
+		mkdir "$$tmp/evidence-git"; \
 		git init -q "$$tmp/evidence-git"; \
 		new_hash=$$(tree_hash "$$tmp"); \
 	fi; \

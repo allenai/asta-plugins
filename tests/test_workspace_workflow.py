@@ -216,6 +216,86 @@ def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "v3"
 
 
+def test_workspace_makefile_preserves_permission_only_edits(tmp_path: Path) -> None:
+    archives = []
+    for version in ("first", "second"):
+        archive_root = tmp_path / version / "asta-plugins-test"
+        source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+        shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+        (source / "snippet.lua").write_text(version)
+        archive = tmp_path / f"{version}.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(archive_root, arcname=archive_root.name)
+        archives.append(archive)
+
+    for path_type in ("file", "directory"):
+        project = tmp_path / f"project-{path_type}"
+        project.mkdir()
+        command = [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ]
+        env = {"PATH": os.environ["PATH"]}
+        env["ASTA_PLUGINS_ARCHIVE_URL"] = archives[0].as_uri()
+        subprocess.run(command, cwd=project, env=env, check=True)
+        installed = project / "_extensions/evidence"
+        modified = installed / "snippet.lua" if path_type == "file" else installed
+        modified.chmod(0o600 if path_type == "file" else 0o700)
+
+        env["ASTA_PLUGINS_ARCHIVE_URL"] = archives[1].as_uri()
+        subprocess.run(command, cwd=project, env=env, check=True)
+
+        backups = list((project / ".asta/evidence-backups").glob("evidence.*/evidence"))
+        assert len(backups) == 1
+        preserved = backups[0] / "snippet.lua" if path_type == "file" else backups[0]
+        assert preserved.stat().st_mode & 0o777 == (
+            0o600 if path_type == "file" else 0o700
+        )
+        assert (backups[0] / "snippet.lua").read_text() == "first"
+        assert (installed / "snippet.lua").read_text() == "second"
+
+
+def test_workspace_makefile_does_not_run_archive_git_config(tmp_path: Path) -> None:
+    hook_marker = tmp_path / "archive-hook-ran"
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+    (source / ".gitattributes").write_text("*.lua filter=archive-hook\n")
+    injected_git_dir = tmp_path / "archive" / "evidence-git/.git"
+    injected_git_dir.mkdir(parents=True)
+    (injected_git_dir / "config").write_text(
+        f'[filter "archive-hook"]\n\tclean = touch {hook_marker}\n'
+    )
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+        bundle.add(injected_git_dir.parent, arcname="evidence-git")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+            "PATH": os.environ["PATH"],
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not hook_marker.exists()
+    assert (project / "_extensions/evidence/snippet.lua").is_file()
+
+
 def test_workspace_makefile_without_git_keeps_cache_and_preserves_refresh(
     tmp_path: Path,
 ) -> None:
