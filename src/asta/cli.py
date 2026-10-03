@@ -17,6 +17,9 @@ from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
 from asta.papers.snippet_search import snippet_search
+from asta.patents.forward_citations import forward_citations
+from asta.patents.get import get as patent_get
+from asta.patents.search import search as patent_search
 from asta.pdf_extraction import pdf_extraction
 from asta.theorizer import generate_theories
 
@@ -40,6 +43,12 @@ def literature():
 @cli.group()
 def papers():
     """Semantic Scholar paper lookup and search"""
+    pass
+
+
+@cli.group()
+def patents():
+    """Patent (USPTO) lookup, BM25 search, and forward citations"""
     pass
 
 
@@ -74,6 +83,11 @@ papers.add_command(search)
 papers.add_command(snippet_search)
 papers.add_command(citations)
 papers.add_command(author)
+
+# Register patent subcommands
+patents.add_command(patent_get, name="get")
+patents.add_command(patent_search, name="search")
+patents.add_command(forward_citations)
 
 
 if __name__ == "__main__":
