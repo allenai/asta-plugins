@@ -20,13 +20,17 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # fails) but a previously fetched _extensions/evidence already exists, keep that
 # cached copy and warn instead of failing — so a render works on a plane. Only a
 # first fetch with no cache is a hard error.
+# Keep replaced trees because any one of them may contain local edits.
 workspace-assets:
 	@set -eu; \
 	ref="$(ASTA_PLUGINS_REF)"; \
 	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
-	if [ -L _extensions/evidence ]; then echo "workspace-assets: using local evidence symlink"; exit 0; fi; \
+	if [ -L _extensions/evidence ]; then \
+		[ -d _extensions/evidence ] || { echo "workspace-assets: _extensions/evidence symlink is broken or does not point to a directory" >&2; exit 1; }; \
+		echo "workspace-assets: using local evidence symlink"; exit 0; \
+	fi; \
 	have_cache=0; \
-	if [ -d _extensions/evidence ] || [ -L _extensions/evidence ]; then have_cache=1; fi; \
+	if [ -d _extensions/evidence ]; then have_cache=1; fi; \
 	offline_ok() { \
 		if [ "$$have_cache" -eq 1 ]; then \
 			echo "workspace-assets: could not reach asta-plugins ($$1); keeping the cached _extensions/evidence — re-run with network access to refresh" >&2; \
@@ -68,14 +72,15 @@ workspace-assets:
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
-	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1; then \
-		echo "workspace-assets: evidence extension unchanged"; exit 0; \
-	fi; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
+	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1; then \
+		echo "workspace-assets: evidence extension unchanged"; exit 0; \
+	fi; \
 	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
-		backup=$$(mktemp -d _extensions/.evidence-backup.XXXXXX); \
+		mkdir -p .asta/evidence-backups; \
+		backup=$$(mktemp -d .asta/evidence-backups/evidence.XXXXXX); \
 		mv _extensions/evidence "$$backup/evidence"; \
 	fi; \
 	mv "$$tmp/evidence" _extensions/evidence; \

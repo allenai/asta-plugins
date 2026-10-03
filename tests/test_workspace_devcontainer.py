@@ -3,7 +3,10 @@
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -97,8 +100,10 @@ def test_codespaces_persists_asta_login() -> None:
 
 
 @pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.parametrize("copy_exits_nonzero", [False, True])
+@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
 def test_codespaces_migration_preserves_credentials(
-    tmp_path: Path, conflict: bool
+    tmp_path: Path, conflict: bool, copy_exits_nonzero: bool
 ) -> None:
     command = _devcontainer()["postCreateCommand"]
     persisted = tmp_path / "persisted"
@@ -112,7 +117,54 @@ def test_codespaces_migration_preserves_credentials(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     installer = bin_dir / "npx"
-    installer.write_text("#!/bin/sh\nexit 0\n")
+    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
+    installer.chmod(0o755)
+    if copy_exits_nonzero:
+        system_cp = shutil.which("cp")
+        assert system_cp
+        copy_stub = bin_dir / "cp"
+        copy_stub.write_text(f'#!/bin/sh\n{shlex.quote(system_cp)} "$@"\nexit 1\n')
+        copy_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "CODESPACES": "true",
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+    }
+
+    result = subprocess.run(
+        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (home / "npx-ran").exists()
+    assert (persisted / "login").read_text() == "old"
+    assert (persisted / "refresh").read_text() == "keep"
+    assert source.is_symlink() is not conflict
+    assert (source / "login").read_text() == ("new" if conflict else "old")
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
+def test_codespaces_migration_compares_symlinks_and_newline_names(
+    tmp_path: Path, conflict: bool
+) -> None:
+    command = _devcontainer()["postCreateCommand"]
+    persisted = tmp_path / "persisted"
+    persisted.mkdir()
+    home = tmp_path / "home"
+    source = home / ".config/asta-cli"
+    source.mkdir(parents=True)
+    filename = "link\nname"
+    (source / filename).symlink_to("new-target" if conflict else "old-target")
+    (persisted / filename).symlink_to("old-target")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    installer = bin_dir / "npx"
+    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
     installer.chmod(0o755)
     env = {
         **os.environ,
@@ -129,6 +181,9 @@ def test_codespaces_migration_preserves_credentials(
     )
 
     assert result.returncode == 0, result.stderr
-    assert (persisted / "refresh").read_text() == "keep"
+    assert (home / "npx-ran").exists()
     assert source.is_symlink() is not conflict
-    assert (source / "login").read_text() == ("new" if conflict else "old")
+    assert (persisted / filename).readlink() == Path("old-target")
+    assert (source / filename).readlink() == Path(
+        "new-target" if conflict else "old-target"
+    )

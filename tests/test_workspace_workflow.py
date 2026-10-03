@@ -153,10 +153,37 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()
     backups = list(
-        (project / "_extensions").glob(".evidence-backup.*/evidence/stale-file")
+        (project / ".asta/evidence-backups").glob("evidence.*/evidence/stale-file")
     )
     assert len(backups) == 1
     assert backups[0].read_text() == "remove me"
+
+
+def test_workspace_makefile_rejects_broken_evidence_symlink(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    extension = project / "_extensions/evidence"
+    extension.parent.mkdir(parents=True)
+    extension.symlink_to("missing")
+
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_ARCHIVE_URL": "https://invalid.example",
+            "PATH": os.environ["PATH"],
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "symlink is broken" in result.stderr
+    assert extension.is_symlink()
 
 
 def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> None:
