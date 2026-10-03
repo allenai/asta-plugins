@@ -31,7 +31,6 @@ workspace-assets:
 		if [ -n "$$ref" ] || [ -n "$$url" ]; then echo "workspace-assets: local evidence symlink takes precedence over ASTA_PLUGINS_REF and ASTA_PLUGINS_ARCHIVE_URL" >&2; fi; \
 		echo "workspace-assets: using local evidence symlink"; exit 0; \
 	fi; \
-	command -v git >/dev/null 2>&1 || { echo "workspace-assets: git is required to refresh the evidence extension" >&2; exit 1; }; \
 	have_cache=0; \
 	if [ -d _extensions/evidence ]; then have_cache=1; fi; \
 	offline_ok() { \
@@ -85,27 +84,38 @@ workspace-assets:
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
-	git init -q "$$tmp/evidence-git"; \
-	new_hash=$$(tree_hash "$$tmp"); \
+	have_git=0; \
+	if command -v git >/dev/null 2>&1; then \
+		have_git=1; \
+		git init -q "$$tmp/evidence-git"; \
+		new_hash=$$(tree_hash "$$tmp"); \
+	fi; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
 	mkdir -p .asta/evidence-backups; \
-	grep -Fxq '*' .asta/evidence-backups/.gitignore 2>/dev/null || printf '\n*\n' >> .asta/evidence-backups/.gitignore; \
-	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1 \
+	if ! grep -Fxq '*' .asta/evidence-backups/.gitignore 2>/dev/null; then \
+		if [ -s .asta/evidence-backups/.gitignore ] && [ -n "$$(tail -c 1 .asta/evidence-backups/.gitignore)" ]; then printf '\n' >> .asta/evidence-backups/.gitignore; fi; \
+		printf '*\n' >> .asta/evidence-backups/.gitignore; \
+	fi; \
+	if [ "$$have_git" -eq 1 ] && [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1 \
 		&& git -c core.filemode=true diff --no-index --quiet -- _extensions/evidence "$$tmp/evidence"; then \
 		printf '%s\n' "$$new_hash" > "$$tmp/marker"; mv "$$tmp/marker" "$$marker"; \
 		echo "workspace-assets: evidence extension unchanged"; exit 0; \
 	fi; \
 	if [ -e _extensions/evidence ]; then \
-		current_hash=$$(tree_hash _extensions); \
-		if [ -f "$$marker" ] && [ "$$(cat "$$marker")" = "$$current_hash" ]; then keep_backup=0; fi; \
+		if [ "$$have_git" -eq 1 ]; then \
+			current_hash=$$(tree_hash _extensions); \
+			if [ -f "$$marker" ] && [ "$$(cat "$$marker")" = "$$current_hash" ]; then keep_backup=0; fi; \
+		fi; \
 		backup=$$(mktemp -d .asta/evidence-backups/evidence.XXXXXX); \
 		mv _extensions/evidence "$$backup/evidence"; \
 	fi; \
 	mv "$$tmp/evidence" _extensions/evidence; \
-	printf '%s\n' "$$new_hash" > "$$tmp/marker"; \
-	mv "$$tmp/marker" "$$marker"; \
+	if [ "$$have_git" -eq 1 ]; then \
+		printf '%s\n' "$$new_hash" > "$$tmp/marker"; \
+		mv "$$tmp/marker" "$$marker"; \
+	else rm -f "$$marker"; fi; \
 	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"; \
 	if [ -n "$$backup" ]; then \
 		if [ "$$keep_backup" -eq 1 ]; then echo "workspace-assets: previous files preserved at $$backup/evidence (review and remove old backups when no longer needed)"; \

@@ -101,19 +101,22 @@ def test_codespaces_persists_asta_login() -> None:
 
 @pytest.mark.parametrize("conflict", [False, True])
 @pytest.mark.parametrize("copy_exits_nonzero", [False, True])
+@pytest.mark.parametrize("loose_persisted_mode", [False, True])
 @pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
 def test_codespaces_migration_preserves_credentials(
-    tmp_path: Path, conflict: bool, copy_exits_nonzero: bool
+    tmp_path: Path, conflict: bool, copy_exits_nonzero: bool, loose_persisted_mode: bool
 ) -> None:
     command = _devcontainer()["postCreateCommand"]
     persisted = tmp_path / "persisted"
     persisted.mkdir()
     (persisted / "login").write_text("old")
+    (persisted / "login").chmod(0o644 if loose_persisted_mode else 0o600)
     (persisted / "refresh").write_text("keep")
     home = tmp_path / "home"
     source = home / ".config/asta-cli"
     source.mkdir(parents=True)
     (source / "login").write_text("new" if conflict else "old")
+    (source / "login").chmod(0o600)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     installer = bin_dir / "npx"
@@ -142,6 +145,7 @@ def test_codespaces_migration_preserves_credentials(
     assert result.returncode == 0, result.stderr
     assert (home / "npx-ran").exists()
     assert (persisted / "login").read_text() == "old"
+    assert (persisted / "login").stat().st_mode & 0o077 == 0
     assert (persisted / "refresh").read_text() == "keep"
     assert source.is_symlink() is not conflict
     assert (source / "login").read_text() == ("new" if conflict else "old")

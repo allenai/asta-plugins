@@ -216,33 +216,75 @@ def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "v3"
 
 
-def test_workspace_makefile_requires_git_before_replacing_evidence(
+def test_workspace_makefile_without_git_keeps_cache_and_preserves_refresh(
     tmp_path: Path,
 ) -> None:
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
     project = tmp_path / "project"
     target = project / "_extensions/evidence"
     target.mkdir(parents=True)
     sentinel = target / "snippet.lua"
     sentinel.write_text("keep me")
+    marker = project / ".asta/evidence-backups/installed.sha"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("stale marker")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for utility in (
+        "cp",
+        "curl",
+        "diff",
+        "find",
+        "gzip",
+        "grep",
+        "mkdir",
+        "mktemp",
+        "mv",
+        "rm",
+        "rmdir",
+        "tail",
+        "tar",
+    ):
+        executable = shutil.which(utility)
+        assert executable
+        (bin_dir / utility).symlink_to(executable)
+    assert shutil.which("git", path=str(bin_dir)) is None
     make = shutil.which("make")
     assert make
-
-    result = subprocess.run(
-        [
-            make,
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ],
+    command = [
+        make,
+        "-f",
+        str((WORKSPACE_ASSETS / "Makefile").resolve()),
+        "workspace-assets",
+    ]
+    env = {"PATH": str(bin_dir), "ASTA_PLUGINS_ARCHIVE_URL": "file:///missing"}
+    offline = subprocess.run(
+        command,
         cwd=project,
-        env={"PATH": str(tmp_path), "ASTA_PLUGINS_ARCHIVE_URL": "file:///missing"},
+        env=env,
         capture_output=True,
         text=True,
     )
-
-    assert result.returncode != 0
-    assert "git is required" in result.stderr
+    assert offline.returncode == 0, offline.stderr
     assert sentinel.read_text() == "keep me"
+    assert marker.read_text() == "stale marker"
+
+    env["ASTA_PLUGINS_ARCHIVE_URL"] = archive.as_uri()
+    refreshed = subprocess.run(
+        command, cwd=project, env=env, capture_output=True, text=True
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
+    assert sentinel.read_bytes() == (source / "snippet.lua").read_bytes()
+    backups = list(marker.parent.glob("evidence.*/evidence/snippet.lua"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == "keep me"
+    assert not marker.exists()
 
 
 def test_workspace_makefile_restores_evidence_after_swap_failure(
