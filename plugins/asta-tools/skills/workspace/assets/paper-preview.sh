@@ -5,12 +5,17 @@ base=${1:-}
 # Paper directory relative to the repo root; each holds its own main.tex.
 dir=${2:-paper}
 dir=${dir%/}
+site_dir="_site/paper-previews/$dir"
 case "$dir" in
   ""|.|..|-*|/*|*/*) echo "::error::Paper directory must be a top-level directory"; exit 1 ;;
 esac
+if [[ "$dir" =~ [[:cntrl:]] ]]; then
+  echo "::error::Paper directory contains a control character"
+  exit 1
+fi
 test -f "$dir/main.tex" || exit 0
-mkdir -p "$dir/build" "_site/$dir"
-printf '{"changed":false}\n' > "_site/$dir/preview.json"
+mkdir -p "$dir/build" "$site_dir"
+printf '{"changed":false}\n' > "$site_dir/preview.json"
 
 export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
 export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
@@ -27,9 +32,9 @@ if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliog
   echo "::error file=$dir/main.tex::Unresolved paper citations or missing bibliography"
   exit 1
 fi
-cp "$dir/build/main.pdf" "_site/$dir/main.pdf"
+cp "$dir/build/main.pdf" "$site_dir/main.pdf"
 if [ -s "$dir/build/main.bbl" ]; then
-  cp "$dir/build/main.bbl" "_site/$dir/main.bbl"
+  cp "$dir/build/main.bbl" "$site_dir/main.bbl"
 fi
 
 convert_html() {
@@ -42,24 +47,45 @@ convert_html() {
     else
       result=$?
     fi
+  else
+    printf 'latexmlc is not installed\n' > "$log"
   fi
   if [ -s "$output" ]; then cat "$output" >> "$log"; fi
   if [ "$result" -eq 124 ]; then echo "LaTeXML timed out after 180 seconds" >> "$log"; fi
   rm -f "$output"
   if [ "$result" -eq 0 ] && [ -s "$target" ] && [ -f "$log" ] && \
-     ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors?' "$log"; then
+     ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors?' "$log" && \
+     python3 - "$target" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+document = path.read_text(encoding="utf-8")
+head = re.search(r"<head(?:\s[^>]*)?>", document, flags=re.IGNORECASE)
+if not head:
+    raise SystemExit("LaTeXML HTML has no head for a content security policy")
+policy = (
+    "default-src 'none'; img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; font-src 'self' data:; "
+    "script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+)
+meta = f'<meta http-equiv="Content-Security-Policy" content="{policy}">'
+path.write_text(document[:head.end()] + meta + document[head.end():], encoding="utf-8")
+PY
+  then
     return 0
   fi
   rm -f "$target"
   echo "::warning file=$source::LaTeXML conversion failed; see $log"
   return 1
 }
-convert_html "$dir/main.tex" "_site/$dir/html/index.html" "_site/$dir/html/latexml.log" || true
+convert_html "$dir/main.tex" "$site_dir/html/index.html" "$site_dir/html/latexml.log" || true
 
 test -n "$base" || exit 0
 fallback() {
-  rm -f "_site/$dir/preview.json" "_site/$dir/what-changed.pdf" "_site/$dir"/diff-page-*.png
-  printf '{"changed":true,"diff":false}\n' > "_site/$dir/preview.json"
+  rm -f "$site_dir/preview.json" "$site_dir/what-changed.pdf" "$site_dir"/diff-page-*.png
+  printf '{"changed":true,"diff":false}\n' > "$site_dir/preview.json"
   echo '::warning::Could not compare paper versions; the current paper PDF remains available'
 }
 if ! flags=$(python3 - "$base" "$dir" <<'PY'
@@ -118,10 +144,10 @@ PY
 fi
 read -r tex_changed other_changed <<< "$flags"
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
-printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "_site/$dir/preview.json"
+printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 
 if ! git cat-file -e "$base:$dir/main.tex" 2>/dev/null; then
-  printf '{"changed":true,"diff":false,"new":true}\n' > "_site/$dir/preview.json"
+  printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
   exit 0
 fi
 if [ "$tex_changed" = 0 ]; then exit 0; fi
@@ -165,28 +191,28 @@ if not re.search(r"\\DIF(?:add|del)(?:begin|end)?(?:\{|\b)", body):
     raise SystemExit(1)
 PY
 then
-  printf '{"changed":true,"diff":false,"other_inputs":%s,"unhighlighted":true}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "_site/$dir/preview.json"
+  printf '{"changed":true,"diff":false,"other_inputs":%s,"unhighlighted":true}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
   exit 0
 fi
 html_diff=false
-if convert_html "$diff_tex" "_site/$dir/html-diff/index.html" \
-  "_site/$dir/html-diff/latexml.log"; then
+if convert_html "$diff_tex" "$site_dir/html-diff/index.html" \
+  "$site_dir/html-diff/latexml.log"; then
   html_diff=true
 fi
 if (cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
   -halt-on-error -file-line-error -outdir=build "$diff_name"); then
-  cp "$dir/build/$diff_stem.pdf" "_site/$dir/what-changed.pdf"
-  if ! pdftoppm -f 1 -l 12 -png -r 54 "_site/$dir/what-changed.pdf" "_site/$dir/diff-page" >/dev/null 2>&1; then
-    rm -f "_site/$dir"/diff-page-*.png
+  cp "$dir/build/$diff_stem.pdf" "$site_dir/what-changed.pdf"
+  if ! pdftoppm -f 1 -l 12 -png -r 54 "$site_dir/what-changed.pdf" "$site_dir/diff-page" >/dev/null 2>&1; then
+    rm -f "$site_dir"/diff-page-*.png
     echo '::warning::Could not render paper diff thumbnails; the diff PDF remains available'
   fi
-  pages=$(pdfinfo "_site/$dir/what-changed.pdf" 2>/dev/null | awk '/^Pages:/ {print $2; exit}') || pages=""
+  pages=$(pdfinfo "$site_dir/what-changed.pdf" 2>/dev/null | awk '/^Pages:/ {print $2; exit}') || pages=""
   if [[ "$pages" =~ ^[0-9]+$ ]]; then
-    printf '{"changed":true,"diff":true,"html_diff":%s,"other_inputs":%s,"thumbnail_limit":12,"page_count":%s}\n' "$html_diff" "$([ "$other_changed" = 1 ] && echo true || echo false)" "$pages" > "_site/$dir/preview.json"
+    printf '{"changed":true,"diff":true,"html_diff":%s,"other_inputs":%s,"thumbnail_limit":12,"page_count":%s}\n' "$html_diff" "$([ "$other_changed" = 1 ] && echo true || echo false)" "$pages" > "$site_dir/preview.json"
   else
-    printf '{"changed":true,"diff":true,"html_diff":%s,"other_inputs":%s,"thumbnail_limit":12}\n' "$html_diff" "$([ "$other_changed" = 1 ] && echo true || echo false)" > "_site/$dir/preview.json"
+    printf '{"changed":true,"diff":true,"html_diff":%s,"other_inputs":%s,"thumbnail_limit":12}\n' "$html_diff" "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
   fi
 else
-  printf '{"changed":true,"diff":false,"html_diff":%s,"other_inputs":%s}\n' "$html_diff" "$([ "$other_changed" = 1 ] && echo true || echo false)" > "_site/$dir/preview.json"
+  printf '{"changed":true,"diff":false,"html_diff":%s,"other_inputs":%s}\n' "$html_diff" "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
 fi

@@ -83,35 +83,22 @@ jobs:
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          # A paper is any top-level <dir>/main.tex with a latexmkrc beside it;
-          # paper/main.tex is always a paper, with or without one.
-          papers=()
-          for tex in */main.tex; do
-            [ -f "$tex" ] || continue
-            d=${tex%/main.tex}
-            if [ "$d" = paper ] || [ -f "$d/latexmkrc" ] || [ -f "$d/.latexmkrc" ]; then
-              papers+=("$d")
-              mkdir -p "_site/$d"
-              printf '{"changed":false}\n' > "_site/$d/preview.json"
-            fi
-          done
-          removed=()
-          if [ -n "$PR_BASE" ]; then
-            while IFS= read -r -d '' tex; do
-              case "$tex" in */main.tex) ;; *) continue ;; esac
-              d=${tex%/main.tex}
-              case "$d" in */*) continue ;; esac
-              if [ -f "$tex" ] && { [ "$d" = paper ] || [ -f "$d/latexmkrc" ] || [ -f "$d/.latexmkrc" ]; }; then continue; fi
-              if [ "$d" = paper ] || git cat-file -e "$PR_BASE:$d/latexmkrc" 2>/dev/null || git cat-file -e "$PR_BASE:$d/.latexmkrc" 2>/dev/null; then removed+=("$d"); fi
-            done < <(git ls-tree -rz --name-only "$PR_BASE" 2>/dev/null)
+          if [ -e _site/paper-previews ]; then
+            echo '::error::Quarto output already uses paper-previews/; reserve that path for paper previews'
+            exit 1
           fi
+          discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
+          curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || exit 1
+          discovery=$(python3 /tmp/paper-discovery.py "$PR_BASE") || exit 1
+          mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
+          mapfile -t removed < <(jq -r '.removed[]' <<< "$discovery")
           for d in "${removed[@]}"; do
-            mkdir -p "_site/$d"
-            printf '{"changed":true,"removed":true}\n' > "_site/$d/preview.json"
+            mkdir -p "_site/paper-previews/$d"
+            printf '{"changed":true,"removed":true}\n' > "_site/paper-previews/$d/preview.json"
           done
           [ ${#papers[@]} -gt 0 ] || exit 0
           fail_all() {
-            for d in "${papers[@]}"; do mkdir -p "_site/$d"; echo "$1" > "_site/$d/build-failed.txt"; done
+            for d in "${papers[@]}"; do mkdir -p "_site/paper-previews/$d"; echo "$1" > "_site/paper-previews/$d/build-failed.txt"; done
             exit 1
           }
           sudo apt-get update -qq || fail_all 'Could not update LaTeX package lists.'
@@ -133,8 +120,8 @@ jobs:
           for d in "${papers[@]}"; do
             if ! bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
-              mkdir -p "_site/$d"
-              if [ ! -f "_site/$d/build-failed.txt" ]; then
+              mkdir -p "_site/paper-previews/$d"
+              if [ ! -f "_site/paper-previews/$d/build-failed.txt" ]; then
                 {
                   echo "The paper in $d/ failed to build; the rest of the preview was published without it."
                   echo
@@ -142,7 +129,7 @@ jobs:
                   for log in "$d"/build/*.blg; do
                     if [ -f "$log" ]; then tail -n 100 "$log"; fi
                   done
-                } > "_site/$d/build-failed.txt"
+                } > "_site/paper-previews/$d/build-failed.txt"
               fi
               echo "::error file=$d/main.tex::Paper preview failed; the rest of the preview will still publish"
             fi
@@ -285,32 +272,34 @@ jobs:
             fi
             # Surface the paper directly; it is otherwise one click deep.
             pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
-            for paper_dir in "$pr_dir"/*/; do
+            for paper_dir in "$pr_dir"/paper-previews/*/; do
               d=$(basename "$paper_dir")
               [ -f "$paper_dir/preview.json" ] || continue
               encoded=$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe=""))' "$d")
-              label="Paper"; [ "$d" = paper ] || label="Paper ($encoded/)"
+              display=$(python3 -c 'import html, re, sys; print(re.sub(r"([\\`*_{}\[\]()#+.!|<>])", r"\\\1", html.escape(sys.argv[1])))' "$d")
+              label="Paper"; [ "$d" = paper ] || label="Paper ($display/)"
+              paper_url="${url}paper-previews/$encoded"
               if [ -f "$paper_dir/main.pdf" ]; then
-                body=$(printf '%s\n📑 %s PDF: %s%s/main.pdf' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n📑 %s PDF: %s/main.pdf' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/html/index.html" ]; then
-                body=$(printf '%s\n📄 %s HTML: %s%s/html/index.html' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n📄 %s HTML: %s/html/index.html' "$body" "$label" "$paper_url")
               elif [ -f "$paper_dir/html/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s%s/html/latexml.log' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s/html/latexml.log' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/main.bbl" ]; then
-                body=$(printf '%s\n📚 %s bibliography (arXiv): %s%s/main.bbl' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n📚 %s bibliography (arXiv): %s/main.bbl' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/what-changed.pdf" ]; then
-                body=$(printf '%s\n🖍️ %s PDF diff: %s%s/what-changed.pdf' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n🖍️ %s PDF diff: %s/what-changed.pdf' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/html-diff/index.html" ] && grep -q '"html_diff":true' "$paper_dir/preview.json"; then
-                body=$(printf '%s\n🔎 %s HTML diff: %s%s/html-diff/index.html' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n🔎 %s HTML diff: %s/html-diff/index.html' "$body" "$label" "$paper_url")
               elif [ -f "$paper_dir/html-diff/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML diff conversion failed: %s%s/html-diff/latexml.log' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n⚠️ %s HTML diff conversion failed: %s/html-diff/latexml.log' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/build-failed.txt" ]; then
-                body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s%s/build-failed.txt' "$body" "$label" "$url" "$encoded")
+                body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")

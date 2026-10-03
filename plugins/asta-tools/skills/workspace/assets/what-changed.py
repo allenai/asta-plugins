@@ -633,9 +633,13 @@ def list_pages(root, out_path=None):
             except OSError:
                 continue
             rel = os.path.relpath(full, root)
-            first = rel.split(os.sep, 1)[0]
-            if first != rel and os.path.isfile(
-                os.path.join(root, first, "preview.json")
+            parts = rel.split(os.sep)
+            if (
+                len(parts) > 2
+                and parts[0] == "paper-previews"
+                and os.path.isfile(
+                    os.path.join(root, parts[0], parts[1], "preview.json")
+                )
             ):
                 continue
             pages[rel] = full
@@ -1011,7 +1015,7 @@ def paper_identity(paper_dir):
 
 
 def paper_preview(new_root, paper_dir="paper"):
-    manifest = os.path.join(new_root, paper_dir, "preview.json")
+    manifest = os.path.join(new_root, "paper-previews", paper_dir, "preview.json")
     if not os.path.isfile(manifest):
         return None
     try:
@@ -1034,11 +1038,13 @@ def paper_preview(new_root, paper_dir="paper"):
         return section, "removed"
 
     def paper_url(filename):
-        return html.escape(f"{quote(paper_dir, safe='')}/{filename}", quote=True)
+        return html.escape(
+            f"paper-previews/{quote(paper_dir, safe='')}/{filename}", quote=True
+        )
 
     pdf = paper_url("what-changed.pdf" if state.get("diff") else "main.pdf")
     html_diff = state.get("html_diff") is True and os.path.isfile(
-        os.path.join(new_root, paper_dir, "html-diff", "index.html")
+        os.path.join(new_root, "paper-previews", paper_dir, "html-diff", "index.html")
     )
     if state.get("new"):
         note = "Paper added; the current paper PDF is available."
@@ -1058,7 +1064,9 @@ def paper_preview(new_root, paper_dir="paper"):
     thumbs = []
     if state.get("diff"):
         pages = []
-        for path in glob.glob(os.path.join(new_root, paper_dir, "diff-page-*.png")):
+        for path in glob.glob(
+            os.path.join(new_root, "paper-previews", paper_dir, "diff-page-*.png")
+        ):
             filename = os.path.basename(path)
             match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
             if not match:
@@ -1080,7 +1088,7 @@ def paper_preview(new_root, paper_dir="paper"):
         ):
             note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
     html_current = os.path.isfile(
-        os.path.join(new_root, paper_dir, "html", "index.html")
+        os.path.join(new_root, "paper-previews", paper_dir, "html", "index.html")
     )
     html_path = (
         paper_url("html-diff/index.html")
@@ -1111,10 +1119,12 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
+    paper_root = os.path.join(new_root, "paper-previews")
     for paper_dir in sorted(
-        os.listdir(new_root), key=lambda name: (name != "paper", name)
+        os.listdir(paper_root) if os.path.isdir(paper_root) else [],
+        key=lambda name: (name != "paper", name),
     ):
-        if not os.path.isdir(os.path.join(new_root, paper_dir)):
+        if not os.path.isdir(os.path.join(paper_root, paper_dir)):
             continue
         paper_section = paper_preview(new_root, paper_dir)
         if paper_section:
