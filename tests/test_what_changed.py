@@ -932,3 +932,26 @@ def test_has_computed_output_detects_widgets_and_ignores_prose():
     assert not WHAT_CHANGED.has_computed_output(
         "<p>Just prose with <a href='x'>a link</a> and <code>code</code>.</p>"
     )
+
+
+def test_citation_links_point_at_the_full_page_bibliography(tmp_path):
+    # Quarto renders citations as `#ref-<key>` links to the page's own
+    # bibliography, which the excerpt lacks; they must deep-link the full page.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    (old / "sub").mkdir(parents=True)
+    (new / "sub").mkdir(parents=True)
+    shell = (
+        "<html><head></head><body><main><p>{text} "
+        '<a href="#ref-he2026" role="doc-biblioref">He et al. 2026</a></p>'
+        "</main></body></html>"
+    )
+    (old / "sub" / "page.html").write_text(shell.format(text="Old claim."))
+    (new / "sub" / "page.html").write_text(shell.format(text="New claim."))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+    assert 'href="sub/page.html#ref-he2026"' in result
+    assert 'href="#ref-he2026"' not in result
+
+    result = WHAT_CHANGED.build(old, new, "https://example.org/pr-1/", "PR #1")
+    assert 'href="https://example.org/pr-1/sub/page.html#ref-he2026"' in result
