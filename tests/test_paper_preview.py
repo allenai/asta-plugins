@@ -123,7 +123,28 @@ def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
     assert "footnotehyper" not in converted
     assert "makesavenoteenv" not in converted
     assert source.read_text() == original
+    assert (
+        (repo / "_site/paper-previews/paper/html/x1.png")
+        .read_text()
+        .endswith("/main.tex")
+    )
     assert not list((repo / "paper").glob(".latexml-*.tex"))
+
+
+def test_non_quarto_paper_passes_original_source_to_latexml(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    source = repo / "paper/main.tex"
+    capture = repo / "html-input.tex"
+    with (bin_dir / "latexmlc").open("a") as mock:
+        mock.write('cp "${@: -1}" "$FAKE_CAPTURE"\n')
+    env["FAKE_CAPTURE"] = str(capture)
+
+    run("bash", str(SCRIPT), "", cwd=repo, env=env)
+
+    assert capture.read_text() == source.read_text()
+    assert (repo / "_site/paper-previews/paper/html/x1.png").read_text() == (
+        "paper/main.tex"
+    )
 
 
 def test_paper_preview_builds_second_paper_in_its_own_directory(tmp_path):

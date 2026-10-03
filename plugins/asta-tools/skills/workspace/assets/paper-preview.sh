@@ -39,13 +39,13 @@ fi
 
 convert_html() {
   local source=$1 target=$2 log=$3
-  local output="${log}.output" result=1 input="$source" converted=""
+  local output="${log}.output" result=1 input="$source" prepared_dir=""
   mkdir -p "$(dirname "$target")"
   # Quarto's PDF preamble loads packages that only affect PDF navigation and
   # table footnotes. LaTeXML can spend minutes parsing their expl3 internals.
   if grep -Fq 'pdfcreator={LaTeX via pandoc}' "$source"; then
-    converted=$(mktemp "$(dirname "$source")/.latexml-XXXXXX.tex")
-    python3 - "$source" "$converted" <<'PY'
+    if prepared_dir=$(mktemp -d); then
+      if python3 - "$source" "$prepared_dir/$(basename "$source")" <<'PY'
 import pathlib
 import sys
 
@@ -58,10 +58,17 @@ source = source.replace(
 source = source.replace(r"\makesavenoteenv{longtable}", "")
 pathlib.Path(sys.argv[2]).write_text(source, encoding="utf-8")
 PY
-    input="$converted"
+      then
+        input="$prepared_dir/$(basename "$source")"
+      else
+        rm -rf "$prepared_dir"
+        prepared_dir=""
+      fi
+    fi
   fi
   if command -v latexmlc >/dev/null 2>&1; then
-    if timeout --kill-after=15s 180s latexmlc --format=html5 --path=. --dest="$target" --log="$log" "$input" >"$output" 2>&1; then
+    if timeout --kill-after=15s 180s latexmlc --format=html5 --path=. \
+        --path="$(dirname "$source")" --dest="$target" --log="$log" "$input" >"$output" 2>&1; then
       result=0
     else
       result=$?
@@ -72,7 +79,7 @@ PY
   if [ -s "$output" ]; then cat "$output" >> "$log"; fi
   if [ "$result" -eq 124 ]; then echo "LaTeXML timed out after 180 seconds" >> "$log"; fi
   rm -f "$output"
-  if [ -n "$converted" ]; then rm -f "$converted"; fi
+  if [ -n "$prepared_dir" ]; then rm -rf "$prepared_dir"; fi
   if [ "$result" -eq 0 ] && [ -s "$target" ] && [ -f "$log" ] && \
      ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors?' "$log" && \
      python3 - "$target" <<'PY'
