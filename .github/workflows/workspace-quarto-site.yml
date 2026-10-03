@@ -98,6 +98,30 @@ jobs:
             echo '::warning::Could not find the PR merge base; publishing current papers without diffs or removals'
             base=""
           fi
+          # Papers made by `make latex` are build outputs, not committed sources.
+          # Commit them to throwaway commits on head and base (HEAD is restored
+          # on exit) so discovery and diffs treat them like committed papers.
+          orig_head=$(git rev-parse HEAD)
+          gen_base=""
+          trap 'git reset -q --soft "$orig_head"; [ -z "$gen_base" ] || git worktree remove --force "$gen_base" 2>/dev/null || true' EXIT
+          generate_latex() {
+            make -C "$1" -n latex >/dev/null 2>&1 || return 0
+            git -C "$1" ls-files -o | sort > /tmp/latex-before.txt
+            make -C "$1" latex || return 1
+            git -C "$1" ls-files -o | sort | comm -13 /tmp/latex-before.txt - | grep -v '/build/' > /tmp/latex-new.txt || true
+            [ -s /tmp/latex-new.txt ] || return 0
+            git -C "$1" add -f --pathspec-from-file=/tmp/latex-new.txt
+            git -C "$1" -c user.name=asta-preview -c user.email=asta-preview@localhost \
+              commit -q --no-verify -m 'Generated LaTeX (preview only)'
+          }
+          generate_latex . || fail_discovery 'make latex failed; see the build log.'
+          if [ -n "$base" ] && gen_base=$(mktemp -d) && git worktree add -q --detach "$gen_base" "$base"; then
+            if generate_latex "$gen_base"; then
+              base=$(git -C "$gen_base" rev-parse HEAD)
+            else
+              echo '::warning::make latex failed on the PR base; its generated papers are treated as absent'
+            fi
+          fi
           discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
           curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
           discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
