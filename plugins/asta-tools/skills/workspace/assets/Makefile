@@ -46,15 +46,16 @@ workspace-assets:
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
-	backup="$$tmp/previous-evidence"; \
+	backup=; \
 	lock_held=0; \
 	cleanup() { \
 		status=$$?; \
 		trap - 0 1 2 15; \
-		if [ "$$status" -ne 0 ] && { [ -e "$$backup" ] || [ -L "$$backup" ]; }; then \
+		if [ "$$status" -ne 0 ] && [ -n "$$backup" ] && { [ -e "$$backup/evidence" ] || [ -L "$$backup/evidence" ]; }; then \
 			rm -rf _extensions/evidence; \
-			mv "$$backup" _extensions/evidence || status=1; \
+			mv "$$backup/evidence" _extensions/evidence || status=1; \
 		fi; \
+		if [ "$$status" -ne 0 ] && [ -n "$$backup" ]; then rmdir "$$backup" 2>/dev/null || true; fi; \
 		[ "$$lock_held" -eq 0 ] || rmdir "$$lock" 2>/dev/null || true; \
 		rm -rf "$$tmp"; \
 		exit "$$status"; \
@@ -70,10 +71,12 @@ workspace-assets:
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
 	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
-		mv _extensions/evidence "$$backup"; \
+		backup=$$(mktemp -d _extensions/.evidence-backup.XXXXXX); \
+		mv _extensions/evidence "$$backup/evidence"; \
 	fi; \
 	mv "$$tmp/evidence" _extensions/evidence; \
-	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
+	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"; \
+	[ -z "$$backup" ] || echo "workspace-assets: previous files preserved at $$backup/evidence"
 
 preview: workspace-assets
 	quarto preview --no-browser

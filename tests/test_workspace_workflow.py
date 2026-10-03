@@ -155,6 +155,9 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
     assert (target / "snippet.lua").read_bytes() == (
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()
+    backups = list((project / "_extensions").glob(".evidence-backup.*/evidence/stale-file"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == "remove me"
 
 
 def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> None:

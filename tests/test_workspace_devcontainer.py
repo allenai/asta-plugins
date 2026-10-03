@@ -1,7 +1,9 @@
 """Static checks that keep the workspace dev container a working Codespaces surface."""
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -92,3 +94,39 @@ def test_codespaces_persists_asta_login() -> None:
     assert "cp -an" in cmd
     assert "ln -sfnT /workspaces/.asta-auth" in cmd
     assert cmd.index("ln -sfnT") < cmd.index("skills@latest add")
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_codespaces_migration_preserves_credentials(tmp_path: Path, conflict: bool) -> None:
+    command = _devcontainer()["postCreateCommand"]
+    persisted = tmp_path / "persisted"
+    persisted.mkdir()
+    (persisted / "login").write_text("old")
+    (persisted / "refresh").write_text("keep")
+    home = tmp_path / "home"
+    source = home / ".config/asta-cli"
+    source.mkdir(parents=True)
+    (source / "login").write_text("new" if conflict else "old")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    installer = bin_dir / "npx"
+    installer.write_text("#!/bin/sh\nexit 0\n")
+    installer.chmod(0o755)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "CODESPACES": "true",
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+    }
+
+    result = subprocess.run(
+        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (persisted / "refresh").read_text() == "keep"
+    assert source.is_symlink() is not conflict
+    assert (source / "login").read_text() == ("new" if conflict else "old")
