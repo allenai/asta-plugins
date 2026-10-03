@@ -20,7 +20,7 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # fails) but a previously fetched _extensions/evidence already exists, keep that
 # cached copy and warn instead of failing — so a render works on a plane. Only a
 # first fetch with no cache is a hard error.
-# A saved tree hash avoids backing up clean updates; unknown trees are preserved.
+# A saved content-and-mode hash avoids backing up clean updates; unknown trees are preserved.
 # diff checks empty directories; git diff also detects executable-bit changes.
 workspace-assets:
 	@set -eu; \
@@ -31,6 +31,7 @@ workspace-assets:
 		if [ -n "$$ref" ] || [ -n "$$url" ]; then echo "workspace-assets: local evidence symlink takes precedence over ASTA_PLUGINS_REF and ASTA_PLUGINS_ARCHIVE_URL" >&2; fi; \
 		echo "workspace-assets: using local evidence symlink"; exit 0; \
 	fi; \
+	command -v git >/dev/null 2>&1 || { echo "workspace-assets: git is required to refresh the evidence extension" >&2; exit 1; }; \
 	have_cache=0; \
 	if [ -d _extensions/evidence ]; then have_cache=1; fi; \
 	offline_ok() { \
@@ -54,6 +55,14 @@ workspace-assets:
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
 	marker=.asta/evidence-backups/installed.sha; \
+	tree_hash() { \
+		base=$$1; \
+		rm -f "$$tmp/evidence-index"; \
+		GIT_INDEX_FILE="$$tmp/evidence-index" git --git-dir="$$tmp/evidence-git/.git" --work-tree="$$base" -c core.filemode=true add -f -- evidence || return 1; \
+		files=$$(GIT_INDEX_FILE="$$tmp/evidence-index" git --git-dir="$$tmp/evidence-git/.git" write-tree) || return 1; \
+		dirs=$$(cd "$$base" && find evidence -type d -print | LC_ALL=C sort | git hash-object --stdin) || return 1; \
+		printf '%s\n%s\n' "$$files" "$$dirs" | git hash-object --stdin; \
+	}; \
 	backup=; \
 	lock_held=0; \
 	keep_backup=1; \
@@ -76,29 +85,30 @@ workspace-assets:
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
+	git init -q "$$tmp/evidence-git"; \
+	new_hash=$$(tree_hash "$$tmp"); \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
 	mkdir -p .asta/evidence-backups; \
-	grep -Fxq '*' .asta/evidence-backups/.gitignore 2>/dev/null || printf '*\n' >> .asta/evidence-backups/.gitignore; \
+	grep -Fxq '*' .asta/evidence-backups/.gitignore 2>/dev/null || printf '\n*\n' >> .asta/evidence-backups/.gitignore; \
 	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1 \
 		&& git -c core.filemode=true diff --no-index --quiet -- _extensions/evidence "$$tmp/evidence"; then \
+		printf '%s\n' "$$new_hash" > "$$tmp/marker"; mv "$$tmp/marker" "$$marker"; \
 		echo "workspace-assets: evidence extension unchanged"; exit 0; \
 	fi; \
-	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
-		tar -cf "$$tmp/current.tar" -C _extensions evidence; \
-		current_hash=$$(git hash-object "$$tmp/current.tar"); \
+	if [ -e _extensions/evidence ]; then \
+		current_hash=$$(tree_hash _extensions); \
 		if [ -f "$$marker" ] && [ "$$(cat "$$marker")" = "$$current_hash" ]; then keep_backup=0; fi; \
 		backup=$$(mktemp -d .asta/evidence-backups/evidence.XXXXXX); \
 		mv _extensions/evidence "$$backup/evidence"; \
 	fi; \
 	mv "$$tmp/evidence" _extensions/evidence; \
-	tar -cf "$$tmp/installed.tar" -C _extensions evidence; \
-	git hash-object "$$tmp/installed.tar" > "$$tmp/marker"; \
+	printf '%s\n' "$$new_hash" > "$$tmp/marker"; \
 	mv "$$tmp/marker" "$$marker"; \
 	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"; \
 	if [ -n "$$backup" ]; then \
-		if [ "$$keep_backup" -eq 1 ]; then echo "workspace-assets: previous files preserved at $$backup/evidence"; \
+		if [ "$$keep_backup" -eq 1 ]; then echo "workspace-assets: previous files preserved at $$backup/evidence (review and remove old backups when no longer needed)"; \
 		else rm -rf "$$backup" || true; fi; \
 	fi
 

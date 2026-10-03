@@ -145,6 +145,20 @@ def test_codespaces_migration_preserves_credentials(
     assert (persisted / "refresh").read_text() == "keep"
     assert source.is_symlink() is not conflict
     assert (source / "login").read_text() == ("new" if conflict else "old")
+    attach = subprocess.run(
+        [
+            "sh",
+            "-c",
+            _devcontainer()["postAttachCommand"]["auth"].replace(
+                "/workspaces/.asta-auth", str(persisted)
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert attach.returncode == 0
+    assert ("Asta auth is not persisted" in attach.stderr) is conflict
 
 
 @pytest.mark.parametrize("conflict", [False, True])

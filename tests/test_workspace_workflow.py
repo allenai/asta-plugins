@@ -184,7 +184,7 @@ def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -
     project.mkdir()
     backup_root = project / ".asta/evidence-backups"
     backup_root.mkdir(parents=True)
-    (backup_root / ".gitignore").write_text("# keep this note\n")
+    (backup_root / ".gitignore").write_text("# keep this note")
     command = [
         "make",
         "-f",
@@ -195,6 +195,12 @@ def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -
     for version in ("v1", "v2"):
         env["ASTA_PLUGINS_ARCHIVE_URL"] = archive(version).as_uri()
         subprocess.run(command, cwd=project, env=env, check=True)
+        if version == "v1":
+            (backup_root / "installed.sha").unlink()
+            subprocess.run(command, cwd=project, env=env, check=True)
+            assert (backup_root / "installed.sha").is_file()
+            installed = project / "_extensions/evidence/snippet.lua"
+            os.utime(installed, (1_600_000_000, 1_600_000_000))
 
     assert (backup_root / "installed.sha").is_file()
     assert (backup_root / ".gitignore").read_text() == "# keep this note\n*\n"
@@ -208,6 +214,88 @@ def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -
     assert len(backups) == 1
     assert backups[0].read_text() == "local edit"
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "v3"
+
+
+def test_workspace_makefile_requires_git_before_replacing_evidence(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    target = project / "_extensions/evidence"
+    target.mkdir(parents=True)
+    sentinel = target / "snippet.lua"
+    sentinel.write_text("keep me")
+    make = shutil.which("make")
+    assert make
+
+    result = subprocess.run(
+        [
+            make,
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={"PATH": str(tmp_path), "ASTA_PLUGINS_ARCHIVE_URL": "file:///missing"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "git is required" in result.stderr
+    assert sentinel.read_text() == "keep me"
+
+
+def test_workspace_makefile_restores_evidence_after_swap_failure(
+    tmp_path: Path,
+) -> None:
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+    project = tmp_path / "project"
+    target = project / "_extensions/evidence"
+    target.mkdir(parents=True)
+    sentinel = target / "local-edit"
+    sentinel.write_text("keep me")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    mv = bin_dir / "mv"
+    mv.write_text(
+        "#!/bin/sh\n"
+        'if [ "$2" = _extensions/evidence ] && [ ! -e "$FAIL_ONCE" ]; then\n'
+        '  : > "$FAIL_ONCE"\n'
+        "  exit 1\n"
+        "fi\n"
+        'exec "$REAL_MV" "$@"\n'
+    )
+    mv.chmod(0o755)
+    system_mv = shutil.which("mv")
+    assert system_mv
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "FAIL_ONCE": str(tmp_path / "failed"),
+            "REAL_MV": system_mv,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert sentinel.read_text() == "keep me"
+    assert not (project / "_extensions/.evidence-install.lock").exists()
+    assert list((project / ".asta/evidence-backups").glob("evidence.*")) == []
 
 
 def test_workspace_makefile_refreshes_upstream_executable_bit(tmp_path: Path) -> None:
