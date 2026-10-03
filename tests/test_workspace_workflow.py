@@ -189,10 +189,15 @@ def _write_fake_gh(bin_dir: Path) -> None:
 set -eu
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "repo view") echo owner/project ;;
+  "repo view")
+    case "$*" in
+      *defaultBranchRef*) echo "${GH_DEFAULT_BRANCH:-main}" ;;
+      *) echo owner/project ;;
+    esac
+    ;;
   "pr view")
     [ "${GH_NO_PR:-0}" != 1 ] || exit 1
-    echo 1
+    echo "${GH_PR_STATE:-OPEN}"
     ;;
   "run list")
     count=0
@@ -343,8 +348,52 @@ def test_preview_wait_requires_pr_for_feature_branch(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "open a PR first" in result.stderr
+    assert "open a PR" in result.stderr
     assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_skips_pr_lookup_on_detached_head(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    subprocess.run(["git", "checkout", "--detach", "-q"], cwd=project, check=True)
+    env.update(GH_NO_PR="1", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "pr view" not in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_skips_pr_lookup_on_default_branch(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    subprocess.run(["git", "branch", "-M", "trunk"], cwd=project, check=True)
+    env.update(GH_DEFAULT_BRANCH="trunk", GH_NO_PR="1", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "pr view" not in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_rejects_closed_pr(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_PR_STATE"] = "CLOSED"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "No open PR" in result.stderr
 
 
 def test_quarto_check_rejects_colored_warning(tmp_path: Path) -> None:

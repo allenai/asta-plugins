@@ -82,9 +82,21 @@ wait)
   branch=$(git branch --show-current)
   sha=$(git rev-parse HEAD)
 
-  if [ "$branch" != main ] && ! gh pr view --json number --jq .number >/dev/null 2>&1; then
-    echo "No PR for $branch yet — push the branch and open a PR first" >&2
-    exit 1
+  if [ -n "$branch" ]; then
+    default_branch=$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name) || {
+      echo "Could not determine the default branch for $REPO" >&2
+      exit 1
+    }
+    if [ "$branch" != "$default_branch" ]; then
+      if ! pr_state=$(gh pr view "$branch" --repo "$REPO" --json state --jq .state); then
+        echo "Could not find an open PR for $branch; check gh access or open a PR" >&2
+        exit 1
+      fi
+      if [ "$pr_state" != OPEN ]; then
+        echo "No open PR for $branch (state: $pr_state)" >&2
+        exit 1
+      fi
+    fi
   fi
 
   set --
@@ -129,8 +141,10 @@ wait)
     exit 1
   }
 
-  after=$(pages_tip) || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
-  [ -n "$after" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
+  after=$(pages_tip) && [ -n "$after" ] || {
+    echo "Could not read $PAGES_BRANCH on $REPO" >&2
+    exit 1
+  }
   if [ "$after" = "$before" ]; then
     echo "Docs workflow $run_id published no run-ID marker; update its workspace workflow" >&2
     exit 1
@@ -177,6 +191,7 @@ wait)
 
   elapsed=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
+    # GitHub caps a page at 100 builds; the timeout still bounds a busy repo.
     if ! built=$(gh api "repos/$REPO/pages/builds?per_page=100" --jq \
       "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length"); then
       echo "Could not read Pages builds for $REPO; verify Pages API access" >&2
