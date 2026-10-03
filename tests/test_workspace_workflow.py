@@ -134,373 +134,74 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
     target = project / "_extensions/evidence"
     target.mkdir(parents=True)
     (target / "stale-file").write_text("remove me")
-    (project / ".gitignore").write_text("_extensions/evidence/\n")
-    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
 
     env = {
         "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         "PATH": os.environ["PATH"],
     }
-    command = [
-        "make",
-        "-f",
-        str((WORKSPACE_ASSETS / "Makefile").resolve()),
-        "workspace-assets",
-    ]
-    subprocess.run(command, cwd=project, env=env, check=True)
-    subprocess.run(command, cwd=project, env=env, check=True)
+    subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        check=True,
+    )
 
     assert not (target / "stale-file").exists()
     assert (target / "snippet.lua").read_bytes() == (
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()
-    backups = list(
-        (project / ".asta/evidence-backups").glob("evidence.*/evidence/stale-file")
-    )
-    assert len(backups) == 1
-    assert backups[0].read_text() == "remove me"
-    status = subprocess.run(
-        ["git", "status", "--short", "--untracked-files=all"],
+
+
+def _run_workspace_assets(project: Path, archive_url: str) -> str:
+    return subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
         cwd=project,
+        env={"ASTA_PLUGINS_ARCHIVE_URL": archive_url, "PATH": os.environ["PATH"]},
         check=True,
         capture_output=True,
         text=True,
-    )
-    assert ".asta/" not in status.stdout
+    ).stdout
 
 
-def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -> None:
-    def archive(version: str) -> Path:
-        archive_root = tmp_path / version / "asta-plugins-test"
-        source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
-        shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
-        (source / "snippet.lua").write_text(version)
-        bundle_path = tmp_path / f"{version}.tar.gz"
-        with tarfile.open(bundle_path, "w:gz") as bundle:
-            bundle.add(archive_root, arcname=archive_root.name)
-        return bundle_path
-
+def test_workspace_makefile_leaves_symlinked_evidence_alone(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "snippet.lua").write_text("-- local edit")
     project = tmp_path / "project"
-    project.mkdir()
-    backup_root = project / ".asta/evidence-backups"
-    backup_root.mkdir(parents=True)
-    (backup_root / ".gitignore").write_text("# keep this note")
-    command = [
-        "make",
-        "-f",
-        str((WORKSPACE_ASSETS / "Makefile").resolve()),
-        "workspace-assets",
-    ]
-    env = {"PATH": os.environ["PATH"]}
-    for version in ("v1", "v2"):
-        env["ASTA_PLUGINS_ARCHIVE_URL"] = archive(version).as_uri()
-        subprocess.run(command, cwd=project, env=env, check=True)
-        if version == "v1":
-            (backup_root / "installed.sha").unlink()
-            subprocess.run(command, cwd=project, env=env, check=True)
-            assert (backup_root / "installed.sha").is_file()
-            installed = project / "_extensions/evidence/snippet.lua"
-            os.utime(installed, (1_600_000_000, 1_600_000_000))
+    (project / "_extensions").mkdir(parents=True)
+    (project / "_extensions/evidence").symlink_to(checkout)
 
-    assert (backup_root / "installed.sha").is_file()
-    assert (backup_root / ".gitignore").read_text() == "# keep this note\n*\n"
-    assert list(backup_root.glob("evidence.*")) == []
+    out = _run_workspace_assets(project, (tmp_path / "unreachable.tar.gz").as_uri())
 
-    (project / "_extensions/evidence/snippet.lua").write_text("local edit")
-    env["ASTA_PLUGINS_ARCHIVE_URL"] = archive("v3").as_uri()
-    subprocess.run(command, cwd=project, env=env, check=True)
-
-    backups = list(backup_root.glob("evidence.*/evidence/snippet.lua"))
-    assert len(backups) == 1
-    assert backups[0].read_text() == "local edit"
-    assert (project / "_extensions/evidence/snippet.lua").read_text() == "v3"
+    assert "symlink" in out
+    assert (project / "_extensions/evidence").is_symlink()
+    assert (checkout / "snippet.lua").read_text() == "-- local edit"
 
 
-def test_workspace_makefile_preserves_permission_only_edits(tmp_path: Path) -> None:
-    archives = []
-    for version in ("first", "second"):
-        archive_root = tmp_path / version / "asta-plugins-test"
-        source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
-        shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
-        (source / "snippet.lua").write_text(version)
-        archive = tmp_path / f"{version}.tar.gz"
-        with tarfile.open(archive, "w:gz") as bundle:
-            bundle.add(archive_root, arcname=archive_root.name)
-        archives.append(archive)
-
-    for path_type in ("file", "directory"):
-        project = tmp_path / f"project-{path_type}"
-        project.mkdir()
-        command = [
-            "make",
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ]
-        env = {"PATH": os.environ["PATH"]}
-        env["ASTA_PLUGINS_ARCHIVE_URL"] = archives[0].as_uri()
-        subprocess.run(command, cwd=project, env=env, check=True)
-        installed = project / "_extensions/evidence"
-        modified = installed / "snippet.lua" if path_type == "file" else installed
-        modified.chmod(0o600 if path_type == "file" else 0o700)
-
-        env["ASTA_PLUGINS_ARCHIVE_URL"] = archives[1].as_uri()
-        subprocess.run(command, cwd=project, env=env, check=True)
-
-        backups = list((project / ".asta/evidence-backups").glob("evidence.*/evidence"))
-        assert len(backups) == 1
-        preserved = backups[0] / "snippet.lua" if path_type == "file" else backups[0]
-        assert preserved.stat().st_mode & 0o777 == (
-            0o600 if path_type == "file" else 0o700
-        )
-        assert (backups[0] / "snippet.lua").read_text() == "first"
-        assert (installed / "snippet.lua").read_text() == "second"
-
-
-def test_workspace_makefile_does_not_run_archive_git_config(tmp_path: Path) -> None:
-    hook_marker = tmp_path / "archive-hook-ran"
-    archive_root = tmp_path / "archive" / "asta-plugins-test"
-    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
-    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
-    (source / ".gitattributes").write_text("*.lua filter=archive-hook\n")
-    injected_git_dir = tmp_path / "archive" / "evidence-git/.git"
-    injected_git_dir.mkdir(parents=True)
-    (injected_git_dir / "config").write_text(
-        f'[filter "archive-hook"]\n\tclean = touch {hook_marker}\n'
-    )
-    archive = tmp_path / "asta-plugins.tar.gz"
-    with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(archive_root, arcname=archive_root.name)
-        bundle.add(injected_git_dir.parent, arcname="evidence-git")
-
-    project = tmp_path / "project"
-    project.mkdir()
-    result = subprocess.run(
-        [
-            "make",
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ],
-        cwd=project,
-        env={
-            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
-            "PATH": os.environ["PATH"],
-        },
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert not hook_marker.exists()
-    assert (project / "_extensions/evidence/snippet.lua").is_file()
-
-
-def test_workspace_makefile_without_git_keeps_cache_and_preserves_refresh(
-    tmp_path: Path,
-) -> None:
-    archive_root = tmp_path / "archive" / "asta-plugins-test"
-    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
-    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
-    archive = tmp_path / "asta-plugins.tar.gz"
-    with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(archive_root, arcname=archive_root.name)
-
+def test_workspace_makefile_leaves_committed_evidence_alone(tmp_path: Path) -> None:
     project = tmp_path / "project"
     target = project / "_extensions/evidence"
     target.mkdir(parents=True)
-    sentinel = target / "snippet.lua"
-    sentinel.write_text("keep me")
-    marker = project / ".asta/evidence-backups/installed.sha"
-    marker.parent.mkdir(parents=True)
-    marker.write_text("stale marker")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    for utility in (
-        "cp",
-        "curl",
-        "diff",
-        "find",
-        "gzip",
-        "grep",
-        "mkdir",
-        "mktemp",
-        "mv",
-        "rm",
-        "rmdir",
-        "tail",
-        "tar",
-    ):
-        executable = shutil.which(utility)
-        assert executable
-        (bin_dir / utility).symlink_to(executable)
-    assert shutil.which("git", path=str(bin_dir)) is None
-    make = shutil.which("make")
-    assert make
-    command = [
-        make,
-        "-f",
-        str((WORKSPACE_ASSETS / "Makefile").resolve()),
-        "workspace-assets",
-    ]
-    env = {"PATH": str(bin_dir), "ASTA_PLUGINS_ARCHIVE_URL": "file:///missing"}
-    offline = subprocess.run(
-        command,
-        cwd=project,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert offline.returncode == 0, offline.stderr
-    assert sentinel.read_text() == "keep me"
-    assert marker.read_text() == "stale marker"
+    (target / "snippet.lua").write_text("-- customized")
+    git = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "_extensions/evidence"], check=True)
+    subprocess.run([*git, "commit", "-qm", "customize evidence"], check=True)
 
-    env["ASTA_PLUGINS_ARCHIVE_URL"] = archive.as_uri()
-    refreshed = subprocess.run(
-        command, cwd=project, env=env, capture_output=True, text=True
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
-    assert sentinel.read_bytes() == (source / "snippet.lua").read_bytes()
-    backups = list(marker.parent.glob("evidence.*/evidence/snippet.lua"))
-    assert len(backups) == 1
-    assert backups[0].read_text() == "keep me"
-    assert not marker.exists()
+    out = _run_workspace_assets(project, (tmp_path / "unreachable.tar.gz").as_uri())
 
-
-def test_workspace_makefile_restores_evidence_after_swap_failure(
-    tmp_path: Path,
-) -> None:
-    archive_root = tmp_path / "archive" / "asta-plugins-test"
-    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
-    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
-    archive = tmp_path / "asta-plugins.tar.gz"
-    with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(archive_root, arcname=archive_root.name)
-
-    project = tmp_path / "project"
-    target = project / "_extensions/evidence"
-    target.mkdir(parents=True)
-    sentinel = target / "local-edit"
-    sentinel.write_text("keep me")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    mv = bin_dir / "mv"
-    mv.write_text(
-        "#!/bin/sh\n"
-        'if [ "$2" = _extensions/evidence ] && [ ! -e "$FAIL_ONCE" ]; then\n'
-        '  : > "$FAIL_ONCE"\n'
-        "  exit 1\n"
-        "fi\n"
-        'exec "$REAL_MV" "$@"\n'
-    )
-    mv.chmod(0o755)
-    system_mv = shutil.which("mv")
-    assert system_mv
-    result = subprocess.run(
-        [
-            "make",
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ],
-        cwd=project,
-        env={
-            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "FAIL_ONCE": str(tmp_path / "failed"),
-            "REAL_MV": system_mv,
-        },
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode != 0
-    assert sentinel.read_text() == "keep me"
-    assert not (project / "_extensions/.evidence-install.lock").exists()
-    assert list((project / ".asta/evidence-backups").glob("evidence.*")) == []
-
-
-def test_workspace_makefile_refreshes_upstream_executable_bit(tmp_path: Path) -> None:
-    project = tmp_path / "project"
-    project.mkdir()
-    command = [
-        "make",
-        "-f",
-        str((WORKSPACE_ASSETS / "Makefile").resolve()),
-        "workspace-assets",
-    ]
-    source = WORKSPACE_ASSETS / "_extensions/evidence"
-    for executable in (False, True):
-        archive_root = tmp_path / f"archive-{executable}" / "asta-plugins-test"
-        extension = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
-        shutil.copytree(source, extension)
-        (extension / "snippet.lua").chmod(0o755 if executable else 0o644)
-        archive = tmp_path / f"archive-{executable}.tar.gz"
-        with tarfile.open(archive, "w:gz") as bundle:
-            bundle.add(archive_root, arcname=archive_root.name)
-        env = {"ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(), "PATH": os.environ["PATH"]}
-        subprocess.run(command, cwd=project, env=env, check=True)
-
-    installed = project / "_extensions/evidence/snippet.lua"
-    assert installed.stat().st_mode & 0o111
-    assert list((project / ".asta/evidence-backups").glob("evidence.*")) == []
-
-
-def test_workspace_makefile_rejects_broken_evidence_symlink(tmp_path: Path) -> None:
-    project = tmp_path / "project"
-    extension = project / "_extensions/evidence"
-    extension.parent.mkdir(parents=True)
-    extension.symlink_to("missing")
-
-    result = subprocess.run(
-        [
-            "make",
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ],
-        cwd=project,
-        env={
-            "ASTA_PLUGINS_ARCHIVE_URL": "https://invalid.example",
-            "PATH": os.environ["PATH"],
-        },
-        text=True,
-        capture_output=True,
-    )
-
-    assert result.returncode != 0
-    assert "symlink is broken" in result.stderr
-    assert extension.is_symlink()
-
-
-def test_workspace_makefile_preserves_local_evidence_symlink(tmp_path: Path) -> None:
-    project = tmp_path / "project"
-    local = project / "local-evidence"
-    local.mkdir(parents=True)
-    extension = project / "_extensions/evidence"
-    extension.parent.mkdir()
-    extension.symlink_to(local, target_is_directory=True)
-
-    result = subprocess.run(
-        [
-            "make",
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ],
-        cwd=project,
-        env={
-            "ASTA_PLUGINS_ARCHIVE_URL": "https://invalid.example",
-            "PATH": os.environ["PATH"],
-        },
-        text=True,
-        capture_output=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "local evidence symlink takes precedence" in result.stderr
-    assert extension.is_symlink()
-    assert not (project / ".asta/evidence-backups").exists()
+    assert "committed" in out
+    assert (target / "snippet.lua").read_text() == "-- customized"
 
 
 def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> None:

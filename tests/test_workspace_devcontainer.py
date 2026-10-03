@@ -1,12 +1,7 @@
 """Static checks that keep the workspace dev container a working Codespaces surface."""
 
 import json
-import os
 import re
-import shlex
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -51,7 +46,7 @@ def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
     assert label, "tex stage must carry devcontainer.metadata"
     metadata = json.loads(label.group(1))
     assert "james-yu.latex-workshop" in json.dumps(metadata)
-    assert "devcontainer.metadata" not in "".join(
+    assert "latex-workshop" not in "".join(
         s for s in stages if not s.startswith("asta AS tex")
     )
 
@@ -91,196 +86,11 @@ def test_tex_image_matches_ci_paper_lane():
     assert _packages(tex_stage) == _packages(lane)
 
 
-def test_codespaces_persists_asta_login() -> None:
-    cmd = _devcontainer()["postCreateCommand"]
-    assert "CODESPACES" in cmd
-    assert "cp -an" in cmd
-    assert "ln -sfnT /workspaces/.asta-auth" in cmd
-    assert cmd.index("ln -sfnT") < cmd.index("skills@latest add")
-
-
-@pytest.mark.parametrize("conflict", [False, True])
-@pytest.mark.parametrize("copy_exits_nonzero", [False, True])
-@pytest.mark.parametrize("loose_persisted_mode", [False, True])
-@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
-def test_codespaces_migration_preserves_credentials(
-    tmp_path: Path, conflict: bool, copy_exits_nonzero: bool, loose_persisted_mode: bool
-) -> None:
-    command = _devcontainer()["postCreateCommand"]
-    persisted = tmp_path / "persisted"
-    persisted.mkdir()
-    (persisted / "login").write_text("old")
-    (persisted / "login").chmod(0o644 if loose_persisted_mode else 0o600)
-    (persisted / "refresh").write_text("keep")
-    home = tmp_path / "home"
-    source = home / ".config/asta-cli"
-    source.mkdir(parents=True)
-    (source / "login").write_text("new" if conflict else "old")
-    (source / "login").chmod(0o600)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    installer = bin_dir / "npx"
-    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
-    installer.chmod(0o755)
-    if copy_exits_nonzero:
-        system_cp = shutil.which("cp")
-        assert system_cp
-        copy_stub = bin_dir / "cp"
-        copy_stub.write_text(f'#!/bin/sh\n{shlex.quote(system_cp)} "$@"\nexit 1\n')
-        copy_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "CODESPACES": "true",
-        "PATH": f"{bin_dir}:{os.environ['PATH']}",
-    }
-
-    result = subprocess.run(
-        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert (home / "npx-ran").exists()
-    assert (persisted / "login").read_text() == "old"
-    assert (persisted / "login").stat().st_mode & 0o077 == 0
-    assert (persisted / "refresh").read_text() == "keep"
-    assert source.is_symlink() is not conflict
-    assert (source / "login").read_text() == ("new" if conflict else "old")
-    attach = subprocess.run(
-        [
-            "sh",
-            "-c",
-            _devcontainer()["postAttachCommand"]["auth"].replace(
-                "/workspaces/.asta-auth", str(persisted)
-            ),
-        ],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert attach.returncode == 0
-    assert ("Asta auth is not persisted" in attach.stderr) is conflict
-
-
-@pytest.mark.parametrize("conflict", [False, True])
-@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
-def test_codespaces_migration_compares_symlinks_and_newline_names(
-    tmp_path: Path, conflict: bool
-) -> None:
-    command = _devcontainer()["postCreateCommand"]
-    persisted = tmp_path / "persisted"
-    persisted.mkdir()
-    home = tmp_path / "home"
-    source = home / ".config/asta-cli"
-    source.mkdir(parents=True)
-    filename = "link\nname"
-    (source / filename).symlink_to("new-target" if conflict else "old-target")
-    (persisted / filename).symlink_to("old-target")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    installer = bin_dir / "npx"
-    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
-    installer.chmod(0o755)
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "CODESPACES": "true",
-        "PATH": f"{bin_dir}:{os.environ['PATH']}",
-    }
-
-    result = subprocess.run(
-        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert (home / "npx-ran").exists()
-    assert source.is_symlink() is not conflict
-    assert (persisted / filename).readlink() == Path("old-target")
-    assert (source / filename).readlink() == Path(
-        "new-target" if conflict else "old-target"
-    )
-
-
-@pytest.mark.parametrize("absolute_internal", [False, True])
-@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
-def test_codespaces_migration_keeps_source_when_symlink_target_moves(
-    tmp_path: Path, absolute_internal: bool
-) -> None:
-    command = _devcontainer()["postCreateCommand"]
-    persisted = tmp_path / "persisted"
-    persisted.mkdir()
-    home = tmp_path / "home"
-    source = home / ".config/asta-cli"
-    source.mkdir(parents=True)
-    target = str(source / "token") if absolute_internal else "../token"
-    if absolute_internal:
-        (source / "token").write_text("data")
-    (source / "login").symlink_to(target)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    installer = bin_dir / "npx"
-    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
-    installer.chmod(0o755)
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "CODESPACES": "true",
-        "PATH": f"{bin_dir}:{os.environ['PATH']}",
-    }
-
-    result = subprocess.run(
-        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert (home / "npx-ran").exists()
-    assert not source.is_symlink()
-    assert (source / "login").readlink() == Path(target)
-    assert "conflicting files" in result.stderr
-
-
-@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
-def test_codespaces_migration_keeps_source_on_directory_conflict(
-    tmp_path: Path,
-) -> None:
-    command = _devcontainer()["postCreateCommand"]
-    persisted = tmp_path / "persisted"
-    persisted.mkdir()
-    (persisted / "empty").write_text("existing file")
-    home = tmp_path / "home"
-    source = home / ".config/asta-cli"
-    (source / "empty").mkdir(parents=True)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    installer = bin_dir / "npx"
-    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
-    installer.chmod(0o755)
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "CODESPACES": "true",
-        "PATH": f"{bin_dir}:{os.environ['PATH']}",
-    }
-
-    result = subprocess.run(
-        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert (home / "npx-ran").exists()
-    assert not source.is_symlink()
-    assert (source / "empty").is_dir()
-    assert (persisted / "empty").read_text() == "existing file"
-    assert "conflicting files" in result.stderr
+def test_codespaces_login_persistence_ships_in_the_image() -> None:
+    assert "asta-auth" not in json.dumps(_devcontainer())
+    for stage in DOCKERFILE.read_text().split("\nFROM ")[:2]:
+        label = re.search(r"^LABEL devcontainer\.metadata='(.+)'$", stage, re.M)
+        assert label, "asta and tex stages must carry devcontainer.metadata"
+        hooks = [m.get("postCreateCommand") for m in json.loads(label.group(1))]
+        assert "asta-persist-auth" in hooks
+    assert "COPY docker/asta-persist-auth /usr/local/bin/" in DOCKERFILE.read_text()

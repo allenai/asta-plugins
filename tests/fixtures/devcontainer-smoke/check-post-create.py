@@ -21,12 +21,14 @@ elif phase == "rebuild":
 else:
     raise ValueError(f"unknown phase: {phase}")
 
-subprocess.run(
-    config["postCreateCommand"],
-    shell=True,
-    check=True,
-    env={**os.environ, "CODESPACES": "true"},
-)
+# The image's devcontainer.metadata hook runs before the project's own command.
+for command in ("asta-persist-auth", config["postCreateCommand"]):
+    subprocess.run(
+        command,
+        shell=True,
+        check=True,
+        env={**os.environ, "CODESPACES": "true"},
+    )
 
 assert auth_dir.is_symlink()
 assert auth_dir.resolve() == Path("/workspaces/.asta-auth")

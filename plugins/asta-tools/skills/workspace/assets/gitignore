@@ -6,5 +6,6 @@ quarto-render.*
 
 # Fetched from the workspace skill before each render (tracks the latest
 # asta-plugins version tag by default; see the workspace-assets target in Makefile).
+# A local copy is a cache and is overwritten. To customize it, delete this line
+# and commit the directory; a committed copy or a symlink is never refreshed.
 _extensions/evidence
-.asta/evidence-backups/
