@@ -615,13 +615,14 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None):
+def list_pages(root, out_path=None, paper_dirs=()):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
     Skips any page that is itself a "What changed" artifact — matched by output
     exact output path (when it falls under this input root) or by the generator's
     self-identifying marker — so the generator never diffs its own output while
-    preserving a legitimate same-named page in another directory.
+    preserving a legitimate same-named page in another directory. Paper output
+    stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
@@ -640,11 +641,15 @@ def list_pages(root, out_path=None):
                 continue
             rel = os.path.relpath(full, root)
             parts = rel.split(os.sep)
-            if (
-                len(parts) > 2
-                and parts[0] == "paper-previews"
-                and os.path.isfile(
-                    os.path.join(root, parts[0], parts[1], "preview.json")
+            if parts[0] == "paper-previews" and (
+                any(
+                    parts[: len(name.split("/")) + 1]
+                    == ["paper-previews", *name.split("/")]
+                    for name in paper_dirs
+                )
+                or any(
+                    os.path.isfile(os.path.join(root, *parts[:i], "preview.json"))
+                    for i in range(2, len(parts))
                 )
             ):
                 continue
@@ -1022,7 +1027,9 @@ def paper_identity(paper_dir):
         )
     )
     section_id = (
-        "paper-diff" if paper_dir == "paper" else f"paper-diff-{anchor_id(paper_dir)}"
+        "paper-diff"
+        if paper_dir == "paper"
+        else f"paper-diff-{paper_dir.encode().hex()}"
     )
     return label, section_id
 
@@ -1114,7 +1121,7 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     rendered_rel = f"paper-previews/{paper_dir}/html/index.html"
     old_rendered = os.path.join(old_root, rendered_rel)
     new_rendered = os.path.join(new_root, rendered_rel)
-    rendered_diff = False
+    rendered_diff = ""
     if (
         not html_diff
         and not state.get("new")
@@ -1125,15 +1132,21 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
             old_content = normalize(extract_main(source.read()))
         with open(new_rendered, encoding="utf-8") as source:
             new_content = normalize(extract_main(source.read()))
-        rendered_diff = (
+        content_differs = (
             re.sub(r"\s+", " ", old_content).strip()
             != re.sub(r"\s+", " ", new_content).strip()
         )
+        if content_differs:
+            diff, changed = diff_content(
+                strip_volatile(old_content), strip_volatile(new_content)
+            )
+            if changed:
+                rendered_diff = diff
     if rendered_diff:
         html_view = (
-            f'<p class="wc-note"><a href="#{anchor_id(rendered_rel)}">'
-            "See rendered HTML changes below</a> · "
+            '<p class="wc-note">Rendered HTML changes · '
             f'<a href="{paper_url("html/index.html")}">Open the current HTML paper</a></p>'
+            f'<div class="diff-body">{rendered_diff}</div>'
         )
     elif html_path:
         description = "HTML diff" if html_diff else "current HTML paper"
@@ -1152,8 +1165,6 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
 
 
 def build(old_root, new_root, preview_url, title, out_path=None):
-    old_pages = list_pages(old_root, out_path)
-    new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1164,6 +1175,8 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 paper_dirs.append(
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
+    old_pages = list_pages(old_root, out_path, paper_dirs)
+    new_pages = list_pages(new_root, out_path, paper_dirs)
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:

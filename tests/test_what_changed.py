@@ -74,9 +74,9 @@ def test_multiple_papers_have_distinct_diff_sections(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert 'id="paper-diff"' in result
-    assert 'id="paper-diff-p-latex"' in result
+    assert 'id="paper-diff-6c61746578"' in result
     assert 'href="paper-previews/latex/main.pdf"' in result
-    assert 'href="#paper-diff-p-latex"' in result
+    assert 'href="#paper-diff-6c61746578"' in result
     assert 'href="paper-previews/latex/html-diff/index.html"' in result
     assert 'src="paper-previews/latex/html-diff/index.html"' in result
     assert 'id="p-latex-html-index-html"' not in result
@@ -102,11 +102,48 @@ def test_rendered_html_changes_replace_failed_latexml_diff(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
-    assert 'href="#p-paper-previews-lit-review-latex-html-index-html"' in result
-    assert "See rendered HTML changes below" in result
+    assert "Rendered HTML changes" in result
     assert "<del>Old</del><ins>New</ins> claim" in result
+    assert 'id="p-paper-previews-lit-review-latex-html-index-html"' not in result
     assert "Generated at 01:00" not in result
     assert "Generated at 02:00" not in result
+
+
+def test_top_level_paper_fallback_shows_rendered_diff_in_its_section(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, text in ((old, "Old claim"), (new, "New claim")):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text(f"<main><p>{text}</p></main>")
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True, "html_diff": False})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    section = result.split('id="paper-diff"', 1)[1].split("</section>", 1)[0]
+    assert "<del>Old</del><ins>New</ins> claim" in section
+    assert 'href="#p-paper-previews-paper-html-index-html"' not in result
+    assert 'id="p-paper-previews-paper-html-index-html"' not in result
+
+
+def test_paper_section_ids_distinguish_dash_from_path_separator(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    for name in ("foo-bar", "foo/bar"):
+        directory = new / "paper-previews" / name
+        directory.mkdir(parents=True)
+        (directory / "preview.json").write_text(
+            json.dumps({"changed": True, "new": True})
+        )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    for section_id in ("paper-diff-666f6f2d626172", "paper-diff-666f6f2f626172"):
+        assert result.count(f'id="{section_id}"') == 1
+        assert result.count(f'href="#{section_id}"') == 1
 
 
 def test_latexml_build_time_alone_does_not_create_a_page_diff(tmp_path):
@@ -188,7 +225,7 @@ def test_paper_preview_does_not_hide_quarto_section_with_same_name(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert 'id="p-latex-index-html"' in result
-    assert 'id="paper-diff-p-latex"' in result
+    assert 'id="paper-diff-6c61746578"' in result
 
 
 def test_removed_second_paper_has_its_own_notice(tmp_path):
@@ -202,7 +239,7 @@ def test_removed_second_paper_has_its_own_notice(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
-    assert 'id="paper-diff-p-latex"' in result
+    assert 'id="paper-diff-6c61746578"' in result
     assert "LaTeX" in result
     assert 'href="paper-previews/latex/main.pdf"' not in result
 
