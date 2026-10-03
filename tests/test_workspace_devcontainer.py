@@ -1,7 +1,9 @@
 """Static checks that keep the workspace dev container a working Codespaces surface."""
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -91,3 +93,39 @@ def test_codespaces_persists_asta_login() -> None:
     assert "cp -an" in cmd
     assert "ln -sfnT /workspaces/.asta-auth" in cmd
     assert cmd.index("ln -sfnT") < cmd.index("skills@latest add")
+
+
+@pytest.mark.parametrize("stored", [None, "same", "older"])
+def test_codespaces_auth_migration_preserves_credentials(
+    tmp_path: Path, stored: str | None
+) -> None:
+    home = tmp_path / "home"
+    source = home / ".config" / "asta-cli"
+    source.mkdir(parents=True)
+    (source / "credentials").write_text("same" if stored != "older" else "newer")
+    destination = tmp_path / "persistent"
+    destination.mkdir()
+    if stored is not None:
+        (destination / "credentials").write_text(stored)
+
+    command = _devcontainer()["postCreateCommand"]
+    command = command.replace("/workspaces/.asta-auth", str(destination))
+    command = command.replace(
+        "npx --yes skills@latest add /opt/asta-plugins --all -g --yes", "true"
+    )
+    result = subprocess.run(
+        ["sh", "-c", command],
+        env={**os.environ, "HOME": str(home), "CODESPACES": "true"},
+        capture_output=True,
+        text=True,
+    )
+
+    if stored == "older":
+        assert result.returncode != 0
+        assert source.is_dir() and not source.is_symlink()
+        assert (source / "credentials").read_text() == "newer"
+        assert (destination / "credentials").read_text() == "older"
+    else:
+        assert result.returncode == 0, result.stderr
+        assert source.is_symlink() and source.resolve() == destination
+        assert (destination / "credentials").read_text() == "same"
