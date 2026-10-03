@@ -38,42 +38,21 @@ def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
 def test_wait_for_preview_rejects_closed_pr_before_deployment_lookup(
     tmp_path: Path,
 ) -> None:
-    subprocess.run(["git", "init", "-q", "-b", "preview", str(tmp_path)], check=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "test"],
-        env={
-            **os.environ,
-            "GIT_AUTHOR_NAME": "Test",
-            "GIT_AUTHOR_EMAIL": "test@example.invalid",
-            "GIT_COMMITTER_NAME": "Test",
-            "GIT_COMMITTER_EMAIL": "test@example.invalid",
-        },
-        check=True,
-    )
-    (tmp_path / ".git" / "preview-run-before").write_text("baseline\n0\n")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    gh = bin_dir / "gh"
-    gh.write_text(
-        "#!/bin/sh\n[ \"$1 $2\" = 'pr view' ] || exit 99\nprintf 'CLOSED\\n'\n"
-    )
-    gh.chmod(0o755)
-
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_PR_STATE"] = "CLOSED"
     result = subprocess.run(
-        ["sh", str((WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()), "wait"],
-        cwd=tmp_path,
-        env={
-            **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "REPO": "owner/repo",
-        },
+        [script, "wait"],
+        cwd=project,
+        env=env,
         text=True,
         capture_output=True,
     )
 
     assert result.returncode == 1
     assert "No open PR" in result.stderr
-    assert (tmp_path / ".git" / "preview-run-before").exists()
+    assert (project / ".git" / "preview-run-before").exists()
 
 
 def test_scaffolded_workflow_ref_matches_project_version() -> None:
@@ -231,6 +210,17 @@ set -eu
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
   "repo view") echo owner/project ;;
+  "pr view")
+    count=0
+    [ ! -f "$GH_PR_COUNT" ] || count=$(cat "$GH_PR_COUNT")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$GH_PR_COUNT"
+    if [ "$count" -ge "${GH_PR_CLOSE_ON:-999}" ]; then
+      echo CLOSED
+    else
+      echo "${GH_PR_STATE:-OPEN}"
+    fi
+    ;;
   "run list")
     count=0
     [ ! -f "$GH_RUN_COUNT" ] || count=$(cat "$GH_RUN_COUNT")
@@ -319,6 +309,7 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GH_LOG": str(tmp_path / "gh.log"),
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
+        "GH_PR_COUNT": str(tmp_path / "pr-count"),
         "GH_TIP_COUNT": str(tmp_path / "tip-count"),
         "WORKFLOW_TIMEOUT": "3",
         "RUN_TIMEOUT": "2",
@@ -367,6 +358,21 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     assert "compare/before...after" in log
     assert "(run 101)" in log
     assert "pages/builds?per_page=10" in log
+
+
+def test_preview_wait_rejects_pr_closed_during_deployment(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_PR_CLOSE_ON="2")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "no longer open" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> None:
