@@ -39,10 +39,29 @@ fi
 
 convert_html() {
   local source=$1 target=$2 log=$3
-  local output="${log}.output" result=1
+  local output="${log}.output" result=1 input="$source" converted=""
   mkdir -p "$(dirname "$target")"
+  # Quarto's PDF preamble loads packages that only affect PDF navigation and
+  # table footnotes. LaTeXML can spend minutes parsing their expl3 internals.
+  if grep -Fq 'pdfcreator={LaTeX via pandoc}' "$source"; then
+    converted=$(mktemp "$(dirname "$source")/.latexml-XXXXXX.tex")
+    python3 - "$source" "$converted" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+source = source.replace(r"\usepackage{bookmark}", "")
+source = source.replace(
+    r"\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}",
+    "",
+)
+source = source.replace(r"\makesavenoteenv{longtable}", "")
+pathlib.Path(sys.argv[2]).write_text(source, encoding="utf-8")
+PY
+    input="$converted"
+  fi
   if command -v latexmlc >/dev/null 2>&1; then
-    if timeout --kill-after=15s 180s latexmlc --format=html5 --path=. --dest="$target" --log="$log" "$source" >"$output" 2>&1; then
+    if timeout --kill-after=15s 180s latexmlc --format=html5 --path=. --dest="$target" --log="$log" "$input" >"$output" 2>&1; then
       result=0
     else
       result=$?
@@ -53,6 +72,7 @@ convert_html() {
   if [ -s "$output" ]; then cat "$output" >> "$log"; fi
   if [ "$result" -eq 124 ]; then echo "LaTeXML timed out after 180 seconds" >> "$log"; fi
   rm -f "$output"
+  if [ -n "$converted" ]; then rm -f "$converted"; fi
   if [ "$result" -eq 0 ] && [ -s "$target" ] && [ -f "$log" ] && \
      ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors?' "$log" && \
      python3 - "$target" <<'PY'

@@ -96,6 +96,35 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert all("$pdf_mode ||= 1;" in command for command in commands)
 
 
+def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    source = repo / "paper/main.tex"
+    original = (
+        r"\usepackage{bookmark}"
+        "\n"
+        r"\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}"
+        "\n"
+        r"\makesavenoteenv{longtable}"
+        "\n"
+        r"pdfcreator={LaTeX via pandoc}"
+        "\n"
+    )
+    source.write_text(original)
+    capture = repo / "html-input.tex"
+    with (bin_dir / "latexmlc").open("a") as mock:
+        mock.write('cp "${@: -1}" "$FAKE_CAPTURE"\n')
+    env["FAKE_CAPTURE"] = str(capture)
+
+    run("bash", str(SCRIPT), "", cwd=repo, env=env)
+
+    converted = capture.read_text()
+    assert "bookmark" not in converted
+    assert "footnotehyper" not in converted
+    assert "makesavenoteenv" not in converted
+    assert source.read_text() == original
+    assert not list((repo / "paper").glob(".latexml-*.tex"))
+
+
 def test_paper_preview_builds_second_paper_in_its_own_directory(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
     second = repo / "latex"
