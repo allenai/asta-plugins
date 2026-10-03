@@ -139,17 +139,14 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
         "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         "PATH": os.environ["PATH"],
     }
-    subprocess.run(
-        [
-            "make",
-            "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
-            "workspace-assets",
-        ],
-        cwd=project,
-        env=env,
-        check=True,
-    )
+    command = [
+        "make",
+        "-f",
+        str((WORKSPACE_ASSETS / "Makefile").resolve()),
+        "workspace-assets",
+    ]
+    subprocess.run(command, cwd=project, env=env, check=True)
+    subprocess.run(command, cwd=project, env=env, check=True)
 
     assert not (target / "stale-file").exists()
     assert (target / "snippet.lua").read_bytes() == (

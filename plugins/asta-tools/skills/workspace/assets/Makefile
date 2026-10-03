@@ -24,6 +24,7 @@ workspace-assets:
 	@set -eu; \
 	ref="$(ASTA_PLUGINS_REF)"; \
 	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
+	if [ -L _extensions/evidence ]; then echo "workspace-assets: using local evidence symlink"; exit 0; fi; \
 	have_cache=0; \
 	if [ -d _extensions/evidence ] || [ -L _extensions/evidence ]; then have_cache=1; fi; \
 	offline_ok() { \
@@ -67,6 +68,9 @@ workspace-assets:
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
 	cp -R "$$source_dir" "$$tmp/evidence"; \
+	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1; then \
+		echo "workspace-assets: evidence extension unchanged"; exit 0; \
+	fi; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
