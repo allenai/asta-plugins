@@ -57,12 +57,13 @@ def test_multiple_papers_have_distinct_diff_sections(tmp_path):
         directory = new / name
         directory.mkdir(parents=True)
         (directory / "preview.json").write_text(
-            json.dumps({"changed": True, "diff": False})
+            json.dumps({"changed": True, "diff": False, "html_diff": True})
         )
         (directory / "main.pdf").write_bytes(b"pdf")
     (new / "latex/html").mkdir()
+    (new / "latex/html-diff").mkdir()
     (new / "latex/html/index.html").write_text("<main>Converted paper</main>")
-    (new / "latex/html/what-changed.html").write_text("<main>Highlighted paper</main>")
+    (new / "latex/html-diff/index.html").write_text("<main>Highlighted paper</main>")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
@@ -70,9 +71,43 @@ def test_multiple_papers_have_distinct_diff_sections(tmp_path):
     assert 'id="paper-diff-p-latex"' in result
     assert 'href="latex/main.pdf"' in result
     assert 'href="#paper-diff-p-latex"' in result
-    assert 'href="latex/html/what-changed.html"' in result
-    assert 'src="latex/html/what-changed.html"' in result
+    assert 'href="latex/html-diff/index.html"' in result
+    assert 'src="latex/html-diff/index.html"' in result
     assert 'id="p-latex-html-index-html"' not in result
+
+
+def test_paper_directory_is_encoded_in_links_and_escaped_in_attributes(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    name = 'draft &" #1'
+    directory = new / name
+    (directory / "html-diff").mkdir(parents=True)
+    (directory / "preview.json").write_text(
+        json.dumps({"changed": True, "diff": False, "html_diff": True})
+    )
+    (directory / "html-diff/index.html").write_text("<main>diff</main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'href="draft%20%26%22%20%231/main.pdf"' in result
+    assert 'src="draft%20%26%22%20%231/html-diff/index.html"' in result
+    assert 'title="Paper (draft &amp;&quot; #1/) HTML diff"' in result
+    assert 'href="draft &"' not in result
+
+
+def test_site_section_with_main_pdf_remains_in_what_changed(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, body in ((old, "old"), (new, "new")):
+        (root / "docs").mkdir(parents=True)
+        (root / "docs/main.pdf").write_bytes(b"pdf")
+        (root / "docs/index.html").write_text(f"<main><p>{body}</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-docs-index-html"' in result
+    assert "new" in result
 
 
 def test_removed_second_paper_has_its_own_notice(tmp_path):

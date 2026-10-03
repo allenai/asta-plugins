@@ -89,15 +89,21 @@ jobs:
           for tex in */main.tex; do
             [ -f "$tex" ] || continue
             d=${tex%/main.tex}
-            if [ "$d" = paper ] || [ -f "$d/latexmkrc" ] || [ -f "$d/.latexmkrc" ]; then papers+=("$d"); fi
+            if [ "$d" = paper ] || [ -f "$d/latexmkrc" ] || [ -f "$d/.latexmkrc" ]; then
+              papers+=("$d")
+              mkdir -p "_site/$d"
+              printf '{"changed":false}\n' > "_site/$d/preview.json"
+            fi
           done
           removed=()
           if [ -n "$PR_BASE" ]; then
-            while IFS= read -r tex; do
+            while IFS= read -r -d '' tex; do
+              case "$tex" in */main.tex) ;; *) continue ;; esac
               d=${tex%/main.tex}
-              [ -f "$tex" ] && continue
+              case "$d" in */*) continue ;; esac
+              if [ -f "$tex" ] && { [ "$d" = paper ] || [ -f "$d/latexmkrc" ] || [ -f "$d/.latexmkrc" ]; }; then continue; fi
               if [ "$d" = paper ] || git cat-file -e "$PR_BASE:$d/latexmkrc" 2>/dev/null || git cat-file -e "$PR_BASE:$d/.latexmkrc" 2>/dev/null; then removed+=("$d"); fi
-            done < <(git ls-tree -r --name-only "$PR_BASE" 2>/dev/null | grep -E '^[^/]+/main\.tex$' || true)
+            done < <(git ls-tree -rz --name-only "$PR_BASE" 2>/dev/null)
           fi
           for d in "${removed[@]}"; do
             mkdir -p "_site/$d"
@@ -281,27 +287,30 @@ jobs:
             pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
             for paper_dir in "$pr_dir"/*/; do
               d=$(basename "$paper_dir")
-              [ -f "$paper_dir/main.pdf" ] || [ -f "$paper_dir/build-failed.txt" ] || [ -f "$paper_dir/preview.json" ] || continue
-              label="Paper"; [ "$d" = paper ] || label="Paper ($d/)"
+              [ -f "$paper_dir/preview.json" ] || continue
+              encoded=$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe=""))' "$d")
+              label="Paper"; [ "$d" = paper ] || label="Paper ($encoded/)"
               if [ -f "$paper_dir/main.pdf" ]; then
-                body=$(printf '%s\n📑 %s PDF: %s%s/main.pdf' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n📑 %s PDF: %s%s/main.pdf' "$body" "$label" "$url" "$encoded")
               fi
               if [ -f "$paper_dir/html/index.html" ]; then
-                body=$(printf '%s\n📄 %s HTML: %s%s/html/index.html' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n📄 %s HTML: %s%s/html/index.html' "$body" "$label" "$url" "$encoded")
               elif [ -f "$paper_dir/html/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s%s/html/latexml.log' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s%s/html/latexml.log' "$body" "$label" "$url" "$encoded")
               fi
               if [ -f "$paper_dir/main.bbl" ]; then
-                body=$(printf '%s\n📚 %s bibliography (arXiv): %s%s/main.bbl' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n📚 %s bibliography (arXiv): %s%s/main.bbl' "$body" "$label" "$url" "$encoded")
               fi
               if [ -f "$paper_dir/what-changed.pdf" ]; then
-                body=$(printf '%s\n🖍️ %s PDF diff: %s%s/what-changed.pdf' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n🖍️ %s PDF diff: %s%s/what-changed.pdf' "$body" "$label" "$url" "$encoded")
               fi
-              if [ -f "$paper_dir/html/what-changed.html" ]; then
-                body=$(printf '%s\n🔎 %s HTML diff: %s%s/html/what-changed.html' "$body" "$label" "$url" "$d")
+              if [ -f "$paper_dir/html-diff/index.html" ] && grep -q '"html_diff":true' "$paper_dir/preview.json"; then
+                body=$(printf '%s\n🔎 %s HTML diff: %s%s/html-diff/index.html' "$body" "$label" "$url" "$encoded")
+              elif [ -f "$paper_dir/html-diff/latexml.log" ]; then
+                body=$(printf '%s\n⚠️ %s HTML diff conversion failed: %s%s/html-diff/latexml.log' "$body" "$label" "$url" "$encoded")
               fi
               if [ -f "$paper_dir/build-failed.txt" ]; then
-                body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s%s/build-failed.txt' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s%s/build-failed.txt' "$body" "$label" "$url" "$encoded")
               fi
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")

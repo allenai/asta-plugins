@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -82,6 +82,7 @@ dependencies = [
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "requests" },
 ]
 
@@ -99,6 +100,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.3.0" },
+    { name = "pyyaml", marker = "extra == 'test'", specifier = ">=6.0" },
     { name = "requests", marker = "extra == 'test'", specifier = ">=2.31" },
     { name = "rich", specifier = ">=13.7.0" },
 ]
@@ -595,7 +597,7 @@ name = "importlib-metadata"
 version = "8.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp", marker = "python_full_version < '3.13'" },
+    { name = "zipp" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f3/49/3b30cad09e7771a4982d9975a8cbf64f00d4a1ececb53297f1d9a7be1b10/importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb", size = 57107, upload-time = "2025-12-21T10:00:19.278Z" }
 wheels = [

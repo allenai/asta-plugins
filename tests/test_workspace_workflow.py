@@ -6,14 +6,23 @@ import tarfile
 import tomllib
 from pathlib import Path
 
+import yaml
+
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 
 
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
-    workflow = WORKFLOW.read_text()
-    assert "quarto-version:" in workflow
-    assert "version: ${{ inputs.quarto-version }}" in workflow
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    assert workflow["on"]["workflow_call"]["inputs"]["quarto-version"]["default"] == (
+        "latest"
+    )
+    setup = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("uses") == "quarto-dev/quarto-actions/setup@v2"
+    )
+    assert setup["with"]["version"] == "${{ inputs.quarto-version }}"
 
 
 def test_workspace_assets_use_called_workflow_identity() -> None:

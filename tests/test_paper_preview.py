@@ -42,7 +42,7 @@ def paper_repo(tmp_path, old_paper=True):
         "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "%s\\n" "${FAKE_LATEX_LOG:-}" > build/main.log\nif [ -n "${FAKE_BIBTEX_LOG:-}" ]; then printf "%s\\n" "$FAKE_BIBTEX_LOG" > build/main.blg; fi\nif [ -n "${FAKE_BBL:-}" ]; then printf "%s\\n" "$FAKE_BBL" > build/main.bbl; fi\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
         "latexdiff": "#!/bin/bash\nprintf '\\\\begin{document}\\n\\\\DIFadd{new}\\n'\n",
         "pdftoppm": '#!/bin/bash\nname="${@: -1}"\nprintf png > "${name}-1.png"\n',
-        "latexmlc": '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf "<html><body>paper</body></html>" > "$dest"\nprintf "Conversion complete: 0 errors; 0 warnings\\n" > "$log"\n',
+        "latexmlc": '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf "<html><body>paper</body></html>" > "$dest"\nprintf "%s" "${@: -1}" > "$(dirname "$dest")/x1.png"\nprintf "Conversion complete: 0 errors; 0 warnings\\n" > "$log"\n',
     }
     for name, contents in commands.items():
         path = bin_dir / name
@@ -67,11 +67,14 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert (repo / "_site/paper/main.pdf").exists()
     assert (repo / "_site/paper/what-changed.pdf").exists()
     assert (repo / "_site/paper/html/index.html").exists()
-    assert (repo / "_site/paper/html/what-changed.html").exists()
+    assert (repo / "_site/paper/html-diff/index.html").exists()
+    assert (repo / "_site/paper/html/x1.png").read_text() == "paper/main.tex"
+    assert "what-changed." in (repo / "_site/paper/html-diff/x1.png").read_text()
     assert (repo / "_site/paper/diff-page-1.png").exists()
     assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
         "changed": True,
         "diff": True,
+        "html_diff": True,
         "other_inputs": False,
         "thumbnail_limit": 12,
     }
@@ -99,9 +102,25 @@ def test_paper_preview_builds_second_paper_in_its_own_directory(tmp_path):
     assert (repo / "_site/latex/main.pdf").exists()
     assert (repo / "_site/latex/what-changed.pdf").exists()
     assert (repo / "_site/latex/html/index.html").exists()
-    assert (repo / "_site/latex/html/what-changed.html").exists()
+    assert (repo / "_site/latex/html-diff/index.html").exists()
     assert (repo / "_site/latex/preview.json").exists()
     assert not (repo / "_site/paper/main.pdf").exists()
+
+
+def test_paper_directory_with_spaces_and_quotes_builds(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    name = 'my paper &"'
+    run("git", "mv", "paper", name, cwd=repo)
+    run("git", "commit", "-qm", "rename paper", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / name / "main.tex").write_text("newer")
+    run("git", "commit", "-qam", "edit paper", cwd=repo)
+
+    run("bash", str(SCRIPT), base, name, cwd=repo, env=env)
+
+    assert (repo / "_site" / name / "main.pdf").exists()
+    assert (repo / "_site" / name / "html-diff/index.html").exists()
+    assert not list((repo / name).glob("what-changed.*.tex"))
 
 
 def test_latexml_failure_keeps_pdf_and_log(tmp_path):
@@ -115,8 +134,42 @@ def test_latexml_failure_keeps_pdf_and_log(tmp_path):
     assert (repo / "_site/paper/main.pdf").exists()
     assert (repo / "_site/paper/what-changed.pdf").exists()
     assert not (repo / "_site/paper/html/index.html").exists()
-    assert not (repo / "_site/paper/html/what-changed.html").exists()
+    assert not (repo / "_site/paper/html-diff/index.html").exists()
     assert (repo / "_site/paper/html/latexml.log").exists()
+
+
+def test_single_latexml_error_is_not_published_as_html(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    (bin_dir / "latexmlc").write_text(
+        '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf html > "$dest"\nprintf "Conversion complete: 1 error; 0 warnings\\n" > "$log"\n'
+    )
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert not (repo / "_site/paper/html/index.html").exists()
+    assert not (repo / "_site/paper/html-diff/index.html").exists()
+    assert (
+        json.loads((repo / "_site/paper/preview.json").read_text())["html_diff"]
+        is False
+    )
+
+
+def test_html_diff_survives_diff_pdf_failure(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('if [[ "$name" == what-changed.* ]]; then exit 1; fi\n')
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert not (repo / "_site/paper/what-changed.pdf").exists()
+    assert (repo / "_site/paper/html-diff/index.html").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": True,
+        "diff": False,
+        "html_diff": True,
+        "other_inputs": False,
+    }
 
 
 def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
@@ -188,7 +241,9 @@ def test_unchanged_paper_has_no_diff_manifest(tmp_path):
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
     assert (repo / "_site/paper/main.pdf").exists()
-    assert not (repo / "_site/paper/preview.json").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": False
+    }
 
 
 def test_missing_comparison_base_still_builds_current_pdf(tmp_path):
@@ -197,7 +252,9 @@ def test_missing_comparison_base_still_builds_current_pdf(tmp_path):
     run("bash", str(SCRIPT), "", cwd=repo, env=env)
 
     assert (repo / "_site/paper/main.pdf").exists()
-    assert not (repo / "_site/paper/preview.json").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": False
+    }
 
 
 def test_missing_recorder_keeps_current_pdf_without_failing_build(tmp_path):
@@ -252,6 +309,7 @@ def test_thumbnail_failure_keeps_diff_pdf(tmp_path):
     assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
         "changed": True,
         "diff": True,
+        "html_diff": True,
         "other_inputs": False,
         "thumbnail_limit": 12,
     }
@@ -291,7 +349,9 @@ def test_unread_paper_file_does_not_claim_paper_changed(tmp_path):
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
-    assert not (repo / "_site/paper/preview.json").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": False
+    }
 
 
 def test_changed_included_subdirectory_tex_builds_diff(tmp_path):
@@ -366,7 +426,9 @@ def test_unused_bibliography_edit_does_not_mark_paper_changed(tmp_path):
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
-    assert not (repo / "_site/paper/preview.json").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": False
+    }
 
 
 def test_dependency_comment_does_not_mark_unused_bibliography_changed(tmp_path):
@@ -382,7 +444,9 @@ def test_dependency_comment_does_not_mark_unused_bibliography_changed(tmp_path):
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
-    assert not (repo / "_site/paper/preview.json").exists()
+    assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
+        "changed": False
+    }
 
 
 def test_latexmkrc_change_is_a_paper_input(tmp_path):

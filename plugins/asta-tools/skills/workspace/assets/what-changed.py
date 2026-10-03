@@ -52,7 +52,7 @@ import os
 import re
 import sys
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 # Inline formatting tags may live *inside* an <ins>/<del>; anything else is
 # treated as structural and closes the wrapper so we never nest a block element
@@ -634,9 +634,8 @@ def list_pages(root, out_path=None):
                 continue
             rel = os.path.relpath(full, root)
             first = rel.split(os.sep, 1)[0]
-            if first != rel and (
-                os.path.isfile(os.path.join(root, first, "main.pdf"))
-                or os.path.isfile(os.path.join(root, first, "preview.json"))
+            if first != rel and os.path.isfile(
+                os.path.join(root, first, "preview.json")
             ):
                 continue
             pages[rel] = full
@@ -1003,6 +1002,14 @@ def pick_template(new_pages):
         return None, 0
 
 
+def paper_identity(paper_dir):
+    label = "Paper" if paper_dir == "paper" else f"Paper ({html.escape(paper_dir)}/)"
+    section_id = (
+        "paper-diff" if paper_dir == "paper" else f"paper-diff-{anchor_id(paper_dir)}"
+    )
+    return label, section_id
+
+
 def paper_preview(new_root, paper_dir="paper"):
     manifest = os.path.join(new_root, paper_dir, "preview.json")
     if not os.path.isfile(manifest):
@@ -1016,10 +1023,7 @@ def paper_preview(new_root, paper_dir="paper"):
         return None
     if not state.get("changed"):
         return None
-    label = "Paper" if paper_dir == "paper" else f"Paper ({html.escape(paper_dir)}/)"
-    section_id = (
-        "paper-diff" if paper_dir == "paper" else f"paper-diff-{anchor_id(paper_dir)}"
-    )
+    label, section_id = paper_identity(paper_dir)
     if state.get("removed"):
         section = (
             f'<section class="page-diff removed" id="{section_id}">'
@@ -1028,10 +1032,13 @@ def paper_preview(new_root, paper_dir="paper"):
             "</section>"
         )
         return section, "removed"
-    pdf = (
-        f"{paper_dir}/what-changed.pdf"
-        if state.get("diff")
-        else f"{paper_dir}/main.pdf"
+
+    def paper_url(filename):
+        return html.escape(f"{quote(paper_dir, safe='')}/{filename}", quote=True)
+
+    pdf = paper_url("what-changed.pdf" if state.get("diff") else "main.pdf")
+    html_diff = state.get("html_diff") is True and os.path.isfile(
+        os.path.join(new_root, paper_dir, "html-diff", "index.html")
     )
     if state.get("new"):
         note = "Paper added; the current paper PDF is available."
@@ -1041,6 +1048,8 @@ def paper_preview(new_root, paper_dir="paper"):
         note = "LaTeX edits are highlighted in the diff PDF."
     elif state.get("unhighlighted"):
         note = "LaTeX inputs changed, but the diff has no marked text; the current PDF is available without highlights."
+    elif html_diff:
+        note = "The HTML diff is available; the diff PDF could not be built."
     elif state.get("other_inputs"):
         note = "Paper inputs changed; the current PDF is available without highlights."
     else:
@@ -1057,7 +1066,7 @@ def paper_preview(new_root, paper_dir="paper"):
             pages.append((int(match.group(1)), filename))
         for page, filename in sorted(pages):
             thumbs.append(
-                f'<a href="{pdf}#page={page}"><img src="{paper_dir}/{filename}" '
+                f'<a href="{pdf}#page={page}"><img src="{paper_url(filename)}" '
                 f'alt="Paper diff page {page}" loading="lazy"></a>'
             )
         limit = state.get("thumbnail_limit")
@@ -1070,16 +1079,13 @@ def paper_preview(new_root, paper_dir="paper"):
             and len(thumbs) >= limit
         ):
             note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
-    html_diff = os.path.isfile(
-        os.path.join(new_root, paper_dir, "html", "what-changed.html")
-    )
     html_current = os.path.isfile(
         os.path.join(new_root, paper_dir, "html", "index.html")
     )
     html_path = (
-        f"{paper_dir}/html/what-changed.html"
+        paper_url("html-diff/index.html")
         if html_diff
-        else f"{paper_dir}/html/index.html"
+        else paper_url("html/index.html")
         if html_current
         else None
     )
@@ -1114,16 +1120,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         if paper_section:
             section, paper_status = paper_section
             sections.append(section)
-            label = (
-                "Paper"
-                if paper_dir == "paper"
-                else f"Paper ({html.escape(paper_dir)}/)"
-            )
-            section_id = (
-                "paper-diff"
-                if paper_dir == "paper"
-                else f"paper-diff-{anchor_id(paper_dir)}"
-            )
+            label, section_id = paper_identity(paper_dir)
             toc.append(
                 f'<a href="#{section_id}">{label} <span class="tag {paper_status}">'
                 f"{paper_status}</span></a>"
