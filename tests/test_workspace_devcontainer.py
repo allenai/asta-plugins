@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSET = ROOT / "plugins/asta-tools/skills/workspace/assets/devcontainer.json"
 DOCKERFILE = ROOT / "Dockerfile"
 WORKFLOW = ROOT / ".github/workflows/workspace-quarto-site.yml"
+SKILLS_PACKAGE = ROOT / "image/skills-cli/package.json"
+SKILLS_LOCK = ROOT / "image/skills-cli/package-lock.json"
 
 
 def _devcontainer() -> dict:
@@ -52,7 +54,22 @@ def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
 
 
 def test_agent_gets_the_asta_skills():
-    assert "skills@latest add /opt/asta-plugins" in _devcontainer()["postCreateCommand"]
+    command = _devcontainer()["postCreateCommand"]
+    assert "if command -v skills" in command
+    assert "skills add /opt/asta-plugins" in command
+    assert "npx --yes skills@1.5.0 add /opt/asta-plugins" in command
+
+
+def test_skills_cli_is_pinned_in_the_image():
+    package = json.loads(SKILLS_PACKAGE.read_text())
+    lock = json.loads(SKILLS_LOCK.read_text())
+    version = package["dependencies"]["skills"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
+    assert lock["packages"]["node_modules/skills"]["version"] == version
+    dockerfile = DOCKERFILE.read_text()
+    assert "npm ci --prefix /opt/skills-cli" in dockerfile
+    assert "--engine-strict" in dockerfile
+    assert "node_modules/.bin/skills /usr/local/bin/skills" in dockerfile
 
 
 def _packages(text: str) -> set[str]:
