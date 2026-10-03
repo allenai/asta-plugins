@@ -35,6 +35,39 @@ def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
     assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
 
 
+def test_wait_for_preview_rejects_closed_pr_before_deployment_lookup(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "preview", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "test"],
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.invalid",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        },
+        check=True,
+    )
+    (tmp_path / ".git" / "preview-run-before").write_text("baseline\n0\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\n[ \"$1 $2\" = 'pr view' ] || exit 99\nprintf 'CLOSED\\n'\n")
+    gh.chmod(0o755)
+
+    result = subprocess.run(
+        ["sh", str((WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()), "wait"],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "REPO": "owner/repo"},
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "No open PR" in result.stderr
+    assert (tmp_path / ".git" / "preview-run-before").exists()
+
+
 def test_scaffolded_workflow_ref_matches_project_version() -> None:
     """Release-managed workspace assets must advance under one version tag."""
     project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][

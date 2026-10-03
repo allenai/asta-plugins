@@ -82,6 +82,14 @@ wait)
   branch=$(git branch --show-current)
   sha=$(git rev-parse HEAD)
 
+  if [ "$branch" != main ]; then
+    pr_state=$(gh pr view --json state --jq .state 2>/dev/null) || pr_state=
+    [ "$pr_state" = OPEN ] || {
+      echo "No open PR for $branch — its preview may have been removed" >&2
+      exit 1
+    }
+  fi
+
   set --
   [ -z "$branch" ] || set -- --branch "$branch"
   elapsed=0 run_id=
@@ -178,6 +186,13 @@ wait)
       exit 1
     fi
     if [ "$built" -gt 0 ]; then
+      if [ "$branch" != main ]; then
+        pr_state=$(gh pr view --json state --jq .state 2>/dev/null) || pr_state=
+        [ "$pr_state" = OPEN ] || {
+          echo "PR for $branch is no longer open — its preview may have been removed" >&2
+          exit 1
+        }
+      fi
       rm -f "$state"
       echo "Pages published $published"
       exit 0
