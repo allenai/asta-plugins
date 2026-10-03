@@ -87,18 +87,40 @@ jobs:
             echo '::error::Quarto output already uses paper-previews/; reserve that path for paper previews'
             exit 1
           fi
+          mkdir -p _site/paper-previews
+          fail_discovery() {
+            echo "$1" > _site/paper-previews/build-failed.txt
+            echo "::error::$1"
+            exit 1
+          }
+          base=""
+          if [ -n "$PR_BASE" ] && ! base=$(git merge-base "$PR_BASE" HEAD); then
+            echo '::warning::Could not find the PR merge base; publishing current papers without diffs or removals'
+            base=""
+          fi
           discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
-          curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || exit 1
-          discovery=$(python3 /tmp/paper-discovery.py "$PR_BASE") || exit 1
+          curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
+          discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
+          jq -e '(.papers | type == "array" and all(.[]; type == "string")) and (.removed | type == "array" and all(.[]; type == "string")) and (.warnings | type == "array" and all(.[]; type == "string"))' <<< "$discovery" >/dev/null || fail_discovery 'Paper discovery returned invalid data.'
           mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
           mapfile -t removed < <(jq -r '.removed[]' <<< "$discovery")
+          mapfile -t warnings < <(jq -r '.warnings[]' <<< "$discovery")
+          status=0
+          if [ ${#warnings[@]} -gt 0 ]; then
+            printf '%s\n' "${warnings[@]}" > _site/paper-previews/build-failed.txt
+            status=1
+          fi
           for d in "${removed[@]}"; do
             mkdir -p "_site/paper-previews/$d"
             printf '{"changed":true,"removed":true}\n' > "_site/paper-previews/$d/preview.json"
           done
-          [ ${#papers[@]} -gt 0 ] || exit 0
+          [ ${#papers[@]} -gt 0 ] || exit "$status"
           fail_all() {
-            for d in "${papers[@]}"; do mkdir -p "_site/paper-previews/$d"; echo "$1" > "_site/paper-previews/$d/build-failed.txt"; done
+            for d in "${papers[@]}"; do
+              mkdir -p "_site/paper-previews/$d"
+              echo "$1" > "_site/paper-previews/$d/build-failed.txt"
+              [ -f "_site/paper-previews/$d/preview.json" ] || printf '{"changed":false}\n' > "_site/paper-previews/$d/preview.json"
+            done
             exit 1
           }
           sudo apt-get update -qq || fail_all 'Could not update LaTeX package lists.'
@@ -110,13 +132,7 @@ jobs:
             texlive-science texlive-pictures texlive-plain-generic biber || fail_all 'Could not install the LaTeX toolchain.'
           script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
           curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
-          base=""
-          if [ -n "$PR_BASE" ] && ! base=$(git merge-base "$PR_BASE" HEAD); then
-            echo '::warning::Could not find the PR base; publishing the current papers without a diff'
-            base=""
-          fi
           # Build every paper even if one fails; each failure is recorded on its own.
-          status=0
           for d in "${papers[@]}"; do
             if ! bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
@@ -131,6 +147,7 @@ jobs:
                   done
                 } > "_site/paper-previews/$d/build-failed.txt"
               fi
+              [ -f "_site/paper-previews/$d/preview.json" ] || printf '{"changed":false}\n' > "_site/paper-previews/$d/preview.json"
               echo "::error file=$d/main.tex::Paper preview failed; the rest of the preview will still publish"
             fi
           done
@@ -272,11 +289,14 @@ jobs:
             fi
             # Surface the paper directly; it is otherwise one click deep.
             pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
+            if [ -f "$pr_dir/paper-previews/build-failed.txt" ]; then
+              body=$(printf '%s\n⚠️ Paper discovery incomplete: %spaper-previews/build-failed.txt' "$body" "$url")
+            fi
             while IFS= read -r -d '' manifest; do
               paper_dir=$(dirname "$manifest")
               d=${paper_dir#"$pr_dir/paper-previews/"}
               encoded=$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe="/"))' "$d")
-              display=$(python3 -c 'import html, re, sys; name=" / ".join(p.replace("-", " ").title().replace("Latex", "LaTeX") for p in sys.argv[1].split("/")); print(re.sub(r"([\\`*_{}\[\]()#+.!|<>])", r"\\\1", html.escape(name)))' "$d")
+              display=$(python3 -c 'import re, sys; name=" / ".join(p.replace("-", " ").title().replace("Latex", "LaTeX") for p in sys.argv[1].split("/")); print(re.sub(r"([\\`*_{}\[\]()#+.!|<>])", r"\\\1", name))' "$d")
               label="Paper"; [ "$d" = paper ] || label="$display"
               paper_url="${url}paper-previews/$encoded"
               if [ -f "$paper_dir/main.pdf" ]; then
@@ -304,7 +324,12 @@ jobs:
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")
               fi
-            done < <(find "$pr_dir/paper-previews" -name preview.json -print0 2>/dev/null)
+            done < <(
+              if [ -f "$pr_dir/paper-previews/paper/preview.json" ]; then
+                printf '%s\0' "$pr_dir/paper-previews/paper/preview.json"
+              fi
+              find "$pr_dir/paper-previews" -name preview.json ! -path "$pr_dir/paper-previews/paper/preview.json" -print0 2>/dev/null | sort -z
+            )
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.

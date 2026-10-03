@@ -100,6 +100,7 @@ ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
 # up as a spurious "new"/"changed" page in the very diff it is the output of.
 WHAT_CHANGED_MARKER = "asta-what-changed"
 WHAT_CHANGED_META = f'<meta name="generator" content="{WHAT_CHANGED_MARKER}">'
+MAX_INLINE_PAPER_HTML_BYTES = 512_000
 _MARKER_RE = re.compile(
     r'(?is)<meta\b[^>]*\bname\s*=\s*["\']generator["\'][^>]*'
     r'\bcontent\s*=\s*["\']' + re.escape(WHAT_CHANGED_MARKER) + r'["\']'
@@ -633,12 +634,6 @@ def list_pages(root, out_path=None, paper_dirs=()):
             full = os.path.join(dirpath, f)
             if excluded and os.path.realpath(full) == excluded:
                 continue
-            try:
-                with open(full, encoding="utf-8") as fh:
-                    if is_what_changed_artifact(fh.read(4096)):
-                        continue
-            except OSError:
-                continue
             rel = os.path.relpath(full, root)
             parts = rel.split(os.sep)
             if parts[0] == "paper-previews" and (
@@ -652,6 +647,12 @@ def list_pages(root, out_path=None, paper_dirs=()):
                     for i in range(2, len(parts))
                 )
             ):
+                continue
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    if is_what_changed_artifact(fh.read(4096)):
+                        continue
+            except (OSError, UnicodeDecodeError):
                 continue
             pages[rel] = full
     return pages
@@ -1128,20 +1129,28 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
         and os.path.isfile(old_rendered)
         and os.path.isfile(new_rendered)
     ):
-        with open(old_rendered, encoding="utf-8") as source:
-            old_content = normalize(extract_main(source.read()))
-        with open(new_rendered, encoding="utf-8") as source:
-            new_content = normalize(extract_main(source.read()))
-        content_differs = (
-            re.sub(r"\s+", " ", old_content).strip()
-            != re.sub(r"\s+", " ", new_content).strip()
-        )
-        if content_differs:
-            diff, changed = diff_content(
-                strip_volatile(old_content), strip_volatile(new_content)
+        try:
+            small_enough = all(
+                os.path.getsize(path) <= MAX_INLINE_PAPER_HTML_BYTES
+                for path in (old_rendered, new_rendered)
             )
-            if changed:
-                rendered_diff = diff
+            if small_enough:
+                with open(old_rendered, encoding="utf-8") as source:
+                    old_content = normalize(extract_main(source.read()))
+                with open(new_rendered, encoding="utf-8") as source:
+                    new_content = normalize(extract_main(source.read()))
+                content_differs = (
+                    re.sub(r"\s+", " ", old_content).strip()
+                    != re.sub(r"\s+", " ", new_content).strip()
+                )
+                if content_differs:
+                    diff, changed = diff_content(
+                        strip_volatile(old_content), strip_volatile(new_content)
+                    )
+                    if changed:
+                        rendered_diff = diff
+        except (OSError, UnicodeDecodeError):
+            pass  # The current HTML link below still works when the old artifact is corrupt.
     if rendered_diff:
         html_view = (
             '<p class="wc-note">Rendered HTML changes · '

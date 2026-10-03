@@ -64,20 +64,44 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
     assert discover(repo, base) == {
         "papers": ["added", "kept", "nested/sub", "paper"],
         "removed": ["demoted", "gone", "nested/removed"],
+        "warnings": [],
     }
 
 
-def test_discovery_rejects_control_characters_in_paper_names(tmp_path):
+def test_discovery_skips_invalid_names_but_keeps_valid_papers(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     directory = repo / "bad\nname"
     directory.mkdir()
     (directory / "main.tex").write_text("paper")
     (directory / "latexmkrc").write_text("$pdf_mode = 1;\n")
+    good = repo / "paper"
+    good.mkdir()
+    (good / "main.tex").write_text("paper")
 
     result = subprocess.run(
         ["python3", str(SCRIPT)], cwd=repo, capture_output=True, text=True
     )
 
-    assert result.returncode != 0
-    assert "invalid paper directory name" in result.stderr
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {
+        "papers": ["paper"],
+        "removed": [],
+        "warnings": ["Skipped invalid paper directory name: 'bad\\nname'"],
+    }
+    assert "Skipped invalid paper directory" in result.stderr
+
+
+def test_discovery_keeps_current_papers_when_base_is_missing(tmp_path):
+    repo = tmp_path / "repo"
+    paper = repo / "paper"
+    paper.mkdir(parents=True)
+    (paper / "main.tex").write_text("paper")
+
+    result = discover(repo, "missing-base")
+
+    assert result["papers"] == ["paper"]
+    assert result["removed"] == []
+    assert result["warnings"] == [
+        "Could not read paper files at base missing-base; removals were omitted"
+    ]

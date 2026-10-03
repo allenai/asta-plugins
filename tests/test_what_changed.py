@@ -128,6 +128,44 @@ def test_top_level_paper_fallback_shows_rendered_diff_in_its_section(tmp_path):
     assert 'id="p-paper-previews-paper-html-index-html"' not in result
 
 
+def test_paper_fallback_links_current_html_when_old_html_is_invalid(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root in (old, new):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+    (old / "paper-previews/paper/html/index.html").write_bytes(b"\xff")
+    (new / "paper-previews/paper/html/index.html").write_text(
+        "<main><p>Current paper</p></main>"
+    )
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True, "html_diff": False})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'src="paper-previews/paper/html/index.html"' in result
+    assert "Open the current HTML paper" in result
+
+
+def test_large_paper_html_uses_link_instead_of_inline_diff(tmp_path, monkeypatch):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, text in ((old, "Old claim"), (new, "New claim")):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text(f"<main><p>{text}</p></main>")
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True, "html_diff": False})
+    )
+    monkeypatch.setattr(WHAT_CHANGED, "MAX_INLINE_PAPER_HTML_BYTES", 1)
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'src="paper-previews/paper/html/index.html"' in result
+    assert "Rendered HTML changes" not in result
+
+
 def test_paper_section_ids_distinguish_dash_from_path_separator(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

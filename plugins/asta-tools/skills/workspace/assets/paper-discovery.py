@@ -16,7 +16,7 @@ def valid_name(name: str) -> bool:
     )
 
 
-def current_papers(root: Path) -> set[str]:
+def current_papers(root: Path, warnings: list[str]) -> set[str]:
     papers = set()
     for directory, children, files in os.walk(root, followlinks=False):
         entry = Path(directory)
@@ -35,19 +35,26 @@ def current_papers(root: Path) -> set[str]:
         ):
             continue
         if not all(valid_name(part) for part in entry.relative_to(root).parts):
-            raise ValueError(f"invalid paper directory name: {name!r}")
+            warnings.append(f"Skipped invalid paper directory name: {name!r}")
+            continue
         papers.add(name)
     return papers
 
 
-def base_papers(base: str) -> set[str]:
+def base_papers(base: str, warnings: list[str]) -> set[str]:
     if not base:
         return set()
-    result = subprocess.run(
-        ["git", "ls-tree", "-rz", "--name-only", base],
-        capture_output=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "-rz", "--name-only", base],
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        warnings.append(
+            f"Could not read paper files at base {base}; removals were omitted"
+        )
+        return set()
     paths = {os.fsdecode(path) for path in result.stdout.split(b"\0") if path}
     names = set()
     for path in paths:
@@ -60,16 +67,28 @@ def base_papers(base: str) -> set[str]:
         ):
             continue
         if not all(valid_name(part) for part in parts[:-1]):
-            raise ValueError(f"invalid base paper directory name: {name!r}")
+            warnings.append(f"Skipped invalid base paper directory name: {name!r}")
+            continue
         names.add(name)
     return names
 
 
 def main() -> None:
     base = sys.argv[1] if len(sys.argv) > 1 else ""
-    current = current_papers(Path.cwd())
-    removed = base_papers(base) - current
-    print(json.dumps({"papers": sorted(current), "removed": sorted(removed)}))
+    warnings: list[str] = []
+    current = current_papers(Path.cwd(), warnings)
+    removed = base_papers(base, warnings) - current
+    for warning in warnings:
+        print(f"::warning::{warning}", file=sys.stderr)
+    print(
+        json.dumps(
+            {
+                "papers": sorted(current),
+                "removed": sorted(removed),
+                "warnings": warnings,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
