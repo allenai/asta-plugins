@@ -15,7 +15,7 @@ WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     assert workflow["on"]["workflow_call"]["inputs"]["quarto-version"]["default"] == (
-        "latest"
+        "release"
     )
     setup = next(
         step

@@ -19,7 +19,7 @@ on:
       quarto-version:
         description: Quarto CLI version used to render generated sources
         type: string
-        default: latest
+        default: release
 
 jobs:
   # Build + quality gates (via `make check`). This is the required status
