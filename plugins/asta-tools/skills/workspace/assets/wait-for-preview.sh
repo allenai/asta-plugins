@@ -45,25 +45,6 @@ latest_workflow_run() {
     --json databaseId --jq '.[0].databaseId // 0' 2>/dev/null
 }
 
-check_preview_pr() {
-  # Let gh resolve the current branch. A positional branch could be parsed as a
-  # PR number (numeric names) and can miss fork heads.
-  pr_info=$(gh pr view --json state,headRefOid --jq '[.state,.headRefOid] | join(" ")') || {
-    echo "Could not find an open PR for $branch; check gh access or open a PR" >&2
-    return 1
-  }
-  pr_state=${pr_info%% *}
-  pr_head=${pr_info#* }
-  if [ "$pr_state" != OPEN ]; then
-    echo "No open PR for $branch (state: $pr_state)" >&2
-    return 1
-  fi
-  if [ "$pr_head" != "$sha" ]; then
-    echo "PR for $branch has moved from $sha to $pr_head; wait for its new preview" >&2
-    return 1
-  fi
-}
-
 case "${1:-wait}" in
 baseline)
   error="$state.pages-error.$$"
@@ -109,7 +90,16 @@ wait)
     check_pr=0
     if [ "$branch" != "$default_branch" ]; then
       check_pr=1
-      check_preview_pr || exit 1
+      pr_number=$(gh pr list --repo "$REPO" --head "$branch" --state open \
+        --limit 100 --json number,headRefOid --jq \
+        "[.[] | select(.headRefOid==\"$sha\")][0].number // empty") || {
+        echo "Could not look up an open PR for $branch on $REPO" >&2
+        exit 1
+      }
+      if [ -z "$pr_number" ]; then
+        echo "No open PR for $branch at $sha; check gh access, open a PR, or push the current commit" >&2
+        exit 1
+      fi
     fi
   else
     check_pr=0
@@ -215,7 +205,15 @@ wait)
     fi
     if [ "$built" -gt 0 ]; then
       if [ "$check_pr" -eq 1 ]; then
-        check_preview_pr || exit 1
+        pr_head=$(gh pr view "$pr_number" --repo "$REPO" \
+          --json state,headRefOid --jq '[.state, .headRefOid] | join(" ")') || {
+          echo "Could not confirm PR $pr_number is still open at $sha" >&2
+          exit 1
+        }
+        if [ "$pr_head" != "OPEN $sha" ]; then
+          echo "PR $pr_number is no longer open at $sha (now: $pr_head)" >&2
+          exit 1
+        fi
       fi
       rm -f "$state"
       echo "Pages published $published"
