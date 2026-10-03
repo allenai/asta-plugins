@@ -203,6 +203,47 @@ def test_codespaces_migration_compares_symlinks_and_newline_names(
     )
 
 
+@pytest.mark.parametrize("absolute_internal", [False, True])
+@pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
+def test_codespaces_migration_keeps_source_when_symlink_target_moves(
+    tmp_path: Path, absolute_internal: bool
+) -> None:
+    command = _devcontainer()["postCreateCommand"]
+    persisted = tmp_path / "persisted"
+    persisted.mkdir()
+    home = tmp_path / "home"
+    source = home / ".config/asta-cli"
+    source.mkdir(parents=True)
+    target = str(source / "token") if absolute_internal else "../token"
+    if absolute_internal:
+        (source / "token").write_text("data")
+    (source / "login").symlink_to(target)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    installer = bin_dir / "npx"
+    installer.write_text('#!/bin/sh\n: > "$HOME/npx-ran"\n')
+    installer.chmod(0o755)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "CODESPACES": "true",
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+    }
+
+    result = subprocess.run(
+        ["sh", "-c", command.replace("/workspaces/.asta-auth", str(persisted))],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (home / "npx-ran").exists()
+    assert not source.is_symlink()
+    assert (source / "login").readlink() == Path(target)
+    assert "conflicting files" in result.stderr
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="devcontainer uses Linux ln -T")
 def test_codespaces_migration_keeps_source_on_directory_conflict(
     tmp_path: Path,
