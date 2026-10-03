@@ -49,6 +49,48 @@ def test_paper_diff_appears_before_quarto_changes(tmp_path):
     assert 'src="paper/diff-page-1.png"' in result
 
 
+def test_multiple_papers_have_distinct_diff_sections(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    for name in ("paper", "latex"):
+        directory = new / name
+        directory.mkdir(parents=True)
+        (directory / "preview.json").write_text(
+            json.dumps({"changed": True, "diff": False})
+        )
+        (directory / "main.pdf").write_bytes(b"pdf")
+    (new / "latex/html").mkdir()
+    (new / "latex/html/index.html").write_text("<main>Converted paper</main>")
+    (new / "latex/html/what-changed.html").write_text("<main>Highlighted paper</main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="paper-diff"' in result
+    assert 'id="paper-diff-p-latex"' in result
+    assert 'href="latex/main.pdf"' in result
+    assert 'href="#paper-diff-p-latex"' in result
+    assert 'href="latex/html/what-changed.html"' in result
+    assert 'src="latex/html/what-changed.html"' in result
+    assert 'id="p-latex-html-index-html"' not in result
+
+
+def test_removed_second_paper_has_its_own_notice(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    (new / "latex").mkdir(parents=True)
+    (new / "latex/preview.json").write_text(
+        json.dumps({"changed": True, "removed": True})
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="paper-diff-p-latex"' in result
+    assert "Paper (latex/)" in result
+    assert 'href="latex/main.pdf"' not in result
+
+
 def test_paper_diff_thumbnails_follow_page_number(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

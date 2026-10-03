@@ -90,7 +90,7 @@ jobs:
               d=${tex%/main.tex}
               [ -f "$tex" ] && continue
               if [ "$d" = paper ] || git cat-file -e "$PR_BASE:$d/latexmkrc" 2>/dev/null || git cat-file -e "$PR_BASE:$d/.latexmkrc" 2>/dev/null; then removed+=("$d"); fi
-            done < <(git ls-tree --name-only "$PR_BASE" -- '*/main.tex' 2>/dev/null | grep -E '^[^/]+/main\.tex$' || true)
+            done < <(git ls-tree -r --name-only "$PR_BASE" 2>/dev/null | grep -E '^[^/]+/main\.tex$' || true)
           fi
           for d in "${removed[@]}"; do
             mkdir -p "_site/$d"
@@ -103,7 +103,7 @@ jobs:
           }
           sudo apt-get update -qq || fail_all 'Could not update LaTeX package lists.'
           sudo apt-get install -y --no-install-recommends \
-            latexmk latexdiff poppler-utils texlive-latex-base \
+            latexmk latexdiff latexml poppler-utils texlive-latex-base \
             texlive-latex-recommended texlive-latex-extra \
             texlive-fonts-recommended texlive-bibtex-extra \
             texlive-luatex texlive-xetex texlive-publishers \
@@ -279,11 +279,19 @@ jobs:
               if [ -f "$paper_dir/main.pdf" ]; then
                 body=$(printf '%s\n📑 %s PDF: %s%s/main.pdf' "$body" "$label" "$url" "$d")
               fi
+              if [ -f "$paper_dir/html/index.html" ]; then
+                body=$(printf '%s\n📄 %s HTML: %s%s/html/index.html' "$body" "$label" "$url" "$d")
+              elif [ -f "$paper_dir/html/latexml.log" ]; then
+                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s%s/html/latexml.log' "$body" "$label" "$url" "$d")
+              fi
               if [ -f "$paper_dir/main.bbl" ]; then
                 body=$(printf '%s\n📚 %s bibliography (arXiv): %s%s/main.bbl' "$body" "$label" "$url" "$d")
               fi
               if [ -f "$paper_dir/what-changed.pdf" ]; then
-                body=$(printf '%s\n🖍️ %s diff: %s%s/what-changed.pdf' "$body" "$label" "$url" "$d")
+                body=$(printf '%s\n🖍️ %s PDF diff: %s%s/what-changed.pdf' "$body" "$label" "$url" "$d")
+              fi
+              if [ -f "$paper_dir/html/what-changed.html" ]; then
+                body=$(printf '%s\n🔎 %s HTML diff: %s%s/html/what-changed.html' "$body" "$label" "$url" "$d")
               fi
               if [ -f "$paper_dir/build-failed.txt" ]; then
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s%s/build-failed.txt' "$body" "$label" "$url" "$d")

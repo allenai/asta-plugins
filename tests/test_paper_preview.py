@@ -42,6 +42,7 @@ def paper_repo(tmp_path, old_paper=True):
         "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "%s\\n" "${FAKE_LATEX_LOG:-}" > build/main.log\nif [ -n "${FAKE_BIBTEX_LOG:-}" ]; then printf "%s\\n" "$FAKE_BIBTEX_LOG" > build/main.blg; fi\nif [ -n "${FAKE_BBL:-}" ]; then printf "%s\\n" "$FAKE_BBL" > build/main.bbl; fi\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
         "latexdiff": "#!/bin/bash\nprintf '\\\\begin{document}\\n\\\\DIFadd{new}\\n'\n",
         "pdftoppm": '#!/bin/bash\nname="${@: -1}"\nprintf png > "${name}-1.png"\n',
+        "latexmlc": '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf "<html><body>paper</body></html>" > "$dest"\nprintf "Conversion complete: 0 errors; 0 warnings\\n" > "$log"\n',
     }
     for name, contents in commands.items():
         path = bin_dir / name
@@ -65,6 +66,8 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
 
     assert (repo / "_site/paper/main.pdf").exists()
     assert (repo / "_site/paper/what-changed.pdf").exists()
+    assert (repo / "_site/paper/html/index.html").exists()
+    assert (repo / "_site/paper/html/what-changed.html").exists()
     assert (repo / "_site/paper/diff-page-1.png").exists()
     assert json.loads((repo / "_site/paper/preview.json").read_text()) == {
         "changed": True,
@@ -77,6 +80,43 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert len(commands) == 2
     assert all("-pdf" not in command for command in commands)
     assert all("$pdf_mode ||= 1;" in command for command in commands)
+
+
+def test_paper_preview_builds_second_paper_in_its_own_directory(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    second = repo / "latex"
+    second.mkdir()
+    (second / "main.tex").write_text("old")
+    (second / "latexmkrc").write_text("$pdf_mode = 1;\n")
+    run("git", "add", "latex/main.tex", "latex/latexmkrc", cwd=repo)
+    run("git", "commit", "-qm", "add second paper", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (second / "main.tex").write_text("new")
+    run("git", "commit", "-qam", "edit second paper", cwd=repo)
+
+    run("bash", str(SCRIPT), base, "latex", cwd=repo, env=env)
+
+    assert (repo / "_site/latex/main.pdf").exists()
+    assert (repo / "_site/latex/what-changed.pdf").exists()
+    assert (repo / "_site/latex/html/index.html").exists()
+    assert (repo / "_site/latex/html/what-changed.html").exists()
+    assert (repo / "_site/latex/preview.json").exists()
+    assert not (repo / "_site/paper/main.pdf").exists()
+
+
+def test_latexml_failure_keeps_pdf_and_log(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    (bin_dir / "latexmlc").write_text(
+        '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf partial > "$dest"\nprintf "Error: unsupported package\\n" > "$log"\nexit 1\n'
+    )
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert (repo / "_site/paper/main.pdf").exists()
+    assert (repo / "_site/paper/what-changed.pdf").exists()
+    assert not (repo / "_site/paper/html/index.html").exists()
+    assert not (repo / "_site/paper/html/what-changed.html").exists()
+    assert (repo / "_site/paper/html/latexml.log").exists()
 
 
 def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):

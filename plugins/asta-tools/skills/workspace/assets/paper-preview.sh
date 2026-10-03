@@ -28,6 +28,21 @@ if [ -s $dir/build/main.bbl ]; then
   cp $dir/build/main.bbl _site/$dir/main.bbl
 fi
 
+convert_html() {
+  local source=$1 target=$2 log=$3
+  mkdir -p "$(dirname "$target")"
+  if command -v latexmlc >/dev/null 2>&1 && \
+     latexmlc --format=html5 --path="$PWD" --dest="$target" --log="$log" "$source" >/dev/null 2>&1 && \
+     [ -s "$target" ] && [ -f "$log" ] && \
+     ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors' "$log"; then
+    return 0
+  fi
+  rm -f "$target"
+  echo "::warning file=$source::LaTeXML conversion failed; see $log"
+  return 1
+}
+convert_html "$dir/main.tex" "_site/$dir/html/index.html" "_site/$dir/html/latexml.log" || true
+
 test -n "$base" || exit 0
 fallback() {
   rm -f _site/$dir/preview.json _site/$dir/what-changed.pdf _site/$dir/diff-page-*.png
@@ -140,6 +155,8 @@ then
   printf '{"changed":true,"diff":false,"other_inputs":%s,"unhighlighted":true}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > _site/$dir/preview.json
   exit 0
 fi
+convert_html "$diff_tex" "_site/$dir/html/what-changed.html" \
+  "_site/$dir/html/what-changed.log" || true
 if (cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
   -halt-on-error -file-line-error -outdir=build "$diff_name"); then
   cp "$dir/build/$diff_stem.pdf" _site/$dir/what-changed.pdf

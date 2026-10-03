@@ -633,6 +633,12 @@ def list_pages(root, out_path=None):
             except OSError:
                 continue
             rel = os.path.relpath(full, root)
+            first = rel.split(os.sep, 1)[0]
+            if first != rel and (
+                os.path.isfile(os.path.join(root, first, "main.pdf"))
+                or os.path.isfile(os.path.join(root, first, "preview.json"))
+            ):
+                continue
             pages[rel] = full
     return pages
 
@@ -686,6 +692,7 @@ DIFF_STYLE = """
 .wc-scope .paper-thumbs { display: flex; flex-wrap: wrap; gap: .75rem; }
 .wc-scope .paper-thumbs img { max-width: 160px; height: auto;
     border: 1px solid var(--wc-border); }
+.wc-scope .paper-html { width: 100%; height: 36rem; border: 1px solid var(--wc-border); }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -996,8 +1003,8 @@ def pick_template(new_pages):
         return None, 0
 
 
-def paper_preview(new_root):
-    manifest = os.path.join(new_root, "paper", "preview.json")
+def paper_preview(new_root, paper_dir="paper"):
+    manifest = os.path.join(new_root, paper_dir, "preview.json")
     if not os.path.isfile(manifest):
         return None
     try:
@@ -1009,15 +1016,23 @@ def paper_preview(new_root):
         return None
     if not state.get("changed"):
         return None
+    label = "Paper" if paper_dir == "paper" else f"Paper ({html.escape(paper_dir)}/)"
+    section_id = (
+        "paper-diff" if paper_dir == "paper" else f"paper-diff-{anchor_id(paper_dir)}"
+    )
     if state.get("removed"):
         section = (
-            '<section class="page-diff removed" id="paper-diff">'
-            '<h2>Paper <span class="tag removed">removed</span></h2>'
+            f'<section class="page-diff removed" id="{section_id}">'
+            f'<h2>{label} <span class="tag removed">removed</span></h2>'
             '<p class="wc-note">Paper removed; no paper PDF is published in this preview.</p>'
             "</section>"
         )
         return section, "removed"
-    pdf = "paper/what-changed.pdf" if state.get("diff") else "paper/main.pdf"
+    pdf = (
+        f"{paper_dir}/what-changed.pdf"
+        if state.get("diff")
+        else f"{paper_dir}/main.pdf"
+    )
     if state.get("new"):
         note = "Paper added; the current paper PDF is available."
     elif state.get("diff") and state.get("other_inputs"):
@@ -1034,7 +1049,7 @@ def paper_preview(new_root):
     thumbs = []
     if state.get("diff"):
         pages = []
-        for path in glob.glob(os.path.join(new_root, "paper", "diff-page-*.png")):
+        for path in glob.glob(os.path.join(new_root, paper_dir, "diff-page-*.png")):
             filename = os.path.basename(path)
             match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
             if not match:
@@ -1042,7 +1057,7 @@ def paper_preview(new_root):
             pages.append((int(match.group(1)), filename))
         for page, filename in sorted(pages):
             thumbs.append(
-                f'<a href="{pdf}#page={page}"><img src="paper/{filename}" '
+                f'<a href="{pdf}#page={page}"><img src="{paper_dir}/{filename}" '
                 f'alt="Paper diff page {page}" loading="lazy"></a>'
             )
         limit = state.get("thumbnail_limit")
@@ -1055,10 +1070,31 @@ def paper_preview(new_root):
             and len(thumbs) >= limit
         ):
             note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
+    html_diff = os.path.isfile(
+        os.path.join(new_root, paper_dir, "html", "what-changed.html")
+    )
+    html_current = os.path.isfile(
+        os.path.join(new_root, paper_dir, "html", "index.html")
+    )
+    html_path = (
+        f"{paper_dir}/html/what-changed.html"
+        if html_diff
+        else f"{paper_dir}/html/index.html"
+        if html_current
+        else None
+    )
+    html_view = ""
+    if html_path:
+        description = "HTML diff" if html_diff else "current HTML paper"
+        html_view = (
+            f'<p class="wc-note"><a href="{html_path}">Open the {description}</a></p>'
+            f'<iframe class="paper-html" src="{html_path}" sandbox="" '
+            f'title="{label} {description}" loading="lazy"></iframe>'
+        )
     section = (
-        f'<section class="page-diff {status}" id="paper-diff">'
-        f'<h2>Paper <span class="tag {status}">{status}</span></h2>'
-        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
+        f'<section class="page-diff {status}" id="{section_id}">'
+        f'<h2>{label} <span class="tag {status}">{status}</span></h2>'
+        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>{html_view}'
         f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
     )
     return section, status
@@ -1069,14 +1105,29 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
-    paper_section = paper_preview(new_root)
-    if paper_section:
-        section, paper_status = paper_section
-        sections.append(section)
-        toc.append(
-            f'<a href="#paper-diff">Paper <span class="tag {paper_status}">'
-            f"{paper_status}</span></a>"
-        )
+    for paper_dir in sorted(
+        os.listdir(new_root), key=lambda name: (name != "paper", name)
+    ):
+        if not os.path.isdir(os.path.join(new_root, paper_dir)):
+            continue
+        paper_section = paper_preview(new_root, paper_dir)
+        if paper_section:
+            section, paper_status = paper_section
+            sections.append(section)
+            label = (
+                "Paper"
+                if paper_dir == "paper"
+                else f"Paper ({html.escape(paper_dir)}/)"
+            )
+            section_id = (
+                "paper-diff"
+                if paper_dir == "paper"
+                else f"paper-diff-{anchor_id(paper_dir)}"
+            )
+            toc.append(
+                f'<a href="#{section_id}">{label} <span class="tag {paper_status}">'
+                f"{paper_status}</span></a>"
+            )
     for rel in sorted(set(old_pages) | set(new_pages)):
         new_doc = (
             open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
