@@ -196,13 +196,26 @@ case "$1 $2" in
     esac
     ;;
   "pr list")
+    count=0
+    [ ! -f "$GH_PR_COUNT" ] || count=$(cat "$GH_PR_COUNT")
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$GH_PR_COUNT"
     jq_filter=
+    open_only=0
     while [ "$#" -gt 0 ]; do
+      if [ "$1" = --state ] && [ "$2" = open ]; then open_only=1; fi
       if [ "$1" = --jq ]; then jq_filter=$2; break; fi
       shift
     done
-    if [ "${GH_NO_PR:-0}" = 1 ] || [ "${GH_PR_STATE:-OPEN}" != OPEN ]; then
+    if [ "${GH_NO_PR:-0}" = 1 ] || [ "$count" -lt "${GH_PR_ON:-1}" ] || \
+       { [ "$open_only" = 1 ] && [ "${GH_PR_STATE:-OPEN}" != OPEN ]; }; then
       echo '[]' | jq -r "$jq_filter"
+    elif [ "${GH_AMBIGUOUS_PR:-0}" = 1 ]; then
+      printf '[{"number":123,"headRefOid":"%s"},{"number":124,"headRefOid":"%s"}]\n' \
+        "$(git rev-parse HEAD)" "$(git rev-parse HEAD)" | jq -r "$jq_filter"
+    elif [ "${GH_FORK_PR:-0}" = 1 ]; then
+      printf '[{"number":122,"headRefOid":"other-sha","isCrossRepository":false},{"number":123,"headRefOid":"%s","isCrossRepository":true}]\n' \
+        "$(git rev-parse HEAD)" | jq -r "$jq_filter"
     else
       printf '[{"number":123,"headRefOid":"%s"}]\\n' \
         "${GH_PR_HEAD_SHA:-$(git rev-parse HEAD)}" | jq -r "$jq_filter"
@@ -305,6 +318,7 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GH_LOG": str(tmp_path / "gh.log"),
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
+        "GH_PR_COUNT": str(tmp_path / "pr-count"),
         "GH_TIP_COUNT": str(tmp_path / "tip-count"),
         "WORKFLOW_TIMEOUT": "3",
         "RUN_TIMEOUT": "2",
@@ -368,6 +382,35 @@ def test_preview_wait_requires_pr_for_feature_branch(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "open a PR" in result.stderr
     assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_allows_pr_to_appear_after_first_lookup(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_PR_ON="2", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert Path(env["GH_PR_COUNT"]).read_text().strip() == "2"
+
+
+def test_preview_wait_rejects_ambiguous_branch_and_sha(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_AMBIGUOUS_PR"] = "1"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Multiple open PRs" in result.stderr
+    assert "pr view" not in Path(env["GH_LOG"]).read_text()
 
 
 def test_preview_wait_skips_pr_lookup_on_detached_head(tmp_path: Path) -> None:
@@ -477,6 +520,7 @@ def test_preview_wait_resolves_fork_pr_via_base_repo(tmp_path: Path) -> None:
     log = Path(env["GH_LOG"]).read_text()
     assert "pr list --repo owner/project --head" in log
     assert "pr view 123 --repo owner/project" in log
+    assert "pr view 122" not in log
 
 
 def test_preview_wait_rejects_pr_closed_during_deploy(tmp_path: Path) -> None:
@@ -498,7 +542,7 @@ def test_quarto_check_rejects_colored_warning(tmp_path: Path) -> None:
     quarto = tmp_path / "quarto"
     quarto.write_text(
         "#!/bin/sh\nmkdir -p _site\nprintf page > _site/index.html\n"
-        'printf "\\033[33mWARN: unresolved citation\\033[0m\\n"\n'
+        'printf "\\033[2K\\033[1G\\033[33mWARN: unresolved citation\\033[0m\\n"\n'
     )
     quarto.chmod(0o755)
     script = (WORKSPACE_ASSETS / "quarto-check.sh").resolve()
