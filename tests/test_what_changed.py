@@ -82,6 +82,51 @@ def test_multiple_papers_have_distinct_diff_sections(tmp_path):
     assert 'id="p-latex-html-index-html"' not in result
 
 
+
+def test_rendered_html_changes_replace_failed_latexml_diff(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    rel = "paper-previews/lit-review/latex/html/index.html"
+    for root, body, timestamp in (
+        (old, "Old claim", "01:00"),
+        (new, "New claim", "02:00"),
+    ):
+        page = root / rel
+        page.parent.mkdir(parents=True)
+        page.write_text(
+            f'<html><body><main><p>{body}</p></main>'
+            f'<footer class="ltx_page_footer">Generated at {timestamp}</footer>'
+            '</body></html>'
+        )
+    preview = new / "paper-previews/lit-review/latex/preview.json"
+    preview.write_text(json.dumps({"changed": True, "diff": True, "html_diff": False}))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'href="#p-paper-previews-lit-review-latex-html-index-html"' in result
+    assert "See rendered HTML changes below" in result
+    assert "<del>Old</del><ins>New</ins> claim" in result
+    assert "Generated at 01:00" not in result
+    assert "Generated at 02:00" not in result
+
+
+def test_latexml_build_time_alone_does_not_create_a_page_diff(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, timestamp in ((old, "01:00"), (new, "02:00")):
+        page = root / "paper-previews/paper/html/index.html"
+        page.parent.mkdir(parents=True)
+        page.write_text(
+            '<html><body><main><p>Same paper</p></main>'
+            f'<footer class="ltx_page_footer">Generated at {timestamp}</footer>'
+            '</body></html>'
+        )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert 'id="p-paper-previews-paper-html-index-html"' not in result
+
+
 def test_paper_directory_is_encoded_in_links_and_escaped_in_attributes(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

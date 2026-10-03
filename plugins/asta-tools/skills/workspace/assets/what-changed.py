@@ -143,6 +143,12 @@ def normalize(content):
     )
     # Bare date-modified paragraph, if the theme renders one.
     content = re.sub(r'(?is)<p class="date-modified">.*?</p>', "", content)
+    # LaTeXML stamps its build time into a footer on every conversion.
+    content = re.sub(
+        r'(?is)<footer\b(?=[^>]*\bclass=["\'][^"\']*\bltx_page_footer\b)[^>]*>.*?</footer>',
+        "",
+        content,
+    )
     return content
 
 
@@ -1021,7 +1027,7 @@ def paper_identity(paper_dir):
     return label, section_id
 
 
-def paper_preview(new_root, paper_dir="paper"):
+def paper_preview(old_root, new_root, paper_dir="paper"):
     manifest = os.path.join(new_root, "paper-previews", paper_dir, "preview.json")
     if not os.path.isfile(manifest):
         return None
@@ -1105,7 +1111,26 @@ def paper_preview(new_root, paper_dir="paper"):
         else None
     )
     html_view = ""
-    if html_path:
+    rendered_rel = f"paper-previews/{paper_dir}/html/index.html"
+    old_rendered = os.path.join(old_root, rendered_rel)
+    new_rendered = os.path.join(new_root, rendered_rel)
+    rendered_diff = False
+    if not html_diff and not state.get("new") and os.path.isfile(old_rendered) and os.path.isfile(new_rendered):
+        with open(old_rendered, encoding="utf-8") as source:
+            old_content = normalize(extract_main(source.read()))
+        with open(new_rendered, encoding="utf-8") as source:
+            new_content = normalize(extract_main(source.read()))
+        rendered_diff = (
+            re.sub(r"\s+", " ", old_content).strip()
+            != re.sub(r"\s+", " ", new_content).strip()
+        )
+    if rendered_diff:
+        html_view = (
+            f'<p class="wc-note"><a href="#{anchor_id(rendered_rel)}">'
+            'See rendered HTML changes below</a> · '
+            f'<a href="{paper_url("html/index.html")}">Open the current HTML paper</a></p>'
+        )
+    elif html_path:
         description = "HTML diff" if html_diff else "current HTML paper"
         html_view = (
             f'<p class="wc-note"><a href="{html_path}">Open the {description}</a></p>'
@@ -1135,7 +1160,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
-        paper_section = paper_preview(new_root, paper_dir)
+        paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:
             section, paper_status = paper_section
             sections.append(section)
