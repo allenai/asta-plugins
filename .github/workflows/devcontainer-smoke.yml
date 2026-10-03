@@ -96,6 +96,7 @@ jobs:
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |
+          docker run --rm asta-smoke latexmlc --VERSION
           docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
             latexmk -synctex=1 -e '$pdf_mode ||= 1;' -interaction=nonstopmode -halt-on-error \
               -file-line-error -outdir=build main.tex
