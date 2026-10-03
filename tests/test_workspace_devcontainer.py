@@ -46,7 +46,7 @@ def test_quarto_extension_listed_latex_workshop_rides_the_tex_image():
     assert label, "tex stage must carry devcontainer.metadata"
     metadata = json.loads(label.group(1))
     assert "james-yu.latex-workshop" in json.dumps(metadata)
-    assert "devcontainer.metadata" not in "".join(
+    assert "latex-workshop" not in "".join(
         s for s in stages if not s.startswith("asta AS tex")
     )
 
@@ -86,9 +86,11 @@ def test_tex_image_matches_ci_paper_lane():
     assert _packages(tex_stage) == _packages(lane)
 
 
-def test_codespaces_persists_asta_login() -> None:
-    cmd = _devcontainer()["postCreateCommand"]
-    assert "CODESPACES" in cmd
-    assert "cp -an" in cmd
-    assert "ln -sfnT /workspaces/.asta-auth" in cmd
-    assert cmd.index("ln -sfnT") < cmd.index("skills@latest add")
+def test_codespaces_login_persistence_ships_in_the_image() -> None:
+    assert "asta-auth" not in json.dumps(_devcontainer())
+    for stage in DOCKERFILE.read_text().split("\nFROM ")[:2]:
+        label = re.search(r"^LABEL devcontainer\.metadata='(.+)'$", stage, re.M)
+        assert label, "asta and tex stages must carry devcontainer.metadata"
+        hooks = [m.get("postCreateCommand") for m in json.loads(label.group(1))]
+        assert "asta-persist-auth" in hooks
+    assert "COPY docker/asta-persist-auth /usr/local/bin/" in DOCKERFILE.read_text()

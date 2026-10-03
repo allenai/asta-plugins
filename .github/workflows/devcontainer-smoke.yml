@@ -70,6 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           meta=$(docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' asta-smoke)
+          echo "$meta" | jq -e 'any(.[]; .postCreateCommand == "asta-persist-auth")'
           if [ "${{ matrix.target }}" = tex ]; then
             echo "$meta" | jq -e 'any(.[]; .customizations.vscode.extensions | index("james-yu.latex-workshop"))'
           else

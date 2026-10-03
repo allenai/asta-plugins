@@ -157,6 +157,53 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
     ).read_bytes()
 
 
+def _run_workspace_assets(project: Path, archive_url: str) -> str:
+    return subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={"ASTA_PLUGINS_ARCHIVE_URL": archive_url, "PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def test_workspace_makefile_leaves_symlinked_evidence_alone(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "snippet.lua").write_text("-- local edit")
+    project = tmp_path / "project"
+    (project / "_extensions").mkdir(parents=True)
+    (project / "_extensions/evidence").symlink_to(checkout)
+
+    out = _run_workspace_assets(project, (tmp_path / "unreachable.tar.gz").as_uri())
+
+    assert "symlink" in out
+    assert (project / "_extensions/evidence").is_symlink()
+    assert (checkout / "snippet.lua").read_text() == "-- local edit"
+
+
+def test_workspace_makefile_leaves_committed_evidence_alone(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    target = project / "_extensions/evidence"
+    target.mkdir(parents=True)
+    (target / "snippet.lua").write_text("-- customized")
+    git = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "_extensions/evidence"], check=True)
+    subprocess.run([*git, "commit", "-qm", "customize evidence"], check=True)
+
+    out = _run_workspace_assets(project, (tmp_path / "unreachable.tar.gz").as_uri())
+
+    assert "committed" in out
+    assert (target / "snippet.lua").read_text() == "-- customized"
+
+
 def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"

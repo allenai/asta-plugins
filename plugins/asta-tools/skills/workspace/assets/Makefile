@@ -22,6 +22,12 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # first fetch with no cache is a hard error.
 workspace-assets:
 	@set -eu; \
+	if [ -L _extensions/evidence ]; then \
+		echo "workspace-assets: _extensions/evidence is a symlink (local development); not refreshing"; exit 0; \
+	fi; \
+	if git ls-files --error-unmatch _extensions/evidence >/dev/null 2>&1; then \
+		echo "workspace-assets: _extensions/evidence is committed (customized copy); not refreshing"; exit 0; \
+	fi; \
 	ref="$(ASTA_PLUGINS_REF)"; \
 	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
 	have_cache=0; \

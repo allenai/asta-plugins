@@ -11,7 +11,7 @@
       "documentationUrl": "https://github.com/allenai/asta-plugins#readme"
     }
   },
-  "postCreateCommand": "if [ \"${CODESPACES:-}\" = true ]; then mkdir -p /workspaces/.asta-auth \"$HOME/.config\" && chmod 700 /workspaces/.asta-auth && if [ -d \"$HOME/.config/asta-cli\" ] && [ ! -L \"$HOME/.config/asta-cli\" ]; then cp -an \"$HOME/.config/asta-cli/.\" /workspaces/.asta-auth/ && rm -r \"$HOME/.config/asta-cli\"; fi && ln -sfnT /workspaces/.asta-auth \"$HOME/.config/asta-cli\"; fi && npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
+  "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
   "postAttachCommand": {
     "preview": "if [ -n \"${CODESPACE_NAME:-}\" ]; then url=\"https://${CODESPACE_NAME}-4848.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/\"; else url=http://localhost:4848/; fi; echo \"Quarto preview: $url\"; curl -sf -o /dev/null http://127.0.0.1:4848/ || { [ -f Makefile ] && make preview; } || { [ -f _quarto.yml ] && quarto preview --no-browser --port 4848; } || true"
   },

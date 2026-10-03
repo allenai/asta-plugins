@@ -20,6 +20,11 @@ ENV PATH="/root/.local/bin:$PATH"
 #   claude plugin marketplace add /opt/asta-plugins   (Claude Code)
 #   npx skills add /opt/asta-plugins                  (any agent)
 
+# Codespaces runs this on create, alongside the project's own postCreateCommand,
+# so project devcontainer.json files carry no auth setup.
+COPY docker/asta-persist-auth /usr/local/bin/asta-persist-auth
+LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"}]'
+
 WORKDIR /app
 
 # Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
@@ -33,8 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       texlive-science texlive-pictures texlive-plain-generic biber \
     && rm -rf /var/lib/apt/lists/*
 # Dev containers merge this into devcontainer.json, so LaTeX Workshop
-# arrives with TeX and Quarto-only projects never get it.
-LABEL devcontainer.metadata='[{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"]}}}]'
+# arrives with TeX and Quarto-only projects never get it. Replaces the parent
+# label, so it repeats the auth hook.
+LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"},{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"]}}}]'
 
 # A plain `docker build .` still produces the slim image.
 FROM asta
