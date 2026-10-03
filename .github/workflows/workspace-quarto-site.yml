@@ -15,6 +15,11 @@ name: Quarto site
 
 on:
   workflow_call:
+    inputs:
+      quarto-version:
+        description: Quarto CLI version used to render generated sources
+        type: string
+        default: latest
 
 jobs:
   # Build + quality gates (via `make check`). This is the required status
@@ -42,6 +47,8 @@ jobs:
         run: git fetch --no-tags origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
 
       - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: ${{ inputs.quarto-version }}
 
       # Shared scripts are vendored into each project. Surface (never fail on)
       # drift from the canonical copies shipped at this workflow's own commit.

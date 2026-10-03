@@ -10,6 +10,12 @@ WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 
 
+def test_workspace_can_pin_quarto_for_generated_sources() -> None:
+    workflow = WORKFLOW.read_text()
+    assert "quarto-version:" in workflow
+    assert "version: ${{ inputs.quarto-version }}" in workflow
+
+
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
