@@ -206,12 +206,24 @@ wait)
   elapsed=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
     # GitHub caps a page at 100 builds; the timeout still bounds a busy repo.
-    if ! built=$(gh api "repos/$REPO/pages/builds?per_page=100" --jq \
-      "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length"); then
+    if ! built_commits=$(gh api "repos/$REPO/pages/builds?per_page=100" --jq \
+      '[.[] | select(.status=="built") | .commit] | .[]'); then
       echo "Could not read Pages builds for $REPO; verify Pages API access" >&2
       exit 1
     fi
-    if [ "$built" -gt 0 ]; then
+    built=0
+    for candidate in $built_commits; do
+      if [ "$candidate" = "$published" ]; then
+        built=1
+        break
+      fi
+      if ! relation=$(gh api "repos/$REPO/compare/$published...$candidate" --jq .status); then
+        echo "Could not compare Pages build $candidate with published marker $published" >&2
+        exit 1
+      fi
+      case "$relation" in ahead|identical) built=1; break ;; esac
+    done
+    if [ "$built" -eq 1 ]; then
       if [ "$check_pr" -eq 1 ]; then
         pr_head=$(gh pr view "$pr_number" --repo "$REPO" \
           --json state,headRefOid --jq '[.state, .headRefOid] | join(" ")') || {

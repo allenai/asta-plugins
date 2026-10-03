@@ -281,7 +281,11 @@ case "$1 $2" in
     ;;
   "api repos/owner/project/pages/builds?per_page=100")
     [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
-    echo "${GH_BUILT:-1}"
+    echo "${GH_BUILT_COMMITS-published-sha}"
+    ;;
+  "api repos/owner/project/compare/published-sha..."*)
+    [ "${GH_DESCENDANT_API_FAIL:-0}" != 1 ] || exit 1
+    echo "${GH_DESCENDANT_STATUS:-ahead}"
     ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
@@ -367,6 +371,41 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     assert "compare/before...after" in log
     assert "(run 101)" in log
     assert "pages/builds?per_page=100" in log
+
+
+def test_preview_wait_accepts_coalesced_pages_build(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_BUILT_COMMITS="later-sha")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    assert "compare/published-sha...later-sha" in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_rejects_unrelated_pages_build(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(
+        GH_AFTER_TIP="after",
+        GH_BUILT_COMMITS="unrelated-sha",
+        GH_DESCENDANT_STATUS="diverged",
+        PAGES_TIMEOUT="1",
+    )
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Pages did not publish" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def test_preview_wait_requires_pr_for_feature_branch(tmp_path: Path) -> None:
@@ -688,7 +727,7 @@ def test_preview_wait_bounds_pages_poll_and_preserves_baseline(tmp_path: Path) -
     script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
 
     subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
-    env.update(GH_AFTER_TIP="after", GH_BUILT="0", PAGES_TIMEOUT="1")
+    env.update(GH_AFTER_TIP="after", GH_BUILT_COMMITS="", PAGES_TIMEOUT="1")
     result = subprocess.run(
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
