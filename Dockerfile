@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       texlive-latex-recommended texlive-latex-extra \
       texlive-fonts-recommended texlive-bibtex-extra \
       texlive-luatex texlive-xetex texlive-publishers \
-      texlive-science texlive-pictures biber \
+      texlive-science texlive-pictures texlive-plain-generic biber \
     && rm -rf /var/lib/apt/lists/*
 # Dev containers merge this into devcontainer.json, so LaTeX Workshop
 # arrives with TeX and Quarto-only projects never get it.

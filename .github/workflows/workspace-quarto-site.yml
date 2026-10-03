@@ -107,7 +107,7 @@ jobs:
             texlive-latex-recommended texlive-latex-extra \
             texlive-fonts-recommended texlive-bibtex-extra \
             texlive-luatex texlive-xetex texlive-publishers \
-            texlive-science texlive-pictures biber || fail_all 'Could not install the LaTeX toolchain.'
+            texlive-science texlive-pictures texlive-plain-generic biber || fail_all 'Could not install the LaTeX toolchain.'
           script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
           curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
           base=""
