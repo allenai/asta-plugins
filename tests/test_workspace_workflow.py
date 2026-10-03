@@ -134,6 +134,8 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
     target = project / "_extensions/evidence"
     target.mkdir(parents=True)
     (target / "stale-file").write_text("remove me")
+    (project / ".gitignore").write_text("_extensions/evidence/\n")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
 
     env = {
         "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
@@ -157,6 +159,55 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
     )
     assert len(backups) == 1
     assert backups[0].read_text() == "remove me"
+    status = subprocess.run(
+        ["git", "status", "--short", "--untracked-files=all"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert ".asta/" not in status.stdout
+
+
+def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -> None:
+    def archive(version: str) -> Path:
+        archive_root = tmp_path / version / "asta-plugins-test"
+        source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+        shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+        (source / "snippet.lua").write_text(version)
+        bundle_path = tmp_path / f"{version}.tar.gz"
+        with tarfile.open(bundle_path, "w:gz") as bundle:
+            bundle.add(archive_root, arcname=archive_root.name)
+        return bundle_path
+
+    project = tmp_path / "project"
+    project.mkdir()
+    backup_root = project / ".asta/evidence-backups"
+    backup_root.mkdir(parents=True)
+    (backup_root / ".gitignore").write_text("# keep this note\n")
+    command = [
+        "make",
+        "-f",
+        str((WORKSPACE_ASSETS / "Makefile").resolve()),
+        "workspace-assets",
+    ]
+    env = {"PATH": os.environ["PATH"]}
+    for version in ("v1", "v2"):
+        env["ASTA_PLUGINS_ARCHIVE_URL"] = archive(version).as_uri()
+        subprocess.run(command, cwd=project, env=env, check=True)
+
+    assert (backup_root / "installed.sha").is_file()
+    assert (backup_root / ".gitignore").read_text() == "# keep this note\n*\n"
+    assert list(backup_root.glob("evidence.*")) == []
+
+    (project / "_extensions/evidence/snippet.lua").write_text("local edit")
+    env["ASTA_PLUGINS_ARCHIVE_URL"] = archive("v3").as_uri()
+    subprocess.run(command, cwd=project, env=env, check=True)
+
+    backups = list(backup_root.glob("evidence.*/evidence/snippet.lua"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == "local edit"
+    assert (project / "_extensions/evidence/snippet.lua").read_text() == "v3"
 
 
 def test_workspace_makefile_rejects_broken_evidence_symlink(tmp_path: Path) -> None:
@@ -184,6 +235,36 @@ def test_workspace_makefile_rejects_broken_evidence_symlink(tmp_path: Path) -> N
     assert result.returncode != 0
     assert "symlink is broken" in result.stderr
     assert extension.is_symlink()
+
+
+def test_workspace_makefile_preserves_local_evidence_symlink(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    local = project / "local-evidence"
+    local.mkdir(parents=True)
+    extension = project / "_extensions/evidence"
+    extension.parent.mkdir()
+    extension.symlink_to(local, target_is_directory=True)
+
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_ARCHIVE_URL": "https://invalid.example",
+            "PATH": os.environ["PATH"],
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "local evidence symlink takes precedence" in result.stderr
+    assert extension.is_symlink()
+    assert not (project / ".asta/evidence-backups").exists()
 
 
 def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> None:

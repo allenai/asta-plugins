@@ -20,13 +20,14 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # fails) but a previously fetched _extensions/evidence already exists, keep that
 # cached copy and warn instead of failing — so a render works on a plane. Only a
 # first fetch with no cache is a hard error.
-# Keep replaced trees because any one of them may contain local edits.
+# A saved tree hash avoids backing up clean updates; unknown trees are preserved.
 workspace-assets:
 	@set -eu; \
 	ref="$(ASTA_PLUGINS_REF)"; \
 	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
 	if [ -L _extensions/evidence ]; then \
 		[ -d _extensions/evidence ] || { echo "workspace-assets: _extensions/evidence symlink is broken or does not point to a directory" >&2; exit 1; }; \
+		if [ -n "$$ref" ] || [ -n "$$url" ]; then echo "workspace-assets: local evidence symlink takes precedence over ASTA_PLUGINS_REF and ASTA_PLUGINS_ARCHIVE_URL" >&2; fi; \
 		echo "workspace-assets: using local evidence symlink"; exit 0; \
 	fi; \
 	have_cache=0; \
@@ -51,8 +52,10 @@ workspace-assets:
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
+	marker=.asta/evidence-backups/installed.sha; \
 	backup=; \
 	lock_held=0; \
+	keep_backup=1; \
 	cleanup() { \
 		status=$$?; \
 		trap - 0 1 2 15; \
@@ -75,17 +78,27 @@ workspace-assets:
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
+	mkdir -p .asta/evidence-backups; \
+	grep -Fxq '*' .asta/evidence-backups/.gitignore 2>/dev/null || printf '*\n' >> .asta/evidence-backups/.gitignore; \
 	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1; then \
 		echo "workspace-assets: evidence extension unchanged"; exit 0; \
 	fi; \
 	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
-		mkdir -p .asta/evidence-backups; \
+		tar -cf "$$tmp/current.tar" -C _extensions evidence; \
+		current_hash=$$(git hash-object "$$tmp/current.tar"); \
+		if [ -f "$$marker" ] && [ "$$(cat "$$marker")" = "$$current_hash" ]; then keep_backup=0; fi; \
 		backup=$$(mktemp -d .asta/evidence-backups/evidence.XXXXXX); \
 		mv _extensions/evidence "$$backup/evidence"; \
 	fi; \
 	mv "$$tmp/evidence" _extensions/evidence; \
+	tar -cf "$$tmp/installed.tar" -C _extensions evidence; \
+	git hash-object "$$tmp/installed.tar" > "$$tmp/marker"; \
+	mv "$$tmp/marker" "$$marker"; \
 	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"; \
-	[ -z "$$backup" ] || echo "workspace-assets: previous files preserved at $$backup/evidence"
+	if [ -n "$$backup" ]; then \
+		if [ "$$keep_backup" -eq 1 ]; then echo "workspace-assets: previous files preserved at $$backup/evidence"; \
+		else rm -rf "$$backup" || true; fi; \
+	fi
 
 preview: workspace-assets
 	quarto preview --no-browser
