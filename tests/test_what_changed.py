@@ -82,7 +82,6 @@ def test_multiple_papers_have_distinct_diff_sections(tmp_path):
     assert 'id="p-latex-html-index-html"' not in result
 
 
-
 def test_rendered_html_changes_replace_failed_latexml_diff(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
@@ -94,9 +93,9 @@ def test_rendered_html_changes_replace_failed_latexml_diff(tmp_path):
         page = root / rel
         page.parent.mkdir(parents=True)
         page.write_text(
-            f'<html><body><main><p>{body}</p></main>'
+            f"<html><body><main><p>{body}</p></main>"
             f'<footer class="ltx_page_footer">Generated at {timestamp}</footer>'
-            '</body></html>'
+            "</body></html>"
         )
     preview = new / "paper-previews/lit-review/latex/preview.json"
     preview.write_text(json.dumps({"changed": True, "diff": True, "html_diff": False}))
@@ -117,9 +116,9 @@ def test_latexml_build_time_alone_does_not_create_a_page_diff(tmp_path):
         page = root / "paper-previews/paper/html/index.html"
         page.parent.mkdir(parents=True)
         page.write_text(
-            '<html><body><main><p>Same paper</p></main>'
+            "<html><body><main><p>Same paper</p></main>"
             f'<footer class="ltx_page_footer">Generated at {timestamp}</footer>'
-            '</body></html>'
+            "</body></html>"
         )
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")

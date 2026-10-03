@@ -1115,7 +1115,12 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     old_rendered = os.path.join(old_root, rendered_rel)
     new_rendered = os.path.join(new_root, rendered_rel)
     rendered_diff = False
-    if not html_diff and not state.get("new") and os.path.isfile(old_rendered) and os.path.isfile(new_rendered):
+    if (
+        not html_diff
+        and not state.get("new")
+        and os.path.isfile(old_rendered)
+        and os.path.isfile(new_rendered)
+    ):
         with open(old_rendered, encoding="utf-8") as source:
             old_content = normalize(extract_main(source.read()))
         with open(new_rendered, encoding="utf-8") as source:
@@ -1127,7 +1132,7 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     if rendered_diff:
         html_view = (
             f'<p class="wc-note"><a href="#{anchor_id(rendered_rel)}">'
-            'See rendered HTML changes below</a> · '
+            "See rendered HTML changes below</a> · "
             f'<a href="{paper_url("html/index.html")}">Open the current HTML paper</a></p>'
         )
     elif html_path:
