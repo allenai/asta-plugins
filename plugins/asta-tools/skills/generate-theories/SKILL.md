@@ -1,7 +1,7 @@
 ---
 name: generate-theories
 description: This skill should be used when the user asks to "generate theories", "theorize about", "what theories explain", "form scientific theories", "literature-driven theories", "hypothesize", "form hypotheses", "generate hypotheses", "what hypotheses explain", "run the theorizer", or wants AI-generated, literature-grounded scientific theories or hypotheses about a research question.
-allowed-tools: Bash(asta auth login) Bash(asta auth status) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(open *)
+allowed-tools: Bash(asta auth login) Bash(asta auth status) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(find *) Bash(open *) Read(*) Glob(*)
 ---
 
 # Generate Theories
@@ -46,6 +46,42 @@ Two more standalone subcommands round out the surface:
 ## How to run it
 
 The sections below describe the choreography for handling a generate-theories request — what to ask, what to surface, and when.
+
+## Local and user-supplied papers
+
+A local paper index and Theorizer's evidence store are separate systems. Merely
+extracting or indexing PDFs with `local-paper-index` does **not** make those
+papers available to `find-and-extract` or `literature-theory-generation`.
+Silently continuing would let a user reasonably—but incorrectly—believe the
+result was grounded in sources they supplied.
+
+Before either evidence-gathering command, inspect the conversation and project
+for user-supplied PDFs, extracted Markdown, or a local paper index:
+
+- If none are present, follow the normal flow below.
+- If local sources are present and the user explicitly wants them included,
+  run `asta generate-theories describe <skill-id>` and use the **current**
+  schema's `paper_store` input. Build its `paper_markdown` entries from the
+  extracted Markdown sources (not the chunked search-index records), preserving
+  a title/source identifier for each paper. Do not hard-code a remembered
+  payload shape: the agent card is authoritative.
+- If local sources are present but inclusion is ambiguous, stop before
+  submission and ask whether to inject them. Explain plainly that the default
+  published-corpus search excludes the local sources; offer the two concrete
+  choices: include them through `paper_store`, or continue with published
+  literature only.
+- If the sources are still PDFs with no extracted Markdown, say that they must
+  be extracted first and invoke `pdf-extraction`; local indexing alone is not a
+  substitute for the full-paper Markdown Theorizer accepts.
+- If the live schema no longer exposes a compatible local-paper input, do not
+  imply that inclusion happened. Report the limitation and ask whether to
+  continue with published literature only.
+
+After `find-and-extract` (standalone, piecemeal, or inside the automatic
+pipeline), report evidence provenance with the stage summary: how many papers
+came from PaperFinder and how many were user-supplied. Derive those counts from
+the submitted store and returned result; if the result does not distinguish
+them, state exactly what was submitted instead of guessing.
 
 ## Two modes: automatic vs piecemeal
 
