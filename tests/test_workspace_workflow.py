@@ -197,7 +197,12 @@ case "$1 $2" in
     ;;
   "pr view")
     [ "${GH_NO_PR:-0}" != 1 ] || exit 1
-    echo "${GH_PR_STATE:-OPEN}"
+    count=0
+    [ ! -f "$GH_PR_COUNT" ] || count=$(cat "$GH_PR_COUNT")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$GH_PR_COUNT"
+    if [ "$count" -gt 1 ]; then echo "${GH_PR_STATE_AFTER:-OPEN}";
+    else echo "${GH_PR_STATE:-OPEN}"; fi
     ;;
   "run list")
     count=0
@@ -288,6 +293,7 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "GH_LOG": str(tmp_path / "gh.log"),
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
         "GH_TIP_COUNT": str(tmp_path / "tip-count"),
+        "GH_PR_COUNT": str(tmp_path / "pr-count"),
         "WORKFLOW_TIMEOUT": "3",
         "RUN_TIMEOUT": "2",
         "PAGES_TIMEOUT": "2",
@@ -394,6 +400,21 @@ def test_preview_wait_rejects_closed_pr(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "No open PR" in result.stderr
+
+
+def test_preview_wait_rejects_pr_closed_during_deploy(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_PR_STATE_AFTER="CLOSED", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "no longer open" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
 
 
 def test_quarto_check_rejects_colored_warning(tmp_path: Path) -> None:

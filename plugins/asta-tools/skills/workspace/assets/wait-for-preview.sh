@@ -87,7 +87,9 @@ wait)
       echo "Could not determine the default branch for $REPO" >&2
       exit 1
     }
+    check_pr=0
     if [ "$branch" != "$default_branch" ]; then
+      check_pr=1
       if ! pr_state=$(gh pr view "$branch" --repo "$REPO" --json state --jq .state); then
         echo "Could not find an open PR for $branch; check gh access or open a PR" >&2
         exit 1
@@ -97,6 +99,8 @@ wait)
         exit 1
       fi
     fi
+  else
+    check_pr=0
   fi
 
   set --
@@ -198,6 +202,16 @@ wait)
       exit 1
     fi
     if [ "$built" -gt 0 ]; then
+      if [ "$check_pr" -eq 1 ]; then
+        if ! pr_state=$(gh pr view "$branch" --repo "$REPO" --json state --jq .state); then
+          echo "Could not confirm the PR for $branch is still open" >&2
+          exit 1
+        fi
+        if [ "$pr_state" != OPEN ]; then
+          echo "PR for $branch is no longer open (state: $pr_state)" >&2
+          exit 1
+        fi
+      fi
       rm -f "$state"
       echo "Pages published $published"
       exit 0
