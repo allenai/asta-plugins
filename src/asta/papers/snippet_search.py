@@ -31,6 +31,14 @@ from asta.papers.client import SemanticScholarClient
     help="Only include papers indexed before this date (YYYY-MM-DD, YYYY-MM, or YYYY)",
 )
 @click.option(
+    "--fields-of-study",
+    default=None,
+    help=(
+        "Comma-separated fields of study to restrict results to "
+        '(e.g., "Computer Science,Medicine")'
+    ),
+)
+@click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
@@ -43,6 +51,7 @@ def snippet_search(
     limit: int,
     date: str | None,
     inserted_before: str | None,
+    fields_of_study: str | None,
     output_format: str,
 ):
     """Search for papers with full-text snippet matching.
@@ -57,6 +66,8 @@ def snippet_search(
         asta papers snippet-search "RLHF reward hacking" --date 2023- --limit 10
 
         asta papers snippet-search "chain-of-thought" --inserted-before 2024-01-01
+
+        asta papers snippet-search "attention" --fields-of-study "Computer Science"
     """
     try:
         client = SemanticScholarClient()
@@ -69,6 +80,7 @@ def snippet_search(
             limit=limit,
             publication_date_or_year=publication_date_or_year,
             inserted_before=inserted_before,
+            fields_of_study=fields_of_study,
         )
 
         if output_format == "json":

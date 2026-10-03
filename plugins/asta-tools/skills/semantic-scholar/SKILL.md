@@ -91,13 +91,30 @@ asta papers search "RLHF" --date 2023- --limit 10
 asta papers search "neural networks" --fields title,year,abstract,authors
 
 asta papers search "LLM safety" --date 2024-01-01:2024-12-31
+
+asta papers search "protein folding" --fields-of-study "Computer Science"
 ```
 
 Options:
 - `--fields`: Comma-separated fields to return
 - `--limit`: Number of results (default 20, max 100)
 - `--date`: Publication date or year filter. Accepts years (`2020`, `2020-2024`, `2020-`) or date ranges (`2024-01-01:2024-12-31`). Maps to the S2 `publicationDateOrYear` parameter.
+- `--fields-of-study`: Comma-separated field-of-study filter — see [Filtering by field of study](#filtering-by-field-of-study).
 - `--format`: Output as `json` or `text`
+
+### Filtering by field of study
+
+`asta papers search`, `asta papers snippet-search` and `asta papers author papers` accept `--fields-of-study`, which maps to the S2 `fieldsOfStudy` query parameter. A paper matches if S2 classified it into *any* of the listed fields, so multiple values are an OR, not an AND.
+
+Values come from S2's fixed 23-value vocabulary: `Computer Science`, `Medicine`, `Chemistry`, `Biology`, `Materials Science`, `Physics`, `Geology`, `Psychology`, `Art`, `History`, `Geography`, `Sociology`, `Business`, `Political Science`, `Economics`, `Philosophy`, `Mathematics`, `Engineering`, `Environmental Science`, `Agricultural and Food Sciences`, `Education`, `Law`, `Linguistics`.
+
+Two behaviours to know:
+
+- **Matching is case-insensitive but otherwise exact.** `computer science` works; `computer-science` does not. An unrecognized value yields zero results rather than an error, so check spelling first if a filtered query comes back empty.
+- **The filter matches `s2FieldsOfStudy`, not the `fieldsOfStudy` value returned in `--fields`.** `s2FieldsOfStudy` holds labels from two sources — `source: "s2-fos-model"` (S2's classifier) and `source: "external"` (publisher-supplied) — and a paper matches if the requested field appears under *either*. The separate `fieldsOfStudy` field is only a narrower projection of the external labels. So a paper returned under `--fields-of-study "Computer Science"` can come back showing `fieldsOfStudy: ["Medicine"]`, and a paper with no external label at all can still match. To see what the filter matched on, request `s2FieldsOfStudy` in `--fields` with `asta papers search` or `asta papers author papers`. Snippet search cannot return these labels because its `--fields` option accepts only snippet fields.
+- **On `asta papers author papers`, request `fieldsOfStudy` *and* `s2FieldsOfStudy` together.** That endpoint drops the `source: "external"` entries from `s2FieldsOfStudy` unless `fieldsOfStudy` is also requested, which makes correctly-matched papers look unmatched — asking for `s2FieldsOfStudy` alone accounts for only about a third of the papers a `Medicine` filter returns, while the two together account for all of them. `asta papers search` returns both sources either way.
+
+**The other `asta papers` commands have no field-of-study filter, because the endpoints behind them do not support one.** `asta papers citations` and `asta papers author search` hit endpoints that *silently ignore* `fieldsOfStudy` — they return the identical unfiltered result set, exactly as they do for a parameter name that does not exist. There is no error to signal this, so do not hand-append the parameter to those requests and assume it applied; filter their results client-side instead (for `citations`, request `s2FieldsOfStudy` in `--fields` and match on it yourself).
 
 ### Snippet Search
 
@@ -112,6 +129,10 @@ asta papers snippet-search "sparse mixture of experts" --fields snippet.text,sni
 
 # Pin results to papers indexed before a date (useful for reproducible benchmarks)
 asta papers snippet-search "chain-of-thought" --inserted-before 2024-01-01
+
+# Restrict to one or more fields of study
+asta papers snippet-search "graph neural networks" --fields-of-study "Computer Science"
+asta papers snippet-search "protein folding" --fields-of-study "Biology,Chemistry"
 ```
 
 The `--fields` option accepts **snippet fields**:
@@ -129,6 +150,7 @@ Options:
 - `--date`: Date/year filter, same as standard search
 - `--limit`: Max results (default 20, max 1000 — higher ceiling than standard search)
 - `--inserted-before`: Only include papers indexed before this date (`YYYY-MM-DD`, `YYYY-MM`, or `YYYY`). Typically used for consistency in benchmarking — pinning a cutoff date ensures the same set of papers is returned across repeated runs, even as new papers are continuously indexed.
+- `--fields-of-study`: Comma-separated field-of-study filter, same as standard search — see [Filtering by field of study](#filtering-by-field-of-study).
 - `--format`: Output as `json` or `text`
 
 ### Get Citations
@@ -166,11 +188,15 @@ asta papers author search "Yoav Goldberg"
 asta papers author papers 1741101 --limit 50
 
 asta papers author papers 1741101 --fields title,year,venue,citationCount
+
+# Restrict an author's papers to one or more fields of study
+asta papers author papers 1741101 --fields-of-study "Computer Science"
 ```
 
 Options:
 - `--fields`: Fields to return for papers
 - `--limit`: Max results (default 50, max 1000)
+- `--fields-of-study`: Comma-separated field-of-study filter, same as standard search — see [Filtering by field of study](#filtering-by-field-of-study).
 - `--format`: Output as `json` or `text`
 
 ## Output Formats
