@@ -272,12 +272,12 @@ jobs:
             fi
             # Surface the paper directly; it is otherwise one click deep.
             pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
-            for paper_dir in "$pr_dir"/paper-previews/*/; do
-              d=$(basename "$paper_dir")
-              [ -f "$paper_dir/preview.json" ] || continue
-              encoded=$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe=""))' "$d")
-              display=$(python3 -c 'import html, re, sys; print(re.sub(r"([\\`*_{}\[\]()#+.!|<>])", r"\\\1", html.escape(sys.argv[1])))' "$d")
-              label="Paper"; [ "$d" = paper ] || label="Paper ($display/)"
+            while IFS= read -r -d '' manifest; do
+              paper_dir=$(dirname "$manifest")
+              d=${paper_dir#"$pr_dir/paper-previews/"}
+              encoded=$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe="/"))' "$d")
+              display=$(python3 -c 'import html, re, sys; name=" / ".join(p.replace("-", " ").title().replace("Latex", "LaTeX") for p in sys.argv[1].split("/")); print(re.sub(r"([\\`*_{}\[\]()#+.!|<>])", r"\\\1", html.escape(name)))' "$d")
+              label="Paper"; [ "$d" = paper ] || label="$display"
               paper_url="${url}paper-previews/$encoded"
               if [ -f "$paper_dir/main.pdf" ]; then
                 body=$(printf '%s\n📑 %s PDF: %s/main.pdf' "$body" "$label" "$paper_url")
@@ -304,7 +304,7 @@ jobs:
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")
               fi
-            done
+            done < <(find "$pr_dir/paper-previews" -name preview.json -print0 2>/dev/null)
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.

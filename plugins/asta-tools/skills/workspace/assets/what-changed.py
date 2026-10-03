@@ -1007,7 +1007,14 @@ def pick_template(new_pages):
 
 
 def paper_identity(paper_dir):
-    label = "Paper" if paper_dir == "paper" else f"Paper ({html.escape(paper_dir)}/)"
+    label = (
+        "Paper"
+        if paper_dir == "paper"
+        else " / ".join(
+            html.escape(part.replace("-", " ").title().replace("Latex", "LaTeX"))
+            for part in paper_dir.split("/")
+        )
+    )
     section_id = (
         "paper-diff" if paper_dir == "paper" else f"paper-diff-{anchor_id(paper_dir)}"
     )
@@ -1039,7 +1046,7 @@ def paper_preview(new_root, paper_dir="paper"):
 
     def paper_url(filename):
         return html.escape(
-            f"paper-previews/{quote(paper_dir, safe='')}/{filename}", quote=True
+            f"paper-previews/{quote(paper_dir, safe='/')}/{filename}", quote=True
         )
 
     pdf = paper_url("what-changed.pdf" if state.get("diff") else "main.pdf")
@@ -1120,12 +1127,14 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
-    for paper_dir in sorted(
-        os.listdir(paper_root) if os.path.isdir(paper_root) else [],
-        key=lambda name: (name != "paper", name),
-    ):
-        if not os.path.isdir(os.path.join(paper_root, paper_dir)):
-            continue
+    paper_dirs = []
+    if os.path.isdir(paper_root):
+        for directory, _, files in os.walk(paper_root):
+            if "preview.json" in files:
+                paper_dirs.append(
+                    os.path.relpath(directory, paper_root).replace(os.sep, "/")
+                )
+    for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(new_root, paper_dir)
         if paper_section:
             section, paper_status = paper_section

@@ -218,6 +218,31 @@ def test_paper_preview_builds_second_paper_in_its_own_directory(tmp_path):
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
 
 
+def test_nested_paper_builds_pdf_and_diff(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    nested = repo / "lit-review/latex"
+    nested.mkdir(parents=True)
+    (nested / "main.tex").write_text("old")
+    (nested / "latexmkrc").write_text("$pdf_mode = 1;\n")
+    run(
+        "git",
+        "add",
+        "lit-review/latex/main.tex",
+        "lit-review/latex/latexmkrc",
+        cwd=repo,
+    )
+    run("git", "commit", "-qm", "add nested paper", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (nested / "main.tex").write_text("new")
+    run("git", "commit", "-qam", "edit nested paper", cwd=repo)
+
+    run("bash", str(SCRIPT), base, "lit-review/latex", cwd=repo, env=env)
+
+    assert (repo / "_site/paper-previews/lit-review/latex/main.pdf").exists()
+    assert (repo / "_site/paper-previews/lit-review/latex/what-changed.pdf").exists()
+    assert (repo / "_site/paper-previews/lit-review/latex/html/index.html").exists()
+
+
 def test_paper_directory_with_spaces_and_quotes_builds(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
     name = 'my paper &"'

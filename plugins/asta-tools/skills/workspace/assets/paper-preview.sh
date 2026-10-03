@@ -6,11 +6,8 @@ base=${1:-}
 dir=${2:-paper}
 dir=${dir%/}
 site_dir="_site/paper-previews/$dir"
-case "$dir" in
-  ""|.|..|-*|/*|*/*) echo "::error::Paper directory must be a top-level directory"; exit 1 ;;
-esac
-if [[ "$dir" =~ [[:cntrl:]] ]]; then
-  echo "::error::Paper directory contains a control character"
+if [[ -z "$dir" || "$dir" == /* || "$dir" == *//* || "$dir" =~ (^|/)(\.{1,2}|-[^/]*)(/|$) || "$dir" =~ [[:cntrl:]] ]]; then
+  echo "::error::Paper directory must be a safe relative path"
   exit 1
 fi
 test -f "$dir/main.tex" || exit 0

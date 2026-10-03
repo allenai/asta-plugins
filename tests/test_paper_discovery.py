@@ -39,11 +39,22 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
     (repo / "nested/sub").mkdir(parents=True)
     (repo / "nested/sub/main.tex").write_text("nested")
     (repo / "nested/sub/latexmkrc").write_text("$pdf_mode = 1;\n")
+    (repo / "nested/removed").mkdir()
+    (repo / "nested/removed/main.tex").write_text("removed")
+    (repo / "nested/removed/latexmkrc").write_text("$pdf_mode = 1;\n")
     git(repo, "add", "paper", "gone", "demoted", "kept", "nested")
     git(repo, "commit", "-qm", "base")
     base = git(repo, "rev-parse", "HEAD")
 
-    git(repo, "rm", "gone/main.tex", "gone/latexmkrc", "demoted/latexmkrc")
+    git(
+        repo,
+        "rm",
+        "gone/main.tex",
+        "gone/latexmkrc",
+        "demoted/latexmkrc",
+        "nested/removed/main.tex",
+        "nested/removed/latexmkrc",
+    )
     (repo / "added").mkdir()
     (repo / "added/main.tex").write_text("new")
     (repo / "added/latexmkrc").write_text("$pdf_mode = 1;\n")
@@ -51,8 +62,8 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
     (repo / "without-rc/main.tex").write_text("not a paper")
 
     assert discover(repo, base) == {
-        "papers": ["added", "kept", "paper"],
-        "removed": ["demoted", "gone"],
+        "papers": ["added", "kept", "nested/sub", "paper"],
+        "removed": ["demoted", "gone", "nested/removed"],
     }
 
 

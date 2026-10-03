@@ -98,8 +98,23 @@ def test_paper_directory_is_encoded_in_links_and_escaped_in_attributes(tmp_path)
 
     assert 'href="paper-previews/draft%20%26%22%20%231/main.pdf"' in result
     assert 'src="paper-previews/draft%20%26%22%20%231/html-diff/index.html"' in result
-    assert 'title="Paper (draft &amp;&quot; #1/) HTML diff"' in result
+    assert 'title="Draft &amp;&quot; #1 HTML diff"' in result
     assert 'href="draft &"' not in result
+
+
+def test_nested_paper_appears_with_source_path(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    directory = new / "paper-previews/lit-review/latex"
+    directory.mkdir(parents=True)
+    (directory / "preview.json").write_text(json.dumps({"changed": True, "new": True}))
+    (directory / "main.pdf").write_bytes(b"pdf")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "Lit Review / LaTeX" in result
+    assert 'href="paper-previews/lit-review/latex/main.pdf"' in result
 
 
 def test_site_section_with_main_pdf_remains_in_what_changed(tmp_path):
@@ -144,7 +159,7 @@ def test_removed_second_paper_has_its_own_notice(tmp_path):
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert 'id="paper-diff-p-latex"' in result
-    assert "Paper (latex/)" in result
+    assert "LaTeX" in result
     assert 'href="paper-previews/latex/main.pdf"' not in result
 
 

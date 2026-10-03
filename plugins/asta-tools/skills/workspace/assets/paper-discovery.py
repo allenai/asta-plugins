@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find top-level LaTeX papers in a workspace and papers removed by a PR."""
+"""Find LaTeX papers in a workspace and papers removed by a PR."""
 
 import json
 import os
@@ -18,17 +18,23 @@ def valid_name(name: str) -> bool:
 
 def current_papers(root: Path) -> set[str]:
     papers = set()
-    for entry in root.iterdir():
-        if not entry.is_dir() or entry.is_symlink():
-            continue
-        name = entry.name
-        if not (entry / "main.tex").is_file():
+    for directory, children, files in os.walk(root, followlinks=False):
+        entry = Path(directory)
+        children[:] = [
+            name
+            for name in children
+            if name not in {"_site", "_extensions", "build", "node_modules"}
+            and not name.startswith(".")
+            and not (entry / name).is_symlink()
+        ]
+        name = entry.relative_to(root).as_posix()
+        if name == "." or "main.tex" not in files:
             continue
         if name != "paper" and not any(
-            (entry / rc).is_file() for rc in ("latexmkrc", ".latexmkrc")
+            rc in files for rc in ("latexmkrc", ".latexmkrc")
         ):
             continue
-        if not valid_name(name):
+        if not all(valid_name(part) for part in entry.relative_to(root).parts):
             raise ValueError(f"invalid paper directory name: {name!r}")
         papers.add(name)
     return papers
@@ -46,14 +52,14 @@ def base_papers(base: str) -> set[str]:
     names = set()
     for path in paths:
         parts = path.split("/")
-        if len(parts) != 2 or parts[1] != "main.tex":
+        if len(parts) < 2 or parts[-1] != "main.tex":
             continue
-        name = parts[0]
+        name = "/".join(parts[:-1])
         if name != "paper" and not any(
             f"{name}/{rc}" in paths for rc in ("latexmkrc", ".latexmkrc")
         ):
             continue
-        if not valid_name(name):
+        if not all(valid_name(part) for part in parts[:-1]):
             raise ValueError(f"invalid base paper directory name: {name!r}")
         names.add(name)
     return names
