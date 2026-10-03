@@ -350,7 +350,7 @@ def test_preview_wait_requires_pr_for_feature_branch(tmp_path: Path) -> None:
 def test_quarto_check_rejects_colored_warning(tmp_path: Path) -> None:
     quarto = tmp_path / "quarto"
     quarto.write_text(
-        '#!/bin/sh\nmkdir -p _site\nprintf page > _site/index.html\n'
+        "#!/bin/sh\nmkdir -p _site\nprintf page > _site/index.html\n"
         'printf "\\033[33mWARN: unresolved citation\\033[0m\\n"\n'
     )
     quarto.chmod(0o755)
