@@ -50,7 +50,7 @@ import pathlib
 import sys
 
 source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-source = source.replace(r"\usepackage{bookmark}", "")
+source = source.replace(r"\usepackage{bookmark}", r"\usepackage{hyperref}")
 source = source.replace(
     r"\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}",
     "",

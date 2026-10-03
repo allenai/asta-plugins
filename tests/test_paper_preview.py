@@ -119,6 +119,7 @@ def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
 
     converted = capture.read_text()
     assert "bookmark" not in converted
+    assert r"\usepackage{hyperref}" in converted
     assert "footnotehyper" not in converted
     assert "makesavenoteenv" not in converted
     assert source.read_text() == original
