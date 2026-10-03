@@ -21,6 +21,7 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # cached copy and warn instead of failing — so a render works on a plane. Only a
 # first fetch with no cache is a hard error.
 # A saved tree hash avoids backing up clean updates; unknown trees are preserved.
+# diff checks empty directories; git diff also detects executable-bit changes.
 workspace-assets:
 	@set -eu; \
 	ref="$(ASTA_PLUGINS_REF)"; \
@@ -80,7 +81,8 @@ workspace-assets:
 	lock_held=1; \
 	mkdir -p .asta/evidence-backups; \
 	grep -Fxq '*' .asta/evidence-backups/.gitignore 2>/dev/null || printf '*\n' >> .asta/evidence-backups/.gitignore; \
-	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1; then \
+	if [ -d _extensions/evidence ] && diff -qr _extensions/evidence "$$tmp/evidence" >/dev/null 2>&1 \
+		&& git -c core.filemode=true diff --no-index --quiet -- _extensions/evidence "$$tmp/evidence"; then \
 		echo "workspace-assets: evidence extension unchanged"; exit 0; \
 	fi; \
 	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \

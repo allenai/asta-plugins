@@ -210,6 +210,32 @@ def test_workspace_makefile_backs_up_only_local_evidence_edits(tmp_path: Path) -
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "v3"
 
 
+def test_workspace_makefile_refreshes_upstream_executable_bit(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    command = [
+        "make",
+        "-f",
+        str((WORKSPACE_ASSETS / "Makefile").resolve()),
+        "workspace-assets",
+    ]
+    source = WORKSPACE_ASSETS / "_extensions/evidence"
+    for executable in (False, True):
+        archive_root = tmp_path / f"archive-{executable}" / "asta-plugins-test"
+        extension = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+        shutil.copytree(source, extension)
+        (extension / "snippet.lua").chmod(0o755 if executable else 0o644)
+        archive = tmp_path / f"archive-{executable}.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(archive_root, arcname=archive_root.name)
+        env = {"ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(), "PATH": os.environ["PATH"]}
+        subprocess.run(command, cwd=project, env=env, check=True)
+
+    installed = project / "_extensions/evidence/snippet.lua"
+    assert installed.stat().st_mode & 0o111
+    assert list((project / ".asta/evidence-backups").glob("evidence.*")) == []
+
+
 def test_workspace_makefile_rejects_broken_evidence_symlink(tmp_path: Path) -> None:
     project = tmp_path / "project"
     extension = project / "_extensions/evidence"
