@@ -111,9 +111,17 @@ def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
     )
     source.write_text(original)
     capture = repo / "html-input.tex"
+    capture_bbl = repo / "html-input-bbl.txt"
+    (repo / "paper/build").mkdir()
+    (repo / "paper/build/main.bbl").write_text("compiled bibliography")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
     with (bin_dir / "latexmlc").open("a") as mock:
         mock.write('cp "${@: -1}" "$FAKE_CAPTURE"\n')
+        mock.write('cat "$(dirname "${@: -1}")/main.bbl" > "$FAKE_CAPTURE_BBL"\n')
     env["FAKE_CAPTURE"] = str(capture)
+    env["FAKE_CAPTURE_BBL"] = str(capture_bbl)
+    env["TMPDIR"] = str(scratch)
 
     run("bash", str(SCRIPT), "", cwd=repo, env=env)
 
@@ -122,13 +130,15 @@ def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
     assert r"\usepackage{hyperref}" in converted
     assert "footnotehyper" not in converted
     assert "makesavenoteenv" not in converted
+    assert "pdfcreator={LaTeX via pandoc}" in converted
+    assert capture_bbl.read_text() == "compiled bibliography"
     assert source.read_text() == original
     assert (
         (repo / "_site/paper-previews/paper/html/x1.png")
         .read_text()
         .endswith("/main.tex")
     )
-    assert not list((repo / "paper").glob(".latexml-*.tex"))
+    assert not list(scratch.iterdir())
 
 
 def test_non_quarto_paper_passes_original_source_to_latexml(tmp_path):
@@ -138,10 +148,49 @@ def test_non_quarto_paper_passes_original_source_to_latexml(tmp_path):
     with (bin_dir / "latexmlc").open("a") as mock:
         mock.write('cp "${@: -1}" "$FAKE_CAPTURE"\n')
     env["FAKE_CAPTURE"] = str(capture)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    env["TMPDIR"] = str(scratch)
 
     run("bash", str(SCRIPT), "", cwd=repo, env=env)
 
     assert capture.read_text() == source.read_text()
+    assert (repo / "_site/paper-previews/paper/html/x1.png").read_text() == (
+        "paper/main.tex"
+    )
+    assert not list(scratch.iterdir())
+
+
+def test_quarto_preparation_failure_falls_back_to_original_source(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    source = repo / "paper/main.tex"
+    original = b"pdfcreator={LaTeX via pandoc}\ninvalid utf-8: \xff\n"
+    source.write_bytes(original)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    env["TMPDIR"] = str(scratch)
+
+    result = run("bash", str(SCRIPT), "", cwd=repo, env=env)
+
+    assert "Could not prepare Quarto TeX" in result.stdout
+    assert (repo / "_site/paper-previews/paper/main.pdf").exists()
+    assert (repo / "_site/paper-previews/paper/html/x1.png").read_text() == (
+        "paper/main.tex"
+    )
+    assert source.read_bytes() == original
+    assert not list(scratch.iterdir())
+
+
+def test_temp_directory_failure_falls_back_to_original_source(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    (repo / "paper/main.tex").write_text("pdfcreator={LaTeX via pandoc}\n")
+    (bin_dir / "mktemp").write_text("#!/bin/sh\nexit 1\n")
+    (bin_dir / "mktemp").chmod(0o755)
+
+    result = run("bash", str(SCRIPT), "", cwd=repo, env=env)
+
+    assert "Could not create a temporary TeX directory" in result.stdout
+    assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert (repo / "_site/paper-previews/paper/html/x1.png").read_text() == (
         "paper/main.tex"
     )

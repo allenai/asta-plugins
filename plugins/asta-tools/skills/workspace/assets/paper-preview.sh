@@ -37,9 +37,10 @@ if [ -s "$dir/build/main.bbl" ]; then
   cp "$dir/build/main.bbl" "$site_dir/main.bbl"
 fi
 
-convert_html() {
+convert_html() (
   local source=$1 target=$2 log=$3
   local output="${log}.output" result=1 input="$source" prepared_dir=""
+  trap 'if [ -n "$prepared_dir" ]; then rm -rf "$prepared_dir"; fi' EXIT
   mkdir -p "$(dirname "$target")"
   # Quarto's PDF preamble loads packages that only affect PDF navigation and
   # table footnotes. LaTeXML can spend minutes parsing their expl3 internals.
@@ -60,10 +61,16 @@ pathlib.Path(sys.argv[2]).write_text(source, encoding="utf-8")
 PY
       then
         input="$prepared_dir/$(basename "$source")"
+        local bbl="$(dirname "$source")/build/$(basename "${source%.tex}").bbl"
+        if [ -f "$bbl" ]; then
+          ln -s "$PWD/$bbl" "$prepared_dir/$(basename "${source%.tex}").bbl" || \
+            echo "::warning file=$source::Could not link the compiled bibliography for LaTeXML"
+        fi
       else
-        rm -rf "$prepared_dir"
-        prepared_dir=""
+        echo "::warning file=$source::Could not prepare Quarto TeX for LaTeXML; trying the original"
       fi
+    else
+      echo "::warning file=$source::Could not create a temporary TeX directory; trying the original"
     fi
   fi
   if command -v latexmlc >/dev/null 2>&1; then
@@ -79,7 +86,6 @@ PY
   if [ -s "$output" ]; then cat "$output" >> "$log"; fi
   if [ "$result" -eq 124 ]; then echo "LaTeXML timed out after 180 seconds" >> "$log"; fi
   rm -f "$output"
-  if [ -n "$prepared_dir" ]; then rm -rf "$prepared_dir"; fi
   if [ "$result" -eq 0 ] && [ -s "$target" ] && [ -f "$log" ] && \
      ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors?' "$log" && \
      python3 - "$target" <<'PY'
@@ -106,7 +112,7 @@ PY
   rm -f "$target"
   echo "::warning file=$source::LaTeXML conversion failed; see $log"
   return 1
-}
+)
 convert_html "$dir/main.tex" "$site_dir/html/index.html" "$site_dir/html/latexml.log" || true
 
 test -n "$base" || exit 0
