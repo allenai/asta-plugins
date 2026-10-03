@@ -97,7 +97,9 @@ def test_codespaces_persists_asta_login() -> None:
 
 
 @pytest.mark.parametrize("conflict", [False, True])
-def test_codespaces_migration_preserves_credentials(tmp_path: Path, conflict: bool) -> None:
+def test_codespaces_migration_preserves_credentials(
+    tmp_path: Path, conflict: bool
+) -> None:
     command = _devcontainer()["postCreateCommand"]
     persisted = tmp_path / "persisted"
     persisted.mkdir()
