@@ -190,6 +190,10 @@ set -eu
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
   "repo view") echo owner/project ;;
+  "pr view")
+    [ "${GH_NO_PR:-0}" != 1 ] || exit 1
+    echo 1
+    ;;
   "run list")
     count=0
     [ ! -f "$GH_RUN_COUNT" ] || count=$(cat "$GH_RUN_COUNT")
@@ -239,7 +243,7 @@ case "$1 $2" in
     marker_run=${GH_MARKER_RUN:-101}
     printf '[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]\\n' "$marker_run" | jq -r "$jq_filter"
     ;;
-  "api repos/owner/project/pages/builds?per_page=10")
+  "api repos/owner/project/pages/builds?per_page=100")
     [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
     echo "${GH_BUILT:-1}"
     ;;
@@ -325,7 +329,41 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     log = Path(env["GH_LOG"]).read_text()
     assert "compare/before...after" in log
     assert "(run 101)" in log
-    assert "pages/builds?per_page=10" in log
+    assert "pages/builds?per_page=100" in log
+
+
+def test_preview_wait_requires_pr_for_feature_branch(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_NO_PR"] = "1"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "open a PR first" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_quarto_check_rejects_colored_warning(tmp_path: Path) -> None:
+    quarto = tmp_path / "quarto"
+    quarto.write_text(
+        '#!/bin/sh\nmkdir -p _site\nprintf page > _site/index.html\n'
+        'printf "\\033[33mWARN: unresolved citation\\033[0m\\n"\n'
+    )
+    quarto.chmod(0o755)
+    script = (WORKSPACE_ASSETS / "quarto-check.sh").resolve()
+    env = os.environ.copy()
+    env["PATH"] = f"{tmp_path}:{env['PATH']}"
+
+    result = subprocess.run(
+        ["sh", str(script)], cwd=tmp_path, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "unresolved citation" in result.stdout
 
 
 def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> None:

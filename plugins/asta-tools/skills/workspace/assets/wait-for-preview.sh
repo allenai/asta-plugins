@@ -82,6 +82,11 @@ wait)
   branch=$(git branch --show-current)
   sha=$(git rev-parse HEAD)
 
+  if [ "$branch" != main ] && ! gh pr view --json number --jq .number >/dev/null 2>&1; then
+    echo "No PR for $branch yet — push the branch and open a PR first" >&2
+    exit 1
+  fi
+
   set --
   [ -z "$branch" ] || set -- --branch "$branch"
   elapsed=0 run_id=
@@ -98,7 +103,7 @@ wait)
     elapsed=$((elapsed + POLL))
   done
   [ -n "$run_id" ] || {
-    echo "No newer docs workflow run for $sha — was preview-baseline run after pushing?" >&2
+    echo "No newer docs workflow run for $sha — check that preview-baseline ran before pushing" >&2
     exit 1
   }
 
@@ -124,7 +129,7 @@ wait)
     exit 1
   }
 
-  after=$(pages_tip)
+  after=$(pages_tip) || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
   [ -n "$after" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
   if [ "$after" = "$before" ]; then
     echo "Docs workflow $run_id published no run-ID marker; update its workspace workflow" >&2
@@ -172,7 +177,7 @@ wait)
 
   elapsed=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
-    if ! built=$(gh api "repos/$REPO/pages/builds?per_page=10" --jq \
+    if ! built=$(gh api "repos/$REPO/pages/builds?per_page=100" --jq \
       "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length"); then
       echo "Could not read Pages builds for $REPO; verify Pages API access" >&2
       exit 1
