@@ -45,8 +45,12 @@ workspace-assets:
 	if [ -z "$$url" ]; then \
 		if [ "$$ref" = latest ]; then \
 			url="$(ASTA_PLUGINS_REPO)/archive/refs/heads/latest.tar.gz"; \
-		else \
+		elif printf '%s\n' "$$ref" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$$'; then \
+			url="$(ASTA_PLUGINS_REPO)/archive/refs/tags/$$ref.tar.gz"; \
+		elif printf '%s\n' "$$ref" | grep -Eq '^[0-9a-f]{40}$$'; then \
 			url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
+		else \
+			url="$(ASTA_PLUGINS_REPO)/archive/refs/heads/$$ref.tar.gz"; \
 		fi; \
 	fi; \
 	tmp=$$(mktemp -d); \

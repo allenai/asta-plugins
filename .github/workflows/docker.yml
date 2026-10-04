@@ -193,7 +193,10 @@ jobs:
             echo "latest branch already at $current"
             exit 0
           fi
-          # Fail before moving image tags if this is not a fast-forward.
+          if ! git merge-base --is-ancestor "$current_sha" "$sha"; then
+            echo "Cannot advance latest from $current to $newest: release is not a descendant of the current latest commit. Merge the release into main and tag that commit." >&2
+            exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/latest" -f sha="$sha" -F force=false >/dev/null
           echo "latest branch -> $newest ($sha)"
 

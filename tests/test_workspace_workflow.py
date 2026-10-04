@@ -834,16 +834,34 @@ def _make_evidence_archive(archive: Path) -> None:
         bundle.add(archive_root, arcname=archive_root.name)
 
 
-def test_workspace_makefile_resolves_latest_branch(tmp_path: Path) -> None:
-    # The default fetches the promoted latest branch, even if a newer tag exists.
+@pytest.mark.parametrize(
+    ("ref", "archive_ref"),
+    [
+        (None, "refs/heads/latest"),
+        ("v0.104.1", "refs/tags/v0.104.1"),
+        ("v0.105.0-rc.1", "refs/tags/v0.105.0-rc.1"),
+        ("feature/x", "refs/heads/feature/x"),
+        ("a" * 40, "a" * 40),
+    ],
+)
+def test_workspace_makefile_resolves_archive_ref(
+    tmp_path: Path, ref: str | None, archive_ref: str
+) -> None:
     repo = tmp_path / "asta-plugins"
     (repo / "archive").mkdir(parents=True)
-    archive = repo / "archive/refs/heads/latest.tar.gz"
-    archive.parent.mkdir(parents=True)
+    archive = repo / f"archive/{archive_ref}.tar.gz"
+    archive.parent.mkdir(parents=True, exist_ok=True)
     _make_evidence_archive(archive)
 
     project = tmp_path / "project"
     project.mkdir()
+    if ref is not None:
+        docs = project / ".github/workflows/docs.yml"
+        docs.parent.mkdir(parents=True)
+        docs.write_text(
+            "  uses: allenai/asta-plugins/.github/workflows/"
+            f"workspace-quarto-site.yml@{ref}\n"
+        )
     env = {
         "ASTA_PLUGINS_REPO": repo.as_uri(),
         "PATH": os.environ["PATH"],
@@ -862,7 +880,7 @@ def test_workspace_makefile_resolves_latest_branch(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "asta-plugins@latest" in result.stdout
+    assert f"asta-plugins@{ref or 'latest'}" in result.stdout
     assert (project / "_extensions/evidence/snippet.lua").read_bytes() == (
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()

@@ -44,7 +44,7 @@ LOCK_VERSION_PATTERN = re.compile(r'(name = "asta"\nversion = ")([^"]+)(")')
 WORKSPACE_WORKFLOW_REF_PATTERN = re.compile(
     r"^[ \t]*uses:[ \t]*(?P<quote>['\"]?)allenai/asta-plugins/\.github/workflows/"
     r"workspace-quarto-site\.yml@(?P<ref>latest|v\d+\.\d+\.\d+)"
-    r"(?P=quote)[ \t]*(?:#.*)?$",
+    r"(?P=quote)[ \t]*(?:#.*)?\r?$",
     re.MULTILINE,
 )
 
