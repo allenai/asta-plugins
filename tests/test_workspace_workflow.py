@@ -6,6 +6,7 @@ import tarfile
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
@@ -28,7 +29,11 @@ def _run_paper_step(tmp_path: Path, *, download_fails: bool = False):
     bin_dir.mkdir()
     curl = bin_dir / "curl"
     curl.write_text(
-        '#!/bin/sh\n[ "${FAIL_CURL:-0}" != 1 ] || exit 1\ncp "$DISCOVERY_SOURCE" "$4"\n'
+        "#!/bin/sh\n"
+        '[ "${FAIL_CURL:-0}" != 1 ] || exit 1\n'
+        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
+        '[ "$#" -ge 2 ] || exit 2\n'
+        'cp "$DISCOVERY_SOURCE" "$2"\n'
     )
     curl.chmod(0o755)
     sudo = bin_dir / "sudo"
@@ -69,6 +74,224 @@ def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
     assert (project / "_site/paper-previews/build-failed.txt").read_text().strip() == (
         "Could not download the paper discovery script."
     )
+
+
+def test_what_changed_project_override_runs_before_write_enabled_deploy(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    build = workflow["jobs"]["build"]
+    deploy = workflow["jobs"]["deploy"]
+    assert build["permissions"]["contents"] == "read"
+    assert deploy["permissions"]["contents"] == "write"
+    step = next(s for s in build["steps"] if s.get("name") == "Generate What changed")
+    assert not any("what-changed.py" in s.get("run", "") for s in deploy["steps"])
+
+    remote = tmp_path / "remote.git"
+    project = tmp_path / "project"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(project)], check=True, capture_output=True
+    )
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
+
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (project / "index.html").write_text("deployed main")
+    git("add", "index.html")
+    git("commit", "-m", "Baseline")
+    git("remote", "add", "origin", str(remote))
+    git("push", "origin", "gh-pages")
+    git("switch", "-c", "main")
+    (project / "scripts").mkdir()
+    (project / "scripts/what-changed.py").write_text(
+        "import argparse\n"
+        "from pathlib import Path\n"
+        "p = argparse.ArgumentParser()\n"
+        "for arg in ('old', 'new', 'out', 'title'):\n"
+        "    p.add_argument('--' + arg)\n"
+        "a = p.parse_args()\n"
+        "Path(a.out).write_text('custom: ' + Path(a.old, 'index.html').read_text() + '\\n' + a.title)\n"
+    )
+    git("add", "scripts/what-changed.py")
+    git("commit", "-m", "Customize diff")
+    git("update-ref", "refs/remotes/origin/gh-pages", "HEAD")
+    (project / "_site").mkdir()
+    (project / "_site/index.html").write_text("PR content")
+
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={**os.environ, "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    page = (project / "_site/what-changed.html").read_text()
+    assert page.startswith("custom: deployed main\nPR #7 · Pages ")
+    assert re.search(r"Pages [0-9a-f]{12}$", page)
+    assert "Using project-owned" in result.stdout
+
+    (project / "_site/what-changed.html").unlink()
+    (project / "scripts/what-changed.py").write_text(
+        "import argparse\n"
+        "from pathlib import Path\n"
+        "p = argparse.ArgumentParser()\n"
+        "for arg in ('old', 'new', 'out', 'title'):\n"
+        "    p.add_argument('--' + arg)\n"
+        "a = p.parse_args()\n"
+        "Path(a.out).write_text('partial')\n"
+        "raise RuntimeError('failed after writing')\n"
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={**os.environ, "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (project / "_site/what-changed.html").exists()
+    assert "what-changed page generation failed" in result.stdout
+
+
+def test_what_changed_uses_managed_generator_without_project_copy(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    project = tmp_path / "project"
+    (project / "_site").mkdir(parents=True)
+    (project / "_site/index.html").write_text(
+        "<html><head><title>Test</title></head><body><main>New page</main></body></html>"
+    )
+    subprocess.run(
+        ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
+    )
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
+        '[ "$#" -ge 2 ] || exit 2\n'
+        'cp "$MANAGED_SOURCE" "$2"\n'
+    )
+    curl.chmod(0o755)
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "MANAGED_SOURCE": str((WORKSPACE_ASSETS / "what-changed.py").resolve()),
+            "PR_NUMBER": "8",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/what-changed.html").is_file()
+    assert "no deployed baseline" in (project / "_site/what-changed.html").read_text()
+
+
+@pytest.mark.parametrize("failed_command", ["ls-remote", "fetch", "archive"])
+def test_what_changed_skips_diff_when_baseline_read_fails(
+    tmp_path: Path, failed_command: str
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    project = tmp_path / "project"
+    (project / "_site").mkdir(parents=True)
+    (project / "_site/index.html").write_text("PR content")
+    subprocess.run(
+        ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
+    )
+    remote = tmp_path / "remote.git"
+    baseline = tmp_path / "baseline"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(baseline)],
+        check=True,
+        capture_output=True,
+    )
+    (baseline / "index.html").write_text("deployed main")
+    for args in (
+        ("config", "user.name", "Test"),
+        ("config", "user.email", "test@example.invalid"),
+        ("add", "index.html"),
+        ("commit", "-m", "Baseline"),
+        ("remote", "add", "origin", str(remote)),
+        ("push", "origin", "gh-pages"),
+    ):
+        subprocess.run(["git", *args], cwd=baseline, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$1" >> "$GIT_COMMAND_LOG"\n'
+        '[ "$1" != "$FAILED_COMMAND" ] || exit 1\n'
+        'exec "$REAL_GIT" "$@"\n'
+    )
+    git.chmod(0o755)
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "REAL_GIT": shutil.which("git"),
+            "FAILED_COMMAND": failed_command,
+            "GIT_COMMAND_LOG": str(tmp_path / "git-commands.log"),
+            "PR_NUMBER": "8",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (project / "_site/what-changed.html").exists()
+    assert "skipping the diff page" in result.stdout
+    commands = (tmp_path / "git-commands.log").read_text().splitlines()
+    assert failed_command in commands
+    if failed_command == "archive":
+        assert "fetch" in commands
 
 
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
