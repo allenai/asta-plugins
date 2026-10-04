@@ -105,178 +105,50 @@ jobs:
           fi
           discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
           curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
-          # Papers made by `make latex` are build outputs, not committed sources.
-          # Commit them to throwaway commits on head and base (HEAD is restored
-          # on exit) so discovery and diffs treat them like committed papers.
-          orig_head=$(git rev-parse -q --verify HEAD 2>/dev/null || true)
-          generated_head=0
-          generation_failed=0
-          gen_base=""
-          cleanup_generated() {
-            status=$?
-            trap - EXIT
-            if [ "$generated_head" -eq 1 ]; then
-              git reset -q --mixed "$orig_head" || status=1
-            fi
-            if [ -n "$gen_base" ]; then
-              git worktree remove --force "$gen_base" 2>/dev/null || true
-              rm -rf -- "$gen_base"
-              git worktree prune --expire=now || status=1
-            fi
-            exit "$status"
-          }
-          [ -z "$(trap -p EXIT)" ] || fail_discovery 'Paper step already has an EXIT trap.'
-          trap cleanup_generated EXIT
+          # `make latex` output is a build product, not a committed source: run
+          # it in this checkout and in a separate base checkout, then discover
+          # and diff papers by comparing the two trees on disk.
           has_latex_target() {
-            local target_db target_errors probe_status
-            target_db=$(mktemp) || return 2
-            target_errors=$(mktemp) || { rm -f "$target_db"; return 2; }
-            probe_status=0
-            # Query Make's target database; included makefiles can be remade.
-            LC_ALL=C make -C "$1" -prq --eval='__asta_workspace_probe:' \
-              __asta_workspace_probe > "$target_db" 2> "$target_errors" || probe_status=$?
-            if [ "$probe_status" -gt 1 ]; then
-              cat "$target_errors" >&2
-              rm -f "$target_db" "$target_errors"
-              return 2
-            fi
-            if ! awk '/^# Not a target:/{skip=1;next} /^latex:/{if (!skip) found=1} {skip=0} END{exit !found}' "$target_db"; then
-              rm -f "$target_db" "$target_errors"
-              return 1
-            fi
-            rm -f "$target_db" "$target_errors"
+            local db status=0
+            db=$(LC_ALL=C make -C "$1" -prq --eval='__asta_probe:' __asta_probe 2>/dev/null) || status=$?
+            [ "$status" -le 1 ] || return 2
+            awk '/^# Not a target:/{skip=1;next} /^latex:/{if (!skip) found=1} {skip=0} END{exit !found}' <<< "$db"
           }
-          generate_latex() {
-            local papers paths candidates manifest discovered d path tracked parent tree commit snapshots saved latex_status
-            git -C "$1" diff --cached --quiet || { echo '::error::index has staged changes before make latex'; return 1; }
-            snapshots=$(mktemp -d) || return 1
-            saved=$(mktemp) || { rm -rf "$snapshots"; return 1; }
-            if ! git -C "$1" ls-files -z > "$saved"; then
-              rm -rf "$snapshots"; rm -f "$saved"; return 1
+          base_dir=""
+          cleanup_base() {
+            if [ -n "$base_dir" ]; then
+              git worktree remove --force "$base_dir" 2>/dev/null || rm -rf -- "$base_dir"
+              git worktree prune 2>/dev/null || true
             fi
-            while IFS= read -r -d '' path; do
-              case "$path" in
-                */main.tex)
-                  if [ -e "$1/$path" ] || [ -L "$1/$path" ]; then
-                    mkdir -p "$snapshots/$(dirname "$path")" || { rm -rf "$snapshots"; rm -f "$saved"; return 1; }
-                    cp -Pp "$1/$path" "$snapshots/$path" || { rm -rf "$snapshots"; rm -f "$saved"; return 1; }
-                  fi ;;
-              esac
-            done < "$saved"
-            manifest=$(mktemp) || { rm -rf "$snapshots"; rm -f "$saved"; return 1; }
-            latex_status=0
-            ASTA_PAPER_INPUTS_FILE="$manifest" make -C "$1" latex || latex_status=$?
-            while IFS= read -r -d '' path; do
-              if [ -e "$snapshots/$path" ] || [ -L "$snapshots/$path" ]; then
-                mkdir -p "$1/$(dirname "$path")" || { rm -rf "$snapshots"; rm -f "$saved" "$manifest"; return 1; }
-                cp -Pp "$snapshots/$path" "$1/$path" || { rm -rf "$snapshots"; rm -f "$saved" "$manifest"; return 1; }
-              fi
-            done < "$saved"
-            rm -rf "$snapshots"; rm -f "$saved"
-            if [ "$latex_status" -ne 0 ]; then
-              rm -f "$manifest"
-              return 1
-            fi
-            papers=$(cd "$1" && python3 /tmp/paper-discovery.py "") || { rm -f "$manifest"; return 1; }
-            jq -e '.papers | type == "array"' <<< "$papers" >/dev/null || { rm -f "$manifest"; return 1; }
-            discovered=$(jq -r '.papers[]' <<< "$papers") || { rm -f "$manifest"; return 1; }
-            paths=$(mktemp) || { rm -f "$manifest"; return 1; }
-            candidates=$(mktemp) || { rm -f "$paths" "$manifest"; return 1; }
-            while IFS= read -r d; do
-              [ -n "$d" ] || continue
-              # A committed paper is the project's source, even if the target rewrites it.
-              tracked=$(GIT_LITERAL_PATHSPECS=1 git -C "$1" ls-files -- "$d/main.tex") || { rm -f "$paths" "$candidates" "$manifest"; return 1; }
-              if [ -n "$tracked" ]; then
-                continue
-              fi
-              if ! (cd "$1" && find "./$d" \( -type d -name build -o -type d -name html \) -prune -o \( -type f -o -type l \) -print0) > "$candidates"; then
-                rm -f "$paths" "$candidates" "$manifest"
-                return 1
-              fi
-              while IFS= read -r -d '' path; do
-                path=${path#./}
-                # Include sources made by make check as well as make latex,
-                # without putting TeX build products in the temporary commit.
-                case "$path" in
-                  */main.pdf|*/main-diff.pdf|*/main-*-diff.pdf) ;;
-                  *.tex|*.bib|*.bst|*.bbx|*.cbx|*.cls|*.sty|*.def|*.cfg|*.tikz|*.pgf|*.eps|*.svg|*.png|*.jpg|*.jpeg|*.pdf|*/latexmkrc|*/.latexmkrc)
-                    printf '%s\0' "$path" >> "$paths" || { rm -f "$paths" "$candidates" "$manifest"; return 1; } ;;
-                esac
-              done < "$candidates"
-            done <<< "$discovered"
-            rm -f "$candidates"
-            # The target can name generated inputs outside a paper directory.
-            # Read explicit paths, never sweep the whole repository into Git.
-            while IFS= read -r path || [ -n "$path" ]; do
-              path=${path%$'\r'}
-              path=${path#./}
-              [ -n "$path" ] || continue
-              case "$path" in
-                /*|.*|*/.*)
-                  echo "::error::Invalid path in ASTA_PAPER_INPUTS_FILE: $path" >&2
-                  rm -f "$paths" "$manifest"
-                  return 1 ;;
-              esac
-              parent=${path%/*}
-              while [ "$parent" != "$path" ]; do
-                if [ -L "$1/$parent" ]; then
-                  echo "::error::Linked paper input directory: $parent" >&2
-                  rm -f "$paths" "$manifest"
-                  return 1
-                fi
-                case "$parent" in */*) parent=${parent%/*} ;; *) break ;; esac
-              done
-              if [ ! -f "$1/$path" ] || [ -L "$1/$path" ]; then
-                echo "::error::Missing or linked paper input: $path" >&2
-                rm -f "$paths" "$manifest"
-                return 1
-              fi
-              printf '%s\0' "$path" >> "$paths" || { rm -f "$paths" "$manifest"; return 1; }
-            done < "$manifest"
-            rm -f "$manifest"
-            if [ -s "$paths" ]; then
-              if [ "$1" = . ]; then generated_head=1; fi
-              GIT_LITERAL_PATHSPECS=1 git -C "$1" add -f --pathspec-from-file="$paths" --pathspec-file-nul || { rm -f "$paths"; return 1; }
-            fi
-            rm -f "$paths"
-            git -C "$1" diff --cached --quiet && return 0
-            parent=$(git -C "$1" rev-parse HEAD) || return 1
-            tree=$(git -C "$1" write-tree) || return 1
-            # A preview commit must not run project hooks or require a signing key.
-            commit=$(printf 'Generated LaTeX (preview only)\n' | GIT_AUTHOR_NAME=asta-preview GIT_AUTHOR_EMAIL=asta-preview@localhost GIT_COMMITTER_NAME=asta-preview GIT_COMMITTER_EMAIL=asta-preview@localhost git -C "$1" commit-tree "$tree" -p "$parent") || return 1
-            git -C "$1" update-ref HEAD "$commit" "$parent" || return 1
           }
-          if [ -n "$orig_head" ]; then
-            if has_latex_target .; then
-              if ! generate_latex .; then
-                echo 'make latex failed; see the build log.' > _site/paper-previews/build-failed.txt
-                echo '::error::make latex failed; committed papers will still be built'
-                generation_failed=1
-                if [ "$generated_head" -eq 1 ]; then
-                  git reset -q --mixed "$orig_head" || fail_discovery 'Could not restore the paper preview index.'
-                  generated_head=0
-                fi
-              fi
-            elif [ "$?" -gt 1 ]; then
-              fail_discovery 'Could not inspect the latex target.'
+          trap cleanup_base EXIT
+          generation_failed=0
+          if has_latex_target .; then
+            if ! make latex; then
+              echo 'make latex failed; committed papers were still built.' > _site/paper-previews/build-failed.txt
+              echo '::error::make latex failed; committed papers will still be built'
+              generation_failed=1
             fi
+          elif [ "$?" -gt 1 ]; then
+            fail_discovery 'Could not inspect the latex target.'
           fi
           if [ -n "$base" ]; then
-            gen_base=$(mktemp -d) || fail_discovery 'Could not create a temporary directory for the PR base.'
-            git worktree add -q --detach "$gen_base" "$base" || fail_discovery 'Could not create a worktree for the PR base.'
-            if has_latex_target "$gen_base"; then
-              if ! make -C "$gen_base" check; then
-                echo '::warning::make check failed on the PR base; its generated papers are treated as absent'
-              elif generate_latex "$gen_base"; then
-                base=$(git -C "$gen_base" rev-parse HEAD)
-              else
+            base_dir=$(mktemp -d) || fail_discovery 'Could not create a directory for the PR base.'
+            if ! git worktree add -q --detach "$base_dir" "$base"; then
+              echo '::warning::Could not check out the PR base; publishing current papers without diffs or removals'
+              rm -rf -- "$base_dir"
+              base_dir=""
+            elif has_latex_target "$base_dir"; then
+              if ! make -C "$base_dir" latex; then
+                # Drop partial output so the base shows only its committed papers.
+                git -C "$base_dir" clean -fdxq
                 echo '::warning::make latex failed on the PR base; its generated papers are treated as absent'
               fi
             elif [ "$?" -gt 1 ]; then
-              echo '::warning::Could not inspect the PR base latex target; using committed base papers'
+              echo '::warning::Could not inspect the PR base latex target; using its committed papers'
             fi
           fi
-          discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
+          discovery=$(python3 /tmp/paper-discovery.py "$base_dir") || fail_discovery 'Could not discover paper projects.'
           jq -e '(.papers | type == "array" and all(.[]; type == "string")) and (.removed | type == "array" and all(.[]; type == "string")) and (.warnings | type == "array" and all(.[]; type == "string"))' <<< "$discovery" >/dev/null || fail_discovery 'Paper discovery returned invalid data.'
           mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
           mapfile -t removed < <(jq -r '.removed[]' <<< "$discovery")
@@ -310,7 +182,7 @@ jobs:
           curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
-            if ! bash /tmp/paper-preview.sh "$base" "$d"; then
+            if ! bash /tmp/paper-preview.sh "$base_dir" "$d"; then
               status=1
               mkdir -p "_site/paper-previews/$d"
               if [ ! -f "_site/paper-previews/$d/build-failed.txt" ]; then

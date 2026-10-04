@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base=${1:-}
+base=${1:-}  # checkout of the PR base (empty: no diff)
 # Paper directory relative to the repo root; each holds its own main.tex.
 dir=${2:-paper}
 dir=${dir%/}
@@ -119,9 +119,9 @@ fallback() {
   echo '::warning::Could not compare paper versions; the current paper PDF remains available'
 }
 if ! flags=$(python3 - "$base" "$dir" <<'PY'
+import filecmp
 import pathlib
 import shlex
-import subprocess
 import sys
 
 root = pathlib.Path.cwd().resolve()
@@ -130,15 +130,17 @@ fls = paper_dir / "build/main.fls"
 if not fls.is_file():
     raise SystemExit("LaTeX did not record paper inputs in build/main.fls")
 inputs = set()
+outputs = set()
 cwd = paper_dir
 for line in fls.read_text(errors="replace").splitlines():
     if line.startswith("PWD "):
         cwd = pathlib.Path(line[4:])
-    elif line.startswith("INPUT "):
-        path = pathlib.Path(line[6:])
+    elif line.startswith(("INPUT ", "OUTPUT ")):
+        kind, _, name = line.partition(" ")
+        path = pathlib.Path(name)
         path = (path if path.is_absolute() else cwd / path).resolve()
         try:
-            inputs.add(path.relative_to(root).as_posix())
+            (inputs if kind == "INPUT" else outputs).add(path.relative_to(root).as_posix())
         except ValueError:
             pass
 
@@ -158,13 +160,19 @@ for name in shlex.split(dep_text.partition(":")[2]):
     except ValueError:
         pass
 
-changed = subprocess.check_output(
-    ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
-).decode().rstrip("\0").split("\0")
-relevant = [
-    path for path in changed
-    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
-]
+# Compare the head and base trees on disk, so generated sources count too.
+base = pathlib.Path(sys.argv[1])
+candidates = inputs | {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
+build = f"{sys.argv[2]}/build/"
+def differs(path):
+    new, old = root / path, base / path
+    if new.is_file() != old.is_file():
+        return True
+    return new.is_file() and not filecmp.cmp(new, old, shallow=False)
+relevant = sorted(
+    path for path in candidates - outputs
+    if not path.startswith(build) and differs(path)
+)
 print(int(any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))
 PY
@@ -176,38 +184,26 @@ read -r tex_changed other_changed <<< "$flags"
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
 printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 
-if ! git cat-file -e "$base:$dir/main.tex" 2>/dev/null; then
+if [ ! -f "$base/$dir/main.tex" ]; then
   printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
   exit 0
 fi
 if [ "$tex_changed" = 0 ]; then exit 0; fi
-if ! old=$(mktemp -d); then fallback; exit 0; fi
 if ! diff_tmp=$(mktemp "$dir/what-changed.XXXXXXXX"); then
-  rm -rf "$old"
   fallback
   exit 0
 fi
 diff_tex="$diff_tmp.tex"
 if ! mv "$diff_tmp" "$diff_tex"; then
   rm -f "$diff_tmp"
-  rm -rf "$old"
   fallback
   exit 0
 fi
 diff_name=${diff_tex##*/}
 diff_stem=${diff_name%.tex}
-cleanup() {
-  git worktree remove --force "$old" 2>/dev/null || true
-  rm -rf "$old"
-  rm -f "$diff_tex"
-}
-trap cleanup EXIT
-if ! git worktree add --detach "$old" "$base" >/dev/null; then
-  fallback
-  exit 0
-fi
+trap 'rm -f "$diff_tex"' EXIT
 
-if ! latexdiff --flatten "$old/$dir/main.tex" "$dir/main.tex" > "$diff_tex"; then
+if ! latexdiff --flatten "$base/$dir/main.tex" "$dir/main.tex" > "$diff_tex"; then
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
   exit 0
 fi

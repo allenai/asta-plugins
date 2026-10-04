@@ -17,6 +17,19 @@ def git(repo: Path, *args: str) -> str:
 
 
 def discover(repo: Path, base: str = "") -> dict:
+    if base and subprocess.run(
+        ["git", "rev-parse", "-q", "--verify", f"{base}^{{commit}}"],
+        cwd=repo,
+        capture_output=True,
+    ).returncode == 0:
+        # The workflow passes a checkout of the PR base, not a revision.
+        target = repo.parent / "base"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "--detach", str(target), base],
+            cwd=repo,
+            check=True,
+        )
+        base = str(target)
     result = subprocess.run(
         ["python3", str(SCRIPT), base], cwd=repo, capture_output=True, text=True
     )

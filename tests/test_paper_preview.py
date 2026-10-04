@@ -11,6 +11,14 @@ SCRIPT = (
 )
 
 
+
+def checkout(repo: Path, rev: str) -> str:
+    """Check out the PR base beside the repo, as the workflow does."""
+    target = repo.parent / f"base-{rev[:12]}"
+    if not target.exists():
+        run("git", "worktree", "add", "-q", "--detach", str(target), rev, cwd=repo)
+    return str(target)
+
 def run(*args, cwd, env=None):
     return subprocess.run(
         args, cwd=cwd, env=env, check=True, capture_output=True, text=True
@@ -62,7 +70,7 @@ def paper_repo(tmp_path, old_paper=True):
 def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     repo, base, env, _ = paper_repo(tmp_path)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
@@ -208,7 +216,7 @@ def test_paper_preview_builds_second_paper_in_its_own_directory(tmp_path):
     (second / "main.tex").write_text("new")
     run("git", "commit", "-qam", "edit second paper", cwd=repo)
 
-    run("bash", str(SCRIPT), base, "latex", cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), "latex", cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/latex/main.pdf").exists()
     assert (repo / "_site/paper-previews/latex/what-changed.pdf").exists()
@@ -236,7 +244,7 @@ def test_nested_paper_builds_pdf_and_diff(tmp_path):
     (nested / "main.tex").write_text("new")
     run("git", "commit", "-qam", "edit nested paper", cwd=repo)
 
-    run("bash", str(SCRIPT), base, "lit-review/latex", cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), "lit-review/latex", cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/lit-review/latex/main.pdf").exists()
     assert (repo / "_site/paper-previews/lit-review/latex/what-changed.pdf").exists()
@@ -252,7 +260,7 @@ def test_paper_directory_with_spaces_and_quotes_builds(tmp_path):
     (repo / name / "main.tex").write_text("newer")
     run("git", "commit", "-qam", "edit paper", cwd=repo)
 
-    run("bash", str(SCRIPT), base, name, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), name, cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews" / name / "main.pdf").exists()
     assert (repo / "_site/paper-previews" / name / "html-diff/index.html").exists()
@@ -265,7 +273,7 @@ def test_latexml_failure_keeps_pdf_and_log(tmp_path):
         '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf partial > "$dest"\nprintf "Error: unsupported package\\n" > "$log"\nexit 1\n'
     )
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
@@ -278,7 +286,7 @@ def test_missing_latexmlc_writes_a_published_failure_log(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     (bin_dir / "latexmlc").unlink()
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert (
@@ -293,7 +301,7 @@ def test_single_latexml_error_is_not_published_as_html(tmp_path):
         '#!/bin/bash\nfor arg in "$@"; do case "$arg" in --dest=*) dest=${arg#--dest=};; --log=*) log=${arg#--log=};; esac; done\nprintf html > "$dest"\nprintf "Conversion complete: 1 error; 0 warnings\\n" > "$log"\n'
     )
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert not (repo / "_site/paper-previews/paper/html/index.html").exists()
@@ -311,7 +319,7 @@ def test_html_diff_survives_diff_pdf_failure(tmp_path):
     with (bin_dir / "latexmk").open("a") as mock:
         mock.write('if [[ "$name" == what-changed.* ]]; then exit 1; fi\n')
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert not (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
     assert (repo / "_site/paper-previews/paper/html-diff/index.html").exists()
@@ -328,7 +336,7 @@ def test_html_diff_survives_diff_pdf_failure(tmp_path):
 def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
     repo, base, env, _ = paper_repo(tmp_path, old_paper=False)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert json.loads(
@@ -395,7 +403,7 @@ def test_unchanged_paper_has_no_diff_manifest(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert json.loads(
@@ -419,7 +427,7 @@ def test_missing_recorder_keeps_current_pdf_without_failing_build(tmp_path):
     with (bin_dir / "latexmk").open("a") as mock:
         mock.write("rm -f build/main.fls\n")
 
-    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    result = run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert "Could not compare paper versions" in result.stdout
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
@@ -450,7 +458,7 @@ def test_latexdiff_failure_keeps_current_pdf(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     (bin_dir / "latexdiff").write_text("#!/bin/bash\nexit 1\n")
 
-    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    result = run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert "Could not build latexdiff PDF" in result.stdout
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
@@ -467,7 +475,7 @@ def test_thumbnail_failure_keeps_diff_pdf(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     (bin_dir / "pdftoppm").write_text("#!/bin/bash\nexit 1\n")
 
-    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    result = run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert "Could not render paper diff thumbnails" in result.stdout
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
@@ -488,7 +496,7 @@ def test_diff_records_actual_page_count_for_thumbnail_note(tmp_path):
     (bin_dir / "pdfinfo").write_text("#!/bin/sh\necho 'Pages: 13'\n")
     (bin_dir / "pdfinfo").chmod(0o755)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (
         json.loads((repo / "_site/paper-previews/paper/preview.json").read_text())[
@@ -505,7 +513,7 @@ def test_diff_does_not_delete_a_tracked_paper_file(tmp_path):
     run("git", "add", "paper/what-changed.tex", cwd=repo)
     run("git", "commit", "-qm", "add tracked file", cwd=repo)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert tracked.read_text() == "keep this file"
     assert not list((repo / "paper").glob("what-changed.*.tex"))
@@ -518,7 +526,7 @@ def test_unread_paper_file_does_not_claim_paper_changed(tmp_path):
     run("git", "add", "paper/README.md", cwd=repo)
     run("git", "commit", "-qm", "add paper notes", cwd=repo)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert json.loads(
         (repo / "_site/paper-previews/paper/preview.json").read_text()
@@ -538,7 +546,7 @@ def test_changed_included_subdirectory_tex_builds_diff(tmp_path):
     run("git", "commit", "-qam", "edit section", cwd=repo)
     env["FAKE_LATEX_INPUT"] = "sections/intro.tex"
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
     assert (
@@ -559,7 +567,7 @@ def test_root_level_tex_input_is_detected_without_false_diff_highlights(tmp_path
     run("git", "commit", "-qam", "edit shared input", cwd=repo)
     env["FAKE_LATEX_INPUT"] = "../shared.tex"
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert not (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
@@ -582,7 +590,7 @@ def test_bibliography_only_edit_links_unmarked_current_pdf(tmp_path):
     run("git", "commit", "-qam", "edit bibliography", cwd=repo)
     env["FAKE_LATEX_DEPS"] = "../references.bib"
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert (repo / "_site/paper-previews/paper/main.pdf").exists()
     assert not (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
@@ -604,7 +612,7 @@ def test_unused_bibliography_edit_does_not_mark_paper_changed(tmp_path):
     (repo / "unused.bib").write_text("new")
     run("git", "commit", "-qam", "edit unused bibliography", cwd=repo)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert json.loads(
         (repo / "_site/paper-previews/paper/preview.json").read_text()
@@ -622,7 +630,7 @@ def test_dependency_comment_does_not_mark_unused_bibliography_changed(tmp_path):
     with (bin_dir / "latexmk").open("a") as mock:
         mock.write('sed -i "1i# Header: ../unused.bib" build/main.dep\n')
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert json.loads(
         (repo / "_site/paper-previews/paper/preview.json").read_text()
@@ -638,7 +646,7 @@ def test_latexmkrc_change_is_a_paper_input(tmp_path):
     (repo / "paper/.latexmkrc").write_text("new")
     run("git", "commit", "-qam", "edit configuration", cwd=repo)
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert json.loads(
         (repo / "_site/paper-previews/paper/preview.json").read_text()
@@ -655,7 +663,7 @@ def test_preamble_only_edit_links_pdf_without_highlights(tmp_path):
         "#!/bin/bash\nprintf '\\\\usepackage{new}\\n\\\\begin{document}\\nbody\\n'\n"
     )
 
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    run("bash", str(SCRIPT), checkout(repo, base), cwd=repo, env=env)
 
     assert not (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
     assert json.loads(
