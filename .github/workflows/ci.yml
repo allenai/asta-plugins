@@ -7,6 +7,28 @@ on:
     branches: [main]
 
 jobs:
+  ref-permission-probe:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check GITHUB_TOKEN can advance a ref across workflow edits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref="gas2own-ref-probe-${GITHUB_RUN_ID}"
+          trap 'gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$ref" >/dev/null 2>&1 || true' EXIT
+          old_sha=$(git rev-list -n 1 v0.104.1)
+          new_sha=$(git rev-parse origin/main)
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$ref" -f sha="$old_sha" >/dev/null
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$ref" -f sha="$new_sha" -F force=false >/dev/null
+          echo 'GITHUB_TOKEN advanced the test ref over main history'
+
   code-quality:
     runs-on: ubuntu-latest
     steps:
