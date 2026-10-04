@@ -326,9 +326,13 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
     baseline.mkdir()
     subprocess.run(
         [
-            "bash", "-o", "pipefail", "-c",
+            "bash",
+            "-o",
+            "pipefail",
+            "-c",
             'git archive HEAD | tar -x --exclude=pr-preview -C "$1"',
-            "bash", str(baseline),
+            "bash",
+            str(baseline),
         ],
         cwd=repo,
         check=True,
