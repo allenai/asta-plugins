@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import re
 import shutil
@@ -124,6 +125,7 @@ def test_scaffolded_workflow_follows_latest_release() -> None:
         ("latest", "latest"),
         ("v0.104.1", "v0.104.1"),
         ("main", "main"),
+        ("feature/x", "feature/x"),
         ("a" * 40, "a" * 40),
         ("'latest'", "latest"),
         ('"v0.104.1"', "v0.104.1"),
@@ -171,7 +173,20 @@ def test_latest_release_ref_is_updated_before_images() -> None:
     assert image_job["permissions"] == {"contents": "read", "packages": "write"}
 
 
-def test_latest_ref_selects_newest_release_after_lock(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("current_release", "published_releases", "expected_release"),
+    [
+        ("v0.104.1", ("v0.104.1", "v0.105.0"), "v0.105.0"),
+        ("v0.105.0", ("v0.104.1", "v0.105.0"), None),
+        ("v0.105.0", ("v0.104.1",), None),
+    ],
+)
+def test_latest_ref_selects_newest_release_after_lock(
+    tmp_path: Path,
+    current_release: str,
+    published_releases: tuple[str, ...],
+    expected_release: str | None,
+) -> None:
     workflow = yaml.load(
         Path(".github/workflows/docker.yml").read_text(), Loader=yaml.BaseLoader
     )
@@ -202,10 +217,13 @@ def test_latest_ref_selects_newest_release_after_lock(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker = bin_dir / "docker"
+    published_tags = "|".join(
+        f"ghcr.io/allenai/asta:{release}*" for release in published_releases
+    )
     docker.write_text(
         "#!/bin/sh\n"
         'case "$4" in\n'
-        "  ghcr.io/allenai/asta:v0.104.1*|ghcr.io/allenai/asta:v0.105.0*) exit 0 ;;\n"
+        f"  {published_tags}) exit 0 ;;\n"
         "  *) exit 1 ;;\n"
         "esac\n"
     )
@@ -215,7 +233,10 @@ def test_latest_ref_selects_newest_release_after_lock(tmp_path: Path) -> None:
         "#!/bin/sh\n"
         'if [ "$2" = "-X" ]; then\n'
         '  for arg in "$@"; do\n'
-        '    case "$arg" in sha=*) printf "%s" "${arg#sha=}" > "$UPDATED_SHA" ;; esac\n'
+        '    case "$arg" in\n'
+        '      sha=*) printf "%s" "${arg#sha=}" > "$UPDATED_SHA" ;;\n'
+        "      force=true) exit 1 ;;\n"
+        "    esac\n"
         "  done\n"
         "else\n"
         '  printf "%s\\n" "$CURRENT_SHA"\n'
@@ -227,15 +248,62 @@ def test_latest_ref_selects_newest_release_after_lock(tmp_path: Path) -> None:
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GITHUB_REPOSITORY": "allenai/asta-plugins",
-        "GITHUB_REF_NAME": "v0.104.1",
-        "CURRENT_SHA": old_sha,
+        "CURRENT_SHA": {"v0.104.1": old_sha, "v0.105.0": new_sha}[current_release],
         "UPDATED_SHA": str(updated_sha),
     }
     subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script], cwd=repo, env=env, check=True
     )
 
-    assert updated_sha.read_text() == new_sha
+    if expected_release is None:
+        assert not updated_sha.exists()
+    else:
+        assert (
+            updated_sha.read_text()
+            == {
+                "v0.104.1": old_sha,
+                "v0.105.0": new_sha,
+            }[expected_release]
+        )
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("latest", "latest"),
+        ("v0.104.1", "0.104.1"),
+        ("'v0.104.1'", "0.104.1"),
+        ("latest-foo", None),
+        ("v0.104.1-rc.1", None),
+        ("v0.104.1.2", None),
+    ],
+)
+def test_manage_version_reads_complete_workspace_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ref: str, expected: str | None
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "manage_version", Path("scripts/manage-version.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    docs = tmp_path / "docs.yml"
+    quote = ref[0] if ref.startswith(("'", '"')) else ""
+    clean_ref = ref.strip("'\"")
+    docs.write_text(
+        "  uses: "
+        f"{quote}allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
+        f"{clean_ref}{quote}\n"
+    )
+    monkeypatch.setattr(module, "WORKSPACE_DOCS_WORKFLOW_FILE", docs)
+
+    if expected is None:
+        with pytest.raises(ValueError, match="Could not find workspace workflow ref"):
+            module.get_workspace_workflow_version()
+        monkeypatch.setattr(module, "INIT_FILE", tmp_path / "missing-init-file")
+        assert module.set_version("0.105.0") is False
+    else:
+        assert module.get_workspace_workflow_version() == expected
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:

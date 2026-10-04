@@ -7,7 +7,7 @@
 # With no docs.yml, `latest` is used.
 ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
 ifndef ASTA_PLUGINS_REF
-ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
+ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
 endif
 # Derived from the repo + resolved ref unless set explicitly (tests point it at
 # a local archive). When set, it is used verbatim and ref resolution is skipped.

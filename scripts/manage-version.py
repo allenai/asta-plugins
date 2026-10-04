@@ -98,9 +98,10 @@ def get_workspace_workflow_version() -> str:
     """
     content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
     match = re.search(
-        r"uses: allenai/asta-plugins/\.github/workflows/"
-        r"workspace-quarto-site\.yml@(latest|v[0-9.]+)",
+        r"^\s*uses:\s*['\"]?allenai/asta-plugins/\.github/workflows/"
+        r"workspace-quarto-site\.yml@(latest|v\d+\.\d+\.\d+)['\"]?\s*(?:#.*)?$",
         content,
+        re.MULTILINE,
     )
     if not match:
         raise ValueError("Could not find workspace workflow ref in docs.yml")
@@ -196,6 +197,12 @@ def set_version(new_version: str) -> bool:
         print(f"{RED}Error: Version must be in format x.y.z (e.g., 1.2.3){NC}")
         return False
 
+    try:
+        workspace_workflow_version = get_workspace_workflow_version()
+    except ValueError as exc:
+        print(f"{RED}Error: {exc}{NC}")
+        return False
+
     print(f"Setting version to {new_version} in all files...")
 
     # Update src/asta/__init__.py
@@ -251,7 +258,7 @@ def set_version(new_version: str) -> bool:
     ASTA_CLI_SKILL_FILE.write_text(content)
 
     # Advance a pinned scaffold ref with the release tag; `@latest` needs none.
-    if get_workspace_workflow_version() != "latest":
+    if workspace_workflow_version != "latest":
         print("Updating workspace docs workflow...")
         content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
         content, replacements = re.subn(

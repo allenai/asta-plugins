@@ -167,7 +167,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # The package is public, so inspect it without registry credentials.
       - name: Point the latest branch at the highest published final release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -194,8 +193,8 @@ jobs:
             echo "latest branch already at $current"
             exit 0
           fi
-          # Fail before moving image tags if the token cannot advance this branch.
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/latest" -f sha="$sha" -F force=true >/dev/null
+          # Fail before moving image tags if this is not a fast-forward.
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/latest" -f sha="$sha" -F force=false >/dev/null
           echo "latest branch -> $newest ($sha)"
 
   latest:
