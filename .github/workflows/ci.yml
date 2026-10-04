@@ -1,13 +1,13 @@
 name: CI
 
-env:
-  CLAUDE_CODE_TEST_VERSION: "2.1.283"
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
+env:
+  CLAUDE_CODE_TEST_VERSION: "2.1.283"
 
 jobs:
   code-quality:

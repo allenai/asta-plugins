@@ -5,6 +5,9 @@ on:
     - cron: "0 8 * * 1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   selective-install:
     runs-on: ubuntu-latest

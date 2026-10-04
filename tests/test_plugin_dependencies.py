@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 MARKETPLACE = json.loads(
     (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text()
 )
@@ -27,12 +27,11 @@ REF = re.compile(
 
 @cache
 def _plugin_path(plugin: str) -> Path:
-    path = (REPO_ROOT / ENTRIES[plugin]["source"]).resolve()
+    source = ENTRIES[plugin]["source"]
+    assert isinstance(source, str), f"{plugin}: marketplace source must be local"
+    path = (REPO_ROOT / source).resolve()
     assert path.is_relative_to(REPO_ROOT), plugin
     assert path.is_dir(), f"{plugin}: marketplace source does not exist: {path}"
-    assert list((path / "skills").glob("*/SKILL.md")), (
-        f"{plugin}: marketplace source has no skills: {path}"
-    )
     return path
 
 
@@ -59,6 +58,14 @@ def _dependencies(plugin: str) -> set[str]:
         dependency if isinstance(dependency, str) else dependency["name"]
         for dependency in ENTRIES[plugin].get("dependencies", [])
     }
+
+
+def test_marketplace_plugins_include_skills():
+    for plugin in ENTRIES:
+        path = _plugin_path(plugin)
+        assert list((path / "skills").glob("*/SKILL.md")), (
+            f"{plugin}: marketplace source has no skills: {path}"
+        )
 
 
 def test_references_resolve():
@@ -96,7 +103,7 @@ def test_reference_pattern_catches_long_plugin_names():
 
 def test_claude_selective_install_includes_asta_tools(tmp_path):
     if os.environ.get("ASTA_TEST_CLAUDE_PLUGIN_DEPS") != "1":
-        pytest.skip("Claude Code plugin integration test is not enabled")
+        pytest.skip("set ASTA_TEST_CLAUDE_PLUGIN_DEPS=1 to run the Claude Code check")
     if not shutil.which("claude"):
         pytest.fail("Claude Code CLI is required for the dependency integration test")
 
@@ -138,9 +145,11 @@ def test_claude_selective_install_includes_asta_tools(tmp_path):
         timeout=90,
     )
     assert disable.returncode != 0, disable.stdout + disable.stderr
-    assert "asta-assistant" in (disable.stdout + disable.stderr).lower(), (
-        disable.stdout + disable.stderr
-    )
+    disable_output = (disable.stdout + disable.stderr).lower()
+    assert re.search(
+        r"(?:requir|depend)\w*[^\n]*asta-assistant|asta-assistant[^\n]*(?:requir|depend)\w*",
+        disable_output,
+    ), disable_output
     result = subprocess.run(
         ["claude", "plugin", "list", "--json"],
         env=env,
