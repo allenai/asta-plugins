@@ -92,6 +92,7 @@ render: workspace-assets
 # gate, add it here (or as a prerequisite target), never as an inline workflow
 # step. The shared render/validate logic is vendored in scripts/quarto-check.sh
 # (from the workspace skill; update by re-copying, don't hand-edit).
+ASTA_WORKSPACE_CHECK := 1
 check: workspace-assets
 	sh scripts/quarto-check.sh
 

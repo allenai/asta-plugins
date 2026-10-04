@@ -433,6 +433,32 @@ def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
     assert "using cached Makefile" in offline.stderr
 
 
+def test_workspace_makefile_rejects_missing_shared_check(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive/asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    source.write_text("managed:\n\t@echo managed-target\n")
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "check"],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_REF": "v1.2.3",
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+            "PATH": os.environ["PATH"],
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "does not provide the shared check gate" in result.stderr
+
+
 def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -610,7 +636,7 @@ def test_workspace_makefile_ref_validation_does_not_expand_make_input(
 
 
 @pytest.mark.parametrize("has_managed_asset", [False, True])
-def test_workspace_makefile_legacy_fallback(
+def test_workspace_makefile_rejects_legacy_asset(
     tmp_path: Path, has_managed_asset: bool
 ) -> None:
     archive_root = tmp_path / "source/asta-plugins-old"
@@ -640,13 +666,9 @@ def test_workspace_makefile_legacy_fallback(
         capture_output=True,
         timeout=15,
     )
-    if has_managed_asset:
-        assert result.returncode != 0
-        assert "does not provide a managed workspace.mk" in result.stderr
-        assert not (project / ".asta/cache/v0.104.1/workspace.mk").exists()
-    else:
-        assert result.returncode == 0, result.stderr
-        assert "old-target" in result.stdout
+    assert result.returncode != 0
+    assert "does not provide a managed workspace.mk" in result.stderr
+    assert not (project / ".asta/cache/v0.104.1/workspace.mk").exists()
 
 
 def test_workspace_makefile_passes_ref_to_evidence_assets(tmp_path: Path) -> None:

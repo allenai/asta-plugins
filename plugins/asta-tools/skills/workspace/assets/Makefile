@@ -23,8 +23,12 @@ ASTA_LOAD_WORKSPACE_MK := 1
 endif
 
 ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
+ASTA_REF_ORIGIN := $(origin ASTA_PLUGINS_REF)
 ifneq ($(origin ASTA_PLUGINS_REF),undefined)
 override ASTA_PLUGINS_REF := $(value ASTA_PLUGINS_REF)
+endif
+ifeq ($(ASTA_REF_ORIGIN),environment)
+$(warning ASTA_PLUGINS_REF from the environment overrides docs.yml; local builds may differ from CI)
 endif
 ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
 ASTA_PLUGINS_ARCHIVE_URL ?=
@@ -66,6 +70,12 @@ endif
 ASTA_WORKSPACE_MK := .asta/cache/$(ASTA_PLUGINS_REF)/workspace.mk
 include $(ASTA_WORKSPACE_MK)
 
+ifneq ($(filter check,$(MAKECMDGOALS)),)
+ifeq ($(ASTA_WORKSPACE_CHECK),)
+$(error selected workspace.mk does not provide the shared check gate)
+endif
+endif
+
 # Floating channels refresh at most once an hour. A failed refresh keeps the
 # last working copy so local work can continue offline.
 ifneq ($(filter main latest,$(ASTA_PLUGINS_REF)),)
@@ -94,14 +104,9 @@ $(ASTA_WORKSPACE_MK):
 		echo "workspace: cannot fetch managed Makefile from $$url" >&2; exit 1; \
 	fi; \
 	entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1); \
-	legacy=0; \
-	if [ -z "$$entry" ]; then legacy=1; entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/Makefile$$' | head -n 1); fi; \
-	[ -n "$$entry" ] || { echo "workspace: no managed Makefile in $$url" >&2; exit 1; }; \
+	[ -n "$$entry" ] || { echo "workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk" >&2; exit 1; }; \
 	tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk"; \
 	[ -s "$$tmp/workspace.mk" ] || { echo "workspace: empty managed Makefile in $$url" >&2; exit 1; }; \
-	if [ "$$legacy" -eq 1 ] && grep -q 'ASTA_WORKSPACE_MK' "$$tmp/workspace.mk"; then \
-		echo "workspace: $$ref does not provide a managed workspace.mk" >&2; exit 1; \
-	fi; \
 	mkdir -p "$$(dirname "$@")"; \
 	mv "$$tmp/workspace.mk" "$@"
 endif
