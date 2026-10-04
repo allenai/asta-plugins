@@ -168,7 +168,8 @@ def test_latest_release_ref_is_updated_before_images() -> None:
 
     assert ref_job["needs"] == "promote"
     assert ref_job["concurrency"]["group"] == "docker-release-latest-ref"
-    assert ref_job["permissions"] == {"contents": "write"}
+    assert ref_job["permissions"] == {"contents": "read"}
+    assert ref_job["environment"] == "release"
     assert image_job["needs"] == "latest-ref"
     assert image_job["permissions"] == {"contents": "read", "packages": "write"}
 
@@ -229,42 +230,28 @@ def test_latest_ref_selects_newest_release_after_lock(
     )
     docker.chmod(0o755)
     gh = bin_dir / "gh"
-    gh.write_text(
-        "#!/bin/sh\n"
-        'if [ "$2" = "-X" ]; then\n'
-        '  for arg in "$@"; do\n'
-        '    case "$arg" in\n'
-        '      sha=*) printf "%s" "${arg#sha=}" > "$UPDATED_SHA" ;;\n'
-        "      force=true) exit 1 ;;\n"
-        "    esac\n"
-        "  done\n"
-        "else\n"
-        '  printf "%s\\n" "$CURRENT_SHA"\n'
-        "fi\n"
-    )
+    gh.write_text('#!/bin/sh\nprintf "%s\\n" "$CURRENT_SHA"\n')
     gh.chmod(0o755)
-    updated_sha = tmp_path / "updated-sha"
     env = {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GITHUB_REPOSITORY": "allenai/asta-plugins",
         "CURRENT_SHA": {"v0.104.1": old_sha, "v0.105.0": new_sha}[current_release],
-        "UPDATED_SHA": str(updated_sha),
     }
+    subprocess.run(
+        ["git", "branch", "latest", env["CURRENT_SHA"]], cwd=repo, check=True
+    )
     subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script], cwd=repo, env=env, check=True
     )
 
-    if expected_release is None:
-        assert not updated_sha.exists()
-    else:
-        assert (
-            updated_sha.read_text()
-            == {
-                "v0.104.1": old_sha,
-                "v0.105.0": new_sha,
-            }[expected_release]
-        )
+    latest_sha = subprocess.check_output(
+        ["git", "rev-parse", "refs/heads/latest"], cwd=repo, text=True
+    ).strip()
+    expected_sha = {"v0.104.1": old_sha, "v0.105.0": new_sha}[
+        expected_release or current_release
+    ]
+    assert latest_sha == expected_sha
 
 
 @pytest.mark.parametrize(
