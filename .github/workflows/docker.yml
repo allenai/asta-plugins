@@ -154,12 +154,72 @@ jobs:
             test "$actual" = "$expected"
           done
 
-  latest:
+  latest-ref:
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
     needs: promote
     runs-on: ubuntu-latest
+    # Only this environment (deployable from v* tags) holds the deploy key that
+    # the `latest` branch ruleset lets bypass its update restriction.
+    environment: release
     concurrency:
-      group: docker-release-latest
+      group: docker-release-latest-ref
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push the latest branch with the release deploy key
+        env:
+          LATEST_DEPLOY_KEY: ${{ secrets.LATEST_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$LATEST_DEPLOY_KEY" || { echo 'LATEST_DEPLOY_KEY is not set in the release environment' >&2; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$LATEST_DEPLOY_KEY" > ~/.ssh/latest_deploy_key
+          chmod 600 ~/.ssh/latest_deploy_key
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
+          git config core.sshCommand 'ssh -i ~/.ssh/latest_deploy_key -o IdentitiesOnly=yes'
+          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
+      - name: Point the latest branch at the highest published final release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image=ghcr.io/allenai/asta
+          git fetch --tags --force origin
+          newest=''
+          while read -r version; do
+            if docker buildx imagetools inspect "$image:$version" >/dev/null 2>&1 && \
+               docker buildx imagetools inspect "$image:$version-tex" >/dev/null 2>&1; then
+              newest="$version"
+              break
+            fi
+          done < <(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr)
+          test -n "$newest" || { echo 'No complete final release pair is published' >&2; exit 1; }
+          sha=$(git rev-list -n 1 "$newest")
+          test -n "$sha"
+          current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/latest" --jq .object.sha)
+          current=$(git tag --points-at "$current_sha" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | head -n 1)
+          test -n "$current" || { echo 'The latest branch does not point at a final release' >&2; exit 1; }
+          highest=$(printf '%s\n%s\n' "$current" "$newest" | sort -V | tail -n 1)
+          if [ "$highest" = "$current" ]; then
+            echo "latest branch already at $current"
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$current_sha" "$sha"; then
+            echo "Cannot advance latest from $current to $newest: release is not a descendant of the current latest commit. Merge the release into main and tag that commit." >&2
+            exit 1
+          fi
+          git push origin "$sha:refs/heads/latest"
+          echo "latest branch -> $newest ($sha)"
+
+  latest:
+    needs: latest-ref
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-release-latest-images
       cancel-in-progress: false
     permissions:
       contents: read
@@ -174,20 +234,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Point latest at the highest published final release
+      - name: Point latest at the selected final release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           image=ghcr.io/allenai/asta
           git fetch --tags --force origin
-          newest=''
-          while read -r version; do
-            if docker buildx imagetools inspect "$image:$version" >/dev/null 2>&1 && \
-               docker buildx imagetools inspect "$image:$version-tex" >/dev/null 2>&1; then
-              newest="$version"
-              break
-            fi
-          done < <(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr)
-          test -n "$newest" || { echo 'No complete final release pair is published' >&2; exit 1; }
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/latest" --jq .object.sha)
+          newest=$(git tag --points-at "$sha" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | head -n 1)
+          test -n "$newest" || { echo 'The latest branch does not point at a final release' >&2; exit 1; }
           for suffix in '' -tex; do
             digest=$(docker buildx imagetools inspect "$image:$newest$suffix" --format '{{json .Manifest}}' | jq -er .digest)
             docker buildx imagetools create -t "$image:latest$suffix" "$image@$digest"

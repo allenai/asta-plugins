@@ -4,7 +4,13 @@ Edit, preview, and save this research project.
 
 ## Preview locally
 
-With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which blocks until this push's Pages deployment is live. If a transient API or workflow failure interrupts the wait, the baseline remains so the same command can be retried. The render targets fetch the workspace evidence extension from the latest `asta-plugins` version tag by default; set `ASTA_PLUGINS_REF` to pin a specific release (e.g. `v0.103.0`) or to track `main`. The CI-side deploy assets (the workflow in `docs.yml`, `what-changed.py`, and the vendored-script drift checks) follow the same version-tag policy: the scaffold's literal workflow ref is advanced by the `asta-plugins` release process, and existing projects receive that one-line bump when their workspace assets are upgraded. Offline is tolerated: if the fetch can't reach `asta-plugins` but a previously fetched `_extensions/evidence/` is present, the render keeps that cached copy and warns instead of failing; only a first fetch with no cache is a hard error.
+With [Quarto](https://quarto.org) on the host: `make preview`, then open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which waits for this push's Pages deployment. If a transient failure interrupts the wait, the baseline remains so the command can be retried.
+
+### Workspace version
+
+The `uses: ...@<ref>` line in `docs.yml` controls the workflow, `what-changed.py`, drift checks, and evidence extension fetched by the render targets. `@latest` follows final releases without a project PR; it is a mutable ref, so a bad release or compromised release branch can affect downstream CI. Pin `@vX.Y.Z` when upgrades need review, or use `@main` to track unreleased changes. Existing projects with a pinned workflow ref now fetch the evidence extension from that same release instead of the newest release. `ASTA_PLUGINS_REF` overrides the ref for render targets only.
+
+The devcontainer image has its own tag in `devcontainer.json`; choose the matching release or channel there. During promotion, the workflow ref and `:latest` image may change a short time apart. If an asset fetch cannot reach asta-plugins but `_extensions/evidence/` exists, the render keeps that cached copy and warns. A first fetch with no cache needs network access.
 
 ## Devcontainer (`.devcontainer/devcontainer.json`)
 
@@ -55,7 +61,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make render` | build to `_site/` |
 | `make check` | run the same quality gates CI runs (render + warning validation) |
 | `make clean` | wipe build artifacts |
-| `make workspace-assets` | refresh the evidence extension from `asta-plugins` (latest version tag by default) |
+| `make workspace-assets` | refresh the evidence extension from the `docs.yml` workflow ref |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
 

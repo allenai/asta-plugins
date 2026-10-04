@@ -1,11 +1,12 @@
+import importlib.util
 import os
 import re
 import shutil
 import subprocess
 import tarfile
-import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
@@ -109,16 +110,235 @@ def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
     assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
 
 
-def test_scaffolded_workflow_ref_matches_project_version() -> None:
-    """Release-managed workspace assets must advance under one version tag."""
-    project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][
-        "version"
-    ]
+def test_scaffolded_workflow_follows_latest_release() -> None:
+    """New projects follow the latest release, like the :latest image and CLI."""
     scaffold = (WORKSPACE_ASSETS / "docs.yml").read_text()
-    match = re.search(r"workspace-quarto-site\.yml@v([0-9.]+)", scaffold)
+    match = re.search(r"workspace-quarto-site\.yml@(\S+)", scaffold)
 
     assert match is not None
-    assert match.group(1) == project_version
+    assert match.group(1) == "latest"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("latest", "latest"),
+        ("v0.104.1", "v0.104.1"),
+        ("main", "main"),
+        ("feature/x", "feature/x"),
+        ("a" * 40, "a" * 40),
+        ("'latest'", "latest"),
+        ('"v0.104.1"', "v0.104.1"),
+        (None, "latest"),
+    ],
+)
+def test_workspace_makefile_reads_workflow_ref(
+    tmp_path: Path, value: str | None, expected: str
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    if value is not None:
+        docs = project / ".github/workflows/docs.yml"
+        docs.parent.mkdir(parents=True)
+        quote = value[0] if value.startswith(("'", '"')) else ""
+        ref = value.strip("'\"")
+        docs.write_text(
+            "  # uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@ignored\n"
+            f"  uses: {quote}allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@{ref}{quote}\n"
+        )
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    source.mkdir(parents=True)
+    (source / "snippet.lua").write_text("-- managed")
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+    out = _run_workspace_assets(project, archive.as_uri())
+
+    assert f"installed evidence extension from asta-plugins@{expected}" in out
+
+
+def test_latest_release_ref_is_updated_before_images() -> None:
+    workflow = yaml.load(
+        Path(".github/workflows/docker.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    ref_job = workflow["jobs"]["latest-ref"]
+    image_job = workflow["jobs"]["latest"]
+
+    assert ref_job["needs"] == "promote"
+    assert ref_job["concurrency"]["group"] == "docker-release-latest-ref"
+    assert ref_job["permissions"] == {"contents": "read"}
+    assert ref_job["environment"] == "release"
+    assert image_job["needs"] == "latest-ref"
+    assert image_job["permissions"] == {"contents": "read", "packages": "write"}
+
+
+@pytest.mark.parametrize(
+    ("current_release", "published_releases", "expected_release"),
+    [
+        ("v0.104.1", ("v0.104.1", "v0.105.0"), "v0.105.0"),
+        ("v0.105.0", ("v0.104.1", "v0.105.0"), None),
+        ("v0.105.0", ("v0.104.1",), None),
+    ],
+)
+def test_latest_ref_selects_newest_release_after_lock(
+    tmp_path: Path,
+    current_release: str,
+    published_releases: tuple[str, ...],
+    expected_release: str | None,
+) -> None:
+    workflow = yaml.load(
+        Path(".github/workflows/docker.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    script = workflow["jobs"]["latest-ref"]["steps"][-1]["run"]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True
+    )
+    source = repo / "source"
+    source.write_text("first")
+    subprocess.run(["git", "add", "source"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "first"], cwd=repo, check=True)
+    subprocess.run(["git", "tag", "v0.104.1"], cwd=repo, check=True)
+    old_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+    source.write_text("second")
+    subprocess.run(["git", "commit", "-qam", "second"], cwd=repo, check=True)
+    subprocess.run(["git", "tag", "v0.105.0"], cwd=repo, check=True)
+    new_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+    subprocess.run(["git", "remote", "add", "origin", str(repo)], cwd=repo, check=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    published_tags = "|".join(
+        f"ghcr.io/allenai/asta:{release}*" for release in published_releases
+    )
+    docker.write_text(
+        "#!/bin/sh\n"
+        'case "$4" in\n'
+        f"  {published_tags}) exit 0 ;;\n"
+        "  *) exit 1 ;;\n"
+        "esac\n"
+    )
+    docker.chmod(0o755)
+    gh = bin_dir / "gh"
+    gh.write_text('#!/bin/sh\nprintf "%s\\n" "$CURRENT_SHA"\n')
+    gh.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "allenai/asta-plugins",
+        "CURRENT_SHA": {"v0.104.1": old_sha, "v0.105.0": new_sha}[current_release],
+    }
+    subprocess.run(
+        ["git", "branch", "latest", env["CURRENT_SHA"]], cwd=repo, check=True
+    )
+    subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script], cwd=repo, env=env, check=True
+    )
+
+    latest_sha = subprocess.check_output(
+        ["git", "rev-parse", "refs/heads/latest"], cwd=repo, text=True
+    ).strip()
+    expected_sha = {"v0.104.1": old_sha, "v0.105.0": new_sha}[
+        expected_release or current_release
+    ]
+    assert latest_sha == expected_sha
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("latest", "latest"),
+        ("v0.104.1", "0.104.1"),
+        ("'v0.104.1'", "0.104.1"),
+        ("latest-foo", None),
+        ("v0.104.1-rc.1", None),
+        ("v0.104.1.2", None),
+    ],
+)
+def test_manage_version_reads_complete_workspace_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ref: str, expected: str | None
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "manage_version", Path("scripts/manage-version.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    docs = tmp_path / "docs.yml"
+    quote = ref[0] if ref.startswith(("'", '"')) else ""
+    clean_ref = ref.strip("'\"")
+    docs.write_text(
+        "  uses: "
+        f"{quote}allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
+        f"{clean_ref}{quote}\n"
+    )
+    monkeypatch.setattr(module, "WORKSPACE_DOCS_WORKFLOW_FILE", docs)
+
+    if expected is None:
+        with pytest.raises(ValueError, match="Could not find workspace workflow ref"):
+            module.get_workspace_workflow_version()
+        monkeypatch.setattr(module, "INIT_FILE", tmp_path / "missing-init-file")
+        assert module.set_version("0.105.0") is False
+    else:
+        assert module.get_workspace_workflow_version() == expected
+
+
+@pytest.mark.parametrize(
+    "uses_line",
+    [
+        "    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1",
+        "    uses:   'allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1' # pinned",
+        '    uses: "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1"',
+    ],
+)
+def test_manage_version_updates_any_accepted_pinned_workflow_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, uses_line: str
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "manage_version", Path("scripts/manage-version.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    for name in (
+        "INIT_FILE",
+        "PYPROJECT_FILE",
+        "MARKETPLACE_FILE",
+        "LOCK_FILE",
+        "HOOK_FILE",
+        "ASTA_CLI_SKILL_FILE",
+    ):
+        source = getattr(module, name)
+        target = tmp_path / name / source.name
+        target.parent.mkdir()
+        target.write_bytes(source.read_bytes())
+        monkeypatch.setattr(module, name, target)
+    docs = tmp_path / "docs.yml"
+    docs.write_text(f"jobs:\n  docs:\n{uses_line}\n")
+    monkeypatch.setattr(module, "WORKSPACE_DOCS_WORKFLOW_FILE", docs)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+
+    assert module.get_workspace_workflow_version() == "0.104.1"
+    assert module.set_version("0.105.0") is True
+    assert (
+        docs.read_text()
+        == f"jobs:\n  docs:\n{uses_line.replace('v0.104.1', 'v0.105.0')}\n"
+    )
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
@@ -601,41 +821,34 @@ def _make_evidence_archive(archive: Path) -> None:
         bundle.add(archive_root, arcname=archive_root.name)
 
 
-def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
-    # A local git repo standing in for asta-plugins: git ls-remote reads its
-    # tags, and curl reads a co-located archive/ dir via file://. The default
-    # (no ASTA_PLUGINS_REF, no ASTA_PLUGINS_ARCHIVE_URL) must pick the highest
-    # semver tag and skip non-version tags.
+@pytest.mark.parametrize(
+    ("ref", "archive_ref"),
+    [
+        (None, "refs/heads/latest"),
+        ("v0.104.1", "refs/tags/v0.104.1"),
+        ("v0.105.0-rc.1", "refs/tags/v0.105.0-rc.1"),
+        ("feature/x", "refs/heads/feature/x"),
+        ("a" * 40, "a" * 40),
+    ],
+)
+def test_workspace_makefile_resolves_archive_ref(
+    tmp_path: Path, ref: str | None, archive_ref: str
+) -> None:
     repo = tmp_path / "asta-plugins"
     (repo / "archive").mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "user.name=t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "seed",
-            "--no-gpg-sign",
-        ],
-        check=True,
-    )
-    for tag in ("v0.2.0", "v0.10.0", "v0.9.0", "v2-reproduction-work"):
-        subprocess.run(["git", "-C", str(repo), "tag", tag], check=True)
-
-    # Only the latest semver tag's archive exists; if resolution picked any
-    # other ref (main, v2-reproduction-work, v0.9.0), the curl would 404.
-    _make_evidence_archive(repo / "archive/v0.10.0.tar.gz")
+    archive = repo / f"archive/{archive_ref}.tar.gz"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    _make_evidence_archive(archive)
 
     project = tmp_path / "project"
     project.mkdir()
+    if ref is not None:
+        docs = project / ".github/workflows/docs.yml"
+        docs.parent.mkdir(parents=True)
+        docs.write_text(
+            "  uses: allenai/asta-plugins/.github/workflows/"
+            f"workspace-quarto-site.yml@{ref}\n"
+        )
     env = {
         "ASTA_PLUGINS_REPO": repo.as_uri(),
         "PATH": os.environ["PATH"],
@@ -654,7 +867,7 @@ def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "asta-plugins@v0.10.0" in result.stdout
+    assert f"asta-plugins@{ref or 'latest'}" in result.stdout
     assert (project / "_extensions/evidence/snippet.lua").read_bytes() == (
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()
