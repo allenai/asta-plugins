@@ -128,7 +128,9 @@ def _generated_paper_project(project: Path) -> str:
     return _git(project, "rev-parse", "HEAD")
 
 
-def test_generated_latex_is_previewed_without_being_committed(tmp_path: Path) -> None:
+def test_generated_latex_survives_failed_toolchain_without_commit(
+    tmp_path: Path,
+) -> None:
     project, result = _run_paper_step(tmp_path, prepare=_generated_paper_project)
 
     assert result.returncode != 0
@@ -139,6 +141,67 @@ def test_generated_latex_is_previewed_without_being_committed(tmp_path: Path) ->
     assert _git(project, "log", "--format=%s") == "base"
     assert _git(project, "diff", "--cached", "--name-only") == ""
     assert len(_git(project, "worktree", "list").splitlines()) == 1
+
+
+def test_generated_paths_are_literal_and_check_edits_survive(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "genx").mkdir()
+        (project / "genx/main.tex").write_text("committed elsewhere\n")
+        (project / "status.txt").write_text("source\n")
+        (project / "Makefile").write_text(
+            "check:\n\tprintf rendered > status.txt\n"
+            "latex:\n\tmkdir -p 'gen[x]'\n"
+            "\tprintf generated > 'gen[x]/main.tex'\n"
+            "\tprintf rc > 'gen[x]/latexmkrc'\n"
+            "\tprintf figure > 'gen[x]/main*.pdf'\n"
+            "\tprintf output > 'gen[x]/main.pdf'\n"
+        )
+        _git(project, "init", "-q")
+        _git(
+            project, "add", "Makefile", "status.txt", "paper/main.tex", "genx/main.tex"
+        )
+        _git(project, "commit", "-q", "-m", "base")
+        base = _git(project, "rev-parse", "HEAD")
+        hook = project / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
+        _git(project, "config", "commit.gpgsign", "true")
+        subprocess.run(["make", "check"], cwd=project, check=True, capture_output=True)
+        return base
+
+    project, result = _run_paper_step(
+        tmp_path,
+        prepare=prepare,
+        inspect_stage=True,
+        paper_script="#!/bin/sh\nexit 0\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert set((tmp_path / "staged.txt").read_text().splitlines()) == {
+        "gen[x]/latexmkrc",
+        "gen[x]/main.tex",
+        "gen[x]/main*.pdf",
+    }
+    assert (project / "status.txt").read_text() == "rendered"
+    assert (project / "gen[x]/main.pdf").read_text() == "output"
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+    assert _git(project, "log", "--format=%s") == "base"
+
+
+def test_latex_prerequisite_is_not_a_target(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("all: latex\n")
+        _git(project, "init", "-q")
+        _git(project, "add", "Makefile", "paper/main.tex")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert "No rule to make target 'latex'" not in result.stderr
+    assert not (project / "_site/paper-previews/build-failed.txt").exists()
+    assert (project / "_site/paper-previews/paper/build-failed.txt").is_file()
 
 
 def test_paper_generated_by_check_is_discovered_without_staging_artifacts(

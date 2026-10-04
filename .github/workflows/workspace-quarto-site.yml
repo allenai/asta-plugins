@@ -37,6 +37,11 @@ jobs:
       group: pages-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
+      - name: Reject privileged PR events
+        if: github.event_name == 'pull_request_target'
+        run: |
+          echo '::error::Call this workflow from pull_request, not pull_request_target'
+          exit 1
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # full history for checks that read git history
@@ -104,31 +109,28 @@ jobs:
           # Commit them to throwaway commits on head and base (HEAD is restored
           # on exit) so discovery and diffs treat them like committed papers.
           orig_head=$(git rev-parse -q --verify HEAD 2>/dev/null || true)
-          orig_clean=0
+          generated_head=0
           gen_base=""
           cleanup_generated() {
             status=$?
             trap - EXIT
-            if [ -n "$orig_head" ]; then
+            if [ "$generated_head" -eq 1 ]; then
               git reset -q --mixed "$orig_head" || status=1
-              if [ "$orig_clean" -eq 1 ]; then
-                git restore --worktree -- . || status=1
-              fi
             fi
             if [ -n "$gen_base" ]; then
               git worktree remove --force "$gen_base" 2>/dev/null || true
               rm -rf -- "$gen_base"
+              git worktree prune --expire=now || status=1
             fi
             exit "$status"
           }
           trap cleanup_generated EXIT
           generate_latex() {
-            local target_db target_errors probe_status papers paths d path
-            target_db=$(mktemp)
-            target_errors=$(mktemp)
+            local target_db target_errors probe_status papers paths candidates discovered d path tracked parent tree commit
+            target_db=$(mktemp) || return 1
+            target_errors=$(mktemp) || { rm -f "$target_db"; return 1; }
             probe_status=0
-            # Query Make's target database without running recipes. An actual
-            # latex target can still fail when make executes it below.
+            # Query Make's target database; included makefiles can be remade.
             LC_ALL=C make -C "$1" -pRrq --eval='__asta_workspace_probe:' \
               __asta_workspace_probe > "$target_db" 2> "$target_errors" || probe_status=$?
             if [ "$probe_status" -gt 1 ]; then
@@ -136,39 +138,52 @@ jobs:
               rm -f "$target_db" "$target_errors"
               return 1
             fi
-            if ! grep -q '^latex:' "$target_db"; then
+            if ! awk '/^# Not a target:/{skip=1;next} /^latex:/{if (!skip) found=1} {skip=0} END{exit !found}' "$target_db"; then
               rm -f "$target_db" "$target_errors"
               return 0
             fi
             rm -f "$target_db" "$target_errors"
             git -C "$1" diff --cached --quiet || { echo '::error::index has staged changes before make latex'; return 1; }
-            git -C "$1" diff --quiet || { echo '::error::make check modified tracked files before make latex'; return 1; }
-            if [ "$1" = . ]; then orig_clean=1; fi
             make -C "$1" latex || return 1
-            git -C "$1" restore --worktree -- . || return 1
             papers=$(cd "$1" && python3 /tmp/paper-discovery.py "") || return 1
             jq -e '.papers | type == "array"' <<< "$papers" >/dev/null || return 1
-            paths=$(mktemp)
+            discovered=$(jq -r '.papers[]' <<< "$papers") || return 1
+            paths=$(mktemp) || return 1
+            candidates=$(mktemp) || { rm -f "$paths"; return 1; }
             while IFS= read -r d; do
+              [ -n "$d" ] || continue
               # A committed paper is the project's source, even if the target rewrites it.
-              if [ -n "$(git -C "$1" ls-files -- "$d/main.tex")" ]; then continue; fi
+              tracked=$(GIT_LITERAL_PATHSPECS=1 git -C "$1" ls-files -- "$d/main.tex") || { rm -f "$paths" "$candidates"; return 1; }
+              if [ -n "$tracked" ]; then
+                GIT_LITERAL_PATHSPECS=1 git -C "$1" restore --worktree -- "$d/main.tex" || { rm -f "$paths" "$candidates"; return 1; }
+                continue
+              fi
+              if ! (cd "$1" && find "$d" \( -type d -name build -o -type d -name html \) -prune -o \( -type f -o -type l \) -print0) > "$candidates"; then
+                rm -f "$paths" "$candidates"
+                return 1
+              fi
               while IFS= read -r -d '' path; do
                 # Include sources made by make check as well as make latex,
                 # without putting TeX build products in the temporary commit.
                 case "$path" in
                   */main.pdf) ;;
-                  *.tex|*.bib|*.bst|*.cls|*.sty|*.def|*.cfg|*.eps|*.svg|*.png|*.jpg|*.jpeg|*.pdf|*/latexmkrc|*/.latexmkrc)
-                    printf '%s\0' "$path" >> "$paths" ;;
+                  *.tex|*.bib|*.bst|*.bbx|*.cbx|*.cls|*.sty|*.def|*.cfg|*.tikz|*.pgf|*.eps|*.svg|*.png|*.jpg|*.jpeg|*.pdf|*/latexmkrc|*/.latexmkrc)
+                    printf '%s\0' "$path" >> "$paths" || { rm -f "$paths" "$candidates"; return 1; } ;;
                 esac
-              done < <(cd "$1" && find "$d" \( -type d -name build -o -type d -name html \) -prune -o \( -type f -o -type l \) -print0)
-            done < <(jq -r '.papers[]' <<< "$papers")
+              done < "$candidates"
+            done <<< "$discovered"
+            rm -f "$candidates"
             if [ -s "$paths" ]; then
-              git -C "$1" add -f --pathspec-from-file="$paths" --pathspec-file-nul || { rm -f "$paths"; return 1; }
+              GIT_LITERAL_PATHSPECS=1 git -C "$1" add -f --pathspec-from-file="$paths" --pathspec-file-nul || { rm -f "$paths"; return 1; }
             fi
             rm -f "$paths"
             git -C "$1" diff --cached --quiet && return 0
-            git -C "$1" -c user.name=asta-preview -c user.email=asta-preview@localhost \
-              commit -q -m 'Generated LaTeX (preview only)'
+            parent=$(git -C "$1" rev-parse HEAD) || return 1
+            tree=$(git -C "$1" write-tree) || return 1
+            # A preview commit must not run project hooks or require a signing key.
+            commit=$(printf 'Generated LaTeX (preview only)\n' | GIT_AUTHOR_NAME=asta-preview GIT_AUTHOR_EMAIL=asta-preview@localhost GIT_COMMITTER_NAME=asta-preview GIT_COMMITTER_EMAIL=asta-preview@localhost git -C "$1" commit-tree "$tree" -p "$parent") || return 1
+            git -C "$1" update-ref HEAD "$commit" "$parent" || return 1
+            if [ "$1" = . ]; then generated_head=1; fi
           }
           [ -z "$orig_head" ] || generate_latex . || fail_discovery 'make latex failed; see the build log.'
           if [ -n "$base" ]; then
