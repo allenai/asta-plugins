@@ -13,6 +13,41 @@ WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 
 
+def _managed_cache_file(project: Path, ref: str) -> Path:
+    matches = list((project / ".asta/cache").glob(f"**/{ref}/workspace.mk"))
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
+def _isolated_workspace_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "ASTA_PLUGINS_REF",
+            "ASTA_PLUGINS_REPO",
+            "ASTA_PLUGINS_ARCHIVE_URL",
+        }
+    }
+
+
+def test_workspace_scaffold_keeps_full_makefile_while_loader_is_opt_in() -> None:
+    scaffold = (WORKSPACE_ASSETS / "docs.yml").read_text()
+    assert re.search(r"workspace-quarto-site\.yml@v[0-9]+\.[0-9]+\.[0-9]+", scaffold)
+    full_makefile = (WORKSPACE_ASSETS / "Makefile").read_text()
+    assert "workspace-assets:" in full_makefile
+    assert "include $(ASTA_WORKSPACE_MK)" not in full_makefile
+    assert (
+        "Copy `assets/Makefile` to project root"
+        in (WORKSPACE_ASSETS.parent / "SKILL.md").read_text()
+    )
+    assert (
+        "include $(ASTA_WORKSPACE_MK)"
+        in (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
+
+
 def _run_paper_step(tmp_path: Path, *, download_fails: bool = False):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -364,7 +399,9 @@ def test_workspace_makefile_fetches_managed_targets(
         f"uses: {quote}allenai/asta-plugins/.github/workflows/"
         f"workspace-quarto-site.yml@{ref}{quote}{inline_comment}\n"
     )
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     with (project / "Makefile").open("a") as file:
         file.write("\nproject: managed\n\t@echo project-target\n")
     result = subprocess.run(
@@ -377,13 +414,91 @@ def test_workspace_makefile_fetches_managed_targets(
     assert result.returncode == 0, result.stderr
     assert "managed-target" in result.stdout
     assert "project-target" in result.stdout
-    assert (project / f".asta/cache/{ref}/workspace.mk").read_text() == (
-        source.read_text()
-    )
+    assert _managed_cache_file(project, ref).read_text() == (source.read_text())
 
 
-def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
+def test_workspace_makefile_separates_caches_for_different_sources(
     tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
+    archives = []
+    for label in ("one", "two"):
+        source = (
+            tmp_path / label / "asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
+        )
+        source.parent.mkdir(parents=True)
+        source.write_text(f"managed:\n\t@echo {label}\n")
+        archive = tmp_path / f"{label}.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(source.parents[5], arcname="asta-plugins-test")
+        archives.append(archive)
+
+    for label, archive in zip(("one", "two"), archives, strict=True):
+        result = subprocess.run(
+            ["make", "managed"],
+            cwd=project,
+            env={
+                "ASTA_PLUGINS_REF": "v1.2.3",
+                "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+                "PATH": os.environ["PATH"],
+            },
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert label in result.stdout
+    assert len(list((project / ".asta/cache").glob("**/v1.2.3/workspace.mk"))) == 2
+
+
+def test_workspace_makefile_does_not_execute_repo_setting(tmp_path: Path) -> None:
+    marker = tmp_path / "unexpected"
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
+    result = subprocess.run(
+        ["make", "managed"],
+        cwd=tmp_path,
+        env={
+            "ASTA_PLUGINS_REF": "v1.2.3",
+            "ASTA_PLUGINS_REPO": f"file:///missing/$(touch {marker})",
+            "PATH": os.environ["PATH"],
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert not marker.exists()
+
+
+def test_workspace_assets_does_not_execute_repo_setting(tmp_path: Path) -> None:
+    marker = tmp_path / "unexpected"
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
+            "workspace-assets",
+        ],
+        cwd=tmp_path,
+        env={
+            "ASTA_PLUGINS_REF": "main",
+            "ASTA_PLUGINS_REPO": f"file:///missing/$(touch {marker})",
+            "PATH": os.environ["PATH"],
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("ref", ["main", "feature_branch"])
+def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
+    tmp_path: Path, ref: str
 ) -> None:
     source = tmp_path / "archive/asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
     source.parent.mkdir(parents=True)
@@ -397,9 +512,11 @@ def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
     project = tmp_path / "project"
     (project / ".github/workflows").mkdir(parents=True)
     (project / ".github/workflows/docs.yml").write_text(
-        "uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@main\n"
+        f"uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@{ref}\n"
     )
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     env = {"ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(), "PATH": os.environ["PATH"]}
 
     write_archive("first")
@@ -409,7 +526,7 @@ def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
     assert first.returncode == 0, first.stderr
     assert "first" in first.stdout
 
-    cache = project / ".asta/cache/main/workspace.mk"
+    cache = _managed_cache_file(project, ref)
     os.utime(cache, (0, 0))
     write_archive("second")
     second = subprocess.run(
@@ -419,13 +536,11 @@ def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
     assert "second" in second.stdout
 
     os.utime(cache, (0, 0))
+    archive.unlink()
     offline = subprocess.run(
         ["make", "managed"],
         cwd=project,
-        env={
-            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
-            "PATH": os.environ["PATH"],
-        },
+        env=env,
         capture_output=True,
         text=True,
     )
@@ -434,7 +549,9 @@ def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
     assert "using cached Makefile" in offline.stderr
 
 
-@pytest.mark.parametrize("bad_archive", ["corrupt", "missing_asset", "empty_asset"])
+@pytest.mark.parametrize(
+    "bad_archive", ["corrupt", "missing_asset", "nested_asset", "empty_asset"]
+)
 def test_workspace_makefile_keeps_cache_when_archive_is_invalid(
     tmp_path: Path, bad_archive: str
 ) -> None:
@@ -450,7 +567,9 @@ def test_workspace_makefile_keeps_cache_when_archive_is_invalid(
     write_archive()
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     env = {
         "ASTA_PLUGINS_REF": "main",
         "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
@@ -460,7 +579,7 @@ def test_workspace_makefile_keeps_cache_when_archive_is_invalid(
         ["make", "managed"], cwd=project, env=env, capture_output=True, text=True
     )
     assert initial.returncode == 0, initial.stderr
-    cache = project / ".asta/cache/main/workspace.mk"
+    cache = _managed_cache_file(project, "main")
     original = cache.read_text()
     os.utime(cache, (0, 0))
 
@@ -470,6 +589,10 @@ def test_workspace_makefile_keeps_cache_when_archive_is_invalid(
         source.write_text("" if bad_archive == "empty_asset" else "missing:\n")
         if bad_archive == "missing_asset":
             source.rename(source.with_name("other.mk"))
+        elif bad_archive == "nested_asset":
+            nested = source.parent / "fixtures" / WORKSPACE_ASSETS / "workspace.mk"
+            nested.parent.mkdir(parents=True)
+            source.rename(nested)
         write_archive()
 
     fallback = subprocess.run(
@@ -498,7 +621,9 @@ def test_workspace_makefile_rejects_missing_shared_check(tmp_path: Path) -> None
         bundle.add(archive_root, arcname=archive_root.name)
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "check"],
         cwd=project,
@@ -517,8 +642,12 @@ def test_workspace_makefile_rejects_missing_shared_check(tmp_path: Path) -> None
 def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
-    (project / "workspace.mk").write_text("managed:\n\t@echo custom-target\n")
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
+    (project / "workspace.mk").write_text(
+        "managed:\n\t@echo custom-target $(ASTA_PLUGINS_REF)\n"
+    )
     workflow = project / ".github/workflows/docs.yml"
     workflow.parent.mkdir(parents=True)
     workflow.write_text("jobs:\n  docs:\n    uses: ./local.yml\n")
@@ -538,15 +667,34 @@ def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     assert "custom-target" in result.stdout
     assert not (project / ".asta/cache").exists()
 
+    workflow.write_text(
+        "uses: allenai/asta-plugins/.github/workflows/"
+        "workspace-quarto-site.yml@feature_branch\n"
+    )
+    with_ref = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={"PATH": os.environ["PATH"]},
+        text=True,
+        capture_output=True,
+    )
+    assert with_ref.returncode == 0, with_ref.stderr
+    assert "custom-target feature_branch" in with_ref.stdout
+
 
 def test_workspace_makefile_requires_reachable_ref_without_docs_workflow(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "check"],
         cwd=tmp_path,
-        env={**os.environ, "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri()},
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri(),
+        },
         text=True,
         capture_output=True,
     )
@@ -556,14 +704,19 @@ def test_workspace_makefile_requires_reachable_ref_without_docs_workflow(
 
 
 def test_workspace_makefile_rejects_docs_workflow_without_ref(tmp_path: Path) -> None:
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     workflow = tmp_path / ".github/workflows/docs.yml"
     workflow.parent.mkdir(parents=True)
     workflow.write_text("jobs:\n  docs:\n    uses: ./local.yml\n")
     result = subprocess.run(
         ["make", "check"],
         cwd=tmp_path,
-        env={**os.environ, "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri()},
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri(),
+        },
         text=True,
         capture_output=True,
     )
@@ -581,12 +734,14 @@ def test_workspace_makefile_accepts_quote_in_archive_url(tmp_path: Path) -> None
         bundle.add(source.parents[5], arcname="asta-plugins-test")
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "managed"],
         cwd=project,
         env={
-            **os.environ,
+            **_isolated_workspace_env(),
             "ASTA_PLUGINS_REF": "v1.2.3",
             "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         },
@@ -630,12 +785,14 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
 
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "managed"],
         cwd=project,
         env={
-            **os.environ,
+            **_isolated_workspace_env(),
             "ASTA_PLUGINS_REPO": repo.as_uri(),
             "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         },
@@ -644,33 +801,67 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     )
     assert result.returncode == 0, result.stderr
     assert "managed-target" in result.stdout
-    assert (project / ".asta/cache/v0.105.0/workspace.mk").exists()
-    release_ref = project / ".asta/cache/default-release"
+    cache = _managed_cache_file(project, "v0.105.0")
+    release_ref = cache.parents[1] / "default-release"
     assert release_ref.read_text().strip() == "v0.105.0"
 
+    subprocess.run(["git", "tag", "v0.106.0"], cwd=repo, check=True)
+    fresh = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert fresh.returncode == 0, fresh.stderr
+    assert not list((project / ".asta/cache").glob("**/v0.106.0/workspace.mk"))
+
+    os.utime(release_ref, (0, 0))
+    updated = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert updated.returncode == 0, updated.stderr
+    assert _managed_cache_file(project, "v0.106.0").exists()
+    assert release_ref.read_text().strip() == "v0.106.0"
+
+    repo.rename(tmp_path / "versions-offline")
+    archive.unlink()
+    os.utime(release_ref, (0, 0))
     offline = subprocess.run(
         ["make", "managed"],
         cwd=project,
         env={
-            **os.environ,
-            "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri(),
-            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         },
         text=True,
         capture_output=True,
     )
     assert offline.returncode == 0, offline.stderr
     assert "managed-target" in offline.stdout
-    assert "using cached v0.105.0" in offline.stderr
+    assert "using cached v0.106.0" in offline.stderr
 
     release_ref.unlink()
     legacy_cache = subprocess.run(
         ["make", "managed"],
         cwd=project,
         env={
-            **os.environ,
-            "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri(),
-            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         },
         text=True,
         capture_output=True,
@@ -685,11 +876,13 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
 def test_workspace_makefile_rejects_invalid_ref_before_include(
     tmp_path: Path, ref: str
 ) -> None:
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "check"],
         cwd=tmp_path,
-        env={**os.environ, "ASTA_PLUGINS_REF": ref},
+        env={**_isolated_workspace_env(), "ASTA_PLUGINS_REF": ref},
         text=True,
         capture_output=True,
     )
@@ -699,14 +892,16 @@ def test_workspace_makefile_rejects_invalid_ref_before_include(
 
 
 def test_workspace_makefile_clean_works_before_managed_fetch(tmp_path: Path) -> None:
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     (tmp_path / "_site").mkdir()
     (tmp_path / ".quarto").mkdir()
     result = subprocess.run(
         ["make", "clean"],
         cwd=tmp_path,
         env={
-            **os.environ,
+            **_isolated_workspace_env(),
             "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
         },
         text=True,
@@ -719,7 +914,9 @@ def test_workspace_makefile_clean_works_before_managed_fetch(tmp_path: Path) -> 
 
 
 def test_workspace_makefile_clean_respects_committed_override(tmp_path: Path) -> None:
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     (tmp_path / "workspace.mk").write_text(
         "clean:\n\t@echo custom-clean > cleaned-by-project\n"
     )
@@ -737,11 +934,16 @@ def test_workspace_makefile_ref_validation_does_not_run_shell_input(
     tmp_path: Path,
 ) -> None:
     marker = tmp_path / "unexpected"
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "check"],
         cwd=tmp_path,
-        env={**os.environ, "ASTA_PLUGINS_REF": f"bad'; touch {marker}; #"},
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REF": f"bad'; touch {marker}; #",
+        },
         text=True,
         capture_output=True,
     )
@@ -754,11 +956,16 @@ def test_workspace_makefile_ref_validation_does_not_expand_make_input(
     tmp_path: Path,
 ) -> None:
     marker = tmp_path / "unexpected"
-    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "check"],
         cwd=tmp_path,
-        env={**os.environ, "ASTA_PLUGINS_REF": f"$(shell touch {marker})"},
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REF": f"$(shell touch {marker})",
+        },
         text=True,
         capture_output=True,
     )
@@ -777,7 +984,7 @@ def test_workspace_makefile_rejects_legacy_asset(
     legacy_makefile = (
         "legacy:\n\t@echo old-target\n"
         if not has_managed_asset
-        else (WORKSPACE_ASSETS / "Makefile").read_text()
+        else (WORKSPACE_ASSETS / "Makefile.managed").read_text()
     )
     (assets / "Makefile").write_text(legacy_makefile)
     archive = tmp_path / "old.tar.gz"
@@ -785,12 +992,14 @@ def test_workspace_makefile_rejects_legacy_asset(
         bundle.add(archive_root, arcname=archive_root.name)
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "legacy"],
         cwd=project,
         env={
-            **os.environ,
+            **_isolated_workspace_env(),
             "ASTA_PLUGINS_REF": "v0.104.1",
             "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         },
@@ -800,7 +1009,7 @@ def test_workspace_makefile_rejects_legacy_asset(
     )
     assert result.returncode != 0
     assert "does not provide a managed workspace.mk" in result.stderr
-    assert not (project / ".asta/cache/v0.104.1/workspace.mk").exists()
+    assert not list((project / ".asta/cache").glob("**/v0.104.1/workspace.mk"))
 
 
 def test_workspace_makefile_passes_ref_to_evidence_assets(tmp_path: Path) -> None:
@@ -816,12 +1025,14 @@ def test_workspace_makefile_passes_ref_to_evidence_assets(tmp_path: Path) -> Non
         bundle.add(archive_root, arcname=archive_root.name)
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
-        ["make", "workspace-assets"],
+        ["make"],
         cwd=project,
         env={
-            **os.environ,
+            **_isolated_workspace_env(),
             "ASTA_PLUGINS_REF": "v1.2.3",
             "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         },
@@ -850,12 +1061,14 @@ def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
         bundle.add(archive_root, arcname=archive_root.name)
     project = tmp_path / "project"
     project.mkdir()
-    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
     result = subprocess.run(
         ["make", "workspace-assets"],
         cwd=project,
         env={
-            **os.environ,
+            **_isolated_workspace_env(),
             "ASTA_PLUGINS_REF": "latest",
             "ASTA_PLUGINS_REPO": repo.as_uri(),
         },

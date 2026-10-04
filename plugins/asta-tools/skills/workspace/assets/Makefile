@@ -1,128 +1,125 @@
-# Keep project targets here; the shared targets come from the selected
-# asta-plugins version. Commit workspace.mk to take ownership of them.
-# Cleaning a project must also work before the first managed-file fetch.
-.DEFAULT_GOAL := dev
-ASTA_LOCAL_MK := $(shell git ls-files --error-unmatch workspace.mk 2>/dev/null)
-ifneq ($(ASTA_LOCAL_MK),)
-ifeq ($(wildcard workspace.mk),)
-$(error workspace.mk is tracked but missing; restore it or remove it from Git)
-endif
-include workspace.mk
-else
-ifneq ($(MAKECMDGOALS),)
-ifeq ($(filter-out clean,$(MAKECMDGOALS)),)
-# Offline cleanup intentionally removes only local Quarto build output.
-.PHONY: clean
+.PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
+
+# Which asta-plugins ref to fetch the workspace evidence extension from.
+# The default (empty ASTA_PLUGINS_REF) resolves to the latest published version
+# tag, so projects pick up new releases automatically — the same way other
+# asta-plugins consumers upgrade, rather than tracking the mutable main branch.
+# Pin a specific release with ASTA_PLUGINS_REF=v0.103.0, or track the in-flight
+# branch with ASTA_PLUGINS_REF=main.
+ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
+ASTA_PLUGINS_REF ?=
+# Derived from the repo + resolved ref unless set explicitly (tests point it at
+# a local archive). When set, it is used verbatim and ref resolution is skipped.
+ASTA_PLUGINS_ARCHIVE_URL ?=
+
+# The evidence extension is maintained with the workspace skill rather than
+# vendored into every report. Replace it only after a complete download and
+# extraction so a network failure cannot leave a partial extension behind.
+#
+# Offline-tolerant: if the network can't be reached (tag resolution or download
+# fails) but a previously fetched _extensions/evidence already exists, keep that
+# cached copy and warn instead of failing — so a render works on a plane. Only a
+# first fetch with no cache is a hard error.
+workspace-assets:
+	@set -eu; \
+	if [ -L _extensions/evidence ]; then \
+		echo "workspace-assets: _extensions/evidence is a symlink (local development); not refreshing"; exit 0; \
+	fi; \
+	if git ls-files --error-unmatch _extensions/evidence >/dev/null 2>&1; then \
+		echo "workspace-assets: _extensions/evidence is committed (customized copy); not refreshing"; exit 0; \
+	fi; \
+	ref="$(ASTA_PLUGINS_REF)"; \
+	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
+	have_cache=0; \
+	if [ -d _extensions/evidence ] || [ -L _extensions/evidence ]; then have_cache=1; fi; \
+	offline_ok() { \
+		if [ "$$have_cache" -eq 1 ]; then \
+			echo "workspace-assets: could not reach asta-plugins ($$1); keeping the cached _extensions/evidence — re-run with network access to refresh" >&2; \
+			exit 0; \
+		fi; \
+		echo "workspace-assets: could not reach asta-plugins ($$1) and no cached _extensions/evidence exists — network access is required for the first fetch" >&2; \
+		exit 1; \
+	}; \
+	if [ -z "$$url" ]; then \
+		if [ -z "$$ref" ]; then \
+			ref=$$(git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null \
+				| awk -F/ '{print $$NF}' \
+				| grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' \
+				| sort -V | tail -n 1) || true; \
+			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $(ASTA_PLUGINS_REPO)"; \
+		fi; \
+		url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
+	fi; \
+	tmp=$$(mktemp -d); \
+	lock=_extensions/.evidence-install.lock; \
+	backup="$$tmp/previous-evidence"; \
+	lock_held=0; \
+	cleanup() { \
+		status=$$?; \
+		trap - 0 1 2 15; \
+		if [ "$$status" -ne 0 ] && { [ -e "$$backup" ] || [ -L "$$backup" ]; }; then \
+			rm -rf _extensions/evidence; \
+			mv "$$backup" _extensions/evidence || status=1; \
+		fi; \
+		[ "$$lock_held" -eq 0 ] || rmdir "$$lock" 2>/dev/null || true; \
+		rm -rf "$$tmp"; \
+		exit "$$status"; \
+	}; \
+	trap cleanup 0; \
+	trap 'exit 1' 1 2 15; \
+	curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz" || offline_ok "download from $$url failed"; \
+	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
+	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
+	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
+	cp -R "$$source_dir" "$$tmp/evidence"; \
+	mkdir -p _extensions; \
+	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
+	lock_held=1; \
+	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
+		mv _extensions/evidence "$$backup"; \
+	fi; \
+	mv "$$tmp/evidence" _extensions/evidence; \
+	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
+
+preview: workspace-assets
+	quarto preview --no-browser
+
+render: workspace-assets
+	quarto render
+
+# Run the same quality gates CI runs, in one place so local and CI can't
+# drift. CI's docs workflow calls this target — when a project grows a new
+# gate, add it here (or as a prerequisite target), never as an inline workflow
+# step. The shared render/validate logic is vendored in scripts/quarto-check.sh
+# (from the workspace skill; update by re-copying, don't hand-edit).
+check: workspace-assets
+	sh scripts/quarto-check.sh
+
 clean:
 	rm -rf _site .quarto
-else
-ASTA_LOAD_WORKSPACE_MK := 1
-endif
-else
-ASTA_LOAD_WORKSPACE_MK := 1
-endif
 
-ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
-ASTA_REF_ORIGIN := $(origin ASTA_PLUGINS_REF)
-ifneq ($(origin ASTA_PLUGINS_REF),undefined)
-override ASTA_PLUGINS_REF := $(value ASTA_PLUGINS_REF)
-endif
-ifeq ($(ASTA_REF_ORIGIN),environment)
-$(warning ASTA_PLUGINS_REF from the environment overrides docs.yml; local builds may differ from CI)
-endif
-ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
-ASTA_PLUGINS_ARCHIVE_URL ?=
-ifndef ASTA_PLUGINS_REF
-ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
-endif
-ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-ifneq ($(wildcard .github/workflows/docs.yml),)
-$(error Cannot read the asta-plugins workflow ref from docs.yml; fix it or set ASTA_PLUGINS_REF explicitly)
-endif
-ASTA_DEFAULT_RELEASE := 1
-ASTA_PLUGINS_REF := $(shell git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null | awk -F/ '{print $$NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n 1)
-ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-ASTA_PLUGINS_REF := $(shell ref=$$(cat .asta/cache/default-release 2>/dev/null); if [ -s ".asta/cache/$$ref/workspace.mk" ]; then printf '%s' "$$ref"; fi)
-ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-ASTA_PLUGINS_REF := $(shell find .asta/cache -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c 2>/dev/null | awk -F/ '$$3 ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/ { print $$3 }' | sort -V | tail -n 1)
-endif
-ifneq ($(strip $(ASTA_PLUGINS_REF)),)
-$(warning Cannot look up asta-plugins releases; using cached $(ASTA_PLUGINS_REF))
-endif
-endif
-endif
+# Open VS Code attached to the devcontainer.
+dev:
+	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
 
-ifneq ($(wildcard workspace.mk),)
-$(warning workspace.mk is untracked; commit it to use it as a local override)
-endif
-ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-$(error Cannot find an asta-plugins release ref; set ASTA_PLUGINS_REF explicitly)
-endif
-ifneq ($(findstring ..,$(ASTA_PLUGINS_REF)),)
-$(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
-endif
-ifneq ($(filter /%,$(ASTA_PLUGINS_REF)),)
-$(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
-endif
-define ASTA_NEWLINE
+# Print the deployed URL the user can visit.
+# On main: the GitHub Pages root. On a feature branch: the PR's preview URL.
+deployed-url:
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" = "main" ]; then \
+		gh repo view --json owner,name -q '"https://" + .owner.login + ".github.io/" + .name + "/"'; \
+	else \
+		pr=$$(gh pr view --json url -q .url 2>/dev/null) || { echo "No PR for $$branch yet — push the branch and open a PR first." >&2; exit 1; }; \
+		echo "PR: $$pr"; \
+		preview=$$(gh pr view --json comments -q '.comments[] | select(.body | test("Preview:")) | .body' 2>/dev/null | tail -1); \
+		[ -n "$$preview" ] && echo "$$preview" || echo "(Preview URL not posted yet — CI may still be running.)"; \
+	fi
 
+# Preview readiness, for automated callers that report a preview link: mark the
+# Pages tip and latest docs run before pushing, then block until this push's
+# deployment is live. Vendored from the workspace skill — update by re-copying.
+preview-baseline:
+	sh scripts/wait-for-preview.sh baseline
 
-endef
-ifneq ($(findstring $(ASTA_NEWLINE),$(ASTA_PLUGINS_REF)),)
-$(error Invalid asta-plugins ref: line breaks are not allowed)
-endif
-ifneq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | LC_ALL=C awk 'NR != 1 || $$0 !~ /^[A-Za-z0-9_./-]+$$/ { invalid = 1 } END { if (NR == 1 && !invalid) print "valid" }'),valid)
-$(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
-endif
-ASTA_WORKSPACE_MK := .asta/cache/$(ASTA_PLUGINS_REF)/workspace.mk
-include $(ASTA_WORKSPACE_MK)
-
-.PHONY: workspace-check-gate
-check: workspace-check-gate
-workspace-check-gate:
-	@test "$(ASTA_WORKSPACE_CHECK)" = 1 || { echo "selected workspace.mk does not provide the shared check gate" >&2; exit 1; }
-
-# Floating channels refresh at most once an hour. A failed refresh keeps the
-# last working copy so local work can continue offline.
-ifneq ($(filter main latest,$(ASTA_PLUGINS_REF)),)
-ifeq ($(shell find $(ASTA_WORKSPACE_MK) -mmin -60 -type f -print 2>/dev/null),)
-.PHONY: workspace-ref-check
-workspace-ref-check: ;
-$(ASTA_WORKSPACE_MK): workspace-ref-check
-endif
-endif
-
-$(ASTA_WORKSPACE_MK):
-	@set -eu; \
-	ref='$(ASTA_PLUGINS_REF)'; \
-	case "$$ref" in *[!A-Za-z0-9_./-]*|*..*|/*) echo "invalid asta-plugins ref: $$ref" >&2; exit 1;; esac; \
-	url='$(subst ','"'"',$(ASTA_PLUGINS_ARCHIVE_URL))'; \
-	if [ -z "$$url" ]; then \
-		case "$$ref" in \
-			latest|main) url='$(subst ','"'"',$(ASTA_PLUGINS_REPO))/archive/refs/heads/'"$$ref"'.tar.gz';; \
-			v[0-9]*.[0-9]*.[0-9]*) url='$(subst ','"'"',$(ASTA_PLUGINS_REPO))/archive/refs/tags/'"$$ref"'.tar.gz';; \
-			*) url='$(subst ','"'"',$(ASTA_PLUGINS_REPO))/archive/'"$$ref"'.tar.gz';; \
-		esac; \
-	fi; \
-	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; trap 'exit 1' HUP INT TERM; \
-	failure="workspace: cannot fetch managed Makefile from $$url"; \
-	if curl -fsSL --connect-timeout 5 --max-time 120 "$$url" -o "$$tmp/archive.tar.gz"; then \
-		failure="workspace: invalid managed Makefile archive from $$url"; \
-		if tar -tzf "$$tmp/archive.tar.gz" >/dev/null 2>&1; then \
-			entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1) || :; \
-			if [ -z "$$entry" ]; then \
-				failure="workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk"; \
-			elif tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk" && [ -s "$$tmp/workspace.mk" ]; then \
-				mkdir -p "$$(dirname "$@")"; mv "$$tmp/workspace.mk" "$@"; \
-				if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ]; then \
-					ref_file=$$(mktemp .asta/cache/.default-release.XXXXXX); \
-					printf '%s\n' "$$ref" > "$$ref_file"; mv "$$ref_file" .asta/cache/default-release; \
-				fi; \
-				exit 0; \
-			fi; \
-		fi; \
-	fi; \
-	if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed ($$failure)" >&2; exit 0; fi; \
-	echo "$$failure" >&2; exit 1
-endif
-endif
+preview-ready:
+	sh scripts/wait-for-preview.sh wait

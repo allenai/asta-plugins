@@ -24,8 +24,9 @@ workspace-assets:
 	if git ls-files --error-unmatch _extensions/evidence >/dev/null 2>&1; then \
 		echo "workspace-assets: _extensions/evidence is committed (customized copy); not refreshing"; exit 0; \
 	fi; \
-	ref="$(ASTA_PLUGINS_REF)"; \
-	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
+	ref='$(subst ','"'"',$(value ASTA_PLUGINS_REF))'; \
+	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \
+	repo='$(subst ','"'"',$(value ASTA_PLUGINS_REPO))'; \
 	have_cache=0; \
 	if [ -d _extensions/evidence ] || [ -L _extensions/evidence ]; then have_cache=1; fi; \
 	offline_ok() { \
@@ -38,17 +39,19 @@ workspace-assets:
 	}; \
 	if [ -z "$$url" ]; then \
 		if [ -z "$$ref" ]; then \
-			ref=$$(git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null \
+			ref=$$(git ls-remote --tags --refs "$$repo" 'v*' 2>/dev/null \
 				| awk -F/ '{print $$NF}' \
 				| grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' \
 				| sort -V | tail -n 1) || true; \
-			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $(ASTA_PLUGINS_REPO)"; \
+			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $$repo"; \
 		fi; \
-		case "$$ref" in \
-			latest|main) url="$(ASTA_PLUGINS_REPO)/archive/refs/heads/$$ref.tar.gz";; \
-			v[0-9]*.[0-9]*.[0-9]*) url="$(ASTA_PLUGINS_REPO)/archive/refs/tags/$$ref.tar.gz";; \
-			*) url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz";; \
-		esac; \
+		if printf '%s\n' "$$ref" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+			url="$$repo/archive/refs/tags/$$ref.tar.gz"; \
+		elif [ "$$ref" = latest ] || [ "$$ref" = main ]; then \
+			url="$$repo/archive/refs/heads/$$ref.tar.gz"; \
+		else \
+			url="$$repo/archive/$$ref.tar.gz"; \
+		fi; \
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
