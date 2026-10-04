@@ -462,7 +462,9 @@ def test_workspace_makefile_requires_ref_without_docs_workflow(tmp_path: Path) -
     assert not (tmp_path / ".asta").exists()
 
 
-@pytest.mark.parametrize("ref", ["../../outside", "bad;command", "bad'quote"])
+@pytest.mark.parametrize(
+    "ref", ["../../outside", "bad;command", "bad'quote", "v1.2.3\ninvalid"]
+)
 def test_workspace_makefile_rejects_invalid_ref_before_include(
     tmp_path: Path, ref: str
 ) -> None:
@@ -476,6 +478,41 @@ def test_workspace_makefile_rejects_invalid_ref_before_include(
     )
     assert result.returncode != 0
     assert "Invalid asta-plugins ref" in result.stderr
+    assert not (tmp_path / ".asta").exists()
+
+
+def test_workspace_makefile_clean_works_before_managed_fetch(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "_site").mkdir()
+    (tmp_path / ".quarto").mkdir()
+    result = subprocess.run(
+        ["make", "clean"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "_site").exists()
+    assert not (tmp_path / ".quarto").exists()
+    assert not (tmp_path / ".asta").exists()
+
+
+def test_workspace_makefile_clean_respects_committed_override(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (tmp_path / "workspace.mk").write_text(
+        "clean:\n\t@echo custom-clean > cleaned-by-project\n"
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "workspace.mk"], cwd=tmp_path, check=True)
+    result = subprocess.run(
+        ["make", "clean"], cwd=tmp_path, text=True, capture_output=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "cleaned-by-project").read_text().strip() == "custom-clean"
     assert not (tmp_path / ".asta").exists()
 
 

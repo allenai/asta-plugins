@@ -1,5 +1,26 @@
 # Keep project targets here; the shared targets come from the selected
 # asta-plugins version. Commit workspace.mk to take ownership of them.
+# Cleaning a project must also work before the first managed-file fetch.
+ifneq ($(MAKECMDGOALS),)
+ifeq ($(filter-out clean,$(MAKECMDGOALS)),)
+ifneq ($(shell git ls-files --error-unmatch workspace.mk 2>/dev/null),)
+ifeq ($(wildcard workspace.mk),)
+$(error workspace.mk is tracked but missing; restore it or remove it from Git)
+endif
+include workspace.mk
+else
+.PHONY: clean
+clean:
+	rm -rf _site .quarto
+endif
+else
+ASTA_LOAD_WORKSPACE_MK := 1
+endif
+else
+ASTA_LOAD_WORKSPACE_MK := 1
+endif
+
+ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
 ifndef ASTA_PLUGINS_REF
 ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
 endif
@@ -24,7 +45,14 @@ endif
 ifneq ($(filter /%,$(ASTA_PLUGINS_REF)),)
 $(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
 endif
-ifneq ($(shell printf '%s' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | LC_ALL=C grep -Ec '^[A-Za-z0-9_./-]+$$'),1)
+define ASTA_NEWLINE
+
+
+endef
+ifneq ($(findstring $(ASTA_NEWLINE),$(ASTA_PLUGINS_REF)),)
+$(error Invalid asta-plugins ref: line breaks are not allowed)
+endif
+ifneq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | LC_ALL=C awk 'NR != 1 || $$0 !~ /^[A-Za-z0-9_./-]+$$/ { invalid = 1 } END { if (NR == 1 && !invalid) print "valid" }'),valid)
 $(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
 endif
 ASTA_WORKSPACE_MK := .asta/cache/$(ASTA_PLUGINS_REF)/workspace.mk
@@ -67,4 +95,5 @@ $(ASTA_WORKSPACE_MK):
 	fi; \
 	mkdir -p "$$(dirname "$@")"; \
 	mv "$$tmp/workspace.mk" "$@"
+endif
 endif

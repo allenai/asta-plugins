@@ -1,11 +1,7 @@
 .PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
 
-# Which asta-plugins ref to fetch the workspace evidence extension from.
-# The default (empty ASTA_PLUGINS_REF) resolves to the latest published version
-# tag, so projects pick up new releases automatically — the same way other
-# asta-plugins consumers upgrade, rather than tracking the mutable main branch.
-# Pin a specific release with ASTA_PLUGINS_REF=v0.103.0, or track the in-flight
-# branch with ASTA_PLUGINS_REF=main.
+# The project Makefile passes its selected workflow ref to the evidence fetch.
+# Standalone use can set ASTA_PLUGINS_REF or resolve the latest release tag.
 ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
 ASTA_PLUGINS_REF ?=
 # Derived from the repo + resolved ref unless set explicitly (tests point it at
