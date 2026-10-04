@@ -171,8 +171,12 @@ jobs:
               commit -q -m 'Generated LaTeX (preview only)'
           }
           [ -z "$orig_head" ] || generate_latex . || fail_discovery 'make latex failed; see the build log.'
-          if [ -n "$base" ] && gen_base=$(mktemp -d) && git worktree add -q --detach "$gen_base" "$base"; then
-            if generate_latex "$gen_base"; then
+          if [ -n "$base" ]; then
+            gen_base=$(mktemp -d) || fail_discovery 'Could not create a temporary directory for the PR base.'
+            git worktree add -q --detach "$gen_base" "$base" || fail_discovery 'Could not create a worktree for the PR base.'
+            if ! make -C "$gen_base" check; then
+              echo '::warning::make check failed on the PR base; its generated papers are treated as absent'
+            elif generate_latex "$gen_base"; then
               base=$(git -C "$gen_base" rev-parse HEAD)
             else
               echo '::warning::make latex failed on the PR base; its generated papers are treated as absent'

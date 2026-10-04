@@ -19,6 +19,7 @@ def _run_paper_step(
     prepare=None,
     inspect_stage: bool = False,
     paper_script: str | None = None,
+    worktree_add_fails: bool = False,
 ):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -53,6 +54,14 @@ def _run_paper_step(
         '[ -n "${PAPER_SOURCE:-}" ]\n'
     )
     sudo.chmod(0o755)
+    if worktree_add_fails:
+        git = bin_dir / "git"
+        git.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = worktree ] && [ "$2" = add ]; then exit 1; fi\n'
+            f'exec {shutil.which("git")} "$@"\n'
+        )
+        git.chmod(0o755)
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "PR_BASE": pr_base,
@@ -109,6 +118,7 @@ def _git(project: Path, *args: str) -> str:
 def _generated_paper_project(project: Path) -> str:
     (project / ".gitignore").write_text("gen/\n_site/\n")
     (project / "Makefile").write_text(
+        "check:\n\t@true\n"
         "latex:\n\tmkdir -p gen\n\techo paper > gen/main.tex\n"
         "\techo rc > gen/latexmkrc\n"
     )
@@ -201,10 +211,62 @@ def test_generated_base_and_head_keep_distinct_sources(tmp_path: Path) -> None:
     assert len(_git(project, "worktree", "list").splitlines()) == 1
 
 
+def test_base_check_prepares_inputs_for_generated_paper(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / ".gitignore").write_text("gen/\n_site/\n")
+        (project / "Makefile").write_text(
+            "check:\n\tmkdir -p gen\n\tcp source.txt gen/input.txt\n"
+            "latex:\n\tmkdir -p gen\n\tcp gen/input.txt gen/main.tex\n"
+            "\techo rc > gen/latexmkrc\n"
+        )
+        (project / "source.txt").write_text("before\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".gitignore", "Makefile", "source.txt")
+        _git(project, "commit", "-q", "-m", "base")
+        base = _git(project, "rev-parse", "HEAD")
+        (project / "source.txt").write_text("after\n")
+        _git(project, "add", "source.txt")
+        _git(project, "commit", "-q", "-m", "change")
+        subprocess.run(["make", "check"], cwd=project, check=True, capture_output=True)
+        return base
+
+    paper_script = (
+        "#!/bin/bash\n"
+        'git show "$1:gen/main.tex" > _site/base-paper.txt\n'
+        "cp gen/main.tex _site/head-paper.txt\n"
+    )
+    project, result = _run_paper_step(
+        tmp_path, prepare=prepare, paper_script=paper_script
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/base-paper.txt").read_text() == "before\n"
+    assert (project / "_site/head-paper.txt").read_text() == "after\n"
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+    assert len(_git(project, "worktree", "list").splitlines()) == 1
+
+
+def test_base_worktree_failure_reports_discovery_error(tmp_path: Path) -> None:
+    project, result = _run_paper_step(
+        tmp_path,
+        prepare=_generated_paper_project,
+        worktree_add_fails=True,
+    )
+
+    assert result.returncode != 0
+    assert (
+        project / "_site/paper-previews/build-failed.txt"
+    ).read_text().strip() == "Could not create a worktree for the PR base."
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+    assert len(_git(project, "worktree", "list").splitlines()) == 1
+
+
 def test_base_latex_failure_keeps_head_preview(tmp_path: Path) -> None:
     def prepare(project: Path) -> str:
         (project / ".gitignore").write_text("gen/\n_site/\n")
-        (project / "Makefile").write_text("latex: missing-prerequisite\n")
+        (project / "Makefile").write_text(
+            "check:\n\t@true\nlatex: missing-prerequisite\n"
+        )
         _git(project, "init", "-q")
         _git(project, "add", ".")
         _git(project, "commit", "-q", "-m", "base")
@@ -221,6 +283,31 @@ def test_base_latex_failure_keeps_head_preview(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "make latex failed on the PR base" in result.stdout
+    assert (project / "_site/paper-previews/gen/build-failed.txt").is_file()
+    assert _git(project, "log", "--format=%s") == "fix\nbase"
+
+
+def test_base_check_failure_keeps_head_preview(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / ".gitignore").write_text("gen/\n_site/\n")
+        (project / "Makefile").write_text("check: missing-prerequisite\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        base = _git(project, "rev-parse", "HEAD")
+        (project / "Makefile").write_text(
+            "check:\n\t@true\n"
+            "latex:\n\tmkdir -p gen\n\techo paper > gen/main.tex\n"
+            "\techo rc > gen/latexmkrc\n"
+        )
+        _git(project, "add", "Makefile")
+        _git(project, "commit", "-q", "-m", "fix")
+        return base
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert "make check failed on the PR base" in result.stdout
     assert (project / "_site/paper-previews/gen/build-failed.txt").is_file()
     assert _git(project, "log", "--format=%s") == "fix\nbase"
 
