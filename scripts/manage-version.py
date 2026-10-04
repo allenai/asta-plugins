@@ -91,16 +91,21 @@ def get_asta_cli_skill_versions() -> list[str]:
 
 
 def get_workspace_workflow_version() -> str:
-    """Read the asta-plugins tag from the scaffolded docs workflow."""
+    """Read the asta-plugins ref from the scaffolded docs workflow.
+
+    The scaffold follows the floating `latest` release channel; a literal
+    `vX.Y.Z` there must match the release being cut.
+    """
     content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
     match = re.search(
         r"uses: allenai/asta-plugins/\.github/workflows/"
-        r"workspace-quarto-site\.yml@v([0-9.]+)",
+        r"workspace-quarto-site\.yml@(latest|v[0-9.]+)",
         content,
     )
     if not match:
-        raise ValueError("Could not find versioned workspace workflow ref in docs.yml")
-    return match.group(1)
+        raise ValueError("Could not find workspace workflow ref in docs.yml")
+    ref = match.group(1)
+    return ref if ref == "latest" else ref[1:]
 
 
 def check_version_consistency() -> bool:
@@ -142,7 +147,7 @@ def check_version_consistency() -> bool:
 
     # Keep the reusable workflow used by newly scaffolded workspaces aligned
     # with the release-managed CLI and render-time assets.
-    if workspace_workflow_version != init_version:
+    if workspace_workflow_version not in ("latest", init_version):
         mismatch = True
 
     if mismatch:
@@ -245,7 +250,7 @@ def set_version(new_version: str) -> bool:
     )
     ASTA_CLI_SKILL_FILE.write_text(content)
 
-    # Advance the scaffolded reusable workflow with the same release tag.
+    # Advance a pinned scaffold ref with the release tag; `@latest` needs none.
     print("Updating workspace docs workflow...")
     content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
     content, replacements = re.subn(
@@ -254,6 +259,8 @@ def set_version(new_version: str) -> bool:
         rf"\g<1>{new_version}",
         content,
     )
+    if replacements == 0 and get_workspace_workflow_version() == "latest":
+        replacements = 1
     if replacements != 1:
         print(
             f"{RED}Error: expected one versioned workspace workflow ref, "

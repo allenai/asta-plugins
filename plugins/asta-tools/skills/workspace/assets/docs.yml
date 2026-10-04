@@ -24,7 +24,8 @@ jobs:
   docs:
     # The one asta-plugins version for this project: the Makefile reads this
     # ref, and the devcontainer image tag should match it. Choose:
-    #   @vX.Y.Z  pinned release, upgraded by bump PRs (default)
-    #   @latest  newest final release, moved by each asta-plugins release
+    #   @latest  newest final release (default; matches the :latest image and
+    #            how the asta CLI and plugins upgrade)
+    #   @vX.Y.Z  pinned release, upgraded when you edit this line
     #   @main    every asta-plugins merge (canary; can break without a PR here)
-    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1
+    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@latest

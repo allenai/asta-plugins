@@ -109,16 +109,13 @@ def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
     assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
 
 
-def test_scaffolded_workflow_ref_matches_project_version() -> None:
-    """Release-managed workspace assets must advance under one version tag."""
-    project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][
-        "version"
-    ]
+def test_scaffolded_workflow_follows_latest_release() -> None:
+    """New projects follow the latest release, like the :latest image and CLI."""
     scaffold = (WORKSPACE_ASSETS / "docs.yml").read_text()
-    match = re.search(r"workspace-quarto-site\.yml@v([0-9.]+)", scaffold)
+    match = re.search(r"workspace-quarto-site\.yml@(\S+)", scaffold)
 
     assert match is not None
-    assert match.group(1) == project_version
+    assert match.group(1) == "latest"
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
