@@ -156,6 +156,39 @@ jobs:
       - name: Prepare Pages artifact
         run: touch _site/.nojekyll  # serve asset dirs verbatim (no Jekyll)
 
+      # Generate the diff with the build job's read-only token. A project may
+      # customize this script, so it must not run in the write-enabled deploy job.
+      - name: Generate What changed
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          baseline=$(mktemp -d)
+          if git fetch -q origin gh-pages:refs/remotes/origin/gh-pages \
+              && git archive refs/remotes/origin/gh-pages | tar -x -C "$baseline"; then
+            rm -rf "$baseline/pr-preview"
+          else
+            echo "::warning::Could not read the deployed main site; comparing against an empty baseline"
+            rm -rf "$baseline"
+            mkdir -p "$baseline"
+          fi
+          if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
+            gen=scripts/what-changed.py
+            echo "Using project-owned scripts/what-changed.py"
+          else
+            gen=/tmp/what-changed.py
+            url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
+            if ! curl -fsSL "$url" -o "$gen"; then
+              echo "::warning::could not fetch what-changed.py; skipping the diff page"
+              exit 0
+            fi
+          fi
+          python3 "$gen" \
+            --old "$baseline" --new _site \
+            --out _site/what-changed.html --title "PR #$PR_NUMBER" \
+            || echo "::warning::what-changed page generation failed; preview still published"
+
       - name: Upload rendered site
         uses: actions/upload-artifact@v4
         with:
@@ -214,30 +247,6 @@ jobs:
             rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
             mkdir -p "$tmp/pr-preview/pr-$PR_NUMBER"
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/pr-preview/pr-$PR_NUMBER/"
-
-            # "What changed" page: a single link that lands reviewers on exactly
-            # the rendered content this PR adds/removes, highlighted inline,
-            # instead of the site root to hunt through. The baseline is the site
-            # as currently deployed to the gh-pages root (i.e. main), which is
-            # already checked out here — so this is a diff of two rendered trees,
-            # no re-render. Best-effort: a generator hiccup must not fail an
-            # otherwise-good publish.
-            set +e
-            baseline=$(mktemp -d)
-            find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git \
-              -exec cp -r {} "$baseline/" \;
-            gen="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
-            if curl -fsSL "$gen" -o /tmp/what-changed.py; then
-              python3 /tmp/what-changed.py \
-                --old "$baseline" \
-                --new "$GITHUB_WORKSPACE/_site" \
-                --out "$tmp/pr-preview/pr-$PR_NUMBER/what-changed.html" \
-                --title "PR #$PR_NUMBER" \
-                || echo "::warning::what-changed page generation failed; preview still published"
-            else
-              echo "::warning::could not fetch what-changed.py; skipping the diff page"
-            fi
-            set -e
 
             # Keep previews out of search indexes. A project Pages site can't use
             # a path-scoped robots.txt (only the host-root one is honored), so

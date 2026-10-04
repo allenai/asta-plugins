@@ -71,6 +71,107 @@ def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
     )
 
 
+def test_what_changed_project_override_runs_before_write_enabled_deploy(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    build = workflow["jobs"]["build"]
+    deploy = workflow["jobs"]["deploy"]
+    assert build["permissions"]["contents"] == "read"
+    assert deploy["permissions"]["contents"] == "write"
+    step = next(s for s in build["steps"] if s.get("name") == "Generate What changed")
+    assert "what-changed.py" not in deploy["steps"][-1]["run"]
+
+    remote = tmp_path / "remote.git"
+    project = tmp_path / "project"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(project)], check=True, capture_output=True
+    )
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
+
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (project / "index.html").write_text("deployed main")
+    git("add", "index.html")
+    git("commit", "-m", "Baseline")
+    git("remote", "add", "origin", str(remote))
+    git("push", "origin", "gh-pages")
+    git("switch", "-c", "main")
+    (project / "scripts").mkdir()
+    (project / "scripts/what-changed.py").write_text(
+        "import argparse\n"
+        "from pathlib import Path\n"
+        "p = argparse.ArgumentParser()\n"
+        "for arg in ('old', 'new', 'out', 'title'):\n"
+        "    p.add_argument('--' + arg)\n"
+        "a = p.parse_args()\n"
+        "Path(a.out).write_text('custom: ' + Path(a.old, 'index.html').read_text())\n"
+    )
+    git("add", "scripts/what-changed.py")
+    git("commit", "-m", "Customize diff")
+    (project / "_site").mkdir()
+    (project / "_site/index.html").write_text("PR content")
+
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={**os.environ, "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/what-changed.html").read_text() == "custom: deployed main"
+    assert "Using project-owned" in result.stdout
+
+
+def test_what_changed_uses_managed_generator_without_project_copy(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    project = tmp_path / "project"
+    (project / "_site").mkdir(parents=True)
+    (project / "_site/index.html").write_text(
+        "<html><head><title>Test</title></head><body><main>New page</main></body></html>"
+    )
+    subprocess.run(
+        ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text('#!/bin/sh\ncp "$MANAGED_SOURCE" "$4"\n')
+    curl.chmod(0o755)
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "MANAGED_SOURCE": str((WORKSPACE_ASSETS / "what-changed.py").resolve()),
+            "PR_NUMBER": "8",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/what-changed.html").is_file()
+    assert "Could not read the deployed main site" in result.stdout
+
+
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     assert workflow["on"]["workflow_call"]["inputs"]["quarto-version"]["default"] == (
