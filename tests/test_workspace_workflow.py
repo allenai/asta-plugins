@@ -119,6 +119,7 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     )
     git("add", "scripts/what-changed.py")
     git("commit", "-m", "Customize diff")
+    git("update-ref", "refs/remotes/origin/gh-pages", "HEAD")
     (project / "_site").mkdir()
     (project / "_site/index.html").write_text("PR content")
 

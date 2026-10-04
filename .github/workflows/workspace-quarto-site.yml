@@ -164,10 +164,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -o pipefail
-          baseline=$(mktemp -d)
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "$tmpdir"' EXIT
+          baseline="$tmpdir/baseline"
+          mkdir "$baseline"
           baseline_label="no deployed baseline"
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
-            if ! git fetch -q origin gh-pages:refs/remotes/origin/gh-pages \
+            # Pages may have been force-pushed since checkout fetched its branch.
+            if ! git fetch -q origin +gh-pages:refs/remotes/origin/gh-pages \
                 || ! git archive refs/remotes/origin/gh-pages -- . ':(exclude)pr-preview' | tar -x -C "$baseline"; then
               echo "::warning::Could not read the deployed main site; skipping the diff page"
               exit 0
@@ -185,21 +189,23 @@ jobs:
             gen=scripts/what-changed.py
             echo "Using project-owned scripts/what-changed.py"
           else
-            gen=/tmp/what-changed.py
+            gen="$tmpdir/what-changed.py"
             url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
             if ! curl -fsSL "$url" -o "$gen"; then
               echo "::warning::could not fetch what-changed.py; skipping the diff page"
               exit 0
             fi
           fi
-          tmpout=$(mktemp)
+          if [ -e _site/what-changed.html ]; then
+            echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
+          fi
+          tmpout="$tmpdir/what-changed.html"
           if python3 "$gen" \
             --old "$baseline" --new _site \
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
               && [ -s "$tmpout" ]; then
             mv "$tmpout" _site/what-changed.html
           else
-            rm -f "$tmpout"
             echo "::warning::what-changed page generation failed; preview still published"
           fi
 
