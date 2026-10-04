@@ -28,7 +28,11 @@ def _run_paper_step(tmp_path: Path, *, download_fails: bool = False):
     bin_dir.mkdir()
     curl = bin_dir / "curl"
     curl.write_text(
-        '#!/bin/sh\n[ "${FAIL_CURL:-0}" != 1 ] || exit 1\ncp "$DISCOVERY_SOURCE" "$4"\n'
+        "#!/bin/sh\n"
+        '[ "${FAIL_CURL:-0}" != 1 ] || exit 1\n'
+        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
+        '[ "$#" -ge 2 ] || exit 2\n'
+        'cp "$DISCOVERY_SOURCE" "$2"\n'
     )
     curl.chmod(0o755)
     sudo = bin_dir / "sudo"
@@ -80,7 +84,7 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     assert build["permissions"]["contents"] == "read"
     assert deploy["permissions"]["contents"] == "write"
     step = next(s for s in build["steps"] if s.get("name") == "Generate What changed")
-    assert "what-changed.py" not in deploy["steps"][-1]["run"]
+    assert not any("what-changed.py" in s.get("run", "") for s in deploy["steps"])
 
     remote = tmp_path / "remote.git"
     project = tmp_path / "project"
@@ -110,7 +114,7 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
         "for arg in ('old', 'new', 'out', 'title'):\n"
         "    p.add_argument('--' + arg)\n"
         "a = p.parse_args()\n"
-        "Path(a.out).write_text('custom: ' + Path(a.old, 'index.html').read_text())\n"
+        "Path(a.out).write_text('custom: ' + Path(a.old, 'index.html').read_text() + '\\n' + a.title)\n"
     )
     git("add", "scripts/what-changed.py")
     git("commit", "-m", "Customize diff")
@@ -127,8 +131,32 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert (project / "_site/what-changed.html").read_text() == "custom: deployed main"
+    page = (project / "_site/what-changed.html").read_text()
+    assert page.startswith("custom: deployed main\nPR #7 · Pages ")
+    assert re.search(r"Pages [0-9a-f]{12}$", page)
     assert "Using project-owned" in result.stdout
+
+    (project / "_site/what-changed.html").unlink()
+    (project / "scripts/what-changed.py").write_text(
+        "import argparse\n"
+        "from pathlib import Path\n"
+        "p = argparse.ArgumentParser()\n"
+        "for arg in ('old', 'new', 'out', 'title'):\n"
+        "    p.add_argument('--' + arg)\n"
+        "a = p.parse_args()\n"
+        "Path(a.out).write_text('partial')\n"
+        "raise RuntimeError('failed after writing')\n"
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={**os.environ, "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (project / "_site/what-changed.html").exists()
+    assert "what-changed page generation failed" in result.stdout
 
 
 def test_what_changed_uses_managed_generator_without_project_copy(
@@ -151,7 +179,12 @@ def test_what_changed_uses_managed_generator_without_project_copy(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     curl = bin_dir / "curl"
-    curl.write_text('#!/bin/sh\ncp "$MANAGED_SOURCE" "$4"\n')
+    curl.write_text(
+        "#!/bin/sh\n"
+        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
+        '[ "$#" -ge 2 ] || exit 2\n'
+        'cp "$MANAGED_SOURCE" "$2"\n'
+    )
     curl.chmod(0o755)
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
     script = script.replace("${{ job.workflow_sha }}", "source-commit")

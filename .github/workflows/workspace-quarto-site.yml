@@ -165,9 +165,11 @@ jobs:
         run: |
           set -o pipefail
           baseline=$(mktemp -d)
+          baseline_label="no deployed baseline"
           if git fetch -q origin gh-pages:refs/remotes/origin/gh-pages \
-              && git archive refs/remotes/origin/gh-pages | tar -x -C "$baseline"; then
-            rm -rf "$baseline/pr-preview"
+              && git archive refs/remotes/origin/gh-pages -- . ':(exclude)pr-preview' | tar -x -C "$baseline"; then
+            # The read-only build compares with this snapshot; main may redeploy before publication.
+            baseline_label="Pages $(git rev-parse --short=12 refs/remotes/origin/gh-pages)"
           else
             echo "::warning::Could not read the deployed main site; comparing against an empty baseline"
             rm -rf "$baseline"
@@ -184,10 +186,16 @@ jobs:
               exit 0
             fi
           fi
-          python3 "$gen" \
+          tmpout=$(mktemp)
+          if python3 "$gen" \
             --old "$baseline" --new _site \
-            --out _site/what-changed.html --title "PR #$PR_NUMBER" \
-            || echo "::warning::what-changed page generation failed; preview still published"
+            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
+              && [ -s "$tmpout" ]; then
+            mv "$tmpout" _site/what-changed.html
+          else
+            rm -f "$tmpout"
+            echo "::warning::what-changed page generation failed; preview still published"
+          fi
 
       - name: Upload rendered site
         uses: actions/upload-artifact@v4
