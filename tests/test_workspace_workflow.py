@@ -233,8 +233,28 @@ def test_what_changed_skips_diff_when_baseline_read_fails(
     subprocess.run(
         ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
     )
+    remote = tmp_path / "remote.git"
+    baseline = tmp_path / "baseline"
     subprocess.run(
-        ["git", "remote", "add", "origin", str(tmp_path / "unreachable.git")],
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(baseline)],
+        check=True,
+        capture_output=True,
+    )
+    (baseline / "index.html").write_text("deployed main")
+    for args in (
+        ("config", "user.name", "Test"),
+        ("config", "user.email", "test@example.invalid"),
+        ("add", "index.html"),
+        ("commit", "-m", "Baseline"),
+        ("remote", "add", "origin", str(remote)),
+        ("push", "origin", "gh-pages"),
+    ):
+        subprocess.run(["git", *args], cwd=baseline, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
         cwd=project,
         check=True,
         capture_output=True,
@@ -244,10 +264,7 @@ def test_what_changed_skips_diff_when_baseline_read_fails(
     git = bin_dir / "git"
     git.write_text(
         "#!/bin/sh\n"
-        'if [ "$1" = ls-remote ]; then\n'
-        '  [ "$FAILED_COMMAND" != ls-remote ] || exit 128\n'
-        "  exit 0\n"
-        "fi\n"
+        'printf "%s\\n" "$1" >> "$GIT_COMMAND_LOG"\n'
         '[ "$1" != "$FAILED_COMMAND" ] || exit 1\n'
         'exec "$REAL_GIT" "$@"\n'
     )
@@ -262,6 +279,7 @@ def test_what_changed_skips_diff_when_baseline_read_fails(
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "REAL_GIT": shutil.which("git"),
             "FAILED_COMMAND": failed_command,
+            "GIT_COMMAND_LOG": str(tmp_path / "git-commands.log"),
             "PR_NUMBER": "8",
         },
         capture_output=True,
@@ -270,6 +288,10 @@ def test_what_changed_skips_diff_when_baseline_read_fails(
     assert result.returncode == 0, result.stderr
     assert not (project / "_site/what-changed.html").exists()
     assert "skipping the diff page" in result.stdout
+    commands = (tmp_path / "git-commands.log").read_text().splitlines()
+    assert failed_command in commands
+    if failed_command == "archive":
+        assert "fetch" in commands
 
 
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
