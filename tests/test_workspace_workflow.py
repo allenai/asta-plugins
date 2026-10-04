@@ -308,17 +308,30 @@ def test_workspace_can_pin_quarto_for_generated_sources() -> None:
 
 
 def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None:
-    assert "git archive refs/remotes/origin/gh-pages | tar -x --exclude=pr-preview" in (
-        WORKFLOW.read_text()
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    script = next(
+        step["run"]
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name") == "Generate What changed"
     )
+    archive_line = next(
+        line.strip() for line in script.splitlines() if "git archive " in line
+    )
+    assert archive_line.startswith("|| ! ")
+    archive_command = archive_line.removeprefix("|| ! ").removesuffix("; then")
     repo = tmp_path / "repo"
     (repo / "pr-preview/pr-1").mkdir(parents=True)
+    (repo / "docs/pr-preview").mkdir(parents=True)
     (repo / "index.html").write_text("main site")
     (repo / "pr-preview/pr-1/index.html").write_text("preview")
+    (repo / "docs/pr-preview/index.html").write_text("nested site content")
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "index.html", "pr-preview"], cwd=repo, check=True)
     subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "pages"],
+        ["git", "add", "index.html", "pr-preview", "docs"], cwd=repo, check=True
+    )
+    tree = subprocess.check_output(["git", "write-tree"], cwd=repo, text=True).strip()
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/gh-pages", tree],
         cwd=repo,
         check=True,
     )
@@ -330,14 +343,16 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
             "-o",
             "pipefail",
             "-c",
-            'git archive HEAD | tar -x --exclude=pr-preview -C "$1"',
-            "bash",
-            str(baseline),
+            archive_command,
         ],
         cwd=repo,
+        env={"PATH": os.environ["PATH"], "baseline": str(baseline)},
         check=True,
     )
     assert (baseline / "index.html").read_text() == "main site"
+    assert (baseline / "docs/pr-preview/index.html").read_text() == (
+        "nested site content"
+    )
     assert not (baseline / "pr-preview").exists()
 
 

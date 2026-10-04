@@ -172,7 +172,7 @@ jobs:
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
             # Pages may have been force-pushed since checkout fetched its branch.
             if ! git fetch -q origin +gh-pages:refs/remotes/origin/gh-pages \
-                || ! git archive refs/remotes/origin/gh-pages | tar -x --exclude=pr-preview -C "$baseline"; then
+                || ! git archive refs/remotes/origin/gh-pages | tar -x --anchored --exclude=pr-preview -C "$baseline"; then
               echo "::warning::Could not read the deployed main site; skipping the diff page"
               exit 0
             fi
