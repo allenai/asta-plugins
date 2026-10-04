@@ -1,12 +1,14 @@
 .PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
 
 # Which asta-plugins ref to fetch the workspace evidence extension from. The
-# single version of record is the `uses: ...@<ref>` line in
-# .github/workflows/docs.yml, so the workflow and render-time assets move
-# together. <ref> is a release (v0.105.0), `latest` (newest final release; the
-# safer floating choice) or `main`. With no docs.yml, `latest` is used.
+# workflow ref is the `uses: ...@<ref>` line in .github/workflows/docs.yml,
+# so the workflow and render-time assets move together. <ref> is a release
+# (v0.105.0), `latest` (newest promoted final release), or `main`.
+# With no docs.yml, `latest` is used.
 ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
-ASTA_PLUGINS_REF ?= $(shell sed -n 's|.*allenai/asta-plugins/\.github/workflows/workspace-quarto-site\.yml@\([^[:space:]]*\).*|\1|p' .github/workflows/docs.yml 2>/dev/null | head -n 1)
+ifndef ASTA_PLUGINS_REF
+ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
+endif
 # Derived from the repo + resolved ref unless set explicitly (tests point it at
 # a local archive). When set, it is used verbatim and ref resolution is skipped.
 ASTA_PLUGINS_ARCHIVE_URL ?=
@@ -39,15 +41,13 @@ workspace-assets:
 		echo "workspace-assets: could not reach asta-plugins ($$1) and no cached _extensions/evidence exists — network access is required for the first fetch" >&2; \
 		exit 1; \
 	}; \
+	if [ -z "$$ref" ]; then ref=latest; fi; \
 	if [ -z "$$url" ]; then \
-		if [ -z "$$ref" ] || [ "$$ref" = latest ]; then \
-			ref=$$(git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null \
-				| awk -F/ '{print $$NF}' \
-				| grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' \
-				| sort -V | tail -n 1) || true; \
-			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $(ASTA_PLUGINS_REPO)"; \
+		if [ "$$ref" = latest ]; then \
+			url="$(ASTA_PLUGINS_REPO)/archive/refs/heads/latest.tar.gz"; \
+		else \
+			url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
 		fi; \
-		url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \

@@ -5,6 +5,7 @@ import subprocess
 import tarfile
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
@@ -115,6 +116,60 @@ def test_scaffolded_workflow_follows_latest_release() -> None:
 
     assert match is not None
     assert match.group(1) == "latest"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("latest", "latest"),
+        ("v0.104.1", "v0.104.1"),
+        ("main", "main"),
+        ("a" * 40, "a" * 40),
+        ("'latest'", "latest"),
+        ('"v0.104.1"', "v0.104.1"),
+        (None, "latest"),
+    ],
+)
+def test_workspace_makefile_reads_workflow_ref(
+    tmp_path: Path, value: str | None, expected: str
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    if value is not None:
+        docs = project / ".github/workflows/docs.yml"
+        docs.parent.mkdir(parents=True)
+        quote = value[0] if value.startswith(("'", '"')) else ""
+        ref = value.strip("'\"")
+        docs.write_text(
+            "  # uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@ignored\n"
+            f"  uses: {quote}allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@{ref}{quote}\n"
+        )
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    source.mkdir(parents=True)
+    (source / "snippet.lua").write_text("-- managed")
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+    out = _run_workspace_assets(project, archive.as_uri())
+
+    assert f"installed evidence extension from asta-plugins@{expected}" in out
+
+
+def test_latest_release_ref_is_updated_before_images() -> None:
+    workflow = yaml.load(
+        Path(".github/workflows/docker.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    select_job = workflow["jobs"]["latest-select"]
+    ref_job = workflow["jobs"]["latest-ref"]
+    image_job = workflow["jobs"]["latest"]
+
+    assert select_job["permissions"] == {"contents": "read", "packages": "read"}
+    assert ref_job["needs"] == "latest-select"
+    assert ref_job["permissions"] == {"contents": "write"}
+    assert image_job["needs"] == "latest-ref"
+    assert image_job["permissions"] == {"contents": "read", "packages": "write"}
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
@@ -597,38 +652,13 @@ def _make_evidence_archive(archive: Path) -> None:
         bundle.add(archive_root, arcname=archive_root.name)
 
 
-def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
-    # A local git repo standing in for asta-plugins: git ls-remote reads its
-    # tags, and curl reads a co-located archive/ dir via file://. The default
-    # (no ASTA_PLUGINS_REF, no ASTA_PLUGINS_ARCHIVE_URL) must pick the highest
-    # semver tag and skip non-version tags.
+def test_workspace_makefile_resolves_latest_branch(tmp_path: Path) -> None:
+    # The default fetches the promoted latest branch, even if a newer tag exists.
     repo = tmp_path / "asta-plugins"
     (repo / "archive").mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "user.name=t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "seed",
-            "--no-gpg-sign",
-        ],
-        check=True,
-    )
-    for tag in ("v0.2.0", "v0.10.0", "v0.9.0", "v2-reproduction-work"):
-        subprocess.run(["git", "-C", str(repo), "tag", tag], check=True)
-
-    # Only the latest semver tag's archive exists; if resolution picked any
-    # other ref (main, v2-reproduction-work, v0.9.0), the curl would 404.
-    _make_evidence_archive(repo / "archive/v0.10.0.tar.gz")
+    archive = repo / "archive/refs/heads/latest.tar.gz"
+    archive.parent.mkdir(parents=True)
+    _make_evidence_archive(archive)
 
     project = tmp_path / "project"
     project.mkdir()
@@ -650,7 +680,7 @@ def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "asta-plugins@v0.10.0" in result.stdout
+    assert "asta-plugins@latest" in result.stdout
     assert (project / "_extensions/evidence/snippet.lua").read_bytes() == (
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()

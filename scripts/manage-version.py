@@ -251,23 +251,22 @@ def set_version(new_version: str) -> bool:
     ASTA_CLI_SKILL_FILE.write_text(content)
 
     # Advance a pinned scaffold ref with the release tag; `@latest` needs none.
-    print("Updating workspace docs workflow...")
-    content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
-    content, replacements = re.subn(
-        r"(uses: allenai/asta-plugins/\.github/workflows/"
-        r"workspace-quarto-site\.yml@v)\d+\.\d+\.\d+",
-        rf"\g<1>{new_version}",
-        content,
-    )
-    if replacements == 0 and get_workspace_workflow_version() == "latest":
-        replacements = 1
-    if replacements != 1:
-        print(
-            f"{RED}Error: expected one versioned workspace workflow ref, "
-            f"found {replacements}{NC}"
+    if get_workspace_workflow_version() != "latest":
+        print("Updating workspace docs workflow...")
+        content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
+        content, replacements = re.subn(
+            r"(uses: allenai/asta-plugins/\.github/workflows/"
+            r"workspace-quarto-site\.yml@v)\d+\.\d+\.\d+",
+            rf"\g<1>{new_version}",
+            content,
         )
-        return False
-    WORKSPACE_DOCS_WORKFLOW_FILE.write_text(content)
+        if replacements != 1:
+            print(
+                f"{RED}Error: expected one versioned workspace workflow ref, "
+                f"found {replacements}{NC}"
+            )
+            return False
+        WORKSPACE_DOCS_WORKFLOW_FILE.write_text(content)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()
