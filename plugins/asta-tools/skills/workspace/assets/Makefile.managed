@@ -64,6 +64,7 @@ $(error Cannot read the asta-plugins workflow ref from docs.yml; fix it or set A
 endif
 ASTA_DEFAULT_RELEASE := 1
 ASTA_CACHED_RELEASE := $(shell ref=$$(cat '$(ASTA_CACHE_ROOT)/default-release' 2>/dev/null); printf '%s\n' "$$ref" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' && [ -s '$(ASTA_CACHE_ROOT)'/"$$ref"/workspace.mk ] && printf '%s' "$$ref")
+ASTA_LAST_CACHED_RELEASE := $(shell find $(ASTA_CACHE_ROOT) -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c ! -exec grep -Eq '^(# asta-fallback|override ASTA_PLUGINS_REF := )' {} \; -print 2>/dev/null | awk -F/ '{ ref = $$(NF-1); if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/) print ref }' | sort -V | tail -n 1)
 ifneq ($(ASTA_CACHED_RELEASE),)
 ifneq ($(shell find $(ASTA_CACHE_ROOT)/default-release -mmin -60 -type f -print 2>/dev/null),)
 ASTA_PLUGINS_REF := $(ASTA_CACHED_RELEASE)
@@ -78,7 +79,7 @@ endif
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
 ASTA_PLUGINS_REF := $(ASTA_CACHED_RELEASE)
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-ASTA_PLUGINS_REF := $(shell find $(ASTA_CACHE_ROOT) -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c ! -exec grep -Eq '^(# asta-fallback|override ASTA_PLUGINS_REF := )' {} \; -print 2>/dev/null | awk -F/ '{ ref = $$(NF-1); if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/) print ref }' | sort -V | tail -n 1)
+ASTA_PLUGINS_REF := $(ASTA_LAST_CACHED_RELEASE)
 endif
 ifneq ($(strip $(ASTA_PLUGINS_REF)),)
 $(warning Cannot look up asta-plugins releases; using cached $(ASTA_PLUGINS_REF))
@@ -111,7 +112,7 @@ endif
 ASTA_WORKSPACE_MK := $(ASTA_CACHE_ROOT)/$(ASTA_PLUGINS_REF)/workspace.mk
 override ASTA_WORKSPACE_ARCHIVE := $(ASTA_CACHE_ROOT)/$(ASTA_PLUGINS_REF)/archive.tar.gz
 ASTA_REQUESTED_REF := $(ASTA_PLUGINS_REF)
-ASTA_REQUESTED_ARCHIVE := $(ASTA_WORKSPACE_ARCHIVE)
+ASTA_FALLBACK_RELEASE := $(or $(ASTA_CACHED_RELEASE),$(ASTA_LAST_CACHED_RELEASE))
 include $(ASTA_WORKSPACE_MK)
 
 .PHONY: workspace-check-gate
@@ -159,8 +160,11 @@ $(ASTA_WORKSPACE_MK):
 				failure="workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk"; \
 			elif tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk" && [ -s "$$tmp/workspace.mk" ]; then \
 				mkdir -p "$$(dirname "$@")"; \
-				mv "$$tmp/archive.tar.gz" "$(ASTA_REQUESTED_ARCHIVE)"; \
-				mv "$$tmp/workspace.mk" "$@"; \
+				archive_path="$(@D)/archive-$$(git hash-object "$$tmp/archive.tar.gz").tar.gz"; \
+				printf 'override ASTA_WORKSPACE_ARCHIVE := %s\n' "$$archive_path" > "$$tmp/managed.mk"; \
+				cat "$$tmp/workspace.mk" >> "$$tmp/managed.mk"; \
+				mv "$$tmp/archive.tar.gz" "$$archive_path"; \
+				mv "$$tmp/managed.mk" "$@"; \
 				if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ]; then \
 					ref_file=$$(mktemp '$(ASTA_CACHE_ROOT)/.default-release.XXXXXX'); \
 					printf '%s\n' "$$ref" > "$$ref_file"; mv "$$ref_file" '$(ASTA_CACHE_ROOT)/default-release'; \
@@ -170,13 +174,13 @@ $(ASTA_WORKSPACE_MK):
 		fi; \
 	fi; \
 	if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed ($$failure)" >&2; exit 0; fi; \
-	if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ] && [ -n "$(ASTA_CACHED_RELEASE)" ] && [ -s '$(ASTA_CACHE_ROOT)/$(ASTA_CACHED_RELEASE)/workspace.mk' ]; then \
+	if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ] && [ -n "$(ASTA_FALLBACK_RELEASE)" ] && [ -s '$(ASTA_CACHE_ROOT)/$(ASTA_FALLBACK_RELEASE)/workspace.mk' ]; then \
 		mkdir -p "$$(dirname "$@")"; \
 		printf '# asta-fallback\noverride ASTA_PLUGINS_REF := %s\noverride ASTA_WORKSPACE_ARCHIVE := %s\ninclude %s\n' \
-			'$(ASTA_CACHED_RELEASE)' '$(ASTA_CACHE_ROOT)/$(ASTA_CACHED_RELEASE)/archive.tar.gz' \
-			'$(ASTA_CACHE_ROOT)/$(ASTA_CACHED_RELEASE)/workspace.mk' > "$$tmp/fallback.mk"; \
+			'$(ASTA_FALLBACK_RELEASE)' '$(ASTA_CACHE_ROOT)/$(ASTA_FALLBACK_RELEASE)/archive.tar.gz' \
+			'$(ASTA_CACHE_ROOT)/$(ASTA_FALLBACK_RELEASE)/workspace.mk' > "$$tmp/fallback.mk"; \
 		mv "$$tmp/fallback.mk" "$@"; \
-		echo "workspace: $$failure; using cached release $(ASTA_CACHED_RELEASE)" >&2; exit 0; \
+		echo "workspace: $$failure; using cached release $(ASTA_FALLBACK_RELEASE)" >&2; exit 0; \
 	fi; \
 	echo "$$failure" >&2; exit 1
 endif

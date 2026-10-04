@@ -415,7 +415,9 @@ def test_workspace_makefile_fetches_managed_targets(
     assert result.returncode == 0, result.stderr
     assert "managed-target" in result.stdout
     assert "project-target" in result.stdout
-    assert _managed_cache_file(project, ref).read_text() == (source.read_text())
+    cached = _managed_cache_file(project, ref).read_text()
+    assert cached.startswith("override ASTA_WORKSPACE_ARCHIVE := ")
+    assert cached.endswith(source.read_text())
 
 
 def test_workspace_makefile_separates_caches_for_different_sources(
@@ -949,6 +951,22 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert "managed-target v0.106.0" in legacy_cache.stdout
 
     repo = (tmp_path / "versions-offline").rename(tmp_path / "versions")
+    fallback_file.unlink()
+    missing_pointer = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert missing_pointer.returncode == 0, missing_pointer.stderr
+    assert "managed-target v0.106.0" in missing_pointer.stdout
+    assert "using cached release v0.106.0" in missing_pointer.stderr
+
     with tarfile.open(archive, "w:gz") as bundle:
         bundle.add(source.parents[5], arcname="asta-plugins-test")
     restored = subprocess.run(
@@ -1197,6 +1215,54 @@ def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
     assert result.returncode == 0, result.stderr
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- first\n"
     assert (tmp_path / "curl-count").read_text().strip() == "1"
+
+    cache = _managed_cache_file(project, "latest")
+    first_archive = project / cache.read_text().splitlines()[0].split(" := ", 1)[1]
+    assert first_archive.is_file()
+    shutil.rmtree(project / "_extensions/evidence")
+    (cache.parent / "archive-pending.tar.gz").write_bytes(archives[1].read_bytes())
+    interrupted = subprocess.run(
+        ["make", "workspace-assets"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REF": "latest",
+            "ASTA_PLUGINS_REPO": "https://example.invalid/asta-plugins",
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "FIRST_ARCHIVE": str(archives[0]),
+            "SECOND_ARCHIVE": str(archives[1]),
+            "COUNT_FILE": str(tmp_path / "curl-count"),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert interrupted.returncode == 0, interrupted.stderr
+    assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- first\n"
+    assert (tmp_path / "curl-count").read_text().strip() == "1"
+
+    os.utime(cache, (0, 0))
+    refreshed = subprocess.run(
+        ["make", "workspace-assets"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REF": "latest",
+            "ASTA_PLUGINS_REPO": "https://example.invalid/asta-plugins",
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "FIRST_ARCHIVE": str(archives[0]),
+            "SECOND_ARCHIVE": str(archives[1]),
+            "COUNT_FILE": str(tmp_path / "curl-count"),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
+    second_archive = project / cache.read_text().splitlines()[0].split(" := ", 1)[1]
+    assert second_archive.is_file()
+    assert second_archive != first_archive
+    assert first_archive.is_file()
+    assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- second\n"
+    assert (tmp_path / "curl-count").read_text().strip() == "2"
 
 
 @pytest.mark.parametrize("makefile_name", ["Makefile", "workspace.mk"])
