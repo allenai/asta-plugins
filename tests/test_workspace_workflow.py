@@ -433,6 +433,60 @@ def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
     assert "using cached Makefile" in offline.stderr
 
 
+@pytest.mark.parametrize("bad_archive", ["corrupt", "missing_asset", "empty_asset"])
+def test_workspace_makefile_keeps_cache_when_archive_is_invalid(
+    tmp_path: Path, bad_archive: str
+) -> None:
+    source = tmp_path / "source/asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    source.write_text("managed:\n\t@echo cached-target\n")
+    archive = tmp_path / "asta-plugins.tar.gz"
+
+    def write_archive() -> None:
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(source.parents[5], arcname="asta-plugins-test")
+
+    write_archive()
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    env = {
+        "ASTA_PLUGINS_REF": "main",
+        "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    initial = subprocess.run(
+        ["make", "managed"], cwd=project, env=env, capture_output=True, text=True
+    )
+    assert initial.returncode == 0, initial.stderr
+    cache = project / ".asta/cache/main/workspace.mk"
+    original = cache.read_text()
+    os.utime(cache, (0, 0))
+
+    if bad_archive == "corrupt":
+        archive.write_bytes(b"not a gzip archive")
+    else:
+        source.write_text("" if bad_archive == "empty_asset" else "missing:\n")
+        if bad_archive == "missing_asset":
+            source.rename(source.with_name("other.mk"))
+        write_archive()
+
+    fallback = subprocess.run(
+        ["make", "managed"], cwd=project, env=env, capture_output=True, text=True
+    )
+    assert fallback.returncode == 0, fallback.stderr
+    assert "cached-target" in fallback.stdout
+    assert "using cached Makefile" in fallback.stderr
+    assert cache.read_text() == original
+
+    cache.unlink()
+    cold = subprocess.run(
+        ["make", "managed"], cwd=project, env=env, capture_output=True, text=True
+    )
+    assert cold.returncode != 0
+    assert not cache.exists()
+
+
 def test_workspace_makefile_rejects_missing_shared_check(tmp_path: Path) -> None:
     archive_root = tmp_path / "archive/asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "workspace.mk"

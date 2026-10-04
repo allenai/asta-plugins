@@ -102,15 +102,19 @@ $(ASTA_WORKSPACE_MK):
 		esac; \
 	fi; \
 	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; trap 'exit 1' HUP INT TERM; \
-	if ! curl -fsSL --connect-timeout 5 --max-time 120 "$$url" -o "$$tmp/archive.tar.gz"; then \
-		if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed" >&2; exit 0; fi; \
-		echo "workspace: cannot fetch managed Makefile from $$url" >&2; exit 1; \
+	failure="workspace: cannot fetch managed Makefile from $$url"; \
+	if curl -fsSL --connect-timeout 5 --max-time 120 "$$url" -o "$$tmp/archive.tar.gz"; then \
+		failure="workspace: invalid managed Makefile archive from $$url"; \
+		if tar -tzf "$$tmp/archive.tar.gz" >/dev/null 2>&1; then \
+			entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1) || :; \
+			if [ -z "$$entry" ]; then \
+				failure="workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk"; \
+			elif tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk" && [ -s "$$tmp/workspace.mk" ]; then \
+				mkdir -p "$$(dirname "$@")"; mv "$$tmp/workspace.mk" "$@"; exit 0; \
+			fi; \
+		fi; \
 	fi; \
-	entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1); \
-	[ -n "$$entry" ] || { echo "workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk" >&2; exit 1; }; \
-	tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk"; \
-	[ -s "$$tmp/workspace.mk" ] || { echo "workspace: empty managed Makefile in $$url" >&2; exit 1; }; \
-	mkdir -p "$$(dirname "$@")"; \
-	mv "$$tmp/workspace.mk" "$@"
+	if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed ($$failure)" >&2; exit 0; fi; \
+	echo "$$failure" >&2; exit 1
 endif
 endif
