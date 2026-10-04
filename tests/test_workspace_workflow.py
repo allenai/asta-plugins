@@ -307,6 +307,36 @@ def test_workspace_can_pin_quarto_for_generated_sources() -> None:
     assert setup["with"]["version"] == "${{ inputs.quarto-version }}"
 
 
+def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None:
+    assert "git archive refs/remotes/origin/gh-pages | tar -x --exclude=pr-preview" in (
+        WORKFLOW.read_text()
+    )
+    repo = tmp_path / "repo"
+    (repo / "pr-preview/pr-1").mkdir(parents=True)
+    (repo / "index.html").write_text("main site")
+    (repo / "pr-preview/pr-1/index.html").write_text("preview")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "index.html", "pr-preview"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "pages"],
+        cwd=repo,
+        check=True,
+    )
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    subprocess.run(
+        [
+            "bash", "-o", "pipefail", "-c",
+            'git archive HEAD | tar -x --exclude=pr-preview -C "$1"',
+            "bash", str(baseline),
+        ],
+        cwd=repo,
+        check=True,
+    )
+    assert (baseline / "index.html").read_text() == "main site"
+    assert not (baseline / "pr-preview").exists()
+
+
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
