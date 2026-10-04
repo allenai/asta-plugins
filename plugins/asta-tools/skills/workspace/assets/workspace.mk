@@ -48,7 +48,11 @@ workspace-assets:
 				| sort -V | tail -n 1) || true; \
 			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $(ASTA_PLUGINS_REPO)"; \
 		fi; \
-		url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
+		case "$$ref" in \
+			latest|main) url="$(ASTA_PLUGINS_REPO)/archive/refs/heads/$$ref.tar.gz";; \
+			v[0-9]*.[0-9]*.[0-9]*) url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz";; \
+			*) url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz";; \
+		esac; \
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \

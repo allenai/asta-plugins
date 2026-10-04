@@ -3,15 +3,30 @@
 ifndef ASTA_PLUGINS_REF
 ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
 endif
-ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-ASTA_PLUGINS_REF := v0.104.1
-endif
 ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
 ASTA_PLUGINS_ARCHIVE_URL ?=
 
 ifneq ($(shell git ls-files --error-unmatch workspace.mk 2>/dev/null),)
+ifeq ($(wildcard workspace.mk),)
+$(error workspace.mk is tracked but missing; restore it or remove it from Git)
+endif
 include workspace.mk
 else
+ifneq ($(wildcard workspace.mk),)
+$(warning workspace.mk is untracked; commit it to use it as a local override)
+endif
+ifeq ($(strip $(ASTA_PLUGINS_REF)),)
+$(error Cannot find the asta-plugins ref in .github/workflows/docs.yml; set ASTA_PLUGINS_REF explicitly)
+endif
+ifneq ($(findstring ..,$(ASTA_PLUGINS_REF)),)
+$(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
+endif
+ifneq ($(filter /%,$(ASTA_PLUGINS_REF)),)
+$(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
+endif
+ifneq ($(shell printf '%s' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | LC_ALL=C grep -Ec '^[A-Za-z0-9_./-]+$$'),1)
+$(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
+endif
 ASTA_WORKSPACE_MK := .asta/cache/$(ASTA_PLUGINS_REF)/workspace.mk
 include $(ASTA_WORKSPACE_MK)
 
@@ -36,16 +51,20 @@ $(ASTA_WORKSPACE_MK):
 			*) url='$(ASTA_PLUGINS_REPO)/archive/'"$$ref"'.tar.gz';; \
 		esac; \
 	fi; \
-	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
-	if ! curl -fsSL --connect-timeout 5 --max-time 30 "$$url" -o "$$tmp/archive.tar.gz"; then \
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; trap 'exit 1' HUP INT TERM; \
+	if ! curl -fsSL --connect-timeout 5 --max-time 120 "$$url" -o "$$tmp/archive.tar.gz"; then \
 		if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed" >&2; exit 0; fi; \
 		echo "workspace: cannot fetch managed Makefile from $$url" >&2; exit 1; \
 	fi; \
 	entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace.mk$$' | head -n 1); \
-	if [ -z "$$entry" ]; then entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/Makefile$$' | head -n 1); fi; \
+	legacy=0; \
+	if [ -z "$$entry" ]; then legacy=1; entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/Makefile$$' | head -n 1); fi; \
 	[ -n "$$entry" ] || { echo "workspace: no managed Makefile in $$url" >&2; exit 1; }; \
 	tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk"; \
 	[ -s "$$tmp/workspace.mk" ] || { echo "workspace: empty managed Makefile in $$url" >&2; exit 1; }; \
+	if [ "$$legacy" -eq 1 ] && grep -q 'ASTA_WORKSPACE_MK' "$$tmp/workspace.mk"; then \
+		echo "workspace: $$ref does not provide a managed workspace.mk" >&2; exit 1; \
+	fi; \
 	mkdir -p "$$(dirname "$@")"; \
 	mv "$$tmp/workspace.mk" "$@"
 endif

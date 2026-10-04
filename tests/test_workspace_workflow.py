@@ -452,6 +452,153 @@ def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     assert not (project / ".asta/cache").exists()
 
 
+def test_workspace_makefile_requires_ref_without_docs_workflow(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "check"], cwd=tmp_path, text=True, capture_output=True
+    )
+    assert result.returncode != 0
+    assert "Cannot find the asta-plugins ref" in result.stderr
+    assert not (tmp_path / ".asta").exists()
+
+
+@pytest.mark.parametrize("ref", ["../../outside", "bad;command", "bad'quote"])
+def test_workspace_makefile_rejects_invalid_ref_before_include(
+    tmp_path: Path, ref: str
+) -> None:
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_PLUGINS_REF": ref},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "Invalid asta-plugins ref" in result.stderr
+    assert not (tmp_path / ".asta").exists()
+
+
+def test_workspace_makefile_ref_validation_does_not_run_shell_input(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "unexpected"
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_PLUGINS_REF": f"bad'; touch {marker}; #"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "Invalid asta-plugins ref" in result.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("has_managed_asset", [False, True])
+def test_workspace_makefile_legacy_fallback(
+    tmp_path: Path, has_managed_asset: bool
+) -> None:
+    archive_root = tmp_path / "source/asta-plugins-old"
+    assets = archive_root / WORKSPACE_ASSETS
+    assets.mkdir(parents=True)
+    legacy_makefile = (
+        "legacy:\n\t@echo old-target\n"
+        if not has_managed_asset
+        else (WORKSPACE_ASSETS / "Makefile").read_text()
+    )
+    (assets / "Makefile").write_text(legacy_makefile)
+    archive = tmp_path / "old.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "legacy"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REF": "v0.104.1",
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+        timeout=15,
+    )
+    if has_managed_asset:
+        assert result.returncode != 0
+        assert "does not provide a managed workspace.mk" in result.stderr
+        assert not (project / ".asta/cache/v0.104.1/workspace.mk").exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "old-target" in result.stdout
+
+
+def test_workspace_makefile_passes_ref_to_evidence_assets(tmp_path: Path) -> None:
+    archive_root = tmp_path / "source/asta-plugins-test"
+    assets = archive_root / WORKSPACE_ASSETS
+    (assets / "_extensions/evidence").mkdir(parents=True)
+    (assets / "workspace.mk").write_text(
+        (WORKSPACE_ASSETS / "workspace.mk").read_text()
+    )
+    (assets / "_extensions/evidence/snippet.lua").write_text("-- test\n")
+    archive = tmp_path / "assets.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "workspace-assets"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REF": "v1.2.3",
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "asta-plugins@v1.2.3" in result.stdout
+    assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- test\n"
+
+
+def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    archive_root = tmp_path / "source/asta-plugins-latest"
+    assets = archive_root / WORKSPACE_ASSETS
+    (assets / "_extensions/evidence").mkdir(parents=True)
+    (assets / "workspace.mk").write_text(
+        (WORKSPACE_ASSETS / "workspace.mk").read_text()
+    )
+    (assets / "_extensions/evidence/snippet.lua").write_text("-- branch\n")
+    archive = repo / "archive/refs/heads/latest.tar.gz"
+    archive.parent.mkdir(parents=True)
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "workspace-assets"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REF": "latest",
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- branch\n"
+
+
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
