@@ -344,7 +344,8 @@ def test_scaffolded_workflow_ref_matches_project_version() -> None:
     assert match.group(1) == project_version
 
 
-def test_workspace_makefile_fetches_managed_targets(tmp_path: Path) -> None:
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+def test_workspace_makefile_fetches_managed_targets(tmp_path: Path, quote: str) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
     source.parent.mkdir(parents=True)
@@ -356,8 +357,8 @@ def test_workspace_makefile_fetches_managed_targets(tmp_path: Path) -> None:
     project = tmp_path / "project"
     (project / ".github/workflows").mkdir(parents=True)
     (project / ".github/workflows/docs.yml").write_text(
-        "uses: allenai/asta-plugins/.github/workflows/"
-        "workspace-quarto-site.yml@v1.2.3\n"
+        f"uses: {quote}allenai/asta-plugins/.github/workflows/"
+        f"workspace-quarto-site.yml@v1.2.3{quote}\n"
     )
     (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
     with (project / "Makefile").open("a") as file:

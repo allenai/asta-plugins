@@ -1,6 +1,8 @@
 # Keep project targets here; the shared targets come from the selected
 # asta-plugins version. Commit workspace.mk to take ownership of them.
-ASTA_PLUGINS_REF ?= $(shell sed -n 's|.*workspace-quarto-site\.yml@\([^[:space:]]*\).*|\1|p' .github/workflows/docs.yml 2>/dev/null | head -n 1)
+ifndef ASTA_PLUGINS_REF
+ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
+endif
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
 ASTA_PLUGINS_REF := v0.104.1
 endif
@@ -27,7 +29,13 @@ $(ASTA_WORKSPACE_MK):
 	ref='$(ASTA_PLUGINS_REF)'; \
 	case "$$ref" in *[!A-Za-z0-9._/-]*|*..*|/*) echo "invalid asta-plugins ref: $$ref" >&2; exit 1;; esac; \
 	url='$(ASTA_PLUGINS_ARCHIVE_URL)'; \
-	[ -n "$$url" ] || url='$(ASTA_PLUGINS_REPO)/archive/'"$$ref"'.tar.gz'; \
+	if [ -z "$$url" ]; then \
+		case "$$ref" in \
+			latest|main) url='$(ASTA_PLUGINS_REPO)/archive/refs/heads/'"$$ref"'.tar.gz';; \
+			v[0-9]*.[0-9]*.[0-9]*) url='$(ASTA_PLUGINS_REPO)/archive/refs/tags/'"$$ref"'.tar.gz';; \
+			*) url='$(ASTA_PLUGINS_REPO)/archive/'"$$ref"'.tar.gz';; \
+		esac; \
+	fi; \
 	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
 	if ! curl -fsSL --connect-timeout 5 --max-time 30 "$$url" -o "$$tmp/archive.tar.gz"; then \
 		if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed" >&2; exit 0; fi; \
