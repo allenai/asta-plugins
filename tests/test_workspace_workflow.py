@@ -345,7 +345,10 @@ def test_scaffolded_workflow_ref_matches_project_version() -> None:
 
 
 @pytest.mark.parametrize("quote", ["", "'", '"'])
-def test_workspace_makefile_fetches_managed_targets(tmp_path: Path, quote: str) -> None:
+@pytest.mark.parametrize("inline_comment", ["", " # pinned"])
+def test_workspace_makefile_fetches_managed_targets(
+    tmp_path: Path, quote: str, inline_comment: str
+) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
     source.parent.mkdir(parents=True)
@@ -358,7 +361,7 @@ def test_workspace_makefile_fetches_managed_targets(tmp_path: Path, quote: str) 
     (project / ".github/workflows").mkdir(parents=True)
     (project / ".github/workflows/docs.yml").write_text(
         f"uses: {quote}allenai/asta-plugins/.github/workflows/"
-        f"workspace-quarto-site.yml@v1.2.3{quote}\n"
+        f"workspace-quarto-site.yml@v1.2.3{quote}{inline_comment}\n"
     )
     (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
     with (project / "Makefile").open("a") as file:
@@ -452,14 +455,70 @@ def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     assert not (project / ".asta/cache").exists()
 
 
-def test_workspace_makefile_requires_ref_without_docs_workflow(tmp_path: Path) -> None:
+def test_workspace_makefile_requires_reachable_ref_without_docs_workflow(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
     result = subprocess.run(
-        ["make", "check"], cwd=tmp_path, text=True, capture_output=True
+        ["make", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri()},
+        text=True,
+        capture_output=True,
     )
     assert result.returncode != 0
-    assert "Cannot find the asta-plugins ref" in result.stderr
+    assert "Cannot find an asta-plugins release ref" in result.stderr
     assert not (tmp_path / ".asta").exists()
+
+
+def test_workspace_makefile_uses_latest_release_without_docs_workflow(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "versions"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "seed",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    for tag in ("v0.104.1", "v0.105.0"):
+        subprocess.run(["git", "tag", tag], cwd=repo, check=True)
+
+    source = tmp_path / "archive/asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    source.write_text("managed:\n\t@echo managed-target\n")
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(source.parents[5], arcname="asta-plugins-test")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "managed-target" in result.stdout
+    assert (project / ".asta/cache/v0.105.0/workspace.mk").exists()
 
 
 @pytest.mark.parametrize(
@@ -1124,6 +1183,7 @@ def test_preview_wait_bounds_pages_poll_and_preserves_baseline(tmp_path: Path) -
 
 def _make_evidence_archive(archive: Path) -> None:
     """Write a tarball whose layout mirrors an asta-plugins source archive."""
+    archive.parent.mkdir(parents=True, exist_ok=True)
     archive_root = archive.parent / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
     if source.exists():
@@ -1164,7 +1224,7 @@ def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
 
     # Only the latest semver tag's archive exists; if resolution picked any
     # other ref (main, v2-reproduction-work, v0.9.0), the curl would 404.
-    _make_evidence_archive(repo / "archive/v0.10.0.tar.gz")
+    _make_evidence_archive(repo / "archive/refs/tags/v0.10.0.tar.gz")
 
     project = tmp_path / "project"
     project.mkdir()

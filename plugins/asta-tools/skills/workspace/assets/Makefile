@@ -1,14 +1,16 @@
 # Keep project targets here; the shared targets come from the selected
 # asta-plugins version. Commit workspace.mk to take ownership of them.
 # Cleaning a project must also work before the first managed-file fetch.
+ASTA_LOCAL_MK := $(shell git ls-files --error-unmatch workspace.mk 2>/dev/null)
 ifneq ($(MAKECMDGOALS),)
 ifeq ($(filter-out clean,$(MAKECMDGOALS)),)
-ifneq ($(shell git ls-files --error-unmatch workspace.mk 2>/dev/null),)
+ifneq ($(ASTA_LOCAL_MK),)
 ifeq ($(wildcard workspace.mk),)
 $(error workspace.mk is tracked but missing; restore it or remove it from Git)
 endif
 include workspace.mk
 else
+# Offline cleanup intentionally removes only local Quarto build output.
 .PHONY: clean
 clean:
 	rm -rf _site .quarto
@@ -24,13 +26,16 @@ ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
 ifneq ($(origin ASTA_PLUGINS_REF),undefined)
 override ASTA_PLUGINS_REF := $(value ASTA_PLUGINS_REF)
 endif
+ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
+ASTA_PLUGINS_ARCHIVE_URL ?=
 ifndef ASTA_PLUGINS_REF
 ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
 endif
-ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
-ASTA_PLUGINS_ARCHIVE_URL ?=
+ifeq ($(strip $(ASTA_PLUGINS_REF)),)
+ASTA_PLUGINS_REF := $(shell git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null | awk -F/ '{print $$NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n 1)
+endif
 
-ifneq ($(shell git ls-files --error-unmatch workspace.mk 2>/dev/null),)
+ifneq ($(ASTA_LOCAL_MK),)
 ifeq ($(wildcard workspace.mk),)
 $(error workspace.mk is tracked but missing; restore it or remove it from Git)
 endif
@@ -40,7 +45,7 @@ ifneq ($(wildcard workspace.mk),)
 $(warning workspace.mk is untracked; commit it to use it as a local override)
 endif
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-$(error Cannot find the asta-plugins ref in .github/workflows/docs.yml; set ASTA_PLUGINS_REF explicitly)
+$(error Cannot find an asta-plugins release ref; set ASTA_PLUGINS_REF explicitly)
 endif
 ifneq ($(findstring ..,$(ASTA_PLUGINS_REF)),)
 $(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
@@ -66,6 +71,7 @@ include $(ASTA_WORKSPACE_MK)
 ifneq ($(filter main latest,$(ASTA_PLUGINS_REF)),)
 ifeq ($(shell find $(ASTA_WORKSPACE_MK) -mmin -60 -type f -print 2>/dev/null),)
 .PHONY: workspace-ref-check
+workspace-ref-check: ;
 $(ASTA_WORKSPACE_MK): workspace-ref-check
 endif
 endif
@@ -87,7 +93,7 @@ $(ASTA_WORKSPACE_MK):
 		if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed" >&2; exit 0; fi; \
 		echo "workspace: cannot fetch managed Makefile from $$url" >&2; exit 1; \
 	fi; \
-	entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace.mk$$' | head -n 1); \
+	entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1); \
 	legacy=0; \
 	if [ -z "$$entry" ]; then legacy=1; entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep '/plugins/asta-tools/skills/workspace/assets/Makefile$$' | head -n 1); fi; \
 	[ -n "$$entry" ] || { echo "workspace: no managed Makefile in $$url" >&2; exit 1; }; \

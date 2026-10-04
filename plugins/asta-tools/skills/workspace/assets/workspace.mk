@@ -46,7 +46,7 @@ workspace-assets:
 		fi; \
 		case "$$ref" in \
 			latest|main) url="$(ASTA_PLUGINS_REPO)/archive/refs/heads/$$ref.tar.gz";; \
-			v[0-9]*.[0-9]*.[0-9]*) url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz";; \
+			v[0-9]*.[0-9]*.[0-9]*) url="$(ASTA_PLUGINS_REPO)/archive/refs/tags/$$ref.tar.gz";; \
 			*) url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz";; \
 		esac; \
 	fi; \
