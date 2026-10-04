@@ -639,6 +639,42 @@ def test_workspace_makefile_rejects_missing_shared_check(tmp_path: Path) -> None
     assert "does not provide the shared check gate" in result.stderr
 
 
+def test_workspace_makefile_keeps_shared_check_with_project_recipe(
+    tmp_path: Path,
+) -> None:
+    archive_root = tmp_path / "source/asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    source.write_text((WORKSPACE_ASSETS / "workspace.mk").read_text())
+    archive = tmp_path / "assets.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+    project = tmp_path / "project"
+    (project / "scripts").mkdir(parents=True)
+    (project / "_extensions").mkdir()
+    (project / "_extensions/evidence").symlink_to(source.parent)
+    (project / "scripts/quarto-check.sh").write_text("echo shared > shared-check.txt\n")
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+        + "\ncheck:\n\t@echo project > project-check.txt\n"
+    )
+    result = subprocess.run(
+        ["make", "check"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REF": "v1.2.3",
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "shared-check.txt").read_text().strip() == "shared"
+    assert (project / "project-check.txt").read_text().strip() == "project"
+    assert "overriding recipe" not in result.stderr
+
+
 def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -778,7 +814,7 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
 
     source = tmp_path / "archive/asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
     source.parent.mkdir(parents=True)
-    source.write_text("managed:\n\t@echo managed-target\n")
+    source.write_text("managed:\n\t@echo managed-target $(ASTA_PLUGINS_REF)\n")
     archive = tmp_path / "asta-plugins.tar.gz"
     with tarfile.open(archive, "w:gz") as bundle:
         bundle.add(source.parents[5], arcname="asta-plugins-test")
@@ -836,8 +872,26 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert _managed_cache_file(project, "v0.106.0").exists()
     assert release_ref.read_text().strip() == "v0.106.0"
 
-    repo.rename(tmp_path / "versions-offline")
+    subprocess.run(["git", "tag", "v0.107.0"], cwd=repo, check=True)
     archive.unlink()
+    os.utime(release_ref, (0, 0))
+    failed_new_release = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert failed_new_release.returncode == 0, failed_new_release.stderr
+    assert "managed-target v0.106.0" in failed_new_release.stdout
+    assert "using cached release v0.106.0" in failed_new_release.stderr
+    assert release_ref.read_text().strip() == "v0.106.0"
+
+    repo.rename(tmp_path / "versions-offline")
     os.utime(release_ref, (0, 0))
     offline = subprocess.run(
         ["make", "managed"],
@@ -1047,18 +1101,35 @@ def test_workspace_makefile_passes_ref_to_evidence_assets(tmp_path: Path) -> Non
 def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
     tmp_path: Path,
 ) -> None:
-    repo = tmp_path / "repo"
-    archive_root = tmp_path / "source/asta-plugins-latest"
-    assets = archive_root / WORKSPACE_ASSETS
-    (assets / "_extensions/evidence").mkdir(parents=True)
-    (assets / "workspace.mk").write_text(
-        (WORKSPACE_ASSETS / "workspace.mk").read_text()
+    archives = []
+    for version in ("first", "second"):
+        archive_root = tmp_path / version / "asta-plugins-latest"
+        assets = archive_root / WORKSPACE_ASSETS
+        (assets / "_extensions/evidence").mkdir(parents=True)
+        (assets / "workspace.mk").write_text(
+            (WORKSPACE_ASSETS / "workspace.mk").read_text()
+        )
+        (assets / "_extensions/evidence/snippet.lua").write_text(f"-- {version}\n")
+        archive = tmp_path / f"{version}.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(archive_root, arcname=archive_root.name)
+        archives.append(archive)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
+        '[ "$#" -ge 2 ] || exit 2\n'
+        'if [ -e "$COUNT_FILE" ]; then\n'
+        '  cp "$SECOND_ARCHIVE" "$2"\n'
+        '  echo 2 > "$COUNT_FILE"\n'
+        "else\n"
+        '  cp "$FIRST_ARCHIVE" "$2"\n'
+        '  echo 1 > "$COUNT_FILE"\n'
+        "fi\n"
     )
-    (assets / "_extensions/evidence/snippet.lua").write_text("-- branch\n")
-    archive = repo / "archive/refs/heads/latest.tar.gz"
-    archive.parent.mkdir(parents=True)
-    with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(archive_root, arcname=archive_root.name)
+    curl.chmod(0o755)
     project = tmp_path / "project"
     project.mkdir()
     (project / "Makefile").write_text(
@@ -1070,13 +1141,18 @@ def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
         env={
             **_isolated_workspace_env(),
             "ASTA_PLUGINS_REF": "latest",
-            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_REPO": "https://example.invalid/asta-plugins",
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "FIRST_ARCHIVE": str(archives[0]),
+            "SECOND_ARCHIVE": str(archives[1]),
+            "COUNT_FILE": str(tmp_path / "curl-count"),
         },
         text=True,
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr
-    assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- branch\n"
+    assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- first\n"
+    assert (tmp_path / "curl-count").read_text().strip() == "1"
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:

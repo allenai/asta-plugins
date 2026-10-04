@@ -1,4 +1,4 @@
-.PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
+.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready
 
 # The project Makefile passes its selected workflow ref to the evidence fetch.
 # Standalone use can set ASTA_PLUGINS_REF or resolve the latest release tag.
@@ -25,6 +25,7 @@ workspace-assets:
 		echo "workspace-assets: _extensions/evidence is committed (customized copy); not refreshing"; exit 0; \
 	fi; \
 	ref='$(subst ','"'"',$(value ASTA_PLUGINS_REF))'; \
+	archive='$(subst ','"'"',$(value ASTA_WORKSPACE_ARCHIVE))'; \
 	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \
 	repo='$(subst ','"'"',$(value ASTA_PLUGINS_REPO))'; \
 	have_cache=0; \
@@ -70,7 +71,12 @@ workspace-assets:
 	}; \
 	trap cleanup 0; \
 	trap 'exit 1' 1 2 15; \
-	curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz" || offline_ok "download from $$url failed"; \
+	if [ -n "$$archive" ]; then \
+		[ -s "$$archive" ] || offline_ok "managed source archive is missing"; \
+		cp "$$archive" "$$tmp/asta-plugins.tar.gz"; \
+	else \
+		curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz" || offline_ok "download from $$url failed"; \
+	fi; \
 	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
 	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
 	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
@@ -96,7 +102,8 @@ render: workspace-assets
 # step. The shared render/validate logic is vendored in scripts/quarto-check.sh
 # (from the workspace skill; update by re-copying, don't hand-edit).
 ASTA_WORKSPACE_CHECK := 1
-check: workspace-assets
+check: workspace-shared-check
+workspace-shared-check: workspace-assets
 	sh scripts/quarto-check.sh
 
 clean:
