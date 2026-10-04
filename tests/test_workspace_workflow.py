@@ -48,6 +48,35 @@ def test_workspace_scaffold_keeps_full_makefile_while_loader_is_opt_in() -> None
     )
 
 
+def test_workspace_full_and_managed_makefiles_keep_shared_recipes_aligned() -> None:
+    def recipe(makefile: str, target: str) -> str:
+        lines = makefile.splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith(f"{target}:"))
+        commands = []
+        for line in lines[start + 1 :]:
+            if line.startswith("\t"):
+                commands.append(line)
+            elif commands:
+                break
+        assert commands, target
+        return "\n".join(commands)
+
+    full = (WORKSPACE_ASSETS / "Makefile").read_text()
+    managed = (WORKSPACE_ASSETS / "workspace.mk").read_text()
+    for target in (
+        "preview",
+        "render",
+        "clean",
+        "dev",
+        "deployed-url",
+        "preview-baseline",
+        "preview-ready",
+    ):
+        assert recipe(full, target) == recipe(managed, target), target
+    assert "sh scripts/quarto-check.sh" in recipe(full, "check")
+    assert "sh scripts/quarto-check.sh" in recipe(managed, "workspace-shared-check")
+
+
 def _run_paper_step(tmp_path: Path, *, download_fails: bool = False):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -418,6 +447,28 @@ def test_workspace_makefile_fetches_managed_targets(
     cached = _managed_cache_file(project, ref).read_text()
     assert cached.startswith("override ASTA_WORKSPACE_ARCHIVE := ")
     assert cached.endswith(source.read_text())
+
+
+def test_workspace_managed_loader_requires_ignored_cache_in_git_project(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
+    env = {**_isolated_workspace_env(), "ASTA_PLUGINS_REF": "v1.2.3"}
+    missing_ignore = subprocess.run(
+        ["make", "managed"], cwd=project, env=env, text=True, capture_output=True
+    )
+    assert missing_ignore.returncode != 0
+    assert "Add .asta/cache/ to .gitignore" in missing_ignore.stderr
+    assert not (project / ".asta").exists()
+
+    (project / ".gitignore").write_text(".asta/cache/\n")
+    ignored = subprocess.run(["git", "check-ignore", "-q", ".asta/cache/"], cwd=project)
+    assert ignored.returncode == 0
 
 
 def test_workspace_makefile_separates_caches_for_different_sources(
@@ -914,6 +965,20 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert release_ref.read_text().strip() == "v0.106.0"
     fallback_file = _managed_cache_file(project, "v0.107.0")
     assert fallback_file.read_text().startswith("# asta-fallback\n")
+    retry_throttled = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert retry_throttled.returncode == 0, retry_throttled.stderr
+    assert "using cached release" not in retry_throttled.stderr
+    assert "managed-target v0.106.0" in retry_throttled.stdout
     fallback_file.write_text(
         fallback_file.read_text().removeprefix("# asta-fallback\n")
     )
@@ -969,6 +1034,7 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
 
     with tarfile.open(archive, "w:gz") as bundle:
         bundle.add(source.parents[5], arcname="asta-plugins-test")
+    os.utime(fallback_file, (0, 0))
     restored = subprocess.run(
         ["make", "managed"],
         cwd=project,
@@ -986,8 +1052,53 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert release_ref.read_text().strip() == "v0.107.0"
 
 
+def test_workspace_cached_release_ignores_legacy_fallback_marker_after_first_line(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text("#!/bin/sh\nexit 1\n")
+    git.chmod(0o755)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text(
+        (WORKSPACE_ASSETS / "Makefile.managed").read_text()
+    )
+    cache = project / ".asta/cache/v1.2.3/workspace.mk"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(
+        "# genuine managed file\n"
+        "override ASTA_PLUGINS_REF := v1.2.3\n"
+        "cached:\n\t@echo cached-target\n"
+    )
+    result = subprocess.run(
+        ["make", "cached"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "cached-target" in result.stdout
+
+
 @pytest.mark.parametrize(
-    "ref", ["../../outside", "bad;command", "bad'quote", "v1.2.3\ninvalid"]
+    "ref",
+    [
+        "../../outside",
+        "bad;command",
+        "bad'quote",
+        "v1.2.3\ninvalid",
+        ".",
+        "release/./test",
+        "release//test",
+        "default-release",
+        "sources/custom",
+    ],
 )
 def test_workspace_makefile_rejects_invalid_ref_before_include(
     tmp_path: Path, ref: str
@@ -1240,6 +1351,7 @@ def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- first\n"
     assert (tmp_path / "curl-count").read_text().strip() == "1"
 
+    os.utime(first_archive, (0, 0))
     os.utime(cache, (0, 0))
     refreshed = subprocess.run(
         ["make", "workspace-assets"],
@@ -1260,7 +1372,7 @@ def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
     second_archive = project / cache.read_text().splitlines()[0].split(" := ", 1)[1]
     assert second_archive.is_file()
     assert second_archive != first_archive
-    assert first_archive.is_file()
+    assert not first_archive.exists()
     assert (project / "_extensions/evidence/snippet.lua").read_text() == "-- second\n"
     assert (tmp_path / "curl-count").read_text().strip() == "2"
 

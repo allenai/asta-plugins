@@ -2,8 +2,11 @@
 # asta-plugins version. Track workspace.mk to take ownership of them.
 # Keep .asta/cache/ ignored; remove it to fetch managed files again.
 # A tracked workspace.mk is a project-owned override, including its check target.
-# Cleaning a project must also work before the first managed-file fetch.
-# Add project cleanup as prerequisites of clean; its recipe is managed.
+# Bare clean only removes local Quarto output and works before the first fetch.
+# Other goals load the managed targets; add project cleanup as prerequisites.
+# The selected asta-plugins ref supplies executable Make rules. Choose a
+# release ref in docs.yml to control upgrades, or track a moving ref deliberately.
+# Without docs.yml, the newest final release tag supplies those rules.
 .DEFAULT_GOAL := workspace-assets
 ASTA_LOCAL_MK := $(shell git ls-files --error-unmatch workspace.mk 2>/dev/null)
 ASTA_DOCS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
@@ -32,7 +35,7 @@ endif
 ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
 ifneq ($(shell git rev-parse --is-inside-work-tree 2>/dev/null),)
 ifeq ($(shell git check-ignore -q .asta/cache/ && echo ignored),)
-$(warning Add .asta/cache/ to .gitignore before using the managed Makefile)
+$(error Add .asta/cache/ to .gitignore before using the managed Makefile)
 endif
 endif
 ASTA_REF_ORIGIN := $(origin ASTA_PLUGINS_REF)
@@ -64,7 +67,7 @@ $(error Cannot read the asta-plugins workflow ref from docs.yml; fix it or set A
 endif
 ASTA_DEFAULT_RELEASE := 1
 ASTA_CACHED_RELEASE := $(shell ref=$$(cat '$(ASTA_CACHE_ROOT)/default-release' 2>/dev/null); printf '%s\n' "$$ref" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' && [ -s '$(ASTA_CACHE_ROOT)'/"$$ref"/workspace.mk ] && printf '%s' "$$ref")
-ASTA_LAST_CACHED_RELEASE := $(shell find $(ASTA_CACHE_ROOT) -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c ! -exec grep -Eq '^(# asta-fallback|override ASTA_PLUGINS_REF := )' {} \; -print 2>/dev/null | awk -F/ '{ ref = $$(NF-1); if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/) print ref }' | sort -V | tail -n 1)
+ASTA_LAST_CACHED_RELEASE := $(shell find $(ASTA_CACHE_ROOT) -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c ! -exec sh -c 'head -n 1 "$$1" | grep -Eq "^(# asta-fallback|override ASTA_PLUGINS_REF := )"' _ {} \; -print 2>/dev/null | awk -F/ '{ ref = $$(NF-1); if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/) print ref }' | sort -V | tail -n 1)
 ifneq ($(ASTA_CACHED_RELEASE),)
 ifneq ($(shell find $(ASTA_CACHE_ROOT)/default-release -mmin -60 -type f -print 2>/dev/null),)
 ASTA_PLUGINS_REF := $(ASTA_CACHED_RELEASE)
@@ -106,11 +109,10 @@ endef
 ifneq ($(findstring $(ASTA_NEWLINE),$(ASTA_PLUGINS_REF)),)
 $(error Invalid asta-plugins ref: line breaks are not allowed)
 endif
-ifneq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | LC_ALL=C awk 'NR != 1 || $$0 !~ /^[A-Za-z0-9_./-]+$$/ { invalid = 1 } END { if (NR == 1 && !invalid) print "valid" }'),valid)
+ifneq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | LC_ALL=C awk 'NR != 1 || $$0 !~ /^[A-Za-z0-9_./-]+$$/ { invalid = 1 } { n = split($$0, part, "/"); if (part[1] == "sources" || part[1] == "default-release") invalid = 1; for (i = 1; i <= n; i++) if (part[i] == "" || part[i] == ".") invalid = 1 } END { if (NR == 1 && !invalid) print "valid" }'),valid)
 $(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
 endif
 ASTA_WORKSPACE_MK := $(ASTA_CACHE_ROOT)/$(ASTA_PLUGINS_REF)/workspace.mk
-override ASTA_WORKSPACE_ARCHIVE := $(ASTA_CACHE_ROOT)/$(ASTA_PLUGINS_REF)/archive.tar.gz
 ASTA_REQUESTED_REF := $(ASTA_PLUGINS_REF)
 ASTA_FALLBACK_RELEASE := $(or $(ASTA_CACHED_RELEASE),$(ASTA_LAST_CACHED_RELEASE))
 include $(ASTA_WORKSPACE_MK)
@@ -120,13 +122,15 @@ check: workspace-check-gate
 workspace-check-gate:
 	@test "$(origin ASTA_WORKSPACE_CHECK)" = file && test "$(ASTA_WORKSPACE_CHECK)" = 1 || { echo "selected workspace.mk does not provide the shared check gate" >&2; exit 1; }
 
-# Moving refs refresh at most once an hour. A failed refresh keeps the
-# last working copy so local work can continue offline.
+# Moving refs and failed fetches retry at most once an hour. A failed refresh
+# keeps the last working copy so local work can continue offline.
 ifneq ($(shell head -n 1 '$(ASTA_WORKSPACE_MK)' 2>/dev/null | grep -E '^(# asta-fallback|override ASTA_PLUGINS_REF := )'),)
+ifeq ($(shell find $(ASTA_WORKSPACE_MK) -mmin -60 -type f -print 2>/dev/null),)
 ifeq ($(MAKE_RESTARTS),)
 .PHONY: workspace-ref-check
 workspace-ref-check: ;
 $(ASTA_WORKSPACE_MK): workspace-ref-check
+endif
 endif
 else ifeq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | grep -Eq '^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F]{40})$$' && echo immutable),)
 ifeq ($(shell find $(ASTA_WORKSPACE_MK) -mmin -60 -type f -print 2>/dev/null),)
@@ -136,6 +140,7 @@ $(ASTA_WORKSPACE_MK): workspace-ref-check
 endif
 endif
 
+# Retain old archives for a day so concurrent builds can finish using them.
 $(ASTA_WORKSPACE_MK):
 	@set -eu; \
 	ref='$(ASTA_REQUESTED_REF)'; \
@@ -165,6 +170,8 @@ $(ASTA_WORKSPACE_MK):
 				cat "$$tmp/workspace.mk" >> "$$tmp/managed.mk"; \
 				mv "$$tmp/archive.tar.gz" "$$archive_path"; \
 				mv "$$tmp/managed.mk" "$@"; \
+				echo "workspace: loaded managed Makefile for $$ref" >&2; \
+				find "$(@D)" -maxdepth 1 -type f -name 'archive-*.tar.gz' -mmin +1440 ! -path "$$archive_path" -delete || echo 'workspace: could not prune old archives' >&2; \
 				if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ]; then \
 					ref_file=$$(mktemp '$(ASTA_CACHE_ROOT)/.default-release.XXXXXX'); \
 					printf '%s\n' "$$ref" > "$$ref_file"; mv "$$ref_file" '$(ASTA_CACHE_ROOT)/default-release'; \
@@ -176,8 +183,8 @@ $(ASTA_WORKSPACE_MK):
 	if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed ($$failure)" >&2; exit 0; fi; \
 	if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ] && [ -n "$(ASTA_FALLBACK_RELEASE)" ] && [ -s '$(ASTA_CACHE_ROOT)/$(ASTA_FALLBACK_RELEASE)/workspace.mk' ]; then \
 		mkdir -p "$$(dirname "$@")"; \
-		printf '# asta-fallback\noverride ASTA_PLUGINS_REF := %s\noverride ASTA_WORKSPACE_ARCHIVE := %s\ninclude %s\n' \
-			'$(ASTA_FALLBACK_RELEASE)' '$(ASTA_CACHE_ROOT)/$(ASTA_FALLBACK_RELEASE)/archive.tar.gz' \
+		printf '# asta-fallback\noverride ASTA_PLUGINS_REF := %s\ninclude %s\n' \
+			'$(ASTA_FALLBACK_RELEASE)' \
 			'$(ASTA_CACHE_ROOT)/$(ASTA_FALLBACK_RELEASE)/workspace.mk' > "$$tmp/fallback.mk"; \
 		mv "$$tmp/fallback.mk" "$@"; \
 		echo "workspace: $$failure; using cached release $(ASTA_FALLBACK_RELEASE)" >&2; exit 0; \
