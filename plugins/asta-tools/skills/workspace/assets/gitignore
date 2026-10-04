@@ -9,3 +9,6 @@ quarto-render.*
 # A local copy is a cache and is overwritten. To customize it, delete this line
 # and commit the directory; a committed copy or a symlink is never refreshed.
 _extensions/evidence
+
+# Managed workspace Makefile fetched at the project workflow version.
+.asta/cache/

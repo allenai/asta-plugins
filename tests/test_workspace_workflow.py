@@ -344,6 +344,113 @@ def test_scaffolded_workflow_ref_matches_project_version() -> None:
     assert match.group(1) == project_version
 
 
+def test_workspace_makefile_fetches_managed_targets(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    source.write_text("managed:\n\t@echo managed-target\n")
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+    project = tmp_path / "project"
+    (project / ".github/workflows").mkdir(parents=True)
+    (project / ".github/workflows/docs.yml").write_text(
+        "uses: allenai/asta-plugins/.github/workflows/"
+        "workspace-quarto-site.yml@v1.2.3\n"
+    )
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    with (project / "Makefile").open("a") as file:
+        file.write("\nproject: managed\n\t@echo project-target\n")
+    result = subprocess.run(
+        ["make", "project"],
+        cwd=project,
+        env={"ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(), "PATH": os.environ["PATH"]},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "managed-target" in result.stdout
+    assert "project-target" in result.stdout
+    assert (project / ".asta/cache/v1.2.3/workspace.mk").read_text() == (
+        source.read_text()
+    )
+
+
+def test_workspace_makefile_refreshes_floating_ref_and_uses_offline_cache(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "archive/asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    archive = tmp_path / "asta-plugins.tar.gz"
+
+    def write_archive(value: str) -> None:
+        source.write_text(f"managed:\n\t@echo {value}\n")
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(source.parents[5], arcname="asta-plugins-test")
+
+    project = tmp_path / "project"
+    (project / ".github/workflows").mkdir(parents=True)
+    (project / ".github/workflows/docs.yml").write_text(
+        "uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@main\n"
+    )
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    env = {"ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(), "PATH": os.environ["PATH"]}
+
+    write_archive("first")
+    first = subprocess.run(
+        ["make", "managed"], cwd=project, env=env, capture_output=True, text=True
+    )
+    assert first.returncode == 0, first.stderr
+    assert "first" in first.stdout
+
+    cache = project / ".asta/cache/main/workspace.mk"
+    os.utime(cache, (0, 0))
+    write_archive("second")
+    second = subprocess.run(
+        ["make", "managed"], cwd=project, env=env, capture_output=True, text=True
+    )
+    assert second.returncode == 0, second.stderr
+    assert "second" in second.stdout
+
+    os.utime(cache, (0, 0))
+    offline = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+            "PATH": os.environ["PATH"],
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert offline.returncode == 0, offline.stderr
+    assert "second" in offline.stdout
+    assert "using cached Makefile" in offline.stderr
+
+
+def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    (project / "workspace.mk").write_text("managed:\n\t@echo custom-target\n")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "add", "workspace.mk"], cwd=project, check=True)
+    result = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+            "PATH": os.environ["PATH"],
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "custom-target" in result.stdout
+    assert not (project / ".asta/cache").exists()
+
+
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
@@ -366,7 +473,7 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
             "workspace-assets",
         ],
         cwd=project,
@@ -385,7 +492,7 @@ def _run_workspace_assets(project: Path, archive_url: str) -> str:
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
             "workspace-assets",
         ],
         cwd=project,
@@ -451,7 +558,7 @@ def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> N
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
             "workspace-assets",
         ],
         cwd=project,
@@ -484,7 +591,7 @@ def test_workspace_makefile_keeps_cache_when_offline(tmp_path: Path) -> None:
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
             "workspace-assets",
         ],
         cwd=project,
@@ -512,7 +619,7 @@ def test_workspace_makefile_fails_offline_without_cache(tmp_path: Path) -> None:
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
             "workspace-assets",
         ],
         cwd=project,
@@ -867,7 +974,7 @@ def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
             "workspace-assets",
         ],
         cwd=project,
