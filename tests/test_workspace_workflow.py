@@ -497,6 +497,48 @@ def test_workspace_makefile_requires_reachable_ref_without_docs_workflow(
     assert not (tmp_path / ".asta").exists()
 
 
+def test_workspace_makefile_rejects_docs_workflow_without_ref(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    workflow = tmp_path / ".github/workflows/docs.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("jobs:\n  docs:\n    uses: ./local.yml\n")
+    result = subprocess.run(
+        ["make", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri()},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "Cannot read the asta-plugins workflow ref" in result.stderr
+    assert not (tmp_path / ".asta").exists()
+
+
+def test_workspace_makefile_accepts_quote_in_archive_url(tmp_path: Path) -> None:
+    source = tmp_path / "source/asta-plugins-test" / WORKSPACE_ASSETS / "workspace.mk"
+    source.parent.mkdir(parents=True)
+    source.write_text("managed:\n\t@echo managed-target\n")
+    archive = tmp_path / "asta-plugins'quoted.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(source.parents[5], arcname="asta-plugins-test")
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REF": "v1.2.3",
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "managed-target" in result.stdout
+
+
 def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     tmp_path: Path,
 ) -> None:

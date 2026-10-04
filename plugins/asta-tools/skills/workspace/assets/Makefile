@@ -1,6 +1,7 @@
 # Keep project targets here; the shared targets come from the selected
 # asta-plugins version. Commit workspace.mk to take ownership of them.
 # Cleaning a project must also work before the first managed-file fetch.
+.DEFAULT_GOAL := dev
 ASTA_LOCAL_MK := $(shell git ls-files --error-unmatch workspace.mk 2>/dev/null)
 ifneq ($(MAKECMDGOALS),)
 ifeq ($(filter-out clean,$(MAKECMDGOALS)),)
@@ -36,6 +37,9 @@ ifndef ASTA_PLUGINS_REF
 ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
 endif
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
+ifneq ($(wildcard .github/workflows/docs.yml),)
+$(error Cannot read the asta-plugins workflow ref from docs.yml; fix it or set ASTA_PLUGINS_REF explicitly)
+endif
 ASTA_PLUGINS_REF := $(shell git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null | awk -F/ '{print $$NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n 1)
 endif
 
@@ -89,12 +93,12 @@ $(ASTA_WORKSPACE_MK):
 	@set -eu; \
 	ref='$(ASTA_PLUGINS_REF)'; \
 	case "$$ref" in *[!A-Za-z0-9._/-]*|*..*|/*) echo "invalid asta-plugins ref: $$ref" >&2; exit 1;; esac; \
-	url='$(ASTA_PLUGINS_ARCHIVE_URL)'; \
+	url='$(subst ','"'"',$(ASTA_PLUGINS_ARCHIVE_URL))'; \
 	if [ -z "$$url" ]; then \
 		case "$$ref" in \
-			latest|main) url='$(ASTA_PLUGINS_REPO)/archive/refs/heads/'"$$ref"'.tar.gz';; \
-			v[0-9]*.[0-9]*.[0-9]*) url='$(ASTA_PLUGINS_REPO)/archive/refs/tags/'"$$ref"'.tar.gz';; \
-			*) url='$(ASTA_PLUGINS_REPO)/archive/'"$$ref"'.tar.gz';; \
+			latest|main) url='$(subst ','"'"',$(ASTA_PLUGINS_REPO))/archive/refs/heads/'"$$ref"'.tar.gz';; \
+			v[0-9]*.[0-9]*.[0-9]*) url='$(subst ','"'"',$(ASTA_PLUGINS_REPO))/archive/refs/tags/'"$$ref"'.tar.gz';; \
+			*) url='$(subst ','"'"',$(ASTA_PLUGINS_REPO))/archive/'"$$ref"'.tar.gz';; \
 		esac; \
 	fi; \
 	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; trap 'exit 1' HUP INT TERM; \
