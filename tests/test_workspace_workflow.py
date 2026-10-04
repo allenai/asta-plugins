@@ -6,6 +6,7 @@ import tarfile
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
@@ -176,6 +177,16 @@ def test_what_changed_uses_managed_generator_without_project_copy(
     subprocess.run(
         ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
     )
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     curl = bin_dir / "curl"
@@ -202,7 +213,62 @@ def test_what_changed_uses_managed_generator_without_project_copy(
     )
     assert result.returncode == 0, result.stderr
     assert (project / "_site/what-changed.html").is_file()
-    assert "Could not read the deployed main site" in result.stdout
+    assert "no deployed baseline" in (project / "_site/what-changed.html").read_text()
+
+
+@pytest.mark.parametrize("failed_command", ["ls-remote", "fetch", "archive"])
+def test_what_changed_skips_diff_when_baseline_read_fails(
+    tmp_path: Path, failed_command: str
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    project = tmp_path / "project"
+    (project / "_site").mkdir(parents=True)
+    (project / "_site/index.html").write_text("PR content")
+    subprocess.run(
+        ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(tmp_path / "unreachable.git")],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = ls-remote ]; then\n'
+        '  [ "$FAILED_COMMAND" != ls-remote ] || exit 128\n'
+        "  exit 0\n"
+        "fi\n"
+        '[ "$1" != "$FAILED_COMMAND" ] || exit 1\n'
+        'exec "$REAL_GIT" "$@"\n'
+    )
+    git.chmod(0o755)
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "REAL_GIT": shutil.which("git"),
+            "FAILED_COMMAND": failed_command,
+            "PR_NUMBER": "8",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (project / "_site/what-changed.html").exists()
+    assert "skipping the diff page" in result.stdout
 
 
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:

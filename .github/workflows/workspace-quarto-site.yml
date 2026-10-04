@@ -166,14 +166,20 @@ jobs:
           set -o pipefail
           baseline=$(mktemp -d)
           baseline_label="no deployed baseline"
-          if git fetch -q origin gh-pages:refs/remotes/origin/gh-pages \
-              && git archive refs/remotes/origin/gh-pages -- . ':(exclude)pr-preview' | tar -x -C "$baseline"; then
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            if ! git fetch -q origin gh-pages:refs/remotes/origin/gh-pages \
+                || ! git archive refs/remotes/origin/gh-pages -- . ':(exclude)pr-preview' | tar -x -C "$baseline"; then
+              echo "::warning::Could not read the deployed main site; skipping the diff page"
+              exit 0
+            fi
             # The read-only build compares with this snapshot; main may redeploy before publication.
             baseline_label="Pages $(git rev-parse --short=12 refs/remotes/origin/gh-pages)"
           else
-            echo "::warning::Could not read the deployed main site; comparing against an empty baseline"
-            rm -rf "$baseline"
-            mkdir -p "$baseline"
+            status=$?
+            if [ "$status" -ne 2 ]; then
+              echo "::warning::Could not check for the deployed main site; skipping the diff page"
+              exit 0
+            fi
           fi
           if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
             gen=scripts/what-changed.py
