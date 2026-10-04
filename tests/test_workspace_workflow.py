@@ -518,6 +518,9 @@ def test_workspace_makefile_prefers_committed_override(tmp_path: Path) -> None:
     project.mkdir()
     (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
     (project / "workspace.mk").write_text("managed:\n\t@echo custom-target\n")
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("jobs:\n  docs:\n    uses: ./local.yml\n")
     subprocess.run(["git", "init", "-q"], cwd=project, check=True)
     subprocess.run(["git", "add", "workspace.mk"], cwd=project, check=True)
     result = subprocess.run(

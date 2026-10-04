@@ -3,19 +3,18 @@
 # Cleaning a project must also work before the first managed-file fetch.
 .DEFAULT_GOAL := dev
 ASTA_LOCAL_MK := $(shell git ls-files --error-unmatch workspace.mk 2>/dev/null)
-ifneq ($(MAKECMDGOALS),)
-ifeq ($(filter-out clean,$(MAKECMDGOALS)),)
 ifneq ($(ASTA_LOCAL_MK),)
 ifeq ($(wildcard workspace.mk),)
 $(error workspace.mk is tracked but missing; restore it or remove it from Git)
 endif
 include workspace.mk
 else
+ifneq ($(MAKECMDGOALS),)
+ifeq ($(filter-out clean,$(MAKECMDGOALS)),)
 # Offline cleanup intentionally removes only local Quarto build output.
 .PHONY: clean
 clean:
 	rm -rf _site .quarto
-endif
 else
 ASTA_LOAD_WORKSPACE_MK := 1
 endif
@@ -43,12 +42,6 @@ endif
 ASTA_PLUGINS_REF := $(shell git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null | awk -F/ '{print $$NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n 1)
 endif
 
-ifneq ($(ASTA_LOCAL_MK),)
-ifeq ($(wildcard workspace.mk),)
-$(error workspace.mk is tracked but missing; restore it or remove it from Git)
-endif
-include workspace.mk
-else
 ifneq ($(wildcard workspace.mk),)
 $(warning workspace.mk is untracked; commit it to use it as a local override)
 endif
