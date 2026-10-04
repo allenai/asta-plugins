@@ -24,7 +24,8 @@ fi
 
 # Fail on Quarto warnings (broken citations, dead links, etc.), surfacing them
 # in the CI step summary when available.
-warnings=$(sed 's/\x1b\[[0-9;]*m//g' quarto-render.log | grep -E '\[WARNING\]|^WARN:' || true)
+esc=$(printf '\033')
+warnings=$(sed "s/${esc}\[[0-9;]*[A-Za-z]//g" quarto-render.log | grep -E '\[WARNING\]|^WARN:' || true)
 if [ -n "$warnings" ]; then
   echo "::error::Quarto warnings found (broken citations, dead links, etc.):"
   echo "$warnings"

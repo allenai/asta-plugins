@@ -533,7 +533,47 @@ def _write_fake_gh(bin_dir: Path) -> None:
 set -eu
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "repo view") echo owner/project ;;
+  "repo view")
+    case "$*" in
+      *defaultBranchRef*) echo "${GH_DEFAULT_BRANCH:-main}" ;;
+      *) echo owner/project ;;
+    esac
+    ;;
+  "pr list")
+    count=0
+    [ ! -f "$GH_PR_COUNT" ] || count=$(cat "$GH_PR_COUNT")
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$GH_PR_COUNT"
+    jq_filter=
+    open_only=0
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --state ] && [ "$2" = open ]; then open_only=1; fi
+      if [ "$1" = --jq ]; then jq_filter=$2; break; fi
+      shift
+    done
+    if [ "${GH_NO_PR:-0}" = 1 ] || [ "$count" -lt "${GH_PR_ON:-1}" ] || \
+       { [ "$open_only" = 1 ] && [ "${GH_PR_STATE:-OPEN}" != OPEN ]; }; then
+      echo '[]' | jq -r "$jq_filter"
+    elif [ "${GH_AMBIGUOUS_PR:-0}" = 1 ]; then
+      printf '[{"number":123,"headRefOid":"%s"},{"number":124,"headRefOid":"%s"}]\n' \
+        "$(git rev-parse HEAD)" "$(git rev-parse HEAD)" | jq -r "$jq_filter"
+    elif [ "${GH_FORK_PR:-0}" = 1 ]; then
+      printf '[{"number":122,"headRefOid":"other-sha","isCrossRepository":false},{"number":123,"headRefOid":"%s","isCrossRepository":true}]\n' \
+        "$(git rev-parse HEAD)" | jq -r "$jq_filter"
+    else
+      printf '[{"number":123,"headRefOid":"%s"}]\\n' \
+        "${GH_PR_HEAD_SHA:-$(git rev-parse HEAD)}" | jq -r "$jq_filter"
+    fi
+    ;;
+  "pr view")
+    [ "${GH_NO_PR_AFTER:-0}" != 1 ] || exit 1
+    [ "${GH_FORK_PR:-0}" != 1 ] || [ "$3" = 123 ] || {
+      echo 'no pull requests found for fork branch' >&2
+      exit 1
+    }
+    printf '%s %s\\n' "${GH_PR_STATE_AFTER:-OPEN}" \
+      "${GH_PR_HEAD_SHA_AFTER:-$(git rev-parse HEAD)}"
+    ;;
   "run list")
     count=0
     [ ! -f "$GH_RUN_COUNT" ] || count=$(cat "$GH_RUN_COUNT")
@@ -583,9 +623,13 @@ case "$1 $2" in
     marker_run=${GH_MARKER_RUN:-101}
     printf '[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]\\n' "$marker_run" | jq -r "$jq_filter"
     ;;
-  "api repos/owner/project/pages/builds?per_page=10")
+  "api repos/owner/project/pages/builds?per_page=100")
     [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
-    echo "${GH_BUILT:-1}"
+    echo "${GH_BUILT_COMMITS-published-sha}"
+    ;;
+  "api repos/owner/project/compare/published-sha..."*)
+    [ "${GH_DESCENDANT_API_FAIL:-0}" != 1 ] || exit 1
+    echo "${GH_DESCENDANT_STATUS:-ahead}"
     ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
@@ -622,6 +666,7 @@ def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GH_LOG": str(tmp_path / "gh.log"),
         "GH_RUN_COUNT": str(tmp_path / "run-count"),
+        "GH_PR_COUNT": str(tmp_path / "pr-count"),
         "GH_TIP_COUNT": str(tmp_path / "tip-count"),
         "WORKFLOW_TIMEOUT": "3",
         "RUN_TIMEOUT": "2",
@@ -669,7 +714,230 @@ def test_preview_wait_matches_pages_build_to_workflow_deployment(
     log = Path(env["GH_LOG"]).read_text()
     assert "compare/before...after" in log
     assert "(run 101)" in log
-    assert "pages/builds?per_page=10" in log
+    assert "pages/builds?per_page=100" in log
+
+
+def test_preview_wait_accepts_coalesced_pages_build(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_BUILT_COMMITS="later-sha")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    assert "compare/published-sha...later-sha" in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_rejects_unrelated_pages_build(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(
+        GH_AFTER_TIP="after",
+        GH_BUILT_COMMITS="unrelated-sha",
+        GH_DESCENDANT_STATUS="diverged",
+        PAGES_TIMEOUT="1",
+    )
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Pages did not publish" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_requires_pr_for_feature_branch(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_NO_PR"] = "1"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "open a PR" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_allows_pr_to_appear_after_first_lookup(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_PR_ON="2", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert Path(env["GH_PR_COUNT"]).read_text().strip() == "2"
+
+
+def test_preview_wait_rejects_ambiguous_branch_and_sha(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_AMBIGUOUS_PR"] = "1"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Multiple open PRs" in result.stderr
+    assert "pr view" not in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_skips_pr_lookup_on_detached_head(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    subprocess.run(["git", "checkout", "--detach", "-q"], cwd=project, check=True)
+    env.update(GH_NO_PR="1", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "pr list" not in Path(env["GH_LOG"]).read_text()
+    assert "pr view" not in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_skips_pr_lookup_on_default_branch(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    subprocess.run(["git", "branch", "-M", "trunk"], cwd=project, check=True)
+    env.update(GH_DEFAULT_BRANCH="trunk", GH_NO_PR="1", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "pr list" not in Path(env["GH_LOG"]).read_text()
+    assert "pr view" not in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_rejects_closed_pr(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_PR_STATE"] = "CLOSED"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "No open PR" in result.stderr
+
+
+def test_preview_wait_rejects_pr_at_another_commit(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_PR_HEAD_SHA"] = "different-commit"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "No open PR" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_rejects_pr_moved_during_deploy(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_PR_HEAD_SHA_AFTER="different-commit", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "no longer open at" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_resolves_numeric_branch_as_a_head(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run(["git", "branch", "-M", "123"], cwd=project, check=True)
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_AFTER_TIP"] = "after"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = Path(env["GH_LOG"]).read_text()
+    assert "pr list --repo owner/project --head 123 --state open" in log
+    assert "pr view 123 --repo owner/project" in log
+
+
+def test_preview_wait_resolves_fork_pr_via_base_repo(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_FORK_PR="1", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = Path(env["GH_LOG"]).read_text()
+    assert "pr list --repo owner/project --head" in log
+    assert "pr view 123 --repo owner/project" in log
+    assert "pr view 122" not in log
+
+
+def test_preview_wait_rejects_pr_closed_during_deploy(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_PR_STATE_AFTER="CLOSED", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "no longer open" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_quarto_check_rejects_colored_warning(tmp_path: Path) -> None:
+    quarto = tmp_path / "quarto"
+    quarto.write_text(
+        "#!/bin/sh\nmkdir -p _site\nprintf page > _site/index.html\n"
+        'printf "\\033[2K\\033[1G\\033[33mWARN: unresolved citation\\033[0m\\n"\n'
+    )
+    quarto.chmod(0o755)
+    script = (WORKSPACE_ASSETS / "quarto-check.sh").resolve()
+    env = os.environ.copy()
+    env["PATH"] = f"{tmp_path}:{env['PATH']}"
+
+    result = subprocess.run(
+        ["sh", str(script)], cwd=tmp_path, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "unresolved citation" in result.stdout
 
 
 def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> None:
@@ -803,7 +1071,7 @@ def test_preview_wait_bounds_pages_poll_and_preserves_baseline(tmp_path: Path) -
     script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
 
     subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
-    env.update(GH_AFTER_TIP="after", GH_BUILT="0", PAGES_TIMEOUT="1")
+    env.update(GH_AFTER_TIP="after", GH_BUILT_COMMITS="", PAGES_TIMEOUT="1")
     result = subprocess.run(
         [script, "wait"], cwd=project, env=env, text=True, capture_output=True
     )
