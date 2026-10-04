@@ -162,7 +162,7 @@ jobs:
       group: docker-release-latest
       cancel-in-progress: false
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -193,3 +193,18 @@ jobs:
             docker buildx imagetools create -t "$image:latest$suffix" "$image@$digest"
             test "$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
           done
+          echo "newest=$newest" >> "$GITHUB_ENV"
+      # Projects that follow `uses: ...@latest` resolve this branch, so it moves
+      # with the :latest image to the same final release.
+      - name: Point the latest branch at the same release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-list -n 1 "$newest")
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/latest" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/latest" -f sha="$sha" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/heads/latest -f sha="$sha" >/dev/null
+          fi
+          echo "latest branch -> $newest ($sha)"

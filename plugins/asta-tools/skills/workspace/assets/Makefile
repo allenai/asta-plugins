@@ -1,13 +1,12 @@
 .PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
 
-# Which asta-plugins ref to fetch the workspace evidence extension from.
-# The default (empty ASTA_PLUGINS_REF) resolves to the latest published version
-# tag, so projects pick up new releases automatically — the same way other
-# asta-plugins consumers upgrade, rather than tracking the mutable main branch.
-# Pin a specific release with ASTA_PLUGINS_REF=v0.103.0, or track the in-flight
-# branch with ASTA_PLUGINS_REF=main.
+# Which asta-plugins ref to fetch the workspace evidence extension from. The
+# single version of record is the `uses: ...@<ref>` line in
+# .github/workflows/docs.yml, so the workflow and render-time assets move
+# together. <ref> is a release (v0.105.0), `latest` (newest final release; the
+# safer floating choice) or `main`. With no docs.yml, `latest` is used.
 ASTA_PLUGINS_REPO ?= https://github.com/allenai/asta-plugins
-ASTA_PLUGINS_REF ?=
+ASTA_PLUGINS_REF ?= $(shell sed -n 's|.*allenai/asta-plugins/\.github/workflows/workspace-quarto-site\.yml@\([^[:space:]]*\).*|\1|p' .github/workflows/docs.yml 2>/dev/null | head -n 1)
 # Derived from the repo + resolved ref unless set explicitly (tests point it at
 # a local archive). When set, it is used verbatim and ref resolution is skipped.
 ASTA_PLUGINS_ARCHIVE_URL ?=
@@ -41,7 +40,7 @@ workspace-assets:
 		exit 1; \
 	}; \
 	if [ -z "$$url" ]; then \
-		if [ -z "$$ref" ]; then \
+		if [ -z "$$ref" ] || [ "$$ref" = latest ]; then \
 			ref=$$(git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null \
 				| awk -F/ '{print $$NF}' \
 				| grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' \
