@@ -306,6 +306,54 @@ def test_manage_version_reads_complete_workspace_ref(
         assert module.get_workspace_workflow_version() == expected
 
 
+@pytest.mark.parametrize(
+    "uses_line",
+    [
+        "    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1",
+        "    uses:   'allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1' # pinned",
+        '    uses: "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.104.1"',
+    ],
+)
+def test_manage_version_updates_any_accepted_pinned_workflow_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, uses_line: str
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "manage_version", Path("scripts/manage-version.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    for name in (
+        "INIT_FILE",
+        "PYPROJECT_FILE",
+        "MARKETPLACE_FILE",
+        "LOCK_FILE",
+        "HOOK_FILE",
+        "ASTA_CLI_SKILL_FILE",
+    ):
+        source = getattr(module, name)
+        target = tmp_path / name / source.name
+        target.parent.mkdir()
+        target.write_bytes(source.read_bytes())
+        monkeypatch.setattr(module, name, target)
+    docs = tmp_path / "docs.yml"
+    docs.write_text(f"jobs:\n  docs:\n{uses_line}\n")
+    monkeypatch.setattr(module, "WORKSPACE_DOCS_WORKFLOW_FILE", docs)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+
+    assert module.get_workspace_workflow_version() == "0.104.1"
+    assert module.set_version("0.105.0") is True
+    assert (
+        docs.read_text()
+        == f"jobs:\n  docs:\n{uses_line.replace('v0.104.1', 'v0.105.0')}\n"
+    )
+
+
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"

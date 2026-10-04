@@ -41,6 +41,19 @@ WORKSPACE_DOCS_WORKFLOW_FILE = (
 # Matches the asta package's version line in uv.lock. The asta package is the
 # editable root, so `name = "asta"` is unique within the lockfile.
 LOCK_VERSION_PATTERN = re.compile(r'(name = "asta"\nversion = ")([^"]+)(")')
+WORKSPACE_WORKFLOW_REF_PATTERN = re.compile(
+    r"^[ \t]*uses:[ \t]*(?P<quote>['\"]?)allenai/asta-plugins/\.github/workflows/"
+    r"workspace-quarto-site\.yml@(?P<ref>latest|v\d+\.\d+\.\d+)"
+    r"(?P=quote)[ \t]*(?:#.*)?$",
+    re.MULTILINE,
+)
+
+
+def workspace_workflow_ref_match(content: str) -> re.Match[str]:
+    matches = list(WORKSPACE_WORKFLOW_REF_PATTERN.finditer(content))
+    if len(matches) != 1:
+        raise ValueError("Could not find workspace workflow ref in docs.yml")
+    return matches[0]
 
 
 def get_init_version() -> str:
@@ -96,16 +109,8 @@ def get_workspace_workflow_version() -> str:
     The scaffold follows the floating `latest` release channel; a literal
     `vX.Y.Z` there must match the release being cut.
     """
-    content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
-    match = re.search(
-        r"^\s*uses:\s*['\"]?allenai/asta-plugins/\.github/workflows/"
-        r"workspace-quarto-site\.yml@(latest|v\d+\.\d+\.\d+)['\"]?\s*(?:#.*)?$",
-        content,
-        re.MULTILINE,
-    )
-    if not match:
-        raise ValueError("Could not find workspace workflow ref in docs.yml")
-    ref = match.group(1)
+    match = workspace_workflow_ref_match(WORKSPACE_DOCS_WORKFLOW_FILE.read_text())
+    ref = match.group("ref")
     return ref if ref == "latest" else ref[1:]
 
 
@@ -198,10 +203,18 @@ def set_version(new_version: str) -> bool:
         return False
 
     try:
-        workspace_workflow_version = get_workspace_workflow_version()
+        workspace_docs = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
+        workspace_match = workspace_workflow_ref_match(workspace_docs)
     except ValueError as exc:
         print(f"{RED}Error: {exc}{NC}")
         return False
+
+    workspace_workflow_version = workspace_match.group("ref")
+    if workspace_workflow_version != "latest":
+        start, end = workspace_match.span("ref")
+        updated_workspace_docs = (
+            workspace_docs[:start] + f"v{new_version}" + workspace_docs[end:]
+        )
 
     print(f"Setting version to {new_version} in all files...")
 
@@ -260,20 +273,7 @@ def set_version(new_version: str) -> bool:
     # Advance a pinned scaffold ref with the release tag; `@latest` needs none.
     if workspace_workflow_version != "latest":
         print("Updating workspace docs workflow...")
-        content = WORKSPACE_DOCS_WORKFLOW_FILE.read_text()
-        content, replacements = re.subn(
-            r"(uses: allenai/asta-plugins/\.github/workflows/"
-            r"workspace-quarto-site\.yml@v)\d+\.\d+\.\d+",
-            rf"\g<1>{new_version}",
-            content,
-        )
-        if replacements != 1:
-            print(
-                f"{RED}Error: expected one versioned workspace workflow ref, "
-                f"found {replacements}{NC}"
-            )
-            return False
-        WORKSPACE_DOCS_WORKFLOW_FILE.write_text(content)
+        WORKSPACE_DOCS_WORKFLOW_FILE.write_text(updated_workspace_docs)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()
