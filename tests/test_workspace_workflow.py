@@ -161,15 +161,81 @@ def test_latest_release_ref_is_updated_before_images() -> None:
     workflow = yaml.load(
         Path(".github/workflows/docker.yml").read_text(), Loader=yaml.BaseLoader
     )
-    select_job = workflow["jobs"]["latest-select"]
     ref_job = workflow["jobs"]["latest-ref"]
     image_job = workflow["jobs"]["latest"]
 
-    assert select_job["permissions"] == {"contents": "read", "packages": "read"}
-    assert ref_job["needs"] == "latest-select"
+    assert ref_job["needs"] == "promote"
+    assert ref_job["concurrency"]["group"] == "docker-release-latest-ref"
     assert ref_job["permissions"] == {"contents": "write"}
     assert image_job["needs"] == "latest-ref"
     assert image_job["permissions"] == {"contents": "read", "packages": "write"}
+
+
+def test_latest_ref_selects_newest_release_after_lock(tmp_path: Path) -> None:
+    workflow = yaml.load(
+        Path(".github/workflows/docker.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    script = workflow["jobs"]["latest-ref"]["steps"][-1]["run"]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True
+    )
+    source = repo / "source"
+    source.write_text("first")
+    subprocess.run(["git", "add", "source"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "first"], cwd=repo, check=True)
+    subprocess.run(["git", "tag", "v0.104.1"], cwd=repo, check=True)
+    old_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+    source.write_text("second")
+    subprocess.run(["git", "commit", "-qam", "second"], cwd=repo, check=True)
+    subprocess.run(["git", "tag", "v0.105.0"], cwd=repo, check=True)
+    new_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
+    subprocess.run(["git", "remote", "add", "origin", str(repo)], cwd=repo, check=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        'case "$4" in\n'
+        "  ghcr.io/allenai/asta:v0.104.1*|ghcr.io/allenai/asta:v0.105.0*) exit 0 ;;\n"
+        "  *) exit 1 ;;\n"
+        "esac\n"
+    )
+    docker.chmod(0o755)
+    gh = bin_dir / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        'if [ "$2" = "-X" ]; then\n'
+        '  for arg in "$@"; do\n'
+        '    case "$arg" in sha=*) printf "%s" "${arg#sha=}" > "$UPDATED_SHA" ;; esac\n'
+        "  done\n"
+        "else\n"
+        '  printf "%s\\n" "$CURRENT_SHA"\n'
+        "fi\n"
+    )
+    gh.chmod(0o755)
+    updated_sha = tmp_path / "updated-sha"
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "allenai/asta-plugins",
+        "GITHUB_REF_NAME": "v0.104.1",
+        "CURRENT_SHA": old_sha,
+        "UPDATED_SHA": str(updated_sha),
+    }
+    subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script], cwd=repo, env=env, check=True
+    )
+
+    assert updated_sha.read_text() == new_sha
 
 
 def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:

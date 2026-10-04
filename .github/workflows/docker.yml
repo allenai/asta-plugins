@@ -154,27 +154,23 @@ jobs:
             test "$actual" = "$expected"
           done
 
-  latest-select:
+  latest-ref:
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
     needs: promote
     runs-on: ubuntu-latest
+    concurrency:
+      group: docker-release-latest-ref
+      cancel-in-progress: false
     permissions:
-      contents: read
-      packages: read
-    outputs:
-      newest: ${{ steps.release.outputs.newest }}
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Find the highest published final release
-        id: release
+      # The package is public, so inspect it without registry credentials.
+      - name: Point the latest branch at the highest published final release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           image=ghcr.io/allenai/asta
@@ -188,39 +184,19 @@ jobs:
             fi
           done < <(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr)
           test -n "$newest" || { echo 'No complete final release pair is published' >&2; exit 1; }
-          echo "newest=$newest" >> "$GITHUB_OUTPUT"
-
-  latest-ref:
-    needs: latest-select
-    runs-on: ubuntu-latest
-    concurrency:
-      group: docker-release-latest-ref
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      # Fail before moving image tags if the token cannot advance this branch.
-      - name: Point the latest branch at the same release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEWEST: ${{ needs['latest-select'].outputs.newest }}
-        run: |
-          set -euo pipefail
-          sha=$(git rev-list -n 1 "$NEWEST")
+          sha=$(git rev-list -n 1 "$newest")
           test -n "$sha"
           current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/latest" --jq .object.sha)
           current=$(git tag --points-at "$current_sha" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | head -n 1)
           test -n "$current" || { echo 'The latest branch does not point at a final release' >&2; exit 1; }
-          highest=$(printf '%s\n%s\n' "$current" "$NEWEST" | sort -V | tail -n 1)
+          highest=$(printf '%s\n%s\n' "$current" "$newest" | sort -V | tail -n 1)
           if [ "$highest" = "$current" ]; then
             echo "latest branch already at $current"
             exit 0
           fi
+          # Fail before moving image tags if the token cannot advance this branch.
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/latest" -f sha="$sha" -F force=true >/dev/null
-          echo "latest branch -> $NEWEST ($sha)"
+          echo "latest branch -> $newest ($sha)"
 
   latest:
     needs: latest-ref
@@ -247,6 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           image=ghcr.io/allenai/asta
+          git fetch --tags --force origin
           sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/latest" --jq .object.sha)
           newest=$(git tag --points-at "$sha" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | head -n 1)
           test -n "$newest" || { echo 'The latest branch does not point at a final release' >&2; exit 1; }
