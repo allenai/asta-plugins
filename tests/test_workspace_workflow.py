@@ -1,11 +1,13 @@
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tarfile
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
@@ -20,6 +22,7 @@ def _run_paper_step(
     inspect_stage: bool = False,
     paper_script: str | None = None,
     worktree_add_fails: bool = False,
+    update_ref_fails: bool = False,
 ):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -54,12 +57,21 @@ def _run_paper_step(
         '[ -n "${PAPER_SOURCE:-}" ]\n'
     )
     sudo.chmod(0o755)
-    if worktree_add_fails:
+    if worktree_add_fails or update_ref_fails:
         git = bin_dir / "git"
         git.write_text(
             "#!/bin/sh\n"
-            'if [ "$1" = worktree ] && [ "$2" = add ]; then exit 1; fi\n'
-            f'exec {shutil.which("git")} "$@"\n'
+            + (
+                'if [ "$1" = worktree ] && [ "$2" = add ]; then exit 1; fi\n'
+                if worktree_add_fails
+                else ""
+            )
+            + (
+                'if [ "$1" = -C ] && [ "$3" = update-ref ]; then exit 1; fi\n'
+                if update_ref_fails
+                else ""
+            )
+            + f'exec {shutil.which("git")} "$@"\n'
         )
         git.chmod(0o755)
     env = {
@@ -246,6 +258,23 @@ def test_missing_latex_target_keeps_existing_paper(tmp_path: Path) -> None:
     assert not (project / "_site/paper-previews/build-failed.txt").exists()
 
 
+def test_base_without_latex_target_skips_check(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("check:\n\t@false\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(
+        tmp_path, prepare=prepare, paper_script="#!/bin/sh\nexit 0\n"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "make check failed on the PR base" not in result.stdout
+    assert not (project / "_site/paper-previews/build-failed.txt").exists()
+
+
 def test_generated_base_and_head_keep_distinct_sources(tmp_path: Path) -> None:
     def prepare(project: Path) -> str:
         base = _generated_paper_project(project)
@@ -323,6 +352,45 @@ def test_generated_shared_inputs_are_available_on_base_and_head(tmp_path: Path) 
         "shared/citations.sty",
         "data/table.csv",
     }
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "../outside",
+        "/tmp/absolute",
+        ".git/config",
+        "shared/link.txt",
+        "linked/child.txt",
+    ],
+)
+def test_invalid_generated_shared_input_is_rejected(
+    tmp_path: Path, bad_path: str
+) -> None:
+    def prepare(project: Path) -> str:
+        (project / ".gitignore").write_text("gen/\n_site/\n")
+        (project / "Makefile").write_text(
+            "latex:\n\tmkdir -p gen\n\tprintf paper > gen/main.tex\n"
+            "\tprintf rc > gen/latexmkrc\n"
+            f"\tprintf '%s\\n' {shlex.quote(bad_path)} >> \"$$ASTA_PAPER_INPUTS_FILE\"\n"
+        )
+        (project / "shared").mkdir()
+        (project / "shared/child.txt").write_text("input\n")
+        (project / "shared/link.txt").symlink_to(project / "paper/main.tex")
+        (project / "linked").symlink_to(project / "shared", target_is_directory=True)
+        _git(project, "init", "-q")
+        _git(project, "add", ".gitignore", "Makefile", "paper/main.tex")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert (
+        "paper input" in result.stderr.lower()
+        or "ASTA_PAPER_INPUTS_FILE" in result.stderr
+    )
     assert _git(project, "diff", "--cached", "--name-only") == ""
 
 
@@ -405,7 +473,9 @@ def test_base_latex_failure_keeps_head_preview(tmp_path: Path) -> None:
 def test_base_check_failure_keeps_head_preview(tmp_path: Path) -> None:
     def prepare(project: Path) -> str:
         (project / ".gitignore").write_text("gen/\n_site/\n")
-        (project / "Makefile").write_text("check: missing-prerequisite\n")
+        (project / "Makefile").write_text(
+            "check: missing-prerequisite\nlatex:\n\t@true\n"
+        )
         _git(project, "init", "-q")
         _git(project, "add", ".")
         _git(project, "commit", "-q", "-m", "base")
@@ -439,9 +509,28 @@ def test_broken_latex_target_fails_discovery(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "No rule to make target 'missing-prerequisite'" in result.stderr
-    assert (
-        project / "_site/paper-previews/build-failed.txt"
-    ).read_text().strip() == "make latex failed; see the build log."
+    assert (project / "_site/paper-previews/build-failed.txt").read_text().strip() == (
+        "make latex failed; see the build log."
+    )
+
+
+def test_broken_latex_target_still_builds_committed_paper(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("latex: missing-prerequisite\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(
+        tmp_path,
+        prepare=prepare,
+        paper_script="#!/bin/sh\nprintf built > _site/paper-built.txt\n",
+    )
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-built.txt").read_text() == "built"
+    assert (project / "_site/paper-previews/build-failed.txt").is_file()
 
 
 def test_committed_paper_is_not_replaced_by_latex_target(tmp_path: Path) -> None:
@@ -457,6 +546,40 @@ def test_committed_paper_is_not_replaced_by_latex_target(tmp_path: Path) -> None
     assert result.returncode != 0
     assert (project / "paper/main.tex").read_text() == "paper"
     assert _git(project, "diff", "--cached", "--name-only") == ""
+
+
+def test_check_edit_to_committed_paper_survives_latex_target(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("latex:\n\techo generated > paper/main.tex\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        (project / "paper/main.tex").write_text("checked\n")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(
+        tmp_path,
+        prepare=prepare,
+        paper_script="#!/bin/sh\ncp paper/main.tex _site/paper-source.txt\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (project / "paper/main.tex").read_text() == "checked\n"
+    assert (project / "_site/paper-source.txt").read_text() == "checked\n"
+
+
+def test_failed_temporary_commit_clears_generated_index(tmp_path: Path) -> None:
+    project, result = _run_paper_step(
+        tmp_path,
+        prepare=_generated_paper_project,
+        update_ref_fails=True,
+        paper_script="#!/bin/sh\nexit 0\n",
+    )
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-previews/build-failed.txt").is_file()
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+    assert _git(project, "log", "--format=%s") == "base"
 
 
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
