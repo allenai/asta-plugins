@@ -346,8 +346,9 @@ def test_scaffolded_workflow_ref_matches_project_version() -> None:
 
 @pytest.mark.parametrize("quote", ["", "'", '"'])
 @pytest.mark.parametrize("inline_comment", ["", " # pinned"])
+@pytest.mark.parametrize("ref", ["v1.2.3", "feature_branch"])
 def test_workspace_makefile_fetches_managed_targets(
-    tmp_path: Path, quote: str, inline_comment: str
+    tmp_path: Path, quote: str, inline_comment: str, ref: str
 ) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
@@ -361,7 +362,7 @@ def test_workspace_makefile_fetches_managed_targets(
     (project / ".github/workflows").mkdir(parents=True)
     (project / ".github/workflows/docs.yml").write_text(
         f"uses: {quote}allenai/asta-plugins/.github/workflows/"
-        f"workspace-quarto-site.yml@v1.2.3{quote}{inline_comment}\n"
+        f"workspace-quarto-site.yml@{ref}{quote}{inline_comment}\n"
     )
     (project / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
     with (project / "Makefile").open("a") as file:
@@ -376,7 +377,7 @@ def test_workspace_makefile_fetches_managed_targets(
     assert result.returncode == 0, result.stderr
     assert "managed-target" in result.stdout
     assert "project-target" in result.stdout
-    assert (project / ".asta/cache/v1.2.3/workspace.mk").read_text() == (
+    assert (project / f".asta/cache/{ref}/workspace.mk").read_text() == (
         source.read_text()
     )
 
@@ -644,6 +645,38 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert result.returncode == 0, result.stderr
     assert "managed-target" in result.stdout
     assert (project / ".asta/cache/v0.105.0/workspace.mk").exists()
+    release_ref = project / ".asta/cache/default-release"
+    assert release_ref.read_text().strip() == "v0.105.0"
+
+    offline = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert offline.returncode == 0, offline.stderr
+    assert "managed-target" in offline.stdout
+    assert "using cached v0.105.0" in offline.stderr
+
+    release_ref.unlink()
+    legacy_cache = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **os.environ,
+            "ASTA_PLUGINS_REPO": (tmp_path / "missing").as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert legacy_cache.returncode == 0, legacy_cache.stderr
+    assert "managed-target" in legacy_cache.stdout
 
 
 @pytest.mark.parametrize(

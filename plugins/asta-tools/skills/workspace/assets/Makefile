@@ -39,7 +39,17 @@ ifeq ($(strip $(ASTA_PLUGINS_REF)),)
 ifneq ($(wildcard .github/workflows/docs.yml),)
 $(error Cannot read the asta-plugins workflow ref from docs.yml; fix it or set ASTA_PLUGINS_REF explicitly)
 endif
+ASTA_DEFAULT_RELEASE := 1
 ASTA_PLUGINS_REF := $(shell git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null | awk -F/ '{print $$NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n 1)
+ifeq ($(strip $(ASTA_PLUGINS_REF)),)
+ASTA_PLUGINS_REF := $(shell ref=$$(cat .asta/cache/default-release 2>/dev/null); if [ -s ".asta/cache/$$ref/workspace.mk" ]; then printf '%s' "$$ref"; fi)
+ifeq ($(strip $(ASTA_PLUGINS_REF)),)
+ASTA_PLUGINS_REF := $(shell find .asta/cache -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c 2>/dev/null | awk -F/ '$$3 ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/ { print $$3 }' | sort -V | tail -n 1)
+endif
+ifneq ($(strip $(ASTA_PLUGINS_REF)),)
+$(warning Cannot look up asta-plugins releases; using cached $(ASTA_PLUGINS_REF))
+endif
+endif
 endif
 
 ifneq ($(wildcard workspace.mk),)
@@ -85,7 +95,7 @@ endif
 $(ASTA_WORKSPACE_MK):
 	@set -eu; \
 	ref='$(ASTA_PLUGINS_REF)'; \
-	case "$$ref" in *[!A-Za-z0-9._/-]*|*..*|/*) echo "invalid asta-plugins ref: $$ref" >&2; exit 1;; esac; \
+	case "$$ref" in *[!A-Za-z0-9_./-]*|*..*|/*) echo "invalid asta-plugins ref: $$ref" >&2; exit 1;; esac; \
 	url='$(subst ','"'"',$(ASTA_PLUGINS_ARCHIVE_URL))'; \
 	if [ -z "$$url" ]; then \
 		case "$$ref" in \
@@ -103,7 +113,12 @@ $(ASTA_WORKSPACE_MK):
 			if [ -z "$$entry" ]; then \
 				failure="workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk"; \
 			elif tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk" && [ -s "$$tmp/workspace.mk" ]; then \
-				mkdir -p "$$(dirname "$@")"; mv "$$tmp/workspace.mk" "$@"; exit 0; \
+				mkdir -p "$$(dirname "$@")"; mv "$$tmp/workspace.mk" "$@"; \
+				if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ]; then \
+					ref_file=$$(mktemp .asta/cache/.default-release.XXXXXX); \
+					printf '%s\n' "$$ref" > "$$ref_file"; mv "$$ref_file" .asta/cache/default-release; \
+				fi; \
+				exit 0; \
 			fi; \
 		fi; \
 	fi; \
