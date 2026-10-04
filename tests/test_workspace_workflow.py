@@ -962,3 +962,13 @@ def test_artifact_command_checks_completed_site_before_upload(tmp_path, exit_cod
         ["bash", "-e", "-o", "pipefail", "-c", step["run"]], cwd=tmp_path, env=env
     )
     assert result.returncode == exit_code
+
+def test_project_copies_of_paper_scripts_override_managed_ones() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    for asset in ("paper-discovery.py", "paper-preview.sh"):
+        guard = f"git ls-files --error-unmatch scripts/{asset}"
+        assert guard in step["run"]
+        assert step["run"].index(guard) < step["run"].index(f"assets/{asset}")
