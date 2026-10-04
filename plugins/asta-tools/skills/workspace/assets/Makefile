@@ -70,11 +70,10 @@ endif
 ASTA_WORKSPACE_MK := .asta/cache/$(ASTA_PLUGINS_REF)/workspace.mk
 include $(ASTA_WORKSPACE_MK)
 
-ifneq ($(filter check,$(MAKECMDGOALS)),)
-ifeq ($(ASTA_WORKSPACE_CHECK),)
-$(error selected workspace.mk does not provide the shared check gate)
-endif
-endif
+.PHONY: workspace-check-gate
+check: workspace-check-gate
+workspace-check-gate:
+	@test "$(ASTA_WORKSPACE_CHECK)" = 1 || { echo "selected workspace.mk does not provide the shared check gate" >&2; exit 1; }
 
 # Floating channels refresh at most once an hour. A failed refresh keeps the
 # last working copy so local work can continue offline.
