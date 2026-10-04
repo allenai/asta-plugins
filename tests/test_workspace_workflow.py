@@ -912,7 +912,9 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert release_ref.read_text().strip() == "v0.106.0"
     fallback_file = _managed_cache_file(project, "v0.107.0")
     assert fallback_file.read_text().startswith("# asta-fallback\n")
-    fallback_file.write_text(fallback_file.read_text().removeprefix("# asta-fallback\n"))
+    fallback_file.write_text(
+        fallback_file.read_text().removeprefix("# asta-fallback\n")
+    )
 
     repo.rename(tmp_path / "versions-offline")
     os.utime(release_ref, (0, 0))
