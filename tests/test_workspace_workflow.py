@@ -103,7 +103,56 @@ def test_generated_latex_is_previewed_without_being_committed(tmp_path: Path) ->
     ).read_text().strip() == ("Could not update LaTeX package lists.")
     assert (project / "gen/main.tex").read_text().strip() == "paper"
     assert _git(project, "log", "--format=%s") == "base"
+    assert _git(project, "diff", "--cached", "--name-only") == ""
     assert len(_git(project, "worktree", "list").splitlines()) == 1
+
+
+def test_paper_generated_by_check_is_staged_for_discovery(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        base = _generated_paper_project(project)
+        generated = project / "gen"
+        generated.mkdir()
+        (generated / "main.tex").write_text("paper")
+        (generated / "latexmkrc").write_text("rc")
+        return base
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-previews/gen/build-failed.txt").is_file()
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+
+
+def test_broken_latex_target_fails_discovery(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("latex: missing-prerequisite\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert "No rule to make target 'missing-prerequisite'" in result.stderr
+    assert (
+        project / "_site/paper-previews/build-failed.txt"
+    ).read_text().strip() == "make latex failed; see the build log."
+
+
+def test_committed_paper_is_not_replaced_by_latex_target(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("latex:\n\techo generated > paper/main.tex\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert (project / "paper/main.tex").read_text() == "paper"
+    assert _git(project, "diff", "--cached", "--name-only") == ""
 
 
 def test_workspace_can_pin_quarto_for_generated_sources() -> None:
