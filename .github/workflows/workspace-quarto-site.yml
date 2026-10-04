@@ -100,6 +100,53 @@ jobs:
           fi
           discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
           curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
+          # Papers made by `make latex` are build outputs, not committed sources.
+          # Commit them to throwaway commits on head and base (HEAD is restored
+          # on exit) so discovery and diffs treat them like committed papers.
+          orig_head=$(git rev-parse -q --verify HEAD 2>/dev/null || true)
+          gen_base=""
+          trap '[ -z "$orig_head" ] || git reset -q --mixed "$orig_head"; [ -z "$gen_base" ] || git worktree remove --force "$gen_base" 2>/dev/null || true' EXIT
+          generate_latex() {
+            local dry_run papers paths d
+            dry_run=$(mktemp)
+            if ! make -C "$1" -n latex > "$dry_run" 2>&1; then
+              if grep -Fq "No rule to make target 'latex'." "$dry_run"; then
+                rm -f "$dry_run"
+                return 0
+              fi
+              cat "$dry_run" >&2
+              rm -f "$dry_run"
+              return 1
+            fi
+            rm -f "$dry_run"
+            git -C "$1" diff --cached --quiet || { echo '::error::make check staged files before paper generation'; return 1; }
+            make -C "$1" latex || return 1
+            papers=$(cd "$1" && python3 /tmp/paper-discovery.py "") || return 1
+            jq -e '.papers | type == "array"' <<< "$papers" >/dev/null || return 1
+            paths=$(mktemp)
+            while IFS= read -r d; do
+              # A committed paper is the project's source, even if the target rewrites it.
+              if [ -n "$(git -C "$1" ls-files -- "$d")" ]; then
+                git -C "$1" restore --worktree -- "$d" || { rm -f "$paths"; return 1; }
+              fi
+              (cd "$1" && find "$d" \( -type d -name build -o -type d -name html \) -prune -o \( -type f -o -type l \) -print0) >> "$paths"
+            done < <(jq -r '.papers[]' <<< "$papers")
+            if [ -s "$paths" ]; then
+              git -C "$1" add -f --pathspec-from-file="$paths" --pathspec-file-nul || { rm -f "$paths"; return 1; }
+            fi
+            rm -f "$paths"
+            git -C "$1" diff --cached --quiet && return 0
+            git -C "$1" -c user.name=asta-preview -c user.email=asta-preview@localhost \
+              commit -q -m 'Generated LaTeX (preview only)'
+          }
+          [ -z "$orig_head" ] || generate_latex . || fail_discovery 'make latex failed; see the build log.'
+          if [ -n "$base" ] && gen_base=$(mktemp -d) && git worktree add -q --detach "$gen_base" "$base"; then
+            if generate_latex "$gen_base"; then
+              base=$(git -C "$gen_base" rev-parse HEAD)
+            else
+              echo '::warning::make latex failed on the PR base; its generated papers are treated as absent'
+            fi
+          fi
           discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
           jq -e '(.papers | type == "array" and all(.[]; type == "string")) and (.removed | type == "array" and all(.[]; type == "string")) and (.warnings | type == "array" and all(.[]; type == "string"))' <<< "$discovery" >/dev/null || fail_discovery 'Paper discovery returned invalid data.'
           mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
