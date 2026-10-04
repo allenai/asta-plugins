@@ -274,6 +274,58 @@ def test_generated_base_and_head_keep_distinct_sources(tmp_path: Path) -> None:
     assert len(_git(project, "worktree", "list").splitlines()) == 1
 
 
+def test_generated_shared_inputs_are_available_on_base_and_head(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / ".gitignore").write_text(
+            "gen/\nshared/\ndata/\nprivate.bib\n_site/\n"
+        )
+        (project / "source.txt").write_text("before\n")
+        (project / "Makefile").write_text(
+            "check:\n\t@true\n"
+            "latex:\n\tmkdir -p gen shared data\n"
+            "\tcp source.txt gen/main.tex\n"
+            "\tprintf rc > gen/latexmkrc\n"
+            "\tcp source.txt shared/citations.sty\n"
+            "\tcp source.txt data/table.csv\n"
+            "\tprintf private > private.bib\n"
+            "\tprintf '%s\\n' shared/citations.sty data/table.csv >> "
+            '"$$ASTA_PAPER_INPUTS_FILE"\n'
+        )
+        _git(project, "init", "-q")
+        _git(project, "add", ".gitignore", "Makefile", "source.txt", "paper/main.tex")
+        _git(project, "commit", "-q", "-m", "base")
+        base = _git(project, "rev-parse", "HEAD")
+        (project / "source.txt").write_text("after\n")
+        _git(project, "add", "source.txt")
+        _git(project, "commit", "-q", "-m", "change")
+        return base
+
+    paper_script = (
+        "#!/bin/bash\n"
+        'git show "$1:shared/citations.sty" > _site/base-style.txt\n'
+        'git show "$1:data/table.csv" > _site/base-table.txt\n'
+        "git show HEAD:shared/citations.sty > _site/head-style.txt\n"
+        "git show HEAD:data/table.csv > _site/head-table.txt\n"
+        "if git cat-file -e HEAD:private.bib 2>/dev/null; then exit 1; fi\n"
+    )
+    project, result = _run_paper_step(
+        tmp_path, prepare=prepare, paper_script=paper_script, inspect_stage=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/base-style.txt").read_text() == "before\n"
+    assert (project / "_site/base-table.txt").read_text() == "before\n"
+    assert (project / "_site/head-style.txt").read_text() == "after\n"
+    assert (project / "_site/head-table.txt").read_text() == "after\n"
+    assert set((tmp_path / "staged.txt").read_text().splitlines()) == {
+        "gen/main.tex",
+        "gen/latexmkrc",
+        "shared/citations.sty",
+        "data/table.csv",
+    }
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+
+
 def test_base_check_prepares_inputs_for_generated_paper(tmp_path: Path) -> None:
     def prepare(project: Path) -> str:
         (project / ".gitignore").write_text("gen/\n_site/\n")
