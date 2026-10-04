@@ -533,6 +533,23 @@ def test_workspace_makefile_ref_validation_does_not_run_shell_input(
     assert not marker.exists()
 
 
+def test_workspace_makefile_ref_validation_does_not_expand_make_input(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "unexpected"
+    (tmp_path / "Makefile").write_text((WORKSPACE_ASSETS / "Makefile").read_text())
+    result = subprocess.run(
+        ["make", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_PLUGINS_REF": f"$(shell touch {marker})"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "Invalid asta-plugins ref" in result.stderr
+    assert not marker.exists()
+
+
 @pytest.mark.parametrize("has_managed_asset", [False, True])
 def test_workspace_makefile_legacy_fallback(
     tmp_path: Path, has_managed_asset: bool

@@ -21,6 +21,9 @@ ASTA_LOAD_WORKSPACE_MK := 1
 endif
 
 ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
+ifneq ($(origin ASTA_PLUGINS_REF),undefined)
+override ASTA_PLUGINS_REF := $(value ASTA_PLUGINS_REF)
+endif
 ifndef ASTA_PLUGINS_REF
 ASTA_PLUGINS_REF := $(shell awk '/^[[:space:]]*uses:[[:space:]]*/ && /allenai\/asta-plugins\/\.github\/workflows\/workspace-quarto-site\.yml@/ { sub(/^.*workspace-quarto-site\.yml@/, ""); sub(/[^A-Za-z0-9._\/-].*$$/, ""); print; exit }' .github/workflows/docs.yml 2>/dev/null)
 endif
