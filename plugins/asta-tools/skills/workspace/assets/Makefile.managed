@@ -1,5 +1,7 @@
 # Keep project targets here; the shared targets come from the selected
-# asta-plugins version. Commit workspace.mk to take ownership of them.
+# asta-plugins version. Track workspace.mk to take ownership of them.
+# Keep .asta/cache/ ignored; remove it to fetch managed files again.
+# A tracked workspace.mk is a project-owned override, including its check target.
 # Cleaning a project must also work before the first managed-file fetch.
 # Add project cleanup as prerequisites of clean; its recipe is managed.
 .DEFAULT_GOAL := workspace-assets
@@ -28,6 +30,11 @@ ASTA_LOAD_WORKSPACE_MK := 1
 endif
 
 ifeq ($(ASTA_LOAD_WORKSPACE_MK),1)
+ifneq ($(shell git rev-parse --is-inside-work-tree 2>/dev/null),)
+ifeq ($(shell git check-ignore -q .asta/cache/ && echo ignored),)
+$(warning Add .asta/cache/ to .gitignore before using the managed Makefile)
+endif
+endif
 ASTA_REF_ORIGIN := $(origin ASTA_PLUGINS_REF)
 ifneq ($(origin ASTA_PLUGINS_REF),undefined)
 override ASTA_PLUGINS_REF := $(value ASTA_PLUGINS_REF)
@@ -64,14 +71,14 @@ endif
 endif
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
 ASTA_PLUGINS_REF := $(shell repo='$(subst ','"'"',$(value ASTA_PLUGINS_REPO))'; if command -v timeout >/dev/null 2>&1; then limit=timeout; elif command -v gtimeout >/dev/null 2>&1; then limit=gtimeout; else limit=; fi; if [ -n "$$limit" ]; then GIT_TERMINAL_PROMPT=0 GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=5 GIT_SSH_COMMAND='ssh -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1' "$$limit" 15 git ls-remote --tags --refs "$$repo" 'v*' 2>/dev/null; else GIT_TERMINAL_PROMPT=0 GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=5 GIT_SSH_COMMAND='ssh -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1' git ls-remote --tags --refs "$$repo" 'v*' 2>/dev/null; fi | awk -F/ '{print $$NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | sort -V | tail -n 1)
-ifneq ($(ASTA_CACHED_RELEASE),)
+ifeq ($(ASTA_PLUGINS_REF),$(ASTA_CACHED_RELEASE))
 $(shell touch $(ASTA_CACHE_ROOT)/default-release)
 endif
 endif
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
 ASTA_PLUGINS_REF := $(ASTA_CACHED_RELEASE)
 ifeq ($(strip $(ASTA_PLUGINS_REF)),)
-ASTA_PLUGINS_REF := $(shell find $(ASTA_CACHE_ROOT) -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c 2>/dev/null | awk -F/ '{ ref = $$(NF-1); if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/) print ref }' | sort -V | tail -n 1)
+ASTA_PLUGINS_REF := $(shell find $(ASTA_CACHE_ROOT) -mindepth 2 -maxdepth 2 -type f -name workspace.mk -size +0c ! -exec grep -Eq '^(# asta-fallback|override ASTA_PLUGINS_REF := )' {} \; -print 2>/dev/null | awk -F/ '{ ref = $$(NF-1); if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+$$/) print ref }' | sort -V | tail -n 1)
 endif
 ifneq ($(strip $(ASTA_PLUGINS_REF)),)
 $(warning Cannot look up asta-plugins releases; using cached $(ASTA_PLUGINS_REF))
@@ -103,16 +110,24 @@ $(error Invalid asta-plugins ref: $(ASTA_PLUGINS_REF))
 endif
 ASTA_WORKSPACE_MK := $(ASTA_CACHE_ROOT)/$(ASTA_PLUGINS_REF)/workspace.mk
 override ASTA_WORKSPACE_ARCHIVE := $(ASTA_CACHE_ROOT)/$(ASTA_PLUGINS_REF)/archive.tar.gz
+ASTA_REQUESTED_REF := $(ASTA_PLUGINS_REF)
+ASTA_REQUESTED_ARCHIVE := $(ASTA_WORKSPACE_ARCHIVE)
 include $(ASTA_WORKSPACE_MK)
 
 .PHONY: workspace-check-gate
 check: workspace-check-gate
 workspace-check-gate:
-	@test "$(ASTA_WORKSPACE_CHECK)" = 1 || { echo "selected workspace.mk does not provide the shared check gate" >&2; exit 1; }
+	@test "$(origin ASTA_WORKSPACE_CHECK)" = file && test "$(ASTA_WORKSPACE_CHECK)" = 1 || { echo "selected workspace.mk does not provide the shared check gate" >&2; exit 1; }
 
 # Moving refs refresh at most once an hour. A failed refresh keeps the
 # last working copy so local work can continue offline.
-ifeq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | grep -Eq '^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F]{40})$$' && echo immutable),)
+ifneq ($(shell head -n 1 '$(ASTA_WORKSPACE_MK)' 2>/dev/null | grep -E '^(# asta-fallback|override ASTA_PLUGINS_REF := )'),)
+ifeq ($(MAKE_RESTARTS),)
+.PHONY: workspace-ref-check
+workspace-ref-check: ;
+$(ASTA_WORKSPACE_MK): workspace-ref-check
+endif
+else ifeq ($(shell printf '%s\n' '$(subst ','"'"',$(ASTA_PLUGINS_REF))' | grep -Eq '^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F]{40})$$' && echo immutable),)
 ifeq ($(shell find $(ASTA_WORKSPACE_MK) -mmin -60 -type f -print 2>/dev/null),)
 .PHONY: workspace-ref-check
 workspace-ref-check: ;
@@ -122,7 +137,7 @@ endif
 
 $(ASTA_WORKSPACE_MK):
 	@set -eu; \
-	ref='$(ASTA_PLUGINS_REF)'; \
+	ref='$(ASTA_REQUESTED_REF)'; \
 	case "$$ref" in *[!A-Za-z0-9_./-]*|*..*|/*) echo "invalid asta-plugins ref: $$ref" >&2; exit 1;; esac; \
 	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \
 	if [ -z "$$url" ]; then \
@@ -134,17 +149,17 @@ $(ASTA_WORKSPACE_MK):
 			url='$(subst ','"'"',$(value ASTA_PLUGINS_REPO))/archive/'"$$ref"'.tar.gz'; \
 		fi; \
 	fi; \
-	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; trap 'exit 1' HUP INT TERM; \
+	mkdir -p '$(ASTA_CACHE_ROOT)'; tmp=$$(mktemp -d '$(ASTA_CACHE_ROOT)/.tmp.XXXXXX'); trap 'rm -rf "$$tmp"' EXIT; trap 'exit 1' HUP INT TERM; \
 	failure="workspace: cannot fetch managed Makefile from $$url"; \
 	if curl -fsSL --connect-timeout 5 --max-time 120 "$$url" -o "$$tmp/archive.tar.gz"; then \
 		failure="workspace: invalid managed Makefile archive from $$url"; \
 		if tar -tzf "$$tmp/archive.tar.gz" >/dev/null 2>&1; then \
-			entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep -E '^[^/]*/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1) || :; \
+			entry=$$(tar -tzf "$$tmp/archive.tar.gz" | grep -E '^(\./)?[^/]*/plugins/asta-tools/skills/workspace/assets/workspace\.mk$$' | head -n 1) || :; \
 			if [ -z "$$entry" ]; then \
 				failure="workspace: $$ref does not provide a managed workspace.mk; choose a newer ref or commit a custom workspace.mk"; \
 			elif tar -xzOf "$$tmp/archive.tar.gz" "$$entry" > "$$tmp/workspace.mk" && [ -s "$$tmp/workspace.mk" ]; then \
 				mkdir -p "$$(dirname "$@")"; \
-				mv "$$tmp/archive.tar.gz" "$(ASTA_WORKSPACE_ARCHIVE)"; \
+				mv "$$tmp/archive.tar.gz" "$(ASTA_REQUESTED_ARCHIVE)"; \
 				mv "$$tmp/workspace.mk" "$@"; \
 				if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ]; then \
 					ref_file=$$(mktemp '$(ASTA_CACHE_ROOT)/.default-release.XXXXXX'); \
@@ -157,7 +172,7 @@ $(ASTA_WORKSPACE_MK):
 	if [ -s "$@" ]; then touch "$@"; echo "workspace: using cached Makefile; refresh failed ($$failure)" >&2; exit 0; fi; \
 	if [ "$(ASTA_DEFAULT_RELEASE)" = 1 ] && [ -n "$(ASTA_CACHED_RELEASE)" ] && [ -s '$(ASTA_CACHE_ROOT)/$(ASTA_CACHED_RELEASE)/workspace.mk' ]; then \
 		mkdir -p "$$(dirname "$@")"; \
-		printf 'override ASTA_PLUGINS_REF := %s\noverride ASTA_WORKSPACE_ARCHIVE := %s\ninclude %s\n' \
+		printf '# asta-fallback\noverride ASTA_PLUGINS_REF := %s\noverride ASTA_WORKSPACE_ARCHIVE := %s\ninclude %s\n' \
 			'$(ASTA_CACHED_RELEASE)' '$(ASTA_CACHE_ROOT)/$(ASTA_CACHED_RELEASE)/archive.tar.gz' \
 			'$(ASTA_CACHE_ROOT)/$(ASTA_CACHED_RELEASE)/workspace.mk' > "$$tmp/fallback.mk"; \
 		mv "$$tmp/fallback.mk" "$@"; \

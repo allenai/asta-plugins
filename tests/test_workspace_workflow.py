@@ -382,8 +382,9 @@ def test_scaffolded_workflow_ref_matches_project_version() -> None:
 @pytest.mark.parametrize("quote", ["", "'", '"'])
 @pytest.mark.parametrize("inline_comment", ["", " # pinned"])
 @pytest.mark.parametrize("ref", ["v1.2.3", "feature_branch"])
+@pytest.mark.parametrize("archive_prefix", ["", "./"])
 def test_workspace_makefile_fetches_managed_targets(
-    tmp_path: Path, quote: str, inline_comment: str, ref: str
+    tmp_path: Path, quote: str, inline_comment: str, ref: str, archive_prefix: str
 ) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "workspace.mk"
@@ -391,7 +392,7 @@ def test_workspace_makefile_fetches_managed_targets(
     source.write_text("managed:\n\t@echo managed-target\n")
     archive = tmp_path / "asta-plugins.tar.gz"
     with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(archive_root, arcname=archive_root.name)
+        bundle.add(archive_root, arcname=f"{archive_prefix}{archive_root.name}")
 
     project = tmp_path / "project"
     (project / ".github/workflows").mkdir(parents=True)
@@ -637,6 +638,25 @@ def test_workspace_makefile_rejects_missing_shared_check(tmp_path: Path) -> None
     )
     assert result.returncode != 0
     assert "does not provide the shared check gate" in result.stderr
+
+    for spoof in (
+        ["make", "check"],
+        ["make", "ASTA_WORKSPACE_CHECK=1", "check"],
+    ):
+        spoofed = subprocess.run(
+            spoof,
+            cwd=project,
+            env={
+                "ASTA_PLUGINS_REF": "v1.2.3",
+                "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+                "ASTA_WORKSPACE_CHECK": "1",
+                "PATH": os.environ["PATH"],
+            },
+            text=True,
+            capture_output=True,
+        )
+        assert spoofed.returncode != 0
+        assert "does not provide the shared check gate" in spoofed.stderr
 
 
 def test_workspace_makefile_keeps_shared_check_with_project_recipe(
@@ -890,6 +910,9 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
     assert "managed-target v0.106.0" in failed_new_release.stdout
     assert "using cached release v0.106.0" in failed_new_release.stderr
     assert release_ref.read_text().strip() == "v0.106.0"
+    fallback_file = _managed_cache_file(project, "v0.107.0")
+    assert fallback_file.read_text().startswith("# asta-fallback\n")
+    fallback_file.write_text(fallback_file.read_text().removeprefix("# asta-fallback\n"))
 
     repo.rename(tmp_path / "versions-offline")
     os.utime(release_ref, (0, 0))
@@ -921,7 +944,26 @@ def test_workspace_makefile_uses_latest_release_without_docs_workflow(
         capture_output=True,
     )
     assert legacy_cache.returncode == 0, legacy_cache.stderr
-    assert "managed-target" in legacy_cache.stdout
+    assert "managed-target v0.106.0" in legacy_cache.stdout
+
+    repo = (tmp_path / "versions-offline").rename(tmp_path / "versions")
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(source.parents[5], arcname="asta-plugins-test")
+    restored = subprocess.run(
+        ["make", "managed"],
+        cwd=project,
+        env={
+            **_isolated_workspace_env(),
+            "ASTA_PLUGINS_REPO": repo.as_uri(),
+            "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert restored.returncode == 0, restored.stderr
+    assert "managed-target v0.107.0" in restored.stdout
+    assert not fallback_file.read_text().startswith("# asta-fallback")
+    assert release_ref.read_text().strip() == "v0.107.0"
 
 
 @pytest.mark.parametrize(
@@ -1155,7 +1197,10 @@ def test_workspace_makefile_latest_uses_same_branch_for_both_assets(
     assert (tmp_path / "curl-count").read_text().strip() == "1"
 
 
-def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
+@pytest.mark.parametrize("makefile_name", ["Makefile", "workspace.mk"])
+def test_workspace_makefile_refreshes_evidence_extension(
+    tmp_path: Path, makefile_name: str
+) -> None:
     archive_root = tmp_path / "archive" / "asta-plugins-test"
     source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
     shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
@@ -1177,7 +1222,7 @@ def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None
         [
             "make",
             "-f",
-            str((WORKSPACE_ASSETS / "workspace.mk").resolve()),
+            str((WORKSPACE_ASSETS / makefile_name).resolve()),
             "workspace-assets",
         ],
         cwd=project,
