@@ -104,32 +104,63 @@ jobs:
           # Commit them to throwaway commits on head and base (HEAD is restored
           # on exit) so discovery and diffs treat them like committed papers.
           orig_head=$(git rev-parse -q --verify HEAD 2>/dev/null || true)
+          orig_clean=0
           gen_base=""
-          trap '[ -z "$orig_head" ] || git reset -q --mixed "$orig_head"; [ -z "$gen_base" ] || git worktree remove --force "$gen_base" 2>/dev/null || true' EXIT
-          generate_latex() {
-            local dry_run papers paths d
-            dry_run=$(mktemp)
-            if ! make -C "$1" -n latex > "$dry_run" 2>&1; then
-              if grep -Fq "No rule to make target 'latex'." "$dry_run"; then
-                rm -f "$dry_run"
-                return 0
+          cleanup_generated() {
+            status=$?
+            trap - EXIT
+            if [ -n "$orig_head" ]; then
+              git reset -q --mixed "$orig_head" || status=1
+              if [ "$orig_clean" -eq 1 ]; then
+                git restore --worktree -- . || status=1
               fi
-              cat "$dry_run" >&2
-              rm -f "$dry_run"
+            fi
+            if [ -n "$gen_base" ]; then
+              git worktree remove --force "$gen_base" 2>/dev/null || true
+              rm -rf -- "$gen_base"
+            fi
+            exit "$status"
+          }
+          trap cleanup_generated EXIT
+          generate_latex() {
+            local target_db target_errors probe_status papers paths d path
+            target_db=$(mktemp)
+            target_errors=$(mktemp)
+            probe_status=0
+            # Query Make's target database without running recipes. An actual
+            # latex target can still fail when make executes it below.
+            LC_ALL=C make -C "$1" -pRrq --eval='__asta_workspace_probe:' \
+              __asta_workspace_probe > "$target_db" 2> "$target_errors" || probe_status=$?
+            if [ "$probe_status" -gt 1 ]; then
+              cat "$target_errors" >&2
+              rm -f "$target_db" "$target_errors"
               return 1
             fi
-            rm -f "$dry_run"
-            git -C "$1" diff --cached --quiet || { echo '::error::make check staged files before paper generation'; return 1; }
+            if ! grep -q '^latex:' "$target_db"; then
+              rm -f "$target_db" "$target_errors"
+              return 0
+            fi
+            rm -f "$target_db" "$target_errors"
+            git -C "$1" diff --cached --quiet || { echo '::error::index has staged changes before make latex'; return 1; }
+            git -C "$1" diff --quiet || { echo '::error::make check modified tracked files before make latex'; return 1; }
+            if [ "$1" = . ]; then orig_clean=1; fi
             make -C "$1" latex || return 1
+            git -C "$1" restore --worktree -- . || return 1
             papers=$(cd "$1" && python3 /tmp/paper-discovery.py "") || return 1
             jq -e '.papers | type == "array"' <<< "$papers" >/dev/null || return 1
             paths=$(mktemp)
             while IFS= read -r d; do
               # A committed paper is the project's source, even if the target rewrites it.
-              if [ -n "$(git -C "$1" ls-files -- "$d")" ]; then
-                git -C "$1" restore --worktree -- "$d" || { rm -f "$paths"; return 1; }
-              fi
-              (cd "$1" && find "$d" \( -type d -name build -o -type d -name html \) -prune -o \( -type f -o -type l \) -print0) >> "$paths"
+              if [ -n "$(git -C "$1" ls-files -- "$d/main.tex")" ]; then continue; fi
+              while IFS= read -r -d '' path; do
+                # Include sources made by make check as well as make latex,
+                # without putting TeX build products in the temporary commit.
+                case "$path" in
+                  */main.pdf) ;;
+                  *.tex|*.bib|*.bst|*.cls|*.sty|*.def|*.cfg|*.eps|*.svg|*.png|*.jpg|*.jpeg|*.pdf|*/latexmkrc|*/.latexmkrc)
+                    printf '%s\0' "$path" >> "$paths" ;;
+                esac
+              done < <(cd "$1" && find "$d" \( -type d -name build -o -type d -name html \) -prune -o \( -type f -o -type l \) -print0)
             done < <(jq -r '.papers[]' <<< "$papers")
             if [ -s "$paths" ]; then
               git -C "$1" add -f --pathspec-from-file="$paths" --pathspec-file-nul || { rm -f "$paths"; return 1; }

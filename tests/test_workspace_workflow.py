@@ -12,7 +12,14 @@ WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 
 
-def _run_paper_step(tmp_path: Path, *, download_fails: bool = False, prepare=None):
+def _run_paper_step(
+    tmp_path: Path,
+    *,
+    download_fails: bool = False,
+    prepare=None,
+    inspect_stage: bool = False,
+    paper_script: str | None = None,
+):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
         item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
@@ -29,11 +36,22 @@ def _run_paper_step(tmp_path: Path, *, download_fails: bool = False, prepare=Non
     bin_dir.mkdir()
     curl = bin_dir / "curl"
     curl.write_text(
-        '#!/bin/sh\n[ "${FAIL_CURL:-0}" != 1 ] || exit 1\ncp "$DISCOVERY_SOURCE" "$4"\n'
+        '#!/bin/sh\n[ "${FAIL_CURL:-0}" != 1 ] || exit 1\n'
+        'if [ -n "${PAPER_SOURCE:-}" ] && [ "${2#*paper-preview.sh}" != "$2" ]; then\n'
+        '  cp "$PAPER_SOURCE" "$4"\n'
+        "else\n"
+        '  cp "$DISCOVERY_SOURCE" "$4"\n'
+        "fi\n"
     )
     curl.chmod(0o755)
     sudo = bin_dir / "sudo"
-    sudo.write_text("#!/bin/sh\nexit 1\n")
+    sudo.write_text(
+        "#!/bin/sh\n"
+        'if [ -n "${INSPECT_STAGE_PATH:-}" ]; then\n'
+        '  git diff-tree --no-commit-id --name-only -r HEAD > "$INSPECT_STAGE_PATH"\n'
+        "fi\n"
+        '[ -n "${PAPER_SOURCE:-}" ]\n'
+    )
     sudo.chmod(0o755)
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
@@ -41,6 +59,12 @@ def _run_paper_step(tmp_path: Path, *, download_fails: bool = False, prepare=Non
         "DISCOVERY_SOURCE": str(source.resolve()),
         "FAIL_CURL": "1" if download_fails else "0",
     }
+    if inspect_stage:
+        env["INSPECT_STAGE_PATH"] = str(tmp_path / "staged.txt")
+    if paper_script is not None:
+        source = tmp_path / "paper-preview.sh"
+        source.write_text(paper_script)
+        env["PAPER_SOURCE"] = str(source)
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
         cwd=project,
@@ -107,20 +131,98 @@ def test_generated_latex_is_previewed_without_being_committed(tmp_path: Path) ->
     assert len(_git(project, "worktree", "list").splitlines()) == 1
 
 
-def test_paper_generated_by_check_is_staged_for_discovery(tmp_path: Path) -> None:
+def test_paper_generated_by_check_is_discovered_without_staging_artifacts(
+    tmp_path: Path,
+) -> None:
     def prepare(project: Path) -> str:
         base = _generated_paper_project(project)
         generated = project / "gen"
         generated.mkdir()
         (generated / "main.tex").write_text("paper")
         (generated / "latexmkrc").write_text("rc")
+        (generated / "figure.pdf").write_text("figure")
+        (generated / "main.pdf").write_text("built paper")
+        (generated / "main.aux").write_text("build artifact")
+        (generated / ".env").write_text("local file")
+        return base
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare, inspect_stage=True)
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-previews/gen/build-failed.txt").is_file()
+    assert set((tmp_path / "staged.txt").read_text().splitlines()) == {
+        "gen/figure.pdf",
+        "gen/latexmkrc",
+        "gen/main.tex",
+    }
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+
+
+def test_missing_latex_target_keeps_existing_paper(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / "Makefile").write_text("check:\n\t@true\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        return _git(project, "rev-parse", "HEAD")
+
+    project, result = _run_paper_step(tmp_path, prepare=prepare)
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-previews/paper/build-failed.txt").is_file()
+    assert not (project / "_site/paper-previews/build-failed.txt").exists()
+
+
+def test_generated_base_and_head_keep_distinct_sources(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        base = _generated_paper_project(project)
+        makefile = project / "Makefile"
+        makefile.write_text(makefile.read_text().replace("echo paper", "echo changed"))
+        _git(project, "add", "Makefile")
+        _git(project, "commit", "-q", "-m", "change")
+        return base
+
+    paper_script = (
+        "#!/bin/bash\n"
+        'if [ "$2" = gen ]; then\n'
+        '  git show "$1:gen/main.tex" > _site/base-paper.txt\n'
+        "  cp gen/main.tex _site/head-paper.txt\n"
+        "fi\n"
+    )
+    project, result = _run_paper_step(
+        tmp_path, prepare=prepare, paper_script=paper_script
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/base-paper.txt").read_text().strip() == "paper"
+    assert (project / "_site/head-paper.txt").read_text().strip() == "changed"
+    assert _git(project, "log", "--format=%s") == "change\nbase"
+    assert _git(project, "diff", "--cached", "--name-only") == ""
+    assert len(_git(project, "worktree", "list").splitlines()) == 1
+
+
+def test_base_latex_failure_keeps_head_preview(tmp_path: Path) -> None:
+    def prepare(project: Path) -> str:
+        (project / ".gitignore").write_text("gen/\n_site/\n")
+        (project / "Makefile").write_text("latex: missing-prerequisite\n")
+        _git(project, "init", "-q")
+        _git(project, "add", ".")
+        _git(project, "commit", "-q", "-m", "base")
+        base = _git(project, "rev-parse", "HEAD")
+        (project / "Makefile").write_text(
+            "latex:\n\tmkdir -p gen\n\techo paper > gen/main.tex\n"
+            "\techo rc > gen/latexmkrc\n"
+        )
+        _git(project, "add", "Makefile")
+        _git(project, "commit", "-q", "-m", "fix")
         return base
 
     project, result = _run_paper_step(tmp_path, prepare=prepare)
 
     assert result.returncode != 0
+    assert "make latex failed on the PR base" in result.stdout
     assert (project / "_site/paper-previews/gen/build-failed.txt").is_file()
-    assert _git(project, "diff", "--cached", "--name-only") == ""
+    assert _git(project, "log", "--format=%s") == "fix\nbase"
 
 
 def test_broken_latex_target_fails_discovery(tmp_path: Path) -> None:
