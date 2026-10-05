@@ -6,6 +6,7 @@ on:
       - Dockerfile
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - tests/fixtures/devcontainer-smoke/**
+      - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
   workflow_call:
@@ -104,3 +105,12 @@ jobs:
               -file-line-error -outdir=build main.tex
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.pdf
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.synctex.gz
+      - name: Shared paper preview builds with the image toolchain
+        if: matrix.target == 'tex'
+        run: |
+          docker run --rm \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+            -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
+            -w /w asta-smoke bash /paper-preview.sh '' paper
+          test -s tests/fixtures/devcontainer-smoke/_site/paper-previews/paper/main.pdf
+          test -s tests/fixtures/devcontainer-smoke/_site/paper-previews/paper/main.bbl

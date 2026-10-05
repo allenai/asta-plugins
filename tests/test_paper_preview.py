@@ -49,9 +49,13 @@ def paper_repo(tmp_path, old_paper=True):
         path.write_text(contents)
         path.chmod(0o755)
     with (bin_dir / "latexmk").open("a") as mock:
+        mock.write(
+            'for arg in "$@"; do case "$arg" in -deps-escape=*) exit 2;; esac; done\n'
+        )
         mock.write('printf "%s\\n" "$*" >> latexmk-args.txt\n')
         mock.write(
-            'printf "build/main.pdf: main.tex %s\\n" "$FAKE_LATEX_DEPS" > build/main.dep\n'
+            "printf '%s\\n' 'build/main.pdf :\\' '    main.tex\\' "
+            "'    '\"$FAKE_LATEX_DEPS\" > build/main.dep\n"
         )
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
@@ -666,3 +670,23 @@ def test_preamble_only_edit_links_pdf_without_highlights(tmp_path):
         "other_inputs": False,
         "unhighlighted": True,
     }
+
+
+def test_bibliography_path_with_spaces_is_detected(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    bibliography = repo / "shared refs.bib"
+    bibliography.write_text("old")
+    run("git", "add", bibliography.name, cwd=repo)
+    run("git", "commit", "-qm", "add bibliography", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    bibliography.write_text("new")
+    run("git", "commit", "-qam", "edit bibliography", cwd=repo)
+    env["FAKE_LATEX_DEPS"] = "../shared refs.bib"
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    )
+    assert manifest["changed"] is True
+    assert manifest["other_inputs"] is True
