@@ -62,7 +62,46 @@ def archive_url(repository: str, ref: str) -> str:
     if re.fullmatch(r"v\d+\.\d+\.\d+", ref):
         path = f"refs/tags/{ref}"
     elif ref in ("main", "latest"):
-        path = f"refs/heads/{ref}"
+        try:
+            found = subprocess.run(
+                [
+                    "git",
+                    "ls-remote",
+                    "--heads",
+                    "--tags",
+                    f"https://github.com/{repository}.git",
+                    f"refs/tags/{ref}",
+                    f"refs/tags/{ref}^{{}}",
+                    f"refs/heads/{ref}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise click.ClickException(f"Could not resolve asta-plugins@{ref}") from exc
+        if found.returncode != 0:
+            raise click.ClickException(f"Could not resolve asta-plugins@{ref}")
+        refs = {}
+        for line in found.stdout.splitlines():
+            sha, _, name = line.partition("\t")
+            if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+                refs[name] = sha
+        path = next(
+            (
+                refs[name]
+                for name in (
+                    f"refs/tags/{ref}^{{}}",
+                    f"refs/tags/{ref}",
+                    f"refs/heads/{ref}",
+                )
+                if name in refs
+            ),
+            "",
+        )
+        if not path:
+            raise click.ClickException(f"Could not resolve asta-plugins@{ref}")
     else:
         path = ref
     return f"https://github.com/{repository}/archive/{path}.tar.gz"

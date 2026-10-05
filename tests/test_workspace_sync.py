@@ -101,6 +101,20 @@ def test_sync_uses_called_workflow_repository_in_ci(
     assert CliRunner().invoke(cli, args).exit_code != 0
 
 
+def test_moving_ref_uses_tag_before_branch_and_fetches_commit(monkeypatch) -> None:
+    def refs(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=(f"{'a' * 40}\trefs/heads/latest\n{'b' * 40}\trefs/tags/latest\n"),
+        )
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", refs)
+    assert workspace_module.archive_url("allenai/asta-plugins", "latest") == (
+        f"https://github.com/allenai/asta-plugins/archive/{'b' * 40}.tar.gz"
+    )
+
+
 def test_sync_keeps_local_override_and_never_fetches(
     tmp_path: Path, monkeypatch
 ) -> None:
