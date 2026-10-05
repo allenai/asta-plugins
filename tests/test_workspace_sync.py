@@ -97,6 +97,10 @@ def test_sync_uses_called_workflow_repository_in_ci(
     result = CliRunner().invoke(cli, args)
     assert result.exit_code == 0, result.output
     assert calls == [("example/asta-plugins", "a" * 40)]
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.write_text(workflow.read_text().replace("example/", "Example/"))
+    assert CliRunner().invoke(cli, args).exit_code == 0
+    assert calls == [("example/asta-plugins", "a" * 40)]
     monkeypatch.setenv("ASTA_WORKSPACE_RESOLVED_REPOSITORY", "allenai/asta-plugins")
     assert CliRunner().invoke(cli, args).exit_code != 0
 
@@ -112,6 +116,18 @@ def test_moving_ref_uses_tag_before_branch_and_fetches_commit(monkeypatch) -> No
     monkeypatch.setattr(workspace_module.subprocess, "run", refs)
     assert workspace_module.archive_url("allenai/asta-plugins", "latest") == (
         f"https://github.com/allenai/asta-plugins/archive/{'b' * 40}.tar.gz"
+    )
+
+
+def test_other_branch_ref_resolves_to_commit(monkeypatch) -> None:
+    def refs(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args, 0, stdout=f"{'c' * 40}\trefs/heads/feature/paper\n"
+        )
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", refs)
+    assert workspace_module.archive_url("allenai/asta-plugins", "feature/paper") == (
+        f"https://github.com/allenai/asta-plugins/archive/{'c' * 40}.tar.gz"
     )
 
 
@@ -291,6 +307,8 @@ def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
     ):
         assert recipe(full, target) == recipe(managed, target), target
     assert recipe(full, "check") == recipe(managed, "workspace-shared-check")
+    assert "ASTA_WORKSPACE_ARCHIVE" in recipe(managed, "workspace-assets")
+    assert "ASTA_WORKSPACE_ARCHIVE" not in recipe(full, "workspace-assets")
 
 
 def test_shared_workflow_installs_cli_from_its_own_commit_for_managed_projects() -> (
@@ -337,3 +355,12 @@ def test_archive_reader_accepts_only_the_expected_regular_file(monkeypatch) -> N
         payload,
         archive.getvalue(),
     )
+
+
+def test_archive_reader_wraps_incomplete_http_response(monkeypatch) -> None:
+    def interrupted(*args, **kwargs):
+        raise workspace_module.http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(workspace_module, "urlopen", interrupted)
+    with pytest.raises(workspace_module.click.ClickException):
+        workspace_module.load_asset("allenai/asta-plugins", "v0.105.0")

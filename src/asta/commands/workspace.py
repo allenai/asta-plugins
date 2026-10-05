@@ -1,6 +1,7 @@
 """Fetch workspace build rules from the version selected by a project."""
 
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -23,6 +24,7 @@ WORKFLOW_LINE = re.compile(
     + r"(?P<ref>[A-Za-z0-9._/-]+)(?P=quote)(?:\s*(?:#.*)?)?$"
 )
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
+MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_ASSET_BYTES = 1024 * 1024
 
 
@@ -61,7 +63,9 @@ def selected_source(project: Path) -> tuple[str, str]:
 def archive_url(repository: str, ref: str) -> str:
     if re.fullmatch(r"v\d+\.\d+\.\d+", ref):
         path = f"refs/tags/{ref}"
-    elif ref in ("main", "latest"):
+    elif re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+        path = ref
+    else:
         try:
             found = subprocess.run(
                 [
@@ -102,8 +106,6 @@ def archive_url(repository: str, ref: str) -> str:
         )
         if not path:
             raise click.ClickException(f"Could not resolve asta-plugins@{ref}")
-    else:
-        path = ref
     return f"https://github.com/{repository}/archive/{path}.tar.gz"
 
 
@@ -111,7 +113,7 @@ def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
     try:
         with urlopen(archive_url(repository, ref), timeout=30) as response:
             archive = response.read(MAX_ARCHIVE_BYTES + 1)
-    except (OSError, URLError) as exc:
+    except (OSError, URLError, http.client.HTTPException) as exc:
         raise click.ClickException(
             f"Could not fetch asta-plugins@{ref}: {exc}"
         ) from exc
@@ -120,11 +122,15 @@ def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
     try:
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
             matches = []
+            total_bytes = 0
             for index, member in enumerate(bundle):
                 if index >= 10000:
                     raise click.ClickException(
                         "Asta-plugins archive has too many entries"
                     )
+                total_bytes += member.size
+                if total_bytes > MAX_UNCOMPRESSED_BYTES:
+                    raise click.ClickException("Asta-plugins archive expands too large")
                 parts = member.name.split("/", 1)
                 if len(parts) == 2 and parts[0] and parts[1] == ASSET:
                     matches.append(member)
@@ -186,10 +192,11 @@ def sync(project: Path, refresh: bool) -> None:
     repository, ref = selected_source(project)
     source_ref = os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA") or ref
     resolved_repository = os.environ.get("ASTA_WORKSPACE_RESOLVED_REPOSITORY")
-    if resolved_repository and resolved_repository != repository:
+    if resolved_repository and resolved_repository.casefold() != repository.casefold():
         raise click.ClickException(
             f"Called workflow repository {resolved_repository} differs from {repository} in docs.yml"
         )
+    repository = resolved_repository or repository
     if source_ref != ref and not re.fullmatch(r"[0-9a-fA-F]{40}", source_ref):
         raise click.ClickException(
             "ASTA_WORKSPACE_RESOLVED_SHA must be a full commit SHA"
@@ -268,7 +275,7 @@ def sync(project: Path, refresh: bool) -> None:
     )
     if cache_valid and not refresh:
         target.touch()
-        if ref in ("main", "latest"):
+        if not re.fullmatch(r"v\d+\.\d+\.\d+|[0-9a-fA-F]{40}", ref):
             click.echo(
                 f"Using cached {ref}; run 'asta workspace sync --refresh' to update",
                 err=True,

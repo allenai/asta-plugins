@@ -101,6 +101,8 @@ render: workspace-assets
 # gate, add it here (or as a prerequisite target), never as an inline workflow
 # step. The shared render/validate logic is vendored in scripts/quarto-check.sh
 # (from the workspace skill; update by re-copying, don't hand-edit).
+# Projects can require this marker so a custom rules file cannot make their
+# `check` target pass without the shared quality gate.
 ASTA_WORKSPACE_CHECK := 1
 check: workspace-shared-check
 workspace-shared-check: workspace-assets
