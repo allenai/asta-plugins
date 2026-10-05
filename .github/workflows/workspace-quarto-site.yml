@@ -84,6 +84,7 @@ jobs:
       - name: Run docs checks
         env:
           ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
+          ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
         run: make check
 
       # A broken paper must not hold back the Quarto preview: publish the rest,

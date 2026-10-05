@@ -14,18 +14,19 @@ from urllib.request import urlopen
 
 import click
 
-WORKFLOW = "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
+WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 WORKFLOW_LINE = re.compile(
-    r"^\s*uses:\s*['\"]?"
+    r"^\s*uses:\s*(?P<quote>['\"]?)"
+    r"(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
     + re.escape(WORKFLOW)
-    + r"([A-Za-z0-9._/-]+)['\"]?(?:\s*(?:#.*)?)?$"
+    + r"(?P<ref>[A-Za-z0-9._/-]+)(?P=quote)(?:\s*(?:#.*)?)?$"
 )
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_ASSET_BYTES = 1024 * 1024
 
 
-def selected_ref(project: Path) -> str:
+def selected_source(project: Path) -> tuple[str, str]:
     workflow = project / ".github/workflows/docs.yml"
     try:
         lines = workflow.read_text().splitlines()
@@ -40,34 +41,36 @@ def selected_ref(project: Path) -> str:
             raise click.ClickException(
                 f"Invalid asta-plugins workflow line in {workflow}"
             )
-        refs.append(match.group(1))
+        refs.append((match.group("repository"), match.group("ref")))
     if len(refs) != 1:
         raise click.ClickException(
             f"Expected exactly one asta-plugins workspace workflow in {workflow}"
         )
-    ref = refs[0]
+    repository, ref = refs[0]
+    if any(part in (".", "..") for part in repository.split("/")):
+        raise click.ClickException(f"Invalid workflow repository in {workflow}")
     if (
         not re.fullmatch(r"[A-Za-z0-9._/-]+", ref)
         or ref.startswith("/")
         or any(part in ("", ".", "..") for part in ref.split("/"))
     ):
         raise click.ClickException(f"Invalid asta-plugins ref in {workflow}: {ref}")
-    return ref
+    return repository, ref
 
 
-def archive_url(ref: str) -> str:
+def archive_url(repository: str, ref: str) -> str:
     if re.fullmatch(r"v\d+\.\d+\.\d+", ref):
         path = f"refs/tags/{ref}"
     elif ref in ("main", "latest"):
         path = f"refs/heads/{ref}"
     else:
         path = ref
-    return f"https://github.com/allenai/asta-plugins/archive/{path}.tar.gz"
+    return f"https://github.com/{repository}/archive/{path}.tar.gz"
 
 
-def load_asset(ref: str) -> tuple[bytes, bytes]:
+def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
     try:
-        with urlopen(archive_url(ref), timeout=30) as response:
+        with urlopen(archive_url(repository, ref), timeout=30) as response:
             archive = response.read(MAX_ARCHIVE_BYTES + 1)
     except (OSError, URLError) as exc:
         raise click.ClickException(
@@ -77,7 +80,15 @@ def load_asset(ref: str) -> tuple[bytes, bytes]:
         raise click.ClickException("Asta-plugins archive is too large")
     try:
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
-            matches = [member for member in bundle if member.name.endswith("/" + ASSET)]
+            matches = []
+            for index, member in enumerate(bundle):
+                if index >= 10000:
+                    raise click.ClickException(
+                        "Asta-plugins archive has too many entries"
+                    )
+                parts = member.name.split("/", 1)
+                if len(parts) == 2 and parts[0] and parts[1] == ASSET:
+                    matches.append(member)
             if (
                 len(matches) != 1
                 or not matches[0].isfile()
@@ -107,6 +118,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
         tmp.write(data)
         temp_path = Path(tmp.name)
     try:
+        temp_path.chmod(0o644)
         os.replace(temp_path, path)
     finally:
         temp_path.unlink(missing_ok=True)
@@ -132,8 +144,13 @@ def sync(project: Path, refresh: bool) -> None:
     if (project / "workspace.mk").exists():
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
-    ref = selected_ref(project)
+    repository, ref = selected_source(project)
     source_ref = os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA") or ref
+    resolved_repository = os.environ.get("ASTA_WORKSPACE_RESOLVED_REPOSITORY")
+    if resolved_repository and resolved_repository != repository:
+        raise click.ClickException(
+            f"Called workflow repository {resolved_repository} differs from {repository} in docs.yml"
+        )
     if source_ref != ref and not re.fullmatch(r"[0-9a-fA-F]{40}", source_ref):
         raise click.ClickException(
             "ASTA_WORKSPACE_RESOLVED_SHA must be a full commit SHA"
@@ -144,21 +161,52 @@ def sync(project: Path, refresh: bool) -> None:
     if (
         (project / ".asta").is_symlink()
         or cache.is_symlink()
+        or (cache / "archives").is_symlink()
         or target.is_symlink()
         or manifest.is_symlink()
     ):
         raise click.ClickException("Workspace cache must not be a symlink")
-    if (project / ".git").exists() and subprocess.run(
-        ["git", "check-ignore", "-q", ".asta/cache/workspace.mk"],
-        cwd=project,
-        check=False,
-    ).returncode != 0:
-        raise click.ClickException(
-            "Add .asta/cache/ to .gitignore before syncing workspace rules"
+    try:
+        inside_git = subprocess.run(
+            ["git", "-C", str(project), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
         )
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            "git is required to verify the workspace cache ignore rule"
+        ) from exc
+    if inside_git.returncode == 0 and inside_git.stdout.strip() == "true":
+        ignored = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project),
+                "check-ignore",
+                "-q",
+                ".asta/cache/workspace.mk",
+            ],
+            check=False,
+        )
+        if ignored.returncode == 1:
+            raise click.ClickException(
+                "Add .asta/cache/ to .gitignore before syncing workspace rules"
+            )
+        if ignored.returncode != 0:
+            raise click.ClickException(
+                "Could not verify the workspace cache ignore rule"
+            )
+    elif not (
+        inside_git.returncode == 128
+        and "not a git repository" in inside_git.stderr.lower()
+    ):
+        raise click.ClickException("Could not determine whether the project is in Git")
     try:
         state = json.loads(manifest.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
+        state = {}
+    if not isinstance(state, dict):
         state = {}
     archive_sha = state.get("archive_sha256")
     if not isinstance(archive_sha, str) or not re.fullmatch(
@@ -166,8 +214,11 @@ def sync(project: Path, refresh: bool) -> None:
     ):
         archive_sha = ""
     archive_path = cache / "archives" / archive_sha
+    if archive_path.is_symlink():
+        raise click.ClickException("Workspace source archive must not be a symlink")
     cache_valid = (
         target.is_file()
+        and state.get("repository") == repository
         and state.get("ref") == ref
         and state.get("source_ref") == source_ref
         and state.get("sha256") == hashlib.sha256(target.read_bytes()).hexdigest()
@@ -177,12 +228,19 @@ def sync(project: Path, refresh: bool) -> None:
         and archive_sha == hashlib.sha256(archive_path.read_bytes()).hexdigest()
     )
     if cache_valid and not refresh:
+        target.touch()
+        if ref in ("main", "latest"):
+            click.echo(
+                f"Using cached {ref}; run 'asta workspace sync --refresh' to update",
+                err=True,
+            )
         click.echo(f"workspace.mk already cached from asta-plugins@{ref}")
         return
     try:
-        asset, archive = load_asset(source_ref)
+        asset, archive = load_asset(repository, source_ref)
     except click.ClickException:
         if cache_valid:
+            target.touch()
             click.echo(
                 f"Could not refresh asta-plugins@{ref}; using the cached copy", err=True
             )
@@ -190,6 +248,8 @@ def sync(project: Path, refresh: bool) -> None:
         raise
     archive_sha = hashlib.sha256(archive).hexdigest()
     archive_path = cache / "archives" / archive_sha
+    if archive_path.is_symlink():
+        raise click.ClickException("Workspace source archive must not be a symlink")
     if not archive_path.is_file():
         _atomic_write(archive_path, archive)
     managed = (
@@ -201,6 +261,7 @@ def sync(project: Path, refresh: bool) -> None:
         manifest,
         json.dumps(
             {
+                "repository": repository,
                 "ref": ref,
                 "source_ref": source_ref,
                 "sha256": hashlib.sha256(managed).hexdigest(),

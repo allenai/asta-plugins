@@ -1,12 +1,14 @@
 # Optional compact entry point; use after the CLI version that adds workspace sync.
 # A local workspace.mk takes precedence when a project customizes shared rules.
+# Copied scripts remain project-owned for now; the preview workflow warns on drift.
 .DEFAULT_GOAL := preview
 ifneq ($(wildcard workspace.mk),)
 include workspace.mk
 else
 include .asta/cache/workspace.mk
 .asta/cache/workspace.mk: .github/workflows/docs.yml
-	asta workspace sync
+	@command -v asta >/dev/null || { echo 'Install the Asta CLI to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
+	@asta workspace sync
 endif
 
 .PHONY: update-workspace
