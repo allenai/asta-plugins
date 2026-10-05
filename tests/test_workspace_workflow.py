@@ -310,8 +310,8 @@ def test_workspace_can_pin_quarto_for_generated_sources() -> None:
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 4
-    assert workflow.count("${{ job.workflow_sha }}") == 4
+    assert workflow.count("${{ job.workflow_repository }}") == 5
+    assert workflow.count("${{ job.workflow_sha }}") == 6
     assert "github.job_workflow" not in workflow
 
 
