@@ -131,6 +131,39 @@ def test_other_branch_ref_resolves_to_commit(monkeypatch) -> None:
     )
 
 
+def test_version_shaped_branch_without_tag_resolves_to_commit(monkeypatch) -> None:
+    def refs(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args, 0, stdout=f"{'c' * 40}\trefs/heads/v1.2.3\n"
+        )
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", refs)
+    assert workspace_module.archive_url("allenai/asta-plugins", "v1.2.3") == (
+        f"https://github.com/allenai/asta-plugins/archive/{'c' * 40}.tar.gz"
+    )
+
+
+def test_sync_replaces_corrupt_cached_archive(tmp_path: Path, monkeypatch) -> None:
+    project = project_with_ref(tmp_path, "main")
+    calls = []
+
+    def fetch(repository, ref):
+        calls.append((repository, ref))
+        return b"rule", b"archive"
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    args = ["workspace", "sync", "--project", str(project)]
+    runner = CliRunner()
+    assert runner.invoke(cli, args).exit_code == 0
+    archive_path = next((project / ".asta/cache/archives").iterdir())
+    archive_path.write_bytes(b"corrupt")
+
+    result = runner.invoke(cli, args)
+    assert result.exit_code == 0, result.output
+    assert calls == [("allenai/asta-plugins", "main")] * 2
+    assert archive_path.read_bytes() == b"archive"
+
+
 def test_sync_keeps_local_override_and_never_fetches(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -380,7 +413,7 @@ def test_archive_reader_accepts_only_the_expected_regular_file(monkeypatch) -> N
     monkeypatch.setattr(
         workspace_module, "urlopen", lambda *_args, **_kwargs: Response()
     )
-    assert workspace_module.load_asset("allenai/asta-plugins", "v0.105.0") == (
+    assert workspace_module.load_asset("allenai/asta-plugins", "a" * 40) == (
         payload,
         archive.getvalue(),
     )
@@ -392,4 +425,4 @@ def test_archive_reader_wraps_incomplete_http_response(monkeypatch) -> None:
 
     monkeypatch.setattr(workspace_module, "urlopen", interrupted)
     with pytest.raises(workspace_module.click.ClickException):
-        workspace_module.load_asset("allenai/asta-plugins", "v0.105.0")
+        workspace_module.load_asset("allenai/asta-plugins", "a" * 40)

@@ -61,9 +61,7 @@ def selected_source(project: Path) -> tuple[str, str]:
 
 
 def archive_url(repository: str, ref: str) -> str:
-    if re.fullmatch(r"v\d+\.\d+\.\d+", ref):
-        path = f"refs/tags/{ref}"
-    elif re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+    if re.fullmatch(r"[0-9a-fA-F]{40}", ref):
         path = ref
     else:
         try:
@@ -296,7 +294,10 @@ def sync(project: Path, refresh: bool) -> None:
     archive_path = cache / "archives" / archive_sha
     if archive_path.is_symlink():
         raise click.ClickException("Workspace source archive must not be a symlink")
-    if not archive_path.is_file():
+    if (
+        not archive_path.is_file()
+        or hashlib.sha256(archive_path.read_bytes()).hexdigest() != archive_sha
+    ):
         _atomic_write(archive_path, archive)
     managed = (
         f"override ASTA_PLUGINS_REF := {ref}\n"
