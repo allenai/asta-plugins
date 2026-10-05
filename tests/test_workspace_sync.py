@@ -247,6 +247,27 @@ def test_sync_reads_quoted_ref_with_comment(tmp_path: Path, monkeypatch) -> None
     assert (project / ".asta/cache/workspace.mk").read_bytes().endswith(b"main")
 
 
+def test_multiple_workflow_calls_must_select_one_source(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    workflow = project / ".github/workflows/docs.yml"
+    original = workflow.read_text()
+    workflow.write_text(original + original)
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda *_args: (b"rules", b"archive"),
+    )
+    args = ["workspace", "sync", "--project", str(project)]
+    assert CliRunner().invoke(cli, args).exit_code == 0
+
+    workflow.write_text(original + original.replace("@main", "@latest"))
+    result = CliRunner().invoke(cli, args)
+    assert result.exit_code != 0
+    assert "Expected one asta-plugins workspace source" in result.output
+
+
 def test_sync_rejects_mismatched_quotes(tmp_path: Path) -> None:
     project = project_with_ref(tmp_path, "main")
     workflow = project / ".github/workflows/docs.yml"

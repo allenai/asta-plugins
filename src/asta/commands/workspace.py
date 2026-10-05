@@ -44,9 +44,9 @@ def selected_source(project: Path) -> tuple[str, str]:
                 f"Invalid asta-plugins workflow line in {workflow}"
             )
         refs.append((match.group("repository"), match.group("ref")))
-    if len(refs) != 1:
+    if not refs or len(set(refs)) != 1:
         raise click.ClickException(
-            f"Expected exactly one asta-plugins workspace workflow in {workflow}"
+            f"Expected one asta-plugins workspace source in {workflow}"
         )
     repository, ref = refs[0]
     if any(part in (".", "..") for part in repository.split("/")):
