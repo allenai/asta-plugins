@@ -109,8 +109,8 @@ jobs:
         if: matrix.target == 'tex'
         run: |
           preview=$(mktemp -d "$RUNNER_TEMP/paper-preview.XXXXXX")
-          cp -R tests/fixtures/devcontainer-smoke/. "$preview/"
-          rm -rf "$preview/paper/build" "$preview/_site"
+          mkdir "$preview/paper"
+          cp tests/fixtures/devcontainer-smoke/paper/main.tex tests/fixtures/devcontainer-smoke/paper/refs.bib "$preview/paper/"
           git -C "$preview" init -q
           git -C "$preview" config user.name 'Smoke test'
           git -C "$preview" config user.email 'test@example.invalid'
