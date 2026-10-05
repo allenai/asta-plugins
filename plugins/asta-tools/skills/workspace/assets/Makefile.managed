@@ -5,6 +5,9 @@
 ifneq ($(wildcard workspace.mk),)
 include workspace.mk
 else
+ifneq ($(origin ASTA_PLUGINS_REF),undefined)
+$(error ASTA_PLUGINS_REF cannot select managed rules; change the ref in .github/workflows/docs.yml)
+endif
 include .asta/cache/workspace.mk
 .asta/cache/workspace.mk: .github/workflows/docs.yml
 	@command -v asta >/dev/null || { echo 'Install the Asta CLI to load workspace rules, or add a local workspace.mk' >&2; exit 1; }

@@ -277,6 +277,35 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     assert "managed-preview" in result.stdout
 
 
+def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "main")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(source.read_text())
+    env = {**os.environ, "ASTA_PLUGINS_REF": "v0.104.1"}
+    commands = (
+        (["make", "preview"], env),
+        (["make", "preview", "ASTA_PLUGINS_REF=v0.104.1"], os.environ),
+    )
+    for command, variables in commands:
+        result = subprocess.run(
+            command, cwd=project, env=variables, text=True, capture_output=True
+        )
+        assert result.returncode != 0
+        assert "ASTA_PLUGINS_REF cannot select managed rules" in result.stderr
+
+    (project / "workspace.mk").write_text("preview:\n\t@echo customized\n")
+    result = subprocess.run(
+        ["make", "preview"], cwd=project, env=env, text=True, capture_output=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert "customized" in result.stdout
+
+
 def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
     assets = (
         Path(__file__).resolve().parents[1]
