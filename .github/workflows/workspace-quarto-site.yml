@@ -20,6 +20,10 @@ on:
         description: Quarto CLI version used to render generated sources
         type: string
         default: release
+      artifact-command:
+        description: Optional project command after rendering and paper previews, before publication
+        type: string
+        default: ""
 
 jobs:
   # Build + quality gates (via `make check`). This is the required status
@@ -50,6 +54,15 @@ jobs:
         with:
           version: ${{ inputs.quarto-version }}
 
+      # The managed entry point needs the CLI from this workflow's own revision.
+      - name: Install Asta CLI for managed workspace rules
+        run: |
+          if [ ! -f workspace.mk ] && grep -Eq '^[[:space:]]*(-?include|sinclude)[[:space:]]+\.asta/cache/workspace\.mk([[:space:]]|$)' Makefile; then
+            python3 -m venv "$RUNNER_TEMP/asta-cli"
+            "$RUNNER_TEMP/asta-cli/bin/pip" install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
+            echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
+          fi
+
       # Shared scripts are vendored into each project. Surface (never fail on)
       # drift from the canonical copies shipped at this workflow's own commit.
       - name: Check vendored workspace scripts for drift
@@ -73,6 +86,9 @@ jobs:
       # single source of truth shared with local runs, so CI and local can't
       # drift. Warnings are surfaced to the step summary from inside the target.
       - name: Run docs checks
+        env:
+          ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
+          ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
         run: make check
 
       # A broken paper must not hold back the Quarto preview: publish the rest,
@@ -172,7 +188,7 @@ jobs:
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
             # Pages may have been force-pushed since checkout fetched its branch.
             if ! git fetch -q origin +gh-pages:refs/remotes/origin/gh-pages \
-                || ! git archive refs/remotes/origin/gh-pages -- . ':(exclude)pr-preview' | tar -x -C "$baseline"; then
+                || ! git archive refs/remotes/origin/gh-pages | tar -x --anchored --exclude=pr-preview -C "$baseline"; then
               echo "::warning::Could not read the deployed main site; skipping the diff page"
               exit 0
             fi
@@ -208,6 +224,16 @@ jobs:
           else
             echo "::warning::what-changed page generation failed; preview still published"
           fi
+
+      - name: Check project preview artifacts
+        if: inputs.artifact-command != ''
+        env:
+          ARTIFACT_COMMAND: ${{ inputs.artifact-command }}
+          SITE_DIR: _site
+          REQUIRE_WHAT_CHANGED: ${{ github.event_name == 'pull_request' }}
+          ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
+          ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
+        run: bash -e -o pipefail -c "$ARTIFACT_COMMAND"
 
       - name: Upload rendered site
         uses: actions/upload-artifact@v4

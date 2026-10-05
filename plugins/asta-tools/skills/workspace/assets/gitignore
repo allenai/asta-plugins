@@ -9,3 +9,6 @@ quarto-render.*
 # A local copy is a cache and is overwritten. To customize it, delete this line
 # and commit the directory; a committed copy or a symlink is never refreshed.
 _extensions/evidence
+
+# Shared workspace rules fetched by `asta workspace sync`.
+.asta/cache/
