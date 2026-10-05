@@ -157,14 +157,16 @@ def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
 
 def _atomic_write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
-        tmp.write(data)
-        temp_path = Path(tmp.name)
+    temp_path = None
     try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
+            temp_path = Path(tmp.name)
+            tmp.write(data)
         temp_path.chmod(0o644)
         os.replace(temp_path, path)
     finally:
-        temp_path.unlink(missing_ok=True)
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 @click.group()
@@ -222,6 +224,21 @@ def sync(project: Path, refresh: bool) -> None:
             "git is required to verify the workspace cache ignore rule"
         ) from exc
     if inside_git.returncode == 0 and inside_git.stdout.strip() == "true":
+        tracked = subprocess.run(
+            ["git", "-C", str(project), "ls-files", "--cached", "--", ".asta/cache"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            raise click.ClickException(
+                "Could not verify whether the workspace cache is tracked"
+            )
+        if tracked.stdout:
+            raise click.ClickException(
+                "Workspace cache is tracked by Git; remove it from the index with "
+                "'git rm --cached -r .asta/cache' before syncing"
+            )
         ignored = subprocess.run(
             [
                 "git",
@@ -273,7 +290,7 @@ def sync(project: Path, refresh: bool) -> None:
     )
     if cache_valid and not refresh:
         target.touch()
-        if not re.fullmatch(r"v\d+\.\d+\.\d+|[0-9a-fA-F]{40}", ref):
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", ref):
             click.echo(
                 f"Using cached {ref}; run 'asta workspace sync --refresh' to update",
                 err=True,

@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+import tempfile
 import time
 from pathlib import Path
 
@@ -141,6 +142,23 @@ def test_version_shaped_branch_without_tag_resolves_to_commit(monkeypatch) -> No
     assert workspace_module.archive_url("allenai/asta-plugins", "v1.2.3") == (
         f"https://github.com/allenai/asta-plugins/archive/{'c' * 40}.tar.gz"
     )
+
+
+def test_cached_version_shaped_branch_prompts_refresh(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "v1.2.3")
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda *_args: (b"rules", b"archive"),
+    )
+    args = ["workspace", "sync", "--project", str(project)]
+    runner = CliRunner()
+    assert runner.invoke(cli, args).exit_code == 0
+    cached = runner.invoke(cli, args)
+    assert cached.exit_code == 0
+    assert "run 'asta workspace sync --refresh' to update" in cached.output
 
 
 def test_sync_replaces_corrupt_cached_archive(tmp_path: Path, monkeypatch) -> None:
@@ -281,6 +299,57 @@ def test_sync_requires_ignored_cache_in_git_project(
     assert runner.invoke(cli, args).exit_code == 0
 
 
+def test_sync_rejects_tracked_cache_even_when_ignore_rule_exists(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    (project / ".gitignore").write_text(".asta/cache/\n")
+    cache = project / ".asta/cache"
+    cache.mkdir(parents=True)
+    (cache / "workspace.mk").write_text("tracked rules\n")
+    subprocess.run(
+        ["git", "-C", str(project), "add", "-f", ".asta/cache/workspace.mk"],
+        check=True,
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("unexpected fetch")),
+    )
+
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0
+    assert "Workspace cache is tracked by Git" in result.output
+    assert "git rm --cached -r .asta/cache" in result.output
+    assert (cache / "workspace.mk").read_text() == "tracked rules\n"
+
+
+def test_atomic_write_cleans_temp_file_after_write_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    original = tempfile.NamedTemporaryFile
+
+    class FailingFile:
+        def __init__(self, **kwargs):
+            self.file = original(**kwargs)
+            self.name = self.file.name
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.file.close()
+
+        def write(self, _data):
+            raise OSError("disk full")
+
+    monkeypatch.setattr(workspace_module.tempfile, "NamedTemporaryFile", FailingFile)
+    with pytest.raises(OSError, match="disk full"):
+        workspace_module._atomic_write(tmp_path / "workspace.mk", b"rules")
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     if shutil.which("make") is None:
         pytest.skip("make not installed")
@@ -387,6 +456,61 @@ def test_shared_workflow_installs_cli_from_its_own_commit_for_managed_projects()
         "ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}" in workflow
     )
     assert "git+https://github.com/${{ job.workflow_repository }}.git@" in workflow
+
+
+def test_managed_archive_supplies_evidence_extension(
+    tmp_path: Path, monkeypatch
+) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "main")
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    (project / "Makefile").write_text((assets / "Makefile.managed").read_text())
+    archive_file = io.BytesIO()
+    with tarfile.open(fileobj=archive_file, mode="w:gz") as bundle:
+        payload = b"evidence filter\n"
+        member = tarfile.TarInfo(
+            "asta-plugins-test/plugins/asta-tools/skills/workspace/assets/"
+            "_extensions/evidence/snippet.lua"
+        )
+        member.size = len(payload)
+        bundle.addfile(member, io.BytesIO(payload))
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda *_args: (
+            (assets / "workspace.mk").read_bytes(),
+            archive_file.getvalue(),
+        ),
+    )
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code == 0, result.output
+
+    built = subprocess.run(
+        ["make", "workspace-assets"], cwd=project, text=True, capture_output=True
+    )
+    assert built.returncode == 0, built.stderr
+    assert (project / "_extensions/evidence/snippet.lua").read_bytes() == payload
+
+
+def test_repository_archive_fits_workspace_sync_limits() -> None:
+    root = Path(__file__).resolve().parents[1]
+    archive = subprocess.run(
+        ["git", "archive", "--format=tar.gz", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert len(archive) < workspace_module.MAX_ARCHIVE_BYTES
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
+        members = bundle.getmembers()
+    assert len(members) < 10000
+    assert (
+        sum(member.size for member in members) < workspace_module.MAX_UNCOMPRESSED_BYTES
+    )
 
 
 def test_archive_reader_accepts_only_the_expected_regular_file(monkeypatch) -> None:

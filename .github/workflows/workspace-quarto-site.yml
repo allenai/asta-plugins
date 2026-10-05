@@ -53,7 +53,7 @@ jobs:
       # The managed entry point needs the CLI from this workflow's own revision.
       - name: Install Asta CLI for managed workspace rules
         run: |
-          if [ ! -f workspace.mk ] && grep -Eq '^[[:space:]]*include[[:space:]]+\.asta/cache/workspace\.mk' Makefile; then
+          if [ ! -f workspace.mk ] && grep -Eq '^[[:space:]]*(-?include|sinclude)[[:space:]]+\.asta/cache/workspace\.mk([[:space:]]|$)' Makefile; then
             python3 -m venv "$RUNNER_TEMP/asta-cli"
             "$RUNNER_TEMP/asta-cli/bin/pip" install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
             echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
