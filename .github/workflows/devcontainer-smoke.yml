@@ -113,6 +113,7 @@ jobs:
           cp tests/fixtures/devcontainer-smoke/paper/main.tex "$preview/paper/"
           cp tests/fixtures/devcontainer-smoke/paper/refs.bib "$preview/paper/shared refs.bib"
           sed -i 's/{refs.bib}/{shared refs.bib}/' "$preview/paper/main.tex"
+          grep -q '{shared refs.bib}' "$preview/paper/main.tex"
           printf '%s\n' '$deps_escape = "unix";' > "$preview/paper/latexmkrc"
           git -C "$preview" init -q
           git -C "$preview" config user.name 'Smoke test'

@@ -712,6 +712,16 @@ def test_bibliography_path_with_spaces_is_detected(tmp_path, name, escape):
     env["FAKE_LATEX_DEPS"] = f"../{name}"
     env["FAKE_DEPS_ESCAPE"] = escape
 
+    if escape != "none":
+        unnormalized = tmp_path / "unnormalized-preview.sh"
+        unnormalized.write_text(
+            SCRIPT.read_text().replace('$deps_escape = "none";', "")
+        )
+        run("bash", str(unnormalized), base, cwd=repo, env=env)
+        assert json.loads(
+            (repo / "_site/paper-previews/paper/preview.json").read_text()
+        ) == {"changed": False}
+
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
     manifest = json.loads(
@@ -719,6 +729,19 @@ def test_bibliography_path_with_spaces_is_detected(tmp_path, name, escape):
     )
     assert manifest["changed"] is True
     assert manifest["other_inputs"] is True
+
+
+def test_final_dependency_ending_in_backslash_uses_visible_fallback(tmp_path):
+    repo, base, env, _ = paper_repo(tmp_path)
+    env["FAKE_LATEX_DEPS"] = "../ends-in-backslash\\"
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert "Could not compare paper versions" in result.stdout
+    assert (repo / "_site/paper-previews/paper/main.pdf").exists()
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {"changed": True, "diff": False}
 
 
 def test_multiple_dependencies_are_each_detected(tmp_path):

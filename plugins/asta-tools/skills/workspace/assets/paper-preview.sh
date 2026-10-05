@@ -17,7 +17,7 @@ printf '{"changed":false}\n' > "$site_dir/preview.json"
 export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
 export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
 # Preserve a configured engine; request a PDF when no rc selected one.
-# Normalize this private dependency file without requiring newer CLI options.
+# -e runs after rc files: override their escaping for this private dependency file.
 (cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out=build/main.dep \
   -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)
 if [ ! -f "$dir/build/main.log" ]; then
@@ -148,6 +148,7 @@ expect_target = True
 seen_target = False
 # Latexmk indents each unescaped pathname by four spaces. Multiple output
 # formats and optional phony rules can produce more than one target.
+# A final pathname ending in a backslash is ambiguous and uses the fallback.
 for line in deps.read_text(errors="replace").splitlines():
     if not line or line.startswith("#"):
         continue
