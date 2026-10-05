@@ -5,8 +5,8 @@ on:
     paths:
       - Dockerfile
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
-      - tests/fixtures/devcontainer-smoke/**
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
+      - tests/fixtures/devcontainer-smoke/**
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
   workflow_call:
@@ -108,9 +108,29 @@ jobs:
       - name: Shared paper preview builds with the image toolchain
         if: matrix.target == 'tex'
         run: |
+          preview=$(mktemp -d "$RUNNER_TEMP/paper-preview.XXXXXX")
+          cp -R tests/fixtures/devcontainer-smoke/. "$preview/"
+          rm -rf "$preview/paper/build" "$preview/_site"
+          git -C "$preview" init -q
+          git -C "$preview" config user.name 'Smoke test'
+          git -C "$preview" config user.email 'test@example.invalid'
+          git -C "$preview" add paper/main.tex paper/refs.bib
+          git -C "$preview" commit -qm base
+          base=$(git -C "$preview" rev-parse HEAD)
+          sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/refs.bib"
+          git -C "$preview" commit -qam 'edit bibliography'
           docker run --rm \
-            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+            -v "$preview:/w" \
             -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
-            -w /w asta-smoke bash /paper-preview.sh '' paper
-          test -s tests/fixtures/devcontainer-smoke/_site/paper-previews/paper/main.pdf
-          test -s tests/fixtures/devcontainer-smoke/_site/paper-previews/paper/main.bbl
+            -w /w asta-smoke bash -euc '
+              git config --global --add safe.directory /w
+              bash /paper-preview.sh "$1" paper
+            ' _ "$base"
+          test -s "$preview/_site/paper-previews/paper/main.pdf"
+          grep -q 'Literate Programming Updated' "$preview/_site/paper-previews/paper/main.bbl"
+          python3 - "$preview/_site/paper-previews/paper/preview.json" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1]) as manifest:
+              assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
+          PY
