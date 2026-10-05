@@ -20,6 +20,10 @@ on:
         description: Quarto CLI version used to render generated sources
         type: string
         default: release
+      artifact-command:
+        description: Optional project command after rendering and paper previews, before publication
+        type: string
+        default: ""
 
 jobs:
   # Build + quality gates (via `make check`). This is the required status
@@ -220,6 +224,16 @@ jobs:
           else
             echo "::warning::what-changed page generation failed; preview still published"
           fi
+
+      - name: Check project preview artifacts
+        if: inputs.artifact-command != ''
+        env:
+          ARTIFACT_COMMAND: ${{ inputs.artifact-command }}
+          SITE_DIR: _site
+          REQUIRE_WHAT_CHANGED: ${{ github.event_name == 'pull_request' }}
+          ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
+          ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
+        run: bash -e -o pipefail -c "$ARTIFACT_COMMAND"
 
       - name: Upload rendered site
         uses: actions/upload-artifact@v4

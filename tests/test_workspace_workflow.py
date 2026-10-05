@@ -359,8 +359,8 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 6
-    assert workflow.count("${{ job.workflow_sha }}") == 6
+    assert workflow.count("${{ job.workflow_repository }}") == 7
+    assert workflow.count("${{ job.workflow_sha }}") == 7
     assert "github.job_workflow" not in workflow
 
 
@@ -930,3 +930,35 @@ def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
     assert (project / "_extensions/evidence/snippet.lua").read_bytes() == (
         WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
     ).read_bytes()
+
+
+@pytest.mark.parametrize("exit_code", [0, 23])
+def test_artifact_command_checks_completed_site_before_upload(tmp_path, exit_code):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    build = workflow["jobs"]["build"]
+    steps = build["steps"]
+    names = [s.get("name") for s in steps]
+    assert names.index("Generate What changed") < names.index(
+        "Check project preview artifacts"
+    )
+    assert names.index("Check project preview artifacts") < names.index(
+        "Upload rendered site"
+    )
+    assert build["permissions"]["contents"] == "read"
+    assert workflow["jobs"]["deploy"]["needs"] == "build"
+    assert (
+        workflow["on"]["workflow_call"]["inputs"]["artifact-command"]["default"] == ""
+    )
+    step = steps[names.index("Check project preview artifacts")]
+    assert "continue-on-error" not in step
+    (tmp_path / "_site").mkdir()
+    (tmp_path / "_site/paper.html").write_text("rendered paper")
+    env = dict(
+        os.environ,
+        SITE_DIR="_site",
+        ARTIFACT_COMMAND=f"test -s _site/paper.html; exit {exit_code}",
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]], cwd=tmp_path, env=env
+    )
+    assert result.returncode == exit_code
