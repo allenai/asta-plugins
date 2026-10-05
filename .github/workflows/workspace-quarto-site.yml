@@ -50,6 +50,15 @@ jobs:
         with:
           version: ${{ inputs.quarto-version }}
 
+      # The managed entry point needs the CLI from this workflow's own revision.
+      - name: Install Asta CLI for managed workspace rules
+        run: |
+          if grep -Eq '^[[:space:]]*include[[:space:]]+\.asta/cache/workspace\.mk' Makefile; then
+            python3 -m venv "$RUNNER_TEMP/asta-cli"
+            "$RUNNER_TEMP/asta-cli/bin/pip" install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
+            echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
+          fi
+
       # Shared scripts are vendored into each project. Surface (never fail on)
       # drift from the canonical copies shipped at this workflow's own commit.
       - name: Check vendored workspace scripts for drift
@@ -73,6 +82,8 @@ jobs:
       # single source of truth shared with local runs, so CI and local can't
       # drift. Warnings are surfaced to the step summary from inside the target.
       - name: Run docs checks
+        env:
+          ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
         run: make check
 
       # A broken paper must not hold back the Quarto preview: publish the rest,

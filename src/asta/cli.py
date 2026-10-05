@@ -7,6 +7,7 @@ from asta import __version__
 from asta.analyze_data import analyze_data
 from asta.autodiscovery.commands import autodiscovery
 from asta.commands.auth import auth
+from asta.commands.workspace import workspace
 from asta.documents import documents
 from asta.experiment import experiment
 from asta.feedback import feedback
@@ -45,6 +46,7 @@ def papers():
 
 # Register auth commands
 cli.add_command(auth)
+cli.add_command(workspace)
 
 # Register generate-theories commands
 cli.add_command(generate_theories)

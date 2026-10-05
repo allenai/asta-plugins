@@ -1,0 +1,239 @@
+"""Workspace asset sync uses the project's workflow version."""
+
+import io
+import os
+import shutil
+import subprocess
+import tarfile
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from asta.cli import cli
+from asta.commands import workspace as workspace_module
+
+
+def project_with_ref(tmp_path: Path, ref: str) -> Path:
+    project = tmp_path / "project"
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "jobs:\n  docs:\n"
+        f"    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@{ref}\n"
+    )
+    return project
+
+
+def test_sync_uses_workflow_ref_and_refreshes_only_when_requested(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    calls = []
+
+    def fetch(ref):
+        calls.append(ref)
+        return f"rule-{len(calls)}".encode(), f"archive-{len(calls)}".encode()
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    assert runner.invoke(cli, args).exit_code == 0
+    assert runner.invoke(cli, args).exit_code == 0
+    assert calls == ["main"]
+    assert runner.invoke(cli, args + ["--refresh"]).exit_code == 0
+    assert calls == ["main", "main"]
+    cached_rules = (project / ".asta/cache/workspace.mk").read_bytes()
+    assert cached_rules.endswith(b"rule-2")
+    assert b"override ASTA_PLUGINS_REF := main\n" in cached_rules
+    assert b"override ASTA_WORKSPACE_ARCHIVE := .asta/cache/archives/" in cached_rules
+    assert len(list((project / ".asta/cache/archives").iterdir())) == 2
+
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.write_text(workflow.read_text().replace("@main", "@v0.105.0"))
+    assert runner.invoke(cli, args).exit_code == 0
+    assert calls[-1] == "v0.105.0"
+
+
+def test_sync_uses_resolved_workflow_sha_in_ci(tmp_path: Path, monkeypatch) -> None:
+    project = project_with_ref(tmp_path, "main")
+    calls = []
+
+    def fetch(ref):
+        calls.append(ref)
+        return b"rule", b"archive"
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    monkeypatch.setenv("ASTA_WORKSPACE_RESOLVED_SHA", "a" * 40)
+    assert runner.invoke(cli, args).exit_code == 0
+    monkeypatch.setenv("ASTA_WORKSPACE_RESOLVED_SHA", "b" * 40)
+    assert runner.invoke(cli, args).exit_code == 0
+    assert calls == ["a" * 40, "b" * 40]
+
+
+def test_sync_keeps_local_override_and_never_fetches(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    (project / "workspace.mk").write_text("local")
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda ref: (_ for _ in ()).throw(AssertionError("unexpected fetch")),
+    )
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code == 0
+    assert (project / "workspace.mk").read_text() == "local"
+    assert not (project / ".asta/cache/workspace.mk").exists()
+
+
+def test_sync_offline_uses_only_matching_verified_cache(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda ref: (b"cached", b"archive")
+    )
+    assert runner.invoke(cli, args).exit_code == 0
+
+    def fail(ref):
+        raise workspace_module.click.ClickException("offline")
+
+    monkeypatch.setattr(workspace_module, "load_asset", fail)
+    assert runner.invoke(cli, args + ["--refresh"]).exit_code == 0
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.write_text(workflow.read_text().replace("@main", "@latest"))
+    assert runner.invoke(cli, args).exit_code != 0
+    assert (project / ".asta/cache/workspace.mk").read_bytes().endswith(b"cached")
+
+
+def test_sync_rejects_invalid_ref(tmp_path: Path) -> None:
+    project = project_with_ref(tmp_path, "../../other")
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0
+    assert "Invalid asta-plugins" in result.output
+
+
+def test_sync_reads_quoted_ref_with_comment(tmp_path: Path, monkeypatch) -> None:
+    project = project_with_ref(tmp_path, "main")
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.write_text(
+        workflow.read_text()
+        .replace("@main", "@main' # canary")
+        .replace("uses: allenai", "uses: 'allenai")
+    )
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda ref: (ref.encode(), b"archive")
+    )
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code == 0, result.output
+    assert (project / ".asta/cache/workspace.mk").read_bytes().endswith(b"main")
+
+
+def test_sync_requires_ignored_cache_in_git_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda ref: (b"shared", b"archive")
+    )
+    args = ["workspace", "sync", "--project", str(project)]
+    runner = CliRunner()
+    result = runner.invoke(cli, args)
+    assert result.exit_code != 0
+    assert "Add .asta/cache/" in result.output
+    (project / ".gitignore").write_text(".asta/cache/\n")
+    assert runner.invoke(cli, args).exit_code == 0
+
+
+def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
+    if shutil.which("make") is None:
+        return
+    project = project_with_ref(tmp_path, "main")
+    source = Path("plugins/asta-tools/skills/workspace/assets/Makefile.managed")
+    (project / "Makefile").write_text(source.read_text())
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    fake_cli = tool_dir / "asta"
+    fake_cli.write_text(
+        "#!/bin/sh\n"
+        "mkdir -p .asta/cache\n"
+        "printf 'preview:\\n\\t@echo managed-preview\\n' > .asta/cache/workspace.mk\n"
+    )
+    fake_cli.chmod(0o755)
+    result = subprocess.run(
+        ["make", "preview"],
+        cwd=project,
+        env={**os.environ, "PATH": str(tool_dir) + os.pathsep + os.environ["PATH"]},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "managed-preview" in result.stdout
+
+
+def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
+    assets = Path("plugins/asta-tools/skills/workspace/assets")
+
+    def recipe(source: str, target: str) -> str:
+        lines = source.splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith(f"{target}:"))
+        commands = []
+        for line in lines[start + 1 :]:
+            if line.startswith("\t"):
+                commands.append(line)
+            elif commands:
+                break
+        return "\n".join(commands)
+
+    full = (assets / "Makefile").read_text()
+    managed = (assets / "workspace.mk").read_text()
+    for target in (
+        "preview",
+        "render",
+        "clean",
+        "dev",
+        "deployed-url",
+        "preview-baseline",
+        "preview-ready",
+    ):
+        assert recipe(full, target) == recipe(managed, target), target
+    assert recipe(full, "check") == recipe(managed, "workspace-shared-check")
+
+
+def test_shared_workflow_installs_cli_from_its_own_commit_for_managed_projects() -> (
+    None
+):
+    workflow = Path(".github/workflows/workspace-quarto-site.yml").read_text()
+    assert "Install Asta CLI for managed workspace rules" in workflow
+    assert "job.workflow_sha" in workflow
+    assert "ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}" in workflow
+    assert "git+https://github.com/${{ job.workflow_repository }}.git@" in workflow
+
+
+def test_archive_reader_accepts_only_the_expected_regular_file(monkeypatch) -> None:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:gz") as bundle:
+        payload = b"check:\n\t@true\n"
+        entry = tarfile.TarInfo("asta-plugins-test/" + workspace_module.ASSET)
+        entry.size = len(payload)
+        bundle.addfile(entry, io.BytesIO(payload))
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def read(self, *_):
+            return archive.getvalue()
+
+    monkeypatch.setattr(
+        workspace_module, "urlopen", lambda *_args, **_kwargs: Response()
+    )
+    assert workspace_module.load_asset("v0.105.0") == (payload, archive.getvalue())
