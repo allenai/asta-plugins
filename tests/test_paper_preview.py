@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = (
     Path(__file__).parents[1]
     / "plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
@@ -49,9 +51,27 @@ def paper_repo(tmp_path, old_paper=True):
         path.write_text(contents)
         path.chmod(0o755)
     with (bin_dir / "latexmk").open("a") as mock:
+        mock.write(
+            'for arg in "$@"; do case "$arg" in -deps-escape=*) exit 2;; esac; done\n'
+        )
         mock.write('printf "%s\\n" "$*" >> latexmk-args.txt\n')
         mock.write(
-            'printf "build/main.pdf: main.tex %s\\n" "$FAKE_LATEX_DEPS" > build/main.dep\n'
+            'deps_escape="${FAKE_DEPS_ESCAPE:-none}"\n'
+            'for arg in "$@"; do\n'
+            '  if [[ "$arg" == *\'$deps_escape = "none";\'* ]]; then deps_escape=none; fi\n'
+            "done\n"
+            "printf '%s' 'build/main.pdf :\\' > build/main.dep\n"
+            "printf '\\n    main.tex' >> build/main.dep\n"
+            'if [ -n "$FAKE_LATEX_DEPS" ]; then\n'
+            "  while IFS= read -r dep; do\n"
+            '    case "$deps_escape" in\n'
+            '      unix) dep="${dep// /\\\\ }";;\n'
+            '      nmake) dep="${dep// /^ }";;\n'
+            "    esac\n"
+            "    printf '\\\\\\n    %s' \"$dep\" >> build/main.dep\n"
+            '  done <<< "$FAKE_LATEX_DEPS"\n'
+            "fi\n"
+            "printf '\\n' >> build/main.dep\n"
         )
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
@@ -94,6 +114,7 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert len(commands) == 2
     assert all("-pdf" not in command for command in commands)
     assert all("$pdf_mode ||= 1;" in command for command in commands)
+    assert '$deps_escape = "none";' in commands[0]
 
 
 def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
@@ -666,3 +687,111 @@ def test_preamble_only_edit_links_pdf_without_highlights(tmp_path):
         "other_inputs": False,
         "unhighlighted": True,
     }
+
+
+@pytest.mark.parametrize("escape", ["none", "unix", "nmake"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "shared refs.bib",
+        " leading.bib",
+        "trailing.bib ",
+        r"literal\ refs.bib",
+        "literal^ refs.bib",
+    ],
+)
+def test_bibliography_path_with_spaces_is_detected(tmp_path, name, escape):
+    repo, _, env, _ = paper_repo(tmp_path)
+    bibliography = repo / name
+    bibliography.write_text("old")
+    run("git", "add", bibliography.name, cwd=repo)
+    run("git", "commit", "-qm", "add bibliography", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    bibliography.write_text("new")
+    run("git", "commit", "-qam", "edit bibliography", cwd=repo)
+    env["FAKE_LATEX_DEPS"] = f"../{name}"
+    env["FAKE_DEPS_ESCAPE"] = escape
+
+    if escape != "none":
+        unnormalized = tmp_path / "unnormalized-preview.sh"
+        unnormalized.write_text(
+            SCRIPT.read_text().replace('$deps_escape = "none";', "")
+        )
+        run("bash", str(unnormalized), base, cwd=repo, env=env)
+        assert json.loads(
+            (repo / "_site/paper-previews/paper/preview.json").read_text()
+        ) == {"changed": False}
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    )
+    assert manifest["changed"] is True
+    assert manifest["other_inputs"] is True
+
+
+def test_final_dependency_ending_in_backslash_uses_visible_fallback(tmp_path):
+    repo, base, env, _ = paper_repo(tmp_path)
+    env["FAKE_LATEX_DEPS"] = "../ends-in-backslash\\"
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert "Could not compare paper versions" in result.stdout
+    assert (repo / "_site/paper-previews/paper/main.pdf").exists()
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {"changed": True, "diff": False}
+
+
+def test_multiple_dependencies_are_each_detected(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    for name in ("first.bib", "shared refs.bib"):
+        (repo / name).write_text("old")
+    run("git", "add", "first.bib", "shared refs.bib", cwd=repo)
+    run("git", "commit", "-qm", "add bibliographies", cwd=repo)
+    env["FAKE_LATEX_DEPS"] = "../first.bib\n../shared refs.bib"
+
+    for name in ("first.bib", "shared refs.bib"):
+        base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+        (repo / name).write_text("new")
+        run("git", "commit", "-qam", "edit bibliography", cwd=repo)
+
+        run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+        assert json.loads(
+            (repo / "_site/paper-previews/paper/preview.json").read_text()
+        ) == {"changed": True, "diff": False, "other_inputs": True}
+
+
+def test_multiple_dependency_targets_and_phony_rules_are_supported(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write(
+            "printf 'build/main.dvi :\\\\\\n    main.tex\\nmain.tex :\\n' >> build/main.dep\n"
+        )
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    )
+    assert manifest["diff"] is True
+    assert manifest["other_inputs"] is False
+
+
+@pytest.mark.parametrize(
+    "suffix", ["unexpected text\n", "bad-target:\n", "build/extra.pdf :\\\n"]
+)
+def test_invalid_trailing_dependency_output_uses_visible_fallback(tmp_path, suffix):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('printf "%s" "$FAKE_DEP_SUFFIX" >> build/main.dep\n')
+    env["FAKE_DEP_SUFFIX"] = suffix
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert "Could not compare paper versions" in result.stdout
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {"changed": True, "diff": False}

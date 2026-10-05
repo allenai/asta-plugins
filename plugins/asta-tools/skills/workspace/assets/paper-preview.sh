@@ -17,8 +17,8 @@ printf '{"changed":false}\n' > "$site_dir/preview.json"
 export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
 export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
 # Preserve a configured engine; request a PDF when no rc selected one.
-(cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -recorder -deps-out=build/main.dep \
-  -deps-escape=unix \
+# -e runs after rc files: override their escaping for this private dependency file.
+(cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out=build/main.dep \
   -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)
 if [ ! -f "$dir/build/main.log" ]; then
   echo "::error file=$dir/main.tex::LaTeX did not write $dir/build/main.log"
@@ -120,7 +120,6 @@ fallback() {
 }
 if ! flags=$(python3 - "$base" "$dir" <<'PY'
 import pathlib
-import shlex
 import subprocess
 import sys
 
@@ -145,18 +144,32 @@ for line in fls.read_text(errors="replace").splitlines():
 deps = paper_dir / "build/main.dep"
 if not deps.is_file():
     raise SystemExit("LaTeX did not record paper dependencies in build/main.dep")
-dep_text = "\n".join(
-    line for line in deps.read_text(errors="replace").splitlines()
-    if not line.lstrip().startswith("#")
-).replace("\\\n", " ")
-if ":" not in dep_text:
-    raise SystemExit("LaTeX wrote an invalid paper dependency list")
-for name in shlex.split(dep_text.partition(":")[2]):
-    path = (paper_dir / name).resolve()
-    try:
-        inputs.add(path.relative_to(root).as_posix())
-    except ValueError:
-        pass
+expect_target = True
+seen_target = False
+# Latexmk indents each unescaped pathname by four spaces. Multiple output
+# formats and optional phony rules can produce more than one target.
+# A final pathname ending in a backslash is ambiguous and uses the fallback.
+for line in deps.read_text(errors="replace").splitlines():
+    if not line or line.startswith("#"):
+        continue
+    continued = line.endswith("\\")
+    entry = line[:-1] if continued else line
+    if expect_target:
+        if not entry.endswith(" :"):
+            raise SystemExit("LaTeX wrote an invalid paper dependency target")
+        seen_target = True
+    else:
+        if not entry.startswith("    ") or not entry[4:]:
+            raise SystemExit("LaTeX wrote an invalid paper dependency path")
+        name = entry[4:]
+        path = (paper_dir / name).resolve()
+        try:
+            inputs.add(path.relative_to(root).as_posix())
+        except ValueError:
+            pass
+    expect_target = not continued
+if not seen_target or not expect_target:
+    raise SystemExit("LaTeX wrote an incomplete paper dependency list")
 
 changed = subprocess.check_output(
     ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
