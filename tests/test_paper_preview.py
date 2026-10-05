@@ -56,10 +56,18 @@ def paper_repo(tmp_path, old_paper=True):
         )
         mock.write('printf "%s\\n" "$*" >> latexmk-args.txt\n')
         mock.write(
+            'deps_escape="${FAKE_DEPS_ESCAPE:-none}"\n'
+            'for arg in "$@"; do\n'
+            '  if [[ "$arg" == *\'$deps_escape = "none";\'* ]]; then deps_escape=none; fi\n'
+            "done\n"
             "printf '%s' 'build/main.pdf :\\' > build/main.dep\n"
             "printf '\\n    main.tex' >> build/main.dep\n"
             'if [ -n "$FAKE_LATEX_DEPS" ]; then\n'
             "  while IFS= read -r dep; do\n"
+            '    case "$deps_escape" in\n'
+            '      unix) dep="${dep// /\\\\ }";;\n'
+            '      nmake) dep="${dep// /^ }";;\n'
+            "    esac\n"
             "    printf '\\\\\\n    %s' \"$dep\" >> build/main.dep\n"
             '  done <<< "$FAKE_LATEX_DEPS"\n'
             "fi\n"
@@ -106,6 +114,7 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert len(commands) == 2
     assert all("-pdf" not in command for command in commands)
     assert all("$pdf_mode ||= 1;" in command for command in commands)
+    assert '$deps_escape = "none";' in commands[0]
 
 
 def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):
@@ -680,8 +689,18 @@ def test_preamble_only_edit_links_pdf_without_highlights(tmp_path):
     }
 
 
-@pytest.mark.parametrize("name", ["shared refs.bib", " leading.bib", "trailing.bib "])
-def test_bibliography_path_with_spaces_is_detected(tmp_path, name):
+@pytest.mark.parametrize("escape", ["none", "unix", "nmake"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "shared refs.bib",
+        " leading.bib",
+        "trailing.bib ",
+        r"literal\ refs.bib",
+        "literal^ refs.bib",
+    ],
+)
+def test_bibliography_path_with_spaces_is_detected(tmp_path, name, escape):
     repo, _, env, _ = paper_repo(tmp_path)
     bibliography = repo / name
     bibliography.write_text("old")
@@ -691,6 +710,7 @@ def test_bibliography_path_with_spaces_is_detected(tmp_path, name):
     bibliography.write_text("new")
     run("git", "commit", "-qam", "edit bibliography", cwd=repo)
     env["FAKE_LATEX_DEPS"] = f"../{name}"
+    env["FAKE_DEPS_ESCAPE"] = escape
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 

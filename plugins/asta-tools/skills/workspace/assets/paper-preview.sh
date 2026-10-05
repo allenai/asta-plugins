@@ -17,7 +17,8 @@ printf '{"changed":false}\n' > "$site_dir/preview.json"
 export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
 export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
 # Preserve a configured engine; request a PDF when no rc selected one.
-(cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -recorder -deps-out=build/main.dep \
+# Normalize this private dependency file without requiring newer CLI options.
+(cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out=build/main.dep \
   -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)
 if [ ! -f "$dir/build/main.log" ]; then
   echo "::error file=$dir/main.tex::LaTeX did not write $dir/build/main.log"

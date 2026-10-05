@@ -110,14 +110,17 @@ jobs:
         run: |
           preview=$(mktemp -d "$RUNNER_TEMP/paper-preview.XXXXXX")
           mkdir "$preview/paper"
-          cp tests/fixtures/devcontainer-smoke/paper/main.tex tests/fixtures/devcontainer-smoke/paper/refs.bib "$preview/paper/"
+          cp tests/fixtures/devcontainer-smoke/paper/main.tex "$preview/paper/"
+          cp tests/fixtures/devcontainer-smoke/paper/refs.bib "$preview/paper/shared refs.bib"
+          sed -i 's/{refs.bib}/{shared refs.bib}/' "$preview/paper/main.tex"
+          printf '%s\n' '$deps_escape = "unix";' > "$preview/paper/latexmkrc"
           git -C "$preview" init -q
           git -C "$preview" config user.name 'Smoke test'
           git -C "$preview" config user.email 'test@example.invalid'
-          git -C "$preview" add paper/main.tex paper/refs.bib
+          git -C "$preview" add paper/main.tex 'paper/shared refs.bib' paper/latexmkrc
           git -C "$preview" commit -qm base
           base=$(git -C "$preview" rev-parse HEAD)
-          sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/refs.bib"
+          sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/shared refs.bib"
           git -C "$preview" commit -qam 'edit bibliography'
           docker run --rm \
             -v "$preview:/w" \
