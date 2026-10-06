@@ -3,7 +3,9 @@
 import json
 import os
 import re
+import socket
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -113,7 +115,7 @@ def test_codespaces_login_persistence_ships_in_the_image() -> None:
     ],
 )
 @pytest.mark.parametrize(
-    ("healthy", "project", "start_status", "expected_status", "expected_calls"),
+    ("port_open", "project", "start_status", "expected_status", "expected_calls"),
     [
         (True, "managed", 0, 0, ""),
         (False, "managed", 0, 0, "make preview\n"),
@@ -127,7 +129,7 @@ def test_codespaces_login_persistence_ships_in_the_image() -> None:
 )
 def test_preview_startup_preserves_prerequisites_and_reports_errors(
     tmp_path,
-    healthy,
+    port_open,
     project,
     start_status,
     expected_status,
@@ -139,12 +141,10 @@ def test_preview_startup_preserves_prerequisites_and_reports_errors(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     calls = tmp_path / "calls"
-    for name in ("curl", "make", "quarto"):
+    for name in ("python3", "make", "quarto"):
         script = bin_dir / name
-        if name == "curl":
-            body = (
-                f'printf "%s\\n" "$*" > "$PREVIEW_PROBE"\nexit {0 if healthy else 22}\n'
-            )
+        if name == "python3":
+            body = f'printf "%s\\n" "$*" > "$PREVIEW_PROBE"\nexit {0 if port_open else 1}\n'
         else:
             body = (
                 f'printf "%s\\n" "{name} $*" >> "$PREVIEW_CALLS"\nexit {start_status}\n'
@@ -173,12 +173,43 @@ def test_preview_startup_preserves_prerequisites_and_reports_errors(
     assert result.returncode == expected_status
     assert (calls.read_text() if calls.exists() else "") == expected_calls
     assert f"Quarto preview: {expected_url}" in result.stdout
-    assert (tmp_path / "probe").read_text().split() == [
-        "-sf",
-        "--max-time",
-        "2",
-        "-o",
-        "/dev/null",
-        "http://127.0.0.1:4848/",
-    ]
+    assert (tmp_path / "probe").read_text().rstrip() == (
+        '-c import socket; socket.create_connection(("127.0.0.1", 4848), 2).close()'
+    )
     assert ("Quarto preview failed" in result.stderr) == (expected_status != 0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
+def test_preview_reuses_listening_server_without_waiting_for_http(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(sys.executable)
+    calls = tmp_path / "calls"
+    for name in ("make", "quarto"):
+        script = bin_dir / name
+        script.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$PREVIEW_CALLS"\nexit 2\n'
+        )
+        script.chmod(0o755)
+    (tmp_path / "Makefile").touch()
+    (tmp_path / "_quarto.yml").touch()
+
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 4848))
+        listener.listen()
+        # The port accepts connections but never sends an HTTP response.
+        result = subprocess.run(
+            ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+            cwd=tmp_path,
+            env={
+                "PATH": f"{bin_dir}:{os.defpath}",
+                "PREVIEW_CALLS": str(calls),
+            },
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert not calls.exists(), "must not start another preview on an occupied port"
