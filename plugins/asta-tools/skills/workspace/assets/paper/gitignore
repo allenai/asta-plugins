@@ -1,0 +1,7 @@
+paper/build/
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+paper/what-changed.tex
+/paper/html/index.qmd
+/paper/html/paper-viewer.js

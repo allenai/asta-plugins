@@ -1,0 +1,4 @@
+use Cwd 'abs_path';
+use File::Basename 'dirname';
+$pdf_mode = 1;
+$ENV{'BIBINPUTS'} = abs_path(dirname(__FILE__) . '/..') . $search_path_separator . ($ENV{'BIBINPUTS'} // '') . $search_path_separator;

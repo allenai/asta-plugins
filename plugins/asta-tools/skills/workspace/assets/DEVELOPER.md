@@ -27,7 +27,7 @@ Asta auth: run `asta auth login` in the container terminal (device-code flow: op
 | You want… | Path |
 |-----------|------|
 | A PDF of the Quarto write-up itself (to share, print, or submit), with the `.qmd` staying primary | Run `quarto render index.qmd --to pdf` with a TeX toolchain such as the `-tex` image. Quarto builds this PDF through LaTeX, so the same source can also emit the `.tex` source that preprint servers and venues ask for (command below) without maintaining a separate paper. Run it on demand; keeping this rendering path outside the shared `make` targets and PR preview is deliberate. |
-| A separately written LaTeX paper that reuses the project bibliography | Write `paper/main.tex` citing `../references.bib`. `make paper` builds it, and every PR preview publishes its PDF and a LaTeX diff. In VS Code, LaTeX Workshop (in the `-tex` image) builds on save with SyncTeX. |
+| A separately written LaTeX paper that reuses the project bibliography | Write `paper/main.tex`; its `latexmkrc` locates the shared root `references.bib`. `make paper` builds it (or `make paper PAPER_DIR=<directory>` for another paper). These targets require shared rules from a release containing them; older projects can keep their own targets until upgrading. Every PR preview publishes its PDF, LaTeXML HTML and HTML/PDF diffs. In VS Code, LaTeX Workshop (in the `-tex` image) builds on save with SyncTeX. |
 
 The first path is one-way: Quarto writes LaTeX, nothing converts LaTeX back to `.qmd`. If the paper needs to diverge from the site (venue template, heavy hand edits), switch to the second path and let `paper/main.tex` become the primary copy.
 
@@ -54,7 +54,9 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make preview` | live preview on port 4848 |
 | `make render` | build to `_site/` |
 | `make check` | run the same quality gates CI runs (render + warning validation) |
-| `make clean` | wipe build artifacts |
+| `make clean` | wipe Quarto build artifacts |
+| `make paper` | compile a separate LaTeX source paper using its latexmkrc |
+| `make paper-clean` | clean that paper's build outputs |
 | `make workspace-assets` | refresh the evidence extension from `asta-plugins` (latest version tag by default) |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
