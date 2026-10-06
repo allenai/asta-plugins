@@ -31,7 +31,9 @@ jobs:
   # commit supersedes its own stale build while separate PRs and main never
   # cancel each other.
   build:
-    if: github.event.action != 'closed'
+    if: >-
+      github.event.action != 'closed' &&
+      github.event_name != 'pull_request_target' && github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
     outputs:
       paper: ${{ steps.paper.outcome }}
@@ -130,8 +132,14 @@ jobs:
             echo '::warning::Could not find the PR merge base; publishing current papers without diffs or removals'
             base=""
           fi
-          discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
-          curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
+          # A project's committed scripts/<asset> is a customization and wins.
+          if git ls-files --error-unmatch scripts/paper-discovery.py >/dev/null 2>&1; then
+            echo '::notice::Using the project copy of scripts/paper-discovery.py'
+            cp scripts/paper-discovery.py /tmp/paper-discovery.py || fail_discovery 'Could not copy scripts/paper-discovery.py.'
+          else
+            discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
+            curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
+          fi
           discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
           jq -e '(.papers | type == "array" and all(.[]; type == "string")) and (.removed | type == "array" and all(.[]; type == "string")) and (.warnings | type == "array" and all(.[]; type == "string"))' <<< "$discovery" >/dev/null || fail_discovery 'Paper discovery returned invalid data.'
           mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
@@ -162,8 +170,13 @@ jobs:
             texlive-fonts-recommended texlive-bibtex-extra \
             texlive-luatex texlive-xetex texlive-publishers \
             texlive-science texlive-pictures texlive-plain-generic biber || fail_all 'Could not install the LaTeX toolchain.'
-          script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
-          curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
+          if git ls-files --error-unmatch scripts/paper-preview.sh >/dev/null 2>&1; then
+            echo '::notice::Using the project copy of scripts/paper-preview.sh'
+            cp scripts/paper-preview.sh /tmp/paper-preview.sh || fail_all 'Could not copy scripts/paper-preview.sh.'
+          else
+            script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
+            curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
+          fi
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
             if ! bash /tmp/paper-preview.sh "$base" "$d"; then
