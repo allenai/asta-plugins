@@ -6,6 +6,7 @@ on:
       - Dockerfile
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
+      - tests/dom/check_paper_diff.mjs
       - tests/fixtures/devcontainer-smoke/**
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
@@ -111,6 +112,8 @@ jobs:
           preview=$(mktemp -d "$RUNNER_TEMP/paper-preview.XXXXXX")
           mkdir "$preview/paper"
           cp tests/fixtures/devcontainer-smoke/paper/main.tex "$preview/paper/"
+          sed -i '/\\begin{document}/i\\\usepackage[normalem]{ulem}\n\\usepackage{color}' "$preview/paper/main.tex"
+          sed -i '/\\printbibliography/i\\\textcolor{red}{\\sout{author strikethrough}}' "$preview/paper/main.tex"
           cp tests/fixtures/devcontainer-smoke/paper/refs.bib "$preview/paper/shared refs.bib"
           sed -i 's/{refs.bib}/{shared refs.bib}/' "$preview/paper/main.tex"
           grep -q '{shared refs.bib}' "$preview/paper/main.tex"
@@ -122,7 +125,8 @@ jobs:
           git -C "$preview" commit -qm base
           base=$(git -C "$preview" rev-parse HEAD)
           sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/shared refs.bib"
-          git -C "$preview" commit -qam 'edit bibliography'
+          sed -i 's/Dev container smoke test/Updated preview smoke test/' "$preview/paper/main.tex"
+          git -C "$preview" commit -qam 'edit text and bibliography'
           docker run --rm \
             -v "$preview:/w" \
             -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
@@ -131,10 +135,14 @@ jobs:
               bash /paper-preview.sh "$1" paper
             ' _ "$base"
           test -s "$preview/_site/paper-previews/paper/main.pdf"
+          test -s "$preview/_site/paper-previews/paper/what-changed.pdf"
           grep -q 'Literate Programming Updated' "$preview/_site/paper-previews/paper/main.bbl"
           python3 - "$preview/_site/paper-previews/paper/preview.json" <<'PY'
           import json
           import sys
           with open(sys.argv[1]) as manifest:
-              assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
+              result = json.load(manifest)
+              assert result["diff"] and result["html_diff"] and result["other_inputs"]
           PY
+          npm ci --prefix tests/dom
+          node tests/dom/check_paper_diff.mjs "$preview/_site/paper-previews/paper/html-diff/index.html"

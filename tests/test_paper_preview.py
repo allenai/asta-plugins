@@ -88,10 +88,6 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
     assert (repo / "_site/paper-previews/paper/html/index.html").exists()
     assert (repo / "_site/paper-previews/paper/html-diff/index.html").exists()
-    assert (
-        ".ltx_ulem_sout[style*="
-        in (repo / "_site/paper-previews/paper/html-diff/index.html").read_text()
-    )
     html = (repo / "_site/paper-previews/paper/html/index.html").read_text()
     assert 'http-equiv="Content-Security-Policy"' in html
     assert "script-src 'none'" in html
@@ -119,6 +115,41 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert all("-pdf" not in command for command in commands)
     assert all("$pdf_mode ||= 1;" in command for command in commands)
     assert '$deps_escape = "none";' in commands[0]
+
+
+def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    original_diff = r"""\providecommand{\DIFadd}[1]{{\color{blue}\uwave{#1}}}
+\providecommand{\DIFdel}[1]{{\color{red}\sout{#1}}}
+\begin{document}
+\DIFdel{old} \DIFadd{new} \textcolor{red}{\sout{author strikethrough}}
+\end{document}
+"""
+    (bin_dir / "latexdiff").write_text(
+        "#!/bin/bash\ncat <<'EOF'\n" + original_diff + "EOF\n"
+    )
+    capture = repo / "html-diff-input.tex"
+    with (bin_dir / "latexmlc").open("a") as mock:
+        mock.write(
+            'if [[ "$dest" == */html-diff/* ]]; then cp "${@: -1}" "$FAKE_CAPTURE"; fi\n'
+        )
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write(
+            'if [[ "$name" == what-changed.* ]]; then cp "$name" ../pdf-diff-input.tex; fi\n'
+        )
+    env["FAKE_CAPTURE"] = str(capture)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    converted = capture.read_text()
+    assert r"\lxWithClass{asta-diff-add}{\astadiffadd{#1}}" in converted
+    assert r"\lxWithClass{asta-diff-del}{\astadiffdel{#1}}" in converted
+    assert converted.index(r"\RequirePackage{latexml}") < converted.index(
+        r"\begin{document}"
+    )
+    assert r"\textcolor{red}{\sout{author strikethrough}}" in converted
+    assert (repo / "pdf-diff-input.tex").read_text() == original_diff
+    assert not list((repo / "paper").glob("what-changed.*.tex"))
 
 
 def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):

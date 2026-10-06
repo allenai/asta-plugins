@@ -36,24 +36,34 @@ fi
 
 convert_html() (
   local source=$1 target=$2 log=$3
-  local output="${log}.output" result=1 input="$source" prepared_dir=""
+  local output="${log}.output" result=1 input="$source" prepared_dir="" diff=${4:-false}
   trap 'if [ -n "$prepared_dir" ]; then rm -rf "$prepared_dir"; fi' EXIT
   mkdir -p "$(dirname "$target")"
   # Quarto's PDF preamble loads packages that only affect PDF navigation and
   # table footnotes. LaTeXML can spend minutes parsing their expl3 internals.
-  if grep -Fq 'pdfcreator={LaTeX via pandoc}' "$source"; then
+  if [ "$diff" = true ] || grep -Fq 'pdfcreator={LaTeX via pandoc}' "$source"; then
     if prepared_dir=$(mktemp -d); then
-      if python3 - "$source" "$prepared_dir/$(basename "$source")" <<'PY'
+      if python3 - "$source" "$prepared_dir/$(basename "$source")" "$diff" <<'PY'
 import pathlib
 import sys
 
 source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-source = source.replace(r"\usepackage{bookmark}", r"\usepackage{hyperref}")
-source = source.replace(
-    r"\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}",
-    "",
-)
-source = source.replace(r"\makesavenoteenv{longtable}", "")
+if "pdfcreator={LaTeX via pandoc}" in source:
+    source = source.replace(r"\usepackage{bookmark}", r"\usepackage{hyperref}")
+    source = source.replace(
+        r"\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}",
+        "",
+    )
+    source = source.replace(r"\makesavenoteenv{longtable}", "")
+if sys.argv[3] == "true":
+    # Preserve latexdiff's macros, but identify their output without color heuristics.
+    markers = r"""\RequirePackage{latexml}
+\let\astadiffadd\DIFadd
+\let\astadiffdel\DIFdel
+\renewcommand{\DIFadd}[1]{\lxWithClass{asta-diff-add}{\astadiffadd{#1}}}
+\renewcommand{\DIFdel}[1]{\lxWithClass{asta-diff-del}{\astadiffdel{#1}}}
+"""
+    source = source.replace(r"\begin{document}", markers + r"\begin{document}", 1)
 pathlib.Path(sys.argv[2]).write_text(source, encoding="utf-8")
 PY
       then
@@ -239,11 +249,10 @@ then
 fi
 html_diff=false
 if convert_html "$diff_tex" "$site_dir/html-diff/index.html" \
-  "$site_dir/html-diff/latexml.log"; then
+  "$site_dir/html-diff/latexml.log" true; then
   html_diff=true
   # The sandboxed "What changed" iframe can't load LaTeXML's linked stylesheets,
-  # so latexdiff's marks (red \sout, blue \uwave) would show as bare color. Inline
-  # the what-changed palette for them; the CSP already allows inline styles.
+  # so inline the palette for our explicit latexdiff classes.
   python3 - "$site_dir/html-diff/index.html" <<'PY' || true
 import pathlib
 import sys
@@ -251,12 +260,12 @@ import sys
 path = pathlib.Path(sys.argv[1])
 document = path.read_text(encoding="utf-8")
 style = """<style>
-.ltx_ulem_uwave[style*="color:#0000FF" i] { background: #d7f5dd; color: #032b13 !important;
+.asta-diff-add { background: #d7f5dd; color: #032b13 !important;
   text-decoration: none; border-radius: 2px; }
-.ltx_ulem_sout[style*="color:#FF0000" i] { background: #ffd7d5; color: #40100c !important;
+.asta-diff-del { background: #ffd7d5; color: #40100c !important;
   text-decoration: line-through; text-decoration-color: #cf222e; border-radius: 2px; }
-.ltx_ulem_uwave[style*="color:#0000FF" i] [mathcolor],
-.ltx_ulem_sout[style*="color:#FF0000" i] [mathcolor] { color: inherit; }
+.asta-diff-add [style], .asta-diff-add [mathcolor],
+.asta-diff-del [style], .asta-diff-del [mathcolor] { color: inherit !important; }
 </style>"""
 end = document.lower().find("</head>")
 if end >= 0:
