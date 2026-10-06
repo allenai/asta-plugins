@@ -79,6 +79,14 @@ The PR's “What changed” page uses the version of `what-changed.py` shipped w
 
 A custom script must accept `--old <site-dir>`, `--new <site-dir>`, `--out <html-file>`, and `--title <text>`. It must write a nonempty HTML file to `--out` and exit successfully to publish the page. `--old` is a snapshot of the deployed main site (empty before the first deploy); `--new` is the PR's rendered `_site/`.
 
+### Managed paper HTML viewers
+
+For each discovered LaTeX paper, the shared preview generates `<paper-dir>/html/index.qmd` before `make check`. This page embeds the LaTeXML rendition in the Quarto site and links the PDF; the paper's HTML and PDF diffs remain in What changed. Keep the LaTeX source and bibliography committed, and ignore the generated viewer directory. There is no viewer script to copy into the project.
+
+Add the viewer path to `project.render` if your `_quarto.yml` uses an explicit render list, and link it from your navbar or write-up. Automatic render discovery includes it without a list. Local Quarto-only previews can omit this generated page; the full paper viewer is built by the shared CI preview.
+
+To customize or eject the viewer, commit your own `<paper-dir>/html/index.qmd` (or `index.md`/`index.html`); existing pages are left untouched. A committed `scripts/paper-viewer.py` overrides the generator. This supports separately written LaTeX papers; Quarto-to-PDF stays an on-demand render of the `.qmd` source.
+
 CI runs `make check` — the identical command you can run locally before pushing, so a local pass predicts the CI result. New quality gates belong in the `check` target (or a prerequisite target), not in workflow files, so local and CI can't drift.
 
 Projects can set `artifact-command: make preview-artifact-check` under the reusable workflow's `with:` inputs to validate or extend the completed `_site/` (including paper previews and What changed). It runs with read-only permissions before upload and deployment; a failure prevents publication. Leave it unset to keep the usual behavior of publishing the Quarto site even when a paper fails.

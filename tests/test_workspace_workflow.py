@@ -359,8 +359,8 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 7
-    assert workflow.count("${{ job.workflow_sha }}") == 7
+    assert workflow.count("${{ job.workflow_repository }}") == 8
+    assert workflow.count("${{ job.workflow_sha }}") == 8
     assert "github.job_workflow" not in workflow
 
 
