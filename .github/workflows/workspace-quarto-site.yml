@@ -82,6 +82,21 @@ jobs:
             fi
           done
 
+      - name: Generate managed paper viewer pages
+        run: |
+          assets="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets"
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "$tmpdir"' EXIT
+          for name in paper-discovery.py paper-viewer.py; do
+            if git ls-files --error-unmatch "scripts/$name" >/dev/null 2>&1; then
+              cp "scripts/$name" "$tmpdir/$name"
+            else
+              curl -fsSL "$assets/$name" -o "$tmpdir/$name"
+            fi
+          done
+          set -o pipefail
+          python3 "$tmpdir/paper-discovery.py" | python3 "$tmpdir/paper-viewer.py"
+
       # All quality gates live in the repo's `check` Makefile target — the
       # single source of truth shared with local runs, so CI and local can't
       # drift. Warnings are surfaced to the step summary from inside the target.
