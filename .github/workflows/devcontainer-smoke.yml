@@ -6,6 +6,7 @@ on:
       - Dockerfile
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
+      - tests/dom/**
       - tests/fixtures/devcontainer-smoke/**
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
@@ -138,3 +139,28 @@ jobs:
           with open(sys.argv[1]) as manifest:
               assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
           PY
+
+      - name: HTML diff marks match the inline palette
+        if: matrix.target == 'tex'
+        run: |
+          preview=$(mktemp -d "$RUNNER_TEMP/paper-diff.XXXXXX")
+          mkdir "$preview/paper"
+          cp tests/fixtures/devcontainer-smoke/paper-diff/main.tex "$preview/paper/"
+          git -C "$preview" init -q
+          git -C "$preview" config user.name 'Smoke test'
+          git -C "$preview" config user.email 'test@example.invalid'
+          git -C "$preview" add paper/main.tex
+          git -C "$preview" commit -qm base
+          base=$(git -C "$preview" rev-parse HEAD)
+          sed -i 's/Dev container/Updated preview/;s/x=1/x=2/' "$preview/paper/main.tex"
+          git -C "$preview" commit -qam 'edit paper'
+          docker run --rm \
+            -v "$preview:/w" \
+            -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
+            -w /w asta-smoke bash -euc '
+              git config --global --add safe.directory /w
+              bash /paper-preview.sh "$1" paper
+            ' _ "$base"
+          test -s "$preview/_site/paper-previews/paper/what-changed.pdf"
+          npm ci --prefix tests/dom
+          node tests/dom/check_paper_diff.mjs "$preview/_site/paper-previews/paper/html-diff/index.html"
