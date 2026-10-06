@@ -1,9 +1,11 @@
 # A committed scripts/<name> wins; otherwise use the copy `asta workspace sync` caches.
 ASTA_WORKSPACE_MANAGED_SCRIPTS := 1
 ASTA_WORKSPACE_SCRIPTS ?= .asta/cache/scripts
+PYTHON ?= python3
+ASTA_WORKSPACE_VIEWERS ?= 1
 workspace_script = $(or $(firstword $(wildcard scripts/$(1) $(ASTA_WORKSPACE_SCRIPTS)/$(1))),$(error Missing $(1): update the Asta CLI and run 'asta workspace sync --refresh' or add scripts/$(1) to customize it))
 
-.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready
+.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready workspace-viewers
 
 # The project Makefile passes its selected workflow ref to the evidence fetch.
 # Standalone use can set ASTA_PLUGINS_REF or resolve the latest release tag.
@@ -95,10 +97,30 @@ workspace-assets:
 	mv "$$tmp/evidence" _extensions/evidence; \
 	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
 
-preview: workspace-assets
+workspace-viewers:
+	@set -eu; \
+	[ '$(subst ','"'"',$(ASTA_WORKSPACE_VIEWERS))' != 0 ] || exit 0; \
+	discovery='$(subst ','"'"',$(firstword $(wildcard scripts/paper-discovery.py $(ASTA_WORKSPACE_SCRIPTS)/paper-discovery.py)))'; \
+	viewer='$(subst ','"'"',$(firstword $(wildcard scripts/paper-viewer.py $(ASTA_WORKSPACE_SCRIPTS)/paper-viewer.py)))'; \
+	if [ -z "$$discovery" ] || [ -z "$$viewer" ]; then \
+		if find . -type d \( -name node_modules -o -name _site -o -name .asta -o -name .git -o -name venv -o -name .venv -o -name paper-previews \) -prune -o -type f -name main.tex -print -quit | grep -q .; then \
+			[ -n "$$discovery" ] || echo "workspace-viewers: missing paper-discovery.py" >&2; \
+			[ -n "$$viewer" ] || echo "workspace-viewers: missing paper-viewer.py" >&2; \
+			echo "workspace-viewers: update the Asta CLI and run 'asta workspace sync --refresh --require-scripts' before removing existing viewer pages" >&2; \
+		fi; exit 0; \
+	fi; \
+	python='$(subst ','"'"',$(PYTHON))'; \
+	if ! command -v "$$python" >/dev/null 2>&1; then \
+		echo "workspace-viewers: $$python is unavailable; keeping existing viewer pages" >&2; exit 0; \
+	fi; \
+	tmp=$$(mktemp); trap 'rm -f "$$tmp"' 0; \
+	"$$python" "$$discovery" > "$$tmp"; \
+	"$$python" "$$viewer" < "$$tmp"
+
+preview: workspace-assets workspace-viewers
 	quarto preview --no-browser
 
-render: workspace-assets
+render: workspace-assets workspace-viewers
 	quarto render
 
 # Run the same quality gates CI runs, in one place so local and CI can't
@@ -110,7 +132,7 @@ render: workspace-assets
 # `check` target pass without the shared quality gate.
 ASTA_WORKSPACE_CHECK := 1
 check: workspace-shared-check
-workspace-shared-check: workspace-assets
+workspace-shared-check: workspace-assets workspace-viewers
 	sh $(call workspace_script,quarto-check.sh)
 
 clean:

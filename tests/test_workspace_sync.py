@@ -3,8 +3,10 @@
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -778,7 +780,11 @@ def test_require_scripts_allows_removal_only_with_working_managed_targets(
     (project / "Makefile").write_text((assets / "Makefile.managed").read_text())
     archive = _archive(
         {
-            workspace_module.ASSET_DIR + name: f"echo managed-{name}\n".encode()
+            workspace_module.ASSET_DIR + name: (
+                (assets / name).read_bytes()
+                if name.endswith(".py")
+                else f"echo managed-{name}\n".encode()
+            )
             for name in workspace_module.SCRIPTS
         }
     )
@@ -1037,6 +1043,60 @@ def test_sync_accepts_older_archives_with_missing_scripts(
     assert runner.invoke(cli, args).exit_code == 0
 
 
+@pytest.mark.parametrize("mode", ["fresh", "cached", "offline-refresh"])
+def test_require_scripts_accepts_pre_viewer_managed_rules(tmp_path, monkeypatch, mode):
+    project = project_with_ref(tmp_path, "older-managed-release")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\ncheck:\n\t@true\n"
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: b"echo old"
+            for name in workspace_module.CHECK_SCRIPTS
+        },
+        scripts=False,
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (rules, archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    if mode != "fresh":
+        assert runner.invoke(cli, args).exit_code == 0
+
+        def offline(*_args):
+            raise workspace_module.click.ClickException("offline")
+
+        monkeypatch.setattr(workspace_module, "load_asset", offline)
+    result = runner.invoke(
+        cli,
+        args
+        + ["--require-scripts"]
+        + (["--refresh"] if mode == "offline-refresh" else []),
+    )
+    assert result.exit_code == 0, result.output
+    assert set(
+        json.loads((project / ".asta/cache/workspace.json").read_text())["scripts"]
+    ) == set(workspace_module.CHECK_SCRIPTS)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_viewer_rules_require_the_viewer_helpers(tmp_path, monkeypatch, cached):
+    project = project_with_ref(tmp_path, "main")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\nworkspace-viewers:\n\t@true\n"
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: b"echo check"
+            for name in workspace_module.CHECK_SCRIPTS
+        },
+        scripts=False,
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (rules, archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    if cached:
+        assert runner.invoke(cli, args).exit_code == 0
+    result = runner.invoke(cli, args + ["--require-scripts"])
+    assert result.exit_code != 0
+    assert "does not support all managed workspace scripts" in result.output
+
+
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_missing_managed_script_reports_sync_guidance(tmp_path: Path) -> None:
     assets = (
@@ -1153,7 +1213,11 @@ def test_ejected_rules_and_scripts_work_without_cli_or_cache(tmp_path) -> None:
     (tmp_path / "Makefile").write_text("include workspace.mk\n")
     (tmp_path / "scripts").mkdir()
     for name in workspace_module.SCRIPTS:
-        (tmp_path / "scripts" / name).write_text(f'echo "ejected-{name} $1"\n')
+        (tmp_path / "scripts" / name).write_bytes(
+            (assets / name).read_bytes()
+            if name.endswith(".py")
+            else f'echo "ejected-{name} $1"\n'.encode()
+        )
     result = subprocess.run(
         [
             shutil.which("make"),
@@ -1211,3 +1275,223 @@ def test_full_makefile_preview_helpers_need_no_cli_or_cache(tmp_path) -> None:
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == f"project {expected}"
     assert not (tmp_path / ".asta").exists()
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("goal", ["preview", "render", "check"])
+def test_local_managed_viewer_precedes_render_and_preserves_custom_pages(
+    tmp_path, monkeypatch, goal
+):
+    project = project_with_ref(tmp_path, "main")
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (project / "Makefile").write_text((assets / "Makefile.managed").read_text())
+    papers = ("paper", "research/nested")
+    for name in papers:
+        directory = project / name
+        directory.mkdir(parents=True)
+        (directory / "main.tex").write_text("paper source")
+        (directory / "latexmkrc").write_text("# config")
+    custom = project / "research/nested/html/index.qmd"
+    custom.parent.mkdir()
+    custom.write_text("custom viewer")
+    for name in workspace_module.SCRIPTS:
+        assert (assets / name).is_file(), f"Missing managed asset: {name}"
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: (assets / name).read_bytes()
+            for name in workspace_module.SCRIPTS
+        }
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda *_: ((assets / "workspace.mk").read_bytes(), archive),
+    )
+    synced = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert synced.exit_code == 0, synced.output
+    # Check the consumer sees the generated page before rendering an explicit list.
+    tools = project / "bin"
+    tools.mkdir()
+    quarto = tools / "quarto"
+    quarto.write_text(
+        "#!/bin/sh\ntest -f paper/html/index.qmd || exit 9\necho rendered\n"
+    )
+    quarto.chmod(0o755)
+    checker = project / "scripts/quarto-check.sh"
+    checker.parent.mkdir()
+    checker.write_text("test -f paper/html/index.qmd || exit 9\necho checked\n")
+    (project / ".gitignore").write_text(".asta/cache/\n/paper/html/index.qmd\n")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    result = subprocess.run(
+        ["make", "-o", "workspace-assets", goal],
+        cwd=project,
+        env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "paper/html/index.qmd").is_file()
+    assert custom.read_text() == "custom viewer"
+    assert (
+        subprocess.run(
+            ["git", "check-ignore", "-q", "paper/html/index.qmd"], cwd=project
+        ).returncode
+        == 0
+    )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_local_viewer_discovery_failure_prevents_generation(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "paper-discovery.py").write_text(
+        "import json\nprint(json.dumps({'papers': ['paper']}))\nraise SystemExit(1)\n"
+    )
+    (scripts / "paper-viewer.py").write_text(
+        'from pathlib import Path\nPath("unexpected").touch()\n'
+    )
+    result = subprocess.run(
+        ["make", "workspace-viewers"], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "unexpected").exists()
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("paper", [False, True])
+def test_older_cli_cache_keeps_existing_projects_working(tmp_path, paper):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "quarto-check.sh").write_text("echo checked\n")
+    if paper:
+        (tmp_path / "paper").mkdir()
+        (tmp_path / "paper/main.tex").write_text("source")
+    result = subprocess.run(
+        ["make", "-o", "workspace-assets", "check"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "checked" in result.stdout
+    assert ("--require-scripts" in result.stderr) == paper
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_local_viewer_skips_without_python_and_keeps_existing_pages(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_bytes((assets / name).read_bytes())
+    (scripts / "quarto-check.sh").write_text("echo checked\n")
+    existing = tmp_path / "paper/html/index.qmd"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("custom viewer")
+    (tmp_path / "sh").symlink_to(shutil.which("sh"))
+    result = subprocess.run(
+        [shutil.which("make"), "-s", "-o", "workspace-assets", "check"],
+        cwd=tmp_path,
+        env={"PATH": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "python3 is unavailable" in result.stderr
+    assert existing.read_text() == "custom viewer"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_local_viewer_accepts_apostrophe_in_cache_path(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "cache'custom"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_bytes((assets / name).read_bytes())
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "main.tex").write_text("source")
+    result = subprocess.run(
+        ["make", "-s", "workspace-viewers", "ASTA_WORKSPACE_SCRIPTS=cache'custom"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (paper / "html/index.qmd").is_file()
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_workflow_viewers_are_not_regenerated_by_managed_check(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_text('raise SystemExit("wrong cached version")\n')
+    (scripts / "quarto-check.sh").write_text("test -f paper/html/index.qmd\n")
+    page = tmp_path / "paper/html/index.qmd"
+    page.parent.mkdir(parents=True)
+    page.write_text("workflow viewer")
+    result = subprocess.run(
+        ["make", "-s", "-o", "workspace-assets", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_WORKSPACE_VIEWERS": "0"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert page.read_text() == "workflow viewer"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_viewer_python_can_be_selected_by_project(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_bytes((assets / name).read_bytes())
+    log = tmp_path / "interpreter.log"
+    interpreter = tmp_path / "selected-python"
+    interpreter.write_text(
+        f"#!/bin/sh\necho selected >> {shlex.quote(str(log))}\n"
+        f'exec {shlex.quote(sys.executable)} "$@"\n'
+    )
+    interpreter.chmod(0o755)
+    result = subprocess.run(
+        ["make", "-s", "workspace-viewers", f"PYTHON={interpreter}"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert log.read_text().splitlines() == ["selected", "selected"]
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    "directory", ["node_modules", "_site", ".asta", "venv", "paper-previews"]
+)
+def test_missing_helpers_do_not_warn_about_build_or_dependency_papers(
+    tmp_path, directory
+):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    folder = tmp_path / directory / "example"
+    folder.mkdir(parents=True)
+    (folder / "main.tex").write_text("dependency paper")
+    result = subprocess.run(
+        ["make", "-s", "workspace-viewers"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
