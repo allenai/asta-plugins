@@ -980,6 +980,41 @@ def cached_scripts(project: Path) -> Path:
     return project / ".asta/cache/scripts" / state["archive_sha256"]
 
 
+@pytest.mark.parametrize(
+    "digest", ["../outside", "/outside", "$(shell false)", "A" * 64, None, 123]
+)
+def test_invalid_archive_digest_cannot_certify_or_repair_cache(
+    tmp_path: Path, monkeypatch, digest
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\n"
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: (rules, _archive({}))
+    )
+    args = ["workspace", "sync", "--project", str(project), "--require-scripts"]
+    runner = CliRunner()
+    assert runner.invoke(cli, args).exit_code == 0
+    missing = cached_scripts(project) / "quarto-check.sh"
+    missing.unlink()
+    manifest = project / ".asta/cache/workspace.json"
+    state = json.loads(manifest.read_text())
+    state["archive_sha256"] = digest
+    manifest.write_text(json.dumps(state))
+    before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+
+    def offline(*_args):
+        raise workspace_module.click.ClickException("offline")
+
+    monkeypatch.setattr(workspace_module, "load_asset", offline)
+    result = runner.invoke(cli, args)
+    assert result.exit_code != 0
+    assert "offline" in result.output
+    assert not missing.exists()
+    assert before == {
+        path: path.read_bytes() for path in project.rglob("*") if path.is_file()
+    }
+
+
 @pytest.mark.parametrize("present", [[], ["quarto-check.sh"]])
 def test_sync_accepts_older_archives_with_missing_scripts(
     tmp_path, monkeypatch, present
@@ -1003,15 +1038,12 @@ def test_sync_accepts_older_archives_with_missing_scripts(
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("rules", ["workspace.mk"])
-def test_missing_managed_script_reports_sync_guidance(
-    tmp_path: Path, rules: str
-) -> None:
+def test_missing_managed_script_reports_sync_guidance(tmp_path: Path) -> None:
     assets = (
         Path(__file__).resolve().parents[1]
         / "plugins/asta-tools/skills/workspace/assets"
     )
-    shutil.copy(assets / rules, tmp_path / "Makefile")
+    shutil.copy(assets / "workspace.mk", tmp_path / "Makefile")
     result = subprocess.run(
         ["make", "-s", "preview-ready"],
         cwd=tmp_path,
@@ -1049,8 +1081,8 @@ def test_workspace_rules_prefer_committed_script(tmp_path: Path, committed) -> N
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("interrupted_at", ["script", "rules", "manifest"])
-def test_interrupted_refresh_keeps_rules_and_scripts_on_one_version(
+@pytest.mark.parametrize("interrupted_at", ["script", "rules", "manifest", None])
+def test_refresh_keeps_rules_and_scripts_on_one_version(
     tmp_path, monkeypatch, interrupted_at
 ) -> None:
     project = project_with_ref(tmp_path, "main")
@@ -1089,7 +1121,8 @@ def test_interrupted_refresh_keeps_rules_and_scripts_on_one_version(
         write(path, data)
 
     monkeypatch.setattr(workspace_module, "_atomic_write", interrupt)
-    assert runner.invoke(cli, args + ["--refresh"]).exit_code != 0
+    result = runner.invoke(cli, args + ["--refresh"])
+    assert (result.exit_code == 0) == (interrupted_at is None)
     assert (old_scripts / "quarto-check.sh").read_text() == "echo script-1\n"
     old_reader = project / "old-rules.mk"
     old_reader.write_bytes(old_rules)
@@ -1097,7 +1130,7 @@ def test_interrupted_refresh_keeps_rules_and_scripts_on_one_version(
         (old_reader, 1),
         (
             project / ".asta/cache/workspace.mk",
-            2 if interrupted_at == "manifest" else 1,
+            2 if interrupted_at in ("manifest", None) else 1,
         ),
     ):
         result = subprocess.run(
@@ -1108,6 +1141,41 @@ def test_interrupted_refresh_keeps_rules_and_scripts_on_one_version(
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout == f"rules-{expected}\nscript-{expected}\n"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_ejected_rules_and_scripts_work_without_cli_or_cache(tmp_path) -> None:
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    shutil.copy(assets / "workspace.mk", tmp_path / "workspace.mk")
+    (tmp_path / "Makefile").write_text("include workspace.mk\n")
+    (tmp_path / "scripts").mkdir()
+    for name in workspace_module.SCRIPTS:
+        (tmp_path / "scripts" / name).write_text(f'echo "ejected-{name} $1"\n')
+    result = subprocess.run(
+        [
+            shutil.which("make"),
+            "-s",
+            "-o",
+            "workspace-assets",
+            "check",
+            "preview-baseline",
+            "preview-ready",
+        ],
+        cwd=tmp_path,
+        env={"PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "ejected-quarto-check.sh ",
+        "ejected-wait-for-preview.sh baseline",
+        "ejected-wait-for-preview.sh wait",
+    ]
+    assert not (tmp_path / ".asta").exists()
 
 
 @pytest.mark.parametrize("name", workspace_module.SCRIPTS)

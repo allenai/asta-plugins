@@ -9,6 +9,7 @@ import re
 import subprocess
 import tarfile
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -190,7 +191,7 @@ def _script_hashes(scripts: dict[str, bytes]) -> dict[str, str]:
     }
 
 
-def _require_scripts(rules: bytes, scripts: dict, ref: str) -> None:
+def _require_scripts(rules: bytes, scripts: Mapping[str, object], ref: str) -> None:
     if (
         MANAGED_SCRIPTS_MARKER not in rules.splitlines()
         or set(SCRIPTS) - scripts.keys()
