@@ -13,6 +13,54 @@ ASSETS = (
 )
 
 
+@pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
+@pytest.mark.parametrize("paper_dir", ["paper", "papers/a"])
+def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    config = (ASSETS / "_quarto.yml").read_text().replace("{{TITLE}}", "Starter")
+    config = config.replace("{{REPO_URL}}", "https://github.com/allenai/asta-plugins")
+    config = config.replace(
+        "  type: website",
+        f"  type: website\n  render:\n    - index.qmd\n    - {paper_dir}/html/index.qmd",
+    )
+    (tmp_path / "_quarto.yml").write_text(config)
+    (tmp_path / "index.qmd").write_text("---\ntitle: Starter\n---\n")
+    (tmp_path / "references.bib").write_text("")
+    shutil.copy(ASSETS / "evidence.yml", tmp_path / "evidence.yml")
+    (tmp_path / ".gitignore").write_text(
+        (ASSETS / "gitignore").read_text()
+        + (ASSETS / "paper/gitignore").read_text().replace("{{PAPER_DIR}}", paper_dir)
+    )
+    subprocess.run(
+        [
+            "git",
+            "add",
+            ".gitignore",
+            "_quarto.yml",
+            "index.qmd",
+            "references.bib",
+            "evidence.yml",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    shutil.copytree(ASSETS / "_extensions/evidence", tmp_path / "_extensions/evidence")
+    subprocess.run(
+        ["python3", str(ASSETS / "paper-viewer.py")],
+        cwd=tmp_path,
+        input=json.dumps({"papers": [paper_dir]}),
+        text=True,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["quarto", "render"], cwd=tmp_path, check=True, capture_output=True)
+    assert (tmp_path / f"_site/{paper_dir}/html/index.html").is_file()
+    subprocess.run(["git", "diff", "--exit-code"], cwd=tmp_path, check=True)
+    assert not subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=tmp_path
+    ).strip()
+
+
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
 def test_paper_targets_select_directory_and_preserve_engine(tmp_path):
     paper = tmp_path / "papers/custom name"
