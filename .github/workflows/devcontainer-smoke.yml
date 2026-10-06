@@ -101,9 +101,10 @@ jobs:
         run: |
           docker run --rm asta-smoke latexmlc --VERSION
           docker run --rm asta-smoke kpsewhich ulem.sty | grep -q ulem.sty
-          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
-            latexmk -synctex=1 -e '$pdf_mode ||= 1;' -interaction=nonstopmode -halt-on-error \
-              -file-line-error -outdir=build main.tex
+          meta=$(docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' asta-smoke)
+          docker run --rm -e ASTA_EDITOR_METADATA="$meta" \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
+            python3 /w/check-latex-editor.py
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.pdf
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.synctex.gz
       - name: Shared paper preview builds with the image toolchain

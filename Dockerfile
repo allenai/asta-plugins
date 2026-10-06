@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Dev containers merge this into devcontainer.json, so LaTeX Workshop
 # arrives with TeX and Quarto-only projects never get it. Replaces the parent
 # label, so it repeats the auth hook.
-LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"},{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"]}}}]'
+LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"},{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"],"settings":{"latex-workshop.latex.autoBuild.run":"onSave","latex-workshop.latex.recipe.default":"first","latex-workshop.view.pdf.viewer":"tab","latex-workshop.latex.outDir":"%DIR%/build","latex-workshop.latex.recipes":[{"name":"latexmk","tools":["latexmk"]}],"latex-workshop.latex.tools":[{"name":"latexmk","command":"latexmk","args":["-synctex=1","-e","$pdf_mode ||= 1;","-interaction=nonstopmode","-halt-on-error","-file-line-error","-outdir=%OUTDIR%","%DOC%"]}]}}}}]'
 
 # A plain `docker build .` still produces the slim image.
 FROM asta
