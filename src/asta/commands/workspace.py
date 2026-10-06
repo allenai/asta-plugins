@@ -20,7 +20,12 @@ WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
-SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
+SCRIPTS = (
+    "quarto-check.sh",
+    "wait-for-preview.sh",
+    "paper-discovery.py",
+    "paper-viewer.py",
+)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -245,7 +250,7 @@ def workspace() -> None:
 @click.option(
     "--require-scripts",
     is_flag=True,
-    help="Verify managed rules and both cached scripts before removing project copies.",
+    help="Verify managed rules and cached scripts before removing project copies.",
 )
 def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
