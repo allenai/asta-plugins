@@ -56,7 +56,12 @@ def test_agent_gets_the_asta_skills():
 
 
 def _packages(text: str) -> set[str]:
-    return set(re.findall(r"\b(?:latex\w*|texlive-[\w-]+|biber|poppler-utils)\b", text))
+    return set(
+        re.findall(
+            r"\b(?:latexmk|latexdiff|latexml|texlive-[\w-]+|biber|poppler-utils)\b",
+            text,
+        )
+    )
 
 
 def test_tex_image_matches_ci_paper_lane():
