@@ -317,6 +317,7 @@ def sync(project: Path, refresh: bool) -> None:
     archive_path = cache / "archives" / archive_sha
     if archive_path.is_symlink():
         raise click.ClickException("Workspace source archive must not be a symlink")
+    cached_archive = archive_path.read_bytes() if archive_path.is_file() else b""
     cache_valid = (
         target.is_file()
         and state.get("repository") == repository
@@ -326,10 +327,24 @@ def sync(project: Path, refresh: bool) -> None:
         and bool(archive_sha)
         and archive_path.is_file()
         and not archive_path.is_symlink()
-        and archive_sha == hashlib.sha256(archive_path.read_bytes()).hexdigest()
-        and state.get("scripts") is not None
-        and state.get("scripts") == _scripts_state(scripts_dir)
+        and archive_sha == hashlib.sha256(cached_archive).hexdigest()
     )
+    if cache_valid and (
+        state.get("scripts") is None
+        or state.get("scripts") != _scripts_state(scripts_dir)
+    ):
+        try:
+            scripts = load_scripts(cached_archive)
+        except click.ClickException:
+            cache_valid = False
+        else:
+            for name, data in scripts.items():
+                _atomic_write(scripts_dir / name, data)
+            state["scripts"] = {
+                name: hashlib.sha256(data).hexdigest()
+                for name, data in sorted(scripts.items())
+            }
+            _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
         target.touch()
         if not re.fullmatch(r"[0-9a-fA-F]{40}", ref):

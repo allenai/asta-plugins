@@ -1,5 +1,5 @@
 # A committed scripts/<name> wins; otherwise use the copy `asta workspace sync` caches.
-workspace_script = $(firstword $(wildcard scripts/$(1)) .asta/cache/scripts/$(1))
+workspace_script = $(or $(firstword $(wildcard scripts/$(1) .asta/cache/scripts/$(1))),$(error Missing $(1): update the Asta CLI and run 'asta workspace sync --refresh' or add scripts/$(1) to customize it))
 
 .PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready
 
@@ -102,8 +102,8 @@ render: workspace-assets
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new
 # gate, add it here (or as a prerequisite target), never as an inline workflow
-# step. The shared render/validate logic is vendored in scripts/quarto-check.sh
-# (from the workspace skill; update by re-copying, don't hand-edit).
+# step. The render/validate script comes from the workspace cache unless the
+# project supplies scripts/quarto-check.sh.
 # Projects can require this marker so a custom rules file cannot make their
 # `check` target pass without the shared quality gate.
 ASTA_WORKSPACE_CHECK := 1
@@ -133,7 +133,7 @@ deployed-url:
 
 # Preview readiness, for automated callers that report a preview link: mark the
 # Pages tip and latest docs run before pushing, then block until this push's
-# deployment is live. Vendored from the workspace skill — update by re-copying.
+# deployment is live.
 preview-baseline:
 	sh $(call workspace_script,wait-for-preview.sh) baseline
 

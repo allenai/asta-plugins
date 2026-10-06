@@ -1,6 +1,7 @@
 """Workspace asset sync uses the project's workflow version."""
 
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -748,10 +749,97 @@ def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -
     for name in workspace_module.SCRIPTS:
         cached = project / ".asta/cache/scripts" / name
         assert cached.read_bytes() == f"echo {name}".encode()
-    (project / ".asta/cache/scripts/quarto-check.sh").unlink()
+
+
+@pytest.mark.real_scripts
+@pytest.mark.parametrize("damage", ["missing", "corrupt", "legacy-manifest"])
+@pytest.mark.parametrize("refresh", [False, True])
+def test_sync_repairs_scripts_offline_from_verified_archive(
+    tmp_path: Path, monkeypatch, damage: str, refresh: bool
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    payloads = {name: f"echo {name}".encode() for name in workspace_module.SCRIPTS}
+    archive = _archive(
+        {workspace_module.ASSET_DIR + name: data for name, data in payloads.items()}
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda r, f: (b"rule", archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    assert runner.invoke(cli, args).exit_code == 0
+    cache = project / ".asta/cache"
+    rules = (cache / "workspace.mk").read_bytes()
+    script = cache / "scripts/quarto-check.sh"
+    if damage == "missing":
+        script.unlink()
+    elif damage == "corrupt":
+        script.write_text("corrupt")
+    else:
+        manifest = cache / "workspace.json"
+        state = json.loads(manifest.read_text())
+        del state["scripts"]
+        manifest.write_text(json.dumps(state))
+        shutil.rmtree(cache / "scripts")
+    (project / "scripts").mkdir()
+    override = project / "scripts/quarto-check.sh"
+    override.write_text("custom check")
+    calls = []
+
+    def offline(*_args):
+        calls.append(True)
+        raise workspace_module.click.ClickException("offline")
+
+    monkeypatch.setattr(workspace_module, "load_asset", offline)
+    result = runner.invoke(cli, args + (["--refresh"] if refresh else []))
+    assert result.exit_code == 0, result.output
+    assert len(calls) == int(refresh)
+    assert (cache / "workspace.mk").read_bytes() == rules
+    assert override.read_text() == "custom check"
+    for name, data in payloads.items():
+        assert (cache / "scripts" / name).read_bytes() == data
+    assert json.loads((cache / "workspace.json").read_text())["scripts"] == (
+        workspace_module._scripts_state(cache / "scripts")
+    )
+    assert runner.invoke(cli, args).exit_code == 0
+    assert len(calls) == int(refresh)
+
+
+@pytest.mark.real_scripts
+@pytest.mark.parametrize("invalid", ["archive", "ref", "source-sha", "repository"])
+def test_script_repair_rejects_unverified_or_mismatched_cache(
+    tmp_path: Path, monkeypatch, invalid: str
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: b"script"
+            for name in workspace_module.SCRIPTS
+        }
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda r, f: (b"rule", archive))
+    args = ["workspace", "sync", "--project", str(project)]
+    runner = CliRunner()
+    assert runner.invoke(cli, args).exit_code == 0
+    missing = project / ".asta/cache/scripts/quarto-check.sh"
+    missing.unlink()
+    if invalid == "archive":
+        next((project / ".asta/cache/archives").iterdir()).write_bytes(b"corrupt")
+    elif invalid == "source-sha":
+        monkeypatch.setenv("ASTA_WORKSPACE_RESOLVED_SHA", "a" * 40)
+    else:
+        workflow = project / ".github/workflows/docs.yml"
+        old, new = (
+            ("@main", "@latest") if invalid == "ref" else ("allenai/", "example/")
+        )
+        workflow.write_text(workflow.read_text().replace(old, new))
+
+    def offline(*_args):
+        raise workspace_module.click.ClickException("offline")
+
+    monkeypatch.setattr(workspace_module, "load_asset", offline)
     result = runner.invoke(cli, args)
-    assert result.exit_code == 0
-    assert "Loaded workspace.mk" in result.output
+    assert result.exit_code != 0
+    assert "offline" in result.output
+    assert not missing.exists()
 
 
 @pytest.mark.real_scripts
@@ -759,6 +847,28 @@ def test_load_scripts_rejects_archive_without_scripts() -> None:
     archive = _archive({workspace_module.ASSET: b"rule"})
     with pytest.raises(Exception, match="lacks workspace scripts"):
         workspace_module.load_scripts(archive)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+def test_missing_managed_script_reports_sync_guidance(
+    tmp_path: Path, rules: str
+) -> None:
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    shutil.copy(assets / rules, tmp_path / "Makefile")
+    result = subprocess.run(
+        ["make", "-s", "preview-ready"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "update the Asta CLI" in result.stderr
+    assert "asta workspace sync --refresh" in result.stderr
+    assert "add scripts/wait-for-preview.sh to customize it" in result.stderr
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
