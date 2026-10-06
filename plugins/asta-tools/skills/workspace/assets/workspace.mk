@@ -163,3 +163,13 @@ preview-baseline:
 
 preview-ready:
 	sh $(call workspace_script,wait-for-preview.sh) wait
+
+# The paper's latexmkrc selects its engine and bibliography search path.
+PAPER_DIR ?= paper
+.PHONY: paper paper-clean
+paper:
+	@test -f "$(PAPER_DIR)/main.tex" || { echo "No main.tex in $(PAPER_DIR)" >&2; exit 1; }
+	cd "$(PAPER_DIR)" && latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex
+
+paper-clean:
+	cd "$(PAPER_DIR)" && latexmk -C -outdir=build main.tex

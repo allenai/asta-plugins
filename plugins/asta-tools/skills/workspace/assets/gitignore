@@ -1,7 +1,7 @@
 # Quarto build artifacts (the workspace skill appends any of these lines
 # missing from the project's .gitignore).
 _site/
-.quarto/
+/.quarto/
 quarto-render.*
 
 # Fetched from the workspace skill before each render (tracks the latest
