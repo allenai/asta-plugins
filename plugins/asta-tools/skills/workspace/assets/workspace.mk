@@ -96,9 +96,15 @@ workspace-assets:
 	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
 
 workspace-viewers:
-	@set -eu; tmp=$$(mktemp); trap 'rm -f "$$tmp"' 0; \
-	python3 $(call workspace_script,paper-discovery.py) > "$$tmp"; \
-	python3 $(call workspace_script,paper-viewer.py) < "$$tmp"
+	@set -eu; \
+	discovery='$(firstword $(wildcard scripts/paper-discovery.py $(ASTA_WORKSPACE_SCRIPTS)/paper-discovery.py))'; \
+	viewer='$(firstword $(wildcard scripts/paper-viewer.py $(ASTA_WORKSPACE_SCRIPTS)/paper-viewer.py))'; \
+	if [ -z "$$discovery" ] || [ -z "$$viewer" ]; then \
+		echo "workspace-viewers: update the Asta CLI and run 'asta workspace sync --refresh --require-scripts' before removing existing viewer pages" >&2; exit 0; \
+	fi; \
+	tmp=$$(mktemp); trap 'rm -f "$$tmp"' 0; \
+	python3 "$$discovery" > "$$tmp"; \
+	python3 "$$viewer" < "$$tmp"
 
 preview: workspace-assets workspace-viewers
 	quarto preview --no-browser

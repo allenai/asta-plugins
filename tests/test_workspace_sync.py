@@ -1299,3 +1299,21 @@ def test_local_viewer_discovery_failure_prevents_generation(tmp_path):
     )
     assert result.returncode != 0
     assert not (tmp_path / "unexpected").exists()
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_older_cli_cache_keeps_existing_projects_working(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "quarto-check.sh").write_text("echo checked\n")
+    result = subprocess.run(
+        ["make", "-o", "workspace-assets", "check"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "checked" in result.stdout
+    assert "--require-scripts" in result.stderr
