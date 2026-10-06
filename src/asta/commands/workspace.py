@@ -20,6 +20,7 @@ ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
 SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
+MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
     r"(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
@@ -189,6 +190,17 @@ def _script_hashes(scripts: dict[str, bytes]) -> dict[str, str]:
     }
 
 
+def _require_scripts(rules: bytes, scripts: dict, ref: str) -> None:
+    if (
+        MANAGED_SCRIPTS_MARKER not in rules.splitlines()
+        or set(SCRIPTS) - scripts.keys()
+    ):
+        raise click.ClickException(
+            f"asta-plugins@{ref} does not support all managed workspace scripts; "
+            "keep the project scripts or select a newer ref in docs.yml"
+        )
+
+
 def _scripts_state(directory: Path, names: dict[str, str]) -> dict[str, str] | None:
     state = {}
     for name in names:
@@ -229,10 +241,19 @@ def workspace() -> None:
     is_flag=True,
     help="Fetch again, including moving refs such as main and latest.",
 )
-def sync(project: Path, refresh: bool) -> None:
+@click.option(
+    "--require-scripts",
+    is_flag=True,
+    help="Verify managed rules and both cached scripts before removing project copies.",
+)
+def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
     project = project.resolve()
     if (project / "workspace.mk").exists():
+        if require_scripts:
+            raise click.ClickException(
+                "Local workspace.mk overrides managed rules; keep its project scripts"
+            )
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
@@ -362,6 +383,8 @@ def sync(project: Path, refresh: bool) -> None:
             state["scripts"] = _script_hashes(scripts)
             _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
+        if require_scripts:
+            _require_scripts(target.read_bytes(), state["scripts"], ref)
         target.touch()
         if not re.fullmatch(r"[0-9a-fA-F]{40}", ref):
             click.echo(
@@ -375,12 +398,16 @@ def sync(project: Path, refresh: bool) -> None:
         scripts = load_scripts(archive)
     except click.ClickException:
         if cache_valid:
+            if require_scripts:
+                _require_scripts(target.read_bytes(), state["scripts"], ref)
             target.touch()
             click.echo(
                 f"Could not refresh asta-plugins@{ref}; using the cached copy", err=True
             )
             return
         raise
+    if require_scripts:
+        _require_scripts(asset, scripts, ref)
     archive_sha = hashlib.sha256(archive).hexdigest()
     archive_path = cache / "archives" / archive_sha
     scripts_dir = cache / "scripts" / archive_sha

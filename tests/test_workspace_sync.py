@@ -763,6 +763,111 @@ def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -
         assert cached.read_bytes() == f"echo {name}".encode()
 
 
+@pytest.mark.parametrize("mode", ["fresh", "cached", "offline-refresh"])
+def test_require_scripts_allows_removal_only_with_working_managed_targets(
+    tmp_path: Path, monkeypatch, mode: str
+) -> None:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "main")
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    (project / "Makefile").write_text((assets / "Makefile.managed").read_text())
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: f"echo managed-{name}\n".encode()
+            for name in workspace_module.SCRIPTS
+        }
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "load_asset",
+        lambda *_args: ((assets / "workspace.mk").read_bytes(), archive),
+    )
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    if mode != "fresh":
+        assert runner.invoke(cli, args).exit_code == 0
+        (cached_scripts(project) / "quarto-check.sh").unlink()
+
+        def offline(*_args):
+            raise workspace_module.click.ClickException("offline")
+
+        monkeypatch.setattr(workspace_module, "load_asset", offline)
+    (project / "scripts").mkdir()
+    for name in workspace_module.SCRIPTS:
+        (project / "scripts" / name).write_text("echo project-copy\n")
+    flags = ["--require-scripts"]
+    if mode == "offline-refresh":
+        flags.append("--refresh")
+    checked = runner.invoke(cli, args + flags)
+    assert checked.exit_code == 0, checked.output
+    for name in workspace_module.SCRIPTS:
+        (project / "scripts" / name).unlink()
+    built = subprocess.run(
+        [make, "-o", "workspace-assets", "check", "preview-baseline", "preview-ready"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    assert built.returncode == 0, built.stderr
+    assert "managed-quarto-check.sh" in built.stdout
+    assert built.stdout.count("managed-wait-for-preview.sh") == 2
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("source", ["old-rules", "no-scripts", "one-script"])
+def test_require_scripts_rejects_unsupported_source_without_changing_project(
+    tmp_path: Path, monkeypatch, cached: bool, source: str
+) -> None:
+    project = project_with_ref(tmp_path, "v0.105.0")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\ncheck:\n\t@true\n"
+    if source == "old-rules":
+        rules = b"check:\n\tsh scripts/quarto-check.sh\n"
+    scripts = (
+        {workspace_module.ASSET_DIR + "quarto-check.sh": b"echo check\n"}
+        if source == "one-script"
+        else {}
+    )
+    archive = _archive(scripts, scripts=source == "old-rules")
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_args: (rules, archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    if cached:
+        assert runner.invoke(cli, args).exit_code == 0
+    (project / "scripts").mkdir()
+    custom = project / "scripts/quarto-check.sh"
+    custom.write_text("customized\n")
+    before = {
+        p.relative_to(project): p.read_bytes()
+        for p in project.rglob("*")
+        if p.is_file()
+    }
+    result = runner.invoke(cli, args + ["--require-scripts"])
+    assert result.exit_code != 0
+    assert "keep the project scripts or select a newer ref" in result.output
+    after = {
+        p.relative_to(project): p.read_bytes()
+        for p in project.rglob("*")
+        if p.is_file()
+    }
+    assert before == after
+
+
+def test_require_scripts_does_not_certify_local_rules_override(tmp_path: Path) -> None:
+    project = project_with_ref(tmp_path, "main")
+    (project / "workspace.mk").write_text("check:\n\tsh scripts/custom.sh\n")
+    result = CliRunner().invoke(
+        cli, ["workspace", "sync", "--project", str(project), "--require-scripts"]
+    )
+    assert result.exit_code != 0
+    assert "Local workspace.mk overrides managed rules" in result.output
+    assert not (project / ".asta").exists()
+
+
 @pytest.mark.parametrize(
     "damage", ["missing", "corrupt", "legacy-manifest", "legacy-layout"]
 )
