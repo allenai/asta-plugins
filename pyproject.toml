@@ -45,6 +45,7 @@ select = ["E", "F", "I", "UP"]
 ignore = ["E501"]  # line length handled by formatter
 
 [tool.pytest.ini_options]
+markers = ["real_scripts: read workspace scripts from the test archive"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"

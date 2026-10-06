@@ -1,3 +1,6 @@
+# A committed scripts/<name> wins; otherwise use the copy `asta workspace sync` caches.
+workspace_script = $(firstword $(wildcard scripts/$(1)) .asta/cache/scripts/$(1))
+
 .PHONY: preview render clean dev deployed-url check workspace-assets preview-baseline preview-ready
 
 # Which asta-plugins ref to fetch the workspace evidence extension from.
@@ -93,7 +96,7 @@ render: workspace-assets
 # step. The shared render/validate logic is vendored in scripts/quarto-check.sh
 # (from the workspace skill; update by re-copying, don't hand-edit).
 check: workspace-assets
-	sh scripts/quarto-check.sh
+	sh $(call workspace_script,quarto-check.sh)
 
 clean:
 	rm -rf _site .quarto
@@ -119,7 +122,7 @@ deployed-url:
 # Pages tip and latest docs run before pushing, then block until this push's
 # deployment is live. Vendored from the workspace skill — update by re-copying.
 preview-baseline:
-	sh scripts/wait-for-preview.sh baseline
+	sh $(call workspace_script,wait-for-preview.sh) baseline
 
 preview-ready:
-	sh scripts/wait-for-preview.sh wait
+	sh $(call workspace_script,wait-for-preview.sh) wait

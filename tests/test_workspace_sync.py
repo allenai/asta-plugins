@@ -16,6 +16,16 @@ from asta.cli import cli
 from asta.commands import workspace as workspace_module
 
 
+@pytest.fixture(autouse=True)
+def fake_scripts(request, monkeypatch) -> None:
+    if "real_scripts" not in request.keywords:
+        monkeypatch.setattr(
+            workspace_module,
+            "load_scripts",
+            lambda archive: {name: b"script" for name in workspace_module.SCRIPTS},
+        )
+
+
 def project_with_ref(
     tmp_path: Path, ref: str, repository: str = "allenai/asta-plugins"
 ) -> Path:
@@ -710,3 +720,66 @@ def test_archive_reader_wraps_incomplete_http_response(monkeypatch) -> None:
     monkeypatch.setattr(workspace_module, "urlopen", interrupted)
     with pytest.raises(workspace_module.click.ClickException):
         workspace_module.load_asset("allenai/asta-plugins", "a" * 40)
+
+
+def _archive(files: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
+        for name, data in files.items():
+            info = tarfile.TarInfo(f"asta-plugins-abc/{name}")
+            info.size = len(data)
+            bundle.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+@pytest.mark.real_scripts
+def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -> None:
+    project = project_with_ref(tmp_path, "v0.106.0")
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: f"echo {name}".encode()
+            for name in workspace_module.SCRIPTS
+        }
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda r, f: (b"rule", archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    assert runner.invoke(cli, args).exit_code == 0
+    for name in workspace_module.SCRIPTS:
+        cached = project / ".asta/cache/scripts" / name
+        assert cached.read_bytes() == f"echo {name}".encode()
+    (project / ".asta/cache/scripts/quarto-check.sh").unlink()
+    result = runner.invoke(cli, args)
+    assert result.exit_code == 0
+    assert "Loaded workspace.mk" in result.output
+
+
+@pytest.mark.real_scripts
+def test_load_scripts_rejects_archive_without_scripts() -> None:
+    archive = _archive({workspace_module.ASSET: b"rule"})
+    with pytest.raises(Exception, match="lacks workspace scripts"):
+        workspace_module.load_scripts(archive)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("committed", [False, True])
+def test_workspace_rules_prefer_committed_script(tmp_path: Path, committed) -> None:
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    shutil.copy(assets / "workspace.mk", tmp_path / "workspace.mk")
+    cached = tmp_path / ".asta/cache/scripts/wait-for-preview.sh"
+    cached.parent.mkdir(parents=True)
+    cached.write_text('echo "cached $1"\n')
+    if committed:
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts/wait-for-preview.sh").write_text('echo "project $1"\n')
+    result = subprocess.run(
+        ["make", "-s", "-f", "workspace.mk", "preview-ready"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == ("project wait" if committed else "cached wait")

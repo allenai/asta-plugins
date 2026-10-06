@@ -17,6 +17,9 @@ import click
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
+ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
+# Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
+SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
     r"(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
@@ -155,6 +158,42 @@ def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
     return result, archive
 
 
+def load_scripts(archive: bytes) -> dict[str, bytes]:
+    wanted = {ASSET_DIR + name: name for name in SCRIPTS}
+    scripts: dict[str, bytes] = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
+            for member in bundle:
+                parts = member.name.split("/", 1)
+                name = wanted.get(parts[1]) if len(parts) == 2 and parts[0] else None
+                if name is None:
+                    continue
+                stream = bundle.extractfile(member) if member.isfile() else None
+                if name in scripts or stream is None or member.size > MAX_ASSET_BYTES:
+                    raise click.ClickException(
+                        f"Invalid {name} in asta-plugins archive"
+                    )
+                scripts[name] = stream.read(MAX_ASSET_BYTES + 1)
+    except (tarfile.TarError, OSError) as exc:
+        raise click.ClickException(f"Invalid asta-plugins archive: {exc}") from exc
+    missing = sorted(set(SCRIPTS) - set(scripts))
+    if missing:
+        raise click.ClickException(
+            f"asta-plugins archive lacks workspace scripts: {', '.join(missing)}"
+        )
+    return scripts
+
+
+def _scripts_state(directory: Path) -> dict[str, str] | None:
+    state = {}
+    for name in SCRIPTS:
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            return None
+        state[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return state
+
+
 def _atomic_write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = None
@@ -204,7 +243,8 @@ def sync(project: Path, refresh: bool) -> None:
     cache = project / ".asta/cache"
     target = cache / "workspace.mk"
     manifest = cache / "workspace.json"
-    if (
+    scripts_dir = cache / "scripts"
+    if scripts_dir.is_symlink() or (
         (project / ".asta").is_symlink()
         or cache.is_symlink()
         or (cache / "archives").is_symlink()
@@ -287,6 +327,8 @@ def sync(project: Path, refresh: bool) -> None:
         and archive_path.is_file()
         and not archive_path.is_symlink()
         and archive_sha == hashlib.sha256(archive_path.read_bytes()).hexdigest()
+        and state.get("scripts") is not None
+        and state.get("scripts") == _scripts_state(scripts_dir)
     )
     if cache_valid and not refresh:
         target.touch()
@@ -299,6 +341,7 @@ def sync(project: Path, refresh: bool) -> None:
         return
     try:
         asset, archive = load_asset(repository, source_ref)
+        scripts = load_scripts(archive)
     except click.ClickException:
         if cache_valid:
             target.touch()
@@ -320,6 +363,8 @@ def sync(project: Path, refresh: bool) -> None:
         f"override ASTA_PLUGINS_REF := {ref}\n"
         f"override ASTA_WORKSPACE_ARCHIVE := .asta/cache/archives/{archive_sha}\n"
     ).encode() + asset
+    for name, data in scripts.items():
+        _atomic_write(scripts_dir / name, data)
     _atomic_write(target, managed)
     _atomic_write(
         manifest,
@@ -330,6 +375,10 @@ def sync(project: Path, refresh: bool) -> None:
                 "source_ref": source_ref,
                 "sha256": hashlib.sha256(managed).hexdigest(),
                 "archive_sha256": archive_sha,
+                "scripts": {
+                    name: hashlib.sha256(data).hexdigest()
+                    for name, data in sorted(scripts.items())
+                },
             },
             sort_keys=True,
         ).encode()

@@ -1,6 +1,6 @@
 # Optional compact entry point; requires Asta CLI 0.105.0 or newer.
 # A local workspace.mk takes precedence when a project customizes shared rules.
-# Copied scripts remain project-owned for now; the preview workflow warns on drift.
+# Shared scripts are cached by `asta workspace sync`; commit scripts/<name> to customize one.
 .DEFAULT_GOAL := preview
 ifneq ($(wildcard workspace.mk),)
 include workspace.mk
