@@ -1,5 +1,6 @@
 # A committed scripts/<name> wins; otherwise use the copy `asta workspace sync` caches.
-workspace_script = $(or $(firstword $(wildcard scripts/$(1) .asta/cache/scripts/$(1))),$(error Missing $(1): update the Asta CLI and run 'asta workspace sync --refresh' or add scripts/$(1) to customize it))
+ASTA_WORKSPACE_SCRIPTS ?= .asta/cache/scripts
+workspace_script = $(or $(firstword $(wildcard scripts/$(1) $(ASTA_WORKSPACE_SCRIPTS)/$(1))),$(error Missing $(1): update the Asta CLI and run 'asta workspace sync --refresh' or add scripts/$(1) to customize it))
 
 .PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready
 

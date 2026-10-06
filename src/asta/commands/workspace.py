@@ -173,20 +173,27 @@ def load_scripts(archive: bytes) -> dict[str, bytes]:
                     raise click.ClickException(
                         f"Invalid {name} in asta-plugins archive"
                     )
-                scripts[name] = stream.read(MAX_ASSET_BYTES + 1)
+                data = stream.read(MAX_ASSET_BYTES + 1)
+                if not data or len(data) > MAX_ASSET_BYTES:
+                    raise click.ClickException(f"Empty or oversized {name} in archive")
+                scripts[name] = data
     except (tarfile.TarError, OSError) as exc:
         raise click.ClickException(f"Invalid asta-plugins archive: {exc}") from exc
-    missing = sorted(set(SCRIPTS) - set(scripts))
-    if missing:
-        raise click.ClickException(
-            f"asta-plugins archive lacks workspace scripts: {', '.join(missing)}"
-        )
+    # Older refs can omit scripts; only the Make target that needs one should fail.
     return scripts
 
 
-def _scripts_state(directory: Path) -> dict[str, str] | None:
+def _script_hashes(scripts: dict[str, bytes]) -> dict[str, str]:
+    return {
+        name: hashlib.sha256(data).hexdigest() for name, data in sorted(scripts.items())
+    }
+
+
+def _scripts_state(directory: Path, names: dict[str, str]) -> dict[str, str] | None:
     state = {}
-    for name in SCRIPTS:
+    for name in names:
+        if name not in SCRIPTS:
+            return None
         path = directory / name
         if path.is_symlink() or not path.is_file():
             return None
@@ -317,7 +324,6 @@ def sync(project: Path, refresh: bool) -> None:
     archive_path = cache / "archives" / archive_sha
     if archive_path.is_symlink():
         raise click.ClickException("Workspace source archive must not be a symlink")
-    cached_archive = archive_path.read_bytes() if archive_path.is_file() else b""
     cache_valid = (
         target.is_file()
         and state.get("repository") == repository
@@ -327,11 +333,21 @@ def sync(project: Path, refresh: bool) -> None:
         and bool(archive_sha)
         and archive_path.is_file()
         and not archive_path.is_symlink()
-        and archive_sha == hashlib.sha256(cached_archive).hexdigest()
     )
+    cached_archive = archive_path.read_bytes() if cache_valid else b""
+    cache_valid = (
+        cache_valid and archive_sha == hashlib.sha256(cached_archive).hexdigest()
+    )
+    scripts_dir = scripts_dir / archive_sha if archive_sha else scripts_dir
+    if scripts_dir.is_symlink():
+        raise click.ClickException("Workspace scripts directory must not be a symlink")
+    scripts_header = (
+        f"override ASTA_WORKSPACE_SCRIPTS := .asta/cache/scripts/{archive_sha}\n"
+    ).encode()
     if cache_valid and (
-        state.get("scripts") is None
-        or state.get("scripts") != _scripts_state(scripts_dir)
+        not isinstance(state.get("scripts"), dict)
+        or state["scripts"] != _scripts_state(scripts_dir, state["scripts"])
+        or not target.read_bytes().startswith(scripts_header)
     ):
         try:
             scripts = load_scripts(cached_archive)
@@ -340,10 +356,10 @@ def sync(project: Path, refresh: bool) -> None:
         else:
             for name, data in scripts.items():
                 _atomic_write(scripts_dir / name, data)
-            state["scripts"] = {
-                name: hashlib.sha256(data).hexdigest()
-                for name, data in sorted(scripts.items())
-            }
+            if not target.read_bytes().startswith(scripts_header):
+                _atomic_write(target, scripts_header + target.read_bytes())
+                state["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+            state["scripts"] = _script_hashes(scripts)
             _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
         target.touch()
@@ -367,6 +383,9 @@ def sync(project: Path, refresh: bool) -> None:
         raise
     archive_sha = hashlib.sha256(archive).hexdigest()
     archive_path = cache / "archives" / archive_sha
+    scripts_dir = cache / "scripts" / archive_sha
+    if scripts_dir.is_symlink():
+        raise click.ClickException("Workspace scripts directory must not be a symlink")
     if archive_path.is_symlink():
         raise click.ClickException("Workspace source archive must not be a symlink")
     if (
@@ -375,9 +394,11 @@ def sync(project: Path, refresh: bool) -> None:
     ):
         _atomic_write(archive_path, archive)
     managed = (
+        f"override ASTA_WORKSPACE_SCRIPTS := .asta/cache/scripts/{archive_sha}\n"
         f"override ASTA_PLUGINS_REF := {ref}\n"
         f"override ASTA_WORKSPACE_ARCHIVE := .asta/cache/archives/{archive_sha}\n"
     ).encode() + asset
+    # Keep old readers on their archive's scripts until the new rules are published.
     for name, data in scripts.items():
         _atomic_write(scripts_dir / name, data)
     _atomic_write(target, managed)
@@ -390,10 +411,7 @@ def sync(project: Path, refresh: bool) -> None:
                 "source_ref": source_ref,
                 "sha256": hashlib.sha256(managed).hexdigest(),
                 "archive_sha256": archive_sha,
-                "scripts": {
-                    name: hashlib.sha256(data).hexdigest()
-                    for name, data in sorted(scripts.items())
-                },
+                "scripts": _script_hashes(scripts),
             },
             sort_keys=True,
         ).encode()

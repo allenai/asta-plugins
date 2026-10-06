@@ -17,16 +17,6 @@ from asta.cli import cli
 from asta.commands import workspace as workspace_module
 
 
-@pytest.fixture(autouse=True)
-def fake_scripts(request, monkeypatch) -> None:
-    if "real_scripts" not in request.keywords:
-        monkeypatch.setattr(
-            workspace_module,
-            "load_scripts",
-            lambda archive: {name: b"script" for name in workspace_module.SCRIPTS},
-        )
-
-
 def project_with_ref(
     tmp_path: Path, ref: str, repository: str = "allenai/asta-plugins"
 ) -> Path:
@@ -48,7 +38,9 @@ def test_sync_uses_workflow_ref_and_refreshes_only_when_requested(
 
     def fetch(repository, ref):
         calls.append((repository, ref))
-        return f"rule-{len(calls)}".encode(), f"archive-{len(calls)}".encode()
+        return f"rule-{len(calls)}".encode(), _archive(
+            {"revision": str(len(calls)).encode()}
+        )
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
     runner = CliRunner()
@@ -77,7 +69,7 @@ def test_sync_uses_resolved_workflow_sha_in_ci(tmp_path: Path, monkeypatch) -> N
 
     def fetch(repository, ref):
         calls.append((repository, ref))
-        return b"rule", b"archive"
+        return b"rule", _archive({})
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
     runner = CliRunner()
@@ -100,7 +92,7 @@ def test_sync_uses_called_workflow_repository_in_ci(
 
     def fetch(repository, ref):
         calls.append((repository, ref))
-        return b"rule", b"archive"
+        return b"rule", _archive({})
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
     monkeypatch.setenv("ASTA_WORKSPACE_RESOLVED_SHA", "a" * 40)
@@ -162,7 +154,7 @@ def test_cached_version_shaped_branch_prompts_refresh(
     monkeypatch.setattr(
         workspace_module,
         "load_asset",
-        lambda *_args: (b"rules", b"archive"),
+        lambda *_args: (b"rules", _archive({})),
     )
     args = ["workspace", "sync", "--project", str(project)]
     runner = CliRunner()
@@ -178,7 +170,7 @@ def test_sync_replaces_corrupt_cached_archive(tmp_path: Path, monkeypatch) -> No
 
     def fetch(repository, ref):
         calls.append((repository, ref))
-        return b"rule", b"archive"
+        return b"rule", _archive({})
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
     args = ["workspace", "sync", "--project", str(project)]
@@ -190,7 +182,9 @@ def test_sync_replaces_corrupt_cached_archive(tmp_path: Path, monkeypatch) -> No
     result = runner.invoke(cli, args)
     assert result.exit_code == 0, result.output
     assert calls == [("allenai/asta-plugins", "main")] * 2
-    assert archive_path.read_bytes() == b"archive"
+    assert workspace_module.load_scripts(archive_path.read_bytes()) == {
+        name: b"script" for name in workspace_module.SCRIPTS
+    }
 
 
 def test_sync_keeps_local_override_and_never_fetches(
@@ -218,7 +212,9 @@ def test_sync_offline_uses_only_matching_verified_cache(
     runner = CliRunner()
     args = ["workspace", "sync", "--project", str(project)]
     monkeypatch.setattr(
-        workspace_module, "load_asset", lambda repository, ref: (b"cached", b"archive")
+        workspace_module,
+        "load_asset",
+        lambda repository, ref: (b"cached", _archive({})),
     )
     assert runner.invoke(cli, args).exit_code == 0
 
@@ -251,7 +247,7 @@ def test_sync_reads_quoted_ref_with_comment(tmp_path: Path, monkeypatch) -> None
     monkeypatch.setattr(
         workspace_module,
         "load_asset",
-        lambda repository, ref: (ref.encode(), b"archive"),
+        lambda repository, ref: (ref.encode(), _archive({})),
     )
     result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
     assert result.exit_code == 0, result.output
@@ -268,7 +264,7 @@ def test_multiple_workflow_calls_must_select_one_source(
     monkeypatch.setattr(
         workspace_module,
         "load_asset",
-        lambda *_args: (b"rules", b"archive"),
+        lambda *_args: (b"rules", _archive({})),
     )
     args = ["workspace", "sync", "--project", str(project)]
     assert CliRunner().invoke(cli, args).exit_code == 0
@@ -293,7 +289,7 @@ def test_sync_recovers_from_non_object_manifest(tmp_path: Path, monkeypatch) -> 
     cache.mkdir(parents=True)
     (cache / "workspace.json").write_text("[]")
     monkeypatch.setattr(
-        workspace_module, "load_asset", lambda repository, ref: (b"rule", b"archive")
+        workspace_module, "load_asset", lambda repository, ref: (b"rule", _archive({}))
     )
     result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
     assert result.exit_code == 0, result.output
@@ -302,7 +298,7 @@ def test_sync_recovers_from_non_object_manifest(tmp_path: Path, monkeypatch) -> 
 def test_cached_sync_updates_target_mtime(tmp_path: Path, monkeypatch) -> None:
     project = project_with_ref(tmp_path, "main")
     monkeypatch.setattr(
-        workspace_module, "load_asset", lambda repository, ref: (b"rule", b"archive")
+        workspace_module, "load_asset", lambda repository, ref: (b"rule", _archive({}))
     )
     args = ["workspace", "sync", "--project", str(project)]
     runner = CliRunner()
@@ -320,7 +316,9 @@ def test_sync_requires_ignored_cache_in_git_project(
     project = project_with_ref(tmp_path, "main")
     subprocess.run(["git", "init", "-q", str(project)], check=True)
     monkeypatch.setattr(
-        workspace_module, "load_asset", lambda repository, ref: (b"shared", b"archive")
+        workspace_module,
+        "load_asset",
+        lambda repository, ref: (b"shared", _archive({})),
     )
     args = ["workspace", "sync", "--project", str(project)]
     runner = CliRunner()
@@ -605,10 +603,17 @@ def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
         "preview-baseline",
         "preview-ready",
     ):
-        assert recipe(full, target) == recipe(managed, target), target
+        shared = recipe(managed, target).replace(
+            "$(call workspace_script,wait-for-preview.sh)",
+            "scripts/wait-for-preview.sh",
+        )
+        assert recipe(full, target) == shared, target
     thin = (assets / "Makefile.managed").read_text()
     assert recipe(thin, "dev") == recipe(managed, "dev")
-    assert recipe(full, "check") == recipe(managed, "workspace-shared-check")
+    assert recipe(full, "check") == "\tsh scripts/quarto-check.sh"
+    assert "workspace_script,quarto-check.sh" in recipe(
+        managed, "workspace-shared-check"
+    )
     assert "ASTA_WORKSPACE_ARCHIVE" in recipe(managed, "workspace-assets")
     assert "ASTA_WORKSPACE_ARCHIVE" not in recipe(full, "workspace-assets")
 
@@ -723,7 +728,15 @@ def test_archive_reader_wraps_incomplete_http_response(monkeypatch) -> None:
         workspace_module.load_asset("allenai/asta-plugins", "a" * 40)
 
 
-def _archive(files: dict[str, bytes]) -> bytes:
+def _archive(files: dict[str, bytes], *, scripts: bool = True) -> bytes:
+    if scripts:
+        files = {
+            **{
+                workspace_module.ASSET_DIR + name: b"script"
+                for name in workspace_module.SCRIPTS
+            },
+            **files,
+        }
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
         for name, data in files.items():
@@ -733,7 +746,6 @@ def _archive(files: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-@pytest.mark.real_scripts
 def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -> None:
     project = project_with_ref(tmp_path, "v0.106.0")
     archive = _archive(
@@ -747,12 +759,13 @@ def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -
     args = ["workspace", "sync", "--project", str(project)]
     assert runner.invoke(cli, args).exit_code == 0
     for name in workspace_module.SCRIPTS:
-        cached = project / ".asta/cache/scripts" / name
+        cached = cached_scripts(project) / name
         assert cached.read_bytes() == f"echo {name}".encode()
 
 
-@pytest.mark.real_scripts
-@pytest.mark.parametrize("damage", ["missing", "corrupt", "legacy-manifest"])
+@pytest.mark.parametrize(
+    "damage", ["missing", "corrupt", "legacy-manifest", "legacy-layout"]
+)
 @pytest.mark.parametrize("refresh", [False, True])
 def test_sync_repairs_scripts_offline_from_verified_archive(
     tmp_path: Path, monkeypatch, damage: str, refresh: bool
@@ -768,17 +781,28 @@ def test_sync_repairs_scripts_offline_from_verified_archive(
     assert runner.invoke(cli, args).exit_code == 0
     cache = project / ".asta/cache"
     rules = (cache / "workspace.mk").read_bytes()
-    script = cache / "scripts/quarto-check.sh"
+    script = cached_scripts(project) / "quarto-check.sh"
     if damage == "missing":
         script.unlink()
     elif damage == "corrupt":
         script.write_text("corrupt")
-    else:
+    elif damage == "legacy-manifest":
         manifest = cache / "workspace.json"
         state = json.loads(manifest.read_text())
         del state["scripts"]
         manifest.write_text(json.dumps(state))
         shutil.rmtree(cache / "scripts")
+    else:
+        manifest = cache / "workspace.json"
+        state = json.loads(manifest.read_text())
+        generation = cached_scripts(project)
+        for name in payloads:
+            (generation / name).rename(cache / "scripts" / name)
+        generation.rmdir()
+        rules = rules.split(b"\n", 1)[1]
+        (cache / "workspace.mk").write_bytes(rules)
+        state["sha256"] = workspace_module.hashlib.sha256(rules).hexdigest()
+        manifest.write_text(json.dumps(state))
     (project / "scripts").mkdir()
     override = project / "scripts/quarto-check.sh"
     override.write_text("custom check")
@@ -792,18 +816,22 @@ def test_sync_repairs_scripts_offline_from_verified_archive(
     result = runner.invoke(cli, args + (["--refresh"] if refresh else []))
     assert result.exit_code == 0, result.output
     assert len(calls) == int(refresh)
-    assert (cache / "workspace.mk").read_bytes() == rules
+    if damage == "legacy-layout":
+        assert (cache / "workspace.mk").read_bytes().endswith(rules)
+    else:
+        assert (cache / "workspace.mk").read_bytes() == rules
     assert override.read_text() == "custom check"
     for name, data in payloads.items():
-        assert (cache / "scripts" / name).read_bytes() == data
+        assert (cached_scripts(project) / name).read_bytes() == data
     assert json.loads((cache / "workspace.json").read_text())["scripts"] == (
-        workspace_module._scripts_state(cache / "scripts")
+        workspace_module._scripts_state(
+            cached_scripts(project), {name: "" for name in payloads}
+        )
     )
     assert runner.invoke(cli, args).exit_code == 0
     assert len(calls) == int(refresh)
 
 
-@pytest.mark.real_scripts
 @pytest.mark.parametrize("invalid", ["archive", "ref", "source-sha", "repository"])
 def test_script_repair_rejects_unverified_or_mismatched_cache(
     tmp_path: Path, monkeypatch, invalid: str
@@ -819,7 +847,7 @@ def test_script_repair_rejects_unverified_or_mismatched_cache(
     args = ["workspace", "sync", "--project", str(project)]
     runner = CliRunner()
     assert runner.invoke(cli, args).exit_code == 0
-    missing = project / ".asta/cache/scripts/quarto-check.sh"
+    missing = cached_scripts(project) / "quarto-check.sh"
     missing.unlink()
     if invalid == "archive":
         next((project / ".asta/cache/archives").iterdir()).write_bytes(b"corrupt")
@@ -842,15 +870,35 @@ def test_script_repair_rejects_unverified_or_mismatched_cache(
     assert not missing.exists()
 
 
-@pytest.mark.real_scripts
-def test_load_scripts_rejects_archive_without_scripts() -> None:
-    archive = _archive({workspace_module.ASSET: b"rule"})
-    with pytest.raises(Exception, match="lacks workspace scripts"):
-        workspace_module.load_scripts(archive)
+def cached_scripts(project: Path) -> Path:
+    state = json.loads((project / ".asta/cache/workspace.json").read_text())
+    return project / ".asta/cache/scripts" / state["archive_sha256"]
+
+
+@pytest.mark.parametrize("present", [[], ["quarto-check.sh"]])
+def test_sync_accepts_older_archives_with_missing_scripts(
+    tmp_path, monkeypatch, present
+) -> None:
+    project = project_with_ref(tmp_path, "v0.105.0")
+    archive = _archive(
+        {workspace_module.ASSET_DIR + name: b"echo old" for name in present},
+        scripts=False,
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (b"rule", archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    result = runner.invoke(cli, args)
+    assert result.exit_code == 0, result.output
+    state = json.loads((project / ".asta/cache/workspace.json").read_text())
+    assert set(state["scripts"]) == set(present)
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: pytest.fail("offline cache fetched")
+    )
+    assert runner.invoke(cli, args).exit_code == 0
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize("rules", ["workspace.mk"])
 def test_missing_managed_script_reports_sync_guidance(
     tmp_path: Path, rules: str
 ) -> None:
@@ -893,3 +941,100 @@ def test_workspace_rules_prefer_committed_script(tmp_path: Path, committed) -> N
         check=True,
     )
     assert result.stdout.strip() == ("project wait" if committed else "cached wait")
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize("interrupted_at", ["script", "rules", "manifest"])
+def test_interrupted_refresh_keeps_rules_and_scripts_on_one_version(
+    tmp_path, monkeypatch, interrupted_at
+) -> None:
+    project = project_with_ref(tmp_path, "main")
+    version = 1
+
+    def fetch(*_args):
+        rules = (
+            f"probe:\n\t@echo rules-{version}\n"
+            "\t@sh $(ASTA_WORKSPACE_SCRIPTS)/quarto-check.sh\n"
+        ).encode()
+        archive = _archive(
+            {
+                workspace_module.ASSET: rules,
+                workspace_module.ASSET_DIR
+                + "quarto-check.sh": f"echo script-{version}\n".encode(),
+            }
+        )
+        return rules, archive
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    assert runner.invoke(cli, args).exit_code == 0
+    old_scripts = cached_scripts(project)
+    old_rules = (project / ".asta/cache/workspace.mk").read_bytes()
+    write = workspace_module._atomic_write
+    version = 2
+
+    def interrupt(path, data):
+        if (
+            (interrupted_at == "script" and path.name == "wait-for-preview.sh")
+            or (interrupted_at == "rules" and path.name == "workspace.mk")
+            or (interrupted_at == "manifest" and path.name == "workspace.json")
+        ):
+            raise OSError("interrupted")
+        write(path, data)
+
+    monkeypatch.setattr(workspace_module, "_atomic_write", interrupt)
+    assert runner.invoke(cli, args + ["--refresh"]).exit_code != 0
+    assert (old_scripts / "quarto-check.sh").read_text() == "echo script-1\n"
+    old_reader = project / "old-rules.mk"
+    old_reader.write_bytes(old_rules)
+    for path, expected in (
+        (old_reader, 1),
+        (
+            project / ".asta/cache/workspace.mk",
+            2 if interrupted_at == "manifest" else 1,
+        ),
+    ):
+        result = subprocess.run(
+            ["make", "-s", "-f", str(path), "probe"],
+            cwd=project,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == f"rules-{expected}\nscript-{expected}\n"
+
+
+@pytest.mark.parametrize("name", workspace_module.SCRIPTS)
+def test_empty_archived_script_is_rejected(name) -> None:
+    with pytest.raises(
+        workspace_module.click.ClickException, match="Empty or oversized"
+    ):
+        workspace_module.load_scripts(
+            _archive({workspace_module.ASSET_DIR + name: b""})
+        )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_full_makefile_preview_helpers_need_no_cli_or_cache(tmp_path) -> None:
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    shutil.copy(assets / "Makefile", tmp_path / "Makefile")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/wait-for-preview.sh").write_text('echo "project $1"\n')
+    for target, expected in [
+        ("preview-baseline", "baseline"),
+        ("preview-ready", "wait"),
+    ]:
+        result = subprocess.run(
+            [shutil.which("make"), "-s", target],
+            cwd=tmp_path,
+            env={"PATH": "/usr/bin:/bin"},
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == f"project {expected}"
+    assert not (tmp_path / ".asta").exists()

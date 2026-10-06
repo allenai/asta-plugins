@@ -63,6 +63,8 @@ For the optional `Makefile.managed` entry point, set `ASTA_WORKSPACE_LOCAL_GOALS
 
 Managed rules stay cached until the version selected in `docs.yml` changes or you run `make update-workspace`. With a moving channel such as `@latest`, refresh before comparing a local build with CI, which uses the workflow's current revision. Pin a release tag or commit in `docs.yml` if both must stay on a fixed version.
 
+`asta workspace sync` also caches `quarto-check.sh` and `wait-for-preview.sh` at that version. To adopt managed scripts, delete their unmodified copies from `scripts/`; keep any customized copy there, which always takes precedence. CI warns when a project copy differs from the workflow's version. To eject, copy a cached script into `scripts/`, or copy the shared rules to `workspace.mk` and keep any scripts those rules use. The standalone full `Makefile` continues to use project scripts without the CLI.
+
 ## Auto-deploy (`.github/workflows/docs.yml`)
 
 Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment.

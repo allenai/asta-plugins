@@ -63,8 +63,8 @@ jobs:
             echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
           fi
 
-      # Shared scripts are vendored into each project. Surface (never fail on)
-      # drift from the canonical copies shipped at this workflow's own commit.
+      # Project script overrides are optional. Warn on drift without rejecting
+      # intentional customizations.
       - name: Check vendored workspace scripts for drift
         run: |
           for asset in quarto-check.sh wait-for-preview.sh; do
@@ -74,7 +74,7 @@ jobs:
             canonical="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/$asset"
             if curl -fsSL "$canonical" -o "/tmp/$asset.canonical"; then
               if ! diff -u "scripts/$asset" "/tmp/$asset.canonical" > "/tmp/$asset.diff"; then
-                echo "::warning::scripts/$asset differs from the workspace skill's canonical copy — re-copy assets/$asset to update (or ignore if intentionally customized)"
+                echo "::warning::scripts/$asset differs from the workspace skill's canonical copy — remove the copy to use managed scripts, re-copy assets/$asset for a standalone Makefile, or keep it if intentionally customized"
                 { echo "## $asset drift (vendored → canonical)"; echo '```diff'; cat "/tmp/$asset.diff"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
               fi
             else
