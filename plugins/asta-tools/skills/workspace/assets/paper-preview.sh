@@ -241,6 +241,27 @@ html_diff=false
 if convert_html "$diff_tex" "$site_dir/html-diff/index.html" \
   "$site_dir/html-diff/latexml.log"; then
   html_diff=true
+  # The sandboxed "What changed" iframe can't load LaTeXML's linked stylesheets,
+  # so latexdiff's marks (red \sout, blue \uwave) would show as bare color. Inline
+  # the what-changed palette for them; the CSP already allows inline styles.
+  python3 - "$site_dir/html-diff/index.html" <<'PY' || true
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+document = path.read_text(encoding="utf-8")
+style = """<style>
+.ltx_ulem_uwave[style*="color:#0000FF" i] { background: #d7f5dd; color: #032b13 !important;
+  text-decoration: none; border-radius: 2px; }
+.ltx_ulem_sout[style*="color:#FF0000" i] { background: #ffd7d5; color: #40100c !important;
+  text-decoration: line-through; text-decoration-color: #cf222e; border-radius: 2px; }
+.ltx_ulem_uwave[style*="color:#0000FF" i] [mathcolor],
+.ltx_ulem_sout[style*="color:#FF0000" i] [mathcolor] { color: inherit; }
+</style>"""
+end = document.lower().find("</head>")
+if end >= 0:
+    path.write_text(document[:end] + style + document[end:], encoding="utf-8")
+PY
 fi
 if (cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
   -halt-on-error -file-line-error -outdir=build "$diff_name"); then

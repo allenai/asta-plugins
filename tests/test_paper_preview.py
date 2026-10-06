@@ -88,6 +88,9 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
     assert (repo / "_site/paper-previews/paper/html/index.html").exists()
     assert (repo / "_site/paper-previews/paper/html-diff/index.html").exists()
+    assert ".ltx_ulem_sout[style*=" in (
+        repo / "_site/paper-previews/paper/html-diff/index.html"
+    ).read_text()
     html = (repo / "_site/paper-previews/paper/html/index.html").read_text()
     assert 'http-equiv="Content-Security-Policy"' in html
     assert "script-src 'none'" in html
