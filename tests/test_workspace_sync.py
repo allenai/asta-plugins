@@ -385,6 +385,7 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     fake_cli = tool_dir / "asta"
     fake_cli.write_text(
         "#!/bin/sh\n"
+        'if [ "$3" = --help ]; then exit 0; fi\n'
         "mkdir -p .asta/cache\n"
         "printf 'preview:\\n\\t@echo managed-preview\\n' > .asta/cache/workspace.mk\n"
     )
@@ -420,6 +421,7 @@ def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:
         )
         assert result.returncode != 0
         assert "ASTA_PLUGINS_REF cannot select managed rules" in result.stderr
+        assert "unset ASTA_PLUGINS_REF" in result.stderr
 
     (project / "workspace.mk").write_text("preview:\n\t@echo customized\n")
     result = subprocess.run(
@@ -447,6 +449,34 @@ def test_thin_makefile_dev_needs_no_cli(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "vscode-remote://dev-container+" in result.stdout
+    assert not (project / ".asta").exists()
+
+
+def test_thin_makefile_explains_older_cli(tmp_path: Path) -> None:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "latest")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(source.read_text())
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    old_cli = tools / "asta"
+    old_cli.write_text("#!/bin/sh\necho 'No such command: workspace' >&2\nexit 2\n")
+    old_cli.chmod(0o755)
+    result = subprocess.run(
+        [make, "preview"],
+        cwd=project,
+        env={"PATH": str(tools) + ":/usr/bin:/bin"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "Install the Asta CLI 0.105.0 or newer" in result.stderr
+    assert "No such command" not in result.stderr
     assert not (project / ".asta").exists()
 
 
