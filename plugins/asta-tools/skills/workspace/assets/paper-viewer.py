@@ -48,6 +48,7 @@ def remove_orphan_viewers(directories: list[str], tracked: set[str] | None) -> N
             if not name.startswith(".")
             and name not in {"_site", "_extensions", "build", "node_modules"}
             and not (folder / name).is_symlink()
+            and not (folder / name / ".git").exists()
         ]
         if folder.name != "html" or "index.qmd" not in files:
             continue
@@ -78,8 +79,11 @@ def paper_directories(data: object) -> list[str]:
 
 def create_viewer(directory: str, tracked: set[str] | None) -> None:
     folder = Path(directory) / "html"
-    # Any local viewer is an explicit customization, including a symlink.
-    if any(path.is_symlink() for path in [Path(directory), *folder.parents, folder]):
+    # Nested repositories and symlinks belong to their own project.
+    if any(
+        path.is_symlink() or (path != Path(".") and (path / ".git").exists())
+        for path in [*folder.parents, folder]
+    ):
         return
     if any(
         (folder / f"index.{suffix}").exists()

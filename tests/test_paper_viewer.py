@@ -88,6 +88,31 @@ def test_committed_generated_viewer_becomes_user_owned(tmp_path):
     assert page.read_text() == custom
 
 
+@pytest.mark.parametrize("separate_git_dir", [False, True])
+@pytest.mark.parametrize("discovered", [False, True])
+def test_nested_repository_viewer_is_not_removed_or_refreshed(
+    tmp_path, separate_git_dir, discovered
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    nested = tmp_path / "nested"
+    command = ["git", "init", "-q"]
+    if separate_git_dir:
+        command.append(f"--separate-git-dir={tmp_path / '.nested-git'}")
+    subprocess.run([*command, str(nested)], check=True)
+    assert generate(nested, "paper").returncode == 0
+    page = nested / "paper/html/index.qmd"
+    page.write_text(page.read_text() + "\nNested project customization\n")
+    subprocess.run(["git", "add", "paper/html/index.qmd"], cwd=nested, check=True)
+    custom = page.read_text()
+
+    assert generate(tmp_path, "paper").returncode == 0
+    outer = tmp_path / "paper/html/index.qmd"
+    papers = ("nested/paper",) if discovered else ()
+    assert generate(tmp_path, *papers).returncode == 0
+    assert page.read_text() == custom
+    assert not outer.exists()
+
+
 def test_orphan_cleanup_preserves_custom_and_symlinked_pages(tmp_path):
     assert generate(tmp_path, "paper").returncode == 0
     folder = tmp_path / "paper/html"
