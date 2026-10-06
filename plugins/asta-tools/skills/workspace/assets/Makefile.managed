@@ -1,21 +1,21 @@
-# Optional compact entry point; use after the CLI version that adds workspace sync.
+# Optional compact entry point; requires Asta CLI 0.105.0 or newer.
 # A local workspace.mk takes precedence when a project customizes shared rules.
 # Copied scripts remain project-owned for now; the preview workflow warns on drift.
 .DEFAULT_GOAL := preview
 ifneq ($(wildcard workspace.mk),)
 include workspace.mk
-else ifeq ($(MAKECMDGOALS),dev)
-# `make dev` opens the container that supplies the CLI, so it must not need one.
+else ifeq ($(filter-out dev $(ASTA_WORKSPACE_LOCAL_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))),)
+# Project-only goals and host container startup do not need managed rules.
 .PHONY: dev
 dev:
 	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
 else
 ifneq ($(origin ASTA_PLUGINS_REF),undefined)
-$(error ASTA_PLUGINS_REF cannot select managed rules; change the ref in .github/workflows/docs.yml)
+$(error ASTA_PLUGINS_REF cannot select managed rules; unset ASTA_PLUGINS_REF and change the ref in .github/workflows/docs.yml)
 endif
 include .asta/cache/workspace.mk
 .asta/cache/workspace.mk: .github/workflows/docs.yml
-	@command -v asta >/dev/null || { echo 'Install the Asta CLI to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
+	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
 endif
 
