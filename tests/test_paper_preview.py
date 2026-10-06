@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -121,6 +122,8 @@ def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     original_diff = r"""\providecommand{\DIFadd}[1]{{\color{blue}\uwave{#1}}}
 \providecommand{\DIFdel}[1]{{\color{red}\sout{#1}}}
+% A comment mentioning \begin{document}.
+\newcommand{\example}{\begin{document}}
 \begin{document}
 \DIFdel{old} \DIFadd{new} \textcolor{red}{\sout{author strikethrough}}
 \end{document}
@@ -144,12 +147,45 @@ def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):
     converted = capture.read_text()
     assert r"\lxWithClass{asta-diff-add}{\astadiffadd{#1}}" in converted
     assert r"\lxWithClass{asta-diff-del}{\astadiffdel{#1}}" in converted
-    assert converted.index(r"\RequirePackage{latexml}") < converted.index(
-        r"\begin{document}"
+    assert (
+        converted.index(r"\newcommand{\example}")
+        < converted.index(r"\RequirePackage{latexml}")
+        < converted.index("\n" + r"\begin{document}")
     )
+    assert r"\ifdefined\DIFadd" in converted
+    assert r"\ifdefined\DIFdel" in converted
     assert r"\textcolor{red}{\sout{author strikethrough}}" in converted
     assert (repo / "pdf-diff-input.tex").read_text() == original_diff
     assert not list((repo / "paper").glob("what-changed.*.tex"))
+
+
+@pytest.mark.parametrize("failure", ["missing_head_end", "injector_failure"])
+def test_unstyled_html_diff_falls_back_to_pdf_with_warning(tmp_path, failure):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    if failure == "missing_head_end":
+        mock = bin_dir / "latexmlc"
+        mock.write_text(mock.read_text().replace("<head></head>", "<head>"))
+    else:
+        mock = bin_dir / "python3"
+        mock.write_text(
+            "#!/bin/bash\n"
+            'if [[ "$2" == */html-diff/index.html ]]; then exit 1; fi\n'
+            f'exec "{sys.executable}" "$@"\n'
+        )
+        mock.chmod(0o755)
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert "::warning" in result.stdout
+    assert "LaTeXML conversion failed" in result.stdout
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    )
+    assert manifest["html_diff"] is False
+    assert manifest["diff"] is True
+    assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
+    assert not (repo / "_site/paper-previews/paper/html-diff/index.html").exists()
+    assert (repo / "_site/paper-previews/paper/html/index.html").exists()
 
 
 def test_quarto_pdf_only_packages_are_omitted_from_html_conversion(tmp_path):

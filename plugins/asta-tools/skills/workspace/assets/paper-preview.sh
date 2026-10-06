@@ -45,6 +45,7 @@ convert_html() (
     if prepared_dir=$(mktemp -d); then
       if python3 - "$source" "$prepared_dir/$(basename "$source")" "$diff" <<'PY'
 import pathlib
+import re
 import sys
 
 source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
@@ -57,13 +58,25 @@ if "pdfcreator={LaTeX via pandoc}" in source:
     source = source.replace(r"\makesavenoteenv{longtable}", "")
 if sys.argv[3] == "true":
     # Preserve latexdiff's macros, but identify their output without color heuristics.
+    # latexdiff supplies ordinary one-argument macros via \providecommand.
     markers = r"""\RequirePackage{latexml}
+\ifdefined\DIFadd
 \let\astadiffadd\DIFadd
-\let\astadiffdel\DIFdel
 \renewcommand{\DIFadd}[1]{\lxWithClass{asta-diff-add}{\astadiffadd{#1}}}
+\fi
+\ifdefined\DIFdel
+\let\astadiffdel\DIFdel
 \renewcommand{\DIFdel}[1]{\lxWithClass{asta-diff-del}{\astadiffdel{#1}}}
+\fi
 """
-    source = source.replace(r"\begin{document}", markers + r"\begin{document}", 1)
+    source, count = re.subn(
+        r"(?m)^[ \t]*\\begin\{document\}",
+        lambda match: markers + match.group(),
+        source,
+        count=1,
+    )
+    if not count:
+        raise SystemExit("No document start for LaTeXML diff markers")
 pathlib.Path(sys.argv[2]).write_text(source, encoding="utf-8")
 PY
       then
@@ -95,7 +108,7 @@ PY
   rm -f "$output"
   if [ "$result" -eq 0 ] && [ -s "$target" ] && [ -f "$log" ] && \
      ! grep -Eq '^Error:|Conversion complete: [1-9][0-9]* errors?' "$log" && \
-     python3 - "$target" <<'PY'
+     python3 - "$target" "$diff" <<'PY'
 import pathlib
 import re
 import sys
@@ -111,7 +124,22 @@ policy = (
     "script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
 )
 meta = f'<meta http-equiv="Content-Security-Policy" content="{policy}">'
-path.write_text(document[:head.end()] + meta + document[head.end():], encoding="utf-8")
+document = document[:head.end()] + meta + document[head.end():]
+if sys.argv[2] == "true":
+    # The sandboxed iframe cannot load LaTeXML's linked stylesheets.
+    style = """<style>
+.asta-diff-add { background: #d7f5dd; color: #032b13 !important;
+  text-decoration: none; border-radius: 2px; }
+.asta-diff-del { background: #ffd7d5; color: #40100c !important;
+  text-decoration: line-through; text-decoration-color: #cf222e; border-radius: 2px; }
+.asta-diff-add [style], .asta-diff-add [mathcolor],
+.asta-diff-del [style], .asta-diff-del [mathcolor] { color: inherit !important; }
+</style>"""
+    end = re.search(r"</head\s*>", document, flags=re.IGNORECASE)
+    if not end:
+        raise SystemExit("LaTeXML HTML has no closing head for the diff palette")
+    document = document[:end.start()] + style + document[end.start():]
+path.write_text(document, encoding="utf-8")
 PY
   then
     return 0
@@ -251,26 +279,6 @@ html_diff=false
 if convert_html "$diff_tex" "$site_dir/html-diff/index.html" \
   "$site_dir/html-diff/latexml.log" true; then
   html_diff=true
-  # The sandboxed "What changed" iframe can't load LaTeXML's linked stylesheets,
-  # so inline the palette for our explicit latexdiff classes.
-  python3 - "$site_dir/html-diff/index.html" <<'PY' || true
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-document = path.read_text(encoding="utf-8")
-style = """<style>
-.asta-diff-add { background: #d7f5dd; color: #032b13 !important;
-  text-decoration: none; border-radius: 2px; }
-.asta-diff-del { background: #ffd7d5; color: #40100c !important;
-  text-decoration: line-through; text-decoration-color: #cf222e; border-radius: 2px; }
-.asta-diff-add [style], .asta-diff-add [mathcolor],
-.asta-diff-del [style], .asta-diff-del [mathcolor] { color: inherit !important; }
-</style>"""
-end = document.lower().find("</head>")
-if end >= 0:
-    path.write_text(document[:end] + style + document[end:], encoding="utf-8")
-PY
 fi
 if (cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
   -halt-on-error -file-line-error -outdir=build "$diff_name"); then

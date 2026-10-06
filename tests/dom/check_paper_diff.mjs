@@ -5,7 +5,7 @@ import { parseHTML } from "linkedom";
 
 const { document } = parseHTML(fs.readFileSync(process.argv[2], "utf8"));
 const rules = [...document.querySelectorAll("style")].flatMap((style) =>
-  [...style.sheet.cssRules].filter((rule) => rule.selectorText?.includes(".asta-diff-")),
+  [...(style.sheet?.cssRules ?? [])].filter((rule) => rule.selectorText?.includes(".asta-diff-")),
 );
 for (const [selector, text, background, decoration] of [
   [".asta-diff-add", "Updated preview", "#d7f5dd", "none"],
@@ -13,12 +13,18 @@ for (const [selector, text, background, decoration] of [
 ]) {
   const marks = [...document.querySelectorAll(selector)];
   assert.ok(marks.length, `LaTeXML produced no ${selector} marks`);
-  assert.ok(marks.some((mark) => mark.textContent.includes(text)));
+  assert.ok(marks.some((mark) => mark.textContent.includes(text)), `${selector} has no ${text} text`);
   for (const mark of marks) {
     const matched = rules.filter((rule) => mark.matches(rule.selectorText));
-    assert.ok(matched.some((rule) => rule.style.background === background));
-    assert.ok(matched.some((rule) => rule.style["text-decoration"] === decoration));
+    assert.ok(matched.some((rule) => rule.style.background === background), `${selector} background missing: ${mark.outerHTML}`);
+    assert.ok(matched.some((rule) => rule.style["text-decoration"] === decoration), `${selector} decoration missing: ${mark.outerHTML}`);
   }
+}
+for (const selector of [".ltx_figure .ltx_caption", ".ltx_table .ltx_caption"]) {
+  const caption = document.querySelector(selector);
+  assert.ok(caption, `LaTeXML produced no ${selector}`);
+  assert.ok(caption.querySelector(".asta-diff-add"), `${selector} addition is unmarked: ${caption.outerHTML}`);
+  assert.ok(caption.querySelector(".asta-diff-del"), `${selector} deletion is unmarked: ${caption.outerHTML}`);
 }
 const authorStrike = [...document.querySelectorAll(".ltx_ulem_sout")].find(
   (mark) => mark.textContent.includes("author strikethrough"),

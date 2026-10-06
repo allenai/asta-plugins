@@ -6,7 +6,7 @@ on:
       - Dockerfile
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
-      - tests/dom/check_paper_diff.mjs
+      - tests/dom/**
       - tests/fixtures/devcontainer-smoke/**
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
