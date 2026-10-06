@@ -1,4 +1,9 @@
-use Cwd 'abs_path';
+use Cwd 'getcwd';
 use File::Basename 'dirname';
 $pdf_mode = 1;
-$ENV{'BIBINPUTS'} = abs_path(dirname(__FILE__) . '/..') . $search_path_separator . ($ENV{'BIBINPUTS'} // '') . $search_path_separator;
+# latexmk may evaluate rc files as strings; locate the bibliography from cwd.
+my $bib_dir = getcwd();
+while (!-f "$bib_dir/references.bib" && !-e "$bib_dir/.git" && dirname($bib_dir) ne $bib_dir) {
+    $bib_dir = dirname($bib_dir);
+}
+$ENV{'BIBINPUTS'} = $bib_dir . $search_path_separator . ($ENV{'BIBINPUTS'} // '') . $search_path_separator;

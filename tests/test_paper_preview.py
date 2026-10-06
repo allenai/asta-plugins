@@ -369,6 +369,17 @@ def test_latexml_failure_keeps_pdf_and_log(tmp_path):
 def test_missing_latexmlc_writes_a_published_failure_log(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     (bin_dir / "latexmlc").unlink()
+    # Exclude an installed LaTeXML too, while retaining the fake TeX commands.
+    isolated_bin = tmp_path / "isolated-bin"
+    isolated_bin.mkdir()
+    for directory in env["PATH"].split(os.pathsep):
+        if not Path(directory).is_dir():
+            continue
+        for tool in Path(directory).iterdir():
+            dest = isolated_bin / tool.name
+            if tool.name != "latexmlc" and tool.is_file() and not dest.exists():
+                dest.symlink_to(tool.resolve())
+    env["PATH"] = str(isolated_bin)
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 

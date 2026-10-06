@@ -1,7 +1,7 @@
-paper/build/
-paper/*.fls
-paper/*.fdb_latexmk
-paper/*.synctex.gz
-paper/what-changed.tex
-/paper/html/index.qmd
-/paper/html/paper-viewer.js
+/{{PAPER_DIR}}/build/
+/{{PAPER_DIR}}/*.fls
+/{{PAPER_DIR}}/*.fdb_latexmk
+/{{PAPER_DIR}}/*.synctex.gz
+/{{PAPER_DIR}}/what-changed.tex
+/{{PAPER_DIR}}/html/index.qmd
+/{{PAPER_DIR}}/html/paper-viewer.js

@@ -4,7 +4,9 @@ Edit, preview, and save this research project.
 
 ## Preview locally
 
-With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which blocks until this push's Pages deployment is live. If a transient API or workflow failure interrupts the wait, the baseline remains so the same command can be retried. The render targets fetch the workspace evidence extension from the latest `asta-plugins` version tag by default; set `ASTA_PLUGINS_REF` to pin a specific release (e.g. `v0.103.0`) or to track `main`. The CI-side deploy assets (the workflow in `docs.yml`, `what-changed.py`, and the vendored-script drift checks) follow the same version-tag policy: the scaffold's literal workflow ref is advanced by the `asta-plugins` release process, and existing projects receive that one-line bump when their workspace assets are upgraded. Offline is tolerated: if the fetch can't reach `asta-plugins` but a previously fetched `_extensions/evidence/` is present, the render keeps that cached copy and warns instead of failing; only a first fetch with no cache is a hard error.
+With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which blocks until this push's Pages deployment is live. If a transient API or workflow failure interrupts the wait, the baseline remains so the same command can be retried.
+
+Managed rules, helpers and the evidence extension use the ref in `.github/workflows/docs.yml`: `@latest` follows final releases, `@main` follows merges, and a release tag or commit pins a version. Change that ref and run `make update-workspace` to refresh the local cache; projects keep control of when to upgrade. A standalone, ejected Makefile can instead set `ASTA_PLUGINS_REF`, defaulting to the newest final release tag. Offline renders keep cached rules and evidence with a warning when a fetch fails; a first fetch needs network access.
 
 ## Devcontainer (`.devcontainer/devcontainer.json`)
 
@@ -57,7 +59,8 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make clean` | wipe Quarto build artifacts |
 | `make paper` | compile a separate LaTeX source paper using its latexmkrc |
 | `make paper-clean` | clean that paper's build outputs |
-| `make workspace-assets` | refresh the evidence extension from `asta-plugins` (latest version tag by default) |
+| `make workspace-assets` | refresh the evidence extension at the managed ref selected in `docs.yml`; standalone rules default to the newest release tag |
+| `make update-workspace` | refresh managed rules and helpers at the selected ref; available with `Makefile.managed` |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
 
