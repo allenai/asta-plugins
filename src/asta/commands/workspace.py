@@ -9,6 +9,7 @@ import re
 import subprocess
 import tarfile
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -17,6 +18,10 @@ import click
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
+ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
+# Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
+SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
+MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
     r"(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
@@ -155,6 +160,60 @@ def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
     return result, archive
 
 
+def load_scripts(archive: bytes) -> dict[str, bytes]:
+    wanted = {ASSET_DIR + name: name for name in SCRIPTS}
+    scripts: dict[str, bytes] = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
+            for member in bundle:
+                parts = member.name.split("/", 1)
+                name = wanted.get(parts[1]) if len(parts) == 2 and parts[0] else None
+                if name is None:
+                    continue
+                stream = bundle.extractfile(member) if member.isfile() else None
+                if name in scripts or stream is None or member.size > MAX_ASSET_BYTES:
+                    raise click.ClickException(
+                        f"Invalid {name} in asta-plugins archive"
+                    )
+                data = stream.read(MAX_ASSET_BYTES + 1)
+                if not data or len(data) > MAX_ASSET_BYTES:
+                    raise click.ClickException(f"Empty or oversized {name} in archive")
+                scripts[name] = data
+    except (tarfile.TarError, OSError) as exc:
+        raise click.ClickException(f"Invalid asta-plugins archive: {exc}") from exc
+    # Older refs can omit scripts; only the Make target that needs one should fail.
+    return scripts
+
+
+def _script_hashes(scripts: dict[str, bytes]) -> dict[str, str]:
+    return {
+        name: hashlib.sha256(data).hexdigest() for name, data in sorted(scripts.items())
+    }
+
+
+def _require_scripts(rules: bytes, scripts: Mapping[str, object], ref: str) -> None:
+    if (
+        MANAGED_SCRIPTS_MARKER not in rules.splitlines()
+        or set(SCRIPTS) - scripts.keys()
+    ):
+        raise click.ClickException(
+            f"asta-plugins@{ref} does not support all managed workspace scripts; "
+            "keep the project scripts or select a newer ref in docs.yml"
+        )
+
+
+def _scripts_state(directory: Path, names: dict[str, str]) -> dict[str, str] | None:
+    state = {}
+    for name in names:
+        if name not in SCRIPTS:
+            return None
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            return None
+        state[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return state
+
+
 def _atomic_write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = None
@@ -183,10 +242,19 @@ def workspace() -> None:
     is_flag=True,
     help="Fetch again, including moving refs such as main and latest.",
 )
-def sync(project: Path, refresh: bool) -> None:
+@click.option(
+    "--require-scripts",
+    is_flag=True,
+    help="Verify managed rules and both cached scripts before removing project copies.",
+)
+def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
     project = project.resolve()
     if (project / "workspace.mk").exists():
+        if require_scripts:
+            raise click.ClickException(
+                "Local workspace.mk overrides managed rules; keep its project scripts"
+            )
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
@@ -204,7 +272,8 @@ def sync(project: Path, refresh: bool) -> None:
     cache = project / ".asta/cache"
     target = cache / "workspace.mk"
     manifest = cache / "workspace.json"
-    if (
+    scripts_dir = cache / "scripts"
+    if scripts_dir.is_symlink() or (
         (project / ".asta").is_symlink()
         or cache.is_symlink()
         or (cache / "archives").is_symlink()
@@ -286,9 +355,37 @@ def sync(project: Path, refresh: bool) -> None:
         and bool(archive_sha)
         and archive_path.is_file()
         and not archive_path.is_symlink()
-        and archive_sha == hashlib.sha256(archive_path.read_bytes()).hexdigest()
     )
+    cached_archive = archive_path.read_bytes() if cache_valid else b""
+    cache_valid = (
+        cache_valid and archive_sha == hashlib.sha256(cached_archive).hexdigest()
+    )
+    scripts_dir = scripts_dir / archive_sha if archive_sha else scripts_dir
+    if scripts_dir.is_symlink():
+        raise click.ClickException("Workspace scripts directory must not be a symlink")
+    scripts_header = (
+        f"override ASTA_WORKSPACE_SCRIPTS := .asta/cache/scripts/{archive_sha}\n"
+    ).encode()
+    if cache_valid and (
+        not isinstance(state.get("scripts"), dict)
+        or state["scripts"] != _scripts_state(scripts_dir, state["scripts"])
+        or not target.read_bytes().startswith(scripts_header)
+    ):
+        try:
+            scripts = load_scripts(cached_archive)
+        except click.ClickException:
+            cache_valid = False
+        else:
+            for name, data in scripts.items():
+                _atomic_write(scripts_dir / name, data)
+            if not target.read_bytes().startswith(scripts_header):
+                _atomic_write(target, scripts_header + target.read_bytes())
+                state["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+            state["scripts"] = _script_hashes(scripts)
+            _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
+        if require_scripts:
+            _require_scripts(target.read_bytes(), state["scripts"], ref)
         target.touch()
         if not re.fullmatch(r"[0-9a-fA-F]{40}", ref):
             click.echo(
@@ -299,16 +396,24 @@ def sync(project: Path, refresh: bool) -> None:
         return
     try:
         asset, archive = load_asset(repository, source_ref)
+        scripts = load_scripts(archive)
     except click.ClickException:
         if cache_valid:
+            if require_scripts:
+                _require_scripts(target.read_bytes(), state["scripts"], ref)
             target.touch()
             click.echo(
                 f"Could not refresh asta-plugins@{ref}; using the cached copy", err=True
             )
             return
         raise
+    if require_scripts:
+        _require_scripts(asset, scripts, ref)
     archive_sha = hashlib.sha256(archive).hexdigest()
     archive_path = cache / "archives" / archive_sha
+    scripts_dir = cache / "scripts" / archive_sha
+    if scripts_dir.is_symlink():
+        raise click.ClickException("Workspace scripts directory must not be a symlink")
     if archive_path.is_symlink():
         raise click.ClickException("Workspace source archive must not be a symlink")
     if (
@@ -317,9 +422,13 @@ def sync(project: Path, refresh: bool) -> None:
     ):
         _atomic_write(archive_path, archive)
     managed = (
+        f"override ASTA_WORKSPACE_SCRIPTS := .asta/cache/scripts/{archive_sha}\n"
         f"override ASTA_PLUGINS_REF := {ref}\n"
         f"override ASTA_WORKSPACE_ARCHIVE := .asta/cache/archives/{archive_sha}\n"
     ).encode() + asset
+    # Keep old readers on their archive's scripts until the new rules are published.
+    for name, data in scripts.items():
+        _atomic_write(scripts_dir / name, data)
     _atomic_write(target, managed)
     _atomic_write(
         manifest,
@@ -330,6 +439,7 @@ def sync(project: Path, refresh: bool) -> None:
                 "source_ref": source_ref,
                 "sha256": hashlib.sha256(managed).hexdigest(),
                 "archive_sha256": archive_sha,
+                "scripts": _script_hashes(scripts),
             },
             sort_keys=True,
         ).encode()
