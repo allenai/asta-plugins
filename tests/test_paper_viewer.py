@@ -26,11 +26,17 @@ def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
     assert generate(tmp_path, "paper", "research/other paper").returncode == 0
     paper = (tmp_path / "paper/html/index.qmd").read_text()
     nested = (tmp_path / "research/other paper/html/index.qmd").read_text()
-    assert "../../paper-previews/paper/main.pdf" in paper
-    assert "../../../paper-previews/research/other%20paper/main.pdf" in nested
-    assert "sandbox', 'allow-same-origin'" in nested
+    assert 'data-paper-preview="../../paper-previews/paper"' in paper
+    assert (
+        'data-paper-preview="../../../paper-previews/research/other%20paper"' in nested
+    )
+    assert (
+        "sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox'"
+        in nested
+    )
+    assert "allow-scripts" not in nested
     assert "if (!response.ok) return" in nested
-    assert "use the PDF above" in nested
+    assert "use the PDF link when available" in nested
 
 
 @pytest.mark.parametrize("suffix", ["qmd", "md", "html"])
@@ -54,9 +60,45 @@ def test_symlinked_viewer_is_preserved(tmp_path):
     assert (folder / "index.qmd").is_symlink()
 
 
-@pytest.mark.parametrize("directory", ["../outside", "/absolute", "paper/../other"])
+@pytest.mark.parametrize(
+    "directory",
+    [
+        "../outside",
+        "/absolute",
+        "paper/../other",
+        "paper/./other",
+        "paper//other",
+        "",
+        1,
+        None,
+    ],
+)
 def test_invalid_path_is_rejected(tmp_path, directory):
     assert generate(tmp_path, directory).returncode != 0
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        [],
+        {"papers": "paper"},
+        {"papers": None},
+        {"papers": ["paper", "../outside"]},
+    ],
+)
+def test_invalid_discovery_does_not_partially_generate(tmp_path, data):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=json.dumps(data),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "paper-viewer:" in result.stderr
+    assert "Traceback" not in result.stderr
     assert not list(tmp_path.iterdir())
 
 
@@ -67,15 +109,24 @@ def test_paper_titles_and_html_are_escaped(tmp_path):
     metadata = yaml.safe_load(document.split("---")[1])
     assert metadata["title"] == name + " HTML"
     assert "<code>other&lt;&gt;&amp;&quot;/main.tex</code>" in document
-    assert "other%3C%3E%26%22/main.pdf" in document
+    assert 'data-paper-preview="../../paper-previews/other%3C%3E%26%22"' in document
     assert "\\u003c" in document
 
 
 @pytest.mark.skipif(not shutil.which("quarto"), reason="needs the workspace image")
-def test_quarto_renders_the_managed_viewer(tmp_path):
-    assert generate(tmp_path, "paper").returncode == 0
+@pytest.mark.parametrize("directory", ["paper", "papers/special*[x]`other"])
+def test_quarto_renders_the_managed_viewer(tmp_path, directory):
+    assert generate(tmp_path, directory).returncode == 0
     (tmp_path / "_quarto.yml").write_text(
-        "project:\n  type: website\n  render: [paper/html/index.qmd]\nformat: html\n"
+        yaml.safe_dump(
+            {
+                "project": {
+                    "type": "website",
+                    "render": ["**/*.qmd"],
+                },
+                "format": "html",
+            }
+        )
     )
     result = subprocess.run(
         ["quarto", "render"],
@@ -84,10 +135,11 @@ def test_quarto_renders_the_managed_viewer(tmp_path):
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    page = (tmp_path / "_site/paper/html/index.html").read_text()
+    page = (tmp_path / f"_site/{directory}/html/index.html").read_text()
     assert "const host = document.querySelector" in page
-    assert 'href="../../paper-previews/paper/main.pdf"' in page
+    assert 'href="../../paper-previews/paper/main.pdf"' not in page
     assert "createElement('iframe')" in page
+    assert f"<code>{directory}/main.tex</code>" in page
 
 
 def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_path):
@@ -103,6 +155,7 @@ def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_p
         i for i, s in enumerate(steps) if s.get("name") == "Run docs checks"
     )
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("/paper/html/index.qmd\n")
     (tmp_path / "paper").mkdir()
     (tmp_path / "paper/main.tex").write_text("source")
     (tmp_path / "scripts").mkdir()
@@ -112,6 +165,7 @@ def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_p
         [
             "git",
             "add",
+            ".gitignore",
             "paper/main.tex",
             "scripts/paper-discovery.py",
             "scripts/paper-viewer.py",
@@ -121,6 +175,8 @@ def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_p
     )
     script = step["run"].replace("${{ job.workflow_repository }}", "unused")
     script = script.replace("${{ job.workflow_sha }}", "unused")
+    status_command = ["git", "status", "--porcelain", "--untracked-files=all"]
+    before = subprocess.check_output(status_command, cwd=tmp_path)
     result = subprocess.run(
         ["bash", "-e", "-c", script],
         cwd=tmp_path,
@@ -130,5 +186,12 @@ def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_p
     )
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "paper/html/index.qmd").exists()
-    assert subprocess.run(["git", "diff", "--exit-code"], cwd=tmp_path).returncode == 0
+    assert subprocess.check_output(status_command, cwd=tmp_path) == before
     assert not list(tmp_path.glob("tmp.*"))
+
+    (tmp_path / ".gitignore").write_text("")
+    subprocess.run(["git", "add", "paper/html/index.qmd"], cwd=tmp_path, check=True)
+    custom = tmp_path / "paper/html/index.qmd"
+    custom.write_text("custom")
+    assert generate(tmp_path, "paper").returncode == 0
+    assert custom.read_text() == "custom"

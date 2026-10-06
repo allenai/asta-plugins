@@ -2,7 +2,7 @@
   "name": "asta-plugins-dom-tests",
   "private": true,
   "scripts": {
-    "test": "node --test test_what_changed_dom.mjs"
+    "test": "node --test test_*.mjs"
   },
   "devDependencies": {
     "linkedom": "0.18.13"
