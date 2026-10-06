@@ -3,8 +3,10 @@
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -1423,3 +1425,73 @@ def test_local_viewer_accepts_apostrophe_in_cache_path(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert (paper / "html/index.qmd").is_file()
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_workflow_viewers_are_not_regenerated_by_managed_check(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_text('raise SystemExit("wrong cached version")\n')
+    (scripts / "quarto-check.sh").write_text("test -f paper/html/index.qmd\n")
+    page = tmp_path / "paper/html/index.qmd"
+    page.parent.mkdir(parents=True)
+    page.write_text("workflow viewer")
+    result = subprocess.run(
+        ["make", "-s", "-o", "workspace-assets", "check"],
+        cwd=tmp_path,
+        env={**os.environ, "ASTA_WORKSPACE_VIEWERS": "0"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert page.read_text() == "workflow viewer"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_viewer_python_can_be_selected_by_project(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_bytes((assets / name).read_bytes())
+    log = tmp_path / "interpreter.log"
+    interpreter = tmp_path / "selected-python"
+    interpreter.write_text(
+        f"#!/bin/sh\necho selected >> {shlex.quote(str(log))}\n"
+        f'exec {shlex.quote(sys.executable)} "$@"\n'
+    )
+    interpreter.chmod(0o755)
+    result = subprocess.run(
+        ["make", "-s", "workspace-viewers", f"PYTHON={interpreter}"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert log.read_text().splitlines() == ["selected", "selected"]
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+@pytest.mark.parametrize(
+    "directory", ["node_modules", "_site", ".asta", "venv", "paper-previews"]
+)
+def test_missing_helpers_do_not_warn_about_build_or_dependency_papers(
+    tmp_path, directory
+):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    folder = tmp_path / directory / "example"
+    folder.mkdir(parents=True)
+    (folder / "main.tex").write_text("dependency paper")
+    result = subprocess.run(
+        ["make", "-s", "workspace-viewers"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
