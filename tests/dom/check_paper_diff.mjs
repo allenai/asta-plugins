@@ -20,6 +20,20 @@ for (const [selector, text, background, decoration] of [
     assert.ok(matched.some((rule) => rule.style["text-decoration"] === decoration), `${selector} decoration missing: ${mark.outerHTML}`);
   }
 }
+for (const [selector, prefix, formatted, suffix, math] of [
+  [".asta-diff-add", "Mixed addition", "bold addition", "addition tail.", "a=3"],
+  [".asta-diff-del", "Mixed deletion", "italic deletion", "deletion tail.", "b=4"],
+]) {
+  const mark = [...document.querySelectorAll(selector)].find(
+    (element) => element.textContent.includes(prefix),
+  );
+  assert.ok(mark, `${selector} has no mixed text/math mark`);
+  assert.ok(mark.textContent.includes(formatted), `${selector} lost formatted text: ${mark.outerHTML}`);
+  assert.ok(mark.textContent.includes(suffix), `${selector} leaves trailing text unmarked: ${mark.outerHTML}`);
+  const formula = mark.querySelector("math");
+  assert.ok(formula, `${selector} leaves inline math unmarked: ${mark.outerHTML}`);
+  assert.equal(formula.getAttribute("alttext"), math, `${selector} changed the inline math`);
+}
 for (const selector of [".ltx_figure .ltx_caption", ".ltx_table .ltx_caption"]) {
   const caption = document.querySelector(selector);
   assert.ok(caption, `LaTeXML produced no ${selector}`);
