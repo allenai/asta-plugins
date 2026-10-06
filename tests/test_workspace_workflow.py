@@ -963,6 +963,7 @@ def test_artifact_command_checks_completed_site_before_upload(tmp_path, exit_cod
     )
     assert result.returncode == exit_code
 
+
 def test_project_copies_of_paper_scripts_override_managed_ones() -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -972,3 +973,44 @@ def test_project_copies_of_paper_scripts_override_managed_ones() -> None:
         guard = f"git ls-files --error-unmatch scripts/{asset}"
         assert guard in step["run"]
         assert step["run"].index(guard) < step["run"].index(f"assets/{asset}")
+
+
+@pytest.mark.parametrize("committed", [True, False])
+def test_paper_discovery_override_requires_a_tracked_copy(tmp_path, committed):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "paper-discovery.py").write_text(
+        'print(\'{"papers": [], "removed": [], "warnings": []}\')\n'
+    )
+    if committed:
+        subprocess.run(
+            ["git", "add", "scripts/paper-discovery.py"], cwd=tmp_path, check=True
+        )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curl").write_text("#!/bin/sh\nexit 1\n")
+    (bin_dir / "curl").chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", PR_BASE="")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if committed:
+        assert result.returncode == 0, result.stderr
+        assert "Using the project copy" in result.stdout
+        assert not (tmp_path / "_site/paper-previews/build-failed.txt").exists()
+    else:
+        assert result.returncode != 0
+        assert (
+            tmp_path / "_site/paper-previews/build-failed.txt"
+        ).read_text().strip() == ("Could not download the paper discovery script.")
