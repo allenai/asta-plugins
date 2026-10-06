@@ -429,6 +429,27 @@ def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:
     assert "customized" in result.stdout
 
 
+def test_thin_makefile_dev_needs_no_cli(tmp_path: Path) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "main")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(source.read_text())
+    result = subprocess.run(
+        ["make", "-n", "dev"],
+        cwd=project,
+        env={**os.environ, "PATH": "/usr/bin:/bin"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "vscode-remote://dev-container+" in result.stdout
+    assert not (project / ".asta").exists()
+
+
 def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
     assets = (
         Path(__file__).resolve().parents[1]
@@ -458,6 +479,8 @@ def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
         "preview-ready",
     ):
         assert recipe(full, target) == recipe(managed, target), target
+    thin = (assets / "Makefile.managed").read_text()
+    assert recipe(thin, "dev") == recipe(managed, "dev")
     assert recipe(full, "check") == recipe(managed, "workspace-shared-check")
     assert "ASTA_WORKSPACE_ARCHIVE" in recipe(managed, "workspace-assets")
     assert "ASTA_WORKSPACE_ARCHIVE" not in recipe(full, "workspace-assets")

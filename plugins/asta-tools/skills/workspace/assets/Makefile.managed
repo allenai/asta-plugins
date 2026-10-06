@@ -4,6 +4,11 @@
 .DEFAULT_GOAL := preview
 ifneq ($(wildcard workspace.mk),)
 include workspace.mk
+else ifeq ($(MAKECMDGOALS),dev)
+# `make dev` opens the container that supplies the CLI, so it must not need one.
+.PHONY: dev
+dev:
+	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
 else
 ifneq ($(origin ASTA_PLUGINS_REF),undefined)
 $(error ASTA_PLUGINS_REF cannot select managed rules; change the ref in .github/workflows/docs.yml)
