@@ -97,10 +97,17 @@ workspace-assets:
 
 workspace-viewers:
 	@set -eu; \
-	discovery='$(firstword $(wildcard scripts/paper-discovery.py $(ASTA_WORKSPACE_SCRIPTS)/paper-discovery.py))'; \
-	viewer='$(firstword $(wildcard scripts/paper-viewer.py $(ASTA_WORKSPACE_SCRIPTS)/paper-viewer.py))'; \
+	discovery='$(subst ','"'"',$(firstword $(wildcard scripts/paper-discovery.py $(ASTA_WORKSPACE_SCRIPTS)/paper-discovery.py)))'; \
+	viewer='$(subst ','"'"',$(firstword $(wildcard scripts/paper-viewer.py $(ASTA_WORKSPACE_SCRIPTS)/paper-viewer.py)))'; \
 	if [ -z "$$discovery" ] || [ -z "$$viewer" ]; then \
-		echo "workspace-viewers: update the Asta CLI and run 'asta workspace sync --refresh --require-scripts' before removing existing viewer pages" >&2; exit 0; \
+		if find . -type f -name main.tex -print -quit | grep -q .; then \
+			[ -n "$$discovery" ] || echo "workspace-viewers: missing paper-discovery.py" >&2; \
+			[ -n "$$viewer" ] || echo "workspace-viewers: missing paper-viewer.py" >&2; \
+			echo "workspace-viewers: update the Asta CLI and run 'asta workspace sync --refresh --require-scripts' before removing existing viewer pages" >&2; \
+		fi; exit 0; \
+	fi; \
+	if ! command -v python3 >/dev/null 2>&1; then \
+		echo "workspace-viewers: python3 is unavailable; keeping existing viewer pages" >&2; exit 0; \
 	fi; \
 	tmp=$$(mktemp); trap 'rm -f "$$tmp"' 0; \
 	python3 "$$discovery" > "$$tmp"; \

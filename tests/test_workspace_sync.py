@@ -1041,6 +1041,60 @@ def test_sync_accepts_older_archives_with_missing_scripts(
     assert runner.invoke(cli, args).exit_code == 0
 
 
+@pytest.mark.parametrize("mode", ["fresh", "cached", "offline-refresh"])
+def test_require_scripts_accepts_pre_viewer_managed_rules(tmp_path, monkeypatch, mode):
+    project = project_with_ref(tmp_path, "older-managed-release")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\ncheck:\n\t@true\n"
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: b"echo old"
+            for name in workspace_module.CHECK_SCRIPTS
+        },
+        scripts=False,
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (rules, archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    if mode != "fresh":
+        assert runner.invoke(cli, args).exit_code == 0
+
+        def offline(*_args):
+            raise workspace_module.click.ClickException("offline")
+
+        monkeypatch.setattr(workspace_module, "load_asset", offline)
+    result = runner.invoke(
+        cli,
+        args
+        + ["--require-scripts"]
+        + (["--refresh"] if mode == "offline-refresh" else []),
+    )
+    assert result.exit_code == 0, result.output
+    assert set(
+        json.loads((project / ".asta/cache/workspace.json").read_text())["scripts"]
+    ) == set(workspace_module.CHECK_SCRIPTS)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_viewer_rules_require_the_viewer_helpers(tmp_path, monkeypatch, cached):
+    project = project_with_ref(tmp_path, "main")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\nworkspace-viewers:\n\t@true\n"
+    archive = _archive(
+        {
+            workspace_module.ASSET_DIR + name: b"echo check"
+            for name in workspace_module.CHECK_SCRIPTS
+        },
+        scripts=False,
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (rules, archive))
+    runner = CliRunner()
+    args = ["workspace", "sync", "--project", str(project)]
+    if cached:
+        assert runner.invoke(cli, args).exit_code == 0
+    result = runner.invoke(cli, args + ["--require-scripts"])
+    assert result.exit_code != 0
+    assert "does not support all managed workspace scripts" in result.output
+
+
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_missing_managed_script_reports_sync_guidance(tmp_path: Path) -> None:
     assets = (
@@ -1238,6 +1292,8 @@ def test_local_managed_viewer_precedes_render_and_preserves_custom_pages(
     custom = project / "research/nested/html/index.qmd"
     custom.parent.mkdir()
     custom.write_text("custom viewer")
+    for name in workspace_module.SCRIPTS:
+        assert (assets / name).is_file(), f"Missing managed asset: {name}"
     archive = _archive(
         {
             workspace_module.ASSET_DIR + name: (assets / name).read_bytes()
@@ -1302,12 +1358,16 @@ def test_local_viewer_discovery_failure_prevents_generation(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-def test_older_cli_cache_keeps_existing_projects_working(tmp_path):
+@pytest.mark.parametrize("paper", [False, True])
+def test_older_cli_cache_keeps_existing_projects_working(tmp_path, paper):
     assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
     (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "quarto-check.sh").write_text("echo checked\n")
+    if paper:
+        (tmp_path / "paper").mkdir()
+        (tmp_path / "paper/main.tex").write_text("source")
     result = subprocess.run(
         ["make", "-o", "workspace-assets", "check"],
         cwd=tmp_path,
@@ -1316,4 +1376,50 @@ def test_older_cli_cache_keeps_existing_projects_working(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "checked" in result.stdout
-    assert "--require-scripts" in result.stderr
+    assert ("--require-scripts" in result.stderr) == paper
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_local_viewer_skips_without_python_and_keeps_existing_pages(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_bytes((assets / name).read_bytes())
+    (scripts / "quarto-check.sh").write_text("echo checked\n")
+    existing = tmp_path / "paper/html/index.qmd"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("custom viewer")
+    (tmp_path / "sh").symlink_to(shutil.which("sh"))
+    result = subprocess.run(
+        [shutil.which("make"), "-s", "-o", "workspace-assets", "check"],
+        cwd=tmp_path,
+        env={"PATH": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "python3 is unavailable" in result.stderr
+    assert existing.read_text() == "custom viewer"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_local_viewer_accepts_apostrophe_in_cache_path(tmp_path):
+    assets = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+    (tmp_path / "Makefile").write_text((assets / "workspace.mk").read_text())
+    scripts = tmp_path / "cache'custom"
+    scripts.mkdir()
+    for name in workspace_module.VIEWER_SCRIPTS:
+        (scripts / name).write_bytes((assets / name).read_bytes())
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "main.tex").write_text("source")
+    result = subprocess.run(
+        ["make", "-s", "workspace-viewers", "ASTA_WORKSPACE_SCRIPTS=cache'custom"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (paper / "html/index.qmd").is_file()

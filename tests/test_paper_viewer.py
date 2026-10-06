@@ -60,6 +60,51 @@ def test_symlinked_viewer_is_preserved(tmp_path):
     assert (folder / "index.qmd").is_symlink()
 
 
+def test_generated_viewer_refreshes_and_is_removed_after_paper_moves(tmp_path):
+    assert generate(tmp_path, "paper").returncode == 0
+    old = tmp_path / "paper/html/index.qmd"
+    current = old.read_text()
+    old.write_text(current.replace("The preview builds PDF and HTML", "Old template"))
+    assert generate(tmp_path, "paper").returncode == 0
+    assert old.read_text() == current
+    assert generate(tmp_path, "papers/moved").returncode == 0
+    assert not old.exists()
+    moved = tmp_path / "papers/moved/html/index.qmd"
+    assert moved.is_file()
+    assert generate(tmp_path).returncode == 0
+    assert not moved.exists()
+
+
+def test_committed_generated_viewer_becomes_user_owned(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    assert generate(tmp_path, "paper").returncode == 0
+    page = tmp_path / "paper/html/index.qmd"
+    subprocess.run(["git", "add", "paper/html/index.qmd"], cwd=tmp_path, check=True)
+    page.write_text(page.read_text() + "\nUser customization\n")
+    custom = page.read_text()
+    assert generate(tmp_path, "paper").returncode == 0
+    assert page.read_text() == custom
+    assert generate(tmp_path).returncode == 0
+    assert page.read_text() == custom
+
+
+def test_orphan_cleanup_preserves_custom_and_symlinked_pages(tmp_path):
+    assert generate(tmp_path, "paper").returncode == 0
+    folder = tmp_path / "paper/html"
+    source = folder / "index.qmd"
+    source.rename(tmp_path / "generated.qmd")
+    source.symlink_to(tmp_path / "generated.qmd")
+    custom = tmp_path / "custom/html/index.qmd"
+    custom.parent.mkdir(parents=True)
+    custom.write_text("Custom page")
+    link = tmp_path / "linked"
+    link.symlink_to(folder, target_is_directory=True)
+    assert generate(tmp_path).returncode == 0
+    assert source.is_symlink()
+    assert (tmp_path / "generated.qmd").exists()
+    assert custom.read_text() == "Custom page"
+
+
 @pytest.mark.parametrize(
     "directory",
     [

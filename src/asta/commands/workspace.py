@@ -20,12 +20,9 @@ WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
-SCRIPTS = (
-    "quarto-check.sh",
-    "wait-for-preview.sh",
-    "paper-discovery.py",
-    "paper-viewer.py",
-)
+CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
+VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -197,10 +194,10 @@ def _script_hashes(scripts: dict[str, bytes]) -> dict[str, str]:
 
 
 def _require_scripts(rules: bytes, scripts: Mapping[str, object], ref: str) -> None:
-    if (
-        MANAGED_SCRIPTS_MARKER not in rules.splitlines()
-        or set(SCRIPTS) - scripts.keys()
-    ):
+    required = set(CHECK_SCRIPTS)
+    if re.search(rb"^workspace-viewers\s*:", rules, re.MULTILINE):
+        required.update(VIEWER_SCRIPTS)
+    if MANAGED_SCRIPTS_MARKER not in rules.splitlines() or required - scripts.keys():
         raise click.ClickException(
             f"asta-plugins@{ref} does not support all managed workspace scripts; "
             "keep the project scripts or select a newer ref in docs.yml"
@@ -250,7 +247,7 @@ def workspace() -> None:
 @click.option(
     "--require-scripts",
     is_flag=True,
-    help="Verify managed rules and cached scripts before removing project copies.",
+    help="Verify all scripts required by the selected rules before removing project copies.",
 )
 def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
