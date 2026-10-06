@@ -964,19 +964,23 @@ def test_artifact_command_checks_completed_site_before_upload(tmp_path, exit_cod
     assert result.returncode == exit_code
 
 
-def test_project_copies_of_paper_scripts_override_managed_ones() -> None:
+def test_paper_overrides_stay_in_unprivileged_build() -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    step = next(
-        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
-    )
+    build = workflow["jobs"]["build"]
+    assert build["permissions"] == {"contents": "read"}
+    assert "secrets" not in workflow["on"]["workflow_call"]
+    assert "secrets." not in str(build)
+    for event in ("pull_request_target", "workflow_run"):
+        assert f"github.event_name != '{event}'" in build["if"]
     for asset in ("paper-discovery.py", "paper-preview.sh"):
-        guard = f"git ls-files --error-unmatch scripts/{asset}"
-        assert guard in step["run"]
-        assert step["run"].index(guard) < step["run"].index(f"assets/{asset}")
+        assert not any(
+            asset in step.get("run", "") for step in workflow["jobs"]["deploy"]["steps"]
+        )
 
 
-@pytest.mark.parametrize("committed", [True, False])
-def test_paper_discovery_override_requires_a_tracked_copy(tmp_path, committed):
+@pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])
+@pytest.mark.parametrize("copy_state", ["tracked", "untracked", "missing", "directory"])
+def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy_state):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
         item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
@@ -986,18 +990,48 @@ def test_paper_discovery_override_requires_a_tracked_copy(tmp_path, committed):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    (scripts / "paper-discovery.py").write_text(
-        'print(\'{"papers": [], "removed": [], "warnings": []}\')\n'
-    )
-    if committed:
-        subprocess.run(
-            ["git", "add", "scripts/paper-discovery.py"], cwd=tmp_path, check=True
-        )
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    marker = tmp_path / "executed"
+    downloads = tmp_path / "downloads"
+    papers = [] if asset == "paper-discovery.py" else ["paper"]
+    for name in ("paper-discovery.py", "paper-preview.sh"):
+        if name.endswith(".py"):
+            source = (
+                "import json, os\n"
+                "from pathlib import Path\n"
+                "Path(os.environ['EXECUTION_MARKER']).write_text('managed')\n"
+                f"print(json.dumps({{'papers': {papers!r}, 'removed': [], 'warnings': []}}))\n"
+            )
+        else:
+            source = '#!/bin/sh\nprintf managed > "$EXECUTION_MARKER"\n'
+        (sources / name).write_text(source)
+    project_copy = scripts / asset
+    project_copy.write_text((sources / asset).read_text().replace("managed", "project"))
+    if copy_state != "untracked":
+        subprocess.run(["git", "add", f"scripts/{asset}"], cwd=tmp_path, check=True)
+    if copy_state in ("missing", "directory"):
+        project_copy.unlink()
+        if copy_state == "directory":
+            project_copy.mkdir()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "curl").write_text("#!/bin/sh\nexit 1\n")
+    (bin_dir / "curl").write_text(
+        "#!/bin/sh\n"
+        'name="${2##*/}"\n'
+        'printf "%s\\n" "$name" >> "$DOWNLOAD_MARKER"\n'
+        'cp "$MANAGED_SOURCES/$name" "$4"\n'
+    )
     (bin_dir / "curl").chmod(0o755)
-    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", PR_BASE="")
+    (bin_dir / "sudo").write_text("#!/bin/sh\nexit 0\n")
+    (bin_dir / "sudo").chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PR_BASE": "",
+        "EXECUTION_MARKER": str(marker),
+        "DOWNLOAD_MARKER": str(downloads),
+        "MANAGED_SOURCES": str(sources),
+    }
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
         cwd=tmp_path,
@@ -1005,12 +1039,24 @@ def test_paper_discovery_override_requires_a_tracked_copy(tmp_path, committed):
         capture_output=True,
         text=True,
     )
-    if committed:
+    downloaded = downloads.read_text().splitlines() if downloads.exists() else []
+    if copy_state in ("tracked", "untracked"):
         assert result.returncode == 0, result.stderr
-        assert "Using the project copy" in result.stdout
-        assert not (tmp_path / "_site/paper-previews/build-failed.txt").exists()
+        if copy_state == "tracked":
+            assert marker.read_text() == "project"
+            assert asset not in downloaded
+        else:
+            assert marker.read_text() == "managed"
+            assert asset in downloaded
     else:
         assert result.returncode != 0
-        assert (
-            tmp_path / "_site/paper-previews/build-failed.txt"
-        ).read_text().strip() == ("Could not download the paper discovery script.")
+        failure_dir = tmp_path / "_site/paper-previews"
+        if asset == "paper-preview.sh":
+            failure_dir /= "paper"
+            assert (failure_dir / "preview.json").read_text().strip() == (
+                '{"changed":false}'
+            )
+        assert (failure_dir / "build-failed.txt").read_text().strip() == (
+            f"Could not copy scripts/{asset}."
+        )
+        assert asset not in downloaded
