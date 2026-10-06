@@ -103,19 +103,38 @@ def test_codespaces_login_persistence_ships_in_the_image() -> None:
     assert "COPY docker/asta-persist-auth /usr/local/bin/" in DOCKERFILE.read_text()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
+@pytest.mark.parametrize(
+    ("codespace_name", "forwarding_domain", "expected_url"),
+    [
+        ("", "", "http://localhost:4848/"),
+        ("example-space", "", "https://example-space-4848.app.github.dev/"),
+        ("example-space", "example.test", "https://example-space-4848.example.test/"),
+    ],
+)
 @pytest.mark.parametrize(
     ("healthy", "project", "start_status", "expected_status", "expected_calls"),
     [
         (True, "managed", 0, 0, ""),
         (False, "managed", 0, 0, "make preview\n"),
         (False, "managed", 2, 1, "make preview\n"),
+        (False, "managed", 137, 1, "make preview\n"),
+        (False, "make-only", 0, 0, "make preview\n"),
         (False, "quarto", 0, 0, "quarto preview --no-browser --port 4848\n"),
         (False, "quarto", 2, 1, "quarto preview --no-browser --port 4848\n"),
         (False, "empty", 0, 0, ""),
     ],
 )
 def test_preview_startup_preserves_prerequisites_and_reports_errors(
-    tmp_path, healthy, project, start_status, expected_status, expected_calls
+    tmp_path,
+    healthy,
+    project,
+    start_status,
+    expected_status,
+    expected_calls,
+    codespace_name,
+    forwarding_domain,
+    expected_url,
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -123,20 +142,25 @@ def test_preview_startup_preserves_prerequisites_and_reports_errors(
     for name in ("curl", "make", "quarto"):
         script = bin_dir / name
         if name == "curl":
-            body = f"exit {0 if healthy else 22}\n"
+            body = (
+                f'printf "%s\\n" "$*" > "$PREVIEW_PROBE"\nexit {0 if healthy else 22}\n'
+            )
         else:
             body = (
                 f'printf "%s\\n" "{name} $*" >> "$PREVIEW_CALLS"\nexit {start_status}\n'
             )
         script.write_text("#!/bin/sh\n" + body)
         script.chmod(0o755)
-    if project == "managed":
+    if project in ("managed", "make-only"):
         (tmp_path / "Makefile").touch()
     if project in ("managed", "quarto"):
         (tmp_path / "_quarto.yml").touch()
     env = {
         "PATH": f"{bin_dir}:{os.defpath}",
         "PREVIEW_CALLS": str(calls),
+        "PREVIEW_PROBE": str(tmp_path / "probe"),
+        "CODESPACE_NAME": codespace_name,
+        "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": forwarding_domain,
     }
     result = subprocess.run(
         ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
@@ -148,5 +172,13 @@ def test_preview_startup_preserves_prerequisites_and_reports_errors(
     )
     assert result.returncode == expected_status
     assert (calls.read_text() if calls.exists() else "") == expected_calls
-    assert "Quarto preview: http://localhost:4848/" in result.stdout
+    assert f"Quarto preview: {expected_url}" in result.stdout
+    assert (tmp_path / "probe").read_text().split() == [
+        "-sf",
+        "--max-time",
+        "2",
+        "-o",
+        "/dev/null",
+        "http://127.0.0.1:4848/",
+    ]
     assert ("Quarto preview failed" in result.stderr) == (expected_status != 0)
