@@ -439,7 +439,7 @@ def test_thin_makefile_dev_needs_no_cli(tmp_path: Path) -> None:
     )
     (project / "Makefile").write_text(source.read_text())
     result = subprocess.run(
-        ["make", "-n", "dev"],
+        [shutil.which("make"), "-n", "dev"],
         cwd=project,
         env={**os.environ, "PATH": "/usr/bin:/bin"},
         text=True,
@@ -447,6 +447,92 @@ def test_thin_makefile_dev_needs_no_cli(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "vscode-remote://dev-container+" in result.stdout
+    assert not (project / ".asta").exists()
+
+
+@pytest.mark.parametrize(
+    "goals", [("catalogue",), ("pull",), ("catalogue", "pull"), ("dev", "catalogue")]
+)
+def test_thin_makefile_local_goals_need_no_cli(tmp_path: Path, goals) -> None:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make not installed")
+    project = tmp_path / "project"
+    project.mkdir()
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(
+        "ASTA_WORKSPACE_LOCAL_GOALS := catalogue pull\n"
+        + source.read_text()
+        + "\ncatalogue pull:\n\t@echo project-only\n"
+    )
+    result = subprocess.run(
+        [make, "-n", *goals],
+        cwd=project,
+        env={"PATH": "/usr/bin:/bin"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "project-only" in result.stdout
+    assert not (project / ".asta").exists()
+
+
+@pytest.mark.parametrize(
+    "goals", [(), ("preview", "catalogue"), ("catalogue", "preview")]
+)
+def test_thin_makefile_local_goals_do_not_skip_shared_targets(
+    tmp_path: Path, goals
+) -> None:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "latest")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(
+        "ASTA_WORKSPACE_LOCAL_GOALS := catalogue\n"
+        + source.read_text()
+        + "\ncatalogue:\n\t@echo project-only\n"
+    )
+    result = subprocess.run(
+        [make, *goals],
+        cwd=project,
+        env={"PATH": "/usr/bin:/bin"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "Install the Asta CLI" in result.stderr
+
+
+def test_thin_makefile_local_override_precedes_local_goals(tmp_path: Path) -> None:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make not installed")
+    project = tmp_path / "project"
+    project.mkdir()
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(
+        "ASTA_WORKSPACE_LOCAL_GOALS := catalogue\n" + source.read_text()
+    )
+    (project / "workspace.mk").write_text("catalogue:\n\t@echo customized\n")
+    result = subprocess.run(
+        [make, "catalogue"],
+        cwd=project,
+        env={"PATH": "/usr/bin:/bin"},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "customized" in result.stdout
     assert not (project / ".asta").exists()
 
 

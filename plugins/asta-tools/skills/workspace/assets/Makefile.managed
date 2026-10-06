@@ -4,8 +4,8 @@
 .DEFAULT_GOAL := preview
 ifneq ($(wildcard workspace.mk),)
 include workspace.mk
-else ifeq ($(MAKECMDGOALS),dev)
-# `make dev` opens the container that supplies the CLI, so it must not need one.
+else ifeq ($(filter-out dev $(ASTA_WORKSPACE_LOCAL_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))),)
+# Project-only goals and host container startup do not need managed rules.
 .PHONY: dev
 dev:
 	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
