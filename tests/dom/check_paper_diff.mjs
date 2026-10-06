@@ -5,7 +5,7 @@ import { parseHTML } from "linkedom";
 
 const { document } = parseHTML(fs.readFileSync(process.argv[2], "utf8"));
 const rules = [...document.querySelectorAll("style")].flatMap((style) =>
-  [...style.sheet.cssRules].filter((rule) => rule.selectorText),
+  [...style.sheet.cssRules].filter((rule) => rule.selectorText?.includes(".asta-diff-")),
 );
 for (const [selector, text, background, decoration] of [
   [".asta-diff-add", "Updated preview", "#d7f5dd", "none"],
