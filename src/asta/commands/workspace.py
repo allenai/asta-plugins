@@ -573,10 +573,12 @@ def run_preview(command: list[str], project: Path) -> int:
 
 def run_make_preview(project: Path) -> tuple[int, bool]:
     """Stream Make errors and recognize its final missing-preview diagnostic."""
+    env = {**os.environ, "LC_ALL": "C", "LANGUAGE": "C"}
+    env.pop("MAKELEVEL", None)
     with preview_process(
         ["make", "preview"],
         project,
-        env={**os.environ, "LC_ALL": "C", "LANGUAGE": "C"},
+        env=env,
         stderr=subprocess.PIPE,
     ) as process:
         diagnostic = b""
