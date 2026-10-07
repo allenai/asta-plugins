@@ -10,8 +10,10 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
+import threading
 from collections.abc import Mapping
 from pathlib import Path
 from urllib.error import URLError
@@ -454,13 +456,16 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 
 
 PREVIEW_PORT = 4848
-MAKE_PROBE_TIMEOUT = 10
+PREVIEW_STATE = Path(".asta/preview.json")
+NO_PREVIEW_RULE = re.compile(rb"No rule to make target [`']preview'")
 
 
 def make_preview_env() -> dict[str, str]:
     env = dict(os.environ)
     for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
         env.pop(name, None)
+    # English diagnostics so a missing preview rule can be recognised.
+    env["LC_MESSAGES"] = "C"
     return env
 
 
@@ -482,67 +487,55 @@ def preview_running() -> bool:
     return False
 
 
-def make_has_preview(project: Path) -> bool:
-    """Inspect evaluated Make rules without running the preview recipe.
+def _pid_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
-    Includes and shell expressions can run during both this probe and startup.
-    """
-    env = {**make_preview_env(), "LC_ALL": "C"}
-    # Regular files avoid waiting on output pipes held open by descendants.
-    with (
-        tempfile.TemporaryFile(mode="w+t", errors="replace") as stdout,
-        tempfile.TemporaryFile(mode="w+t", errors="replace") as stderr,
-    ):
-        try:
-            process = subprocess.Popen(
-                ["make", "--question", "--print-data-base", "preview"],
-                cwd=project,
-                stdout=stdout,
-                stderr=stderr,
-                env=env,
-                start_new_session=os.name == "posix",
-            )
-        except FileNotFoundError:
-            return False
-        try:
-            returncode = process.wait(timeout=MAKE_PROBE_TIMEOUT)
-        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
-            if os.name == "posix":
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            else:
-                process.kill()
-            process.wait()
-            if isinstance(exc, KeyboardInterrupt):
-                raise
-            click.echo(
-                "Warning: Make target detection timed out; running make preview "
-                "so the project's prerequisites can complete.",
-                err=True,
-            )
-            return True
-        stderr.seek(0)
-        diagnostic = stderr.read()
-        if returncode not in (0, 1):
-            # Preserve Make errors instead of hiding them with the Quarto fallback.
-            return not re.search(r"No rule to make target [`']preview'\.", diagnostic)
-        stdout.seek(0)
-        database = (
-            stdout.read()
-            .rpartition("\n# Make data base, printed on ")[2]
-            .rpartition("\n# Files\n")[2]
-        )
-    # Make records existing files with no explicit or implicit rule as non-targets.
-    return any(
-        re.search(r"^preview::?(?:\s|$)", block, re.MULTILINE)
-        and (
-            not block.startswith("# Not a target:\n")
-            or "\n#  recipe to execute" in block
-        )
-        for block in database.split("\n\n")
+
+def owned_preview(project: Path) -> bool:
+    """True when a live `asta workspace preview` for this project recorded itself."""
+    try:
+        state = json.loads((project / PREVIEW_STATE).read_text())
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(state, dict)
+        and state.get("project") == str(project)
+        and _pid_alive(state.get("pid"))
     )
+
+
+def run_make_preview(project: Path) -> tuple[int, bool]:
+    """Run `make preview`, echoing stderr live; report whether the rule was missing."""
+    process = subprocess.Popen(
+        ["make", "preview"], cwd=project, env=make_preview_env(), stderr=subprocess.PIPE
+    )
+    head = bytearray()
+
+    def forward() -> None:
+        assert process.stderr is not None
+        for chunk in iter(lambda: process.stderr.read1(65536), b""):
+            sys.stderr.buffer.write(chunk)
+            sys.stderr.buffer.flush()
+            head.extend(chunk[: max(0, 4096 - len(head))])
+
+    reader = threading.Thread(target=forward, daemon=True)
+    reader.start()
+    try:
+        returncode = process.wait()
+    except KeyboardInterrupt:
+        process.wait()
+        raise
+    # A descendant may keep stderr open after make exits; don't wait on it.
+    reader.join(1)
+    return returncode, returncode == 2 and bool(NO_PREVIEW_RULE.search(bytes(head)))
 
 
 @workspace.command()
@@ -552,11 +545,11 @@ def make_has_preview(project: Path) -> bool:
     default=Path("."),
 )
 def preview(project: Path) -> None:
-    """Start the project's live preview on port 4848.
+    """Ensure the project's live preview is running on port 4848.
 
-    Delegates to `make preview` when available, otherwise uses Quarto directly.
-    Inherited Make control variables are ignored; project variables are preserved.
-    A competing process can still bind the port before startup; tool errors surface.
+    Safe to run repeatedly: if this project's preview is already running, prints
+    its URL and exits. Runs `make preview` when a Makefile exists, falling back
+    to `quarto preview` only when Make has no `preview` rule.
     """
     project = project.resolve()
     makefile = any(
@@ -566,32 +559,48 @@ def preview(project: Path) -> None:
     if not makefile and not quarto:
         click.echo("No Makefile or _quarto.yml found; nothing to preview")
         return
+    url = preview_url(os.environ)
+    if owned_preview(project):
+        click.echo(f"Preview already running: {url}")
+        return
     if preview_running():
         raise click.ClickException(
-            f"Port {PREVIEW_PORT} is already in use; cannot verify that the server "
-            "belongs to this project. Use the existing server if appropriate, "
-            "or stop it before starting this preview."
+            f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
+            "this project's preview."
         )
-    command = ["make", "preview"]
+    state = project / PREVIEW_STATE
     try:
-        if not makefile or (quarto and not make_has_preview(project)):
+        state.parent.mkdir(exist_ok=True)
+        state.write_text(json.dumps({"pid": os.getpid(), "project": str(project)}))
+    except OSError:
+        state = None
+    command = ["make", "preview"] if makefile else []
+    try:
+        if command:
+            if shutil.which("make") is None:
+                raise click.ClickException("make is not installed")
+            click.echo(f"Preview: {url}")
+            returncode, no_rule = run_make_preview(project)
+            if no_rule and quarto:
+                click.echo("No `preview` rule in the Makefile; using quarto preview")
+                command = []
+        if not command:
             command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
-        if shutil.which(command[0]) is None:
-            raise click.ClickException(f"{command[0]} is not installed")
-        click.echo(f"Preview: {preview_url(os.environ)}")
-        result = subprocess.run(
-            command,
-            cwd=project,
-            check=False,
-            env=make_preview_env() if command[0] == "make" else None,
-        )
+            if shutil.which("quarto") is None:
+                raise click.ClickException("quarto is not installed")
+            if not makefile:
+                click.echo(f"Preview: {url}")
+            returncode = subprocess.run(command, cwd=project, check=False).returncode
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
     except FileNotFoundError as exc:
         raise click.ClickException(f"{command[0]} is not installed") from exc
-    if result.returncode in (-signal.SIGINT, 130):
+    finally:
+        if state is not None:
+            state.unlink(missing_ok=True)
+    if returncode in (-signal.SIGINT, 130):
         raise click.exceptions.Exit(130)
-    if result.returncode != 0:
+    if returncode != 0:
         raise click.ClickException(
-            f"{' '.join(command)} failed (exit {result.returncode}); see the errors above."
+            f"{' '.join(command)} failed (exit {returncode}); see the errors above."
         )
