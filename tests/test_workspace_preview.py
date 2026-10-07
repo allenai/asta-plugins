@@ -37,16 +37,16 @@ class Ran:
         self._record(["make", "preview"], project)
         return (2, True) if self.no_rule else (self.returncode, False)
 
-    def run(self, command, cwd, check, **kwargs):
-        self._record(command, cwd)
-        return type("Result", (), {"returncode": self.returncode})()
+    def run(self, command, project):
+        self._record(command, project)
+        return self.returncode
 
 
 @pytest.fixture
 def ran(monkeypatch):
     runner = Ran()
     monkeypatch.setattr(workspace_module, "run_make_preview", runner.make)
-    monkeypatch.setattr(workspace_module.subprocess, "run", runner.run)
+    monkeypatch.setattr(workspace_module, "run_preview", runner.run)
     monkeypatch.setattr(workspace_module, "preview_running", lambda: False)
     monkeypatch.setattr(workspace_module.shutil, "which", lambda name: f"/bin/{name}")
     monkeypatch.delenv("CODESPACE_NAME", raising=False)
@@ -257,14 +257,44 @@ def test_interrupted_preview_exits_cleanly(tmp_path, ran, returncode):
 def test_keyboard_interrupt_exits_cleanly_and_clears_state(tmp_path, ran, monkeypatch):
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
 
-    def run(command, **kwargs):
+    def run(command, project):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(workspace_module.subprocess, "run", run)
+    monkeypatch.setattr(workspace_module, "run_preview", run)
     result = invoke(tmp_path)
     assert result.exit_code == 130, result.output
     assert "Aborted" not in result.output
     assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+
+
+def test_interrupt_during_lock_acquisition_exits_cleanly(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").write_text("preview:\n")
+
+    def acquire(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(workspace_module.FileLock, "acquire", acquire)
+    result = invoke(tmp_path)
+    assert result.exit_code == 130, result.output
+    assert "Aborted" not in result.output
+    assert ran.calls == []
+
+
+def test_interrupt_during_reattach_preserves_owner_state(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    write_state(tmp_path, os.getpid())
+    state = (tmp_path / workspace_module.PREVIEW_STATE).read_bytes()
+
+    def sleep(seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(workspace_module.time, "sleep", sleep)
+    with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
+        result = invoke(tmp_path)
+    assert result.exit_code == 130, result.output
+    assert "Aborted" not in result.output
+    assert (tmp_path / workspace_module.PREVIEW_STATE).read_bytes() == state
+    assert ran.calls == []
 
 
 def test_nothing_to_preview(tmp_path, ran):
@@ -308,15 +338,15 @@ def real_make(monkeypatch):
         lambda name: "/bin/quarto" if name == "quarto" else actual_which(name),
     )
     calls = []
-    actual_run = subprocess.run
+    actual_run = workspace_module.run_preview
 
-    def run(command, **kwargs):
+    def run(command, project):
         if command[0] == "quarto":
             calls.append(command)
-            return subprocess.CompletedProcess(command, 0)
-        return actual_run(command, **kwargs)
+            return 0
+        return actual_run(command, project)
 
-    monkeypatch.setattr(workspace_module.subprocess, "run", run)
+    monkeypatch.setattr(workspace_module, "run_preview", run)
     return calls
 
 
@@ -493,6 +523,87 @@ def test_held_lock_reuse_does_not_signal_pid(tmp_path, ran, monkeypatch):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+@pytest.mark.parametrize("mode", ["make", "quarto", "fallback"])
+@pytest.mark.parametrize("ignore_interrupt", [False, True])
+def test_cli_only_interrupt_stops_recipe_and_releases_ownership(
+    tmp_path, mode, ignore_interrupt
+):
+    if mode != "quarto" and shutil.which("make") is None:
+        pytest.skip("requires GNU Make")
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    server = tmp_path / "quarto"
+    server.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import os, signal, socket, time\n"
+        + ("signal.signal(signal.SIGINT, signal.SIG_IGN)\n" if ignore_interrupt else "")
+        + "server = socket.socket()\n"
+        + f"server.bind(('127.0.0.1', {port})); server.listen()\n"
+        + "Path('serving').write_text(str(os.getpid()))\n"
+        + "time.sleep(60)\n"
+    )
+    server.chmod(0o755)
+    if mode == "make":
+        (tmp_path / "Makefile").write_text(f"preview:\n\t@{server}\n")
+    else:
+        (tmp_path / "_quarto.yml").write_text("project: {}\n")
+        if mode == "fallback":
+            (tmp_path / "Makefile").write_text("check:\n")
+    script = (
+        "from asta.cli import cli\n"
+        "from asta.commands import workspace\n"
+        f"workspace.PREVIEW_PORT = {port}\n"
+        "cli()\n"
+    )
+    env = dict(os.environ, PATH=f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    with (tmp_path / "launcher.log").open("w+") as log:
+        launcher = subprocess.Popen(
+            [sys.executable, "-c", script, "workspace", "preview"],
+            cwd=tmp_path,
+            env=env,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+        recipe_group = None
+        try:
+            deadline = time.monotonic() + 5
+            while not (tmp_path / "serving").exists():
+                assert launcher.poll() is None
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+            recipe_group = os.getpgid(int((tmp_path / "serving").read_text()))
+            assert recipe_group != os.getpgid(launcher.pid)
+            launcher.send_signal(signal.SIGINT)
+            assert launcher.wait(timeout=6) == 130
+            assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+            with FileLock(tmp_path / workspace_module.PREVIEW_LOCK, timeout=0):
+                pass
+            deadline = time.monotonic() + 2
+            while True:
+                try:
+                    socket.create_connection(("127.0.0.1", port), 0.1).close()
+                except OSError:
+                    break
+                assert time.monotonic() < deadline, "preview child kept serving"
+                time.sleep(0.01)
+            log.seek(0)
+            output = log.read()
+            assert "Aborted" not in output
+            assert "failed (exit" not in output
+        finally:
+            for group in (recipe_group, launcher.pid):
+                if group is not None:
+                    try:
+                        os.killpg(group, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            launcher.wait(timeout=5)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
 @pytest.mark.parametrize("serves", [True, False])
 def test_real_launcher_reattach_checks_lock_and_listener(tmp_path, monkeypatch, serves):
     if shutil.which("make") is None:
@@ -504,7 +615,8 @@ def test_real_launcher_reattach_checks_lock_and_listener(tmp_path, monkeypatch, 
     monkeypatch.setattr(workspace_module, "PREVIEW_START_TIMEOUT", 0.5)
     (tmp_path / "server.py").write_text(
         "from pathlib import Path\n"
-        "import socket, time\n"
+        "import os, socket, time\n"
+        "Path('recipe-pid').write_text(str(os.getpid()))\n"
         "with Path('launches').open('a') as log: log.write('start\\n')\n"
         "time.sleep(0.2)\n"
         "server = socket.socket()\n"
@@ -539,6 +651,14 @@ def test_real_launcher_reattach_checks_lock_and_listener(tmp_path, monkeypatch, 
         finally:
             os.killpg(launcher.pid, signal.SIGKILL)
             launcher.wait(timeout=5)
+            if (tmp_path / "recipe-pid").exists():
+                try:
+                    os.killpg(
+                        os.getpgid(int((tmp_path / "recipe-pid").read_text())),
+                        signal.SIGKILL,
+                    )
+                except ProcessLookupError:
+                    pass
         # A killed owner leaves JSON, but the kernel releases its ownership lock.
         assert (tmp_path / workspace_module.PREVIEW_STATE).exists()
         with FileLock(tmp_path / workspace_module.PREVIEW_LOCK, timeout=0):

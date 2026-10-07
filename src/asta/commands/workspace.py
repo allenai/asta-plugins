@@ -538,6 +538,41 @@ def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
         time.sleep(0.1)
 
 
+def wait_for_preview(process: subprocess.Popen) -> int:
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGINT)
+            else:
+                process.terminate()
+            process.wait(timeout=2)
+        except (ProcessLookupError, subprocess.TimeoutExpired, KeyboardInterrupt):
+            pass
+        finally:
+            # Make can exit before its recipe children; stop the whole owned group.
+            try:
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=2)
+            except (subprocess.TimeoutExpired, KeyboardInterrupt):
+                pass
+        raise
+
+
+def run_preview(command: list[str], project: Path) -> int:
+    process = subprocess.Popen(
+        command, cwd=project, start_new_session=os.name == "posix"
+    )
+    return wait_for_preview(process)
+
+
 def run_make_preview(project: Path) -> tuple[int, bool]:
     """Run `make preview`, echoing stderr live; report whether the rule was missing."""
     terminal = None
@@ -551,6 +586,7 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
             cwd=project,
             env=make_preview_env(),
             stderr=terminal[1] if terminal else subprocess.PIPE,
+            start_new_session=os.name == "posix",
         )
     except BaseException:
         if terminal:
@@ -602,11 +638,7 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
 
     reader = threading.Thread(target=forward, daemon=True)
     reader.start()
-    try:
-        returncode = process.wait()
-    except KeyboardInterrupt:
-        process.wait()
-        raise
+    returncode = wait_for_preview(process)
     # A descendant may keep stderr open after make exits; don't wait on it.
     reader.join(1)
     with diagnostic_lock:
@@ -627,6 +659,13 @@ def preview(project: Path) -> None:
     its URL and exits once the port is listening. Runs `make preview`, falling back
     to `quarto preview` only when Make has no `preview` rule.
     """
+    try:
+        preview_project(project)
+    except KeyboardInterrupt:
+        raise click.exceptions.Exit(130) from None
+
+
+def preview_project(project: Path) -> None:
     project = project.resolve()
     makefile = any(
         (project / name).is_file() for name in ("GNUmakefile", "makefile", "Makefile")
@@ -680,9 +719,7 @@ def preview(project: Path) -> None:
                 raise click.ClickException("quarto is not installed")
             if not makefile:
                 click.echo(f"Preview: {url}")
-            returncode = subprocess.run(command, cwd=project, check=False).returncode
-    except KeyboardInterrupt:
-        raise click.exceptions.Exit(130) from None
+            returncode = run_preview(command, project)
     except FileNotFoundError as exc:
         raise click.ClickException(f"{command[0]} is not installed") from exc
     finally:

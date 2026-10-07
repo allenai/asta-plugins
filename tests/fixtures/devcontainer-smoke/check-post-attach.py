@@ -44,8 +44,8 @@ with tempfile.TemporaryDirectory() as directory:
     log_path = Path(directory) / "preview.log"
     with log_path.open("wb") as log:
         process = subprocess.Popen(
-            command,
-            shell=True,
+            ["asta", "workspace", "preview"] if mode == "cli" else command,
+            shell=mode != "cli",
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
@@ -120,12 +120,30 @@ with tempfile.TemporaryDirectory() as directory:
                         "CLI must report a preview port held by another project\n"
                         f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
                     )
+                process.send_signal(signal.SIGINT)
+                if process.wait(timeout=6) != 130:
+                    raise AssertionError("Interrupted CLI must exit with status 130")
+                if (project / ".asta/cache/preview.json").exists():
+                    raise AssertionError("Interrupted CLI left preview ownership state")
+                for _ in range(20):
+                    response = subprocess.run(
+                        ["curl", "-fsS", "--max-time", "1", "http://127.0.0.1:4848/"],
+                        capture_output=True,
+                        check=False,
+                    )
+                    if response.returncode != 0:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise AssertionError("Preview kept serving after CLI interruption")
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise
         finally:
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                os.killpg(
+                    process.pid, signal.SIGINT if mode == "cli" else signal.SIGTERM
+                )
             except ProcessLookupError:
                 pass
             try:
