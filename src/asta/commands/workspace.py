@@ -4,28 +4,22 @@ import hashlib
 import http.client
 import io
 import json
-import locale
 import os
 import re
 import shutil
 import signal
 import socket
 import subprocess
-import sys
 import tarfile
 import tempfile
 import threading
-import time
 from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from time import monotonic
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import click
-from filelock import FileLock, Timeout
-from platformdirs import user_cache_path
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
@@ -463,36 +457,6 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 
 PREVIEW_PORT = 4848
 PREVIEW_STATE = Path(".asta/cache/preview.json")
-PREVIEW_LOCK = Path(".asta/cache/preview.lock")
-PREVIEW_START_TIMEOUT = 60
-NO_PREVIEW_RULE = re.compile(
-    rb"make: \*\*\* No rule to make target [`']preview'\.  Stop\."
-)
-
-
-def make_preview_env() -> dict[str, str]:
-    env = dict(os.environ)
-    for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
-        env.pop(name, None)
-    # Keep encoding/sorting while making missing-rule diagnostics predictable.
-    all_locale = env.pop("LC_ALL", "")
-    if all_locale:
-        categories = {name for name in dir(locale) if name.startswith("LC_")}
-        categories.update(
-            {
-                "LC_ADDRESS",
-                "LC_IDENTIFICATION",
-                "LC_MEASUREMENT",
-                "LC_NAME",
-                "LC_PAPER",
-                "LC_TELEPHONE",
-            }
-        )
-        for name in categories - {"LC_ALL"}:
-            env[name] = all_locale
-    env["LC_MESSAGES"] = "C"
-    env["LANGUAGE"] = "C"
-    return env
 
 
 def preview_url(env: Mapping[str, str]) -> str:
@@ -513,36 +477,21 @@ def preview_running() -> bool:
     return False
 
 
-def wait_for_owned_preview(
-    project: Path,
-    lock: FileLock,
-    stopped_message: str = "The previous preview stopped; retry startup.",
-) -> None:
-    """Only reuse a listening preview while its launcher still holds the lock."""
-    deadline = monotonic() + PREVIEW_START_TIMEOUT
-    while True:
-        try:
-            lock.acquire(timeout=0)
-        except Timeout:
-            try:
-                state = json.loads((project / PREVIEW_STATE).read_text())
-            except (OSError, ValueError):
-                state = None
-            if (
-                isinstance(state, dict)
-                and state.get("project") == str(project)
-                and preview_running()
-            ):
-                return
-        else:
-            lock.release()
-            raise click.ClickException(stopped_message)
-        if monotonic() >= deadline:
-            raise click.ClickException(
-                "This project's preview is still starting or not listening; "
-                "check its terminal and retry."
-            )
-        time.sleep(0.1)
+def recorded_preview(project: Path) -> bool:
+    # Windows does not provide POSIX's non-signaling kill(pid, 0) probe.
+    if os.name != "posix":
+        return False
+    try:
+        state = json.loads((project / PREVIEW_STATE).read_text())
+        pid = state["pid"]
+        if state["project"] != str(project) or type(pid) is not int or pid <= 0:
+            return False
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+        return False
+    return True
 
 
 class PreviewTerminated(BaseException):
@@ -623,90 +572,21 @@ def run_preview(command: list[str], project: Path) -> int:
 
 
 def run_make_preview(project: Path) -> tuple[int, bool]:
-    """Run `make preview`, echoing stderr live; report whether the rule was missing."""
-    terminal = None
-    if os.name == "posix" and sys.stderr.isatty():
-        import pty
-
-        terminal = pty.openpty()
-    reader = None
-    process = None
-    try:
-        with preview_process(
-            ["make", "preview"],
-            project,
-            env=make_preview_env(),
-            stderr=terminal[1] if terminal else subprocess.PIPE,
-        ) as process:
-            if terminal:
-                os.close(terminal[1])
-                terminal = (terminal[0], None)
-            pending = bytearray()
-            diagnostic = b""
-            diagnostic_lock = threading.Lock()
-
-            def forward() -> None:
-                nonlocal diagnostic
-                output = sys.stderr
-                try:
-                    while True:
-                        try:
-                            chunk = (
-                                os.read(terminal[0], 65536)
-                                if terminal
-                                else process.stderr.read1(65536)
-                            )
-                        except OSError:
-                            break  # A PTY reports EOF as EIO on Linux.
-                        if not chunk:
-                            break
-                        with diagnostic_lock:
-                            pending.extend(chunk)
-                            lines = pending.split(b"\n")
-                            # Retain only short trailing Make diagnostics.
-                            pending[:] = lines.pop()[-4096:]
-                            for line in lines:
-                                if line.startswith(b"make: "):
-                                    diagnostic = line.rstrip(b"\r")[-4096:]
-                        if output is not None:
-                            try:
-                                if hasattr(output, "buffer"):
-                                    output.buffer.write(chunk)
-                                else:
-                                    output.write(chunk.decode(errors="replace"))
-                                output.flush()
-                            except (OSError, ValueError):
-                                output = (
-                                    None  # Keep draining if the caller closes stderr.
-                                )
-                finally:
-                    if terminal:
-                        os.close(terminal[0])
-                    elif process.stderr is not None:
-                        process.stderr.close()
-
-            reader = threading.Thread(target=forward, daemon=True)
-            reader.start()
-            returncode = process.wait()
-            # A descendant may keep stderr open after make exits; don't wait on it.
-            reader.join(1)
-            with diagnostic_lock:
-                no_rule = not reader.is_alive() and bool(
-                    NO_PREVIEW_RULE.fullmatch(diagnostic)
-                )
-            return returncode, returncode == 2 and no_rule
-    finally:
-        if terminal:
-            if terminal[1] is not None:
-                os.close(terminal[1])
-            if reader is None or reader.ident is None:
-                os.close(terminal[0])
-        elif (
-            process is not None
-            and process.stderr is not None
-            and (reader is None or reader.ident is None)
-        ):
-            process.stderr.close()
+    """Stream Make errors and recognize its final missing-preview diagnostic."""
+    with preview_process(
+        ["make", "preview"],
+        project,
+        env={**os.environ, "LC_ALL": "C", "LANGUAGE": "C"},
+        stderr=subprocess.PIPE,
+    ) as process:
+        diagnostic = b""
+        for line in process.stderr:
+            click.echo(line.decode(errors="replace"), err=True, nl=False)
+            if line.strip():
+                diagnostic = line.strip()
+        returncode = process.wait()
+    no_rule = diagnostic == b"make: *** No rule to make target 'preview'.  Stop."
+    return returncode, returncode == 2 and no_rule
 
 
 @workspace.command()
@@ -742,50 +622,26 @@ def preview_project(project: Path) -> None:
         return
     url = preview_url(os.environ)
     state = project / PREVIEW_STATE
-    try:
-        state.parent.mkdir(parents=True, exist_ok=True)
-        lock = FileLock(project / PREVIEW_LOCK, timeout=0)
-    except OSError as exc:
-        raise click.ClickException(f"Cannot record preview ownership: {exc}") from exc
-    try:
-        port_cache = user_cache_path("asta-cli")
-        port_cache.mkdir(parents=True, exist_ok=True)
-        port_lock = FileLock(port_cache / f"preview-{PREVIEW_PORT}.lock", timeout=0)
-    except OSError as exc:
-        raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
-    command = ["make", "preview"] if makefile else []
-    try:
-        # Claim the project first so reattach can wait before ownership is recorded.
-        try:
-            lock.acquire()
-        except Timeout:
-            wait_for_owned_preview(project, lock)
+    if recorded_preview(project):
+        if preview_running():
             click.echo(f"Preview already running: {url}")
             return
-        except OSError as exc:
-            raise click.ClickException(
-                f"Cannot record preview ownership: {exc}"
-            ) from exc
-        try:
-            port_lock.acquire()
-        except Timeout as exc:
-            raise click.ClickException(
-                f"Port {PREVIEW_PORT} is reserved by another project's preview; "
-                "stop it to start this project's preview."
-            ) from exc
-        except OSError as exc:
-            raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
-        if preview_running():
-            raise click.ClickException(
-                f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
-                "this project's preview."
-            )
-        try:
-            state.write_text(json.dumps({"project": str(project)}))
-        except OSError as exc:
-            raise click.ClickException(
-                f"Cannot record preview ownership: {exc}"
-            ) from exc
+        raise click.ClickException(
+            "This project's preview is still starting or not listening; "
+            "check its terminal and retry."
+        )
+    if preview_running():
+        raise click.ClickException(
+            f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
+            "this project's preview."
+        )
+    owner = {"pid": os.getpid(), "project": str(project)}
+    try:
+        _atomic_write(state, json.dumps(owner).encode())
+    except OSError as exc:
+        raise click.ClickException(f"Cannot record preview startup: {exc}") from exc
+    command = ["make", "preview"] if makefile else []
+    try:
         if command and shutil.which("make") is None:
             if not quarto:
                 raise click.ClickException("make is not installed")
@@ -808,13 +664,10 @@ def preview_project(project: Path) -> None:
             returncode = run_preview(command, project)
     finally:
         try:
-            if lock.is_locked:
+            if json.loads(state.read_text()) == owner:
                 state.unlink(missing_ok=True)
-        finally:
-            try:
-                lock.release()
-            finally:
-                port_lock.release()
+        except (OSError, ValueError):
+            pass
     if returncode in (-signal.SIGINT, 130):
         raise click.exceptions.Exit(130)
     if returncode != 0:
