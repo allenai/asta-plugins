@@ -13,7 +13,12 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--preview-command", choices=("asset", "cli"), default="asset")
-mode = parser.parse_args().preview_command
+parser.add_argument(
+    "--stop-signal", choices=("SIGINT", "SIGTERM", "SIGHUP"), default="SIGINT"
+)
+args = parser.parse_args()
+mode = args.preview_command
+stop_signal = getattr(signal, args.stop_signal)
 
 root = Path("/opt/asta-plugins")
 config = json.loads(
@@ -120,11 +125,13 @@ with tempfile.TemporaryDirectory() as directory:
                         "CLI must report a preview port held by another project\n"
                         f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
                     )
-                process.send_signal(signal.SIGINT)
-                if process.wait(timeout=6) != 130:
-                    raise AssertionError("Interrupted CLI must exit with status 130")
+                process.send_signal(stop_signal)
+                if process.wait(timeout=6) != 128 + stop_signal:
+                    raise AssertionError(
+                        f"CLI must handle {args.stop_signal} with cleanup"
+                    )
                 if (project / ".asta/cache/preview.json").exists():
-                    raise AssertionError("Interrupted CLI left preview ownership state")
+                    raise AssertionError("Stopped CLI left preview ownership state")
                 for _ in range(20):
                     response = subprocess.run(
                         ["curl", "-fsS", "--max-time", "1", "http://127.0.0.1:4848/"],
@@ -135,7 +142,7 @@ with tempfile.TemporaryDirectory() as directory:
                         break
                     time.sleep(0.1)
                 else:
-                    raise AssertionError("Preview kept serving after CLI interruption")
+                    raise AssertionError("Preview kept serving after CLI shutdown")
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise

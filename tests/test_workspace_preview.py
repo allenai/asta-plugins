@@ -97,7 +97,6 @@ def test_state_records_this_project_while_running_and_is_removed(tmp_path, ran):
     (tmp_path / "Makefile").write_text("preview:\n")
     assert invoke(tmp_path).exit_code == 0
     assert ran.state_during_run == {
-        "pid": os.getpid(),
         "project": str(tmp_path.resolve()),
     }
     assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
@@ -168,7 +167,7 @@ def test_stale_state_is_replaced(tmp_path, ran):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [["make", "preview"]]
-    assert ran.state_during_run["pid"] == os.getpid()
+    assert ran.state_during_run == {"project": str(tmp_path.resolve())}
 
 
 @pytest.mark.parametrize(
@@ -351,9 +350,7 @@ def real_make(monkeypatch):
 
 
 @pytest.mark.parametrize("artifact", ["file", "directory"])
-def test_real_make_preview_artifact_cannot_silently_succeed(
-    tmp_path, real_make, artifact
-):
+def test_real_make_noop_retains_make_success(tmp_path, real_make, artifact):
     (tmp_path / "Makefile").write_text("check:\n")
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
     if artifact == "file":
@@ -361,8 +358,7 @@ def test_real_make_preview_artifact_cannot_silently_succeed(
     else:
         (tmp_path / "preview").mkdir()
     result = invoke(tmp_path)
-    assert result.exit_code != 0, result.output
-    assert "exited without starting a preview" in result.output
+    assert result.exit_code == 0, result.output
     assert real_make == []
 
 
@@ -525,8 +521,11 @@ def test_held_lock_reuse_does_not_signal_pid(tmp_path, ran, monkeypatch):
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
 @pytest.mark.parametrize("mode", ["make", "quarto", "fallback"])
 @pytest.mark.parametrize("ignore_interrupt", [False, True])
-def test_cli_only_interrupt_stops_recipe_and_releases_ownership(
-    tmp_path, mode, ignore_interrupt
+@pytest.mark.parametrize(
+    "signum", [signal.SIGINT, signal.SIGTERM, getattr(signal, "SIGHUP", signal.SIGTERM)]
+)
+def test_cli_only_signal_stops_recipe_and_releases_ownership(
+    tmp_path, mode, ignore_interrupt, signum
 ):
     if mode != "quarto" and shutil.which("make") is None:
         pytest.skip("requires GNU Make")
@@ -538,7 +537,7 @@ def test_cli_only_interrupt_stops_recipe_and_releases_ownership(
         f"#!{sys.executable}\n"
         "from pathlib import Path\n"
         "import os, signal, socket, time\n"
-        + ("signal.signal(signal.SIGINT, signal.SIG_IGN)\n" if ignore_interrupt else "")
+        + (f"signal.signal({signum}, signal.SIG_IGN)\n" if ignore_interrupt else "")
         + "server = socket.socket()\n"
         + f"server.bind(('127.0.0.1', {port})); server.listen()\n"
         + "Path('serving').write_text(str(os.getpid()))\n"
@@ -576,8 +575,8 @@ def test_cli_only_interrupt_stops_recipe_and_releases_ownership(
                 time.sleep(0.01)
             recipe_group = os.getpgid(int((tmp_path / "serving").read_text()))
             assert recipe_group != os.getpgid(launcher.pid)
-            launcher.send_signal(signal.SIGINT)
-            assert launcher.wait(timeout=6) == 130
+            launcher.send_signal(signum)
+            assert launcher.wait(timeout=6) == 128 + signum
             assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
             with FileLock(tmp_path / workspace_module.PREVIEW_LOCK, timeout=0):
                 pass
@@ -663,3 +662,126 @@ def test_real_launcher_reattach_checks_lock_and_listener(tmp_path, monkeypatch, 
         assert (tmp_path / workspace_module.PREVIEW_STATE).exists()
         with FileLock(tmp_path / workspace_module.PREVIEW_LOCK, timeout=0):
             pass
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_phony_preview_with_real_directory_preserves_success(
+    tmp_path, real_make, empty
+):
+    (tmp_path / "preview").mkdir()
+    (tmp_path / "Makefile").write_text(
+        ".PHONY: preview\npreview:\n" + ("" if empty else "\t@echo custom > calls\n")
+    )
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    if not empty:
+        assert (tmp_path / "calls").read_text() == "custom\n"
+    assert real_make == []
+
+
+@pytest.mark.parametrize("project_file", ["Makefile", "_quarto.yml"])
+def test_state_write_failure_reports_ownership_and_releases_lock(
+    tmp_path, ran, monkeypatch, project_file
+):
+    (tmp_path / project_file).touch()
+    write_text = Path.write_text
+
+    def fail_state(path, *args, **kwargs):
+        if path == tmp_path / workspace_module.PREVIEW_STATE:
+            raise FileNotFoundError("preview cache was removed")
+        return write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_state)
+    result = invoke(tmp_path)
+    assert result.exit_code == 1, result.output
+    assert "Cannot record preview ownership" in result.output
+    assert "not installed" not in result.output
+    assert ran.calls == []
+    with FileLock(tmp_path / workspace_module.PREVIEW_LOCK, timeout=0):
+        pass
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_preview_restores_signal_handlers(tmp_path, ran, failure):
+    (tmp_path / "Makefile").touch()
+    ran.returncode = 2 if failure else 0
+    signals = [signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        signals.append(signal.SIGHUP)
+    handlers = {signum: signal.getsignal(signum) for signum in signals}
+    invoke(tmp_path)
+    assert {signum: signal.getsignal(signum) for signum in signals} == handlers
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+@pytest.mark.parametrize("stage", ["construct", "start"])
+@pytest.mark.parametrize("exception", [KeyboardInterrupt, RuntimeError])
+def test_reader_setup_exception_cleans_spawned_child(
+    tmp_path, real_make, monkeypatch, stage, exception
+):
+    (tmp_path / "Makefile").write_text("preview:\n\t@sleep 60\n")
+    processes = []
+    popen = subprocess.Popen
+
+    def record(*args, **kwargs):
+        child = popen(*args, **kwargs)
+        processes.append(child)
+        return child
+
+    def interrupt(*args, **kwargs):
+        raise exception("reader setup interrupted")
+
+    monkeypatch.setattr(workspace_module.subprocess, "Popen", record)
+    if stage == "construct":
+        monkeypatch.setattr(workspace_module.threading, "Thread", interrupt)
+    else:
+        monkeypatch.setattr(workspace_module.threading.Thread, "start", interrupt)
+    try:
+        result = invoke(tmp_path)
+        assert result.exit_code == (130 if exception is KeyboardInterrupt else 1)
+        assert len(processes) == 1
+        assert processes[0].poll() is not None
+        assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+        with FileLock(tmp_path / workspace_module.PREVIEW_LOCK, timeout=0):
+            pass
+    finally:
+        for process in processes:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=5)
+
+
+@pytest.mark.parametrize(
+    "signum", [signal.SIGTERM, getattr(signal, "SIGHUP", signal.SIGTERM)]
+)
+def test_termination_during_reuse_preserves_owner(tmp_path, ran, monkeypatch, signum):
+    (tmp_path / "Makefile").touch()
+    write_state(tmp_path, os.getpid())
+    state = (tmp_path / workspace_module.PREVIEW_STATE).read_bytes()
+
+    def terminate(seconds):
+        signal.getsignal(signum)(signum, None)
+
+    monkeypatch.setattr(workspace_module.time, "sleep", terminate)
+    with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
+        result = invoke(tmp_path)
+    assert result.exit_code == 128 + signum
+    assert (tmp_path / workspace_module.PREVIEW_STATE).read_bytes() == state
+    assert ran.calls == []
+
+
+def test_slow_startup_reattach_waits_beyond_ten_seconds(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").touch()
+    write_state(tmp_path, os.getpid())
+    probes = iter([False, True])
+    monkeypatch.setattr(workspace_module, "preview_running", lambda: next(probes))
+    clock = iter([0, 20])
+    monkeypatch.setattr(workspace_module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(workspace_module.time, "sleep", lambda _: None)
+    with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
+        result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "already running" in result.output
+    assert ran.calls == []

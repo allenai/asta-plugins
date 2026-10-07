@@ -17,6 +17,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -461,7 +462,7 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 PREVIEW_PORT = 4848
 PREVIEW_STATE = Path(".asta/cache/preview.json")
 PREVIEW_LOCK = Path(".asta/cache/preview.lock")
-PREVIEW_START_TIMEOUT = 10
+PREVIEW_START_TIMEOUT = 60
 NO_PREVIEW_RULE = re.compile(
     rb"make: \*\*\* No rule to make target [`']preview'\.  Stop\."
 )
@@ -538,39 +539,78 @@ def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
         time.sleep(0.1)
 
 
-def wait_for_preview(process: subprocess.Popen) -> int:
+class PreviewTerminated(BaseException):
+    def __init__(self, signum: int):
+        self.signum = signum
+
+
+@contextmanager
+def preview_signals():
+    handlers = {}
+
+    def terminate(signum, frame):
+        raise PreviewTerminated(signum)
+
     try:
-        return process.wait()
-    except KeyboardInterrupt:
+        for signum in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+            if signum is not None:
+                handlers[signum] = signal.signal(signum, terminate)
+        yield
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+
+
+def stop_preview(process: subprocess.Popen, signum: int) -> None:
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signum)
+        else:
+            process.terminate()
+        process.wait(timeout=2)
+    except (
+        ProcessLookupError,
+        subprocess.TimeoutExpired,
+        KeyboardInterrupt,
+        PreviewTerminated,
+    ):
+        pass
+    finally:
+        # Make can exit before its recipe children; stop the whole owned group.
         try:
             if os.name == "posix":
-                os.killpg(process.pid, signal.SIGINT)
+                os.killpg(process.pid, signal.SIGKILL)
             else:
-                process.terminate()
-            process.wait(timeout=2)
-        except (ProcessLookupError, subprocess.TimeoutExpired, KeyboardInterrupt):
+                process.kill()
+        except ProcessLookupError:
             pass
-        finally:
-            # Make can exit before its recipe children; stop the whole owned group.
-            try:
-                if os.name == "posix":
-                    os.killpg(process.pid, signal.SIGKILL)
-                else:
-                    process.kill()
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=2)
-            except (subprocess.TimeoutExpired, KeyboardInterrupt):
-                pass
+        try:
+            process.wait(timeout=2)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt, PreviewTerminated):
+            pass
+
+
+@contextmanager
+def preview_process(command: list[str], project: Path, **kwargs):
+    process = None
+    try:
+        try:
+            process = subprocess.Popen(
+                command, cwd=project, start_new_session=os.name == "posix", **kwargs
+            )
+        except FileNotFoundError as exc:
+            raise click.ClickException(f"{command[0]} is not installed") from exc
+        yield process
+    except BaseException as exc:
+        if process is not None:
+            signum = exc.signum if isinstance(exc, PreviewTerminated) else signal.SIGINT
+            stop_preview(process, signum)
         raise
 
 
 def run_preview(command: list[str], project: Path) -> int:
-    process = subprocess.Popen(
-        command, cwd=project, start_new_session=os.name == "posix"
-    )
-    return wait_for_preview(process)
+    with preview_process(command, project) as process:
+        return process.wait()
 
 
 def run_make_preview(project: Path) -> tuple[int, bool]:
@@ -580,70 +620,82 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
         import pty
 
         terminal = pty.openpty()
+    reader = None
+    process = None
     try:
-        process = subprocess.Popen(
+        with preview_process(
             ["make", "preview"],
-            cwd=project,
+            project,
             env=make_preview_env(),
             stderr=terminal[1] if terminal else subprocess.PIPE,
-            start_new_session=os.name == "posix",
-        )
-    except BaseException:
-        if terminal:
-            os.close(terminal[0])
-        raise
+        ) as process:
+            if terminal:
+                os.close(terminal[1])
+                terminal = (terminal[0], None)
+            pending = bytearray()
+            diagnostic = b""
+            diagnostic_lock = threading.Lock()
+
+            def forward() -> None:
+                nonlocal diagnostic
+                output = sys.stderr
+                try:
+                    while True:
+                        try:
+                            chunk = (
+                                os.read(terminal[0], 65536)
+                                if terminal
+                                else process.stderr.read1(65536)
+                            )
+                        except OSError:
+                            break  # A PTY reports EOF as EIO on Linux.
+                        if not chunk:
+                            break
+                        with diagnostic_lock:
+                            pending.extend(chunk)
+                            lines = pending.split(b"\n")
+                            # Retain only short trailing Make diagnostics.
+                            pending[:] = lines.pop()[-4096:]
+                            for line in lines:
+                                if line.startswith(b"make: "):
+                                    diagnostic = line.rstrip(b"\r")[-4096:]
+                        if output is not None:
+                            try:
+                                if hasattr(output, "buffer"):
+                                    output.buffer.write(chunk)
+                                else:
+                                    output.write(chunk.decode(errors="replace"))
+                                output.flush()
+                            except (OSError, ValueError):
+                                output = (
+                                    None  # Keep draining if the caller closes stderr.
+                                )
+                finally:
+                    if terminal:
+                        os.close(terminal[0])
+                    elif process.stderr is not None:
+                        process.stderr.close()
+
+            reader = threading.Thread(target=forward, daemon=True)
+            reader.start()
+            returncode = process.wait()
+            # A descendant may keep stderr open after make exits; don't wait on it.
+            reader.join(1)
+            with diagnostic_lock:
+                no_rule = bool(NO_PREVIEW_RULE.fullmatch(diagnostic))
+            return returncode, returncode == 2 and no_rule
     finally:
         if terminal:
-            os.close(terminal[1])
-    pending = bytearray()
-    diagnostic = b""
-    diagnostic_lock = threading.Lock()
-
-    def forward() -> None:
-        nonlocal diagnostic
-        output = sys.stderr
-        try:
-            while True:
-                try:
-                    chunk = (
-                        os.read(terminal[0], 65536)
-                        if terminal
-                        else process.stderr.read1(65536)
-                    )
-                except OSError:
-                    break  # A PTY reports EOF as EIO on Linux.
-                if not chunk:
-                    break
-                with diagnostic_lock:
-                    pending.extend(chunk)
-                    lines = pending.split(b"\n")
-                    pending[:] = lines.pop()[-4096:]
-                    for line in lines:
-                        if line.startswith(b"make: "):
-                            diagnostic = line.rstrip(b"\r")[-4096:]
-                if output is not None:
-                    try:
-                        if hasattr(output, "buffer"):
-                            output.buffer.write(chunk)
-                        else:
-                            output.write(chunk.decode(errors="replace"))
-                        output.flush()
-                    except (OSError, ValueError):
-                        output = None  # Keep draining if the caller closes stderr.
-        finally:
-            if terminal:
+            if terminal[1] is not None:
+                os.close(terminal[1])
+            if reader is None or reader.ident is None:
                 os.close(terminal[0])
-            elif process.stderr is not None:
-                process.stderr.close()
-
-    reader = threading.Thread(target=forward, daemon=True)
-    reader.start()
-    returncode = wait_for_preview(process)
-    # A descendant may keep stderr open after make exits; don't wait on it.
-    reader.join(1)
-    with diagnostic_lock:
-        no_rule = bool(NO_PREVIEW_RULE.fullmatch(diagnostic))
-    return returncode, returncode == 2 and no_rule
+        elif (
+            process is not None
+            and process.stderr is not None
+            and (reader is None or reader.ident is None)
+        ):
+            process.stderr.close()
 
 
 @workspace.command()
@@ -660,9 +712,12 @@ def preview(project: Path) -> None:
     to `quarto preview` only when Make has no `preview` rule.
     """
     try:
-        preview_project(project)
+        with preview_signals():
+            preview_project(project)
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
+    except PreviewTerminated as exc:
+        raise click.exceptions.Exit(128 + exc.signum) from None
 
 
 def preview_project(project: Path) -> None:
@@ -694,24 +749,22 @@ def preview_project(project: Path) -> None:
                 f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
                 "this project's preview."
             )
-        state.write_text(json.dumps({"pid": os.getpid(), "project": str(project)}))
+        try:
+            state.write_text(json.dumps({"project": str(project)}))
+        except OSError as exc:
+            raise click.ClickException(
+                f"Cannot record preview ownership: {exc}"
+            ) from exc
         if command:
             if shutil.which("make") is None:
                 raise click.ClickException("make is not installed")
             click.echo(f"Preview: {url}")
             returncode, no_rule = run_make_preview(project)
-            if (
-                returncode == 0
-                and (project / "preview").exists()
-                and not preview_running()
-            ):
-                raise click.ClickException(
-                    "make preview exited without starting a preview. A file or directory "
-                    "named 'preview' can mask a missing rule; define a .PHONY preview "
-                    "target or run quarto preview directly."
-                )
             if no_rule and quarto:
-                click.echo("No `preview` rule in the Makefile; using quarto preview")
+                click.echo(
+                    "No `preview` rule in the Makefile; using quarto preview "
+                    "(the Make diagnostic above is expected)"
+                )
                 command = []
         if not command:
             command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
@@ -720,8 +773,6 @@ def preview_project(project: Path) -> None:
             if not makefile:
                 click.echo(f"Preview: {url}")
             returncode = run_preview(command, project)
-    except FileNotFoundError as exc:
-        raise click.ClickException(f"{command[0]} is not installed") from exc
     finally:
         try:
             state.unlink(missing_ok=True)

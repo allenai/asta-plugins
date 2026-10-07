@@ -92,7 +92,7 @@ requires-dist = [
     { name = "asta-agent", extras = ["a2a-client"], specifier = ">=1.0.7" },
     { name = "asta-artifact", specifier = ">=1.0.10" },
     { name = "click", specifier = ">=8.0" },
-    { name = "filelock", specifier = ">=4.0.12" },
+    { name = "filelock", specifier = ">=3.12" },
     { name = "httpx", specifier = ">=0.26.0" },
     { name = "keyring", specifier = ">=24.3.0" },
     { name = "platformdirs", specifier = ">=4.1.0" },
