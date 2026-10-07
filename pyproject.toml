@@ -21,6 +21,7 @@ dependencies = [
     "platformdirs>=4.1.0",
     "asta-agent[a2a-client]>=1.0.7",
     "asta-artifact>=1.0.10",
+    "filelock>=3.0",
 ]
 
 [project.scripts]

@@ -14,12 +14,14 @@ import sys
 import tarfile
 import tempfile
 import threading
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import click
+from filelock import FileLock, Timeout
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
@@ -457,7 +459,11 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 
 PREVIEW_PORT = 4848
 PREVIEW_STATE = Path(".asta/preview.json")
-NO_PREVIEW_RULE = re.compile(rb"No rule to make target [`']preview'")
+PREVIEW_LOCK = Path(".asta/preview.lock")
+PREVIEW_START_TIMEOUT = 10
+NO_PREVIEW_RULE = re.compile(
+    rb"make: \*\*\* No rule to make target [`']preview'\.  Stop\."
+)
 
 
 def make_preview_env() -> dict[str, str]:
@@ -465,7 +471,7 @@ def make_preview_env() -> dict[str, str]:
     for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
         env.pop(name, None)
     # English diagnostics so a missing preview rule can be recognised.
-    env["LC_MESSAGES"] = "C"
+    env["LC_ALL"] = "C"
     return env
 
 
@@ -499,17 +505,33 @@ def _pid_alive(pid: object) -> bool:
     return True
 
 
-def owned_preview(project: Path) -> bool:
-    """True when a live `asta workspace preview` for this project recorded itself."""
-    try:
-        state = json.loads((project / PREVIEW_STATE).read_text())
-    except (OSError, ValueError):
-        return False
-    return (
-        isinstance(state, dict)
-        and state.get("project") == str(project)
-        and _pid_alive(state.get("pid"))
-    )
+def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
+    """Only reuse a listening preview while its launcher still holds the lock."""
+    deadline = time.monotonic() + PREVIEW_START_TIMEOUT
+    while True:
+        try:
+            lock.acquire(timeout=0)
+        except Timeout:
+            try:
+                state = json.loads((project / PREVIEW_STATE).read_text())
+            except (OSError, ValueError):
+                state = None
+            if (
+                isinstance(state, dict)
+                and state.get("project") == str(project)
+                and _pid_alive(state.get("pid"))
+                and preview_running()
+            ):
+                return
+        else:
+            lock.release()
+            raise click.ClickException("The previous preview stopped; retry startup.")
+        if time.monotonic() >= deadline:
+            raise click.ClickException(
+                "This project's preview is still starting or not listening; "
+                "check its terminal and retry."
+            )
+        time.sleep(0.1)
 
 
 def run_make_preview(project: Path) -> tuple[int, bool]:
@@ -517,14 +539,15 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
     process = subprocess.Popen(
         ["make", "preview"], cwd=project, env=make_preview_env(), stderr=subprocess.PIPE
     )
-    head = bytearray()
+    tail = bytearray()
 
     def forward() -> None:
         assert process.stderr is not None
         for chunk in iter(lambda: process.stderr.read1(65536), b""):
             sys.stderr.buffer.write(chunk)
             sys.stderr.buffer.flush()
-            head.extend(chunk[: max(0, 4096 - len(head))])
+            tail.extend(chunk)
+            del tail[:-4096]
 
     reader = threading.Thread(target=forward, daemon=True)
     reader.start()
@@ -535,7 +558,9 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
         raise
     # A descendant may keep stderr open after make exits; don't wait on it.
     reader.join(1)
-    return returncode, returncode == 2 and bool(NO_PREVIEW_RULE.search(bytes(head)))
+    diagnostic = bytes(tail).strip().splitlines()
+    no_rule = bool(diagnostic and NO_PREVIEW_RULE.fullmatch(diagnostic[-1]))
+    return returncode, returncode == 2 and no_rule
 
 
 @workspace.command()
@@ -548,7 +573,7 @@ def preview(project: Path) -> None:
     """Ensure the project's live preview is running on port 4848.
 
     Safe to run repeatedly: if this project's preview is already running, prints
-    its URL and exits. Runs `make preview` when a Makefile exists, falling back
+    its URL and exits once the port is listening. Runs `make preview`, falling back
     to `quarto preview` only when Make has no `preview` rule.
     """
     project = project.resolve()
@@ -560,27 +585,41 @@ def preview(project: Path) -> None:
         click.echo("No Makefile or _quarto.yml found; nothing to preview")
         return
     url = preview_url(os.environ)
-    if owned_preview(project):
-        click.echo(f"Preview already running: {url}")
-        return
-    if preview_running():
-        raise click.ClickException(
-            f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
-            "this project's preview."
-        )
     state = project / PREVIEW_STATE
     try:
         state.parent.mkdir(exist_ok=True)
-        state.write_text(json.dumps({"pid": os.getpid(), "project": str(project)}))
-    except OSError:
-        state = None
+        lock = FileLock(project / PREVIEW_LOCK, timeout=0)
+        try:
+            lock.acquire()
+        except Timeout:
+            wait_for_owned_preview(project, lock)
+            click.echo(f"Preview already running: {url}")
+            return
+    except OSError as exc:
+        raise click.ClickException(f"Cannot record preview ownership: {exc}") from exc
     command = ["make", "preview"] if makefile else []
     try:
+        if preview_running():
+            raise click.ClickException(
+                f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
+                "this project's preview."
+            )
+        state.write_text(json.dumps({"pid": os.getpid(), "project": str(project)}))
         if command:
             if shutil.which("make") is None:
                 raise click.ClickException("make is not installed")
             click.echo(f"Preview: {url}")
             returncode, no_rule = run_make_preview(project)
+            if (
+                returncode == 0
+                and (project / "preview").exists()
+                and not preview_running()
+            ):
+                raise click.ClickException(
+                    "make preview exited without starting a preview. A file or directory "
+                    "named 'preview' can mask a missing rule; define a .PHONY preview "
+                    "target or run quarto preview directly."
+                )
             if no_rule and quarto:
                 click.echo("No `preview` rule in the Makefile; using quarto preview")
                 command = []
@@ -596,8 +635,10 @@ def preview(project: Path) -> None:
     except FileNotFoundError as exc:
         raise click.ClickException(f"{command[0]} is not installed") from exc
     finally:
-        if state is not None:
+        try:
             state.unlink(missing_ok=True)
+        finally:
+            lock.release()
     if returncode in (-signal.SIGINT, 130):
         raise click.exceptions.Exit(130)
     if returncode != 0:
