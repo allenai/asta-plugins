@@ -92,7 +92,10 @@ with tempfile.TemporaryDirectory() as directory:
                     check=False,
                 )
                 if occupied.returncode == 0 or "already in use" not in occupied.stderr:
-                    raise AssertionError("CLI must report an occupied preview port")
+                    raise AssertionError(
+                        "CLI must report an occupied preview port\n"
+                        f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
+                    )
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise

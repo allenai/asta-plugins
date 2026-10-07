@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -451,6 +452,7 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 
 
 PREVIEW_PORT = 4848
+MAKE_PROBE_TIMEOUT = 10
 
 
 def preview_url(env: Mapping[str, str]) -> str:
@@ -464,26 +466,36 @@ def preview_url(env: Mapping[str, str]) -> str:
 def preview_running() -> bool:
     import socket
 
-    try:
-        socket.create_connection(("127.0.0.1", PREVIEW_PORT), 2).close()
-    except OSError:
-        return False
-    return True
+    for host in ("127.0.0.1", "::1"):
+        try:
+            socket.create_connection((host, PREVIEW_PORT), 2).close()
+        except OSError:
+            continue
+        return True
+    return False
 
 
 def make_has_preview(project: Path) -> bool:
-    # Question mode loads included rules without starting the preview recipe.
-    result = subprocess.run(
-        ["make", "--question", "preview"],
-        cwd=project,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "LC_ALL": "C"},
-        check=False,
-    )
+    # Question mode skips the preview recipe, but can remake included rules or
+    # evaluate shell expressions. Bound the probe; real Make handles a timeout.
+    try:
+        result = subprocess.run(
+            ["make", "--question", "preview"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+            timeout=MAKE_PROBE_TIMEOUT,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    except subprocess.TimeoutExpired:
+        return True
     # Other Make errors must reach `make preview`, not be hidden by a fallback.
     return not (
-        result.returncode == 2 and "No rule to make target 'preview'." in result.stderr
+        result.returncode == 2
+        and re.search(r"No rule to make target [`']preview'\.", result.stderr)
     )
 
 
@@ -502,7 +514,6 @@ def preview(project: Path) -> None:
     if not makefile and not quarto:
         click.echo("No Makefile or _quarto.yml found; nothing to preview")
         return
-    click.echo(f"Quarto preview: {preview_url(os.environ)}")
     if preview_running():
         raise click.ClickException(
             f"Port {PREVIEW_PORT} is already in use; cannot verify that the server "
@@ -513,8 +524,13 @@ def preview(project: Path) -> None:
     try:
         if not makefile or (quarto and not make_has_preview(project)):
             command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
+        click.echo(f"Quarto preview: {preview_url(os.environ)}")
         result = subprocess.run(command, cwd=project, check=False)
+    except KeyboardInterrupt:
+        return
     except FileNotFoundError as exc:
         raise click.ClickException(f"{command[0]} is not installed") from exc
-    if result.returncode != 0:
-        raise click.ClickException("Quarto preview failed; see the errors above.")
+    if result.returncode not in (0, -signal.SIGINT, 130):
+        raise click.ClickException(
+            f"{' '.join(command)} failed (exit {result.returncode}); see the errors above."
+        )
