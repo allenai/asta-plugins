@@ -13,7 +13,7 @@
   },
   "postCreateCommand": "npx --yes skills@latest add /opt/asta-plugins --all -g --yes",
   "postAttachCommand": {
-    "preview": "if [ -n \"${CODESPACE_NAME:-}\" ]; then url=\"https://${CODESPACE_NAME}-4848.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/\"; else url=http://localhost:4848/; fi; echo \"Quarto preview: $url\"; if python3 -c 'import socket; socket.create_connection((\"127.0.0.1\", 4848), 2).close()' 2>/dev/null; then :; elif [ -f Makefile ]; then make preview; elif [ -f _quarto.yml ]; then quarto preview --no-browser --port 4848; fi || { echo \"Quarto preview failed; see the errors above.\" >&2; exit 1; }"
+    "preview": "exec asta workspace preview"
   },
   "customizations": {
     "vscode": {
