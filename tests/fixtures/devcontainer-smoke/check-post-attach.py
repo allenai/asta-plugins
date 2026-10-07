@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -31,6 +32,13 @@ env = {
 expected = "Quarto preview: https://workspace-smoke-4848.app.github.dev/"
 
 with tempfile.TemporaryDirectory() as directory:
+    project = Path.cwd()
+    if mode == "cli":
+        project = Path(directory)
+        for name in ("_quarto.yml", "index.qmd"):
+            shutil.copyfile(Path.cwd() / name, project / name)
+        # A project-owned Makefile need not provide the shared preview target.
+        (project / "Makefile").write_text("check:\n\t@true\n")
     log_path = Path(directory) / "preview.log"
     with log_path.open("wb") as log:
         process = subprocess.Popen(
@@ -39,6 +47,7 @@ with tempfile.TemporaryDirectory() as directory:
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
+            cwd=project,
             start_new_session=True,
         )
         try:
@@ -73,6 +82,17 @@ with tempfile.TemporaryDirectory() as directory:
                 raise AssertionError(
                     "postAttachCommand did not start preview on port 4848"
                 )
+            if mode == "cli":
+                occupied = subprocess.run(
+                    ["asta", "workspace", "preview", "--project", str(project)],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=15,
+                    check=False,
+                )
+                if occupied.returncode == 0 or "already in use" not in occupied.stderr:
+                    raise AssertionError("CLI must report an occupied preview port")
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise

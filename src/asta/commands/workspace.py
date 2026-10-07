@@ -471,28 +471,48 @@ def preview_running() -> bool:
     return True
 
 
+def make_has_preview(project: Path) -> bool:
+    # Question mode loads included rules without starting the preview recipe.
+    result = subprocess.run(
+        ["make", "--question", "preview"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "LC_ALL": "C"},
+        check=False,
+    )
+    # Other Make errors must reach `make preview`, not be hidden by a fallback.
+    return not (
+        result.returncode == 2 and "No rule to make target 'preview'." in result.stderr
+    )
+
+
 @workspace.command()
 @click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
 def preview(project: Path) -> None:
-    """Start the project's live preview unless one is already running.
+    """Start the project's live preview on port 4848.
 
-    Delegates to the project's `make preview`, so a customized target wins.
+    Delegates to `make preview` when available, otherwise uses Quarto directly.
     """
-    click.echo(f"Quarto preview: {preview_url(os.environ)}")
-    if preview_running():
-        click.echo(f"A preview is already serving on port {PREVIEW_PORT}; reusing it")
-        return
     project = project.resolve()
-    if (project / "Makefile").is_file():
-        command = ["make", "preview"]
-    elif (project / "_quarto.yml").is_file():
-        command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
-    else:
+    makefile = (project / "Makefile").is_file()
+    quarto = (project / "_quarto.yml").is_file()
+    if not makefile and not quarto:
         click.echo("No Makefile or _quarto.yml found; nothing to preview")
         return
+    click.echo(f"Quarto preview: {preview_url(os.environ)}")
+    if preview_running():
+        raise click.ClickException(
+            f"Port {PREVIEW_PORT} is already in use; cannot verify that the server "
+            "belongs to this project. Use the existing server if appropriate, "
+            "or stop it before starting this preview."
+        )
+    command = ["make", "preview"]
     try:
+        if not makefile or (quarto and not make_has_preview(project)):
+            command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
         result = subprocess.run(command, cwd=project, check=False)
     except FileNotFoundError as exc:
         raise click.ClickException(f"{command[0]} is not installed") from exc
