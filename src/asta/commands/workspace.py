@@ -6,6 +6,9 @@ import io
 import json
 import os
 import re
+import shutil
+import signal
+import socket
 import subprocess
 import tarfile
 import tempfile
@@ -448,3 +451,147 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
         + b"\n",
     )
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
+
+
+PREVIEW_PORT = 4848
+MAKE_PROBE_TIMEOUT = 10
+
+
+def make_preview_env() -> dict[str, str]:
+    env = dict(os.environ)
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
+        env.pop(name, None)
+    return env
+
+
+def preview_url(env: Mapping[str, str]) -> str:
+    codespace = env.get("CODESPACE_NAME")
+    if codespace:
+        domain = env.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN") or "app.github.dev"
+        return f"https://{codespace}-{PREVIEW_PORT}.{domain}/"
+    return f"http://localhost:{PREVIEW_PORT}/"
+
+
+def preview_running() -> bool:
+    for host in ("127.0.0.1", "::1"):
+        try:
+            socket.create_connection((host, PREVIEW_PORT), 2).close()
+        except OSError:
+            continue
+        return True
+    return False
+
+
+def make_has_preview(project: Path) -> bool:
+    """Inspect evaluated Make rules without running the preview recipe.
+
+    Includes and shell expressions can run during both this probe and startup.
+    """
+    env = {**make_preview_env(), "LC_ALL": "C"}
+    # Regular files avoid waiting on output pipes held open by descendants.
+    with (
+        tempfile.TemporaryFile(mode="w+t", errors="replace") as stdout,
+        tempfile.TemporaryFile(mode="w+t", errors="replace") as stderr,
+    ):
+        try:
+            process = subprocess.Popen(
+                ["make", "--question", "--print-data-base", "preview"],
+                cwd=project,
+                stdout=stdout,
+                stderr=stderr,
+                env=env,
+                start_new_session=os.name == "posix",
+            )
+        except FileNotFoundError:
+            return False
+        try:
+            returncode = process.wait(timeout=MAKE_PROBE_TIMEOUT)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait()
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            click.echo(
+                "Warning: Make target detection timed out; running make preview "
+                "so the project's prerequisites can complete.",
+                err=True,
+            )
+            return True
+        stderr.seek(0)
+        diagnostic = stderr.read()
+        if returncode not in (0, 1):
+            # Preserve Make errors instead of hiding them with the Quarto fallback.
+            return not re.search(r"No rule to make target [`']preview'\.", diagnostic)
+        stdout.seek(0)
+        database = (
+            stdout.read()
+            .rpartition("\n# Make data base, printed on ")[2]
+            .rpartition("\n# Files\n")[2]
+        )
+    # Make records existing files with no explicit or implicit rule as non-targets.
+    return any(
+        re.search(r"^preview::?(?:\s|$)", block, re.MULTILINE)
+        and (
+            not block.startswith("# Not a target:\n")
+            or "\n#  recipe to execute" in block
+        )
+        for block in database.split("\n\n")
+    )
+
+
+@workspace.command()
+@click.option(
+    "--project",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    default=Path("."),
+)
+def preview(project: Path) -> None:
+    """Start the project's live preview on port 4848.
+
+    Delegates to `make preview` when available, otherwise uses Quarto directly.
+    Inherited Make control variables are ignored; project variables are preserved.
+    A competing process can still bind the port before startup; tool errors surface.
+    """
+    project = project.resolve()
+    makefile = any(
+        (project / name).is_file() for name in ("GNUmakefile", "makefile", "Makefile")
+    )
+    quarto = (project / "_quarto.yml").is_file()
+    if not makefile and not quarto:
+        click.echo("No Makefile or _quarto.yml found; nothing to preview")
+        return
+    if preview_running():
+        raise click.ClickException(
+            f"Port {PREVIEW_PORT} is already in use; cannot verify that the server "
+            "belongs to this project. Use the existing server if appropriate, "
+            "or stop it before starting this preview."
+        )
+    command = ["make", "preview"]
+    try:
+        if not makefile or (quarto and not make_has_preview(project)):
+            command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
+        if shutil.which(command[0]) is None:
+            raise click.ClickException(f"{command[0]} is not installed")
+        click.echo(f"Preview: {preview_url(os.environ)}")
+        result = subprocess.run(
+            command,
+            cwd=project,
+            check=False,
+            env=make_preview_env() if command[0] == "make" else None,
+        )
+    except KeyboardInterrupt:
+        raise click.exceptions.Exit(130) from None
+    except FileNotFoundError as exc:
+        raise click.ClickException(f"{command[0]} is not installed") from exc
+    if result.returncode in (-signal.SIGINT, 130):
+        raise click.exceptions.Exit(130)
+    if result.returncode != 0:
+        raise click.ClickException(
+            f"{' '.join(command)} failed (exit {result.returncode}); see the errors above."
+        )

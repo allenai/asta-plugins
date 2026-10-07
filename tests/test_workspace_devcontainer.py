@@ -116,6 +116,24 @@ def test_preview_probe_python_ships_in_both_images():
     assert "FROM asta AS tex" in dockerfile
 
 
+@pytest.mark.parametrize(
+    ("fixture", "arguments"),
+    [
+        ("check-post-create.py", []),
+        ("check-post-create.py", ["unknown"]),
+        ("check-post-attach.py", ["--preview-command", "unknown"]),
+    ],
+)
+def test_smoke_fixtures_reject_invalid_arguments(fixture, arguments):
+    script = ROOT / "tests/fixtures/devcontainer-smoke" / fixture
+    result = subprocess.run(
+        [sys.executable, str(script), *arguments], capture_output=True, text=True
+    )
+    assert result.returncode == 2
+    assert "usage:" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 @pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
 @pytest.mark.parametrize(
     ("port_open", "project", "start_status", "expected_status", "expected_calls"),

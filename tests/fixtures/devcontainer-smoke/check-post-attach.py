@@ -1,7 +1,9 @@
 """Run the workspace post-attach preview command in a Codespaces-like container."""
 
+import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -9,19 +11,36 @@ import tempfile
 import time
 from pathlib import Path
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--preview-command", choices=("asset", "cli"), default="asset")
+mode = parser.parse_args().preview_command
+
 root = Path("/opt/asta-plugins")
 config = json.loads(
     (root / "plugins/asta-tools/skills/workspace/assets/devcontainer.json").read_text()
 )
-command = config["postAttachCommand"]["preview"]
+command = (
+    "asta workspace preview"
+    if mode == "cli"
+    else config["postAttachCommand"]["preview"]
+)
 env = {
     **os.environ,
     "CODESPACE_NAME": "workspace-smoke",
     "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev",
 }
-expected = "Quarto preview: https://workspace-smoke-4848.app.github.dev/"
+label = "Preview" if mode == "cli" else "Quarto preview"
+expected = f"{label}: https://workspace-smoke-4848.app.github.dev/"
 
 with tempfile.TemporaryDirectory() as directory:
+    project = Path.cwd()
+    if mode == "cli":
+        project = Path(directory) / "project"
+        project.mkdir()
+        for name in ("_quarto.yml", "index.qmd"):
+            shutil.copyfile(Path.cwd() / name, project / name)
+        # A project-owned Makefile need not provide the shared preview target.
+        (project / "Makefile").write_text("check:\n\t@true\n")
     log_path = Path(directory) / "preview.log"
     with log_path.open("wb") as log:
         process = subprocess.Popen(
@@ -30,6 +49,7 @@ with tempfile.TemporaryDirectory() as directory:
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
+            cwd=project,
             start_new_session=True,
         )
         try:
@@ -64,6 +84,20 @@ with tempfile.TemporaryDirectory() as directory:
                 raise AssertionError(
                     "postAttachCommand did not start preview on port 4848"
                 )
+            if mode == "cli":
+                occupied = subprocess.run(
+                    ["asta", "workspace", "preview", "--project", str(project)],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=15,
+                    check=False,
+                )
+                if occupied.returncode == 0 or "already in use" not in occupied.stderr:
+                    raise AssertionError(
+                        "CLI must report an occupied preview port\n"
+                        f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
+                    )
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise
