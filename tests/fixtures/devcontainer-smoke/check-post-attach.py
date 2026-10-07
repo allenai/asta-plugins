@@ -4,12 +4,13 @@ import argparse
 import json
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+from preview_process import stop_preview
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--preview-command", choices=("asset", "cli"), default="asset")
@@ -127,15 +128,4 @@ with tempfile.TemporaryDirectory() as directory:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise
         finally:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
+            stop_preview(process)
