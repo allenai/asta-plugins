@@ -501,7 +501,9 @@ def make_has_preview(project: Path) -> bool:
 
 @workspace.command()
 @click.option(
-    "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
+    "--project",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    default=Path("."),
 )
 def preview(project: Path) -> None:
     """Start the project's live preview on port 4848.
@@ -509,7 +511,9 @@ def preview(project: Path) -> None:
     Delegates to `make preview` when available, otherwise uses Quarto directly.
     """
     project = project.resolve()
-    makefile = (project / "Makefile").is_file()
+    makefile = any(
+        (project / name).is_file() for name in ("GNUmakefile", "makefile", "Makefile")
+    )
     quarto = (project / "_quarto.yml").is_file()
     if not makefile and not quarto:
         click.echo("No Makefile or _quarto.yml found; nothing to preview")

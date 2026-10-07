@@ -50,8 +50,9 @@ def invoke(project: Path):
     return CliRunner().invoke(cli, ["workspace", "preview", "--project", str(project)])
 
 
-def test_makefile_target_wins(tmp_path, ran):
-    (tmp_path / "Makefile").write_text("preview:\n")
+@pytest.mark.parametrize("makefile_name", ["GNUmakefile", "makefile", "Makefile"])
+def test_makefile_target_wins(tmp_path, ran, makefile_name):
+    (tmp_path / makefile_name).write_text("preview:\n")
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
@@ -170,8 +171,11 @@ def test_make_probe_timeout_still_uses_project_preview(tmp_path, ran, monkeypatc
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
 @pytest.mark.parametrize("target", ["preview", "check"])
-def test_real_make_included_rules_choose_the_preview(tmp_path, monkeypatch, target):
-    (tmp_path / "Makefile").write_text("include rules.mk\n")
+@pytest.mark.parametrize("makefile_name", ["GNUmakefile", "makefile", "Makefile"])
+def test_real_make_included_rules_choose_the_preview(
+    tmp_path, monkeypatch, target, makefile_name
+):
+    (tmp_path / makefile_name).write_text("include rules.mk\n")
     (tmp_path / "rules.mk").write_text(f"{target}:\n\t@echo ran >> calls\n")
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
     actual_run = subprocess.run
@@ -270,6 +274,17 @@ def test_nothing_to_preview(tmp_path, ran):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert "nothing to preview" in result.output
+    assert ran.calls == []
+
+
+def test_nonexistent_project_is_rejected(tmp_path, ran):
+    project = tmp_path / "missing-project"
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "does not exist" in result.output
+    assert str(project) in result.output
+    assert "nothing to preview" not in result.output
+    assert "Quarto preview:" not in result.output
     assert ran.calls == []
 
 
