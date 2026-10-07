@@ -1,5 +1,6 @@
 """Tests for `asta workspace preview`."""
 
+import io
 import json
 import os
 import shutil
@@ -104,7 +105,7 @@ def test_state_records_this_project_while_running_and_is_removed(tmp_path, ran):
 
 def write_state(project: Path, pid: int, path: Path | None = None):
     state = project / workspace_module.PREVIEW_STATE
-    state.parent.mkdir(exist_ok=True)
+    state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(
         json.dumps({"pid": pid, "project": str(path or project.resolve())})
     )
@@ -158,10 +159,7 @@ def test_live_pid_without_launcher_lock_does_not_prove_ownership(tmp_path, ran):
 
 
 def dead_pid() -> int:
-    pid = 2**22 + 12345
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
-    return pid
+    return 2**22 + 12345
 
 
 def test_stale_state_is_replaced(tmp_path, ran):
@@ -185,7 +183,7 @@ def test_foreign_listener_is_rejected(tmp_path, ran, monkeypatch, state):
     elif state == "other-project":
         write_state(tmp_path, os.getpid(), tmp_path / "elsewhere")
     elif state == "corrupt":
-        (tmp_path / ".asta").mkdir()
+        (tmp_path / workspace_module.PREVIEW_STATE).parent.mkdir(parents=True)
         (tmp_path / workspace_module.PREVIEW_STATE).write_text("{")
     monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
     result = invoke(tmp_path)
@@ -220,7 +218,11 @@ def test_make_env_drops_caller_make_controls(monkeypatch):
         & env.keys()
     )
     assert env["PROJECT_VAR"] == "kept"
-    assert env["LC_ALL"] == "C"
+    assert "LC_ALL" not in env
+    assert env["LC_CTYPE"] == "fr_FR.UTF-8"
+    assert env["LC_COLLATE"] == "fr_FR.UTF-8"
+    assert env["LC_MESSAGES"] == "C"
+    assert env["LANGUAGE"] == "C"
 
 
 def test_codespaces_url(tmp_path, ran, monkeypatch):
@@ -373,6 +375,121 @@ def test_real_make_fallback_survives_long_parse_output(tmp_path, real_make):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert real_make == [QUARTO]
+
+
+def test_real_preview_ignores_caller_make_controls(tmp_path, real_make, monkeypatch):
+    (tmp_path / "Makefile").write_text(
+        "preview:\n\t@printf '%s' \"$$PROJECT_VAR\" > calls\n"
+    )
+    poison = tmp_path / "poison.mk"
+    poison.write_text("$(error must not load caller MAKEFILES)\n")
+    for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"):
+        monkeypatch.setenv(name, "--just-print")
+    monkeypatch.setenv("MAKEFILES", str(poison))
+    monkeypatch.setenv("MAKELEVEL", "42")
+    monkeypatch.setenv("PROJECT_VAR", "kept")
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "calls").read_text() == "kept"
+    assert real_make == []
+
+
+def test_real_recipe_retains_locale_encoding(tmp_path, real_make, monkeypatch):
+    monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    monkeypatch.setenv("LC_CTYPE", "C")
+    (tmp_path / "Makefile").write_text(
+        "preview:\n\t@locale charmap > charset\n\t@locale > locale-env\n"
+    )
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "charset").read_text().strip() == "UTF-8"
+    assert "LC_MESSAGES=C" in (tmp_path / "locale-env").read_text()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX PTYs")
+def test_real_recipe_keeps_terminal_stderr(tmp_path, real_make, monkeypatch):
+    output = io.BytesIO()
+
+    class Terminal:
+        buffer = output
+
+        def isatty(self):
+            return True
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(workspace_module.sys, "stderr", Terminal())
+    (tmp_path / "Makefile").write_text(
+        f"preview:\n\t@{sys.executable} -c "
+        '"import os,sys;sys.stderr.write(str(os.isatty(2)))"\n'
+    )
+    assert workspace_module.run_make_preview(tmp_path) == (0, False)
+    assert output.getvalue() == b"True"
+
+
+@pytest.mark.parametrize("failure", ["write", "flush"])
+def test_closed_stderr_does_not_block_real_recipe(tmp_path, real_make, failure):
+    (tmp_path / "Makefile").write_text(
+        f"preview:\n\t@{sys.executable} -c "
+        "\"import sys;sys.stderr.write('x'*2000000)\"\n"
+    )
+    script = (
+        "import sys\nfrom asta.commands import workspace\n"
+        "class Closed:\n"
+        " def isatty(self): return False\n"
+        " @property\n def buffer(self): return self\n"
+        f" def {failure}(self, *args): raise BrokenPipeError()\n"
+        + (
+            " def flush(self): pass\n"
+            if failure == "write"
+            else " def write(self, data): pass\n"
+        )
+        + "original_stderr = sys.stderr\nsys.stderr = Closed()\n"
+        + f"try: assert workspace.run_make_preview(workspace.Path({str(tmp_path)!r})) == (0, False)\n"
+        + "finally: sys.stderr = original_stderr\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, timeout=5
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX background recipes")
+def test_background_parse_output_cannot_hide_make_diagnostic(tmp_path, real_make):
+    (tmp_path / "Makefile").write_text(
+        "$(shell (sleep 0.05; printf '%5000s\\n' extra >&2) >/dev/null &)\ncheck:\n"
+    )
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert real_make == [QUARTO]
+
+
+def test_existing_cache_ignore_covers_all_preview_state(tmp_path, real_make):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text(".asta/cache/\n")
+    (tmp_path / "Makefile").write_text("preview:\n")
+    assert invoke(tmp_path).exit_code == 0
+    paths = [str(workspace_module.PREVIEW_LOCK), str(workspace_module.PREVIEW_STATE)]
+    result = subprocess.run(
+        ["git", "check-ignore", *paths], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == paths
+
+
+def test_held_lock_reuse_does_not_signal_pid(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    write_state(tmp_path, os.getpid())
+    monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
+
+    def forbidden(*args):
+        raise AssertionError("PID signalling must not be used for ownership")
+
+    monkeypatch.setattr(workspace_module.os, "kill", forbidden)
+    with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
+        assert invoke(tmp_path).exit_code == 0
 
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")

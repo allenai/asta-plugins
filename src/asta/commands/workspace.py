@@ -4,6 +4,7 @@ import hashlib
 import http.client
 import io
 import json
+import locale
 import os
 import re
 import shutil
@@ -458,8 +459,8 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 
 
 PREVIEW_PORT = 4848
-PREVIEW_STATE = Path(".asta/preview.json")
-PREVIEW_LOCK = Path(".asta/preview.lock")
+PREVIEW_STATE = Path(".asta/cache/preview.json")
+PREVIEW_LOCK = Path(".asta/cache/preview.lock")
 PREVIEW_START_TIMEOUT = 10
 NO_PREVIEW_RULE = re.compile(
     rb"make: \*\*\* No rule to make target [`']preview'\.  Stop\."
@@ -470,8 +471,24 @@ def make_preview_env() -> dict[str, str]:
     env = dict(os.environ)
     for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
         env.pop(name, None)
-    # English diagnostics so a missing preview rule can be recognised.
-    env["LC_ALL"] = "C"
+    # Keep encoding/sorting while making missing-rule diagnostics predictable.
+    all_locale = env.pop("LC_ALL", "")
+    if all_locale:
+        categories = {name for name in dir(locale) if name.startswith("LC_")}
+        categories.update(
+            {
+                "LC_ADDRESS",
+                "LC_IDENTIFICATION",
+                "LC_MEASUREMENT",
+                "LC_NAME",
+                "LC_PAPER",
+                "LC_TELEPHONE",
+            }
+        )
+        for name in categories - {"LC_ALL"}:
+            env[name] = all_locale
+    env["LC_MESSAGES"] = "C"
+    env["LANGUAGE"] = "C"
     return env
 
 
@@ -493,18 +510,6 @@ def preview_running() -> bool:
     return False
 
 
-def _pid_alive(pid: object) -> bool:
-    if not isinstance(pid, int) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
     """Only reuse a listening preview while its launcher still holds the lock."""
     deadline = time.monotonic() + PREVIEW_START_TIMEOUT
@@ -519,7 +524,6 @@ def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
             if (
                 isinstance(state, dict)
                 and state.get("project") == str(project)
-                and _pid_alive(state.get("pid"))
                 and preview_running()
             ):
                 return
@@ -536,18 +540,65 @@ def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
 
 def run_make_preview(project: Path) -> tuple[int, bool]:
     """Run `make preview`, echoing stderr live; report whether the rule was missing."""
-    process = subprocess.Popen(
-        ["make", "preview"], cwd=project, env=make_preview_env(), stderr=subprocess.PIPE
-    )
-    tail = bytearray()
+    terminal = None
+    if os.name == "posix" and sys.stderr.isatty():
+        import pty
+
+        terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            ["make", "preview"],
+            cwd=project,
+            env=make_preview_env(),
+            stderr=terminal[1] if terminal else subprocess.PIPE,
+        )
+    except BaseException:
+        if terminal:
+            os.close(terminal[0])
+        raise
+    finally:
+        if terminal:
+            os.close(terminal[1])
+    pending = bytearray()
+    diagnostic = b""
+    diagnostic_lock = threading.Lock()
 
     def forward() -> None:
-        assert process.stderr is not None
-        for chunk in iter(lambda: process.stderr.read1(65536), b""):
-            sys.stderr.buffer.write(chunk)
-            sys.stderr.buffer.flush()
-            tail.extend(chunk)
-            del tail[:-4096]
+        nonlocal diagnostic
+        output = sys.stderr
+        try:
+            while True:
+                try:
+                    chunk = (
+                        os.read(terminal[0], 65536)
+                        if terminal
+                        else process.stderr.read1(65536)
+                    )
+                except OSError:
+                    break  # A PTY reports EOF as EIO on Linux.
+                if not chunk:
+                    break
+                with diagnostic_lock:
+                    pending.extend(chunk)
+                    lines = pending.split(b"\n")
+                    pending[:] = lines.pop()[-4096:]
+                    for line in lines:
+                        if line.startswith(b"make: "):
+                            diagnostic = line.rstrip(b"\r")[-4096:]
+                if output is not None:
+                    try:
+                        if hasattr(output, "buffer"):
+                            output.buffer.write(chunk)
+                        else:
+                            output.write(chunk.decode(errors="replace"))
+                        output.flush()
+                    except (OSError, ValueError):
+                        output = None  # Keep draining if the caller closes stderr.
+        finally:
+            if terminal:
+                os.close(terminal[0])
+            elif process.stderr is not None:
+                process.stderr.close()
 
     reader = threading.Thread(target=forward, daemon=True)
     reader.start()
@@ -558,8 +609,8 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
         raise
     # A descendant may keep stderr open after make exits; don't wait on it.
     reader.join(1)
-    diagnostic = bytes(tail).strip().splitlines()
-    no_rule = bool(diagnostic and NO_PREVIEW_RULE.fullmatch(diagnostic[-1]))
+    with diagnostic_lock:
+        no_rule = bool(NO_PREVIEW_RULE.fullmatch(diagnostic))
     return returncode, returncode == 2 and no_rule
 
 
@@ -587,7 +638,7 @@ def preview(project: Path) -> None:
     url = preview_url(os.environ)
     state = project / PREVIEW_STATE
     try:
-        state.parent.mkdir(exist_ok=True)
+        state.parent.mkdir(parents=True, exist_ok=True)
         lock = FileLock(project / PREVIEW_LOCK, timeout=0)
         try:
             lock.acquire()

@@ -12,5 +12,3 @@ _extensions/evidence
 
 # Shared workspace rules fetched by `asta workspace sync`.
 .asta/cache/
-.asta/preview.json
-.asta/preview.lock
