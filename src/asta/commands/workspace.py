@@ -19,6 +19,7 @@ import time
 from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
+from time import monotonic
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -518,7 +519,7 @@ def wait_for_owned_preview(
     stopped_message: str = "The previous preview stopped; retry startup.",
 ) -> None:
     """Only reuse a listening preview while its launcher still holds the lock."""
-    deadline = time.monotonic() + PREVIEW_START_TIMEOUT
+    deadline = monotonic() + PREVIEW_START_TIMEOUT
     while True:
         try:
             lock.acquire(timeout=0)
@@ -536,7 +537,7 @@ def wait_for_owned_preview(
         else:
             lock.release()
             raise click.ClickException(stopped_message)
-        if time.monotonic() >= deadline:
+        if monotonic() >= deadline:
             raise click.ClickException(
                 "This project's preview is still starting or not listening; "
                 "check its terminal and retry."
@@ -551,6 +552,9 @@ class PreviewTerminated(BaseException):
 
 @contextmanager
 def preview_signals():
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
     handlers = {}
 
     def terminate(signum, frame):
@@ -687,7 +691,9 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
             # A descendant may keep stderr open after make exits; don't wait on it.
             reader.join(1)
             with diagnostic_lock:
-                no_rule = bool(NO_PREVIEW_RULE.fullmatch(diagnostic))
+                no_rule = not reader.is_alive() and bool(
+                    NO_PREVIEW_RULE.fullmatch(diagnostic)
+                )
             return returncode, returncode == 2 and no_rule
     finally:
         if terminal:
@@ -749,20 +755,7 @@ def preview_project(project: Path) -> None:
         raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
     command = ["make", "preview"] if makefile else []
     try:
-        # Reserve the port before claiming a project, including build prerequisites.
-        try:
-            port_lock.acquire()
-        except Timeout:
-            wait_for_owned_preview(
-                project,
-                lock,
-                f"Port {PREVIEW_PORT} is reserved by another project's preview; "
-                "stop it to start this project's preview.",
-            )
-            click.echo(f"Preview already running: {url}")
-            return
-        except OSError as exc:
-            raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
+        # Claim the project first so reattach can wait before ownership is recorded.
         try:
             lock.acquire()
         except Timeout:
@@ -773,6 +766,15 @@ def preview_project(project: Path) -> None:
             raise click.ClickException(
                 f"Cannot record preview ownership: {exc}"
             ) from exc
+        try:
+            port_lock.acquire()
+        except Timeout as exc:
+            raise click.ClickException(
+                f"Port {PREVIEW_PORT} is reserved by another project's preview; "
+                "stop it to start this project's preview."
+            ) from exc
+        except OSError as exc:
+            raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
         if preview_running():
             raise click.ClickException(
                 f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
@@ -784,10 +786,13 @@ def preview_project(project: Path) -> None:
             raise click.ClickException(
                 f"Cannot record preview ownership: {exc}"
             ) from exc
-        if command:
-            if shutil.which("make") is None:
+        if command and shutil.which("make") is None:
+            if not quarto:
                 raise click.ClickException("make is not installed")
-            click.echo(f"Preview: {url}")
+            click.echo("make is not installed; using quarto preview")
+            command = []
+        if command:
+            click.echo(f"Preview URL (once serving): {url}")
             returncode, no_rule = run_make_preview(project)
             if no_rule and quarto:
                 click.echo(
@@ -799,16 +804,17 @@ def preview_project(project: Path) -> None:
             command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
             if shutil.which("quarto") is None:
                 raise click.ClickException("quarto is not installed")
-            if not makefile:
-                click.echo(f"Preview: {url}")
+            click.echo(f"Preview URL (once serving): {url}")
             returncode = run_preview(command, project)
     finally:
         try:
             if lock.is_locked:
                 state.unlink(missing_ok=True)
         finally:
-            lock.release()
-            port_lock.release()
+            try:
+                lock.release()
+            finally:
+                port_lock.release()
     if returncode in (-signal.SIGINT, 130):
         raise click.exceptions.Exit(130)
     if returncode != 0:

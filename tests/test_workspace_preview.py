@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -66,7 +67,7 @@ def test_makefile_runs_make_preview(tmp_path, ran, makefile_name):
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
-    assert "Preview: http://localhost:4848/" in result.output
+    assert "Preview URL (once serving): http://localhost:4848/" in result.output
     assert ran.calls == [["make", "preview"]]
 
 
@@ -83,6 +84,32 @@ def test_missing_preview_rule_falls_back_to_quarto(tmp_path, ran):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [["make", "preview"], QUARTO]
+
+
+def test_missing_make_falls_back_to_quarto(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    monkeypatch.setattr(
+        workspace_module.shutil,
+        "which",
+        lambda name: None if name == "make" else "/bin/quarto",
+    )
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "make is not installed; using quarto preview" in result.output
+    assert "Preview URL (once serving)" in result.output
+    assert ran.calls == [QUARTO]
+
+
+def test_preview_can_run_from_a_worker_thread(tmp_path, ran):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    results = []
+    worker = threading.Thread(target=lambda: results.append(invoke(tmp_path)))
+    worker.start()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert results[0].exit_code == 0, results[0].output
+    assert ran.calls == [["make", "preview"]]
 
 
 def test_missing_preview_rule_without_quarto_fails(tmp_path, ran):
@@ -102,17 +129,15 @@ def test_state_records_this_project_while_running_and_is_removed(tmp_path, ran):
     assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
 
 
-def write_state(project: Path, pid: int, path: Path | None = None):
+def write_state(project: Path, path: Path | None = None):
     state = project / workspace_module.PREVIEW_STATE
     state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(
-        json.dumps({"pid": pid, "project": str(path or project.resolve())})
-    )
+    state.write_text(json.dumps({"project": str(path or project.resolve())}))
 
 
 def test_own_running_preview_is_reused(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
     with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
         result = invoke(tmp_path)
@@ -125,7 +150,7 @@ def test_starting_preview_does_not_claim_success_before_port_listens(
     tmp_path, ran, monkeypatch
 ):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     monkeypatch.setattr(workspace_module, "PREVIEW_START_TIMEOUT", 0)
     with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
         result = invoke(tmp_path)
@@ -137,7 +162,7 @@ def test_starting_preview_does_not_claim_success_before_port_listens(
 
 def test_reattach_waits_for_owned_preview_to_listen(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     probes = iter([False, True])
     monkeypatch.setattr(workspace_module, "preview_running", lambda: next(probes))
     monkeypatch.setattr(workspace_module.time, "sleep", lambda _: None)
@@ -148,39 +173,31 @@ def test_reattach_waits_for_owned_preview_to_listen(tmp_path, ran, monkeypatch):
     assert ran.calls == []
 
 
-def test_live_pid_without_launcher_lock_does_not_prove_ownership(tmp_path, ran):
+def test_state_without_launcher_lock_does_not_prove_ownership(tmp_path, ran):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert "already running" not in result.output
     assert ran.calls == [["make", "preview"]]
 
 
-def dead_pid() -> int:
-    return 2**22 + 12345
-
-
 def test_stale_state_is_replaced(tmp_path, ran):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, dead_pid())
+    write_state(tmp_path)
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [["make", "preview"]]
     assert ran.state_during_run == {"project": str(tmp_path.resolve())}
 
 
-@pytest.mark.parametrize(
-    "state", ["stale", "live-pid", "other-project", "corrupt", "none"]
-)
+@pytest.mark.parametrize("state", ["this-project", "other-project", "corrupt", "none"])
 def test_foreign_listener_is_rejected(tmp_path, ran, monkeypatch, state):
     (tmp_path / "Makefile").write_text("preview:\n")
-    if state == "stale":
-        write_state(tmp_path, dead_pid())
-    elif state == "live-pid":
-        write_state(tmp_path, os.getpid())
+    if state == "this-project":
+        write_state(tmp_path)
     elif state == "other-project":
-        write_state(tmp_path, os.getpid(), tmp_path / "elsewhere")
+        write_state(tmp_path, tmp_path / "elsewhere")
     elif state == "corrupt":
         (tmp_path / workspace_module.PREVIEW_STATE).parent.mkdir(parents=True)
         (tmp_path / workspace_module.PREVIEW_STATE).write_text("{")
@@ -188,7 +205,7 @@ def test_foreign_listener_is_rejected(tmp_path, ran, monkeypatch, state):
     result = invoke(tmp_path)
     assert result.exit_code != 0
     assert "Port 4848 is in use by another process" in result.output
-    assert "Preview:" not in result.output
+    assert "Preview URL" not in result.output
     assert ran.calls == []
 
 
@@ -281,7 +298,7 @@ def test_interrupt_during_lock_acquisition_exits_cleanly(tmp_path, ran, monkeypa
 
 def test_interrupt_during_reattach_preserves_owner_state(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     state = (tmp_path / workspace_module.PREVIEW_STATE).read_bytes()
 
     def sleep(seconds):
@@ -319,7 +336,7 @@ def test_missing_executable_does_not_advertise_a_url(
     result = invoke(tmp_path)
     assert result.exit_code != 0
     assert "is not installed" in result.output
-    assert "Preview:" not in result.output
+    assert "Preview URL" not in result.output
     assert ran.calls == []
     assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
 
@@ -360,6 +377,8 @@ def test_real_make_noop_retains_make_success(tmp_path, real_make, artifact):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert real_make == []
+    assert "Preview URL (once serving)" in result.output
+    assert "already running" not in result.output
 
 
 @pytest.mark.parametrize("nested", ["$(MAKE)", "env -u MAKELEVEL $(MAKE)"])
@@ -492,6 +511,14 @@ def test_background_parse_output_cannot_hide_make_diagnostic(tmp_path, real_make
     assert real_make == [QUARTO]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX background recipes")
+def test_undrained_make_stderr_does_not_enable_fallback(tmp_path, real_make):
+    (tmp_path / "Makefile").write_text(
+        "$(shell (sleep 1.5; echo trailing >&2) >/dev/null &)\ncheck:\n"
+    )
+    assert workspace_module.run_make_preview(tmp_path) == (2, False)
+
+
 def test_existing_cache_ignore_covers_all_preview_state(tmp_path, real_make):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / ".gitignore").write_text(".asta/cache/\n")
@@ -505,9 +532,12 @@ def test_existing_cache_ignore_covers_all_preview_state(tmp_path, real_make):
     assert result.stdout.splitlines() == paths
 
 
-def test_held_lock_reuse_does_not_signal_pid(tmp_path, ran, monkeypatch):
+def test_legacy_pid_is_ignored_during_held_lock_reuse(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("preview:\n")
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
+    (tmp_path / workspace_module.PREVIEW_STATE).write_text(
+        json.dumps({"project": str(tmp_path.resolve()), "pid": os.getpid()})
+    )
     monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
 
     def forbidden(*args):
@@ -516,6 +546,33 @@ def test_held_lock_reuse_does_not_signal_pid(tmp_path, ran, monkeypatch):
     monkeypatch.setattr(workspace_module.os, "kill", forbidden)
     with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
         assert invoke(tmp_path).exit_code == 0
+
+
+def test_interrupted_project_lock_release_still_releases_port(
+    tmp_path, ran, monkeypatch
+):
+    (tmp_path / "Makefile").touch()
+    locks = []
+    original = workspace_module.FileLock
+    original_release = original.release
+
+    def create(*args, **kwargs):
+        lock = original(*args, **kwargs)
+        locks.append(lock)
+        return lock
+
+    def release(lock, *args, **kwargs):
+        interrupt = Path(lock.lock_file).name == "preview.lock" and lock.is_locked
+        original_release(lock, *args, **kwargs)
+        if interrupt:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(workspace_module, "FileLock", create)
+    monkeypatch.setattr(original, "release", release)
+    result = invoke(tmp_path)
+    assert result.exit_code == 130, result.output
+    assert len(locks) == 2
+    assert not any(lock.is_locked for lock in locks)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
@@ -852,12 +909,90 @@ def test_reader_setup_exception_cleans_spawned_child(
             process.wait(timeout=5)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_same_project_reattach_before_ownership_record_waits_for_launcher(tmp_path):
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    (tmp_path / "_quarto.yml").touch()
+    server = tmp_path / "quarto"
+    server.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\nimport socket, time\n"
+        f"server = socket.socket(); server.bind(('127.0.0.1', {port})); server.listen()\n"
+        "Path('listening').touch()\ntime.sleep(60)\n"
+    )
+    server.chmod(0o755)
+    script = (
+        "from pathlib import Path\nimport os, time\n"
+        "from asta.cli import cli\nfrom asta.commands import workspace\n"
+        f"workspace.PREVIEW_PORT = {port}\n"
+        "original_acquire = workspace.FileLock.acquire\n"
+        "def acquire(lock, *args, **kwargs):\n"
+        " if os.environ.get('PR184_REATTACH') and Path(lock.lock_file).name == 'preview.lock':\n"
+        "  Path('reattach-attempt').touch()\n"
+        " result = original_acquire(lock, *args, **kwargs)\n"
+        f" if Path(lock.lock_file).name == 'preview-{port}.lock':\n"
+        "  Path('reserved').touch()\n"
+        "  while not Path('allow-start').exists(): time.sleep(0.01)\n"
+        " return result\n"
+        "workspace.FileLock.acquire = acquire\ncli()\n"
+    )
+    processes = []
+    env = dict(os.environ, PATH=f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+    def start(*, reattach=False):
+        process = subprocess.Popen(
+            [sys.executable, "-c", script, "workspace", "preview"],
+            cwd=tmp_path,
+            env=dict(env, PR184_REATTACH="1" if reattach else ""),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        processes.append(process)
+        return process
+
+    try:
+        owner = start()
+        deadline = time.monotonic() + 5
+        while not (tmp_path / "reserved").exists():
+            assert owner.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+        reattach = start(reattach=True)
+        deadline = time.monotonic() + 5
+        while not (tmp_path / "reattach-attempt").exists():
+            assert reattach.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        with pytest.raises(subprocess.TimeoutExpired):
+            reattach.communicate(timeout=0.3)
+        (tmp_path / "allow-start").touch()
+        output, _ = reattach.communicate(timeout=5)
+        assert reattach.returncode == 0, output
+        assert "Preview already running" in output
+        owner.send_signal(signal.SIGTERM)
+        owner.communicate(timeout=5)
+        assert owner.returncode == 143
+        assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+    finally:
+        for process in processes:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=5)
+
+
 @pytest.mark.parametrize(
     "signum", [signal.SIGTERM, getattr(signal, "SIGHUP", signal.SIGTERM)]
 )
 def test_termination_during_reuse_preserves_owner(tmp_path, ran, monkeypatch, signum):
     (tmp_path / "Makefile").touch()
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     state = (tmp_path / workspace_module.PREVIEW_STATE).read_bytes()
 
     def terminate(seconds):
@@ -873,11 +1008,11 @@ def test_termination_during_reuse_preserves_owner(tmp_path, ran, monkeypatch, si
 
 def test_slow_startup_reattach_waits_beyond_ten_seconds(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").touch()
-    write_state(tmp_path, os.getpid())
+    write_state(tmp_path)
     probes = iter([False, True])
     monkeypatch.setattr(workspace_module, "preview_running", lambda: next(probes))
     clock = iter([0, 20])
-    monkeypatch.setattr(workspace_module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(workspace_module, "monotonic", lambda: next(clock, 20))
     monkeypatch.setattr(workspace_module.time, "sleep", lambda _: None)
     with FileLock(tmp_path / workspace_module.PREVIEW_LOCK):
         result = invoke(tmp_path)
