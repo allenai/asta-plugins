@@ -1,17 +1,22 @@
 """Exercise the workspace devcontainer's Codespaces setup inside its image."""
 
+import argparse
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("phase", choices=("initial", "rebuild"))
+parser.add_argument("--startup", choices=("asset", "image"), default="asset")
+args = parser.parse_args()
 
 root = Path("/opt/asta-plugins")
 config = json.loads(
     (root / "plugins/asta-tools/skills/workspace/assets/devcontainer.json").read_text()
 )
 auth_dir = Path.home() / ".config/asta-cli"
-phase = sys.argv[1]
+phase = args.phase
 if phase == "initial":
     auth_dir.mkdir(parents=True, exist_ok=True)
     (auth_dir / "migration-probe").write_text("probe")
@@ -24,7 +29,7 @@ else:
 # The image's devcontainer.metadata hook runs before the project's own command.
 install = (
     "asta-workspace-install-skills"
-    if sys.argv[2:] == ["image"]
+    if args.startup == "image"
     else config["postCreateCommand"]
 )
 for command in ("asta-persist-auth", install):

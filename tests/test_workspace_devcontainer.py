@@ -266,6 +266,7 @@ def _preview_command(startup):
     return ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
 @pytest.mark.parametrize("status", [0, 2])
 def test_image_skills_installer_keeps_failures_visible(tmp_path, status):
     executable = tmp_path / "npx"
@@ -283,3 +284,24 @@ def test_image_skills_installer_keeps_failures_visible(tmp_path, status):
         result.stdout.strip()
         == "--yes skills@latest add /opt/asta-plugins --all -g --yes"
     )
+
+
+@pytest.mark.parametrize(
+    ("fixture", "phase"),
+    [("check-post-create.py", ["initial"]), ("check-post-attach.py", [])],
+)
+def test_container_smoke_rejects_unknown_startup_mode(fixture, phase):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tests/fixtures/devcontainer-smoke" / fixture),
+            *phase,
+            "--startup",
+            "imgae",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr

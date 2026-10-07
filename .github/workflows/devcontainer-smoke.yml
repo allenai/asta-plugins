@@ -81,22 +81,29 @@ jobs:
           fi
       - name: Check CLI, skills install, Codespaces rebuild and Quarto
         run: |
-          mkdir -p "$RUNNER_TEMP/codespace-storage"
-          docker run --rm \
-            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
-            -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke bash -euc '
-            asta --help >/dev/null
-            python3 /w/check-post-create.py initial image
-            find ~ -maxdepth 4 -type d -path "*skills/workspace" | grep -q .
-            quarto check >/dev/null'
-          docker run --rm \
-            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
-            -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke \
-            python3 /w/check-post-create.py rebuild image
+          set -euo pipefail
+          for startup in asset image; do
+            storage="$RUNNER_TEMP/codespace-storage-$startup"
+            mkdir -p "$storage"
+            docker run --rm \
+              -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+              -v "$storage:/workspaces" asta-smoke bash -euc '
+              asta --help >/dev/null
+              python3 /w/check-post-create.py initial --startup "$1"
+              find ~ -maxdepth 4 -type d -path "*skills/workspace" | grep -q .
+              quarto check >/dev/null' _ "$startup"
+            docker run --rm \
+              -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
+              -v "$storage:/workspaces" asta-smoke \
+              python3 /w/check-post-create.py rebuild --startup "$startup"
+          done
       - name: Preview answers on port 4848
         run: |
-          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
-            python3 /w/check-post-attach.py image
+          set -euo pipefail
+          for startup in asset image; do
+            docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
+              python3 /w/check-post-attach.py --startup "$startup"
+          done
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |

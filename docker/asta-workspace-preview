@@ -1,4 +1,5 @@
 #!/bin/sh
+set -u
 if [ -n "${CODESPACE_NAME:-}" ]; then
     url="https://${CODESPACE_NAME}-4848.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/"
 else

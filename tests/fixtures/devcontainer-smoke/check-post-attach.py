@@ -1,5 +1,6 @@
 """Run the workspace post-attach preview command in a Codespaces-like container."""
 
+import argparse
 import json
 import os
 import signal
@@ -9,13 +10,17 @@ import tempfile
 import time
 from pathlib import Path
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--startup", choices=("asset", "image"), default="asset")
+args = parser.parse_args()
+
 root = Path("/opt/asta-plugins")
 config = json.loads(
     (root / "plugins/asta-tools/skills/workspace/assets/devcontainer.json").read_text()
 )
 command = (
     "asta-workspace-preview"
-    if sys.argv[1:] == ["image"]
+    if args.startup == "image"
     else config["postAttachCommand"]["preview"]
 )
 env = {
