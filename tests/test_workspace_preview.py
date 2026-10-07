@@ -664,6 +664,105 @@ def test_real_launcher_reattach_checks_lock_and_listener(tmp_path, monkeypatch, 
             pass
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+@pytest.mark.parametrize("mode", ["make", "quarto", "fallback"])
+def test_projects_cannot_share_a_preview_port_during_startup(tmp_path, mode):
+    if mode != "quarto" and shutil.which("make") is None:
+        pytest.skip("requires GNU Make")
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    projects = [tmp_path / name for name in ("first", "second")]
+    for project in projects:
+        project.mkdir()
+        server = project / "quarto"
+        server.write_text(
+            f"#!{sys.executable}\n"
+            "from pathlib import Path\n"
+            "import socket, time\n"
+            "Path('starting').touch()\n"
+            "while not Path('allow-listen').exists(): time.sleep(0.01)\n"
+            "server = socket.socket()\n"
+            + f"server.bind(('127.0.0.1', {port})); server.listen()\n"
+            + "Path('listening').touch()\n"
+            "time.sleep(60)\n"
+        )
+        server.chmod(0o755)
+        if mode != "make":
+            (project / "_quarto.yml").write_text("project: {}\n")
+        if mode != "quarto":
+            (project / "Makefile").write_text(
+                f"preview:\n\t@{sys.executable} quarto\n"
+                if mode == "make"
+                else "other:\n"
+            )
+    script = (
+        "from asta.cli import cli\n"
+        "from asta.commands import workspace\n"
+        f"workspace.PREVIEW_PORT = {port}\n"
+        "workspace.PREVIEW_START_TIMEOUT = 0.2\n"
+        "cli()\n"
+    )
+
+    def start(project):
+        return subprocess.Popen(
+            [sys.executable, "-c", script, "workspace", "preview"],
+            cwd=project,
+            env=dict(os.environ, PATH=f"{project}{os.pathsep}{os.environ['PATH']}"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+
+    def await_file(project, name, process):
+        deadline = time.monotonic() + 5
+        while not (project / name).exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+
+    processes = []
+    try:
+        owner = start(projects[0])
+        processes.append(owner)
+        await_file(projects[0], "starting", owner)
+        contender = start(projects[1])
+        processes.append(contender)
+        output, _ = contender.communicate(timeout=5)
+        assert contender.returncode == 1, output
+        assert "another project" in output
+        assert not (projects[1] / "starting").exists()
+        assert not (projects[1] / workspace_module.PREVIEW_STATE).exists()
+
+        (projects[0] / "allow-listen").touch()
+        await_file(projects[0], "listening", owner)
+        for project in projects:
+            repeat = start(project)
+            processes.append(repeat)
+            output, _ = repeat.communicate(timeout=5)
+            assert repeat.returncode == (0 if project == projects[0] else 1), output
+            assert ("Preview already running" in output) == (project == projects[0])
+
+        owner.send_signal(signal.SIGTERM)
+        owner.communicate(timeout=5)
+        assert owner.returncode == 143
+        assert not (projects[0] / workspace_module.PREVIEW_STATE).exists()
+        (projects[1] / "allow-listen").touch()
+        replacement = start(projects[1])
+        processes.append(replacement)
+        await_file(projects[1], "listening", replacement)
+        replacement.send_signal(signal.SIGTERM)
+        replacement.communicate(timeout=5)
+        assert replacement.returncode == 143
+        assert not (projects[1] / workspace_module.PREVIEW_STATE).exists()
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.send_signal(signal.SIGTERM)
+                process.wait(timeout=5)
+
+
 @pytest.mark.parametrize("empty", [False, True])
 def test_phony_preview_with_real_directory_preserves_success(
     tmp_path, real_make, empty

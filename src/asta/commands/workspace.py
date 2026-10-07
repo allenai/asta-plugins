@@ -24,6 +24,7 @@ from urllib.request import urlopen
 
 import click
 from filelock import FileLock, Timeout
+from platformdirs import user_cache_path
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
@@ -511,7 +512,11 @@ def preview_running() -> bool:
     return False
 
 
-def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
+def wait_for_owned_preview(
+    project: Path,
+    lock: FileLock,
+    stopped_message: str = "The previous preview stopped; retry startup.",
+) -> None:
     """Only reuse a listening preview while its launcher still holds the lock."""
     deadline = time.monotonic() + PREVIEW_START_TIMEOUT
     while True:
@@ -530,7 +535,7 @@ def wait_for_owned_preview(project: Path, lock: FileLock) -> None:
                 return
         else:
             lock.release()
-            raise click.ClickException("The previous preview stopped; retry startup.")
+            raise click.ClickException(stopped_message)
         if time.monotonic() >= deadline:
             raise click.ClickException(
                 "This project's preview is still starting or not listening; "
@@ -734,16 +739,40 @@ def preview_project(project: Path) -> None:
     try:
         state.parent.mkdir(parents=True, exist_ok=True)
         lock = FileLock(project / PREVIEW_LOCK, timeout=0)
+    except OSError as exc:
+        raise click.ClickException(f"Cannot record preview ownership: {exc}") from exc
+    try:
+        port_cache = user_cache_path("asta-cli")
+        port_cache.mkdir(parents=True, exist_ok=True)
+        port_lock = FileLock(port_cache / f"preview-{PREVIEW_PORT}.lock", timeout=0)
+    except OSError as exc:
+        raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
+    command = ["make", "preview"] if makefile else []
+    try:
+        # Reserve the port before claiming a project, including build prerequisites.
+        try:
+            port_lock.acquire()
+        except Timeout:
+            wait_for_owned_preview(
+                project,
+                lock,
+                f"Port {PREVIEW_PORT} is reserved by another project's preview; "
+                "stop it to start this project's preview.",
+            )
+            click.echo(f"Preview already running: {url}")
+            return
+        except OSError as exc:
+            raise click.ClickException(f"Cannot reserve preview port: {exc}") from exc
         try:
             lock.acquire()
         except Timeout:
             wait_for_owned_preview(project, lock)
             click.echo(f"Preview already running: {url}")
             return
-    except OSError as exc:
-        raise click.ClickException(f"Cannot record preview ownership: {exc}") from exc
-    command = ["make", "preview"] if makefile else []
-    try:
+        except OSError as exc:
+            raise click.ClickException(
+                f"Cannot record preview ownership: {exc}"
+            ) from exc
         if preview_running():
             raise click.ClickException(
                 f"Port {PREVIEW_PORT} is in use by another process; stop it to start "
@@ -775,9 +804,11 @@ def preview_project(project: Path) -> None:
             returncode = run_preview(command, project)
     finally:
         try:
-            state.unlink(missing_ok=True)
+            if lock.is_locked:
+                state.unlink(missing_ok=True)
         finally:
             lock.release()
+            port_lock.release()
     if returncode in (-signal.SIGINT, 130):
         raise click.exceptions.Exit(130)
     if returncode != 0:

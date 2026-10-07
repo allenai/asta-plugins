@@ -118,8 +118,9 @@ with tempfile.TemporaryDirectory() as directory:
                     timeout=15,
                     check=False,
                 )
-                if occupied.returncode == 0 or "in use by another process" not in (
-                    occupied.stderr
+                if (
+                    occupied.returncode == 0
+                    or "reserved by another project's preview" not in (occupied.stderr)
                 ):
                     raise AssertionError(
                         "CLI must report a preview port held by another project\n"
