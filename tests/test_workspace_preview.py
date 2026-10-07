@@ -236,11 +236,19 @@ def test_failed_launch_removes_record(tmp_path, ran):
     assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
 
 
-def test_codespaces_link(tmp_path, ran, monkeypatch):
+@pytest.mark.parametrize(
+    ("codespace", "domain", "url"),
+    [
+        ("", "", "http://localhost:4848/"),
+        ("example", "app.github.dev", "https://example-4848.app.github.dev/"),
+        ("example", "example.test", "https://example-4848.example.test/"),
+    ],
+)
+def test_codespaces_link(tmp_path, ran, monkeypatch, codespace, domain, url):
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
-    monkeypatch.setenv("CODESPACE_NAME", "example")
-    monkeypatch.setenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "app.github.dev")
-    assert "https://example-4848.app.github.dev/" in invoke(tmp_path).output
+    monkeypatch.setenv("CODESPACE_NAME", codespace)
+    monkeypatch.setenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", domain)
+    assert url in invoke(tmp_path).output
 
 
 def test_codespaces_default_domain(tmp_path, ran, monkeypatch):

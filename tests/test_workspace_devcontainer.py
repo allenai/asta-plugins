@@ -135,6 +135,7 @@ def test_attach_preserves_cli_exit_status(tmp_path, status):
     cli.chmod(0o755)
     result = subprocess.run(
         ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+        cwd=tmp_path,
         env={"PATH": f"{tmp_path}:{os.defpath}"},
         capture_output=True,
         text=True,
@@ -142,3 +143,18 @@ def test_attach_preserves_cli_exit_status(tmp_path, status):
     )
     assert result.stdout == "workspace preview\n"
     assert result.returncode == status
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
+def test_attach_in_empty_project_exits_successfully(tmp_path):
+    result = subprocess.run(
+        ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+        cwd=tmp_path,
+        env={"PATH": f"{Path(sys.executable).parent}:{os.defpath}"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "nothing to preview" in result.stdout
+    assert not (tmp_path / ".asta").exists()
