@@ -23,6 +23,7 @@ ENV PATH="/root/.local/bin:$PATH"
 # Codespaces runs this on create, alongside the project's own postCreateCommand,
 # so project devcontainer.json files carry no auth setup.
 COPY docker/asta-persist-auth /usr/local/bin/asta-persist-auth
+COPY docker/asta-workspace-preview docker/asta-workspace-install-skills /usr/local/bin/
 LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"}]'
 
 WORKDIR /app

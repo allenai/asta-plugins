@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - Dockerfile
-      - docker/latexmkrc
+      - docker/**
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
       - tests/dom/**
@@ -86,17 +86,17 @@ jobs:
             -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
             -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke bash -euc '
             asta --help >/dev/null
-            python3 /w/check-post-create.py initial
+            python3 /w/check-post-create.py initial image
             find ~ -maxdepth 4 -type d -path "*skills/workspace" | grep -q .
             quarto check >/dev/null'
           docker run --rm \
             -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
             -v "$RUNNER_TEMP/codespace-storage:/workspaces" asta-smoke \
-            python3 /w/check-post-create.py rebuild
+            python3 /w/check-post-create.py rebuild image
       - name: Preview answers on port 4848
         run: |
           docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
-            python3 /w/check-post-attach.py
+            python3 /w/check-post-attach.py image
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |

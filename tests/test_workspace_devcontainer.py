@@ -130,8 +130,10 @@ def test_preview_probe_python_ships_in_both_images():
         (False, "empty", 0, 0, ""),
     ],
 )
+@pytest.mark.parametrize("startup", ["asset", "image"])
 def test_preview_startup_preserves_prerequisites_and_reports_errors(
     tmp_path,
+    startup,
     port_open,
     project,
     start_status,
@@ -139,7 +141,7 @@ def test_preview_startup_preserves_prerequisites_and_reports_errors(
     expected_calls,
 ):
     result, calls, probe = _run_preview_startup(
-        tmp_path, port_open, project, start_status
+        tmp_path, port_open, project, start_status, startup=startup
     )
     assert result.returncode == expected_status
     assert calls == expected_calls
@@ -157,18 +159,25 @@ def test_preview_startup_preserves_prerequisites_and_reports_errors(
         ("example-space", "example.test", "https://example-space-4848.example.test/"),
     ],
 )
+@pytest.mark.parametrize("startup", ["asset", "image"])
 def test_preview_startup_prints_forwarded_url(
-    tmp_path, codespace_name, forwarding_domain, expected_url
+    tmp_path, codespace_name, forwarding_domain, expected_url, startup
 ):
     result, _, _ = _run_preview_startup(
-        tmp_path, False, "managed", 0, codespace_name, forwarding_domain
+        tmp_path, False, "managed", 0, codespace_name, forwarding_domain, startup
     )
     assert result.returncode == 0, result.stderr
     assert f"Quarto preview: {expected_url}" in result.stdout
 
 
 def _run_preview_startup(
-    tmp_path, port_open, project, start_status, codespace_name="", forwarding_domain=""
+    tmp_path,
+    port_open,
+    project,
+    start_status,
+    codespace_name="",
+    forwarding_domain="",
+    startup="asset",
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -195,7 +204,7 @@ def _run_preview_startup(
         "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": forwarding_domain,
     }
     result = subprocess.run(
-        ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+        _preview_command(startup),
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -210,7 +219,8 @@ def _run_preview_startup(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
-def test_preview_reuses_listening_server_without_waiting_for_http(tmp_path):
+@pytest.mark.parametrize("startup", ["asset", "image"])
+def test_preview_reuses_listening_server_without_waiting_for_http(tmp_path, startup):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "python3").symlink_to(sys.executable)
@@ -235,7 +245,7 @@ def test_preview_reuses_listening_server_without_waiting_for_http(tmp_path):
         listener.listen()
         # The port accepts connections but never sends an HTTP response.
         result = subprocess.run(
-            ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+            _preview_command(startup),
             cwd=tmp_path,
             env={
                 "PATH": f"{bin_dir}:{os.defpath}",
@@ -248,3 +258,28 @@ def test_preview_reuses_listening_server_without_waiting_for_http(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert not calls.exists(), "must not start another preview on an occupied port"
+
+
+def _preview_command(startup):
+    if startup == "image":
+        return ["sh", str(ROOT / "docker/asta-workspace-preview")]
+    return ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]]
+
+
+@pytest.mark.parametrize("status", [0, 2])
+def test_image_skills_installer_keeps_failures_visible(tmp_path, status):
+    executable = tmp_path / "npx"
+    executable.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*"\nexit {status}\n')
+    executable.chmod(0o755)
+    result = subprocess.run(
+        ["sh", str(ROOT / "docker/asta-workspace-install-skills")],
+        env={"PATH": f"{tmp_path}:{os.defpath}"},
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == status
+    assert (
+        result.stdout.strip()
+        == "--yes skills@latest add /opt/asta-plugins --all -g --yes"
+    )

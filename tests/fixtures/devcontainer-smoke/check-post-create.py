@@ -22,7 +22,12 @@ else:
     raise ValueError(f"unknown phase: {phase}")
 
 # The image's devcontainer.metadata hook runs before the project's own command.
-for command in ("asta-persist-auth", config["postCreateCommand"]):
+install = (
+    "asta-workspace-install-skills"
+    if sys.argv[2:] == ["image"]
+    else config["postCreateCommand"]
+)
+for command in ("asta-persist-auth", install):
     subprocess.run(
         command,
         shell=True,

@@ -13,7 +13,11 @@ root = Path("/opt/asta-plugins")
 config = json.loads(
     (root / "plugins/asta-tools/skills/workspace/assets/devcontainer.json").read_text()
 )
-command = config["postAttachCommand"]["preview"]
+command = (
+    "asta-workspace-preview"
+    if sys.argv[1:] == ["image"]
+    else config["postAttachCommand"]["preview"]
+)
 env = {
     **os.environ,
     "CODESPACE_NAME": "workspace-smoke",
