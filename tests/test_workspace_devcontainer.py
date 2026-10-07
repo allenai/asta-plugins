@@ -1,7 +1,12 @@
 """Static checks that keep the workspace dev container a working Codespaces surface."""
 
+import errno
 import json
+import os
 import re
+import socket
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -99,3 +104,147 @@ def test_codespaces_login_persistence_ships_in_the_image() -> None:
         hooks = [m.get("postCreateCommand") for m in json.loads(label.group(1))]
         assert "asta-persist-auth" in hooks
     assert "COPY docker/asta-persist-auth /usr/local/bin/" in DOCKERFILE.read_text()
+
+
+def test_preview_probe_python_ships_in_both_images():
+    dockerfile = DOCKERFILE.read_text()
+    asta_stage = dockerfile.split("\nFROM ", 1)[0]
+    packages = re.search(
+        r"apt-get install -y --no-install-recommends (.*?)&&", asta_stage, re.S
+    )
+    assert packages and "python3" in packages.group(1).split()
+    assert "FROM asta AS tex" in dockerfile
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
+@pytest.mark.parametrize(
+    ("port_open", "project", "start_status", "expected_status", "expected_calls"),
+    [
+        (True, "managed", 0, 0, ""),
+        (False, "managed", 0, 0, "make preview\n"),
+        (False, "managed", 2, 1, "make preview\n"),
+        (False, "managed", 137, 1, "make preview\n"),
+        (False, "make-only", 0, 0, "make preview\n"),
+        (False, "quarto", 0, 0, "quarto preview --no-browser --port 4848\n"),
+        (False, "quarto", 2, 1, "quarto preview --no-browser --port 4848\n"),
+        (False, "empty", 0, 0, ""),
+    ],
+)
+def test_preview_startup_preserves_prerequisites_and_reports_errors(
+    tmp_path,
+    port_open,
+    project,
+    start_status,
+    expected_status,
+    expected_calls,
+):
+    result, calls, probe = _run_preview_startup(
+        tmp_path, port_open, project, start_status
+    )
+    assert result.returncode == expected_status
+    assert calls == expected_calls
+    assert "Quarto preview: http://localhost:4848/" in result.stdout
+    assert probe, "must probe the port before starting a preview"
+    assert ("Quarto preview failed" in result.stderr) == (expected_status != 0)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
+@pytest.mark.parametrize(
+    ("codespace_name", "forwarding_domain", "expected_url"),
+    [
+        ("", "", "http://localhost:4848/"),
+        ("example-space", "", "https://example-space-4848.app.github.dev/"),
+        ("example-space", "example.test", "https://example-space-4848.example.test/"),
+    ],
+)
+def test_preview_startup_prints_forwarded_url(
+    tmp_path, codespace_name, forwarding_domain, expected_url
+):
+    result, _, _ = _run_preview_startup(
+        tmp_path, False, "managed", 0, codespace_name, forwarding_domain
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"Quarto preview: {expected_url}" in result.stdout
+
+
+def _run_preview_startup(
+    tmp_path, port_open, project, start_status, codespace_name="", forwarding_domain=""
+):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    for name in ("python3", "make", "quarto"):
+        script = bin_dir / name
+        if name == "python3":
+            body = f'printf "%s\\n" "$*" > "$PREVIEW_PROBE"\nexit {0 if port_open else 1}\n'
+        else:
+            body = (
+                f'printf "%s\\n" "{name} $*" >> "$PREVIEW_CALLS"\nexit {start_status}\n'
+            )
+        script.write_text("#!/bin/sh\n" + body)
+        script.chmod(0o755)
+    if project in ("managed", "make-only"):
+        (tmp_path / "Makefile").touch()
+    if project in ("managed", "quarto"):
+        (tmp_path / "_quarto.yml").touch()
+    env = {
+        "PATH": f"{bin_dir}:{os.defpath}",
+        "PREVIEW_CALLS": str(calls),
+        "PREVIEW_PROBE": str(tmp_path / "probe"),
+        "CODESPACE_NAME": codespace_name,
+        "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": forwarding_domain,
+    }
+    result = subprocess.run(
+        ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return (
+        result,
+        calls.read_text() if calls.exists() else "",
+        (tmp_path / "probe").read_text(),
+    )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX sh")
+def test_preview_reuses_listening_server_without_waiting_for_http(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(sys.executable)
+    calls = tmp_path / "calls"
+    for name in ("make", "quarto"):
+        script = bin_dir / name
+        script.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$PREVIEW_CALLS"\nexit 2\n'
+        )
+        script.chmod(0o755)
+    (tmp_path / "Makefile").touch()
+    (tmp_path / "_quarto.yml").touch()
+
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            listener.bind(("127.0.0.1", 4848))
+        except OSError as error:
+            if error.errno == errno.EADDRINUSE:
+                pytest.skip("preview port 4848 is already in use")
+            raise
+        listener.listen()
+        # The port accepts connections but never sends an HTTP response.
+        result = subprocess.run(
+            ["sh", "-c", _devcontainer()["postAttachCommand"]["preview"]],
+            cwd=tmp_path,
+            env={
+                "PATH": f"{bin_dir}:{os.defpath}",
+                "PREVIEW_CALLS": str(calls),
+            },
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert not calls.exists(), "must not start another preview on an occupied port"
