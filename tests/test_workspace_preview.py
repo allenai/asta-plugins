@@ -24,21 +24,23 @@ class Ran:
         self.make_error = "make: *** No rule to make target 'preview'.  Stop.\n"
         self.calls: list[tuple[list[str], Path]] = []
 
+    def popen(self, command, cwd, **kwargs):
+        self.calls.append((command, Path(cwd)))
+        assert command == ["make", "--question", "--print-data-base", "preview"]
+        assert kwargs["env"]["LC_ALL"] == "C"
+        assert not {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"} & kwargs["env"].keys()
+        assert kwargs["start_new_session"] == (os.name == "posix")
+        kwargs["stdout"].write("\n# Files\n\npreview:\n" if self.make_preview else "")
+        kwargs["stderr"].write("" if self.make_preview else self.make_error)
+
+        def wait(timeout):
+            assert timeout == workspace_module.MAKE_PROBE_TIMEOUT
+            return 1 if self.make_preview else 2
+
+        return type("Process", (), {"wait": staticmethod(wait)})()
+
     def __call__(self, command, cwd, check, **kwargs):
         self.calls.append((command, Path(cwd)))
-        if command == ["make", "--question", "preview"]:
-            assert kwargs["env"]["LC_ALL"] == "C"
-            assert not {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"} & kwargs["env"].keys()
-            assert kwargs["timeout"] == workspace_module.MAKE_PROBE_TIMEOUT
-            assert kwargs["stdout"] == subprocess.DEVNULL
-            kwargs["stderr"].write("" if self.make_preview else self.make_error)
-            return type(
-                "Result",
-                (),
-                {
-                    "returncode": 1 if self.make_preview else 2,
-                },
-            )()
         return type("Result", (), {"returncode": self.returncode})()
 
 
@@ -46,6 +48,7 @@ class Ran:
 def ran(monkeypatch):
     runner = Ran()
     monkeypatch.setattr(workspace_module.subprocess, "run", runner)
+    monkeypatch.setattr(workspace_module.subprocess, "Popen", runner.popen)
     monkeypatch.setattr(workspace_module, "preview_running", lambda: False)
     monkeypatch.setattr(workspace_module.shutil, "which", lambda name: f"/bin/{name}")
     monkeypatch.delenv("CODESPACE_NAME", raising=False)
@@ -64,7 +67,7 @@ def test_makefile_target_wins(tmp_path, ran, makefile_name):
     assert result.exit_code == 0, result.output
     assert "Preview: http://localhost:4848/" in result.output
     assert ran.calls == [
-        (["make", "--question", "preview"], tmp_path.resolve()),
+        (["make", "--question", "--print-data-base", "preview"], tmp_path.resolve()),
         (["make", "preview"], tmp_path.resolve()),
     ]
 
@@ -137,7 +140,7 @@ def test_makefile_without_preview_falls_back_to_quarto(tmp_path, ran, quote):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [
-        (["make", "--question", "preview"], tmp_path.resolve()),
+        (["make", "--question", "--print-data-base", "preview"], tmp_path.resolve()),
         (["quarto", "preview", "--no-browser", "--port", "4848"], tmp_path.resolve()),
     ]
 
@@ -146,12 +149,10 @@ def test_missing_make_falls_back_to_quarto(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("check:\n")
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
 
-    def run(command, **kwargs):
-        if command[0] == "make":
-            raise FileNotFoundError("make")
-        return ran(command, **kwargs)
+    def popen(command, **kwargs):
+        raise FileNotFoundError("make")
 
-    monkeypatch.setattr(workspace_module.subprocess, "run", run)
+    monkeypatch.setattr(workspace_module.subprocess, "Popen", popen)
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [
@@ -213,13 +214,20 @@ def test_make_probe_timeout_still_uses_project_preview(tmp_path, ran, monkeypatc
     (tmp_path / "Makefile").write_text("include rules.mk\n")
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
 
-    def run(command, **kwargs):
-        if "--question" in command:
-            assert kwargs["timeout"] == workspace_module.MAKE_PROBE_TIMEOUT
-            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
-        return ran(command, **kwargs)
+    class Probe:
+        pid = 12345
 
-    monkeypatch.setattr(workspace_module.subprocess, "run", run)
+        def wait(self, timeout=None):
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("make", timeout)
+            return -signal.SIGKILL
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(workspace_module.subprocess, "Popen", lambda *a, **kw: Probe())
+    if os.name == "posix":
+        monkeypatch.setattr(workspace_module.os, "killpg", lambda *a: None)
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [(["make", "preview"], tmp_path.resolve())]
@@ -273,6 +281,103 @@ def test_real_make_probe_can_fetch_included_rules(tmp_path):
     )
     assert workspace_module.make_has_preview(tmp_path)
     assert (tmp_path / "rules.mk").read_text() == "preview:\n"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
+@pytest.mark.parametrize("artifact", ["file", "directory"])
+def test_preview_artifact_without_rule_falls_back_to_quarto(
+    tmp_path, monkeypatch, artifact
+):
+    (tmp_path / "Makefile").write_text("check:\n")
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    if artifact == "file":
+        (tmp_path / "preview").touch()
+    else:
+        (tmp_path / "preview").mkdir()
+    actual_run = subprocess.run
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[0] == "quarto":
+            return subprocess.CompletedProcess(command, 0)
+        return actual_run(command, **kwargs)
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", run)
+    monkeypatch.setattr(workspace_module, "preview_running", lambda: False)
+    monkeypatch.setattr(workspace_module.shutil, "which", lambda name: f"/bin/{name}")
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert calls[-1] == ["quarto", "preview", "--no-browser", "--port", "4848"]
+    assert ["make", "preview"] not in calls
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
+@pytest.mark.parametrize(
+    "rules",
+    [
+        "preview:\n",
+        ".PHONY: preview\n",
+        "preview::\n\t@echo preview\n",
+        "pre%:\n\t@echo preview\n",
+        ".DEFAULT:\n\t@echo preview\n",
+        "preview: dependency\ndependency:\n",
+    ],
+)
+def test_real_preview_rules_win_even_with_existing_artifact(tmp_path, rules):
+    (tmp_path / "Makefile").write_text(rules)
+    (tmp_path / "preview").mkdir()
+    assert workspace_module.make_has_preview(tmp_path)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+@pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
+def test_make_probe_timeout_stops_include_remake_children(tmp_path):
+    child = tmp_path / "child.py"
+    child.write_text(
+        "from pathlib import Path\n"
+        "import os, time\n"
+        "Path('child-started').write_text(str(os.getpgrp()))\n"
+        "time.sleep(1)\n"
+        "Path('child-survived').touch()\n"
+        "time.sleep(60)\n"
+    )
+    (tmp_path / "Makefile").write_text(
+        f"include rules.mk\nrules.mk:\n\t@{sys.executable} child.py & wait\n"
+    )
+    script = (
+        "from pathlib import Path\n"
+        "from asta.commands import workspace\n"
+        "workspace.MAKE_PROBE_TIMEOUT = 0.5\n"
+        "assert workspace.make_has_preview(Path('.'))\n"
+    )
+    with (tmp_path / "probe.log").open("w+") as output:
+        process = subprocess.Popen(
+            [sys.executable, "-c", script],
+            cwd=tmp_path,
+            stdout=output,
+            stderr=output,
+            start_new_session=True,
+        )
+        try:
+            process.wait(timeout=5)
+            output.seek(0)
+            assert process.returncode == 0, output.read()
+            assert (tmp_path / "child-started").exists()
+            time.sleep(1.5)
+            assert not (tmp_path / "child-survived").exists()
+        finally:
+            marker = tmp_path / "child-started"
+            if marker.exists():
+                try:
+                    os.killpg(int(marker.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")

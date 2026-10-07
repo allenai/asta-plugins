@@ -481,28 +481,51 @@ def make_has_preview(project: Path) -> bool:
     env = {**os.environ, "LC_ALL": "C"}
     for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
         env.pop(name, None)
-    # Descendants can keep pipes open after Make is killed on timeout.
-    with tempfile.TemporaryFile(mode="w+t", errors="replace") as stderr:
+    # Regular files avoid waiting on output pipes held open by descendants.
+    with (
+        tempfile.TemporaryFile(mode="w+t", errors="replace") as stdout,
+        tempfile.TemporaryFile(mode="w+t", errors="replace") as stderr,
+    ):
         try:
-            result = subprocess.run(
-                ["make", "--question", "preview"],
+            process = subprocess.Popen(
+                ["make", "--question", "--print-data-base", "preview"],
                 cwd=project,
-                stdout=subprocess.DEVNULL,
+                stdout=stdout,
                 stderr=stderr,
                 env=env,
-                timeout=MAKE_PROBE_TIMEOUT,
-                check=False,
+                start_new_session=os.name == "posix",
             )
         except FileNotFoundError:
             return False
-        except subprocess.TimeoutExpired:
+        try:
+            returncode = process.wait(timeout=MAKE_PROBE_TIMEOUT)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait()
+            if isinstance(exc, KeyboardInterrupt):
+                raise
             return True
         stderr.seek(0)
         diagnostic = stderr.read()
-    # Other Make errors must reach `make preview`, not be hidden by a fallback.
-    return not (
-        result.returncode == 2
-        and re.search(r"No rule to make target [`']preview'\.", diagnostic)
+        if returncode not in (0, 1):
+            # Preserve Make errors instead of hiding them with the Quarto fallback.
+            return not re.search(r"No rule to make target [`']preview'\.", diagnostic)
+        stdout.seek(0)
+        database = stdout.read().partition("\n# Files\n")[2]
+    # Make records existing files with no explicit or implicit rule as non-targets.
+    return any(
+        re.search(r"^preview::?(?:\s|$)", block, re.MULTILINE)
+        and (
+            not block.startswith("# Not a target:\n")
+            or "\n#  recipe to execute" in block
+        )
+        for block in database.split("\n\n")
     )
 
 
