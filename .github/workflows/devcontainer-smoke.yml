@@ -102,6 +102,10 @@ jobs:
             docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
               python3 /w/check-post-attach.py --preview-command "$command"
           done
+          for stop_signal in SIGTERM SIGHUP; do
+            docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
+              python3 /w/check-post-attach.py --preview-command cli --stop-signal "$stop_signal"
+          done
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |

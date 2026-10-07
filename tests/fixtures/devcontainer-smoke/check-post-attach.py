@@ -13,7 +13,12 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--preview-command", choices=("asset", "cli"), default="asset")
-mode = parser.parse_args().preview_command
+parser.add_argument(
+    "--stop-signal", choices=("SIGINT", "SIGTERM", "SIGHUP"), default="SIGINT"
+)
+args = parser.parse_args()
+mode = args.preview_command
+stop_signal = getattr(signal, args.stop_signal)
 
 root = Path("/opt/asta-plugins")
 config = json.loads(
@@ -29,7 +34,7 @@ env = {
     "CODESPACE_NAME": "workspace-smoke",
     "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev",
 }
-label = "Preview" if mode == "cli" else "Quarto preview"
+label = "Preview URL (once serving)" if mode == "cli" else "Quarto preview"
 expected = f"{label}: https://workspace-smoke-4848.app.github.dev/"
 
 with tempfile.TemporaryDirectory() as directory:
@@ -44,8 +49,8 @@ with tempfile.TemporaryDirectory() as directory:
     log_path = Path(directory) / "preview.log"
     with log_path.open("wb") as log:
         process = subprocess.Popen(
-            command,
-            shell=True,
+            ["asta", "workspace", "preview"] if mode == "cli" else command,
+            shell=mode != "cli",
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
@@ -85,7 +90,8 @@ with tempfile.TemporaryDirectory() as directory:
                     "postAttachCommand did not start preview on port 4848"
                 )
             if mode == "cli":
-                occupied = subprocess.run(
+                # Rerunning for the same project reuses the live preview.
+                rerun = subprocess.run(
                     ["asta", "workspace", "preview", "--project", str(project)],
                     capture_output=True,
                     text=True,
@@ -93,17 +99,58 @@ with tempfile.TemporaryDirectory() as directory:
                     timeout=15,
                     check=False,
                 )
-                if occupied.returncode == 0 or "already in use" not in occupied.stderr:
+                if rerun.returncode != 0 or (
+                    f"Preview already running: {expected.split(': ', 1)[1]}"
+                    not in rerun.stdout
+                ):
                     raise AssertionError(
-                        "CLI must report an occupied preview port\n"
+                        "CLI must reuse this project's running preview\n"
+                        f"stdout: {rerun.stdout}\nstderr: {rerun.stderr}"
+                    )
+                # Another project must not mistake that server for its own.
+                other = Path(directory) / "other"
+                shutil.copytree(project, other, ignore=shutil.ignore_patterns(".asta"))
+                occupied = subprocess.run(
+                    ["asta", "workspace", "preview", "--project", str(other)],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=15,
+                    check=False,
+                )
+                if occupied.returncode == 0 or "in use by another process" not in (
+                    occupied.stderr
+                ):
+                    raise AssertionError(
+                        "CLI must report a preview port held by another project\n"
                         f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
                     )
+                process.send_signal(stop_signal)
+                if process.wait(timeout=6) != 128 + stop_signal:
+                    raise AssertionError(
+                        f"CLI must handle {args.stop_signal} with cleanup"
+                    )
+                if (project / ".asta/cache/preview.json").exists():
+                    raise AssertionError("Stopped CLI left preview ownership state")
+                for _ in range(20):
+                    response = subprocess.run(
+                        ["curl", "-fsS", "--max-time", "1", "http://127.0.0.1:4848/"],
+                        capture_output=True,
+                        check=False,
+                    )
+                    if response.returncode != 0:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise AssertionError("Preview kept serving after CLI shutdown")
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise
         finally:
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                os.killpg(
+                    process.pid, signal.SIGINT if mode == "cli" else signal.SIGTERM
+                )
             except ProcessLookupError:
                 pass
             try:
