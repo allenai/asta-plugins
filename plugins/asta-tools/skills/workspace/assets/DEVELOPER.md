@@ -47,7 +47,9 @@ underline; hovering it shows the quote and a body-style citation, and the same
 popover appears on the `what-changed` diff so a reviewer can check the backing.
 Full reference (available after the first render or `make workspace-assets`): [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
 
-For automatic container attach, use `asta workspace preview --if-needed` once your installed CLI supports that option. It starts the project's preview when the port is free and skips startup with a warning when the port is occupied, leaving the existing process alone. It does not verify which project owns that process; a manual start without the option still reports an occupied port as an error. Keep existing attach commands until a compatible image is released.
+For automatic container attach, check that `asta workspace preview --help` lists `--if-needed` before using it. It starts the project's preview when the port is free and skips startup with a warning when the port is occupied, leaving the existing process alone. It does not verify which project owns that process; a manual start without the option still reports an occupied port as an error. Keep existing attach commands until a compatible image is released.
+
+Run startup hooks sequentially. The port check does not reserve the port: concurrent starts can both see it free, and the losing startup reports the tool's error.
 
 ## Edit without preview
 

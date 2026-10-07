@@ -554,7 +554,7 @@ def make_has_preview(project: Path) -> bool:
 @click.option(
     "--if-needed",
     is_flag=True,
-    help="Skip startup if port 4848 is occupied; intended for container attach hooks.",
+    help=f"Skip startup if port {PREVIEW_PORT} is occupied; intended for container attach hooks.",
 )
 def preview(project: Path, if_needed: bool) -> None:
     """Start the project's live preview on port 4848.
