@@ -34,7 +34,7 @@ env = {
     "CODESPACE_NAME": "workspace-smoke",
     "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev",
 }
-label = "Preview" if mode == "cli" else "Quarto preview"
+label = "Preview URL (once serving)" if mode == "cli" else "Quarto preview"
 expected = f"{label}: https://workspace-smoke-4848.app.github.dev/"
 
 with tempfile.TemporaryDirectory() as directory:
