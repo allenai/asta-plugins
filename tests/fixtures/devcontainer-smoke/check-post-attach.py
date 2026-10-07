@@ -85,7 +85,8 @@ with tempfile.TemporaryDirectory() as directory:
                     "postAttachCommand did not start preview on port 4848"
                 )
             if mode == "cli":
-                occupied = subprocess.run(
+                # Rerunning for the same project reuses the live preview.
+                rerun = subprocess.run(
                     ["asta", "workspace", "preview", "--project", str(project)],
                     capture_output=True,
                     text=True,
@@ -93,9 +94,30 @@ with tempfile.TemporaryDirectory() as directory:
                     timeout=15,
                     check=False,
                 )
-                if occupied.returncode == 0 or "already in use" not in occupied.stderr:
+                if rerun.returncode != 0 or (
+                    f"Preview already running: {expected.split(': ', 1)[1]}"
+                    not in rerun.stdout
+                ):
                     raise AssertionError(
-                        "CLI must report an occupied preview port\n"
+                        "CLI must reuse this project's running preview\n"
+                        f"stdout: {rerun.stdout}\nstderr: {rerun.stderr}"
+                    )
+                # Another project must not mistake that server for its own.
+                other = Path(directory) / "other"
+                shutil.copytree(project, other, ignore=shutil.ignore_patterns(".asta"))
+                occupied = subprocess.run(
+                    ["asta", "workspace", "preview", "--project", str(other)],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=15,
+                    check=False,
+                )
+                if occupied.returncode == 0 or "in use by another process" not in (
+                    occupied.stderr
+                ):
+                    raise AssertionError(
+                        "CLI must report a preview port held by another project\n"
                         f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
                     )
         except Exception:
