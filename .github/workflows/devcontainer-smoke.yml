@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - Dockerfile
-      - docker/latexmkrc
+      - docker/**
+      - src/asta/commands/workspace.py
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
       - tests/dom/**
@@ -81,6 +82,7 @@ jobs:
           fi
       - name: Check CLI, skills install, Codespaces rebuild and Quarto
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/codespace-storage"
           docker run --rm \
             -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
@@ -95,8 +97,11 @@ jobs:
             python3 /w/check-post-create.py rebuild
       - name: Preview answers on port 4848
         run: |
-          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
-            python3 /w/check-post-attach.py
+          set -euo pipefail
+          for command in asset cli; do
+            docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
+              python3 /w/check-post-attach.py --preview-command "$command"
+          done
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |

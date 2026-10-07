@@ -482,7 +482,7 @@ def preview(project: Path) -> None:
     """
     click.echo(f"Quarto preview: {preview_url(os.environ)}")
     if preview_running():
-        click.echo("A preview is already serving on port 4848; reusing it")
+        click.echo(f"A preview is already serving on port {PREVIEW_PORT}; reusing it")
         return
     project = project.resolve()
     if (project / "Makefile").is_file():
@@ -490,7 +490,8 @@ def preview(project: Path) -> None:
     elif (project / "_quarto.yml").is_file():
         command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
     else:
-        raise click.ClickException("No Makefile or _quarto.yml found to preview")
+        click.echo("No Makefile or _quarto.yml found; nothing to preview")
+        return
     try:
         result = subprocess.run(command, cwd=project, check=False)
     except FileNotFoundError as exc:

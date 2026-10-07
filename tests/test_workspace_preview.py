@@ -1,5 +1,6 @@
 """`asta workspace preview` delegates to the project's own preview."""
 
+import socket
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,9 @@ def test_makefile_target_wins(tmp_path, ran):
 def test_quarto_only_project(tmp_path, ran):
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
     assert invoke(tmp_path).exit_code == 0
-    assert ran.calls[0][0][:2] == ["quarto", "preview"]
+    assert ran.calls == [
+        (["quarto", "preview", "--no-browser", "--port", "4848"], tmp_path.resolve())
+    ]
 
 
 def test_reuses_running_preview(tmp_path, ran, monkeypatch):
@@ -54,6 +57,15 @@ def test_reuses_running_preview(tmp_path, ran, monkeypatch):
     assert result.exit_code == 0
     assert "reusing it" in result.output
     assert ran.calls == []
+
+
+def test_preview_probe_needs_only_a_listening_socket(monkeypatch):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        monkeypatch.setattr(workspace_module, "PREVIEW_PORT", listener.getsockname()[1])
+        listener.listen()
+        assert workspace_module.preview_running()
+    assert not workspace_module.preview_running()
 
 
 def test_codespaces_url(tmp_path, ran, monkeypatch):
@@ -72,5 +84,24 @@ def test_failure_is_reported(tmp_path, ran):
 
 
 def test_nothing_to_preview(tmp_path, ran):
-    assert invoke(tmp_path).exit_code != 0
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "nothing to preview" in result.output
     assert ran.calls == []
+
+
+@pytest.mark.parametrize(
+    ("project_file", "executable"), [("Makefile", "make"), ("_quarto.yml", "quarto")]
+)
+def test_missing_preview_tool_is_reported(
+    tmp_path, ran, monkeypatch, project_file, executable
+):
+    (tmp_path / project_file).touch()
+
+    def missing_tool(command, cwd, check):
+        raise FileNotFoundError(command[0])
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", missing_tool)
+    result = invoke(tmp_path)
+    assert result.exit_code != 0
+    assert f"{executable} is not installed" in result.output
