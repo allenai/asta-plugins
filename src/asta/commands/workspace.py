@@ -448,3 +448,52 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
         + b"\n",
     )
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
+
+
+PREVIEW_PORT = 4848
+
+
+def preview_url(env: Mapping[str, str]) -> str:
+    codespace = env.get("CODESPACE_NAME")
+    if codespace:
+        domain = env.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN") or "app.github.dev"
+        return f"https://{codespace}-{PREVIEW_PORT}.{domain}/"
+    return f"http://localhost:{PREVIEW_PORT}/"
+
+
+def preview_running() -> bool:
+    import socket
+
+    try:
+        socket.create_connection(("127.0.0.1", PREVIEW_PORT), 2).close()
+    except OSError:
+        return False
+    return True
+
+
+@workspace.command()
+@click.option(
+    "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
+)
+def preview(project: Path) -> None:
+    """Start the project's live preview unless one is already running.
+
+    Delegates to the project's `make preview`, so a customized target wins.
+    """
+    click.echo(f"Quarto preview: {preview_url(os.environ)}")
+    if preview_running():
+        click.echo("A preview is already serving on port 4848; reusing it")
+        return
+    project = project.resolve()
+    if (project / "Makefile").is_file():
+        command = ["make", "preview"]
+    elif (project / "_quarto.yml").is_file():
+        command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
+    else:
+        raise click.ClickException("No Makefile or _quarto.yml found to preview")
+    try:
+        result = subprocess.run(command, cwd=project, check=False)
+    except FileNotFoundError as exc:
+        raise click.ClickException(f"{command[0]} is not installed") from exc
+    if result.returncode != 0:
+        raise click.ClickException("Quarto preview failed; see the errors above.")

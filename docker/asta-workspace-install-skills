@@ -1,3 +1,0 @@
-#!/bin/sh
-set -eu
-exec npx --yes skills@latest add /opt/asta-plugins --all -g --yes
