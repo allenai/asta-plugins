@@ -551,7 +551,12 @@ def make_has_preview(project: Path) -> bool:
     type=click.Path(path_type=Path, file_okay=False, exists=True),
     default=Path("."),
 )
-def preview(project: Path) -> None:
+@click.option(
+    "--if-needed",
+    is_flag=True,
+    help="Skip startup if port 4848 is occupied; intended for container attach hooks.",
+)
+def preview(project: Path, if_needed: bool) -> None:
     """Start the project's live preview on port 4848.
 
     Delegates to `make preview` when available, otherwise uses Quarto directly.
@@ -567,6 +572,13 @@ def preview(project: Path) -> None:
         click.echo("No Makefile or _quarto.yml found; nothing to preview")
         return
     if preview_running():
+        if if_needed:
+            click.echo(
+                f"Port {PREVIEW_PORT} is already in use; skipping preview startup. "
+                "The listening server may belong to another project.",
+                err=True,
+            )
+            return
         raise click.ClickException(
             f"Port {PREVIEW_PORT} is already in use; cannot verify that the server "
             "belongs to this project. Use the existing server if appropriate, "

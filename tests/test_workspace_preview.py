@@ -131,6 +131,28 @@ def test_unrelated_real_listener_is_rejected(tmp_path, ran, monkeypatch, host):
     assert ran.calls == []
 
 
+def test_attach_skips_occupied_port_without_claiming_server(tmp_path, ran, monkeypatch):
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
+    result = CliRunner().invoke(
+        cli, ["workspace", "preview", "--project", str(tmp_path), "--if-needed"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "skipping preview startup" in result.output
+    assert "may belong to another project" in result.output
+    assert "Preview:" not in result.output
+    assert ran.calls == []
+
+
+def test_attach_starts_project_preview_when_port_is_free(tmp_path, ran):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    result = CliRunner().invoke(
+        cli, ["workspace", "preview", "--project", str(tmp_path), "--if-needed"]
+    )
+    assert result.exit_code == 0, result.output
+    assert ran.calls[-1] == (["make", "preview"], tmp_path.resolve())
+
+
 def test_empty_project_does_not_require_a_free_port(tmp_path, ran, monkeypatch):
     monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
     result = invoke(tmp_path)

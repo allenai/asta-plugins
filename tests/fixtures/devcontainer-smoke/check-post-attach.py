@@ -98,6 +98,31 @@ with tempfile.TemporaryDirectory() as directory:
                         "CLI must report an occupied preview port\n"
                         f"stdout: {occupied.stdout}\nstderr: {occupied.stderr}"
                     )
+                reattach = subprocess.run(
+                    [
+                        "asta",
+                        "workspace",
+                        "preview",
+                        "--project",
+                        str(project),
+                        "--if-needed",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=15,
+                    check=False,
+                )
+                if (
+                    reattach.returncode != 0
+                    or "skipping preview startup" not in reattach.stderr
+                ):
+                    raise AssertionError(
+                        "Attach mode must leave the existing process running\n"
+                        f"stdout: {reattach.stdout}\nstderr: {reattach.stderr}"
+                    )
+                if process.poll() is not None:
+                    raise AssertionError("Reattach stopped the original preview")
         except Exception:
             print(log_path.read_text(errors="replace"), file=sys.stderr)
             raise

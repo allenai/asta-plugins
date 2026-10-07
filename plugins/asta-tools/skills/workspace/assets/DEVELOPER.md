@@ -47,6 +47,8 @@ underline; hovering it shows the quote and a body-style citation, and the same
 popover appears on the `what-changed` diff so a reviewer can check the backing.
 Full reference (available after the first render or `make workspace-assets`): [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
 
+For automatic container attach, use `asta workspace preview --if-needed` once your installed CLI supports that option. It starts the project's preview when the port is free and skips startup with a warning when the port is occupied, leaving the existing process alone. It does not verify which project owns that process; a manual start without the option still reports an occupied port as an error. Keep existing attach commands until a compatible image is released.
+
 ## Edit without preview
 
 Edit `.qmd` files on GitHub directly or in any editor.
