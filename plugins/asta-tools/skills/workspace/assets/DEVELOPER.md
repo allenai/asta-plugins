@@ -6,6 +6,8 @@ Edit, preview, and save this research project.
 
 With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which blocks until this push's Pages deployment is live. If a transient API or workflow failure interrupts the wait, the baseline remains so the same command can be retried.
 
+With a CLI release containing `asta workspace preview`, that command delegates to your project's `make preview`, including an intentionally empty override, or falls back to Quarto when no preview rule exists. It ignores inherited `MAKEFLAGS`, `MFLAGS`, `MAKELEVEL`, `GNUMAKEFLAGS` and `MAKEFILES` during detection and startup; other project environment variables still apply. Use `make preview` directly when you want those Make controls. An interrupted CLI preview exits with status 130.
+
 Managed rules, helpers and the evidence extension use the ref in `.github/workflows/docs.yml`: `@latest` follows final releases, `@main` follows merges, and a release tag or commit pins a version. Change that ref and run `make update-workspace` to refresh the local cache; projects keep control of when to upgrade. A standalone, ejected Makefile can instead set `ASTA_PLUGINS_REF`, defaulting to the newest final release tag. Offline renders keep cached rules and evidence with a warning when a fetch fails; a first fetch needs network access.
 
 ## Devcontainer (`.devcontainer/devcontainer.json`)

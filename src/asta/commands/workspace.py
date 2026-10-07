@@ -457,6 +457,13 @@ PREVIEW_PORT = 4848
 MAKE_PROBE_TIMEOUT = 10
 
 
+def make_preview_env() -> dict[str, str]:
+    env = dict(os.environ)
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
+        env.pop(name, None)
+    return env
+
+
 def preview_url(env: Mapping[str, str]) -> str:
     codespace = env.get("CODESPACE_NAME")
     if codespace:
@@ -476,11 +483,11 @@ def preview_running() -> bool:
 
 
 def make_has_preview(project: Path) -> bool:
-    # Question mode skips the preview recipe, but can remake included rules or
-    # evaluate shell expressions. Bound the probe; real Make handles a timeout.
-    env = {**os.environ, "LC_ALL": "C"}
-    for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
-        env.pop(name, None)
+    """Inspect evaluated Make rules without running the preview recipe.
+
+    Includes and shell expressions can run during both this probe and startup.
+    """
+    env = {**make_preview_env(), "LC_ALL": "C"}
     # Regular files avoid waiting on output pipes held open by descendants.
     with (
         tempfile.TemporaryFile(mode="w+t", errors="replace") as stdout,
@@ -510,6 +517,11 @@ def make_has_preview(project: Path) -> bool:
             process.wait()
             if isinstance(exc, KeyboardInterrupt):
                 raise
+            click.echo(
+                "Warning: Make target detection timed out; running make preview "
+                "so the project's prerequisites can complete.",
+                err=True,
+            )
             return True
         stderr.seek(0)
         diagnostic = stderr.read()
@@ -517,7 +529,11 @@ def make_has_preview(project: Path) -> bool:
             # Preserve Make errors instead of hiding them with the Quarto fallback.
             return not re.search(r"No rule to make target [`']preview'\.", diagnostic)
         stdout.seek(0)
-        database = stdout.read().partition("\n# Files\n")[2]
+        database = (
+            stdout.read()
+            .rpartition("\n# Make data base, printed on ")[2]
+            .rpartition("\n# Files\n")[2]
+        )
     # Make records existing files with no explicit or implicit rule as non-targets.
     return any(
         re.search(r"^preview::?(?:\s|$)", block, re.MULTILINE)
@@ -539,6 +555,7 @@ def preview(project: Path) -> None:
     """Start the project's live preview on port 4848.
 
     Delegates to `make preview` when available, otherwise uses Quarto directly.
+    Inherited Make control variables are ignored; project variables are preserved.
     A competing process can still bind the port before startup; tool errors surface.
     """
     project = project.resolve()
@@ -562,12 +579,19 @@ def preview(project: Path) -> None:
         if shutil.which(command[0]) is None:
             raise click.ClickException(f"{command[0]} is not installed")
         click.echo(f"Preview: {preview_url(os.environ)}")
-        result = subprocess.run(command, cwd=project, check=False)
+        result = subprocess.run(
+            command,
+            cwd=project,
+            check=False,
+            env=make_preview_env() if command[0] == "make" else None,
+        )
     except KeyboardInterrupt:
-        return
+        raise click.exceptions.Exit(130) from None
     except FileNotFoundError as exc:
         raise click.ClickException(f"{command[0]} is not installed") from exc
-    if result.returncode not in (0, -signal.SIGINT, 130):
+    if result.returncode in (-signal.SIGINT, 130):
+        raise click.exceptions.Exit(130)
+    if result.returncode != 0:
         raise click.ClickException(
             f"{' '.join(command)} failed (exit {result.returncode}); see the errors above."
         )

@@ -28,9 +28,16 @@ class Ran:
         self.calls.append((command, Path(cwd)))
         assert command == ["make", "--question", "--print-data-base", "preview"]
         assert kwargs["env"]["LC_ALL"] == "C"
-        assert not {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"} & kwargs["env"].keys()
+        assert (
+            not {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"}
+            & kwargs["env"].keys()
+        )
         assert kwargs["start_new_session"] == (os.name == "posix")
-        kwargs["stdout"].write("\n# Files\n\npreview:\n" if self.make_preview else "")
+        kwargs["stdout"].write(
+            "\n# Make data base, printed on test\n# Files\n\npreview:\n"
+            if self.make_preview
+            else ""
+        )
         kwargs["stderr"].write("" if self.make_preview else self.make_error)
 
         def wait(timeout):
@@ -162,11 +169,38 @@ def test_missing_make_falls_back_to_quarto(tmp_path, ran, monkeypatch):
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
 @pytest.mark.parametrize("flags", ["-n", "-k", "-i", "--eval=preview:"])
-def test_make_probe_ignores_caller_flags(tmp_path, monkeypatch, flags):
+@pytest.mark.parametrize("variable", ["MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"])
+def test_make_probe_ignores_caller_flags(tmp_path, monkeypatch, flags, variable):
     (tmp_path / "Makefile").write_text("check:\n")
-    for name, value in (("MAKEFLAGS", flags), ("MFLAGS", flags), ("MAKELEVEL", "1")):
-        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(variable, flags)
+    monkeypatch.setenv("MAKELEVEL", "1")
     assert not workspace_module.make_has_preview(tmp_path)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
+def test_make_probe_ignores_caller_makefiles(tmp_path, monkeypatch):
+    (tmp_path / "Makefile").write_text("check:\n")
+    extra_rules = tmp_path / "extra.mk"
+    extra_rules.write_text("preview:\n")
+    monkeypatch.setenv("MAKEFILES", str(extra_rules))
+    assert not workspace_module.make_has_preview(tmp_path)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
+@pytest.mark.parametrize(
+    "variable", ["MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES"]
+)
+def test_real_preview_ignores_caller_make_controls(tmp_path, monkeypatch, variable):
+    (tmp_path / "Makefile").write_text("preview:\n\t@echo $(CUSTOM_VALUE) > started\n")
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    extra_rules = tmp_path / "extra.mk"
+    extra_rules.write_text("preview:\n\t@echo injected > started\n")
+    monkeypatch.setenv(variable, str(extra_rules) if variable == "MAKEFILES" else "-n")
+    monkeypatch.setenv("CUSTOM_VALUE", "project-setting")
+    monkeypatch.setattr(workspace_module, "preview_running", lambda: False)
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "started").read_text() == "project-setting\n"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
@@ -231,6 +265,7 @@ def test_make_probe_timeout_still_uses_project_preview(tmp_path, ran, monkeypatc
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [(["make", "preview"], tmp_path.resolve())]
+    assert "target detection timed out" in result.output
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
@@ -310,6 +345,16 @@ def test_preview_artifact_without_rule_falls_back_to_quarto(
     assert result.exit_code == 0, result.output
     assert calls[-1] == ["quarto", "preview", "--no-browser", "--port", "4848"]
     assert ["make", "preview"] not in calls
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
+def test_make_recipe_output_cannot_invent_a_preview_rule(tmp_path):
+    (tmp_path / "Makefile").write_text(
+        "define noise\nignored\n# Files\n\npreview:\n\nendef\n"
+        "$(info $(noise))\ncheck:\n"
+    )
+    (tmp_path / "preview").touch()
+    assert not workspace_module.make_has_preview(tmp_path)
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="requires GNU Make")
@@ -421,7 +466,7 @@ def test_interrupted_preview_exits_cleanly(tmp_path, ran, returncode):
     (tmp_path / "Makefile").write_text("preview:\n")
     ran.returncode = returncode
     result = invoke(tmp_path)
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 130, result.output
     assert "failed" not in result.output
 
 
@@ -433,7 +478,7 @@ def test_keyboard_interrupt_exits_cleanly(tmp_path, ran, monkeypatch):
 
     monkeypatch.setattr(workspace_module.subprocess, "run", run)
     result = invoke(tmp_path)
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 130, result.output
     assert "Aborted" not in result.output
 
 
