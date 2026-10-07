@@ -34,7 +34,7 @@ env = {
     "CODESPACE_NAME": "workspace-smoke",
     "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev",
 }
-label = "Preview URL (once serving)" if mode == "cli" else "Quarto preview"
+label = "Preview URL (once serving)"
 expected = f"{label}: https://workspace-smoke-4848.app.github.dev/"
 
 with tempfile.TemporaryDirectory() as directory:
@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as directory:
                 raise AssertionError(
                     "postAttachCommand did not start preview on port 4848"
                 )
-            if mode == "cli":
+            if mode == "cli" or command == "exec asta workspace preview":
                 # Rerunning for the same project reuses the live preview.
                 rerun = subprocess.run(
                     ["asta", "workspace", "preview", "--project", str(project)],
