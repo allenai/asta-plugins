@@ -6,7 +6,9 @@ import io
 import json
 import os
 import re
+import shutil
 import signal
+import socket
 import subprocess
 import tarfile
 import tempfile
@@ -464,8 +466,6 @@ def preview_url(env: Mapping[str, str]) -> str:
 
 
 def preview_running() -> bool:
-    import socket
-
     for host in ("127.0.0.1", "::1"):
         try:
             socket.create_connection((host, PREVIEW_PORT), 2).close()
@@ -478,24 +478,31 @@ def preview_running() -> bool:
 def make_has_preview(project: Path) -> bool:
     # Question mode skips the preview recipe, but can remake included rules or
     # evaluate shell expressions. Bound the probe; real Make handles a timeout.
-    try:
-        result = subprocess.run(
-            ["make", "--question", "preview"],
-            cwd=project,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "LC_ALL": "C"},
-            timeout=MAKE_PROBE_TIMEOUT,
-            check=False,
-        )
-    except FileNotFoundError:
-        return False
-    except subprocess.TimeoutExpired:
-        return True
+    env = {**os.environ, "LC_ALL": "C"}
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
+        env.pop(name, None)
+    # Descendants can keep pipes open after Make is killed on timeout.
+    with tempfile.TemporaryFile(mode="w+t", errors="replace") as stderr:
+        try:
+            result = subprocess.run(
+                ["make", "--question", "preview"],
+                cwd=project,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+                env=env,
+                timeout=MAKE_PROBE_TIMEOUT,
+                check=False,
+            )
+        except FileNotFoundError:
+            return False
+        except subprocess.TimeoutExpired:
+            return True
+        stderr.seek(0)
+        diagnostic = stderr.read()
     # Other Make errors must reach `make preview`, not be hidden by a fallback.
     return not (
         result.returncode == 2
-        and re.search(r"No rule to make target [`']preview'\.", result.stderr)
+        and re.search(r"No rule to make target [`']preview'\.", diagnostic)
     )
 
 
@@ -509,6 +516,7 @@ def preview(project: Path) -> None:
     """Start the project's live preview on port 4848.
 
     Delegates to `make preview` when available, otherwise uses Quarto directly.
+    A competing process can still bind the port before startup; tool errors surface.
     """
     project = project.resolve()
     makefile = any(
@@ -528,7 +536,9 @@ def preview(project: Path) -> None:
     try:
         if not makefile or (quarto and not make_has_preview(project)):
             command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
-        click.echo(f"Quarto preview: {preview_url(os.environ)}")
+        if shutil.which(command[0]) is None:
+            raise click.ClickException(f"{command[0]} is not installed")
+        click.echo(f"Preview: {preview_url(os.environ)}")
         result = subprocess.run(command, cwd=project, check=False)
     except KeyboardInterrupt:
         return

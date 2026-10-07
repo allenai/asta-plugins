@@ -29,12 +29,14 @@ env = {
     "CODESPACE_NAME": "workspace-smoke",
     "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev",
 }
-expected = "Quarto preview: https://workspace-smoke-4848.app.github.dev/"
+label = "Preview" if mode == "cli" else "Quarto preview"
+expected = f"{label}: https://workspace-smoke-4848.app.github.dev/"
 
 with tempfile.TemporaryDirectory() as directory:
     project = Path.cwd()
     if mode == "cli":
-        project = Path(directory)
+        project = Path(directory) / "project"
+        project.mkdir()
         for name in ("_quarto.yml", "index.qmd"):
             shutil.copyfile(Path.cwd() / name, project / name)
         # A project-owned Makefile need not provide the shared preview target.
