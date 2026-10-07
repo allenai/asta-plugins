@@ -1,5 +1,6 @@
 """Tests for `asta workspace preview`."""
 
+import io
 import json
 import os
 import shutil
@@ -9,7 +10,9 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -82,6 +85,7 @@ def test_missing_preview_rule_falls_back_to_quarto(tmp_path, ran):
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert ran.calls == [["make", "preview"], QUARTO]
+    assert result.output.count("Preview URL (once serving)") == 1
 
 
 def test_missing_make_falls_back_to_quarto(tmp_path, ran, monkeypatch):
@@ -132,15 +136,14 @@ def write_state(project, pid=None, owner=None):
     state = project / workspace_module.PREVIEW_STATE
     state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(
-        json.dumps(
-            {"pid": pid or os.getpid(), "project": str(owner or project.resolve())}
-        )
+        json.dumps({"pid": pid or 123456, "project": str(owner or project.resolve())})
     )
 
 
 def test_live_record_reuses_preview(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("preview:\n")
     write_state(tmp_path)
+    monkeypatch.setattr(workspace_module.os, "kill", lambda pid, signum: None)
     monkeypatch.setattr(workspace_module, "preview_running", lambda: True)
     result = invoke(tmp_path)
     assert result.exit_code == 0, result.output
@@ -149,9 +152,10 @@ def test_live_record_reuses_preview(tmp_path, ran, monkeypatch):
     assert (tmp_path / workspace_module.PREVIEW_STATE).exists()
 
 
-def test_starting_record_reports_retry_without_launching(tmp_path, ran):
+def test_starting_record_reports_retry_without_launching(tmp_path, ran, monkeypatch):
     (tmp_path / "Makefile").write_text("preview:\n")
     write_state(tmp_path)
+    monkeypatch.setattr(workspace_module.os, "kill", lambda pid, signum: None)
     result = invoke(tmp_path)
     assert result.exit_code != 0
     assert "still starting" in result.output
@@ -181,6 +185,27 @@ def test_dead_record_is_replaced(tmp_path, ran, monkeypatch):
 
     monkeypatch.setattr(workspace_module.os, "kill", dead)
     assert invoke(tmp_path).exit_code == 0
+    assert len(ran.calls) == 1
+
+
+def test_record_with_this_launchers_pid_is_replaced(tmp_path, ran):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    write_state(tmp_path, pid=os.getpid())
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert len(ran.calls) == 1
+
+
+def test_permission_denied_pid_is_not_reused(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    write_state(tmp_path)
+
+    def forbidden(pid, signum):
+        raise PermissionError
+
+    monkeypatch.setattr(workspace_module.os, "kill", forbidden)
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
     assert len(ran.calls) == 1
 
 
@@ -217,6 +242,112 @@ def test_codespaces_link(tmp_path, ran, monkeypatch):
     assert "https://example-4848.app.github.dev/" in invoke(tmp_path).output
 
 
+def test_codespaces_default_domain(tmp_path, ran, monkeypatch):
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    monkeypatch.setenv("CODESPACE_NAME", "example")
+    monkeypatch.delenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", raising=False)
+    assert "https://example-4848.app.github.dev/" in invoke(tmp_path).output
+
+
+def test_nothing_to_preview(tmp_path, ran):
+    result = invoke(tmp_path)
+    assert result.exit_code == 0
+    assert "nothing to preview" in result.output
+    assert not ran.calls
+    assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+
+
+def test_nonexistent_project_is_rejected(tmp_path, ran):
+    result = invoke(tmp_path / "missing")
+    assert result.exit_code != 0
+    assert "does not exist" in result.output
+    assert not ran.calls
+
+
+@pytest.mark.parametrize("returncode", [-signal.SIGINT, 130])
+def test_interrupted_preview_exits_130(tmp_path, ran, returncode):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    ran.returncode = returncode
+    assert invoke(tmp_path).exit_code == 130
+    assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+
+
+def test_missing_quarto_reports_error_and_cleans_state(tmp_path, ran, monkeypatch):
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    monkeypatch.setattr(workspace_module.shutil, "which", lambda name: None)
+    result = invoke(tmp_path)
+    assert result.exit_code != 0
+    assert "quarto is not installed" in result.output
+    assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX signals")
+def test_second_stop_signals_do_not_interrupt_state_cleanup(tmp_path, ran, monkeypatch):
+    (tmp_path / "Makefile").write_text("preview:\n")
+    unlink = Path.unlink
+    handlers = {
+        s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    }
+
+    def interrupted_unlink(path, **kwargs):
+        if path == tmp_path / workspace_module.PREVIEW_STATE:
+            for signum in handlers:
+                os.kill(os.getpid(), signum)
+        unlink(path, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", interrupted_unlink)
+    ran.returncode = 130
+    assert invoke(tmp_path).exit_code == 130
+    assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+    assert all(signal.getsignal(s) == handler for s, handler in handlers.items())
+
+
+@pytest.mark.parametrize(
+    "diagnostic,missing",
+    [
+        (b"make: *** No rule to make target `preview'.  Stop.\n", True),
+        (b"gmake: *** No rule to make target 'preview'.  Stop.\n", True),
+        (b"/usr/bin/make: *** No rule to make target 'preview'.  Stop.\n", True),
+        (b"make[1]: *** No rule to make target 'preview'.  Stop.\n", False),
+        (
+            b"make: *** No rule to make target 'absent', needed by 'preview'.  Stop.\n",
+            False,
+        ),
+        (
+            b"make: *** No rule to make target 'preview'.  Stop.\nmake: *** [preview] Error 2\n",
+            False,
+        ),
+    ],
+)
+def test_make_diagnostic_compatibility(tmp_path, monkeypatch, diagnostic, missing):
+    process = SimpleNamespace(stderr=io.BytesIO(diagnostic), wait=lambda: 2)
+    monkeypatch.setattr(
+        workspace_module, "preview_process", lambda *a, **kw: nullcontext(process)
+    )
+    assert workspace_module.run_make_preview(tmp_path) == (2, missing)
+
+
+@pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
+def test_real_make_does_not_inherit_parent_make_controls(tmp_path, monkeypatch):
+    (tmp_path / "injected.mk").write_text("preview:\n\t@false\n")
+    for name, value in {
+        "MAKEFLAGS": "-n -w",
+        "MFLAGS": "-i",
+        "GNUMAKEFLAGS": "-k",
+        "MAKELEVEL": "7",
+        "MAKEFILES": str(tmp_path / "injected.mk"),
+        "PROJECT_SETTING": "kept",
+    }.items():
+        monkeypatch.setenv(name, value)
+    (tmp_path / "Makefile").write_text(
+        "preview:\n\t@printf '%s' \"$$PROJECT_SETTING\" > ran\n"
+    )
+    assert workspace_module.run_make_preview(tmp_path) == (0, False)
+    assert (tmp_path / "ran").read_text() == "kept"
+    (tmp_path / "Makefile").write_text("other:\n\t@true\n")
+    assert workspace_module.run_make_preview(tmp_path) == (2, True)
+
+
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
 @pytest.mark.parametrize(
     "makefile,missing",
@@ -237,9 +368,16 @@ def test_real_make_fallback_only_for_missing_preview(tmp_path, makefile, missing
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group cleanup")
 @pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP])
 def test_real_start_reuse_and_shutdown(tmp_path, stop_signal):
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        port = reserved.getsockname()[1]
     server = tmp_path / "server.py"
     server.write_text(
-        "import http.server, os\nfrom pathlib import Path\nPath('server.pid').write_text(str(os.getpid()))\nhttp.server.HTTPServer(('127.0.0.1', 4848), http.server.SimpleHTTPRequestHandler).serve_forever()\n"
+        f"""import http.server, os
+from pathlib import Path
+Path('server.pid').write_text(str(os.getpid()))
+http.server.HTTPServer(('127.0.0.1', {port}), http.server.SimpleHTTPRequestHandler).serve_forever()
+"""
     )
     (tmp_path / "_quarto.yml").write_text("project: {}\n")
     # A fake Quarto isolates CLI lifecycle behavior from the rendering toolchain.
@@ -247,39 +385,38 @@ def test_real_start_reuse_and_shutdown(tmp_path, stop_signal):
     quarto.write_text(f"#!/bin/sh\nexec {sys.executable} {server}\n")
     quarto.chmod(0o755)
     env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    command = [
+        sys.executable,
+        "-c",
+        f"from asta.commands import workspace; workspace.PREVIEW_PORT = {port}; "
+        "from asta.cli import cli; cli()",
+        "workspace",
+        "preview",
+        "--project",
+        str(tmp_path),
+    ]
+
+    def listening():
+        try:
+            socket.create_connection(("127.0.0.1", port), 0.2).close()
+        except OSError:
+            return False
+        return True
+
     process = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "asta.cli",
-            "workspace",
-            "preview",
-            "--project",
-            str(tmp_path),
-        ],
+        command,
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     try:
         deadline = time.monotonic() + 10
-        while (
-            not (tmp_path / "server.pid").exists()
-            or not workspace_module.preview_running()
-        ):
+        while not (tmp_path / "server.pid").exists() or not listening():
             assert process.poll() is None
             assert time.monotonic() < deadline
             time.sleep(0.05)
         rerun = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "asta.cli",
-                "workspace",
-                "preview",
-                "--project",
-                str(tmp_path),
-            ],
+            command,
             env=env,
             capture_output=True,
             text=True,
@@ -290,15 +427,16 @@ def test_real_start_reuse_and_shutdown(tmp_path, stop_signal):
         process.send_signal(stop_signal)
         assert process.wait(timeout=6) == 128 + stop_signal
         assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
-        assert not workspace_module.preview_running()
+        assert not listening()
     finally:
         if process.poll() is None:
             process.send_signal(signal.SIGTERM)
             process.wait(timeout=6)
 
 
-def test_live_socket_is_detected():
+def test_live_socket_is_detected(monkeypatch):
     with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 4848))
+        listener.bind(("127.0.0.1", 0))
+        monkeypatch.setattr(workspace_module, "PREVIEW_PORT", listener.getsockname()[1])
         listener.listen()
         assert workspace_module.preview_running()

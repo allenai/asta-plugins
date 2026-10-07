@@ -484,11 +484,14 @@ def recorded_preview(project: Path) -> bool:
     try:
         state = json.loads((project / PREVIEW_STATE).read_text())
         pid = state["pid"]
-        if state["project"] != str(project) or type(pid) is not int or pid <= 0:
+        if (
+            state["project"] != str(project)
+            or type(pid) is not int
+            or pid <= 0
+            or pid == os.getpid()
+        ):
             return False
         os.kill(pid, 0)
-    except PermissionError:
-        return True
     except (OSError, ValueError, KeyError, TypeError, OverflowError):
         return False
     return True
@@ -513,6 +516,25 @@ def preview_signals():
         for signum in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
             if signum is not None:
                 handlers[signum] = signal.signal(signum, terminate)
+        yield
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+
+
+@contextmanager
+def preview_cleanup():
+    """Let cleanup finish even if the terminal sends another stop signal."""
+    handlers = {}
+    try:
+        if threading.current_thread() is threading.main_thread():
+            for signum in (
+                signal.SIGINT,
+                signal.SIGTERM,
+                getattr(signal, "SIGHUP", None),
+            ):
+                if signum is not None:
+                    handlers[signum] = signal.signal(signum, signal.SIG_IGN)
         yield
     finally:
         for signum, handler in handlers.items():
@@ -562,7 +584,8 @@ def preview_process(command: list[str], project: Path, **kwargs):
     except BaseException as exc:
         if process is not None:
             signum = exc.signum if isinstance(exc, PreviewTerminated) else signal.SIGINT
-            stop_preview(process, signum)
+            with preview_cleanup():
+                stop_preview(process, signum)
         raise
 
 
@@ -574,7 +597,8 @@ def run_preview(command: list[str], project: Path) -> int:
 def run_make_preview(project: Path) -> tuple[int, bool]:
     """Stream Make errors and recognize its final missing-preview diagnostic."""
     env = {**os.environ, "LC_ALL": "C", "LANGUAGE": "C"}
-    env.pop("MAKELEVEL", None)
+    for name in ("MAKELEVEL", "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES"):
+        env.pop(name, None)
     with preview_process(
         ["make", "preview"],
         project,
@@ -582,12 +606,19 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
         stderr=subprocess.PIPE,
     ) as process:
         diagnostic = b""
-        for line in process.stderr:
-            click.echo(line.decode(errors="replace"), err=True, nl=False)
-            if line.strip():
-                diagnostic = line.strip()
+        with process.stderr:
+            for line in process.stderr:
+                click.echo(line.decode(errors="replace"), err=True, nl=False)
+                if line.strip():
+                    diagnostic = line.strip()
         returncode = process.wait()
-    no_rule = diagnostic == b"make: *** No rule to make target 'preview'.  Stop."
+    no_rule = (
+        re.fullmatch(
+            rb"(?:.*[/\\])?g?make: \*\*\* No rule to make target [`']preview'\.\s+Stop\.",
+            diagnostic,
+        )
+        is not None
+    )
     return returncode, returncode == 2 and no_rule
 
 
@@ -601,8 +632,9 @@ def preview(project: Path) -> None:
     """Ensure the project's live preview is running on port 4848.
 
     Safe to run repeatedly: if this project's preview is already running, prints
-    its URL and exits once the port is listening. Runs `make preview`, falling back
-    to `quarto preview` only when Make has no `preview` rule.
+    its URL and exits. If that launcher is still starting, asks you to retry.
+    Runs `make preview`, falling back to `quarto preview` if Make is unavailable
+    or has no `preview` rule.
     """
     try:
         with preview_signals():
@@ -649,8 +681,8 @@ def preview_project(project: Path) -> None:
                 raise click.ClickException("make is not installed")
             click.echo("make is not installed; using quarto preview")
             command = []
+        click.echo(f"Preview URL (once serving): {url}")
         if command:
-            click.echo(f"Preview URL (once serving): {url}")
             returncode, no_rule = run_make_preview(project)
             if no_rule and quarto:
                 click.echo(
@@ -662,14 +694,14 @@ def preview_project(project: Path) -> None:
             command = ["quarto", "preview", "--no-browser", "--port", str(PREVIEW_PORT)]
             if shutil.which("quarto") is None:
                 raise click.ClickException("quarto is not installed")
-            click.echo(f"Preview URL (once serving): {url}")
             returncode = run_preview(command, project)
     finally:
-        try:
-            if json.loads(state.read_text()) == owner:
-                state.unlink(missing_ok=True)
-        except (OSError, ValueError):
-            pass
+        with preview_cleanup():
+            try:
+                if json.loads(state.read_text()) == owner:
+                    state.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                pass
     if returncode in (-signal.SIGINT, 130):
         raise click.exceptions.Exit(130)
     if returncode != 0:
