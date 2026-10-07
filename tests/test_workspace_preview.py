@@ -19,6 +19,7 @@ from click.testing import CliRunner
 
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
+from asta.commands.workspace import run_make_preview
 
 
 class Ran:
@@ -325,6 +326,34 @@ def test_make_diagnostic_compatibility(tmp_path, monkeypatch, diagnostic, missin
         workspace_module, "preview_process", lambda *a, **kw: nullcontext(process)
     )
     assert workspace_module.run_make_preview(tmp_path) == (2, missing)
+
+
+@pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
+@pytest.mark.parametrize("path_kind", ["file", "directory"])
+def test_real_make_preview_path_preserves_make_semantics(
+    tmp_path, ran, monkeypatch, path_kind
+):
+    (tmp_path / "Makefile").write_text("other:\n\t@true\n")
+    (tmp_path / "_quarto.yml").write_text("project: {}\n")
+    preview_path = tmp_path / "preview"
+    if path_kind == "directory":
+        preview_path.mkdir()
+    else:
+        preview_path.touch()
+    monkeypatch.setattr(workspace_module, "run_make_preview", run_make_preview)
+    result = invoke(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "Preview URL (once serving)" in result.output
+    assert "Preview already running" not in result.output
+    assert not ran.calls  # Successful Make delegation does not launch Quarto.
+    assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
+
+    (tmp_path / "Makefile").write_text(
+        ".PHONY: preview\npreview:\n\t@touch recipe-ran\n"
+    )
+    assert invoke(tmp_path).exit_code == 0
+    assert (tmp_path / "recipe-ran").exists()
+    assert not (tmp_path / workspace_module.PREVIEW_STATE).exists()
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
