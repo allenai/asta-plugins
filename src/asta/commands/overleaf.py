@@ -152,6 +152,11 @@ def read_plain_files(repo: Path, revision: str, prefix: str = "") -> dict[str, b
     entries = tree(repo, revision, prefix)
     check_paths(entries)
     for name, (mode, blob) in entries.items():
+        if prefix and name == BIBLIOGRAPHY:
+            refuse(
+                prefix + name,
+                "duplicates the canonical root bibliography; move its entries there and commit",
+            )
         if mode != "100644":
             refuse(name, "is executable, a symlink or a submodule")
         if name.rsplit("/", 1)[-1] == ".gitattributes":
@@ -271,7 +276,14 @@ def pull(url: str | None, directory: str, project: Path) -> None:
 @dir_option
 @project_option
 @click.option("--dry-run", is_flag=True, help="Show what would change; push nothing.")
-def publish(directory: str, project: Path, dry_run: bool) -> None:
+@click.option(
+    "--replace-bibliography",
+    is_flag=True,
+    help="Confirm the reviewed root bibliography should replace Overleaf's differing copy.",
+)
+def publish(
+    directory: str, project: Path, dry_run: bool, replace_bibliography: bool
+) -> None:
     """Push the committed paper and root references.bib to Overleaf."""
     root, paper, prefix = resolve(project, directory)
     config = load_config(paper)
@@ -284,11 +296,12 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     ours = read_plain_files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
     bibliography = tree(root, "HEAD").get(BIBLIOGRAPHY)
-    if bibliography:
-        mode, blob = bibliography
-        if mode != "100644":
-            refuse(BIBLIOGRAPHY, "is not a regular non-executable file")
-        ours[BIBLIOGRAPHY] = git_bytes("cat-file", "blob", blob, cwd=root)
+    if not bibliography:
+        raise click.ClickException(f"Commit the canonical root {BIBLIOGRAPHY} first.")
+    mode, blob = bibliography
+    if mode != "100644":
+        refuse(BIBLIOGRAPHY, "is not a regular non-executable file")
+    ours[BIBLIOGRAPHY] = git_bytes("cat-file", "blob", blob, cwd=root)
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -297,6 +310,16 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 f"Overleaf has changed since commit {config['base'][:7]}. Run "
                 "`asta workspace overleaf pull`, review those edits in a PR, then publish."
             )
+        remote_bib = read_plain_files(repo, head).get(BIBLIOGRAPHY)
+        if remote_bib is not None and remote_bib != ours[BIBLIOGRAPHY]:
+            message = (
+                f"Overleaf's {BIBLIOGRAPHY} differs from the workspace root copy. "
+                "Reconcile its entries in a PR first; use --replace-bibliography only "
+                "to confirm the reviewed root copy should replace it."
+            )
+            if not dry_run and not replace_bibliography:
+                raise click.ClickException(message)
+            click.echo(message, err=True)
         git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
         write_files(ours, repo)
         git("add", "-A", cwd=repo)
@@ -310,7 +333,10 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             return
         identity = []
         if subprocess.run(
-            ["git", "var", "GIT_COMMITTER_IDENT"], cwd=root, capture_output=True
+            ["git", "var", "GIT_COMMITTER_IDENT"],
+            cwd=root,
+            env=git_environment(),
+            capture_output=True,
         ).returncode:
             identity = [
                 "-c",
@@ -320,6 +346,11 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             ]
         message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
         git(*identity, "commit", "-q", "-m", message, cwd=repo)
+        if read_plain_files(repo, "HEAD") != ours:
+            raise click.ClickException(
+                "Git configuration or hooks changed the exported files; nothing pushed. "
+                "Content-changing Git filters and conversions are unsupported."
+            )
         push(repo)
         published = git("rev-parse", "HEAD", cwd=repo)
     save_config(paper, config["url"], published)

@@ -179,7 +179,7 @@ def test_publish_pushes_committed_paper_and_root_bibliography(setup):
     dry = run(project, "publish", "--dry-run")
     assert dry.exit_code == 0 and "nothing pushed" in dry.output
     assert git(seed, "ls-remote", "origin", "master") == before
-    result = run(project, "publish")
+    result = run(project, "publish", "--replace-bibliography")
     assert result.exit_code == 0, result.output
     git(seed, "pull", "-q", "origin", "master")
     assert (seed / "main.tex").read_text() == "reviewed\n"
@@ -379,3 +379,112 @@ def test_pull_refuses_ignored_symlink_config(setup):
     result = run(project, "pull")
     assert result.exit_code != 0 and "symlink" in result.output
     assert outside.read_bytes() == before
+
+
+def test_publish_requires_confirmation_after_pull_skips_remote_bibliography(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    overleaf_edit(seed, "references.bib", "@misc{collaborator}\n")
+    assert run(project, "pull").exit_code == 0
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    metadata = (project / "paper/overleaf.json").read_bytes()
+    dry = run(project, "publish", "--dry-run")
+    assert dry.exit_code == 0 and "--replace-bibliography" in dry.output
+    result = run(project, "publish")
+    assert result.exit_code != 0 and "--replace-bibliography" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper/overleaf.json").read_bytes() == metadata
+    assert (seed / "references.bib").read_text() == "@misc{collaborator}\n"
+    result = run(project, "publish", "--replace-bibliography")
+    assert result.exit_code == 0, result.output
+
+
+def test_publish_accepts_matching_bibliography_without_confirmation(setup):
+    seed, project = setup
+    (project / "references.bib").write_bytes((seed / "references.bib").read_bytes())
+    commit_all(project)
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_text() == "reviewed edit\n"
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_refuses_duplicate_workspace_bibliography(setup, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    duplicate = project / "paper/references.bib"
+    duplicate.write_text("@misc{paper_only}\n")
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, command)
+    assert result.exit_code != 0 and "canonical root bibliography" in result.output
+    assert duplicate.read_text() == "@misc{paper_only}\n"
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert not git(project, "status", "--porcelain")
+
+
+def test_publish_refuses_missing_root_bibliography(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "references.bib").unlink()
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish", "--replace-bibliography")
+    assert result.exit_code != 0 and "canonical root references.bib" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.parametrize("setting", ["autocrlf", "filter", "hook"])
+def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    source = project / "paper/main.tex"
+    source.write_bytes(b"reviewed\r\n")
+    commit_all(project)
+    config = project.parent / "global.gitconfig"
+    if setting == "autocrlf":
+        git(project, "config", "--file", str(config), "core.autocrlf", "true")
+        git(project, "config", "core.autocrlf", "false")
+    elif setting == "filter":
+        attributes = project.parent / "attributes"
+        attributes.write_text("*.tex filter=change\n")
+        git(
+            project,
+            "config",
+            "--file",
+            str(config),
+            "core.attributesFile",
+            str(attributes),
+        )
+        git(
+            project,
+            "config",
+            "--file",
+            str(config),
+            "filter.change.clean",
+            "sed s/reviewed/rewritten/",
+        )
+        git(project, "config", "core.attributesFile", os.devnull)
+    else:
+        hooks = project.parent / "hooks"
+        hooks.mkdir()
+        hook = hooks / "pre-commit"
+        hook.write_text(
+            "#!/bin/sh\nprintf 'rewritten\\n' > main.tex\ngit add main.tex\n"
+        )
+        hook.chmod(0o755)
+        git(project, "config", "--file", str(config), "core.hooksPath", str(hooks))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    before = git(seed, "ls-remote", "origin", "master")
+    metadata = (project / "paper/overleaf.json").read_bytes()
+    result = run(project, "publish", "--replace-bibliography")
+    assert result.exit_code != 0 and "nothing pushed" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper/overleaf.json").read_bytes() == metadata
+    assert source.read_bytes() == b"reviewed\r\n"
