@@ -43,10 +43,14 @@ Keeping that intermediate LaTeX is useful even when you only want a PDF: preprin
 
 ## Sync a paper with Overleaf
 
-The workspace repo is the reviewed copy of the paper; Overleaf is where collaborators edit. Both commands use Overleaf's Git integration (Menu → Integrations → Git) with your Overleaf Git token, supplied through `OVERLEAF_TOKEN` or Git's credential helper (username `git`, password = token). The token is never written to the repo.
+The workspace repo is the reviewed copy of the paper; Overleaf is where collaborators edit. Both commands use Overleaf's Git integration with your Overleaf Git token, supplied through `OVERLEAF_TOKEN` or Git's credential helper (username `git`, password = token). Use `https://git.overleaf.com/<project-id>`; other hosts, embedded passwords, redirects and Git URL rewrites are rejected. The token is never written to the repo.
 
-- `asta workspace overleaf pull <overleaf-git-url>` copies the Overleaf project into `paper/` and records the URL and Overleaf commit in `paper/overleaf.json`. Later pulls need no URL. Commit on a branch and open a PR to preview Overleaf edits; Overleaf's `references.bib` is not imported, because the root `references.bib` stays the source.
-- `asta workspace overleaf publish` (on `main` after the PR merges) pushes the committed `paper/` plus the root `references.bib` to Overleaf. It refuses if anyone edited in Overleaf since the last pull or publish; pull those edits into a PR first. `--dry-run` shows the changes without pushing.
+- `asta workspace overleaf pull <overleaf-git-url>` imports the Overleaf project into `paper/` and records the URL and Overleaf commit in `paper/overleaf.json`. Later pulls need no URL. Committed workspace edits to separate files are preserved; overlapping changes stop the import before any workspace files change. Resolve those files manually before retrying. Commit on a branch and open a PR to preview the import.
+- `asta workspace overleaf publish` (on `main` after the PR merges) pushes the committed `paper/` plus the committed root `references.bib`. Both must have no uncommitted changes. Publication requires Overleaf's exact revision from the last pull or this checkout's last successful publish; commit-message trailers do not grant permission to overwrite later edits. `--dry-run` shows the changes without pushing. The CLI does not verify PR approval: publish only after reviewing the snapshot.
+
+The root `references.bib` stays canonical. If it is absent, pull imports Overleaf's copy there for review. If both copies exist and differ, pull preserves the root and saves Overleaf's copy in `.asta/cache/overleaf/`, with a warning to reconcile entries before publishing. Do not keep a second `paper/references.bib`; move its entries into the root. Other named bibliography files remain part of the paper.
+
+Keep `.asta/cache/` ignored. It holds bare Git history and local publication receipts, not a checked-out project or credentials. Clearing it requires a fresh pull before publishing again. Symlinks and Git submodules are rejected in paper files and cache paths. The imported paper may still contain executable TeX or build configuration; review it before compiling, and keep Overleaf credentials out of build processes.
 
 Use `--dir <directory>` for a paper outside `paper/`. Pushing through Git can drop Overleaf comments and tracked changes in the edited regions.
 
