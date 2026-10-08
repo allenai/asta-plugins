@@ -312,7 +312,7 @@ def test_crlf_bibliography_does_not_produce_false_backup(setup):
     result = run(project, "pull")
     assert result.exit_code == 0, result.output
     assert "Reconcile needed entries" not in result.output
-    assert not list((project / ".asta/cache").rglob("overleaf-references.bib"))
+    assert not list((project / ".asta/cache").rglob("overleaf-references*.bib"))
 
 
 def test_missing_base_has_reimport_guidance(setup):
@@ -630,9 +630,51 @@ def test_differing_remote_bibliography_is_saved_without_overwrite(setup):
     result = run(project, "pull", URL)
     assert result.exit_code == 0 and "Reconcile needed entries" in result.output
     assert (project / "references.bib").read_text() == "@misc{a}\n"
-    backup = list((project / ".asta/cache").rglob("overleaf-references.bib"))
+    backup = list((project / ".asta/cache").rglob("overleaf-references-*.bib"))
     assert len(backup) == 1 and backup[0].read_text() == "@misc{coauthor}\n"
     assert not (project / "paper/references.bib").exists()
+
+
+def test_differing_pulls_retain_each_bibliography_version(setup):
+    _, seed, project = setup
+    cache = module.cache_dir(project, URL)
+    legacy = cache / "overleaf-references.bib"
+    legacy.write_text("@misc{historical}\n")
+    versions = ["@misc{first}\n", "@misc{second}\n", "@misc{first}\n"]
+    backups = {}
+    for content in versions:
+        overleaf_edit(seed, "references.bib", content)
+        oid = git(seed, "rev-parse", "HEAD:references.bib")
+        result = run(project, "pull", URL)
+        assert result.exit_code == 0, result.output
+        backup = cache / f"overleaf-references-{oid}.bib"
+        assert str(backup) in result.output
+        backups[backup] = content
+        assert {path: path.read_text() for path in backups} == backups
+        assert legacy.read_text() == "@misc{historical}\n"
+        assert (project / "references.bib").read_text() == "@misc{a}\n"
+        git(project, "add", "paper")
+        git(project, "commit", "-m", "review import")
+        refused = run(project, "publish", "--dry-run")
+        assert refused.exit_code == 1 and "unreconciled entries" in refused.output
+    assert len(list(cache.glob("overleaf-references-*.bib"))) == 2
+
+
+def test_repeated_pull_does_not_replace_existing_bibliography_backup(setup):
+    _, seed, project = setup
+    overleaf_edit(seed, "references.bib", "@misc{coauthor}\n")
+    oid = git(seed, "rev-parse", "HEAD:references.bib")
+    assert run(project, "pull", URL).exit_code == 0
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "review import")
+    backup = module.cache_dir(project, URL) / f"overleaf-references-{oid}.bib"
+    os.utime(backup, ns=(1_000_000_000, 1_000_000_000))
+    before = backup.stat()
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert backup.read_text() == "@misc{coauthor}\n"
+    assert backup.stat().st_mtime_ns == before.st_mtime_ns
+    assert backup.stat().st_mode == before.st_mode
 
 
 def test_remote_default_main_branch_is_supported(setup):
@@ -755,11 +797,12 @@ def test_paper_directory_cannot_escape_workspace(setup, directory):
 
 
 def test_bibliography_cache_symlink_is_rejected_before_import(setup):
-    _, _, project = setup
+    _, seed, project = setup
     cache = module.cache_dir(project, URL)
     outside = project.parent / "private.txt"
     outside.write_text("private fixture")
-    (cache / "overleaf-references.bib").symlink_to(outside)
+    oid = git(seed, "rev-parse", "HEAD:references.bib")
+    (cache / f"overleaf-references-{oid}.bib").symlink_to(outside)
     result = run(project, "pull", URL)
     assert result.exit_code == 1 and "Symlinks" in result.output
     assert outside.read_text() == "private fixture"

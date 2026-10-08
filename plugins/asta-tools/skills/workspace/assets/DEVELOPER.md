@@ -68,7 +68,7 @@ Pull lists imported sources hidden by Git ignore rules, including the paper's ow
 
 ### Shared bibliography
 
-Root `references.bib` stays canonical. If no committed root exists, pull can import Overleaf's copy for review; it refuses an uncommitted deletion of an existing root. Differing Overleaf entries are saved in `.asta/cache/overleaf/`, preserving the root and blocking publication until reconciled.
+Root `references.bib` stays canonical. If no committed root exists, pull can import Overleaf's copy for review; it refuses an uncommitted deletion of an existing root. Differing Overleaf entries are saved in `.asta/cache/overleaf/` as `overleaf-references-<blob-id>.bib`, preserving each version and the root, and blocking publication until reconciled. Repeated pulls reuse an existing backup; older backups, including the former `overleaf-references.bib`, remain available for recovery.
 
 Merge the entries you need into the root, run `asta workspace overleaf pull --reconcile-bibliography` to confirm that decision, and commit both the bibliography and connection metadata for review. This explicit confirmation allows a locally edited bibliography and permits replacing Overleaf's copy with the reviewed root. Publication verifies the committed root matches the confirmed (or newly imported) content; committing only metadata is insufficient. If you change that content before first publication, repeat confirmation and review. Equality checks use Git-normalized content, so checkout line endings do not cause a false mismatch.
 

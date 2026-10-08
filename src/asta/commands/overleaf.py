@@ -569,7 +569,10 @@ def pull(
     if shared.exists() and not shared.is_file():
         raise click.ClickException("Root references.bib must be a regular file.")
     data = blob(repo, remote_bib) if remote_bib else None
-    backup = cache_dir(project, url) / "overleaf-references.bib"
+    backup = (
+        cache_dir(project, url)
+        / f"overleaf-references-{remote_bib[1] if remote_bib else 'absent'}.bib"
+    )
     if backup.is_symlink():
         raise click.ClickException("Symlinks are not supported in cache paths.")
     bib_revision = remote_bib[1] if remote_bib else None
@@ -645,7 +648,8 @@ def pull(
             git("hash-object", f"--path={BIBLIOGRAPHY}", str(shared), cwd=project)
             != bib_revision
         ):
-            replace_file(backup, data)
+            if not backup.exists():
+                replace_file(backup, data)
             click.echo(
                 f"warning: Overleaf's references.bib differs; the root copy stays canonical. "
                 f"Reconcile needed entries from {backup} before publication.",
