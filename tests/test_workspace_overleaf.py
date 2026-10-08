@@ -834,3 +834,53 @@ def test_pull_refuses_separate_git_administrative_directory(setup):
     result = run(project, "pull", URL, "--dir", "admin/hooks")
     assert result.exit_code == 1 and "administrative directory" in result.output
     assert not (project / "admin" / "hooks" / "main.tex").exists()
+
+
+def test_pull_refuses_remote_filters_before_running_their_drivers(
+    setup, monkeypatch, tmp_path
+):
+    seed, project = setup
+    marker = tmp_path / "smudged"
+    config = tmp_path / "gitconfig"
+    config.write_text(f'[filter "probe"]\n\tsmudge = "touch {marker}; cat"\n')
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    (seed / ".gitattributes").write_text("*.tex filter=probe\n")
+    commit_all(seed)
+    git(seed, "push", "-q", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "custom Git filters" in result.output, (
+        result.output
+    )
+    assert not marker.exists()
+    assert not (project / "paper").exists()
+
+
+def test_publish_refuses_uncommitted_workspace_attributes(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / ".gitattributes").write_text("*.tex eol=crlf\n")
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and ".gitattributes" in result.output, result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_refuses_symlinked_metadata_before_reading_it(setup, tmp_path, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    outside = tmp_path / "outside.json"
+    outside.write_bytes((project / "paper" / "overleaf.json").read_bytes())
+    (project / "paper" / "overleaf.json").unlink()
+    (project / "paper" / "overleaf.json").symlink_to(outside)
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    original = outside.read_bytes()
+    result = run(project, command)
+    assert result.exit_code == 1 and "must not be a symlink" in result.output, (
+        result.output
+    )
+    assert outside.read_bytes() == original
+    assert git(seed, "ls-remote", "origin", "master") == before

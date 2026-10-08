@@ -137,11 +137,16 @@ def clone(url: str, dest: Path) -> str:
             "clone",
             "--quiet",
             "--no-tags",
+            "--no-checkout",
             url,
             str(dest),
             cwd=dest.parent,
             env=env,
         )
+    # Refuse filter attributes (including LFS) from the index before checkout runs drivers.
+    git("reset", "-q", cwd=dest)
+    files(dest, "HEAD")
+    git("checkout", "-q", "--", ".", cwd=dest)
     return git("rev-parse", "HEAD", cwd=dest)
 
 
@@ -255,6 +260,8 @@ def require_clean(root: Path, *paths: Path) -> None:
 
 def load_config(paper: Path) -> dict:
     path = paper / CONFIG
+    if path.is_symlink():
+        raise click.ClickException(f"Cannot sync: {CONFIG} must not be a symlink.")
     if not path.exists():
         return {}
     try:
@@ -502,7 +509,13 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             f"No {CONFIG}; run `asta workspace overleaf pull <url>` first."
         )
     root_bib = root / BIBLIOGRAPHY
-    require_clean(root, paper, root_bib)
+    # Uncommitted attributes would change the bytes `cat-file --filters` publishes.
+    attributes = [
+        folder / ".gitattributes"
+        for folder in (paper.parent, *paper.parent.parents)
+        if folder == root or root in folder.parents
+    ]
+    require_clean(root, paper, root_bib, *attributes)
     ours = files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
     bibliography = files(root, "HEAD", BIBLIOGRAPHY).get(BIBLIOGRAPHY)
