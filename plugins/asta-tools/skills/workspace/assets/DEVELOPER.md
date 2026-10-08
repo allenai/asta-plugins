@@ -43,50 +43,12 @@ Keeping that intermediate LaTeX is useful even when you only want a PDF: preprin
 
 ## Sync a paper with Overleaf
 
-The workspace repo is the reviewed copy; Overleaf is where collaborators edit. The usual workflow is:
+The workspace repo is the reviewed copy; Overleaf is where collaborators edit. Authenticate with your Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token); the token is never written to the repo or Git config.
 
-1. Authenticate with your Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token).
-2. On a workspace branch, run `asta workspace overleaf pull https://git.overleaf.com/<project-id>`. Later pulls need no URL.
-3. Review the imported `paper/` and `paper/overleaf.json`, commit them, and open a PR for the normal paper preview.
-4. After merging the reviewed changes, run `asta workspace overleaf publish --dry-run`, then `asta workspace overleaf publish`.
+1. On a branch, run `asta workspace overleaf pull https://git.overleaf.com/<project-id>` (later pulls need no URL). It copies the Overleaf project into `paper/`, applies files Overleaf deleted since the last pull, and records the Overleaf commit in `paper/overleaf.json`. Review with `git diff`, commit, and open a PR for the normal paper preview.
+2. After the PR merges, run `asta workspace overleaf publish --dry-run`, then `asta workspace overleaf publish`. It pushes the committed `paper/` plus the root `references.bib`, then updates `paper/overleaf.json`; commit that file.
 
-Use `--dir <directory>` when the paper lives elsewhere. A service account uses the same commands and needs access to the selected Overleaf project. Pushing through Git can drop Overleaf comments and tracked changes in edited regions.
-
-### Authentication
-
-With `OVERLEAF_TOKEN`, a temporary private `GIT_ASKPASS` script reads the token from the environment. On Windows, use WSL for this token path or a normal Git credential helper. Without the environment token, normal Git helpers remain available. Authentication errors suggest checking the token/helper; access-denied errors also suggest checking access to the project.
-
-### Security notes
-
-Tokens are never written to the repo, and token requests clear generic and URL-scoped credential helpers. Git tracing and HTTP cookie files are disabled. Only `https://git.overleaf.com/<project-id>` is accepted: other hosts, embedded passwords, redirects and Git URL rewrites (including push-only rewrites) are rejected. Certificate verification stays enabled using your configured Git trust store and TLS backend; configured proxies remain available. Inherited HTTP extra headers are cleared. Git diagnostics are not printed because they may contain credentials.
-
-### Pull and publication
-
-Both commands require a clean paper directory. Normal pull also requires a clean root bibliography; publish requires both to be committed and clean. Pull preserves committed edits to separate files and stops on overlapping changes before writing workspace files. Resolve those files manually before retrying.
-
-Publish pushes the committed paper plus root `references.bib`, when present. Papers without that bibliography on either side can also publish. It requires the exact Overleaf revision from the last pull, or a local successful-publication receipt whose workspace commit is an ancestor of the current commit. An older branch cannot reuse a newer receipt, and commit-message trailers cannot authorize overwriting later edits. Publication uses your configured Git identity, with an Asta identity as fallback. The CLI does not verify PR approval or mandate a branch/upstream: publish only the reviewed snapshot, including its Overleaf project URL.
-
-**Publishing from another clone or after clearing the cache requires a fresh pull**, even if the content was already published. Commit and review the resulting connection metadata before publishing again. This deliberately avoids treating an unverified remote commit as a receipt. If recorded history is unavailable (for example after a remote history rewrite), restore it or re-import into a new paper directory and review the result.
-
-Pull lists imported sources hidden by Git ignore rules, including the paper's own rules. Force-add sources that belong in the reviewed import. Publish refuses to remove an Overleaf file unless workspace history records its deletion against the current imported revision; an omitted source is not a deletion. Commit the complete import first, then remove unwanted sources in a separate reviewed commit. A later pull may require restoring the complete import and making that deletion again against the new revision. The same check applies to `--dry-run`.
-
-### Shared bibliography
-
-Root `references.bib` stays canonical. If no committed root exists, pull can import Overleaf's copy for review; it refuses an uncommitted deletion of an existing root. Differing Overleaf entries are saved in `.asta/cache/overleaf/` as `overleaf-references-<blob-id>.bib`, preserving each version and the root, and blocking publication until reconciled. Repeated pulls reuse an existing backup; older backups remain available for recovery.
-
-Commit the ordinary pull's connection metadata and review its saved Overleaf bibliography. Merge the entries you need into the root, run `asta workspace overleaf pull --reconcile-bibliography` to confirm that decision, and commit both the bibliography and connection metadata for review. Confirmation requires Overleaf's bibliography to match the committed import; a newer copy or deletion requires another ordinary pull and review first. Save local bibliography edits before that ordinary pull. This explicit confirmation allows a locally edited bibliography and permits replacing Overleaf's copy with the reviewed root. Publication verifies the committed root matches the confirmed (or newly imported) content; committing only metadata is insufficient. If you change that content before first publication, repeat confirmation and review. Equality checks use Git-normalized content, so checkout line endings do not cause a false mismatch.
-
-An Overleaf-side deletion also requires this confirmation before publication can restore the root bibliography. To accept the deletion on both sides instead, remove and commit the root, then confirm and review the connection metadata. Repeated ordinary pulls do not confirm a deletion.
-
-Once Overleaf's bibliography has been reconciled and published, later reviewed edits to the canonical root, including deliberate removal of entries, need no new confirmation if Overleaf's bibliography is unchanged. The same applies after an automatically reconciled import. The caller must ensure those edits received PR review; the CLI does not inspect approval. New Overleaf bibliography edits still require pulling and reviewing them before reconciliation. Do not keep a second `paper/references.bib`; move its entries into the root. Other named bibliography files remain part of the paper.
-
-### Cache and recovery
-
-Keep `.asta/cache/` ignored. It contains bare history and local receipts, never checked-out projects or credentials. Old imported revisions and bibliography backups are retained for recovery; a backup can be historical rather than the current Overleaf copy. They are not automatically pruned. Run one sync command at a time for each workspace/paper. After stopping sync commands, remove this cache to reclaim space, then follow the fresh-pull procedure above.
-
-Pull refuses paper paths marked `assume-unchanged` or `skip-worktree`; both commands refuse those flags on the bibliography. Symlinks, submodules and case-only paper path collisions are rejected. Imported `.gitignore`, `.gitattributes`, `latexmkrc`, `.latexmkrc` and `_quarto.yml` files produce a warning because they can alter tracking, diffs or build execution. Review executable TeX/build configuration before compiling, keeping Overleaf credentials out of builds.
-
-Imports preflight conflicts and read blobs before writing. Each replacement is atomic, but an interruption or filesystem failure can leave a partial import. Inspect the working tree before restoring/stashing and retrying. Filesystem errors provide that recovery guidance; an intervening remote edit during push requires another pull and review.
+Publish refuses if Overleaf has changed since the recorded commit: pull first so those edits get reviewed too. Pull refuses uncommitted changes in `paper/`, so everything it changes shows up in `git diff`. The root `references.bib` stays canonical: pull never imports Overleaf's copy and warns when it differs. Use `--dir <directory>` when the paper lives elsewhere. Pushing through Git can drop Overleaf comments and tracked changes in edited regions.
 
 ## Back a claim with supporting evidence
 
