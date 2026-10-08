@@ -983,3 +983,19 @@ def test_reimporting_missing_root_requires_committing_imported_bibliography(setu
     result = run(project, "publish")
     assert result.exit_code == 1 and "used for reconciliation" in result.output
     assert git(remote, "rev-parse", "HEAD") == before
+
+
+def test_reconciliation_matches_git_normalized_bibliography(setup):
+    remote, seed, project = setup
+    imported(project)
+    (project / ".gitattributes").write_text("references.bib text eol=crlf\n")
+    git(project, "add", ".gitattributes")
+    git(project, "commit", "-m", "normalize bibliography line endings")
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    (project / "references.bib").write_bytes(b"@misc{a}\r\n@misc{coauthor}\r\n")
+    assert run(project, "pull", "--reconcile-bibliography").exit_code == 0
+    git(project, "add", "paper/overleaf.json", "references.bib")
+    git(project, "commit", "-m", "review reconciled bibliography")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", "HEAD:references.bib") == "@misc{a}\n@misc{coauthor}"

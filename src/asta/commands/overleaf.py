@@ -459,6 +459,7 @@ def pull(
     if data is not None and (reconcile_bibliography or not shared.exists()):
         reconciled_root = git(
             "hash-object",
+            f"--path={BIBLIOGRAPHY}",
             "--stdin",
             cwd=project,
             data=shared.read_bytes() if shared.exists() else data,
