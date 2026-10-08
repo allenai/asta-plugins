@@ -12,7 +12,6 @@ from pathlib import Path
 import click
 
 CONFIG = "overleaf.json"
-BIBLIOGRAPHY = "references.bib"
 SHA = re.compile(r"[0-9a-f]{40}")
 
 
@@ -152,11 +151,6 @@ def read_plain_files(repo: Path, revision: str, prefix: str = "") -> dict[str, b
     entries = tree(repo, revision, prefix)
     check_paths(entries)
     for name, (mode, blob) in entries.items():
-        if prefix and name == BIBLIOGRAPHY:
-            refuse(
-                prefix + name,
-                "duplicates the canonical root bibliography; move its entries there and commit",
-            )
         if mode != "100644":
             refuse(name, "is executable, a symlink or a submodule")
         if name.rsplit("/", 1)[-1] == ".gitattributes":
@@ -258,9 +252,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     name,
                     "can hide imported sources; keep ignore rules in the workspace root",
                 )
-        overleaf_bib = new.pop(BIBLIOGRAPHY, None)
         base = read_plain_files(repo, config["base"]) if config else {}
-        base.pop(BIBLIOGRAPHY, None)
         base.pop(CONFIG, None)
         ours = read_plain_files(root, "HEAD", prefix)
         ours.pop(CONFIG, None)
@@ -284,15 +276,6 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             (paper / name).unlink(missing_ok=True)
         write_files(new, paper)
     save_config(paper, url, head)
-    root_bib = root / BIBLIOGRAPHY
-    if overleaf_bib and (
-        not root_bib.exists() or root_bib.read_bytes() != overleaf_bib
-    ):
-        click.echo(
-            f"Overleaf's {BIBLIOGRAPHY} differs from the workspace root copy and was not "
-            "imported; move any entries you need into the root file.",
-            err=True,
-        )
     click.echo(
         f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
         "Review with `git diff`, then commit and open a PR."
@@ -303,35 +286,17 @@ def pull(url: str | None, directory: str, project: Path) -> None:
 @dir_option
 @project_option
 @click.option("--dry-run", is_flag=True, help="Show what would change; push nothing.")
-@click.option(
-    "--replace-bibliography",
-    is_flag=True,
-    help="Confirm the reviewed root bibliography should replace Overleaf's differing copy.",
-)
-def publish(
-    directory: str, project: Path, dry_run: bool, replace_bibliography: bool
-) -> None:
-    """Push the committed paper and root references.bib to Overleaf."""
+def publish(directory: str, project: Path, dry_run: bool) -> None:
+    """Push the committed paper directory to Overleaf without rewriting its layout."""
     root, paper, prefix = resolve(project, directory)
     config = load_config(paper)
     if not config:
         raise click.ClickException(
             f"No {CONFIG}; run `asta workspace overleaf pull <url>` first."
         )
-    root_bib = root / BIBLIOGRAPHY
-    require_clean(root, paper, root_bib)
+    require_clean(root, paper)
     ours = read_plain_files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
-    bibliography = tree(root, "HEAD").get(BIBLIOGRAPHY)
-    if not bibliography:
-        raise click.ClickException(f"Commit the canonical root {BIBLIOGRAPHY} first.")
-    mode, blob = bibliography
-    if mode != "100644":
-        refuse(BIBLIOGRAPHY, "is not a regular non-executable file")
-    data = git_bytes("cat-file", "blob", blob, cwd=root)
-    if data.startswith(b"version https://git-lfs.github.com/spec/"):
-        refuse(BIBLIOGRAPHY, "is a Git LFS pointer")
-    ours[BIBLIOGRAPHY] = data
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -340,16 +305,6 @@ def publish(
                 f"Overleaf has changed since commit {config['base'][:7]}. Run "
                 "`asta workspace overleaf pull`, review those edits in a PR, then publish."
             )
-        remote_bib = read_plain_files(repo, head).get(BIBLIOGRAPHY)
-        if remote_bib is not None and remote_bib != ours[BIBLIOGRAPHY]:
-            message = (
-                f"Overleaf's {BIBLIOGRAPHY} differs from the workspace root copy. "
-                "Reconcile its entries in a PR first; use --replace-bibliography only "
-                "to confirm the reviewed root copy should replace it."
-            )
-            if not dry_run and not replace_bibliography:
-                raise click.ClickException(message)
-            click.echo(message, err=True)
         git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
         write_files(ours, repo)
         git("add", "-A", cwd=repo)

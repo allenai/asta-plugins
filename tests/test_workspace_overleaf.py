@@ -80,14 +80,16 @@ def commit_all(project):
     git(project, "commit", "-q", "-m", "sync")
 
 
-def test_pull_copies_paper_but_not_bibliography(setup):
+def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
     seed, project = setup
     result = run(project, "pull", URL)
     assert result.exit_code == 0, result.output
     paper = project / "paper"
     assert (paper / "main.tex").read_text() == "hello\n"
-    assert not (paper / "references.bib").exists()
-    assert "differs from the workspace root copy" in result.output
+    assert (paper / "references.bib").read_bytes() == (
+        seed / "references.bib"
+    ).read_bytes()
+    assert (project / "references.bib").read_text() == "@misc{root}\n"
     config = json.loads((paper / "overleaf.json").read_text())
     assert config == {"url": URL, "base": git(seed, "rev-parse", "HEAD")}
 
@@ -170,7 +172,7 @@ def test_publish_refuses_gitattributes_in_paper(setup):
     assert "change file contents" in result.output
 
 
-def test_publish_pushes_committed_paper_and_root_bibliography(setup):
+def test_publish_pushes_committed_paper_without_injecting_workspace_bibliography(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper" / "main.tex").write_text("reviewed\n")
@@ -179,11 +181,11 @@ def test_publish_pushes_committed_paper_and_root_bibliography(setup):
     dry = run(project, "publish", "--dry-run")
     assert dry.exit_code == 0 and "nothing pushed" in dry.output
     assert git(seed, "ls-remote", "origin", "master") == before
-    result = run(project, "publish", "--replace-bibliography")
+    result = run(project, "publish")
     assert result.exit_code == 0, result.output
     git(seed, "pull", "-q", "origin", "master")
     assert (seed / "main.tex").read_text() == "reviewed\n"
-    assert (seed / "references.bib").read_text() == "@misc{root}\n"
+    assert (seed / "references.bib").read_text() == "@misc{overleaf}\n"
     assert not (seed / "overleaf.json").exists()
     config = json.loads((project / "paper" / "overleaf.json").read_text())
     assert config["base"] == git(seed, "rev-parse", "HEAD")
@@ -199,15 +201,6 @@ def test_publish_refuses_when_overleaf_moved(setup):
     assert "Overleaf has changed" in result.output
     git(seed, "pull", "-q", "origin", "master")
     assert (seed / "main.tex").read_text() == "collaborator edit\n"
-
-
-def test_publish_requires_committed_bibliography(setup):
-    _, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    commit_all(project)
-    (project / "references.bib").write_text("@misc{draft}\n")
-    result = run(project, "publish")
-    assert result.exit_code != 0 and "local changes" in result.output
 
 
 @pytest.mark.parametrize(
@@ -306,20 +299,6 @@ def test_sync_refuses_executable_files(setup, command):
     assert git(seed, "ls-remote", "origin", "master") == before
 
 
-@pytest.mark.parametrize("target", ["real.bib", "missing.bib"])
-def test_publish_refuses_symlinked_root_bibliography(setup, target):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    (project / "real.bib").write_text("@misc{root}\n")
-    (project / "references.bib").unlink()
-    os.symlink(target, project / "references.bib")
-    commit_all(project)
-    before = git(seed, "ls-remote", "origin", "master")
-    result = run(project, "publish")
-    assert result.exit_code != 0 and "regular non-executable" in result.output
-    assert git(seed, "ls-remote", "origin", "master") == before
-
-
 @pytest.mark.parametrize(
     "name",
     [
@@ -381,65 +360,6 @@ def test_pull_refuses_ignored_symlink_config(setup):
     assert outside.read_bytes() == before
 
 
-def test_publish_requires_confirmation_after_pull_skips_remote_bibliography(setup):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    commit_all(project)
-    overleaf_edit(seed, "references.bib", "@misc{collaborator}\n")
-    assert run(project, "pull").exit_code == 0
-    commit_all(project)
-    before = git(seed, "ls-remote", "origin", "master")
-    metadata = (project / "paper/overleaf.json").read_bytes()
-    dry = run(project, "publish", "--dry-run")
-    assert dry.exit_code == 0 and "--replace-bibliography" in dry.output
-    result = run(project, "publish")
-    assert result.exit_code != 0 and "--replace-bibliography" in result.output
-    assert git(seed, "ls-remote", "origin", "master") == before
-    assert (project / "paper/overleaf.json").read_bytes() == metadata
-    assert (seed / "references.bib").read_text() == "@misc{collaborator}\n"
-    result = run(project, "publish", "--replace-bibliography")
-    assert result.exit_code == 0, result.output
-
-
-def test_publish_accepts_matching_bibliography_without_confirmation(setup):
-    seed, project = setup
-    (project / "references.bib").write_bytes((seed / "references.bib").read_bytes())
-    commit_all(project)
-    assert run(project, "pull", URL).exit_code == 0
-    (project / "paper/main.tex").write_text("reviewed edit\n")
-    commit_all(project)
-    result = run(project, "publish")
-    assert result.exit_code == 0, result.output
-    git(seed, "pull", "-q", "origin", "master")
-    assert (seed / "main.tex").read_text() == "reviewed edit\n"
-
-
-@pytest.mark.parametrize("command", ["pull", "publish"])
-def test_sync_refuses_duplicate_workspace_bibliography(setup, command):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    duplicate = project / "paper/references.bib"
-    duplicate.write_text("@misc{paper_only}\n")
-    commit_all(project)
-    before = git(seed, "ls-remote", "origin", "master")
-    result = run(project, command)
-    assert result.exit_code != 0 and "canonical root bibliography" in result.output
-    assert duplicate.read_text() == "@misc{paper_only}\n"
-    assert git(seed, "ls-remote", "origin", "master") == before
-    assert not git(project, "status", "--porcelain")
-
-
-def test_publish_refuses_missing_root_bibliography(setup):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    (project / "references.bib").unlink()
-    commit_all(project)
-    before = git(seed, "ls-remote", "origin", "master")
-    result = run(project, "publish", "--replace-bibliography")
-    assert result.exit_code != 0 and "canonical root references.bib" in result.output
-    assert git(seed, "ls-remote", "origin", "master") == before
-
-
 @pytest.mark.parametrize("setting", ["autocrlf", "filter", "hook"])
 def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting):
     seed, project = setup
@@ -483,7 +403,7 @@ def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting):
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     before = git(seed, "ls-remote", "origin", "master")
     metadata = (project / "paper/overleaf.json").read_bytes()
-    result = run(project, "publish", "--replace-bibliography")
+    result = run(project, "publish")
     assert result.exit_code != 0 and "nothing pushed" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
     assert (project / "paper/overleaf.json").read_bytes() == metadata
@@ -556,24 +476,64 @@ def test_pull_refuses_remote_metadata_and_ignore_rules_before_writing(setup, nam
     assert git(seed, "ls-remote", "origin", "master") == before
 
 
-@pytest.mark.parametrize("dry_run", [False, True])
-def test_publish_refuses_lfs_root_bibliography(setup, dry_run):
+@pytest.mark.parametrize(
+    "bibliographies", [[], ["citations.bib"], ["references.bib", "extra.bib"]]
+)
+def test_roundtrip_preserves_arbitrary_latex_layout_without_root_bibliography(
+    setup, bibliographies
+):
+    seed, project = setup
+    git(seed, "rm", "references.bib", "main.tex")
+    (seed / "manuscript.tex").write_text("\\documentclass{article}\noriginal\n")
+    (seed / "styles").mkdir()
+    (seed / "styles/custom.cls").write_text("custom class\n")
+    for name in bibliographies:
+        (seed / name).write_text("@misc{remote_entry}\n")
+    commit_all(seed)
+    git(seed, "push", "origin", "master")
+    git(project, "rm", "references.bib")
+    commit_all(project)
+    assert run(project, "pull", URL).exit_code == 0
+    expected = {
+        name: module.git_bytes("show", f"HEAD:{name}", cwd=seed)
+        for name in module.tree(seed, "HEAD")
+    }
+    for name, data in expected.items():
+        assert (project / "paper" / name).read_bytes() == data
+    (project / "paper/manuscript.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "origin", "master")
+    expected["manuscript.tex"] = b"reviewed edit\n"
+    assert module.read_plain_files(seed, "HEAD") == expected
+
+
+@pytest.mark.parametrize("remote_text", ["@misc{collaborator}\n", None])
+def test_bibliography_uses_same_conflict_protection_as_other_sources(
+    setup, remote_text
+):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    (project / "references.bib").write_text(
-        "version https://git-lfs.github.com/spec/v1\noid sha256:0\nsize 12\n"
-    )
+    (project / "paper/references.bib").write_text("@misc{workspace_edit}\n")
     commit_all(project)
-    before = git(seed, "ls-remote", "origin", "master")
-    metadata = (project / "paper/overleaf.json").read_bytes()
-    result = run(
-        project,
-        "publish",
-        "--replace-bibliography",
-        *(["--dry-run"] if dry_run else []),
-    )
+    before = (project / "paper/overleaf.json").read_bytes()
+    overleaf_edit(seed, "references.bib", remote_text)
+    result = run(project, "pull")
     assert (
-        result.exit_code != 0 and "references.bib is a Git LFS pointer" in result.output
+        result.exit_code != 0
+        and "Both workspace and Overleaf changed references.bib" in result.output
     )
-    assert git(seed, "ls-remote", "origin", "master") == before
-    assert (project / "paper/overleaf.json").read_bytes() == metadata
+    assert (project / "paper/references.bib").read_text() == "@misc{workspace_edit}\n"
+    assert (project / "paper/overleaf.json").read_bytes() == before
+
+
+def test_pull_imports_collaborator_bibliography_updates(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    overleaf_edit(seed, "references.bib", "@misc{collaborator}\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/references.bib").read_text() == "@misc{collaborator}\n"
+    assert (project / "references.bib").read_text() == "@misc{root}\n"
