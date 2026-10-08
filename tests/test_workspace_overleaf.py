@@ -86,7 +86,7 @@ def test_pull_imports_without_shared_bibliography(setup):
 
 def test_publish_round_trip_and_refuses_unpulled_edits(setup):
     remote, seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
+    imported(project)
     (project / "paper" / "main.tex").write_text("reviewed\n")
     (project / "paper" / "old.tex").unlink()
     (project / "paper" / "latexmkrc").write_text("# workspace\n")
@@ -535,15 +535,8 @@ def test_publish_reads_head_even_when_git_hides_worktree_changes(setup):
     (paper / "main.tex").write_text("reviewed\n")
     git(project, "add", "paper/main.tex")
     git(project, "commit", "-m", "reviewed change")
-    git(
-        project,
-        "update-index",
-        "--assume-unchanged",
-        "paper/main.tex",
-        "references.bib",
-    )
+    git(project, "update-index", "--assume-unchanged", "paper/main.tex")
     (paper / "main.tex").write_text("unreviewed\n")
-    (project / "references.bib").write_text("@misc{unreviewed}\n")
     assert git(project, "status", "--porcelain") == ""
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
@@ -817,3 +810,176 @@ def test_failed_file_replacement_does_not_truncate_existing_file(tmp_path, monke
         module.replace_file(target, b"replacement")
     assert target.read_bytes() == b"original"
     assert list(tmp_path.iterdir()) == [target]
+
+
+@pytest.mark.parametrize("ignore_source", ["remote", "root", "exclude"])
+def test_ignored_imports_cannot_be_published_as_deletions(setup, ignore_source):
+    remote, seed, project = setup
+    if ignore_source == "remote":
+        overleaf_edit(seed, ".gitignore", "*.tex\n")
+    elif ignore_source == "root":
+        (project / ".gitignore").write_text(".asta/cache/\npaper/*.tex\n")
+        git(project, "add", ".gitignore")
+        git(project, "commit", "-m", "ignore TeX")
+    else:
+        (project / ".git/info/exclude").write_text("paper/*.tex\n")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    assert "Git ignores imported files:" in result.output
+    assert "paper/main.tex" in result.output and "paper/old.tex" in result.output
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "incomplete import")
+    before = git(remote, "rev-parse", "HEAD")
+    for args in [("publish",), ("publish", "--dry-run")]:
+        result = run(project, *args)
+        assert (
+            result.exit_code == 1 and "no committed workspace deletion" in result.output
+        )
+        assert git(remote, "rev-parse", "HEAD") == before
+    # Force-add the complete import, then make an intentional deletion for review.
+    git(project, "add", "-f", "paper/main.tex", "paper/old.tex")
+    git(project, "commit", "-m", "complete import")
+    git(project, "rm", "paper/old.tex")
+    git(project, "commit", "-m", "remove unwanted source")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", "HEAD:main.tex") == "hello"
+    assert "old.tex" not in git(remote, "ls-tree", "--name-only", "HEAD")
+
+
+def test_deletion_before_import_does_not_authorize_omitted_remote_file(setup):
+    remote, seed, project = setup
+    paper = project / "paper"
+    paper.mkdir()
+    (paper / "old.tex").write_text("unrelated old file\n")
+    git(project, "add", "paper/old.tex")
+    git(project, "commit", "-m", "old paper")
+    git(project, "rm", "paper/old.tex")
+    git(project, "commit", "-m", "old deletion")
+    overleaf_edit(seed, ".gitignore", "old.tex\n")
+    imported(project)
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "no committed workspace deletion" in result.output
+    assert git(remote, "rev-parse", "HEAD") == before
+
+
+def test_reviewed_deletion_after_publication_is_allowed(setup):
+    remote, _, project = setup
+    paper = imported(project)
+    (paper / "main.tex").write_text("first edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "edit")
+    assert run(project, "publish").exit_code == 0
+    git(project, "rm", "paper/old.tex")
+    git(project, "commit", "-m", "reviewed deletion")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert "old.tex" not in git(remote, "ls-tree", "--name-only", "HEAD")
+
+
+def test_deletion_requires_review_against_the_latest_import(setup):
+    remote, seed, project = setup
+    paper = imported(project)
+    git(project, "rm", "paper/old.tex")
+    git(project, "commit", "-m", "delete against previous import")
+    overleaf_edit(seed, "new.tex", "coauthor addition\n")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "review new import")
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "no committed workspace deletion" in result.output
+    assert git(remote, "rev-parse", "HEAD") == before
+    (paper / "old.tex").write_text("old\n")
+    git(project, "add", "paper/old.tex")
+    git(project, "commit", "-m", "complete current import")
+    git(project, "rm", "paper/old.tex")
+    git(project, "commit", "-m", "review deletion against current import")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert "old.tex" not in git(remote, "ls-tree", "--name-only", "HEAD")
+    assert git(remote, "show", "HEAD:new.tex") == "coauthor addition"
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+@pytest.mark.parametrize(
+    "args", [("pull",), ("pull", "--reconcile-bibliography"), ("publish",)]
+)
+def test_hidden_root_bibliography_cannot_authorize_overwrite(setup, flag, args):
+    remote, seed, project = setup
+    paper = imported(project)
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    git(project, "update-index", flag, "references.bib")
+    (project / "references.bib").write_text("@misc{a}\n@misc{coauthor}\n")
+    assert git(project, "status", "--porcelain") == ""
+    before = (paper / module.CONFIG).read_bytes()
+    head = git(remote, "rev-parse", "HEAD")
+    result = run(project, *args)
+    assert result.exit_code == 1 and "assume-unchanged/skip-worktree" in result.output
+    assert (paper / module.CONFIG).read_bytes() == before
+    assert git(remote, "rev-parse", "HEAD") == head
+
+
+def test_uncommitted_root_equality_does_not_reconcile_remote_bibliography(setup):
+    remote, seed, project = setup
+    paper = imported(project)
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    (project / "references.bib").write_text("@misc{a}\n@misc{coauthor}\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (
+        json.loads((paper / module.CONFIG).read_text())["bibliography_reconciled"]
+        is None
+    )
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "metadata only")
+    git(project, "restore", "references.bib")
+    head = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "unreconciled entries" in result.output
+    assert git(remote, "rev-parse", "HEAD") == head
+
+
+def test_explicit_reconciliation_requires_the_confirmed_root_in_head(setup):
+    remote, seed, project = setup
+    imported(project)
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    merged = "@misc{a}\n@misc{coauthor}\n@misc{workspace}\n"
+    (project / "references.bib").write_text(merged)
+    result = run(project, "pull", "--reconcile-bibliography")
+    assert result.exit_code == 0, result.output
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "metadata only")
+    git(project, "restore", "references.bib")
+    # A repeat pull must not drop the binding to the confirmed root content.
+    assert run(project, "pull").exit_code == 0
+    assert git(project, "status", "--porcelain") == ""
+    before = git(remote, "rev-parse", "HEAD")
+    for args in [("publish",), ("publish", "--dry-run")]:
+        result = run(project, *args)
+        assert result.exit_code == 1 and "used for reconciliation" in result.output
+        assert git(remote, "rev-parse", "HEAD") == before
+    (project / "references.bib").write_text(merged)
+    git(project, "add", "references.bib")
+    git(project, "commit", "-m", "review reconciled bibliography")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", "HEAD:references.bib") == merged.strip()
+
+
+def test_reimporting_missing_root_requires_committing_imported_bibliography(setup):
+    remote, seed, project = setup
+    imported(project)
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    (project / "references.bib").unlink()
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert "Imported Overleaf's bibliography" in result.output
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "metadata only")
+    git(project, "restore", "references.bib")
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "used for reconciliation" in result.output
+    assert git(remote, "rev-parse", "HEAD") == before

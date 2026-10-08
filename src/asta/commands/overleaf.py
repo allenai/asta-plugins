@@ -89,7 +89,11 @@ def parse_config(data: bytes) -> dict:
     ):
         raise click.ClickException(f"Invalid {CONFIG}; expected a URL and base commit.")
     config["url"] = validate_url(config["url"])
-    for key in ("bibliography", "bibliography_reconciled"):
+    for key in (
+        "bibliography",
+        "bibliography_reconciled",
+        "bibliography_reconciled_root",
+    ):
         if config.get(key) is not None and not SHA.fullmatch(str(config[key])):
             raise click.ClickException(f"Invalid {CONFIG} bibliography revision.")
     return config
@@ -154,13 +158,42 @@ def current_commit(project: Path) -> str:
         ) from exc
 
 
-def require_visible(project: Path, paper: Path) -> None:
-    entries = git_bytes(
-        "ls-files", "-vz", "--", paper.relative_to(project).as_posix(), cwd=project
-    ).split(b"\0")
+def require_visible(project: Path, path: Path) -> None:
+    rel = path.relative_to(project).as_posix()
+    entries = git_bytes("ls-files", "-vz", "--", rel, cwd=project).split(b"\0")
     if any(entry and (entry[:1].islower() or entry[:1] == b"S") for entry in entries):
         raise click.ClickException(
-            "Clear assume-unchanged/skip-worktree flags on paper files before pulling."
+            f"Clear assume-unchanged/skip-worktree flags on {rel} before syncing Overleaf."
+        )
+
+
+def require_reviewed_deletions(
+    project: Path, rel: str, commit: str, config: dict, deleted: list[str]
+) -> None:
+    for name in deleted:
+        deletion = git(
+            "log",
+            "-1",
+            "--format=%H",
+            "--diff-filter=D",
+            commit,
+            "--",
+            f"{rel}/{name}",
+            cwd=project,
+        )
+        if deletion:
+            before = snapshot(project, f"{deletion}^", rel)
+            if (
+                name in before
+                and CONFIG in before
+                and parse_config(blob(project, before[CONFIG]))["base"]
+                == config["base"]
+            ):
+                continue
+        raise click.ClickException(
+            f"Refusing to delete Overleaf file {name}: it has no committed workspace "
+            "deletion since import. Commit the complete import (force-add ignored "
+            "sources if needed), then remove unwanted files in a separate reviewed commit."
         )
 
 
@@ -357,8 +390,11 @@ def pull(
         )
     require_clean(project, paper)
     require_visible(project, paper)
+    require_visible(project, project / BIBLIOGRAPHY)
     rel = paper.relative_to(project).as_posix()
-    ours = snapshot(project, current_commit(project), rel)
+    commit = current_commit(project)
+    ours = snapshot(project, commit, rel)
+    committed_bib = snapshot(project, commit, BIBLIOGRAPHY).get(BIBLIOGRAPHY)
     ours.pop(CONFIG, None)
     if BIBLIOGRAPHY in ours:
         raise click.ClickException(
@@ -410,7 +446,7 @@ def pull(
         reconcile_bibliography
         or data is None
         or not shared.exists()
-        or shared.read_bytes() == data
+        or (committed_bib is not None and blob(project, committed_bib) == data)
         or (
             remote_bib == base_bib
             and (
@@ -419,6 +455,16 @@ def pull(
             )
         )
     )
+    reconciled_root = None
+    if data is not None and (reconcile_bibliography or not shared.exists()):
+        reconciled_root = git(
+            "hash-object",
+            "--stdin",
+            cwd=project,
+            data=shared.read_bytes() if shared.exists() else data,
+        )
+    elif reconciled and remote_bib != committed_bib and previous == config.get("base"):
+        reconciled_root = config.get("bibliography_reconciled_root")
     # Read every blob before changing files, so a missing object cannot leave a partial import.
     contents = {name: blob(repo, merged[name]) for name in changed}
     git("update-ref", f"refs/overleaf/bases/{head}", head, cwd=repo)
@@ -475,12 +521,39 @@ def pull(
                     "base": head,
                     "bibliography": bib_revision,
                     "bibliography_reconciled": bib_revision if reconciled else None,
+                    "bibliography_reconciled_root": reconciled_root,
                 },
                 indent=2,
             )
             + "\n"
         ).encode(),
     )
+    imported_paths = {f"{rel}/{name}" for name in merged} | {f"{rel}/{CONFIG}"}
+    if data is not None:
+        imported_paths.add(BIBLIOGRAPHY)
+    ignored = sorted(
+        os.fsdecode(name)
+        for name in git_bytes(
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "-z",
+            "--",
+            rel,
+            BIBLIOGRAPHY,
+            cwd=project,
+        ).split(b"\0")
+        if name and os.fsdecode(name) in imported_paths
+    )
+    if ignored:
+        click.echo(
+            "warning: Git ignores imported files: "
+            + ", ".join(ignored)
+            + ". Force-add the sources you want to keep before committing the import; "
+            "publication refuses omissions without a committed deletion.",
+            err=True,
+        )
     click.echo(
         f"Pulled Overleaf {head[:7]} into {rel}/, preserving committed local edits."
     )
@@ -501,6 +574,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         raise click.ClickException("Run `asta workspace overleaf pull <url>` first.")
     require_clean(project, paper)
     require_clean(project, project / BIBLIOGRAPHY)
+    require_visible(project, project / BIBLIOGRAPHY)
     commit = current_commit(project)
     rel = paper.relative_to(project).as_posix()
     ours = snapshot(project, commit, rel)
@@ -529,6 +603,17 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
         remote = snapshot(repo, head)
         remote_bib = remote.get(BIBLIOGRAPHY)
+        confirmed_root = config.get("bibliography_reconciled_root")
+        if (
+            expected == config["base"]
+            and confirmed_root is not None
+            and ours[BIBLIOGRAPHY][1] != confirmed_root
+        ):
+            raise click.ClickException(
+                "Commit the root references.bib used for reconciliation together with "
+                "overleaf.json, or repeat pull --reconcile-bibliography with the intended "
+                "root copy; nothing was pushed."
+            )
         if (
             remote_bib is not None
             and remote_bib[1] != ours[BIBLIOGRAPHY][1]
@@ -544,6 +629,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
         changed = sorted(name for name in ours if ours[name] != remote.get(name))
         deleted = sorted(remote.keys() - ours.keys())
+        require_reviewed_deletions(project, rel, commit, config, deleted)
         if not changed and not deleted:
             click.echo("Overleaf is already up to date.")
             return
