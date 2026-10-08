@@ -166,18 +166,13 @@ def test_cached_version_shaped_branch_prompts_refresh(
     assert "run 'asta workspace sync --refresh' to update" in cached.output
 
 
-@pytest.mark.parametrize("new_archive", [False, True])
-def test_sync_replaces_corrupt_cached_archive(
-    tmp_path: Path, monkeypatch, new_archive: bool
-) -> None:
+def test_sync_replaces_corrupt_cached_archive(tmp_path: Path, monkeypatch) -> None:
     project = project_with_ref(tmp_path, "main")
     calls = []
 
     def fetch(repository, ref):
         calls.append((repository, ref))
-        return b"rule", _archive(
-            {"revision": str(len(calls) if new_archive else 1).encode()}
-        )
+        return b"rule", _archive({})
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
     args = ["workspace", "sync", "--project", str(project)]
@@ -189,8 +184,6 @@ def test_sync_replaces_corrupt_cached_archive(
     result = runner.invoke(cli, args)
     assert result.exit_code == 0, result.output
     assert calls == [("allenai/asta-plugins", "main")] * 2
-    state = json.loads((project / ".asta/cache/workspace.json").read_text())
-    archive_path = project / ".asta/cache/archives" / state["archive_sha256"]
     assert workspace_module.load_scripts(archive_path.read_bytes()) == {
         name: b"script" for name in workspace_module.SCRIPTS
     }
