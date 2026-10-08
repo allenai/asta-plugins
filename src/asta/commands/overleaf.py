@@ -7,6 +7,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -49,12 +50,15 @@ def git_environment() -> dict:
     return env
 
 
-def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
+def git_bytes(
+    *args: str, cwd: Path, env: dict | None = None, input: bytes | None = None
+) -> bytes:
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,
         env=git_environment() if env is None else env,
         capture_output=True,
+        input=input,
     )
     if result.returncode:
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
@@ -68,6 +72,27 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
             raise click.ClickException(
                 "Overleaf access denied. Check your token and access to this project."
             )
+        if network:
+            for markers, message in (
+                (
+                    (b"404", b"not found"),
+                    "Overleaf project not found. Check its Git URL and your project access.",
+                ),
+                (
+                    (b"could not resolve host", b"could not resolve proxy"),
+                    "Cannot resolve the Overleaf host or proxy. Check DNS and Git proxy settings.",
+                ),
+                (
+                    (b"certificate", b"ssl", b"tls"),
+                    "Overleaf TLS connection failed. Check your Git trust store and proxy settings.",
+                ),
+                (
+                    (b"failed to connect", b"timed out", b"connection refused"),
+                    "Cannot connect to Overleaf. Check your network and Git proxy settings.",
+                ),
+            ):
+                if any(marker in stderr for marker in markers):
+                    raise click.ClickException(message)
         if "push" in args and (b"rejected" in stderr or b"fetch first" in stderr):
             raise click.ClickException(
                 "Overleaf changed during publish. Pull and review the changes first."
@@ -99,15 +124,10 @@ def credentials():
     if not env.get("OVERLEAF_TOKEN"):
         yield env, []
         return
-    with tempfile.TemporaryDirectory() as tmp:
-        askpass = Path(tmp) / "askpass"
-        askpass.write_text(
-            '#!/bin/sh\ncase "$1" in Username*) echo git;; *) printf \'%s\\n\' "$OVERLEAF_TOKEN";; esac\n'
-        )
-        askpass.chmod(stat.S_IRWXU)
-        env.update(GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT="0")
-        # An empty helper list stops Git from storing the token anywhere.
-        yield env, ["-c", "credential.helper="]
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    # Clear storage helpers; Git runs this in its shell without an executable temp file.
+    helper = '!f() { if test "$1" = get; then printf "%s\\n" "username=git" "password=$OVERLEAF_TOKEN"; fi; }; f'
+    yield env, ["-c", "credential.helper=", "-c", f"credential.helper={helper}"]
 
 
 def clone(url: str, dest: Path) -> str:
@@ -134,9 +154,17 @@ def validate_paths(names) -> None:
     spellings = {}
     for name in sorted(names):
         parts = name.replace("\\", "/").split("/")
+        if any(
+            part.casefold() in ("..", ".git")
+            or part.endswith((".", " "))
+            or ":" in part
+            or re.fullmatch(r"git~\d+", part, re.IGNORECASE)
+            for part in parts
+        ):
+            raise click.ClickException(f"Cannot sync unsafe Git path: {name}.")
         for index in range(1, len(parts) + 1):
             path = "/".join(parts[:index])
-            key = path.casefold()
+            key = unicodedata.normalize("NFC", path).casefold()
             previous = spellings.setdefault(key, path)
             if previous != path:
                 raise click.ClickException(
@@ -153,11 +181,7 @@ def files(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, s
         meta, path = entry.split(b"\t", 1)
         mode, kind, blob = meta.decode().split()
         name = os.fsdecode(path)
-        if any(
-            part.lower() in ("..", ".git")
-            for part in name.replace("\\", "/").split("/")
-        ):
-            raise click.ClickException(f"Cannot sync unsafe Git path: {name}.")
+        validate_paths([name])
         if prefix.endswith("/"):
             name = name[len(prefix) :]
         if kind != "blob" or mode not in ("100644", "100755"):
@@ -166,7 +190,47 @@ def files(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, s
             )
         result[name] = (mode, blob)
     validate_paths(result)
+    require_no_filters(
+        repo, [prefix + name if prefix.endswith("/") else name for name in result]
+    )
     return result
+
+
+def require_no_filters(repo: Path, names) -> None:
+    if not names:
+        return
+    attributes = git_bytes(
+        "check-attr",
+        "-z",
+        "--stdin",
+        "filter",
+        cwd=repo,
+        input=b"\0".join(os.fsencode(name) for name in names) + b"\0",
+    ).split(b"\0")
+    for path, _, value in zip(attributes[::3], attributes[1::3], attributes[2::3]):
+        if value not in (b"unspecified", b"unset"):
+            raise click.ClickException(
+                f"Cannot sync {os.fsdecode(path)}: custom Git filters (including LFS) "
+                "are unsupported. Use ordinary committed paper files."
+            )
+
+
+def comparison_files(repo: Path, entries: dict, root: Path, prefix: str) -> dict:
+    """Compare remote content after the workspace's Git normalization, in one object format."""
+    require_no_filters(root, [prefix + name for name in entries])
+    return {
+        name: (
+            mode,
+            git(
+                "hash-object",
+                "--stdin",
+                f"--path={prefix}{name}",
+                cwd=root,
+                input=git_bytes("cat-file", "blob", blob, cwd=repo),
+            ),
+        )
+        for name, (mode, blob) in entries.items()
+    }
 
 
 def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
@@ -174,6 +238,12 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
     paper = (root / directory).resolve()
     if root not in paper.parents:
         raise click.ClickException("--dir must be a subdirectory of the workspace.")
+    validate_paths([paper.relative_to(root).as_posix()])
+    git_dir = Path(git("rev-parse", "--absolute-git-dir", cwd=root)).resolve()
+    if paper == git_dir or git_dir in paper.parents:
+        raise click.ClickException(
+            "--dir must not be inside Git's administrative directory."
+        )
     return root, paper, paper.relative_to(root).as_posix() + "/"
 
 
@@ -208,10 +278,16 @@ def save_config(paper: Path, url: str, base: str) -> None:
     (paper / CONFIG).write_text(text)
 
 
-def write_blob(repo: Path, entry: tuple[str, str], target: Path) -> None:
+def write_blob(
+    repo: Path, entry: tuple[str, str], target: Path, *, source: str | None = None
+) -> None:
     mode, blob = entry
     target.parent.mkdir(parents=True, exist_ok=True)
-    content = git_bytes("cat-file", "blob", blob, cwd=repo)
+    content = (
+        git_bytes("cat-file", "--filters", f"HEAD:{source}", cwd=repo)
+        if source
+        else git_bytes("cat-file", "blob", blob, cwd=repo)
+    )
     descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666)
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(content)
@@ -323,6 +399,13 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         head = clone(url, repo)
         new = files(repo, head)
         overleaf_bib = new.pop(BIBLIOGRAPHY, None)
+        overleaf_bib_hash = (
+            comparison_files(repo, {BIBLIOGRAPHY: overleaf_bib}, root, "")[
+                BIBLIOGRAPHY
+            ][1]
+            if overleaf_bib
+            else None
+        )
         if CONFIG in new:
             raise click.ClickException(
                 f"Overleaf contains reserved workspace file {CONFIG}."
@@ -339,14 +422,19 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         base.pop(BIBLIOGRAPHY, None)
         base.pop(CONFIG, None)
         ours = files(root, "HEAD", prefix)
+        normalized_new = comparison_files(repo, new, root, prefix)
+        normalized_base = comparison_files(repo, base, root, prefix)
         # Keep committed workspace edits when Overleaf is unchanged; never merge silently.
         changes = {
-            name for name in base.keys() | new.keys() if new.get(name) != ours.get(name)
+            name
+            for name in base.keys() | new.keys()
+            if normalized_new.get(name) != ours.get(name)
         }
         conflicts = {
             name
             for name in changes
-            if ours.get(name) != base.get(name) and new.get(name) != base.get(name)
+            if ours.get(name) != normalized_base.get(name)
+            and normalized_new.get(name) != normalized_base.get(name)
         }
         if conflicts:
             raise click.ClickException(
@@ -354,7 +442,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 + ", ".join(sorted(conflicts))
                 + ". Reconcile these files before pulling."
             )
-        changes = {name for name in changes if new.get(name) != base.get(name)}
+        changes = {
+            name
+            for name in changes
+            if normalized_new.get(name) != normalized_base.get(name)
+        }
         validate_paths(
             new.keys()
             | ours.keys()
@@ -384,7 +476,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     root_bib = root / BIBLIOGRAPHY
     if overleaf_bib and (
         not root_bib.exists()
-        or git("hash-object", "--", str(root_bib), cwd=root) != overleaf_bib[1]
+        or git("hash-object", "--", str(root_bib), cwd=root) != overleaf_bib_hash
     ):
         click.echo(
             f"Overleaf's {BIBLIOGRAPHY} differs from the workspace root copy and was not "
@@ -444,9 +536,13 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
         git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
         for name, entry in ours.items():
-            write_blob(root, entry, repo / name)
+            source = name if name == BIBLIOGRAPHY else prefix + name
+            write_blob(root, entry, repo / name, source=source)
         if ours:
             git("add", "-f", "--", *sorted(ours), cwd=repo)
+            executable = [name for name, (mode, _) in ours.items() if mode == "100755"]
+            if executable:
+                git("update-index", "--chmod=+x", "--", *executable, cwd=repo)
         changes = git("status", "--short", cwd=repo)
         if not changes:
             click.echo("Overleaf already matches the committed paper.")
@@ -455,19 +551,13 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         if dry_run:
             click.echo("Dry run: nothing pushed.")
             return
-        identity = []
-        if subprocess.run(
-            ["git", "var", "GIT_COMMITTER_IDENT"],
-            cwd=root,
-            env=git_environment(),
-            capture_output=True,
-        ).returncode:
-            identity = [
-                "-c",
-                "user.name=Asta Workspace",
-                "-c",
-                "user.email=asta-workspace@example.invalid",
-            ]
+        try:
+            ident = git("var", "GIT_COMMITTER_IDENT", cwd=root)
+            name, email = ident.rsplit(" <", 1)
+            email = email.split(">", 1)[0]
+        except click.ClickException:
+            name, email = "Asta Workspace", "asta-workspace@example.invalid"
+        identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         message = f"Publish workspace commit {workspace_commit[:12]}"
         git(*identity, "commit", "-q", "-m", message, cwd=repo)
         push(repo)
@@ -475,5 +565,5 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     save_config(paper, config["url"], published)
     click.echo(
         f"Published Overleaf commit {published[:7]}. Commit "
-        f"{(paper / CONFIG).relative_to(root)} so the next publish starts from it."
+        f"{(paper / CONFIG).relative_to(root)} in a follow-up PR so the next publish starts from it."
     )

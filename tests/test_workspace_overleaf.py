@@ -6,6 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -618,15 +619,218 @@ def test_rejects_non_overleaf_urls(setup, url):
     assert "git.overleaf.com/<project-id>" in result.output
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
-def test_token_uses_askpass_and_disables_helpers(monkeypatch):
+@pytest.mark.skipif(os.name == "nt", reason="POSIX credential helper")
+def test_token_uses_ephemeral_helper_and_disables_storage(monkeypatch, tmp_path):
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "nonexistent-noexec-temp"))
     with module.credentials() as (env, options):
-        askpass = env["GIT_ASKPASS"]
-        assert options == ["-c", "credential.helper="]
+        assert options[:2] == ["-c", "credential.helper="]
+        assert "fixture-token" not in " ".join(options)
         answer = subprocess.run(
-            [askpass, "Password for x"], env=env, capture_output=True, text=True
+            ["git", *options, "credential", "fill"],
+            env=env,
+            capture_output=True,
+            input="protocol=https\nhost=git.overleaf.com\n\n",
+            text=True,
         )
-        assert answer.stdout.strip() == "fixture-token"
-        assert "fixture-token" not in open(askpass).read()
-    assert not os.path.exists(askpass)
+        assert answer.returncode == 0
+        assert "username=git\npassword=fixture-token" in answer.stdout
+        stored = subprocess.run(
+            ["git", *options, "credential", "approve"],
+            env=env,
+            capture_output=True,
+            input=answer.stdout,
+            text=True,
+        )
+        assert stored.returncode == 0 and not stored.stdout
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("autocrlf", [False, True])
+def test_pull_compares_normalized_line_endings(setup, autocrlf):
+    seed, project = setup
+    (seed / "main.tex").write_bytes(b"hello\r\n")
+    git(seed, "add", "main.tex")
+    git(seed, "commit", "-m", "CRLF")
+    git(seed, "push", "origin", "master")
+    if autocrlf:
+        git(project, "config", "core.autocrlf", "true")
+    else:
+        (project / ".gitattributes").write_text("paper/*.tex text eol=lf\n")
+        commit_all(project)
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (seed / "main.tex").write_bytes(b"collaborator edit\r\n")
+    git(seed, "add", "main.tex")
+    git(seed, "commit", "-m", "CRLF edit")
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper" / "main.tex").read_text() == "collaborator edit\n"
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+
+
+@pytest.mark.parametrize("side", ["workspace", "overleaf"])
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_refuses_git_filters_before_changing_files(setup, side, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    repo = project if side == "workspace" else seed
+    pattern = "paper/*.tex" if side == "workspace" else "*.tex"
+    (repo / ".gitattributes").write_text(f"{pattern} filter=lfs\n")
+    commit_all(repo)
+    if side == "overleaf":
+        git(seed, "push", "origin", "master")
+        if command == "publish":
+            config = project / "paper" / "overleaf.json"
+            config.write_text(
+                json.dumps({"url": URL, "base": git(seed, "rev-parse", "HEAD")})
+            )
+            commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    metadata = (project / "paper" / "overleaf.json").read_bytes()
+    result = run(project, command)
+    assert result.exit_code == 1 and "custom Git filters" in result.output, (
+        result.output
+    )
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper" / "overleaf.json").read_bytes() == metadata
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_publish_transfers_repo_local_identity_or_uses_fallback(
+    setup, monkeypatch, configured
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper" / "main.tex").write_text("publish me\n")
+    commit_all(project)
+    for key in (
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ):
+        monkeypatch.delenv(key)
+    if configured:
+        git(project, "config", "user.name", "Local Author")
+        git(project, "config", "user.email", "local@example.invalid")
+    else:
+        monkeypatch.setenv("EMAIL", "")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "origin", "master")
+    expected = (
+        "Local Author <local@example.invalid>"
+        if configured
+        else "Asta Workspace <asta-workspace@example.invalid>"
+    )
+    assert git(seed, "log", "-1", "--format=%cn <%ce>") == expected
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        ".git",
+        ".git/hooks",
+        "paper/../.git/hooks",
+        ".git./hooks",
+        "GIT~1/hooks",
+        "paper:stream",
+    ],
+)
+def test_pull_refuses_administrative_and_windows_alias_directories(setup, directory):
+    _, project = setup
+    result = run(project, "pull", URL, "--dir", directory)
+    assert result.exit_code == 1 and "unsafe Git path" in result.output, result.output
+    assert not (project / ".git" / "hooks" / "main.tex").exists()
+
+
+def test_validate_paths_refuses_unicode_aliases():
+    with pytest.raises(click.ClickException, match="case-insensitive path collision"):
+        module.validate_paths(["caf\u00e9/main.tex", "cafe\u0301/other.tex"])
+
+
+@pytest.mark.parametrize(
+    "error, message",
+    [
+        (b"Could not resolve host: private-host", "Check DNS"),
+        (b"SSL certificate problem: private-ca", "trust store"),
+        (
+            b"repository 'https://git:fixture-secret@git.overleaf.com/x' not found",
+            "project not found",
+        ),
+        (b"Failed to connect to private-host", "Check your network"),
+    ],
+)
+def test_network_errors_are_actionable_without_echoing_stderr(
+    tmp_path, monkeypatch, error, message
+):
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 128, b"", error),
+    )
+    with pytest.raises(click.ClickException, match=message) as caught:
+        module.git("clone", URL, cwd=tmp_path)
+    assert "private-" not in str(caught.value)
+    assert "fixture-secret" not in str(caught.value)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_publish_preserves_executable_mode_with_filemode_disabled(setup, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper" / "main.tex").chmod(0o755)
+    commit_all(project)
+    real = module.clone
+
+    def clone_with_filemode_disabled(url, repo):
+        head = real(url, repo)
+        git(repo, "config", "core.fileMode", "false")
+        return head
+
+    monkeypatch.setattr(module, "clone", clone_with_filemode_disabled)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "origin", "master")
+    assert git(seed, "ls-tree", "HEAD", "main.tex").startswith("100755")
+
+
+def test_sync_between_sha256_workspace_and_sha1_overleaf(setup):
+    seed, original = setup
+    project = original.parent / "sha256-project"
+    project.mkdir()
+    git(project, "init", "-b", "main", "--object-format=sha256")
+    (project / "references.bib").write_text("@misc{overleaf}\n")
+    commit_all(project)
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    assert "differs from the workspace root copy" not in result.output
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "remote edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    (project / "paper" / "main.tex").write_text("workspace edit\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "origin", "master")
+    assert (seed / "main.tex").read_text() == "workspace edit\n"
+    config = json.loads((project / "paper" / "overleaf.json").read_text())
+    assert config["base"] == git(seed, "rev-parse", "HEAD")
+    assert len(config["base"]) == 40
+    assert len(git(project, "rev-parse", "HEAD")) == 64
+
+
+def test_pull_refuses_separate_git_administrative_directory(setup):
+    _, project = setup
+    git(project, "init", "--separate-git-dir", str(project / "admin"))
+    result = run(project, "pull", URL, "--dir", "admin/hooks")
+    assert result.exit_code == 1 and "administrative directory" in result.output
+    assert not (project / "admin" / "hooks" / "main.tex").exists()
