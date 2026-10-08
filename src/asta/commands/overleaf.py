@@ -182,6 +182,24 @@ def require_clean(root: Path, *paths: Path) -> None:
         raise click.ClickException(f"Commit or discard local changes in {names} first.")
 
 
+def require_visible(root: Path, paths) -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "-z", "--stdin"],
+        input=b"\0".join(os.fsencode(path) for path in paths) + b"\0",
+        cwd=root,
+        env=git_environment(),
+        capture_output=True,
+    )
+    if result.returncode not in (0, 1):
+        raise click.ClickException("Could not check Git ignore rules; nothing copied.")
+    if result.stdout:
+        name = Path(os.fsdecode(result.stdout.split(b"\0", 1)[0]))
+        raise click.ClickException(
+            f"{name.relative_to(root)} is ignored by Git. Adjust the ignore rules "
+            "so imported sources and sync metadata can be committed; nothing copied."
+        )
+
+
 def load_config(paper: Path) -> dict:
     path = paper / CONFIG
     if path.is_symlink():
@@ -232,14 +250,22 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         repo = Path(tmp) / "overleaf"
         head = clone(url, repo)
         new = read_plain_files(repo, head)
+        if CONFIG in new:
+            refuse(CONFIG, "is reserved for workspace sync metadata")
+        for name in new:
+            if name.rsplit("/", 1)[-1] == ".gitignore":
+                refuse(
+                    name,
+                    "can hide imported sources; keep ignore rules in the workspace root",
+                )
         overleaf_bib = new.pop(BIBLIOGRAPHY, None)
-        new.pop(CONFIG, None)
         base = read_plain_files(repo, config["base"]) if config else {}
         base.pop(BIBLIOGRAPHY, None)
         base.pop(CONFIG, None)
         ours = read_plain_files(root, "HEAD", prefix)
         ours.pop(CONFIG, None)
         check_paths([*new, *(ours.keys() - new.keys())])
+        imported_paths = [paper / name for name in (*new, CONFIG)]
         deleted = base.keys() - new.keys()
         for name in base.keys() | new.keys():
             if new.get(name) == base.get(name):
@@ -253,6 +279,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             target = paper / name
             if target.resolve() != target:
                 refuse(name, "passes through a symlink")
+        require_visible(root, imported_paths)
         for name in deleted:
             (paper / name).unlink(missing_ok=True)
         write_files(new, paper)
@@ -301,7 +328,10 @@ def publish(
     mode, blob = bibliography
     if mode != "100644":
         refuse(BIBLIOGRAPHY, "is not a regular non-executable file")
-    ours[BIBLIOGRAPHY] = git_bytes("cat-file", "blob", blob, cwd=root)
+    data = git_bytes("cat-file", "blob", blob, cwd=root)
+    if data.startswith(b"version https://git-lfs.github.com/spec/"):
+        refuse(BIBLIOGRAPHY, "is a Git LFS pointer")
+    ours[BIBLIOGRAPHY] = data
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)

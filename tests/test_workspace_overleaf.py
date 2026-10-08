@@ -488,3 +488,92 @@ def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting):
     assert git(seed, "ls-remote", "origin", "master") == before
     assert (project / "paper/overleaf.json").read_bytes() == metadata
     assert source.read_bytes() == b"reviewed\r\n"
+
+
+@pytest.mark.parametrize("ignore_source", ["root", "paper", "info", "global"])
+def test_pull_refuses_ignored_imports_before_deleting_or_updating(setup, ignore_source):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    pattern = "*.png\n"
+    if ignore_source == "root":
+        (project / ".gitignore").write_text(pattern)
+        commit_all(project)
+    elif ignore_source == "paper":
+        (project / "paper/.gitignore").write_text(pattern)
+        commit_all(project)
+    elif ignore_source == "info":
+        (project / ".git/info/exclude").write_text(pattern)
+    else:
+        excludes = project.parent / "excludes"
+        excludes.write_text(pattern)
+        git(project, "config", "core.excludesFile", str(excludes))
+    before = (project / "paper/overleaf.json").read_bytes()
+    overleaf_edit(seed, "old.tex", None)
+    overleaf_edit(seed, "figure.png", "remote figure\n")
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "paper/figure.png is ignored" in result.output
+    assert "Adjust the ignore rules" in result.output
+    assert not (project / "paper/figure.png").exists()
+    assert (project / "paper/old.tex").read_text() == "old\n"
+    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("pattern", ["/paper/", "/paper/overleaf.json"])
+def test_pull_refuses_ignored_first_import_and_metadata(setup, pattern):
+    _, project = setup
+    (project / ".gitignore").write_text(pattern + "\n")
+    commit_all(project)
+    result = run(project, "pull", URL)
+    assert result.exit_code != 0 and "is ignored" in result.output
+    assert not (project / "paper").exists()
+
+
+def test_pull_updates_tracked_files_even_when_ignore_pattern_matches(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / ".gitignore").write_text("*.tex\n")
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "remote edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/main.tex").read_text() == "remote edit\n"
+
+
+@pytest.mark.parametrize("name", ["overleaf.json", ".gitignore", "nested/.gitignore"])
+def test_pull_refuses_remote_metadata_and_ignore_rules_before_writing(setup, name):
+    seed, project = setup
+    if "/" in name:
+        (seed / "nested").mkdir()
+    overleaf_edit(seed, name, "valuable remote content\n")
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code != 0
+    assert name in result.output
+    assert not (project / "paper").exists()
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_refuses_lfs_root_bibliography(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "references.bib").write_text(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:0\nsize 12\n"
+    )
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    metadata = (project / "paper/overleaf.json").read_bytes()
+    result = run(
+        project,
+        "publish",
+        "--replace-bibliography",
+        *(["--dry-run"] if dry_run else []),
+    )
+    assert (
+        result.exit_code != 0 and "references.bib is a Git LFS pointer" in result.output
+    )
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper/overleaf.json").read_bytes() == metadata
