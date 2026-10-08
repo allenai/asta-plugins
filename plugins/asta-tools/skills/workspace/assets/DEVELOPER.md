@@ -41,6 +41,15 @@ The first path is one-way: Quarto writes LaTeX, nothing converts LaTeX back to `
 
 Keeping that intermediate LaTeX is useful even when you only want a PDF: preprint servers such as arXiv ask for the TeX source rather than the PDF of a LaTeX-produced paper, journals and conferences often do too, and the `.tex` is the starting point if the paper later moves to the second path. For LaTeX source, run `quarto render index.qmd --to latex -M cite-method:natbib`. This writes `_site/index.tex` with citation commands and a `\bibliography{references.bib}` line. Plain `--to latex` uses citeproc and writes formatted citations into the source instead. The generated `.tex` still needs the bibliography and a successful PDF build before it is ready to submit.
 
+## Sync a paper with Overleaf
+
+The workspace repo is the reviewed copy of the paper; Overleaf is where collaborators edit. Both commands use Overleaf's Git integration (Menu → Integrations → Git) with your Overleaf Git token, supplied through `OVERLEAF_TOKEN` or Git's credential helper (username `git`, password = token). The token is never written to the repo.
+
+- `asta workspace overleaf pull <overleaf-git-url>` copies the Overleaf project into `paper/` and records the URL and Overleaf commit in `paper/overleaf.json`. Later pulls need no URL. Commit on a branch and open a PR to preview Overleaf edits; Overleaf's `references.bib` is not imported, because the root `references.bib` stays the source.
+- `asta workspace overleaf publish` (on `main` after the PR merges) pushes the committed `paper/` plus the root `references.bib` to Overleaf. It refuses if anyone edited in Overleaf since the last pull or publish; pull those edits into a PR first. `--dry-run` shows the changes without pushing.
+
+Use `--dir <directory>` for a paper outside `paper/`. Pushing through Git can drop Overleaf comments and tracked changes in the edited regions.
+
 ## Back a claim with supporting evidence
 
 A factual claim can carry the source quote that backs it. Add a keyed entry to

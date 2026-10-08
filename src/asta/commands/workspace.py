@@ -21,6 +21,8 @@ from urllib.request import urlopen
 
 import click
 
+from asta.commands.overleaf import overleaf
+
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
@@ -238,6 +240,9 @@ def _atomic_write(path: Path, data: bytes) -> None:
 @click.group()
 def workspace() -> None:
     """Manage files supplied by the Asta workspace skill."""
+
+
+workspace.add_command(overleaf)
 
 
 @workspace.command()
