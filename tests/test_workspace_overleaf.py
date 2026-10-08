@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -470,6 +471,141 @@ def test_pull_refuses_incoming_ignore_rules_before_any_writes(setup):
     result = run(project, "pull", URL)
     assert result.exit_code != 0 and "Ignore rules hide imported files" in result.output
     assert not (project / "paper").exists()
+
+
+@pytest.mark.parametrize("direction", ["file-to-directory", "directory-to-file"])
+def test_pull_refuses_path_structure_collisions_before_any_writes(setup, direction):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    paper = project / "paper"
+    if direction == "file-to-directory":
+        (paper / "extra").write_text("workspace-only file\n")
+        (seed / "extra").mkdir()
+        (seed / "extra" / "part.tex").write_text("remote\n")
+    else:
+        (paper / "extra").mkdir()
+        (paper / "extra" / "part.tex").write_text("workspace-only file\n")
+        (seed / "extra").write_text("remote\n")
+    commit_all(project)
+    metadata = (paper / "overleaf.json").read_bytes()
+    overleaf_edit(seed, "main.tex", "an earlier non-conflicting change\n")
+    git(seed, "add", "extra")
+    git(seed, "commit", "-m", "colliding path")
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "path collision" in result.output, result.output
+    assert (paper / "main.tex").read_text() == "hello\n"
+    assert (paper / "overleaf.json").read_bytes() == metadata
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize(
+    "names", [("Foo.tex", "foo.tex"), ("Foo/a.tex", "foo/b.tex"), ("Overleaf.json",)]
+)
+def test_pull_refuses_case_collisions_even_on_case_sensitive_filesystems(setup, names):
+    seed, project = setup
+    for name in names:
+        target = seed / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("remote\n")
+    git(seed, "add", *names)
+    git(seed, "commit", "-m", "case collision")
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "case-insensitive" in result.output, result.output
+    assert not (project / "paper").exists()
+
+
+def test_pull_refuses_case_collision_with_workspace_only_file(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper" / "Extra.tex").write_text("workspace only\n")
+    commit_all(project)
+    overleaf_edit(seed, "extra.tex", "remote\n")
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "case-insensitive" in result.output, result.output
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("failure", ["blob", "metadata"])
+def test_pull_keeps_original_paper_on_staging_failure(setup, monkeypatch, failure):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    metadata = (paper / "overleaf.json").read_bytes()
+    overleaf_edit(seed, "main.tex", "remote\n")
+    overleaf_edit(seed, "old.tex", None)
+    real = module.write_blob if failure == "blob" else module.save_config
+
+    def fail_after_write(*args):
+        real(*args)
+        raise OSError("fixture write failure")
+
+    monkeypatch.setattr(
+        module, "write_blob" if failure == "blob" else "save_config", fail_after_write
+    )
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "Could not update paper" in result.output
+    assert (paper / "main.tex").read_text() == "hello\n"
+    assert (paper / "old.tex").read_text() == "old\n"
+    assert (paper / "overleaf.json").read_bytes() == metadata
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("restore_fails", [False, True])
+def test_pull_preserves_original_when_directory_replacement_fails(
+    setup, monkeypatch, restore_fails
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    metadata = (paper / "overleaf.json").read_bytes()
+    overleaf_edit(seed, "main.tex", "remote\n")
+    rename = Path.rename
+
+    def fail_replacement(path, target):
+        if path.name == "staged" or (restore_fails and path.name == "original"):
+            raise OSError("fixture rename failure")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", fail_replacement)
+    result = run(project, "pull")
+    assert result.exit_code == 1
+    if restore_fails:
+        backups = list(project.glob("tmp*/original"))
+        assert len(backups) == 1
+        original = backups[0]
+        assert "original is preserved at" in result.output
+        assert str(original) in result.output
+    else:
+        original = paper
+        assert "Could not update paper" in result.output
+        assert not git(project, "status", "--porcelain")
+    assert (original / "main.tex").read_text() == "hello\n"
+    assert (original / "overleaf.json").read_bytes() == metadata
+
+
+def test_pull_preserves_ignored_outputs_and_workspace_file_modes(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    paper = project / "paper"
+    (paper / ".gitignore").write_text("*.pdf\n")
+    (paper / "latexmkrc").write_text("# workspace only\n")
+    (paper / "latexmkrc").chmod(0o755)
+    commit_all(project)
+    (paper / "preview.pdf").write_bytes(b"existing generated output")
+    overleaf_edit(seed, "main.tex", "remote\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (paper / "main.tex").read_text() == "remote\n"
+    assert (paper / "preview.pdf").read_bytes() == b"existing generated output"
+    assert (paper / "latexmkrc").read_text() == "# workspace only\n"
+    assert git(project, "diff", "--name-only").splitlines() == [
+        "paper/main.tex",
+        "paper/overleaf.json",
+    ]
 
 
 @pytest.mark.parametrize(

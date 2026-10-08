@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -129,6 +130,21 @@ def push(repo: Path) -> None:
         git(*options, "push", "--quiet", "origin", "HEAD", cwd=repo, env=env)
 
 
+def validate_paths(names) -> None:
+    spellings = {}
+    for name in sorted(names):
+        parts = name.replace("\\", "/").split("/")
+        for index in range(1, len(parts) + 1):
+            path = "/".join(parts[:index])
+            key = path.casefold()
+            previous = spellings.setdefault(key, path)
+            if previous != path:
+                raise click.ClickException(
+                    f"Cannot sync case-insensitive path collision: {previous} and {path}. "
+                    "Rename the conflicting paths before syncing."
+                )
+
+
 def files(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
     """Map regular-file paths to Git mode and blob id; refuse unsupported entries."""
     out = git_bytes("ls-tree", "-r", "-z", revision, "--", prefix or ".", cwd=repo)
@@ -149,6 +165,7 @@ def files(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, s
                 f"Cannot sync {name}: only regular files are supported."
             )
         result[name] = (mode, blob)
+    validate_paths(result)
     return result
 
 
@@ -226,6 +243,49 @@ def require_visible(repo: Path, paths: list[str], *, no_index: bool = False) -> 
         )
 
 
+def replace_paper(
+    paper: Path, repo: Path, new: dict, changes: set, url: str, head: str
+):
+    try:
+        paper.parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(tempfile.mkdtemp(dir=paper.parent))
+        staged, backup = tmp / "staged", tmp / "original"
+        replaced = False
+        try:
+            if paper.exists():
+                shutil.copytree(paper, staged, symlinks=True)
+            else:
+                staged.mkdir()
+            for name in sorted(changes):
+                if name in new:
+                    write_blob(repo, new[name], staged / name)
+                else:
+                    (staged / name).unlink(missing_ok=True)
+            save_config(staged, url, head)
+            # Two renames need a brief gap; sync commands must run sequentially.
+            if paper.exists():
+                paper.rename(backup)
+            try:
+                staged.rename(paper)
+                replaced = True
+            except OSError:
+                if backup.exists():
+                    try:
+                        backup.rename(paper)
+                    except OSError as exc:
+                        raise click.ClickException(
+                            f"Could not restore paper; the original is preserved at {backup}."
+                        ) from exc
+                raise
+        finally:
+            if replaced or not backup.exists():
+                shutil.rmtree(tmp, ignore_errors=True)
+    except OSError as exc:
+        raise click.ClickException(
+            "Could not update paper. Check directory permissions and available space."
+        ) from exc
+
+
 project_option = click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
@@ -295,6 +355,12 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 + ". Reconcile these files before pulling."
             )
         changes = {name for name in changes if new.get(name) != base.get(name)}
+        validate_paths(
+            new.keys()
+            | ours.keys()
+            | {CONFIG}
+            | {path.relative_to(paper).as_posix() for path in paper.rglob("*")}
+        )
         destinations = [prefix + name for name in new] + [prefix + CONFIG]
         require_visible(root, destinations)
         # Incoming .gitignore files must not hide new sources after they are copied.
@@ -307,12 +373,14 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 raise click.ClickException(
                     f"Cannot sync {name}: workspace path is a symlink."
                 )
-        for name in sorted(changes):
-            if name in new:
-                write_blob(repo, new[name], paper / name)
-            else:
-                (paper / name).unlink(missing_ok=True)
-    save_config(paper, url, head)
+            if target.is_dir() or any(
+                path.exists() and not path.is_dir() for path in target.parents
+            ):
+                raise click.ClickException(
+                    f"Cannot sync path collision: {name}. Reconcile file and directory "
+                    "names before pulling."
+                )
+        replace_paper(paper, repo, new, changes, url, head)
     root_bib = root / BIBLIOGRAPHY
     if overleaf_bib and (
         not root_bib.exists()
@@ -357,6 +425,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             "the copies before publishing; keep paper-only entries in a separate .bib file."
         )
     ours[BIBLIOGRAPHY] = bibliography
+    validate_paths(ours)
     workspace_commit = git("rev-parse", "HEAD", cwd=root)
     click.echo(
         f"Publishing workspace commit {workspace_commit[:12]}; ensure its PR is merged."
