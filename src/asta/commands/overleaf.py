@@ -109,11 +109,6 @@ def push(repo: Path) -> None:
         git(*options, "push", "--quiet", "origin", "HEAD", cwd=repo, env=env)
 
 
-def files(repo: Path, revision: str, prefix: str = "") -> dict[str, str]:
-    """Map path (relative to prefix) to blob id at a revision."""
-    return {name: blob for name, (_, blob) in tree(repo, revision, prefix).items()}
-
-
 def tree(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
     out = git_bytes("ls-tree", "-r", "-z", revision, "--", prefix or ".", cwd=repo)
     result = {}
@@ -131,27 +126,40 @@ def refuse(name: str, reason: str) -> None:
     )
 
 
-def check_case(names) -> None:
+def check_paths(names) -> None:
     seen = {}
+    names = set(names)
     for name in names:
-        other = seen.setdefault(name.casefold(), name)
-        if other != name:
-            refuse(name, f"differs from {other} only in letter case")
+        parts = name.split("/")
+        if (
+            any(part in ("", ".", "..") or part.casefold() == ".git" for part in parts)
+            or "\\" in name
+            or ":" in name
+        ):
+            refuse(name, "has an unsafe path")
+        for end in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:end])
+            other = seen.setdefault(prefix.casefold(), prefix)
+            if other != prefix:
+                refuse(name, f"differs from {other} only in letter case")
+            if end < len(parts) and prefix in names:
+                refuse(name, f"uses file {prefix} as a directory")
 
 
 def read_plain_files(repo: Path, revision: str, prefix: str = "") -> dict[str, bytes]:
     """Read every file before anything is written, refusing what sync can't copy as-is."""
     result = {}
-    for name, (mode, blob) in tree(repo, revision, prefix).items():
-        if mode not in ("100644", "100755"):
-            refuse(name, "is a symlink or submodule")
+    entries = tree(repo, revision, prefix)
+    check_paths(entries)
+    for name, (mode, blob) in entries.items():
+        if mode != "100644":
+            refuse(name, "is executable, a symlink or a submodule")
         if name.rsplit("/", 1)[-1] == ".gitattributes":
             refuse(name, "can change file contents in transit")
         data = git_bytes("cat-file", "blob", blob, cwd=repo)
         if data.startswith(b"version https://git-lfs.github.com/spec/"):
             refuse(name, "is a Git LFS pointer")
         result[name] = data
-    check_case(result)
     return result
 
 
@@ -171,6 +179,8 @@ def require_clean(root: Path, *paths: Path) -> None:
 
 def load_config(paper: Path) -> dict:
     path = paper / CONFIG
+    if path.is_symlink():
+        refuse(CONFIG, "is a symlink")
     if not path.exists():
         return {}
     config = json.loads(path.read_text())
@@ -219,18 +229,25 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         new = read_plain_files(repo, head)
         overleaf_bib = new.pop(BIBLIOGRAPHY, None)
         new.pop(CONFIG, None)
-        known = (
-            config
-            and not subprocess.run(
-                ["git", "cat-file", "-e", config["base"] + "^{commit}"],
-                cwd=repo,
-                capture_output=True,
-            ).returncode
-        )
-        # Files Overleaf deleted since the last pull; workspace-only files are kept.
-        deleted = (files(repo, config["base"]) if known else {}).keys() - new.keys()
-        workspace = files(root, "HEAD", prefix).keys() - deleted - {CONFIG}
-        check_case([*new, *(workspace - new.keys())])
+        base = read_plain_files(repo, config["base"]) if config else {}
+        base.pop(BIBLIOGRAPHY, None)
+        base.pop(CONFIG, None)
+        ours = read_plain_files(root, "HEAD", prefix)
+        ours.pop(CONFIG, None)
+        check_paths([*new, *(ours.keys() - new.keys())])
+        deleted = base.keys() - new.keys()
+        for name in base.keys() | new.keys():
+            if new.get(name) == base.get(name):
+                # Keep workspace edits when Overleaf did not change this file.
+                new.pop(name, None)
+            elif ours.get(name) not in (base.get(name), new.get(name)):
+                raise click.ClickException(
+                    f"Both workspace and Overleaf changed {name}. Reconcile it first; nothing copied."
+                )
+        for name in new.keys() | deleted:
+            target = paper / name
+            if target.resolve() != target:
+                refuse(name, "passes through a symlink")
         for name in deleted:
             (paper / name).unlink(missing_ok=True)
         write_files(new, paper)
@@ -266,8 +283,12 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     require_clean(root, paper, root_bib)
     ours = read_plain_files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
-    if root_bib.exists():
-        ours[BIBLIOGRAPHY] = git_bytes("show", f"HEAD:{BIBLIOGRAPHY}", cwd=root)
+    bibliography = tree(root, "HEAD").get(BIBLIOGRAPHY)
+    if bibliography:
+        mode, blob = bibliography
+        if mode != "100644":
+            refuse(BIBLIOGRAPHY, "is not a regular non-executable file")
+        ours[BIBLIOGRAPHY] = git_bytes("cat-file", "blob", blob, cwd=root)
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)

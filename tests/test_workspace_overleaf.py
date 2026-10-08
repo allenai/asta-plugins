@@ -232,3 +232,150 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
         assert answer.stdout.strip() == "fixture-token"
         assert "fixture-token" not in open(askpass).read()
     assert not os.path.exists(askpass)
+
+
+@pytest.mark.parametrize("remote_text", ["remote edit\n", None])
+def test_pull_keeps_committed_workspace_edits_on_conflict(setup, remote_text):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper/main.tex").write_text("reviewed workspace edit\n")
+    commit_all(project)
+    before = (project / "paper/overleaf.json").read_bytes()
+    overleaf_edit(seed, "main.tex", remote_text)
+    result = run(project, "pull")
+    assert result.exit_code != 0
+    assert "Both workspace and Overleaf changed main.tex" in result.output
+    assert (project / "paper/main.tex").read_text() == "reviewed workspace edit\n"
+    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert not git(project, "status", "--porcelain")
+
+
+def test_pull_preserves_local_edits_to_unchanged_remote_file(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed workspace edit\n")
+    commit_all(project)
+    overleaf_edit(seed, "old.tex", "remote edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/main.tex").read_text() == "reviewed workspace edit\n"
+    assert (project / "paper/old.tex").read_text() == "remote edit\n"
+
+
+def test_pull_refuses_initial_import_over_existing_source(setup):
+    _, project = setup
+    (project / "paper").mkdir()
+    (project / "paper/main.tex").write_text("existing paper\n")
+    commit_all(project)
+    result = run(project, "pull", URL)
+    assert result.exit_code != 0
+    assert (project / "paper/main.tex").read_text() == "existing paper\n"
+    assert not (project / "paper/overleaf.json").exists()
+
+
+def test_pull_refuses_directory_case_collision(setup):
+    seed, project = setup
+    for name in ["Figures/a.tex", "figures/b.tex"]:
+        path = seed / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("figure\n")
+        git(seed, "add", name)
+    git(seed, "commit", "-m", "figures")
+    git(seed, "push", "-q", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code != 0 and "letter case" in result.output
+    assert not (project / "paper").exists()
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_refuses_executable_files(setup, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    repo = seed if command == "pull" else project
+    name = "main.tex" if command == "pull" else "paper/main.tex"
+    (repo / name).chmod(0o755)
+    git(repo, "update-index", "--chmod=+x", name)
+    git(repo, "commit", "-m", "executable")
+    if command == "pull":
+        git(seed, "push", "-q", "origin", "master")
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, command)
+    assert result.exit_code != 0 and "executable" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.parametrize("target", ["real.bib", "missing.bib"])
+def test_publish_refuses_symlinked_root_bibliography(setup, target):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "real.bib").write_text("@misc{root}\n")
+    (project / "references.bib").unlink()
+    os.symlink(target, project / "references.bib")
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    assert result.exit_code != 0 and "regular non-executable" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../escape.tex",
+        ".git/config",
+        "nested/.Git/config",
+        "/absolute",
+        "dir\\escape.tex",
+    ],
+)
+def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
+    _, project = setup
+    real = module.tree
+    monkeypatch.setattr(
+        module,
+        "tree",
+        lambda repo, revision, prefix="": (
+            {name: ("100644", "unused")}
+            if repo.name == "overleaf"
+            else real(repo, revision, prefix)
+        ),
+    )
+    result = run(project, "pull", URL)
+    assert result.exit_code != 0 and "unsafe path" in result.output
+    assert not (project / "paper").exists()
+    assert not (project / "escape.tex").exists()
+
+
+def test_pull_refuses_ignored_symlink_destination(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / ".gitignore").write_text("/paper/figures\n")
+    commit_all(project)
+    outside = project.parent / "outside"
+    outside.mkdir()
+    os.symlink(outside, project / "paper/figures")
+    (seed / "figures").mkdir()
+    overleaf_edit(seed, "figures/a.tex", "remote figure\n")
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "symlink" in result.output
+    assert not (outside / "a.tex").exists()
+    assert not git(project, "status", "--porcelain")
+
+
+def test_pull_refuses_ignored_symlink_config(setup):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    config = project / "paper/overleaf.json"
+    outside = project.parent / "outside.json"
+    outside.write_bytes(config.read_bytes())
+    config.unlink()
+    os.symlink(outside, config)
+    git(project, "rm", "--cached", "--ignore-unmatch", "paper/overleaf.json")
+    (project / ".gitignore").write_text("/paper/overleaf.json\n")
+    commit_all(project)
+    before = outside.read_bytes()
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "symlink" in result.output
+    assert outside.read_bytes() == before
