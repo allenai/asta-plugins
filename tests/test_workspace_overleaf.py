@@ -1127,6 +1127,84 @@ def test_workspace_bibliography_can_advance_without_false_conflict(setup):
     assert git(remote, "show", "HEAD:references.bib").endswith("@misc{new}")
 
 
+@pytest.mark.parametrize("published", [False, True])
+def test_reviewed_workspace_bibliography_can_remove_entries(setup, published):
+    remote, _, project = setup
+    imported(project)
+    if published:
+        (project / "paper/main.tex").write_text("reviewed prose\n")
+        git(project, "add", "paper/main.tex")
+        git(project, "commit", "-m", "review prose")
+        assert run(project, "publish").exit_code == 0
+    (project / "references.bib").write_text("@misc{replacement}\n")
+    git(project, "add", "references.bib")
+    git(project, "commit", "-m", "review removal of unused reference")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", "HEAD:references.bib") == "@misc{replacement}"
+
+
+@pytest.mark.parametrize("remote_bib", ["@misc{a}\n@misc{unseen}\n", None])
+def test_reconciliation_refuses_unseen_remote_bibliography(setup, remote_bib):
+    remote, seed, project = setup
+    paper = imported(project)
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{reviewed}\n")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review incoming bibliography")
+    before = (paper / module.CONFIG).read_bytes()
+    (project / "references.bib").write_text("@misc{a}\n@misc{reviewed}\n")
+    if remote_bib is None:
+        git(seed, "rm", "references.bib")
+        git(seed, "commit", "-m", "unseen bibliography deletion")
+        git(seed, "push", "origin", "master")
+    else:
+        overleaf_edit(seed, "references.bib", remote_bib)
+    overleaf_edit(seed, "main.tex", "unseen prose\n")
+    head = git(remote, "rev-parse", "HEAD")
+    result = run(project, "pull", "--reconcile-bibliography")
+    assert (
+        result.exit_code == 1 and "changed since the committed import" in result.output
+    )
+    assert (paper / module.CONFIG).read_bytes() == before
+    assert (paper / "main.tex").read_text() == "hello\n"
+    assert (project / "references.bib").read_text() == "@misc{a}\n@misc{reviewed}\n"
+    assert git(remote, "rev-parse", "HEAD") == head
+
+    # Save the intended local edits before pulling the new version for review.
+    git(project, "add", "references.bib")
+    git(project, "commit", "-m", "save local bibliography edits")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "review fresh Overleaf import")
+    if remote_bib is not None:
+        (project / "references.bib").write_text(remote_bib)
+    result = run(project, "pull", "--reconcile-bibliography")
+    assert result.exit_code == 0, result.output
+    git(project, "add", "paper/overleaf.json", "references.bib")
+    git(project, "commit", "-m", "review reconciliation")
+    assert run(project, "publish").exit_code == 0
+
+
+def test_reconciliation_requires_a_committed_import(setup):
+    _, _, project = setup
+    result = run(project, "pull", URL, "--reconcile-bibliography")
+    assert result.exit_code == 1 and "committed import" in result.output
+    assert not (project / "paper").exists()
+
+
+def test_reconciliation_allows_remote_prose_changes(setup):
+    _, seed, project = setup
+    paper = imported(project)
+    overleaf_edit(seed, "main.tex", "new prose for review\n")
+    result = run(project, "pull", "--reconcile-bibliography")
+    assert result.exit_code == 0, result.output
+    assert (paper / "main.tex").read_text() == "new prose for review\n"
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "review prose and confirmation")
+    assert run(project, "publish").exit_code == 0
+
+
 def test_cache_refs_survive_pruning_and_support_subsequent_pull(setup):
     remote, seed, project = setup
     paper = imported(project)
@@ -1391,6 +1469,9 @@ def test_explicit_reconciliation_requires_the_confirmed_root_in_head(setup):
     remote, seed, project = setup
     imported(project)
     overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review imported bibliography")
     merged = "@misc{a}\n@misc{coauthor}\n@misc{workspace}\n"
     (project / "references.bib").write_text(merged)
     result = run(project, "pull", "--reconcile-bibliography")
@@ -1441,6 +1522,9 @@ def test_reconciliation_matches_git_normalized_bibliography(setup):
     git(project, "add", ".gitattributes")
     git(project, "commit", "-m", "normalize bibliography line endings")
     overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review imported bibliography")
     (project / "references.bib").write_bytes(b"@misc{a}\r\n@misc{coauthor}\r\n")
     assert run(project, "pull", "--reconcile-bibliography").exit_code == 0
     git(project, "add", "paper/overleaf.json", "references.bib")
@@ -1616,6 +1700,9 @@ def test_confirmed_bibliography_restoration_is_bound_to_reviewed_root(setup):
     git(seed, "rm", "references.bib")
     git(seed, "commit", "-m", "coauthor deletes bibliography")
     git(seed, "push", "origin", "master")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review imported bibliography deletion")
     assert run(project, "pull", "--reconcile-bibliography").exit_code == 0
     (project / "references.bib").write_text("@misc{different}\n")
     git(project, "add", "paper/overleaf.json", "references.bib")
@@ -1632,6 +1719,9 @@ def test_review_can_accept_bibliography_deletion_on_both_sides(setup):
     git(seed, "rm", "references.bib")
     git(seed, "commit", "-m", "coauthor deletes bibliography")
     git(seed, "push", "origin", "master")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review imported bibliography deletion")
     git(project, "rm", "references.bib")
     git(project, "commit", "-m", "review deleting root bibliography")
     assert run(project, "pull", "--reconcile-bibliography").exit_code == 0

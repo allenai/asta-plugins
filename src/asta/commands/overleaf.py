@@ -513,7 +513,7 @@ def overleaf() -> None:
 @click.option(
     "--reconcile-bibliography",
     is_flag=True,
-    help="Confirm root references.bib includes the Overleaf entries you want to keep.",
+    help="Confirm root references.bib reconciles the previously imported Overleaf bibliography.",
 )
 @click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
@@ -542,7 +542,7 @@ def pull(
         raise click.ClickException(
             "Restore the deleted root references.bib before syncing Overleaf."
         )
-    ours.pop(CONFIG, None)
+    committed_config = ours.pop(CONFIG, None)
     if BIBLIOGRAPHY in ours:
         raise click.ClickException(
             "Move paper/references.bib entries into the root references.bib first."
@@ -551,6 +551,16 @@ def pull(
         repo, head, _ = fetch(project, url, env)
     theirs = snapshot(repo, head)
     remote_bib = theirs.pop(BIBLIOGRAPHY, None)
+    bib_revision = remote_bib[1] if remote_bib else None
+    if reconcile_bibliography and (
+        committed_config is None or bib_revision != config.get("bibliography")
+    ):
+        raise click.ClickException(
+            "Overleaf's bibliography is missing from or changed since the committed import. "
+            "Save local bibliography edits, pull without --reconcile-bibliography, "
+            "then commit and review the fresh import before confirming reconciliation. "
+            "No workspace files were changed."
+        )
     previous = expected_head(config, receipt_path(project, paper, url), project)
     base = snapshot(repo, previous) if previous else {}
     base_bib = base.pop(BIBLIOGRAPHY, None)
@@ -591,7 +601,6 @@ def pull(
     )
     if backup.is_symlink():
         raise click.ClickException("Symlinks are not supported in cache paths.")
-    bib_revision = remote_bib[1] if remote_bib else None
     remote_deleted = remote_bib is None and (
         base_bib is not None or config.get("bibliography_reconciled_absent") is False
     )
