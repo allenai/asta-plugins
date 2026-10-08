@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import subprocess
 import tempfile
@@ -62,6 +63,13 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None, data=None) -> byte
         ):
             raise click.ClickException(
                 "Overleaf changed during publish. Pull and review the changes before retrying."
+            )
+        if any(
+            marker in result.stderr.lower()
+            for marker in (b"http 403", b"requested url returned error: 403")
+        ):
+            raise click.ClickException(
+                "Overleaf access denied. Check your Git token and access to this project."
             )
         if any(
             marker in result.stderr.lower()
@@ -415,10 +423,10 @@ def replace_file(target: Path, data: bytes, mode: int | None = None) -> None:
     try:
         if mode is None and target.exists():
             mode = stat.S_IMODE(target.stat().st_mode)
-        with tempfile.NamedTemporaryFile(
-            dir=target.parent, prefix=".asta-tmp-", delete=False
-        ) as stream:
-            temporary = Path(stream.name)
+        candidate = target.parent / f".asta-tmp-{secrets.token_hex(16)}"
+        descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        temporary = candidate
+        with os.fdopen(descriptor, "wb") as stream:
             stream.write(data)
         if mode is not None:
             temporary.chmod(mode)
@@ -442,9 +450,17 @@ def receipt_path(project: Path, paper: Path, url: str) -> Path:
 
 
 def expected_head(config: dict, receipt: Path, project: Path) -> str | None:
-    value = (
-        json_object(receipt.read_bytes(), "publish receipt") if receipt.exists() else {}
-    )
+    try:
+        value = (
+            json_object(receipt.read_bytes(), "publish receipt")
+            if receipt.exists()
+            else {}
+        )
+    except click.ClickException as exc:
+        raise click.ClickException(
+            f"Invalid publish receipt JSON. Remove {receipt}, then pull and review "
+            "the connection metadata before publishing again."
+        ) from exc
     expected = config.get("base")
     commit = value.get("commit")
     if value.get("base") == expected and SHA.fullmatch(str(commit)):
@@ -612,17 +628,27 @@ def pull(
     controls = sorted(
         name
         for name in changed
-        if PurePosixPath(name).name in (".gitignore", ".gitattributes")
+        if PurePosixPath(name).name
+        in (".gitignore", ".gitattributes", "latexmkrc", ".latexmkrc", "_quarto.yml")
     )
     if controls:
         click.echo(
-            "warning: Review imported Git tracking/diff rules: " + ", ".join(controls),
+            "warning: Review imported tracking/build configuration: "
+            + ", ".join(controls),
             err=True,
         )
     try:
         paper.mkdir(parents=True, exist_ok=True)
         for name in sorted(removed, reverse=True):
-            safe_path(paper, name).unlink()
+            target = safe_path(paper, name)
+            target.unlink()
+            parent = target.parent
+            while parent != paper:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
         for name in sorted(changed):
             target = safe_path(paper, name)
             if target.is_dir():
@@ -813,7 +839,12 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             git("read-tree", "--empty", cwd=repo, env=index_env)
             for name, entry in sorted(ours.items()):
                 stored = git(
-                    "hash-object", "-w", "--stdin", cwd=repo, data=blob(project, entry)
+                    "hash-object",
+                    "-w",
+                    "--no-filters",
+                    "--stdin",
+                    cwd=repo,
+                    data=blob(project, entry),
                 )
                 git(
                     "update-index",
@@ -830,7 +861,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 configured = git("var", "GIT_AUTHOR_IDENT", cwd=project)
                 name, address = configured.rsplit(" <", 1)
                 email = address.split(">", 1)[0]
-            except click.ClickException:
+            except (click.ClickException, ValueError):
                 name, email = "Asta workspace", "asta@allenai.org"
             new = git(
                 "-c",

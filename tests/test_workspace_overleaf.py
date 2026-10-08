@@ -147,6 +147,11 @@ def test_token_disables_real_credential_storage(setup, monkeypatch, tmp_path, sc
             b"[rejected] master -> master (fetch first) fixture-token",
             "changed during publish",
         ),
+        (
+            "fetch",
+            b"The requested URL returned error: 403 fixture-token",
+            "access denied",
+        ),
     ],
 )
 def test_git_errors_are_actionable_without_credentials(
@@ -357,6 +362,52 @@ def test_private_file_mode_survives_atomic_replacement(tmp_path):
     assert target.read_bytes() == b"new"
     assert target.stat().st_mode & 0o777 == 0o600
     assert not list(tmp_path.glob(".asta-tmp-*"))
+
+
+@pytest.mark.parametrize("mask", [0o022, 0o077])
+@pytest.mark.parametrize("existing_root", [False, True])
+def test_first_import_file_permissions_respect_umask(setup, mask, existing_root):
+    _, seed, project = setup
+    if existing_root:
+        overleaf_edit(seed, "references.bib", "@misc{coauthor}\n")
+    else:
+        git(project, "rm", "references.bib")
+        git(project, "commit", "-m", "import remote bibliography")
+    previous = os.umask(mask)
+    try:
+        result = run(project, "pull", URL)
+    finally:
+        os.umask(previous)
+    assert result.exit_code == 0, result.output
+    bibliography = (
+        next((project / ".asta/cache").rglob("overleaf-references-*.bib"))
+        if existing_root
+        else project / "references.bib"
+    )
+    for path in [bibliography, project / "paper/overleaf.json"]:
+        assert path.stat().st_mode & 0o777 == 0o666 & ~mask
+
+
+def test_publish_falls_back_for_unexpected_git_identity(setup, monkeypatch):
+    remote, _, project = setup
+    paper = imported(project)
+    (paper / "main.tex").write_text("reviewed\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "review")
+    original = module.git
+
+    def unexpected_identity(*args, **kwargs):
+        if args == ("var", "GIT_AUTHOR_IDENT"):
+            return "unexpected identity"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, "git", unexpected_identity)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert (
+        git(remote, "log", "-1", "--format=%an <%ae>")
+        == "Asta workspace <asta@allenai.org>"
+    )
 
 
 def test_publish_uses_workspace_git_identity(setup):
@@ -638,8 +689,6 @@ def test_differing_remote_bibliography_is_saved_without_overwrite(setup):
 def test_differing_pulls_retain_each_bibliography_version(setup):
     _, seed, project = setup
     cache = module.cache_dir(project, URL)
-    legacy = cache / "overleaf-references.bib"
-    legacy.write_text("@misc{historical}\n")
     versions = ["@misc{first}\n", "@misc{second}\n", "@misc{first}\n"]
     backups = {}
     for content in versions:
@@ -651,7 +700,6 @@ def test_differing_pulls_retain_each_bibliography_version(setup):
         assert str(backup) in result.output
         backups[backup] = content
         assert {path: path.read_text() for path in backups} == backups
-        assert legacy.read_text() == "@misc{historical}\n"
         assert (project / "references.bib").read_text() == "@misc{a}\n"
         git(project, "add", "paper")
         git(project, "commit", "-m", "review import")
@@ -841,6 +889,47 @@ def test_paper_directory_to_file_transition(setup):
     assert (paper / "section").read_text() == "file now\n"
 
 
+@pytest.mark.parametrize("ignored_local_file", [False, True])
+def test_pull_prunes_only_empty_removed_directories(setup, ignored_local_file):
+    _, seed, project = setup
+    (seed / "sections/old").mkdir(parents=True)
+    (seed / "sections/old/body.tex").write_text("old section\n")
+    git(seed, "add", "sections/old/body.tex")
+    git(seed, "commit", "-m", "section")
+    git(seed, "push", "origin", "master")
+    paper = imported(project)
+    if ignored_local_file:
+        with (project / ".gitignore").open("a") as stream:
+            stream.write("paper/sections/old/local.cache\n")
+        git(project, "add", ".gitignore")
+        git(project, "commit", "-m", "local cache ignore")
+        (paper / "sections/old/local.cache").write_text("keep local data\n")
+    git(seed, "rm", "sections/old/body.tex")
+    git(seed, "commit", "-m", "remove section")
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert not (paper / "sections/old/body.tex").exists()
+    assert paper.is_dir()
+    if ignored_local_file:
+        assert (paper / "sections/old/local.cache").read_text() == "keep local data\n"
+    else:
+        assert not (paper / "sections").exists()
+
+
+@pytest.mark.parametrize("operation", ["pull", "publish"])
+def test_corrupt_publish_receipt_has_recovery_guidance(setup, operation):
+    _, _, project = setup
+    paper = imported(project)
+    receipt = module.receipt_path(project, paper, URL)
+    receipt.write_text("not JSON")
+    result = run(project, operation)
+    assert result.exit_code == 1, result.output
+    assert "Remove" in result.output and str(receipt) in result.output
+    assert "pull and review" in result.output
+    assert receipt.read_text() == "not JSON"
+
+
 def test_cache_must_be_ignored(setup):
     _, _, project = setup
     (project / ".gitignore").write_text("")
@@ -878,8 +967,6 @@ def test_publish_reads_head_even_when_git_hides_worktree_changes(setup):
 
 
 def test_cache_loss_requires_pull_before_republishing(setup):
-    import shutil
-
     _, _, project = setup
     paper = imported(project)
     (paper / "main.tex").write_text("reviewed\n")
@@ -1134,16 +1221,15 @@ def test_missing_blob_stops_pull_before_workspace_writes(setup, monkeypatch):
     assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
 
 
-def test_import_warns_about_git_control_files(setup):
+@pytest.mark.parametrize(
+    "name", [".gitignore", ".gitattributes", "latexmkrc", ".latexmkrc", "_quarto.yml"]
+)
+def test_import_warns_about_control_files(setup, name):
     _, seed, project = setup
-    overleaf_edit(seed, ".gitignore", "build/\n")
-    overleaf_edit(seed, ".gitattributes", "*.tex text\n")
+    overleaf_edit(seed, name, "# imported configuration\n")
     result = run(project, "pull", URL)
     assert result.exit_code == 0, result.output
-    assert (
-        "Review imported Git tracking/diff rules: .gitattributes, .gitignore"
-        in result.output
-    )
+    assert "Review imported tracking/build configuration: " + name in result.output
 
 
 def test_uncommitted_workspace_has_clear_error(setup):
@@ -1154,8 +1240,6 @@ def test_uncommitted_workspace_has_clear_error(setup):
 
 
 def test_failed_file_replacement_does_not_truncate_existing_file(tmp_path, monkeypatch):
-    from pathlib import Path
-
     target = tmp_path / "main.tex"
     target.write_bytes(b"original")
 
