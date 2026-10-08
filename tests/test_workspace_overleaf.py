@@ -1,10 +1,14 @@
 """Tests for `asta workspace overleaf pull|publish` against a local bare remote."""
 
+import base64
 import importlib
 import json
 import os
 import shutil
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -14,6 +18,16 @@ from asta.cli import cli
 module = importlib.import_module("asta.commands.overleaf")
 REAL_GIT_BYTES = module.git_bytes
 URL = "https://git.overleaf.com/1234567"
+
+
+@pytest.fixture(autouse=True)
+def isolate_executor_credentials(monkeypatch):
+    # Failed subprocess assertions can display their environment in tracebacks.
+    for name in list(os.environ):
+        if name.startswith("AWS_") or any(
+            marker in name for marker in ("TOKEN", "SECRET", "PASSWORD", "API_KEY")
+        ):
+            monkeypatch.delenv(name, raising=False)
 
 
 def git(cwd, *args):
@@ -492,8 +506,6 @@ def test_credentials_are_ephemeral_and_not_in_script(setup, monkeypatch):
     _, _, project = setup
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
     with module.credentials() as env:
-        from pathlib import Path
-
         script = Path(env["GIT_ASKPASS"])
         assert script.exists() and script.stat().st_mode & 0o777 == 0o700
         assert "fixture-token" not in script.read_text()
@@ -1309,3 +1321,412 @@ def test_reconciliation_matches_git_normalized_bibliography(setup):
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
     assert git(remote, "show", "HEAD:references.bib") == "@misc{a}\n@misc{coauthor}"
+
+
+@pytest.mark.parametrize("operation", ["pull", "publish"])
+def test_hook_git_environment_cannot_redirect_sync(
+    setup, monkeypatch, tmp_path, operation
+):
+    remote, _, project = setup
+    if operation == "publish":
+        paper = imported(project)
+        (paper / "main.tex").write_text("reviewed edit\n")
+        git(project, "add", "paper/main.tex")
+        git(project, "commit", "-m", "review edit")
+    unrelated = tmp_path / "hook-repo"
+    unrelated.mkdir()
+    git(unrelated, "init", "-b", "main")
+    (unrelated / "keep").write_text("untouched\n")
+    git(unrelated, "add", "keep")
+    git(unrelated, "commit", "-m", "fixture")
+    before = (unrelated / ".git/index").read_bytes()
+    with monkeypatch.context() as hook:
+        for key, value in {
+            "GIT_DIR": str(unrelated / ".git"),
+            "GIT_WORK_TREE": str(unrelated),
+            "GIT_COMMON_DIR": str(unrelated / ".git"),
+            "GIT_INDEX_FILE": str(unrelated / ".git/index"),
+            "GIT_OBJECT_DIRECTORY": str(unrelated / ".git/objects"),
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(unrelated / ".git/objects"),
+            "GIT_NAMESPACE": "hook",
+        }.items():
+            hook.setenv(key, value)
+        result = run(project, operation, *([URL] if operation == "pull" else []))
+        assert result.exit_code == 0, result.output
+    assert (unrelated / ".git/index").read_bytes() == before
+    assert not git(unrelated, "for-each-ref", "refs/overleaf")
+    assert not git(project, "for-each-ref", "refs/overleaf")
+    if operation == "publish":
+        assert git(remote, "show", "HEAD:main.tex") == "reviewed edit"
+    else:
+        assert (project / "paper/main.tex").read_text() == "hello\n"
+
+
+def test_git_diagnostics_use_stable_locale(setup, monkeypatch):
+    _, _, project = setup
+    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
+    monkeypatch.setenv("LANGUAGE", "fr")
+    original = subprocess.run
+    observed = []
+
+    def record(*args, **kwargs):
+        observed.append(kwargs["env"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record)
+    REAL_GIT_BYTES("rev-parse", "HEAD", cwd=project)
+    with module.credentials() as env:
+        REAL_GIT_BYTES("rev-parse", "HEAD", cwd=project, env=env)
+    assert all(env["LC_ALL"] == "C" and env["LANGUAGE"] == "" for env in observed)
+
+
+@pytest.mark.parametrize("branch", ["master", "main"])
+def test_remote_without_head_symref_uses_sole_branch(setup, monkeypatch, branch):
+    remote, seed, project = setup
+    if branch == "main":
+        git(seed, "branch", "-m", "main")
+        git(seed, "push", "origin", "main")
+        git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+        git(seed, "push", "origin", "--delete", "master")
+    transport = module.git_bytes
+
+    def no_symref(*args, **kwargs):
+        output = transport(*args, **kwargs)
+        if "ls-remote" in args and "--symref" in args:
+            return (
+                b"\n".join(
+                    line for line in output.splitlines() if not line.startswith(b"ref:")
+                )
+                + b"\n"
+            )
+        return output
+
+    monkeypatch.setattr(module, "git_bytes", no_symref)
+    paper = imported(project)
+    (paper / "main.tex").write_text("reviewed\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "review")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", f"{branch}:main.tex") == "reviewed"
+
+
+def test_missing_symref_with_multiple_branches_refuses_guess(setup, monkeypatch):
+    remote, _, project = setup
+    git(remote, "branch", "other")
+    transport = module.git_bytes
+
+    def no_symref(*args, **kwargs):
+        output = transport(*args, **kwargs)
+        if "ls-remote" in args and "--symref" in args:
+            return (
+                b"\n".join(
+                    line for line in output.splitlines() if not line.startswith(b"ref:")
+                )
+                + b"\n"
+            )
+        return output
+
+    monkeypatch.setattr(module, "git_bytes", no_symref)
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "default Git branch" in result.output
+    assert not (project / "paper").exists()
+
+
+def test_paper_without_any_bibliography_publishes(setup):
+    remote, seed, project = setup
+    git(seed, "rm", "references.bib")
+    git(seed, "commit", "-m", "paper has no citations")
+    git(seed, "push", "origin", "master")
+    git(project, "rm", "references.bib")
+    git(project, "commit", "-m", "workspace has no bibliography")
+    paper = imported(project)
+    (paper / "main.tex").write_text("reviewed prose\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "reviewed prose")
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish", "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "rev-parse", "HEAD") == before
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", "HEAD:main.tex") == "reviewed prose"
+    assert "references.bib" not in git(remote, "ls-tree", "--name-only", "HEAD")
+    assert run(project, "publish").exit_code == 0
+
+
+@pytest.mark.parametrize("repeat_pull", [False, True])
+def test_coauthor_bibliography_deletion_requires_review(setup, repeat_pull):
+    remote, seed, project = setup
+    imported(project)
+    git(seed, "rm", "references.bib")
+    git(seed, "commit", "-m", "coauthor deletes bibliography")
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code == 0 and "Overleaf deleted references.bib" in result.output
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review incoming deletion")
+    if repeat_pull:
+        result = run(project, "pull")
+        assert "Overleaf deleted references.bib" in result.output
+        assert not git(project, "status", "--porcelain")
+    before = git(remote, "rev-parse", "HEAD")
+    for args in [("publish",), ("publish", "--dry-run")]:
+        result = run(project, *args)
+        assert result.exit_code == 1 and "Overleaf deleted" in result.output
+        assert git(remote, "rev-parse", "HEAD") == before
+    result = run(project, "pull", "--reconcile-bibliography")
+    assert result.exit_code == 0, result.output
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review restoring canonical bibliography")
+    assert run(project, "publish").exit_code == 0
+    assert git(remote, "show", "HEAD:references.bib") == "@misc{a}"
+
+
+def test_confirmed_bibliography_restoration_is_bound_to_reviewed_root(setup):
+    remote, seed, project = setup
+    imported(project)
+    git(seed, "rm", "references.bib")
+    git(seed, "commit", "-m", "coauthor deletes bibliography")
+    git(seed, "push", "origin", "master")
+    assert run(project, "pull", "--reconcile-bibliography").exit_code == 0
+    (project / "references.bib").write_text("@misc{different}\n")
+    git(project, "add", "paper/overleaf.json", "references.bib")
+    git(project, "commit", "-m", "changed after confirmation")
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "used for reconciliation" in result.output
+    assert git(remote, "rev-parse", "HEAD") == before
+
+
+def test_review_can_accept_bibliography_deletion_on_both_sides(setup):
+    remote, seed, project = setup
+    imported(project)
+    git(seed, "rm", "references.bib")
+    git(seed, "commit", "-m", "coauthor deletes bibliography")
+    git(seed, "push", "origin", "master")
+    git(project, "rm", "references.bib")
+    git(project, "commit", "-m", "review deleting root bibliography")
+    assert run(project, "pull", "--reconcile-bibliography").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review accepting remote deletion")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert "references.bib" not in git(remote, "ls-tree", "--name-only", "HEAD")
+
+
+@pytest.mark.parametrize("token", ["-n", r"fixture\token"])
+def test_askpass_preserves_token_bytes(setup, monkeypatch, token):
+    monkeypatch.setenv("OVERLEAF_TOKEN", token)
+    with module.credentials() as env:
+        result = subprocess.run(
+            [env["GIT_ASKPASS"], "Password:"], env=env, capture_output=True, check=True
+        )
+    assert result.stdout == token.encode() + b"\n"
+
+
+def test_http_options_override_scoped_headers_tls_and_redirects(setup):
+    _, _, project = setup
+    git(project, "config", f"http.{URL}.extraHeader", "X-Fixture: should-not-send")
+    git(project, "config", f"http.{URL}.sslVerify", "false")
+    git(project, "config", f"http.{URL}.followRedirects", "true")
+    with module.credentials() as env:
+        options = module.network_options(env, project)
+        for key, expected in [("sslVerify", "true"), ("followRedirects", "false")]:
+            assert (
+                REAL_GIT_BYTES(
+                    *options,
+                    "config",
+                    "--get-urlmatch",
+                    f"http.{key}",
+                    URL,
+                    cwd=project,
+                    env=env,
+                )
+                .decode()
+                .strip()
+                == expected
+            )
+        assert (
+            REAL_GIT_BYTES(
+                *options,
+                "config",
+                "--get-urlmatch",
+                "http.extraHeader",
+                URL,
+                cwd=project,
+                env=env,
+            )
+            .decode()
+            .strip()
+            == ""
+        )
+
+
+def test_unrelated_401_in_diagnostic_is_not_authentication_error(setup, monkeypatch):
+    _, _, project = setup
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 128, b"", b"missing object 401beef"
+        ),
+    )
+    with pytest.raises(module.click.ClickException) as error:
+        REAL_GIT_BYTES("fetch", URL, cwd=project)
+    assert "Git operation failed" in str(error.value)
+
+
+@pytest.fixture
+def http_remote(setup, monkeypatch):
+    remote, _, _ = setup
+    git(remote, "config", "http.receivepack", "true")
+    requests = []
+    password = r"-fixture\token"
+    expected = "Basic " + base64.b64encode(("git:" + password).encode()).decode()
+
+    class Backend(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            self.serve_git()
+
+        def do_POST(self):
+            self.serve_git()
+
+        def serve_git(self):
+            requests.append((self.path, dict(self.headers)))
+            if self.path.startswith("/redirect"):
+                self.send_response(302)
+                self.send_header("Location", "/trap")
+                self.end_headers()
+                return
+            if self.headers.get("Authorization") != expected:
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", 'Basic realm="fixture"')
+                self.end_headers()
+                return
+            path, _, query = self.path.partition("?")
+            env = module.git_environment()
+            env.update(
+                GIT_PROJECT_ROOT=str(remote.parent),
+                GIT_HTTP_EXPORT_ALL="1",
+                PATH_INFO=path,
+                QUERY_STRING=query,
+                REQUEST_METHOD=self.command,
+                CONTENT_TYPE=self.headers.get("Content-Type", ""),
+                REMOTE_USER="git",
+                CONTENT_LENGTH=self.headers.get("Content-Length", "0"),
+            )
+            result = subprocess.run(
+                ["git", "http-backend"],
+                env=env,
+                input=self.rfile.read(int(env["CONTENT_LENGTH"])),
+                capture_output=True,
+            )
+            headers, _, body = result.stdout.partition(b"\r\n\r\n")
+            pairs = [
+                line.decode().split(": ", 1) for line in headers.split(b"\r\n") if line
+            ]
+            status = next(
+                (
+                    int(value.split()[0])
+                    for key, value in pairs
+                    if key.lower() == "status"
+                ),
+                200,
+            )
+            self.send_response(status)
+            for key, value in pairs:
+                if key.lower() != "status":
+                    self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Backend)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    target = f"http://127.0.0.1:{server.server_port}/overleaf.git"
+
+    def transport(*args, **kwargs):
+        if "--get-url" in args:
+            return (URL + "\n").encode()
+        return REAL_GIT_BYTES(
+            *(target if arg == URL else arg for arg in args), **kwargs
+        )
+
+    monkeypatch.setattr(module, "git_bytes", transport)
+    try:
+        yield target, password, requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_token_pull_and_publish_over_authenticated_http(
+    setup, http_remote, monkeypatch, tmp_path
+):
+    remote, _, project = setup
+    target, password, requests = http_remote
+    monkeypatch.setenv("OVERLEAF_TOKEN", password)
+    config = tmp_path / "gitconfig"
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    stored = tmp_path / "saved-credentials"
+    git(
+        project,
+        "config",
+        "--global",
+        f"credential.{target}.helper",
+        f"store --file={stored}",
+    )
+    git(
+        project,
+        "config",
+        "--global",
+        f"http.{target}.extraHeader",
+        "X-Fixture: forbidden",
+    )
+    paper = imported(project)
+    (paper / "main.tex").write_text("reviewed HTTP edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "review HTTP edit")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert git(remote, "show", "HEAD:main.tex") == "reviewed HTTP edit"
+    assert any("Authorization" in headers for _, headers in requests)
+    assert all("X-Fixture" not in headers for _, headers in requests)
+    assert not stored.exists()
+    assert password.encode() not in (paper / module.CONFIG).read_bytes()
+    for path in (project / ".asta/cache/overleaf").rglob("*"):
+        if path.is_file():
+            assert password.encode() not in path.read_bytes()
+
+
+def test_real_http_redirect_is_not_followed(setup, http_remote, monkeypatch):
+    _, _, project = setup
+    target, password, requests = http_remote
+    monkeypatch.setenv("OVERLEAF_TOKEN", password)
+    redirect = target.replace("/overleaf.git", "/redirect")
+    git(project, "config", f"http.{redirect}.followRedirects", "true")
+    with module.credentials() as env:
+        with pytest.raises(module.click.ClickException):
+            REAL_GIT_BYTES(
+                *module.network_options(env, project),
+                "ls-remote",
+                redirect,
+                cwd=project,
+                env=env,
+            )
+    assert requests and all(path.startswith("/redirect") for path, _ in requests)
+
+
+def test_real_http_auth_failure_has_safe_guidance(setup, http_remote, monkeypatch):
+    _, _, project = setup
+    _, _, _ = http_remote
+    monkeypatch.setenv("OVERLEAF_TOKEN", "incorrect-fixture")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "authentication failed" in result.output
+    assert "incorrect-fixture" not in result.output
+    assert not (project / "paper").exists()

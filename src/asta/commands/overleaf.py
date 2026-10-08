@@ -18,12 +18,39 @@ TRAILER = "Asta-Workspace-Commit:"
 SHA = re.compile(r"[0-9a-f]{40}")
 
 
+def git_environment() -> dict:
+    # Hooks export repository routing; cwd alone cannot select our separate cache.
+    env = dict(os.environ)
+    for key in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+        "GIT_PREFIX",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_SHALLOW_FILE",
+        "GIT_CONFIG",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_COUNT",
+        "GIT_GRAFT_FILE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SSL_NO_VERIFY",
+    ):
+        env.pop(key, None)
+    env.update(LC_ALL="C", LANGUAGE="")
+    return env
+
+
 def git_bytes(*args: str, cwd: Path, env: dict | None = None, data=None) -> bytes:
     with tempfile.TemporaryDirectory() as hooks:
         result = subprocess.run(
             ["git", "--literal-pathspecs", "-c", f"core.hooksPath={hooks}", *args],
             cwd=cwd,
-            env=env,
+            env=git_environment() if env is None else env,
             input=data,
             capture_output=True,
         )
@@ -38,7 +65,13 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None, data=None) -> byte
             )
         if any(
             marker in result.stderr.lower()
-            for marker in (b"authentication failed", b"could not read username", b"401")
+            for marker in (
+                b"authentication failed",
+                b"could not read username",
+                b"401 unauthorized",
+                b"http 401",
+                b"requested url returned error: 401",
+            )
         ):
             raise click.ClickException(
                 "Overleaf authentication failed. Check your Git token or credential helper."
@@ -73,14 +106,18 @@ def validate_url(url: str) -> str:
 @contextmanager
 def credentials():
     """Use the token for validated Overleaf requests, or normal Git helpers."""
-    env = dict(os.environ)
+    env = git_environment()
     if not env.get("OVERLEAF_TOKEN"):
         yield env
         return
+    if os.name == "nt":
+        raise click.ClickException(
+            "OVERLEAF_TOKEN requires a POSIX shell. Use WSL or a Git credential helper on Windows."
+        )
     with tempfile.TemporaryDirectory() as tmp:
         askpass = Path(tmp) / "askpass"
         askpass.write_text(
-            '#!/bin/sh\ncase "$1" in Username*) echo git;; *) echo "$OVERLEAF_TOKEN";; esac\n'
+            "#!/bin/sh\ncase \"$1\" in Username*) printf '%s\\n' git;; *) printf '%s\\n' \"$OVERLEAF_TOKEN\";; esac\n"
         )
         askpass.chmod(stat.S_IRWXU)
         env.update(GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT="0")
@@ -111,6 +148,10 @@ def parse_config(data: bytes) -> dict:
     ):
         if config.get(key) is not None and not SHA.fullmatch(str(config[key])):
             raise click.ClickException(f"Invalid {CONFIG} bibliography revision.")
+    if "bibliography_reconciled_absent" in config and not isinstance(
+        config["bibliography_reconciled_absent"], bool
+    ):
+        raise click.ClickException(f"Invalid {CONFIG} bibliography reconciliation.")
     return config
 
 
@@ -226,6 +267,7 @@ def cache_dir(project: Path, url: str) -> Path:
     ignored = subprocess.run(
         ["git", "check-ignore", "--quiet", "--no-index", str(root)],
         cwd=project,
+        env=git_environment(),
         capture_output=True,
     )
     if ignored.returncode == 1:
@@ -245,11 +287,22 @@ def network_options(env: dict, repo: Path) -> list[str]:
         "-c",
         "http.extraHeader=",
         "-c",
+        "http.sslVerify=true",
+        "-c",
         "credential.username=git",
     ]
+    config = git_bytes("config", "--null", "--list", cwd=repo, env=env)
+    for entry in config.split(b"\0"):
+        key = entry.partition(b"\n")[0]
+        if key.lower().startswith(b"http."):
+            if key.lower().endswith(b".extraheader"):
+                options += ["-c", os.fsdecode(key) + "="]
+            elif key.lower().endswith(b".sslverify"):
+                options += ["-c", os.fsdecode(key) + "=true"]
+            elif key.lower().endswith(b".followredirects"):
+                options += ["-c", os.fsdecode(key) + "=false"]
     if env.get("OVERLEAF_TOKEN"):
         options += ["-c", "credential.helper="]
-        config = git_bytes("config", "--null", "--list", cwd=repo, env=env)
         for entry in config.split(b"\0"):
             key = entry.partition(b"\n")[0]
             if key.lower().startswith(b"credential.") and key.lower().endswith(
@@ -280,11 +333,28 @@ def fetch(project: Path, url: str, env: dict) -> tuple[Path, str, str]:
                 "Git URL rewrites are not supported for Overleaf."
             )
     options = network_options(env, repo)
-    refs = git(*options, "ls-remote", "--symref", url, "HEAD", cwd=repo, env=env)
+    refs = git(
+        *options,
+        "ls-remote",
+        "--symref",
+        url,
+        "HEAD",
+        "refs/heads/*",
+        cwd=repo,
+        env=env,
+    )
     branch = next(
         (line.split()[1] for line in refs.splitlines() if line.startswith("ref: ")),
         None,
     )
+    if branch is None:
+        heads = {
+            line.split()[1]
+            for line in refs.splitlines()
+            if len(line.split()) == 2 and line.split()[1].startswith("refs/heads/")
+        }
+        if len(heads) == 1:
+            branch = heads.pop()
     if not branch or not branch.startswith("refs/heads/"):
         raise click.ClickException("Overleaf did not report its default Git branch.")
     ref = "refs/overleaf/" + branch.removeprefix("refs/heads/")
@@ -503,13 +573,17 @@ def pull(
     if backup.is_symlink():
         raise click.ClickException("Symlinks are not supported in cache paths.")
     bib_revision = remote_bib[1] if remote_bib else None
+    remote_deleted = remote_bib is None and (
+        base_bib is not None or config.get("bibliography_reconciled_absent") is False
+    )
     reconciled = (
         reconcile_bibliography
-        or data is None
-        or not shared.exists()
+        or (data is None and not remote_deleted)
+        or (data is not None and not shared.exists())
         or (committed_bib is not None and blob(project, committed_bib) == data)
         or (
-            remote_bib == base_bib
+            not remote_deleted
+            and remote_bib == base_bib
             and (
                 previous != config.get("base")
                 or config.get("bibliography_reconciled") == bib_revision
@@ -517,7 +591,9 @@ def pull(
         )
     )
     reconciled_root = None
-    if data is not None and (reconcile_bibliography or not shared.exists()):
+    if (reconcile_bibliography and shared.exists()) or (
+        data is not None and not shared.exists()
+    ):
         reconciled_root = git(
             "hash-object",
             f"--path={BIBLIOGRAPHY}",
@@ -576,6 +652,12 @@ def pull(
                 err=True,
             )
     if not reconciled:
+        if remote_deleted:
+            click.echo(
+                "warning: Overleaf deleted references.bib; confirm whether to restore "
+                "the canonical root copy with --reconcile-bibliography after review.",
+                err=True,
+            )
         click.echo(
             "Publication is blocked until bibliography reconciliation is confirmed. "
             "Merge the needed entries into root references.bib, then pull with "
@@ -592,6 +674,7 @@ def pull(
                     "base": head,
                     "bibliography": bib_revision,
                     "bibliography_reconciled": bib_revision if reconciled else None,
+                    "bibliography_reconciled_absent": remote_bib is None and reconciled,
                     "bibliography_reconciled_root": reconciled_root,
                 },
                 indent=2,
@@ -658,11 +741,9 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     if BIBLIOGRAPHY in ours:
         raise click.ClickException("Use root references.bib, not paper/references.bib.")
     shared = snapshot(project, commit, BIBLIOGRAPHY)
-    if BIBLIOGRAPHY not in shared:
-        raise click.ClickException(
-            "Commit the shared root references.bib before publishing."
-        )
-    ours[BIBLIOGRAPHY] = shared[BIBLIOGRAPHY]
+    ours_bib = shared.get(BIBLIOGRAPHY)
+    if ours_bib is not None:
+        ours[BIBLIOGRAPHY] = ours_bib
     receipt = receipt_path(project, paper, url)
     expected = expected_head(config, receipt, project)
     with credentials() as env:
@@ -676,10 +757,16 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         remote = snapshot(repo, head)
         remote_bib = remote.get(BIBLIOGRAPHY)
         confirmed_root = config.get("bibliography_reconciled_root")
+        if ours_bib is None and (
+            remote_bib or config.get("bibliography") or confirmed_root
+        ):
+            raise click.ClickException(
+                "Commit the shared root references.bib before publishing."
+            )
         if (
             expected == config["base"]
             and confirmed_root is not None
-            and ours[BIBLIOGRAPHY][1] != confirmed_root
+            and (ours_bib[1] if ours_bib else None) != confirmed_root
         ):
             raise click.ClickException(
                 "Commit the root references.bib used for reconciliation together with "
@@ -688,7 +775,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
         if (
             remote_bib is not None
-            and remote_bib[1] != ours[BIBLIOGRAPHY][1]
+            and remote_bib[1] != ours_bib[1]
             and not (
                 expected != config["base"]
                 or remote_bib[1] == config.get("bibliography_reconciled")
@@ -698,6 +785,11 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 "Overleaf references.bib has unreconciled entries. Merge the needed "
                 "entries into the root bibliography, then pull with "
                 "--reconcile-bibliography and commit for review; nothing was pushed."
+            )
+        if remote_bib is None and config.get("bibliography_reconciled_absent") is False:
+            raise click.ClickException(
+                "Overleaf deleted references.bib. Review that deletion, then pull with "
+                "--reconcile-bibliography and commit the result; nothing was pushed."
             )
         changed = sorted(name for name in ours if ours[name] != remote.get(name))
         deleted = sorted(remote.keys() - ours.keys())
