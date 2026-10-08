@@ -14,6 +14,25 @@ import click
 CONFIG = "overleaf.json"
 BIBLIOGRAPHY = "references.bib"
 SHA = re.compile(r"[0-9a-f]{40}")
+# Repository-local variables reported by `git rev-parse --local-env-vars`, plus namespace.
+GIT_LOCAL_ENV = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+}
 
 
 def git_environment() -> dict:
@@ -21,11 +40,11 @@ def git_environment() -> dict:
     env = {
         key: value
         for key, value in os.environ.items()
-        if key not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX")
+        if key not in GIT_LOCAL_ENV
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
-    env.update(LC_ALL="C", LANGUAGE="")
+    env.update(LC_ALL="C", LANGUAGE="", GIT_TRACE_REDACT="1")
     return env
 
 
@@ -39,15 +58,16 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
     if result.returncode:
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
-        if b"401" in stderr or b"authentication failed" in stderr:
+        network = "clone" in args or "push" in args
+        if network and (b"401" in stderr or b"authentication failed" in stderr):
             raise click.ClickException(
                 "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper."
             )
-        if b"403" in stderr:
+        if network and b"403" in stderr:
             raise click.ClickException(
                 "Overleaf access denied. Check your token and access to this project."
             )
-        if b"rejected" in stderr or b"fetch first" in stderr:
+        if "push" in args and (b"rejected" in stderr or b"fetch first" in stderr):
             raise click.ClickException(
                 "Overleaf changed during publish. Pull and review the changes first."
             )
@@ -61,7 +81,8 @@ def git(*args: str, **kwargs) -> str:
 
 def validate_url(url: str | None) -> str:
     match = re.fullmatch(
-        r"https://(?:git@)?git\.overleaf\.com/([A-Za-z0-9]+)(?:\.git)?/?", url or ""
+        r"https://(?:git@)?git\.overleaf\.com/([A-Za-z0-9]+)(?:\.git)?/?",
+        url if isinstance(url, str) else "",
     )
     if not match:
         raise click.ClickException(
@@ -116,6 +137,11 @@ def files(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, s
         meta, path = entry.split(b"\t", 1)
         mode, kind, blob = meta.decode().split()
         name = os.fsdecode(path)
+        if any(
+            part.lower() in ("..", ".git")
+            for part in name.replace("\\", "/").split("/")
+        ):
+            raise click.ClickException(f"Cannot sync unsafe Git path: {name}.")
         if prefix.endswith("/"):
             name = name[len(prefix) :]
         if kind != "blob" or mode not in ("100644", "100755"):
@@ -144,8 +170,17 @@ def load_config(paper: Path) -> dict:
     path = paper / CONFIG
     if not path.exists():
         return {}
-    config = json.loads(path.read_text())
-    if not SHA.fullmatch(str(config.get("base", ""))):
+    try:
+        config = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(
+            f"Cannot read {CONFIG}; restore valid JSON metadata."
+        ) from exc
+    if not isinstance(config, dict):
+        raise click.ClickException(
+            f"{CONFIG} must contain a JSON object with url and base."
+        )
+    if not isinstance(config.get("base"), str) or not SHA.fullmatch(config["base"]):
         raise click.ClickException(f"{CONFIG} has no valid base commit.")
     config["url"] = validate_url(config.get("url"))
     return config
@@ -194,7 +229,13 @@ def require_visible(repo: Path, paths: list[str], *, no_index: bool = False) -> 
 project_option = click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
-dir_option = click.option("--dir", "directory", default="paper", show_default=True)
+dir_option = click.option(
+    "--dir",
+    "directory",
+    default="paper",
+    show_default=True,
+    help="Paper directory relative to the workspace repository root.",
+)
 
 
 @click.group()
@@ -211,6 +252,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     root, paper, prefix = resolve(project, directory)
     config = load_config(paper)
     url = validate_url(url or config.get("url"))
+    if config and url != config["url"]:
+        raise click.ClickException(
+            "This paper is linked to a different Overleaf project. Use a separate --dir "
+            "to import the other project."
+        )
     require_clean(root, paper)
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
@@ -221,6 +267,14 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             raise click.ClickException(
                 f"Overleaf contains reserved workspace file {CONFIG}."
             )
+        if config:
+            try:
+                git("cat-file", "-e", config["base"] + "^{commit}", cwd=repo)
+            except click.ClickException as exc:
+                raise click.ClickException(
+                    "The recorded Overleaf base is missing from its history. Import into "
+                    "a separate --dir and compare the copies before reconnecting."
+                ) from exc
         base = files(repo, config["base"]) if config else {}
         base.pop(BIBLIOGRAPHY, None)
         base.pop(CONFIG, None)
@@ -291,8 +345,22 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     require_clean(root, paper, root_bib)
     ours = files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
-    if root_bib.exists():
-        ours[BIBLIOGRAPHY] = files(root, "HEAD", BIBLIOGRAPHY)[BIBLIOGRAPHY]
+    bibliography = files(root, "HEAD", BIBLIOGRAPHY).get(BIBLIOGRAPHY)
+    if bibliography is None:
+        raise click.ClickException(
+            f"Commit a root {BIBLIOGRAPHY} before publishing. Overleaf's bibliography "
+            "has not been changed; copy any needed entries into the root file first."
+        )
+    if BIBLIOGRAPHY in ours and ours[BIBLIOGRAPHY] != bibliography:
+        raise click.ClickException(
+            f"{prefix}{BIBLIOGRAPHY} differs from the canonical root file. Reconcile "
+            "the copies before publishing; keep paper-only entries in a separate .bib file."
+        )
+    ours[BIBLIOGRAPHY] = bibliography
+    workspace_commit = git("rev-parse", "HEAD", cwd=root)
+    click.echo(
+        f"Publishing workspace commit {workspace_commit[:12]}; ensure its PR is merged."
+    )
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -320,15 +388,18 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             return
         identity = []
         if subprocess.run(
-            ["git", "var", "GIT_COMMITTER_IDENT"], cwd=root, capture_output=True
+            ["git", "var", "GIT_COMMITTER_IDENT"],
+            cwd=root,
+            env=git_environment(),
+            capture_output=True,
         ).returncode:
             identity = [
                 "-c",
                 "user.name=Asta Workspace",
                 "-c",
-                "user.email=asta@allenai.org",
+                "user.email=asta-workspace@example.invalid",
             ]
-        message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
+        message = f"Publish workspace commit {workspace_commit[:12]}"
         git(*identity, "commit", "-q", "-m", message, cwd=repo)
         push(repo)
         published = git("rev-parse", "HEAD", cwd=repo)

@@ -157,6 +157,152 @@ def test_publish_requires_committed_bibliography(setup):
     assert result.exit_code != 0 and "local changes" in result.output
 
 
+@pytest.mark.parametrize("state", ["absent", "ignored", "untracked"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_without_committed_root_bib_never_deletes_remote_bib(
+    setup, state, dry_run
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    git(project, "rm", "references.bib")
+    if state == "ignored":
+        (project / ".gitignore").write_text("/references.bib\n")
+    commit_all(project)
+    if state != "absent":
+        (project / "references.bib").write_text("@misc{uncommitted}\n")
+    before = git(seed, "ls-remote", "origin", "master")
+    metadata = (project / "paper" / "overleaf.json").read_bytes()
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code == 1, result.output
+    assert (
+        "Commit a root references.bib" in result.output
+        or "local changes" in result.output
+    )
+    assert not isinstance(result.exception, KeyError)
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert git(seed, "show", "HEAD:references.bib") == "@misc{overleaf}"
+    assert (project / "paper" / "overleaf.json").read_bytes() == metadata
+
+
+def test_pull_refuses_changed_project_url_before_cloning(setup, monkeypatch):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+
+    def unexpected_clone(*args):
+        pytest.fail("A changed project URL must be refused before cloning")
+
+    monkeypatch.setattr(module, "clone", unexpected_clone)
+    result = run(project, "pull", "https://git.overleaf.com/7654321")
+    assert result.exit_code == 1 and "different Overleaf project" in result.output
+    assert not git(project, "status", "--porcelain")
+
+
+def test_pull_reports_missing_base_without_changing_paper(setup):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    config = project / "paper" / "overleaf.json"
+    config.write_text(json.dumps({"url": URL, "base": "0" * 40}))
+    commit_all(project)
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "base is missing from its history" in result.output
+    assert "separate --dir" in result.output
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "{",
+        "[]",
+        "null",
+        "1",
+        '{"base": "bad"}',
+        json.dumps({"base": "0" * 40, "url": 42}),
+        json.dumps({"base": int("1" * 40), "url": URL}),
+    ],
+)
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_reports_invalid_metadata_without_traceback(setup, contents, command):
+    _, project = setup
+    paper = project / "paper"
+    paper.mkdir()
+    (paper / "overleaf.json").write_text(contents)
+    commit_all(project)
+    result = run(project, command)
+    assert result.exit_code == 1 and "Error:" in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("contents", ["@misc{root}\n", "@misc{paper}\n"])
+def test_publish_checks_paper_bibliography_collision(setup, contents):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper" / "references.bib").write_text(contents)
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    if contents == "@misc{root}\n":
+        assert result.exit_code == 0, result.output
+        git(seed, "pull", "origin", "master")
+        assert (seed / "references.bib").read_text() == contents
+    else:
+        assert (
+            result.exit_code == 1 and "differs from the canonical root" in result.output
+        )
+        assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_ignores_inherited_repository_routing(setup, monkeypatch, command):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    with monkeypatch.context() as patch:
+        for name in module.GIT_LOCAL_ENV:
+            patch.setenv(name, "invalid-hook-routing")
+        result = run(project, command)
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["../escape.tex", "sub/../../escape.tex", "sub/.GiT/config", "sub\\..\\escape.tex"],
+)
+def test_tree_refuses_unsafe_paths(monkeypatch, tmp_path, name):
+    monkeypatch.setattr(
+        module,
+        "git_bytes",
+        lambda *a, **k: f"100644 blob {'0' * 40}\t{name}\0".encode(),
+    )
+    with pytest.raises(module.click.ClickException, match="unsafe Git path"):
+        module.files(tmp_path, "HEAD")
+
+
+@pytest.mark.parametrize(
+    "args,message",
+    [
+        (("cat-file", "blob", "401"), "git cat-file failed"),
+        (("clone", URL), "Overleaf authentication failed"),
+        (("-c", "credential.helper=", "clone", URL), "Overleaf authentication failed"),
+        (("push", "origin", "HEAD"), "Overleaf authentication failed"),
+    ],
+)
+def test_git_maps_authentication_errors_only_for_transport(
+    monkeypatch, tmp_path, args, message
+):
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a, 1, b"", b"401 authentication failed"
+        ),
+    )
+    with pytest.raises(module.click.ClickException, match=message):
+        module.git_bytes(*args, cwd=tmp_path)
+
+
 @pytest.mark.parametrize(
     "local,remote",
     [("workspace\n", "overleaf\n"), ("workspace\n", None), (None, "overleaf\n")],
