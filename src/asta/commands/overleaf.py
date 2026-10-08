@@ -42,7 +42,11 @@ def git_environment() -> dict:
         "GIT_SSL_NO_VERIFY",
     ):
         env.pop(key, None)
-    env.update(LC_ALL="C", LANGUAGE="")
+    # Git tracing can persist authorization headers even when stderr is captured.
+    for key in list(env):
+        if key.startswith("GIT_TRACE") or key == "GIT_CURL_VERBOSE":
+            env.pop(key)
+    env.update(LC_ALL="C", LANGUAGE="", GIT_TRACE_REDACT="1")
     return env
 
 
@@ -92,7 +96,7 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None, data=None) -> byte
 
 
 def git(*args: str, **kwargs) -> str:
-    return git_bytes(*args, **kwargs).decode().strip()
+    return os.fsdecode(git_bytes(*args, **kwargs)).strip()
 
 
 def validate_url(url: str) -> str:
@@ -297,6 +301,10 @@ def network_options(env: dict, repo: Path) -> list[str]:
         "-c",
         "http.sslVerify=true",
         "-c",
+        "http.cookieFile=",
+        "-c",
+        "http.saveCookies=false",
+        "-c",
         "credential.username=git",
     ]
     config = git_bytes("config", "--null", "--list", cwd=repo, env=env)
@@ -308,6 +316,10 @@ def network_options(env: dict, repo: Path) -> list[str]:
             elif key.lower().endswith(b".sslverify"):
                 options += ["-c", os.fsdecode(key) + "=true"]
             elif key.lower().endswith(b".followredirects"):
+                options += ["-c", os.fsdecode(key) + "=false"]
+            elif key.lower().endswith(b".cookiefile"):
+                options += ["-c", os.fsdecode(key) + "="]
+            elif key.lower().endswith(b".savecookies"):
                 options += ["-c", os.fsdecode(key) + "=false"]
     if env.get("OVERLEAF_TOKEN"):
         options += ["-c", "credential.helper="]
@@ -421,14 +433,25 @@ def blob(repo: Path, entry: tuple[str, str]) -> bytes:
 def replace_file(target: Path, data: bytes, mode: int | None = None) -> None:
     temporary = None
     try:
-        if mode is None and target.exists():
-            mode = stat.S_IMODE(target.stat().st_mode)
+        exists = target.exists()
+        if exists:
+            existing_mode = stat.S_IMODE(target.stat().st_mode)
+            # Apply Git's executable bit without widening local read/write access.
+            mode = (
+                existing_mode
+                if mode is None
+                else (existing_mode & ~0o111) | (mode & ((existing_mode & 0o444) >> 2))
+            )
         candidate = target.parent / f".asta-tmp-{secrets.token_hex(16)}"
-        descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        descriptor = os.open(
+            candidate,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o666 if mode is None else mode,
+        )
         temporary = candidate
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(data)
-        if mode is not None:
+        if mode is not None and exists:
             temporary.chmod(mode)
         temporary.replace(target)
     except OSError as exc:
@@ -545,7 +568,7 @@ def pull(
     committed_config = ours.pop(CONFIG, None)
     if BIBLIOGRAPHY in ours:
         raise click.ClickException(
-            "Move paper/references.bib entries into the root references.bib first."
+            f"Move {rel}/references.bib entries into the root references.bib first."
         )
     with credentials() as env:
         repo, head, _ = fetch(project, url, env)
@@ -778,7 +801,9 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     config = parse_config(blob(project, ours.pop(CONFIG)))
     url = config["url"]
     if BIBLIOGRAPHY in ours:
-        raise click.ClickException("Use root references.bib, not paper/references.bib.")
+        raise click.ClickException(
+            f"Use root references.bib, not {rel}/references.bib."
+        )
     shared = snapshot(project, commit, BIBLIOGRAPHY)
     ours_bib = shared.get(BIBLIOGRAPHY)
     if ours_bib is not None:
@@ -794,6 +819,10 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 "A publication from another clone or a cleared cache also requires a fresh pull."
             )
         remote = snapshot(repo, head)
+        if CONFIG in remote:
+            raise click.ClickException(
+                "overleaf.json is reserved for workspace connection metadata."
+            )
         remote_bib = remote.get(BIBLIOGRAPHY)
         confirmed_root = config.get("bibliography_reconciled_root")
         if ours_bib is None and (
@@ -871,7 +900,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 name, address = configured.rsplit(" <", 1)
                 email = address.split(">", 1)[0]
             except (click.ClickException, ValueError):
-                name, email = "Asta workspace", "asta@allenai.org"
+                name, email = "Asta workspace", "asta-workspace@example.invalid"
             new = git(
                 "-c",
                 f"user.name={name}",

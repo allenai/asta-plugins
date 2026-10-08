@@ -58,7 +58,7 @@ With `OVERLEAF_TOKEN`, a temporary private `GIT_ASKPASS` script reads the token 
 
 ### Security notes
 
-Tokens are never written to the repo, and token requests clear generic and URL-scoped credential helpers. Only `https://git.overleaf.com/<project-id>` is accepted: other hosts, embedded passwords, redirects and Git URL rewrites (including push-only rewrites) are rejected. TLS verification is required, and inherited HTTP extra headers are cleared; configured proxies remain available. Git diagnostics are not printed because they may contain credentials.
+Tokens are never written to the repo, and token requests clear generic and URL-scoped credential helpers. Git tracing and HTTP cookie files are disabled. Only `https://git.overleaf.com/<project-id>` is accepted: other hosts, embedded passwords, redirects and Git URL rewrites (including push-only rewrites) are rejected. Certificate verification stays enabled using your configured Git trust store and TLS backend; configured proxies remain available. Inherited HTTP extra headers are cleared. Git diagnostics are not printed because they may contain credentials.
 
 ### Pull and publication
 

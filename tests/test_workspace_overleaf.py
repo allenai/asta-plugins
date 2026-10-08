@@ -17,6 +17,9 @@ from asta.cli import cli
 
 module = importlib.import_module("asta.commands.overleaf")
 REAL_GIT_BYTES = module.git_bytes
+POSIX_ONLY = pytest.mark.skipif(
+    os.name == "nt", reason="POSIX permissions, symlinks or askpass"
+)
 URL = "https://git.overleaf.com/1234567"
 
 
@@ -103,6 +106,7 @@ def test_pull_imports_without_shared_bibliography(setup):
 @pytest.mark.parametrize(
     "scope", ["", ".https://git.overleaf.com", ".https://git.overleaf.com/1234567"]
 )
+@POSIX_ONLY
 def test_token_disables_real_credential_storage(setup, monkeypatch, tmp_path, scope):
     _, _, project = setup
     stored = tmp_path / "credentials"
@@ -187,6 +191,7 @@ def test_ignore_check_failure_is_not_reported_as_missing_rule(setup, monkeypatch
     assert "Ignore .asta/cache" not in result.output
 
 
+@POSIX_ONLY
 def test_git_uses_an_empty_hooks_directory(setup, tmp_path):
     _, _, project = setup
     hooks = tmp_path / "hooks"
@@ -354,6 +359,7 @@ def test_filesystem_failure_has_recovery_guidance(setup, monkeypatch):
     assert isinstance(result.exception, SystemExit)
 
 
+@POSIX_ONLY
 def test_private_file_mode_survives_atomic_replacement(tmp_path):
     target = tmp_path / "references.bib"
     target.write_bytes(b"old")
@@ -366,6 +372,7 @@ def test_private_file_mode_survives_atomic_replacement(tmp_path):
 
 @pytest.mark.parametrize("mask", [0o022, 0o077])
 @pytest.mark.parametrize("existing_root", [False, True])
+@POSIX_ONLY
 def test_first_import_file_permissions_respect_umask(setup, mask, existing_root):
     _, seed, project = setup
     if existing_root:
@@ -384,7 +391,11 @@ def test_first_import_file_permissions_respect_umask(setup, mask, existing_root)
         if existing_root
         else project / "references.bib"
     )
-    for path in [bibliography, project / "paper/overleaf.json"]:
+    for path in [
+        bibliography,
+        project / "paper/overleaf.json",
+        project / "paper/main.tex",
+    ]:
         assert path.stat().st_mode & 0o777 == 0o666 & ~mask
 
 
@@ -406,7 +417,7 @@ def test_publish_falls_back_for_unexpected_git_identity(setup, monkeypatch):
     assert result.exit_code == 0, result.output
     assert (
         git(remote, "log", "-1", "--format=%an <%ae>")
-        == "Asta workspace <asta@allenai.org>"
+        == "Asta workspace <asta-workspace@example.invalid>"
     )
 
 
@@ -518,6 +529,7 @@ def imported(project):
         "https://git.overleaf.com/../123",
     ],
 )
+@POSIX_ONLY
 def test_invalid_destination_never_receives_credentials(setup, monkeypatch, url):
     _, _, project = setup
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
@@ -553,6 +565,7 @@ def test_url_normalizes_overleaf_username():
     )
 
 
+@POSIX_ONLY
 def test_credentials_are_ephemeral_and_not_in_script(setup, monkeypatch):
     _, _, project = setup
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
@@ -620,6 +633,7 @@ def test_overlapping_committed_edits_stop_before_any_import(setup, local):
 
 
 @pytest.mark.parametrize("operation", ["pull", "publish"])
+@POSIX_ONLY
 def test_tracked_paper_symlink_is_rejected(setup, operation):
     remote, _, project = setup
     paper = imported(project)
@@ -636,6 +650,7 @@ def test_tracked_paper_symlink_is_rejected(setup, operation):
     assert outside.read_text() == "private fixture"
 
 
+@POSIX_ONLY
 def test_remote_symlink_is_not_imported(setup):
     _, seed, project = setup
     (seed / "secret.tex").symlink_to("/tmp/private.txt")
@@ -844,6 +859,7 @@ def test_paper_directory_cannot_escape_workspace(setup, directory):
     assert not (project / "paper").exists()
 
 
+@POSIX_ONLY
 def test_bibliography_cache_symlink_is_rejected_before_import(setup):
     _, seed, project = setup
     cache = module.cache_dir(project, URL)
@@ -1052,6 +1068,7 @@ def test_descendant_can_reuse_receipt_but_legacy_receipt_cannot(setup):
 
 @pytest.mark.parametrize("operation", ["pull", "publish"])
 @pytest.mark.parametrize("key", ["insteadOf", "pushInsteadOf"])
+@POSIX_ONLY
 def test_matching_rewrites_block_all_transport(setup, monkeypatch, operation, key):
     _, _, project = setup
     imported(project)
@@ -1261,6 +1278,7 @@ def test_pull_preserves_edits_hidden_from_git_status(setup, flag):
     assert (paper / module.CONFIG).read_bytes() == before
 
 
+@POSIX_ONLY
 def test_executable_asset_modes_survive_import_and_publication(setup):
     remote, seed, project = setup
     (seed / "build.sh").write_text("#!/bin/sh\necho paper\n")
@@ -1733,6 +1751,7 @@ def test_review_can_accept_bibliography_deletion_on_both_sides(setup):
 
 
 @pytest.mark.parametrize("token", ["-n", r"fixture\token"])
+@POSIX_ONLY
 def test_askpass_preserves_token_bytes(setup, monkeypatch, token):
     monkeypatch.setenv("OVERLEAF_TOKEN", token)
     with module.credentials() as env:
@@ -1882,6 +1901,7 @@ def http_remote(setup, monkeypatch):
         thread.join(timeout=5)
 
 
+@POSIX_ONLY
 def test_token_pull_and_publish_over_authenticated_http(
     setup, http_remote, monkeypatch, tmp_path
 ):
@@ -1921,6 +1941,7 @@ def test_token_pull_and_publish_over_authenticated_http(
             assert password.encode() not in path.read_bytes()
 
 
+@POSIX_ONLY
 def test_real_http_redirect_is_not_followed(setup, http_remote, monkeypatch):
     _, _, project = setup
     target, password, requests = http_remote
@@ -1939,6 +1960,7 @@ def test_real_http_redirect_is_not_followed(setup, http_remote, monkeypatch):
     assert requests and all(path.startswith("/redirect") for path, _ in requests)
 
 
+@POSIX_ONLY
 def test_real_http_auth_failure_has_safe_guidance(setup, http_remote, monkeypatch):
     _, _, project = setup
     _, _, _ = http_remote
@@ -1947,3 +1969,148 @@ def test_real_http_auth_failure_has_safe_guidance(setup, http_remote, monkeypatc
     assert result.exit_code == 1 and "authentication failed" in result.output
     assert "incorrect-fixture" not in result.output
     assert not (project / "paper").exists()
+
+
+@pytest.mark.parametrize("token", [None, "fixture-token"])
+def test_git_disables_credential_tracing(setup, monkeypatch, tmp_path, token):
+    _, _, project = setup
+    trace = tmp_path / "trace"
+    for key in ("GIT_TRACE", "GIT_TRACE_CURL", "GIT_TRACE_PACKET", "GIT_TRACE2_EVENT"):
+        monkeypatch.setenv(key, str(trace))
+    monkeypatch.setenv("GIT_CURL_VERBOSE", "1")
+    monkeypatch.setenv("GIT_TRACE_REDACT", "0")
+    if token:
+        monkeypatch.setenv("OVERLEAF_TOKEN", token)
+    env = module.git_environment()
+    assert env.get("GIT_TRACE_REDACT") == "1"
+    assert not any(
+        key.startswith("GIT_TRACE") and key != "GIT_TRACE_REDACT" for key in env
+    )
+    assert "GIT_CURL_VERBOSE" not in env
+    module.git("rev-parse", "HEAD", cwd=project, env=env)
+    assert not trace.exists()
+
+
+@POSIX_ONLY
+def test_authenticated_transport_does_not_write_trace_or_cookies(
+    setup, http_remote, monkeypatch, tmp_path
+):
+    _, _, project = setup
+    target, password, _ = http_remote
+    trace = tmp_path / "network-trace"
+    cookies = tmp_path / "cookies"
+    config = tmp_path / "gitconfig"
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    git(project, "config", "--global", f"http.{target}.cookieFile", str(cookies))
+    git(project, "config", "--global", f"http.{target}.saveCookies", "true")
+    monkeypatch.setenv("OVERLEAF_TOKEN", password)
+    for key in ("GIT_TRACE", "GIT_TRACE_CURL", "GIT_TRACE_PACKET", "GIT_TRACE2_EVENT"):
+        monkeypatch.setenv(key, str(trace))
+    monkeypatch.setenv("GIT_TRACE_REDACT", "0")
+    monkeypatch.setenv("GIT_CURL_VERBOSE", "1")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    assert not trace.exists()
+    assert not cookies.exists()
+
+
+@pytest.mark.parametrize("scope", ["", f".{URL}"])
+def test_http_options_disable_cookie_files(setup, scope):
+    _, _, project = setup
+    git(project, "config", f"http{scope}.cookieFile", "fixture-cookies")
+    git(project, "config", f"http{scope}.saveCookies", "true")
+    with module.credentials() as env:
+        options = module.network_options(env, project)
+        for key, expected in [("cookieFile", ""), ("saveCookies", "false")]:
+            assert (
+                os.fsdecode(
+                    REAL_GIT_BYTES(
+                        *options,
+                        "config",
+                        "--get-urlmatch",
+                        f"http.{key}",
+                        URL,
+                        cwd=project,
+                        env=env,
+                    )
+                ).strip()
+                == expected
+            )
+
+
+@pytest.mark.parametrize("operation", ["pull", "publish"])
+def test_custom_paper_directory_in_bibliography_guidance(setup, operation):
+    _, _, project = setup
+    result = run(project, "pull", URL, "--dir", "papers/draft")
+    assert result.exit_code == 0, result.output
+    (project / "papers/draft/references.bib").write_text("@misc{local}\n")
+    git(project, "add", "papers")
+    git(project, "commit", "-m", "review import with conflicting bibliography")
+    result = run(project, operation, "--dir", "papers/draft")
+    assert result.exit_code == 1
+    assert "papers/draft/references.bib" in result.output
+    assert "paper/references.bib" not in result.output
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_rejects_reserved_remote_metadata(setup, dry_run):
+    remote, seed, project = setup
+    paper = imported(project)
+    overleaf_edit(seed, "overleaf.json", "{}\n")
+    config = json.loads((paper / module.CONFIG).read_text())
+    config["base"] = git(remote, "rev-parse", "HEAD")
+    (paper / module.CONFIG).write_text(json.dumps(config))
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "metadata names remote with reserved file")
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code == 1 and "reserved for workspace" in result.output
+    assert git(remote, "rev-parse", "HEAD") == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX non-UTF-8 filenames")
+def test_non_utf8_cache_path_has_clean_refusal(setup):
+    _, _, project = setup
+    name = os.fsdecode(b".asta/cache/legacy-\xff")
+    (project / name).parent.mkdir(parents=True)
+    (project / name).write_bytes(b"cache")
+    git(project, "add", "-f", name)
+    git(project, "commit", "-m", "tracked cache")
+    git(project, "config", "core.quotePath", "false")
+    assert b"\xff" in REAL_GIT_BYTES("ls-files", "--", ".asta/cache", cwd=project)
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "cache must not be committed" in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("mask", [0o022, 0o077])
+def test_new_executable_import_respects_umask(setup, mask):
+    _, seed, project = setup
+    (seed / "build.sh").write_text("#!/bin/sh\necho paper\n")
+    (seed / "build.sh").chmod(0o755)
+    git(seed, "add", "build.sh")
+    git(seed, "commit", "-m", "executable asset")
+    git(seed, "push", "origin", "master")
+    previous = os.umask(mask)
+    try:
+        result = run(project, "pull", URL)
+    finally:
+        os.umask(previous)
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/build.sh").stat().st_mode & 0o777 == 0o755 & ~mask
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("mode", [0o600, 0o640, 0o644])
+@pytest.mark.parametrize("executable", [False, True])
+def test_pull_preserves_local_permissions(setup, mode, executable):
+    _, seed, project = setup
+    paper = imported(project)
+    (paper / "main.tex").chmod(mode)
+    (seed / "main.tex").chmod(0o755 if executable else 0o644)
+    overleaf_edit(seed, "main.tex", "updated paper\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    expected = mode | ((mode & 0o444) >> 2) if executable else mode
+    assert (paper / "main.tex").stat().st_mode & 0o777 == expected
