@@ -318,18 +318,22 @@ def snapshot(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str
                 "Symlinks and submodules are not supported in papers."
             )
         result[name] = (mode, oid)
+    require_case_unique(result)
+    return result
+
+
+def require_case_unique(files: dict) -> None:
     names = {}
-    for name in result:
+    for name in files:
         parts = PurePosixPath(name).parts
         for length in range(1, len(parts) + 1):
             path = "/".join(parts[:length])
             folded = path.casefold()
             if folded in names and names[folded] != path:
                 raise click.ClickException(
-                    "Case-only paper path collisions are not supported; rename the conflicting files in Overleaf."
+                    "Case-only paper path collisions are not supported; rename the conflicting files in the workspace or Overleaf."
                 )
             names[folded] = path
-    return result
 
 
 def blob(repo: Path, entry: tuple[str, str]) -> bytes:
@@ -408,6 +412,7 @@ def merge_files(base: dict, ours: dict, theirs: dict) -> dict:
             + ", ".join(conflicts)
             + ". Reconcile them before pulling; no workspace files were changed."
         )
+    require_case_unique(merged)
     return merged
 
 

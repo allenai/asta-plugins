@@ -225,6 +225,44 @@ def test_case_only_remote_paths_stop_before_import(setup, names):
     assert not (project / "paper").exists()
 
 
+@pytest.mark.parametrize("existing_import", [False, True])
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("fig.png", "Fig.png"),
+        ("figures/a.png", "Figures/b.png"),
+        ("figure", "Figure/a.png"),
+    ],
+)
+def test_case_only_merged_paths_stop_before_writing(setup, names, existing_import):
+    _, seed, project = setup
+    paper = imported(project) if existing_import else project / "paper"
+    local_name, remote_name = names
+    local = paper / local_name
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_bytes(b"local figure")
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "local figure")
+    before = {
+        path.relative_to(paper): path.read_bytes()
+        for path in paper.rglob("*")
+        if path.is_file()
+    }
+    (seed / remote_name).parent.mkdir(parents=True, exist_ok=True)
+    overleaf_edit(seed, remote_name, "remote figure\n")
+    overleaf_edit(seed, "main.tex", "updated paper\n")
+
+    result = run(project, "pull", URL)
+
+    assert result.exit_code == 1 and "Case-only" in result.output
+    assert {
+        path.relative_to(paper): path.read_bytes()
+        for path in paper.rglob("*")
+        if path.is_file()
+    } == before
+    assert git(project, "status", "--porcelain") == ""
+
+
 @pytest.mark.parametrize("args", [("pull",), ("pull", "--reconcile-bibliography")])
 def test_deleted_worktree_bibliography_is_not_reimported(setup, args):
     _, _, project = setup
