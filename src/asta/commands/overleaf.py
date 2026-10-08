@@ -19,15 +19,30 @@ SHA = re.compile(r"[0-9a-f]{40}")
 
 
 def git_bytes(*args: str, cwd: Path, env: dict | None = None, data=None) -> bytes:
-    result = subprocess.run(
-        ["git", "--literal-pathspecs", "-c", "core.hooksPath=/dev/null", *args],
-        cwd=cwd,
-        env=env,
-        input=data,
-        capture_output=True,
-    )
+    with tempfile.TemporaryDirectory() as hooks:
+        result = subprocess.run(
+            ["git", "--literal-pathspecs", "-c", f"core.hooksPath={hooks}", *args],
+            cwd=cwd,
+            env=env,
+            input=data,
+            capture_output=True,
+        )
     if result.returncode:
         # Diagnostics may contain URLs or credential-helper output.
+        if "push" in args and any(
+            marker in result.stderr.lower()
+            for marker in (b"non-fast-forward", b"fetch first", b"[rejected]")
+        ):
+            raise click.ClickException(
+                "Overleaf changed during publish. Pull and review the changes before retrying."
+            )
+        if any(
+            marker in result.stderr.lower()
+            for marker in (b"authentication failed", b"could not read username", b"401")
+        ):
+            raise click.ClickException(
+                "Overleaf authentication failed. Check your Git token or credential helper."
+            )
         raise click.ClickException(
             f"Git operation failed (exit {result.returncode}). "
             "Check repository access, credentials and remote changes."
@@ -209,15 +224,21 @@ def cache_dir(project: Path, url: str) -> Path:
             "The sync cache must not be committed; untrack .asta/cache/ first."
         )
     ignored = subprocess.run(
-        ["git", "check-ignore", "--quiet", "--no-index", str(root)], cwd=project
+        ["git", "check-ignore", "--quiet", "--no-index", str(root)],
+        cwd=project,
+        capture_output=True,
     )
-    if ignored.returncode:
+    if ignored.returncode == 1:
         raise click.ClickException("Ignore .asta/cache/ in .gitignore before syncing.")
+    if ignored.returncode:
+        raise click.ClickException(
+            "Cannot check sync cache ignore rules; check the workspace Git configuration."
+        )
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
-def network_options(env: dict) -> list[str]:
+def network_options(env: dict, repo: Path) -> list[str]:
     options = [
         "-c",
         "http.followRedirects=false",
@@ -228,6 +249,13 @@ def network_options(env: dict) -> list[str]:
     ]
     if env.get("OVERLEAF_TOKEN"):
         options += ["-c", "credential.helper="]
+        config = git_bytes("config", "--null", "--list", cwd=repo, env=env)
+        for entry in config.split(b"\0"):
+            key = entry.partition(b"\n")[0]
+            if key.lower().startswith(b"credential.") and key.lower().endswith(
+                b".helper"
+            ):
+                options += ["-c", os.fsdecode(key) + "="]
     return options
 
 
@@ -251,7 +279,7 @@ def fetch(project: Path, url: str, env: dict) -> tuple[Path, str, str]:
             raise click.ClickException(
                 "Git URL rewrites are not supported for Overleaf."
             )
-    options = network_options(env)
+    options = network_options(env, repo)
     refs = git(*options, "ls-remote", "--symref", url, "HEAD", cwd=repo, env=env)
     branch = next(
         (line.split()[1] for line in refs.splitlines() if line.startswith("ref: ")),
@@ -267,9 +295,15 @@ def fetch(project: Path, url: str, env: dict) -> tuple[Path, str, str]:
 def snapshot(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
     """Return regular-file modes and blob IDs, rejecting symlinks and submodules."""
     result = {}
-    listing = git_bytes(
-        "ls-tree", "-rz", "--full-tree", revision, "--", prefix or ".", cwd=repo
-    )
+    try:
+        listing = git_bytes(
+            "ls-tree", "-rz", "--full-tree", revision, "--", prefix or ".", cwd=repo
+        )
+    except click.ClickException as exc:
+        raise click.ClickException(
+            "Recorded Git revision is unavailable. Restore the missing history or "
+            "re-import Overleaf into a new paper directory and review the result."
+        ) from exc
     for entry in listing.split(b"\0"):
         if not entry:
             continue
@@ -284,6 +318,17 @@ def snapshot(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str
                 "Symlinks and submodules are not supported in papers."
             )
         result[name] = (mode, oid)
+    names = {}
+    for name in result:
+        parts = PurePosixPath(name).parts
+        for length in range(1, len(parts) + 1):
+            path = "/".join(parts[:length])
+            folded = path.casefold()
+            if folded in names and names[folded] != path:
+                raise click.ClickException(
+                    "Case-only paper path collisions are not supported; rename the conflicting files in Overleaf."
+                )
+            names[folded] = path
     return result
 
 
@@ -291,13 +336,18 @@ def blob(repo: Path, entry: tuple[str, str]) -> bytes:
     return git_bytes("cat-file", "blob", entry[1], cwd=repo)
 
 
-def replace_file(target: Path, data: bytes, mode: int = 0o644) -> None:
+def replace_file(target: Path, data: bytes, mode: int | None = None) -> None:
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
+        if mode is None and target.exists():
+            mode = stat.S_IMODE(target.stat().st_mode)
+        with tempfile.NamedTemporaryFile(
+            dir=target.parent, prefix=".asta-tmp-", delete=False
+        ) as stream:
             temporary = Path(stream.name)
             stream.write(data)
-        temporary.chmod(mode)
+        if mode is not None:
+            temporary.chmod(mode)
         temporary.replace(target)
     except OSError as exc:
         raise click.ClickException(
@@ -388,13 +438,19 @@ def pull(
         raise click.ClickException(
             "This paper is already connected to a different Overleaf project."
         )
+    commit = current_commit(project)
     require_clean(project, paper)
     require_visible(project, paper)
     require_visible(project, project / BIBLIOGRAPHY)
+    if not reconcile_bibliography:
+        require_clean(project, project / BIBLIOGRAPHY)
     rel = paper.relative_to(project).as_posix()
-    commit = current_commit(project)
     ours = snapshot(project, commit, rel)
     committed_bib = snapshot(project, commit, BIBLIOGRAPHY).get(BIBLIOGRAPHY)
+    if committed_bib and not (project / BIBLIOGRAPHY).exists():
+        raise click.ClickException(
+            "Restore the deleted root references.bib before syncing Overleaf."
+        )
     ours.pop(CONFIG, None)
     if BIBLIOGRAPHY in ours:
         raise click.ClickException(
@@ -479,26 +535,35 @@ def pull(
             "warning: Review imported Git tracking/diff rules: " + ", ".join(controls),
             err=True,
         )
-    paper.mkdir(parents=True, exist_ok=True)
-    for name in sorted(removed, reverse=True):
-        safe_path(paper, name).unlink()
-    for name in sorted(changed):
-        target = safe_path(paper, name)
-        if target.is_dir():
-            for child in sorted(target.rglob("*"), reverse=True):
-                child.rmdir()
-            target.rmdir()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        replace_file(
-            target, contents[name], 0o755 if merged[name][0] == "100755" else 0o644
-        )
+    try:
+        paper.mkdir(parents=True, exist_ok=True)
+        for name in sorted(removed, reverse=True):
+            safe_path(paper, name).unlink()
+        for name in sorted(changed):
+            target = safe_path(paper, name)
+            if target.is_dir():
+                for child in sorted(target.rglob("*"), reverse=True):
+                    child.rmdir()
+                target.rmdir()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            replace_file(
+                target, contents[name], 0o755 if merged[name][0] == "100755" else 0o644
+            )
+    except OSError as exc:
+        raise click.ClickException(
+            "Sync filesystem update failed. Inspect the working tree before retrying; "
+            "earlier files may already have been updated."
+        ) from exc
     if data is not None:
         if not shared.exists():
             replace_file(shared, data)
             click.echo(
                 "Imported Overleaf's bibliography to root references.bib for review."
             )
-        elif shared.read_bytes() != data:
+        elif (
+            git("hash-object", f"--path={BIBLIOGRAPHY}", str(shared), cwd=project)
+            != bib_revision
+        ):
             replace_file(backup, data)
             click.echo(
                 f"warning: Overleaf's references.bib differs; the root copy stays canonical. "
@@ -600,7 +665,8 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         if head != expected:
             raise click.ClickException(
                 "Overleaf has edits that are not in the workspace. "
-                "Pull and review them in a PR before publishing; nothing was pushed."
+                "Pull and review them in a PR before publishing; nothing was pushed. "
+                "A publication from another clone or a cleared cache also requires a fresh pull."
             )
         remote = snapshot(repo, head)
         remote_bib = remote.get(BIBLIOGRAPHY)
@@ -659,11 +725,17 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                     env=index_env,
                 )
             tree = git("write-tree", cwd=repo, env=index_env)
+            try:
+                configured = git("var", "GIT_AUTHOR_IDENT", cwd=project)
+                name, address = configured.rsplit(" <", 1)
+                email = address.split(">", 1)[0]
+            except click.ClickException:
+                name, email = "Asta workspace", "asta@allenai.org"
             new = git(
                 "-c",
-                "user.name=Asta workspace",
+                f"user.name={name}",
                 "-c",
-                "user.email=asta@allenai.org",
+                f"user.email={email}",
                 "commit-tree",
                 tree,
                 "-p",
@@ -672,7 +744,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 data=f"Publish reviewed workspace changes\n\n{TRAILER} {commit}\n".encode(),
             )
         git(
-            *network_options(env),
+            *network_options(env, repo),
             "push",
             "--quiet",
             url,

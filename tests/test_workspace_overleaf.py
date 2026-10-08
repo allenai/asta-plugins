@@ -3,6 +3,7 @@
 import importlib
 import json
 import os
+import shutil
 import subprocess
 
 import pytest
@@ -11,6 +12,7 @@ from click.testing import CliRunner
 from asta.cli import cli
 
 module = importlib.import_module("asta.commands.overleaf")
+REAL_GIT_BYTES = module.git_bytes
 URL = "https://git.overleaf.com/1234567"
 
 
@@ -30,7 +32,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     remote = tmp_path / "overleaf.git"
-    original_git = module.git_bytes
+    original_git = REAL_GIT_BYTES
 
     def transport(*args, **kwargs):
         if "--get-url" in args:
@@ -82,6 +84,243 @@ def test_pull_imports_without_shared_bibliography(setup):
     assert not (paper / "references.bib").exists()
     config = json.loads((paper / "overleaf.json").read_text())
     assert config["url"] == URL and len(config["base"]) == 40
+
+
+@pytest.mark.parametrize(
+    "scope", ["", ".https://git.overleaf.com", ".https://git.overleaf.com/1234567"]
+)
+def test_token_disables_real_credential_storage(setup, monkeypatch, tmp_path, scope):
+    _, _, project = setup
+    stored = tmp_path / "credentials"
+    global_config = tmp_path / "gitconfig"
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    git(
+        project,
+        "config",
+        "--global",
+        f"credential{scope}.helper",
+        f"store --file={stored}",
+    )
+    git(project, "config", "--global", "credential.useHttpPath", "true")
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    credential = b"protocol=https\nhost=git.overleaf.com\npath=1234567\nusername=git\npassword=fixture-token\n\n"
+    # Demonstrate that the configured helper really would save a credential.
+    module.git("credential", "approve", cwd=project, data=credential)
+    assert stored.exists()
+    stored.unlink()
+    with module.credentials() as env:
+        module.git(
+            *module.network_options(env, project),
+            "credential",
+            "approve",
+            cwd=project,
+            env=env,
+            data=credential,
+        )
+    assert not stored.exists()
+
+
+@pytest.mark.parametrize(
+    ("operation", "diagnostic", "message"),
+    [
+        (
+            "fetch",
+            b"Authentication failed for https://git:fixture-token@git.overleaf.com",
+            "authentication failed",
+        ),
+        (
+            "push",
+            b"[rejected] master -> master (fetch first) fixture-token",
+            "changed during publish",
+        ),
+    ],
+)
+def test_git_errors_are_actionable_without_credentials(
+    setup, monkeypatch, operation, diagnostic, message
+):
+    _, _, project = setup
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 128, b"", diagnostic
+        ),
+    )
+    with pytest.raises(module.click.ClickException) as error:
+        REAL_GIT_BYTES(operation, URL, cwd=project)
+    assert message in str(error.value)
+    assert "fixture-token" not in str(error.value)
+
+
+def test_ignore_check_failure_is_not_reported_as_missing_rule(setup, monkeypatch):
+    _, _, project = setup
+    original = subprocess.run
+
+    def fail_check(*args, **kwargs):
+        if "check-ignore" in args[0]:
+            return subprocess.CompletedProcess(args[0], 128, b"", b"fixture-token")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fail_check)
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "Cannot check" in result.output
+    assert "fixture-token" not in result.output
+    assert "Ignore .asta/cache" not in result.output
+
+
+def test_git_uses_an_empty_hooks_directory(setup, tmp_path):
+    _, _, project = setup
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    marker = tmp_path / "hook-ran"
+    hook = hooks / "pre-commit"
+    hook.write_text(f'#!/bin/sh\ntouch "{marker}"\n')
+    hook.chmod(0o700)
+    git(project, "config", "core.hooksPath", str(hooks))
+    git(project, "config", "user.name", "fixture writer")
+    git(project, "config", "user.email", "fixture@example.invalid")
+    module.git("commit", "--allow-empty", "-m", "fixture", cwd=project)
+    assert not marker.exists()
+
+
+def test_real_global_url_rewrite_is_rejected(setup, monkeypatch, tmp_path):
+    _, _, project = setup
+    config = tmp_path / "gitconfig"
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    git(
+        project,
+        "config",
+        "--global",
+        "url.https://example.invalid/.insteadOf",
+        "https://git.overleaf.com/",
+    )
+    monkeypatch.setattr(module, "git_bytes", REAL_GIT_BYTES)
+    original_run = subprocess.run
+
+    def deny_network(*args, **kwargs):
+        command = args[0]
+        if "ls-remote" in command and "--get-url" not in command:
+            pytest.fail("network attempted")
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", deny_network)
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "URL rewrites" in result.output
+
+
+@pytest.mark.parametrize(
+    "names", [("Fig.png", "fig.png"), ("Figures/a.png", "figures/b.png")]
+)
+def test_case_only_remote_paths_stop_before_import(setup, names):
+    _, seed, project = setup
+    for name in names:
+        target = seed / name
+        target.parent.mkdir(exist_ok=True)
+        target.write_bytes(b"figure")
+    git(seed, "add", ".")
+    git(seed, "commit", "-m", "case collision")
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "Case-only" in result.output
+    assert not (project / "paper").exists()
+
+
+@pytest.mark.parametrize("args", [("pull",), ("pull", "--reconcile-bibliography")])
+def test_deleted_worktree_bibliography_is_not_reimported(setup, args):
+    _, _, project = setup
+    paper = imported(project)
+    before = (paper / module.CONFIG).read_bytes()
+    (project / "references.bib").unlink()
+    result = run(project, *args)
+    assert result.exit_code == 1 and "references.bib" in result.output
+    assert not (project / "references.bib").exists()
+    assert (paper / module.CONFIG).read_bytes() == before
+
+
+def test_normal_pull_refuses_uncommitted_root_bibliography(setup):
+    _, seed, project = setup
+    paper = imported(project)
+    (project / "references.bib").write_text("@misc{local}\n")
+    overleaf_edit(seed, "main.tex", "new paper\n")
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "uncommitted changes" in result.output
+    assert (paper / "main.tex").read_text() == "hello\n"
+    assert (project / "references.bib").read_text() == "@misc{local}\n"
+
+
+def test_crlf_bibliography_does_not_produce_false_backup(setup):
+    _, _, project = setup
+    imported(project)
+    (project / ".gitattributes").write_text("references.bib text eol=crlf\n")
+    git(project, "add", ".gitattributes")
+    git(project, "commit", "-m", "CRLF checkout")
+    (project / "references.bib").unlink()
+    git(project, "restore", "references.bib")
+    assert (project / "references.bib").read_bytes() == b"@misc{a}\r\n"
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert "Reconcile needed entries" not in result.output
+    assert not list((project / ".asta/cache").rglob("overleaf-references.bib"))
+
+
+def test_missing_base_has_reimport_guidance(setup):
+    _, _, project = setup
+    paper = imported(project)
+    metadata = paper / module.CONFIG
+    config = json.loads(metadata.read_text())
+    config["base"] = "a" * 40
+    metadata.write_text(json.dumps(config))
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "missing base")
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "re-import" in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert (paper / "main.tex").read_text() == "hello\n"
+
+
+def test_filesystem_failure_has_recovery_guidance(setup, monkeypatch):
+    _, seed, project = setup
+    paper = imported(project)
+    git(seed, "rm", "old.tex")
+    git(seed, "commit", "-m", "remove")
+    git(seed, "push", "origin", "master")
+    original = type(paper).unlink
+
+    def fail(target, *args, **kwargs):
+        if target == paper / "old.tex":
+            raise OSError("fixture permission failure")
+        return original(target, *args, **kwargs)
+
+    monkeypatch.setattr(type(paper), "unlink", fail)
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "Inspect the working tree" in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_private_file_mode_survives_atomic_replacement(tmp_path):
+    target = tmp_path / "references.bib"
+    target.write_bytes(b"old")
+    target.chmod(0o600)
+    module.replace_file(target, b"new")
+    assert target.read_bytes() == b"new"
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert not list(tmp_path.glob(".asta-tmp-*"))
+
+
+def test_publish_uses_workspace_git_identity(setup):
+    remote, _, project = setup
+    paper = imported(project)
+    git(project, "config", "user.name", "Fixture author")
+    git(project, "config", "user.email", "author@example.invalid")
+    (paper / "main.tex").write_text("reviewed\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "review")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert (
+        git(remote, "log", "-1", "--format=%an <%ae>")
+        == "Fixture author <author@example.invalid>"
+    )
 
 
 def test_publish_round_trip_and_refuses_unpulled_edits(setup):
@@ -211,7 +450,8 @@ def test_url_normalizes_overleaf_username():
     )
 
 
-def test_credentials_are_ephemeral_and_not_in_script(monkeypatch):
+def test_credentials_are_ephemeral_and_not_in_script(setup, monkeypatch):
+    _, _, project = setup
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
     with module.credentials() as env:
         from pathlib import Path
@@ -220,8 +460,8 @@ def test_credentials_are_ephemeral_and_not_in_script(monkeypatch):
         assert script.exists() and script.stat().st_mode & 0o777 == 0o700
         assert "fixture-token" not in script.read_text()
         assert env["GIT_TERMINAL_PROMPT"] == "0"
-        assert "http.followRedirects=false" in module.network_options(env)
-        assert "credential.helper=" in module.network_options(env)
+        assert "http.followRedirects=false" in module.network_options(env, project)
+        assert "credential.helper=" in module.network_options(env, project)
     assert not script.exists()
 
 
@@ -377,7 +617,7 @@ def test_remote_changes_after_fetch_reject_push(setup, monkeypatch):
 
     monkeypatch.setattr(module, "git_bytes", race)
     result = run(project, "publish")
-    assert result.exit_code == 1 and "Git operation failed" in result.output
+    assert result.exit_code == 1 and "Overleaf changed during publish" in result.output
     assert git(remote, "rev-parse", "HEAD") == advanced[0]
     assert git(remote, "show", "HEAD:main.tex") == "hello"
     assert not list((project / ".asta/cache").rglob("published-*.json"))
@@ -579,6 +819,32 @@ def test_stale_checkout_cannot_reuse_newer_publication_receipt(setup, operation)
         assert result.exit_code == 0, result.output
         assert (paper / "main.tex").read_text() == "published edit\n"
     assert git(remote, "rev-parse", "HEAD") == head
+
+
+@pytest.mark.parametrize("recovery", ["clone", "cleared-cache"])
+def test_another_clone_or_cleared_cache_requires_reviewed_pull(
+    setup, tmp_path, recovery
+):
+    _, _, project = setup
+    paper = imported(project)
+    (paper / "main.tex").write_text("published edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "reviewed edit")
+    assert run(project, "publish").exit_code == 0
+    if recovery == "clone":
+        clone = tmp_path / "another-clone"
+        git(tmp_path, "clone", str(project), str(clone))
+        project = clone
+    else:
+        shutil.rmtree(project / ".asta/cache")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "requires a fresh pull" in result.output
+    assert run(project, "pull").exit_code == 0
+    assert git(project, "diff", "--name-only") == "paper/overleaf.json"
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "review refreshed connection")
+    result = run(project, "publish")
+    assert result.exit_code == 0 and "already up to date" in result.output
 
 
 def test_descendant_can_reuse_receipt_but_legacy_receipt_cannot(setup):
@@ -927,6 +1193,9 @@ def test_uncommitted_root_equality_does_not_reconcile_remote_bibliography(setup)
     overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
     (project / "references.bib").write_text("@misc{a}\n@misc{coauthor}\n")
     result = run(project, "pull")
+    assert result.exit_code == 1 and "uncommitted changes" in result.output
+    git(project, "restore", "references.bib")
+    result = run(project, "pull")
     assert result.exit_code == 0, result.output
     assert (
         json.loads((paper / module.CONFIG).read_text())["bibliography_reconciled"]
@@ -972,13 +1241,16 @@ def test_reimporting_missing_root_requires_committing_imported_bibliography(setu
     remote, seed, project = setup
     imported(project)
     overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
-    (project / "references.bib").unlink()
+    git(project, "rm", "references.bib")
+    git(project, "commit", "-m", "remove root bibliography")
     result = run(project, "pull")
     assert result.exit_code == 0, result.output
     assert "Imported Overleaf's bibliography" in result.output
     git(project, "add", "paper/overleaf.json")
     git(project, "commit", "-m", "metadata only")
-    git(project, "restore", "references.bib")
+    (project / "references.bib").write_text("@misc{a}\n")
+    git(project, "add", "references.bib")
+    git(project, "commit", "-m", "different root bibliography")
     before = git(remote, "rev-parse", "HEAD")
     result = run(project, "publish")
     assert result.exit_code == 1 and "used for reconciliation" in result.output
