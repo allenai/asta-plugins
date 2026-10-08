@@ -108,18 +108,21 @@ def push(repo: Path) -> None:
         git(*options, "push", "--quiet", "origin", "HEAD", cwd=repo, env=env)
 
 
-def files(repo: Path, revision: str, prefix: str = "") -> dict[str, str]:
-    """Map path (relative to prefix) to blob id for regular files at a revision."""
+def files(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
+    """Map regular-file paths to Git mode and blob id; refuse unsupported entries."""
     out = git_bytes("ls-tree", "-r", "-z", revision, "--", prefix or ".", cwd=repo)
     result = {}
     for entry in filter(None, out.split(b"\0")):
         meta, path = entry.split(b"\t", 1)
         mode, kind, blob = meta.decode().split()
-        name = os.fsdecode(path)[len(prefix) :]
+        name = os.fsdecode(path)
+        if prefix.endswith("/"):
+            name = name[len(prefix) :]
         if kind != "blob" or mode not in ("100644", "100755"):
-            click.echo(f"Skipping {name}: only regular files are copied.", err=True)
-            continue
-        result[name] = blob
+            raise click.ClickException(
+                f"Cannot sync {name}: only regular files are supported."
+            )
+        result[name] = (mode, blob)
     return result
 
 
@@ -153,9 +156,39 @@ def save_config(paper: Path, url: str, base: str) -> None:
     (paper / CONFIG).write_text(text)
 
 
-def write_blob(repo: Path, blob: str, target: Path) -> None:
+def write_blob(repo: Path, entry: tuple[str, str], target: Path) -> None:
+    mode, blob = entry
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(git_bytes("cat-file", "blob", blob, cwd=repo))
+    content = git_bytes("cat-file", "blob", blob, cwd=repo)
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(content)
+    permissions = stat.S_IMODE(target.stat().st_mode) & ~0o111
+    if mode == "100755":
+        permissions |= (permissions & 0o444) >> 2
+    target.chmod(permissions)
+
+
+def require_visible(repo: Path, paths: list[str], *, no_index: bool = False) -> None:
+    if not paths:
+        return
+    result = subprocess.run(
+        ["git", "check-ignore", "--stdin", "-z", *(["--no-index"] if no_index else [])],
+        cwd=repo,
+        env=git_environment(),
+        capture_output=True,
+        input=b"\0".join(os.fsencode(name) for name in paths) + b"\0",
+    )
+    if result.returncode not in (0, 1):
+        raise click.ClickException("Could not check paper ignore rules.")
+    if result.stdout:
+        raise click.ClickException(
+            "Ignore rules hide imported files: "
+            + ", ".join(
+                os.fsdecode(name) for name in result.stdout.split(b"\0") if name
+            )
+            + ". Adjust the ignore rules before pulling."
+        )
 
 
 project_option = click.option(
@@ -175,7 +208,7 @@ def overleaf() -> None:
 @project_option
 def pull(url: str | None, directory: str, project: Path) -> None:
     """Copy the Overleaf project into the paper directory and record its commit."""
-    root, paper, _ = resolve(project, directory)
+    root, paper, prefix = resolve(project, directory)
     config = load_config(paper)
     url = validate_url(url or config.get("url"))
     require_clean(root, paper)
@@ -184,25 +217,52 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         head = clone(url, repo)
         new = files(repo, head)
         overleaf_bib = new.pop(BIBLIOGRAPHY, None)
-        new.pop(CONFIG, None)
-        known = (
-            config
-            and not subprocess.run(
-                ["git", "cat-file", "-e", config["base"] + "^{commit}"],
-                cwd=repo,
-                capture_output=True,
-            ).returncode
+        if CONFIG in new:
+            raise click.ClickException(
+                f"Overleaf contains reserved workspace file {CONFIG}."
+            )
+        base = files(repo, config["base"]) if config else {}
+        base.pop(BIBLIOGRAPHY, None)
+        base.pop(CONFIG, None)
+        ours = files(root, "HEAD", prefix)
+        # Keep committed workspace edits when Overleaf is unchanged; never merge silently.
+        changes = {
+            name for name in base.keys() | new.keys() if new.get(name) != ours.get(name)
+        }
+        conflicts = {
+            name
+            for name in changes
+            if ours.get(name) != base.get(name) and new.get(name) != base.get(name)
+        }
+        if conflicts:
+            raise click.ClickException(
+                "Workspace and Overleaf both changed: "
+                + ", ".join(sorted(conflicts))
+                + ". Reconcile these files before pulling."
+            )
+        changes = {name for name in changes if new.get(name) != base.get(name)}
+        destinations = [prefix + name for name in new] + [prefix + CONFIG]
+        require_visible(root, destinations)
+        # Incoming .gitignore files must not hide new sources after they are copied.
+        require_visible(
+            repo, [name for name in new if name not in ours] + [CONFIG], no_index=True
         )
-        # Files Overleaf deleted since the last pull; workspace-only files are kept.
-        for name in (files(repo, config["base"]) if known else {}).keys() - new.keys():
-            (paper / name).unlink(missing_ok=True)
-        for name, blob in new.items():
-            write_blob(repo, blob, paper / name)
+        for name in changes | {CONFIG}:
+            target = paper / name
+            if any(path.is_symlink() for path in (target, *target.parents)):
+                raise click.ClickException(
+                    f"Cannot sync {name}: workspace path is a symlink."
+                )
+        for name in sorted(changes):
+            if name in new:
+                write_blob(repo, new[name], paper / name)
+            else:
+                (paper / name).unlink(missing_ok=True)
     save_config(paper, url, head)
     root_bib = root / BIBLIOGRAPHY
     if overleaf_bib and (
         not root_bib.exists()
-        or git("hash-object", "--", str(root_bib), cwd=root) != overleaf_bib
+        or git("hash-object", "--", str(root_bib), cwd=root) != overleaf_bib[1]
     ):
         click.echo(
             f"Overleaf's {BIBLIOGRAPHY} differs from the workspace root copy and was not "
@@ -232,7 +292,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     ours = files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
     if root_bib.exists():
-        ours[BIBLIOGRAPHY] = git("rev-parse", f"HEAD:{BIBLIOGRAPHY}", cwd=root)
+        ours[BIBLIOGRAPHY] = files(root, "HEAD", BIBLIOGRAPHY)[BIBLIOGRAPHY]
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -241,10 +301,15 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 f"Overleaf has changed since commit {config['base'][:7]}. Run "
                 "`asta workspace overleaf pull`, review those edits in a PR, then publish."
             )
+        if CONFIG in files(repo, head):
+            raise click.ClickException(
+                f"Overleaf contains reserved workspace file {CONFIG}."
+            )
         git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
-        for name, blob in ours.items():
-            write_blob(root, blob, repo / name)
-        git("add", "-A", cwd=repo)
+        for name, entry in ours.items():
+            write_blob(root, entry, repo / name)
+        if ours:
+            git("add", "-f", "--", *sorted(ours), cwd=repo)
         changes = git("status", "--short", cwd=repo)
         if not changes:
             click.echo("Overleaf already matches the committed paper.")
