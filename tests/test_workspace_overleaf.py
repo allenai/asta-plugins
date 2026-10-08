@@ -566,3 +566,254 @@ def test_cache_loss_requires_pull_before_republishing(setup):
     result = run(project, "pull")
     assert result.exit_code == 0, result.output
     assert (paper / "main.tex").read_text() == "reviewed\n"
+
+
+@pytest.mark.parametrize("operation", ["publish", "pull"])
+def test_stale_checkout_cannot_reuse_newer_publication_receipt(setup, operation):
+    remote, _, project = setup
+    paper = imported(project)
+    old = git(project, "rev-parse", "HEAD")
+    (paper / "main.tex").write_text("published edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "reviewed edit")
+    assert run(project, "publish").exit_code == 0
+    head = git(remote, "rev-parse", "HEAD")
+    git(project, "checkout", "-q", old)
+    result = run(project, operation)
+    if operation == "publish":
+        assert result.exit_code == 1 and "Overleaf has edits" in result.output
+    else:
+        assert result.exit_code == 0, result.output
+        assert (paper / "main.tex").read_text() == "published edit\n"
+    assert git(remote, "rev-parse", "HEAD") == head
+
+
+def test_descendant_can_reuse_receipt_but_legacy_receipt_cannot(setup):
+    remote, _, project = setup
+    paper = imported(project)
+    (paper / "main.tex").write_text("first edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "first")
+    assert run(project, "publish").exit_code == 0
+    receipt = module.receipt_path(project, paper, URL)
+    record = json.loads(receipt.read_text())
+    assert record["commit"] == git(project, "rev-parse", "HEAD")
+    (paper / "main.tex").write_text("second edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "second")
+    assert run(project, "publish").exit_code == 0
+    record = json.loads(receipt.read_text())
+    record.pop("commit")
+    receipt.write_text(json.dumps(record))
+    before = git(remote, "rev-parse", "HEAD")
+    result = run(project, "publish")
+    assert result.exit_code == 1 and "Overleaf has edits" in result.output
+    assert git(remote, "rev-parse", "HEAD") == before
+
+
+@pytest.mark.parametrize("operation", ["pull", "publish"])
+@pytest.mark.parametrize("key", ["insteadOf", "pushInsteadOf"])
+def test_matching_rewrites_block_all_transport(setup, monkeypatch, operation, key):
+    _, _, project = setup
+    imported(project)
+    cache = module.cache_dir(project, URL) / "repo.git"
+    git(
+        cache,
+        "config",
+        f"url.https://attacker.example/.{key}",
+        "https://git.overleaf.com/",
+    )
+    transport = module.git_bytes
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+
+    def no_network(*args, **kwargs):
+        if any(cmd in args for cmd in ("fetch", "push")) or (
+            "ls-remote" in args and "--get-url" not in args
+        ):
+            pytest.fail("network attempted after rewrite")
+        return transport(*args, **kwargs)
+
+    monkeypatch.setattr(module, "git_bytes", no_network)
+    result = run(project, operation)
+    assert result.exit_code == 1 and "URL rewrites" in result.output
+    assert "fixture-token" not in result.output
+
+
+def test_coauthor_bibliography_requires_explicit_reconciliation(setup):
+    remote, seed, project = setup
+    paper = imported(project)
+    overleaf_edit(seed, "references.bib", "@misc{a}\n@misc{coauthor}\n")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "pull bibliography update")
+    before = git(remote, "rev-parse", "HEAD")
+    for args in [("publish",), ("publish", "--dry-run")]:
+        result = run(project, *args)
+        assert result.exit_code == 1 and "unreconciled entries" in result.output
+        assert git(remote, "rev-parse", "HEAD") == before
+    (project / "references.bib").write_text(
+        "@misc{a}\n@misc{coauthor}\n@misc{workspace}\n"
+    )
+    result = run(project, "pull", "--reconcile-bibliography")
+    assert result.exit_code == 0, result.output
+    git(project, "add", "references.bib", "paper/overleaf.json")
+    git(project, "commit", "-m", "review reconciliation")
+    assert run(project, "publish").exit_code == 0
+    assert (
+        git(remote, "show", "HEAD:references.bib")
+        == "@misc{a}\n@misc{coauthor}\n@misc{workspace}"
+    )
+    assert json.loads((paper / module.CONFIG).read_text())["bibliography_reconciled"]
+
+
+def test_workspace_bibliography_can_advance_without_false_conflict(setup):
+    remote, seed, project = setup
+    imported(project)
+    (project / "references.bib").write_text("@misc{a}\n@misc{workspace}\n")
+    git(project, "add", "references.bib")
+    git(project, "commit", "-m", "workspace reference")
+    assert run(project, "pull").exit_code == 0
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "--allow-empty", "-m", "refresh metadata")
+    assert run(project, "publish").exit_code == 0
+    (project / "references.bib").write_text("@misc{a}\n@misc{workspace}\n@misc{new}\n")
+    git(project, "add", "references.bib")
+    git(project, "commit", "-m", "new workspace reference")
+    overleaf_edit(seed, "main.tex", "coauthor prose\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    git(project, "add", "paper")
+    git(project, "commit", "-m", "review prose")
+    assert run(project, "publish").exit_code == 0
+    assert git(remote, "show", "HEAD:references.bib").endswith("@misc{new}")
+
+
+def test_cache_refs_survive_pruning_and_support_subsequent_pull(setup):
+    remote, seed, project = setup
+    paper = imported(project)
+    base = json.loads((paper / module.CONFIG).read_text())["base"]
+    (paper / "main.tex").write_text("published\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "review")
+    assert run(project, "publish").exit_code == 0
+    cache = module.cache_dir(project, URL) / "repo.git"
+    assert git(cache, "rev-parse", "refs/overleaf/master") == base
+    assert git(cache, "rev-parse", "refs/overleaf/published") == git(
+        remote, "rev-parse", "HEAD"
+    )
+    git(cache, "gc", "--prune=now")
+    overleaf_edit(seed, "old.tex", "remote\n")
+    assert run(project, "pull").exit_code == 0
+    assert (paper / "main.tex").read_text() == "published\n"
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {},
+        {"base": "a" * 40},
+        {"url": 42, "base": "a" * 40},
+        {"url": URL, "base": "bad"},
+        {"url": URL, "base": "a" * 40, "bibliography": 42},
+    ],
+)
+@pytest.mark.parametrize("operation", ["pull", "publish"])
+def test_malformed_config_has_an_actionable_error(setup, operation, config):
+    _, _, project = setup
+    paper = imported(project)
+    (paper / module.CONFIG).write_text(json.dumps(config))
+    git(project, "add", "paper/overleaf.json")
+    git(project, "commit", "-m", "invalid config")
+    result = run(project, operation)
+    assert result.exit_code == 1 and "Invalid overleaf.json" in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_pull_preserves_edits_hidden_from_git_status(setup, flag):
+    _, seed, project = setup
+    paper = imported(project)
+    git(project, "update-index", flag, "paper/main.tex")
+    (paper / "main.tex").write_text("hidden local edit\n")
+    overleaf_edit(seed, "main.tex", "remote edit\n")
+    assert git(project, "status", "--porcelain") == ""
+    before = (paper / module.CONFIG).read_bytes()
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "assume-unchanged/skip-worktree" in result.output
+    assert (paper / "main.tex").read_text() == "hidden local edit\n"
+    assert (paper / module.CONFIG).read_bytes() == before
+
+
+def test_executable_asset_modes_survive_import_and_publication(setup):
+    remote, seed, project = setup
+    (seed / "build.sh").write_text("#!/bin/sh\necho paper\n")
+    (seed / "build.sh").chmod(0o755)
+    git(seed, "add", "build.sh")
+    git(seed, "commit", "-m", "executable")
+    git(seed, "push", "origin", "master")
+    paper = imported(project)
+    assert (paper / "build.sh").stat().st_mode & 0o111
+    (paper / "main.tex").write_text("edit\n")
+    git(project, "add", "paper/main.tex")
+    git(project, "commit", "-m", "edit")
+    assert run(project, "publish").exit_code == 0
+    assert git(remote, "ls-tree", "HEAD", "build.sh").startswith("100755")
+
+
+def test_missing_blob_stops_pull_before_workspace_writes(setup, monkeypatch):
+    _, seed, project = setup
+    paper = imported(project)
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    overleaf_edit(seed, "main.tex", "first\n")
+    overleaf_edit(seed, "old.tex", "second\n")
+    original = module.blob
+    count = 0
+
+    def missing(repo, entry):
+        nonlocal count
+        count += 1
+        if count == 3:
+            raise module.click.ClickException("Missing object")
+        return original(repo, entry)
+
+    monkeypatch.setattr(module, "blob", missing)
+    result = run(project, "pull")
+    assert result.exit_code == 1 and "Missing object" in result.output
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+
+
+def test_import_warns_about_git_control_files(setup):
+    _, seed, project = setup
+    overleaf_edit(seed, ".gitignore", "build/\n")
+    overleaf_edit(seed, ".gitattributes", "*.tex text\n")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    assert (
+        "Review imported Git tracking/diff rules: .gitattributes, .gitignore"
+        in result.output
+    )
+
+
+def test_uncommitted_workspace_has_clear_error(setup):
+    _, _, project = setup
+    git(project, "checkout", "--orphan", "empty")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 1 and "Commit the workspace" in result.output
+
+
+def test_failed_file_replacement_does_not_truncate_existing_file(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    target = tmp_path / "main.tex"
+    target.write_bytes(b"original")
+
+    def fail(source, destination):
+        assert destination == target
+        assert target.read_bytes() == b"original"
+        raise OSError("fixture disk failure")
+
+    monkeypatch.setattr(Path, "replace", fail)
+    with pytest.raises(module.click.ClickException, match="earlier files may already"):
+        module.replace_file(target, b"replacement")
+    assert target.read_bytes() == b"original"
+    assert list(tmp_path.iterdir()) == [target]

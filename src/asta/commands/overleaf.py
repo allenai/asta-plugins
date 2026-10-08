@@ -40,8 +40,12 @@ def git(*args: str, **kwargs) -> str:
 
 
 def validate_url(url: str) -> str:
-    match = re.fullmatch(
-        r"https://(?:git@)?git\.overleaf\.com/([A-Za-z0-9]+)(?:\.git)?/?", url
+    match = (
+        re.fullmatch(
+            r"https://(?:git@)?git\.overleaf\.com/([A-Za-z0-9]+)(?:\.git)?/?", url
+        )
+        if isinstance(url, str)
+        else None
     )
     if not match:
         raise click.ClickException(
@@ -78,21 +82,25 @@ def json_object(data: bytes, description: str) -> dict:
         raise click.ClickException(f"Invalid {description} JSON.") from exc
 
 
-def load_config(paper: Path) -> dict:
-    path = paper / CONFIG
-    config = json_object(path.read_bytes(), CONFIG) if path.exists() else {}
-    if config:
-        if not isinstance(config.get("url"), str) or not SHA.fullmatch(
-            str(config.get("base", ""))
-        ):
-            raise click.ClickException(
-                f"Invalid {CONFIG}; expected a URL and base commit."
-            )
-        config["url"] = validate_url(config["url"])
+def parse_config(data: bytes) -> dict:
+    config = json_object(data, CONFIG)
+    if not isinstance(config.get("url"), str) or not SHA.fullmatch(
+        str(config.get("base", ""))
+    ):
+        raise click.ClickException(f"Invalid {CONFIG}; expected a URL and base commit.")
+    config["url"] = validate_url(config["url"])
+    for key in ("bibliography", "bibliography_reconciled"):
+        if config.get(key) is not None and not SHA.fullmatch(str(config[key])):
+            raise click.ClickException(f"Invalid {CONFIG} bibliography revision.")
     return config
 
 
-def safe_path(root: Path, name: str) -> Path:
+def load_config(paper: Path) -> dict:
+    path = paper / CONFIG
+    return parse_config(path.read_bytes()) if path.exists() else {}
+
+
+def validate_name(name: str) -> None:
     parts = PurePosixPath(name).parts
     if (
         not parts
@@ -105,6 +113,10 @@ def safe_path(root: Path, name: str) -> Path:
         raise click.ClickException(
             "Paper paths must be relative and outside .git/.asta."
         )
+
+
+def safe_path(root: Path, name: str) -> Path:
+    validate_name(name)
     target = root / name
     for path in [target, *target.parents]:
         if path == root:
@@ -130,6 +142,25 @@ def require_clean(project: Path, path: Path) -> None:
     if git("status", "--porcelain", "--untracked-files=all", "--", rel, cwd=project):
         raise click.ClickException(
             f"{rel} has uncommitted changes; commit or stash them first."
+        )
+
+
+def current_commit(project: Path) -> str:
+    try:
+        return git("rev-parse", "--verify", "HEAD", cwd=project)
+    except click.ClickException as exc:
+        raise click.ClickException(
+            "Commit the workspace before syncing Overleaf."
+        ) from exc
+
+
+def require_visible(project: Path, paper: Path) -> None:
+    entries = git_bytes(
+        "ls-files", "-vz", "--", paper.relative_to(project).as_posix(), cwd=project
+    ).split(b"\0")
+    if any(entry and (entry[:1].islower() or entry[:1] == b"S") for entry in entries):
+        raise click.ClickException(
+            "Clear assume-unchanged/skip-worktree flags on paper files before pulling."
         )
 
 
@@ -176,6 +207,17 @@ def fetch(project: Path, url: str, env: dict) -> tuple[Path, str, str]:
         git("init", "--quiet", "--bare", str(repo), cwd=project)
     if git("ls-remote", "--get-url", url, cwd=repo) != url:
         raise click.ClickException("Git URL rewrites are not supported for Overleaf.")
+    config = git_bytes("config", "--null", "--list", cwd=repo)
+    for entry in config.split(b"\0"):
+        key, _, value = entry.partition(b"\n")
+        if (
+            key.lower().startswith(b"url.")
+            and key.lower().endswith((b".insteadof", b".pushinsteadof"))
+            and url.encode().startswith(value)
+        ):
+            raise click.ClickException(
+                "Git URL rewrites are not supported for Overleaf."
+            )
     options = network_options(env)
     refs = git(*options, "ls-remote", "--symref", url, "HEAD", cwd=repo, env=env)
     branch = next(
@@ -184,12 +226,13 @@ def fetch(project: Path, url: str, env: dict) -> tuple[Path, str, str]:
     )
     if not branch or not branch.startswith("refs/heads/"):
         raise click.ClickException("Overleaf did not report its default Git branch.")
-    git(*options, "fetch", "--quiet", url, branch, cwd=repo, env=env)
-    return repo, git("rev-parse", "FETCH_HEAD", cwd=repo), branch
+    ref = "refs/overleaf/" + branch.removeprefix("refs/heads/")
+    git(*options, "fetch", "--quiet", url, f"+{branch}:{ref}", cwd=repo, env=env)
+    return repo, git("rev-parse", ref, cwd=repo), branch
 
 
-def snapshot(repo: Path, revision: str, prefix: str = "") -> dict[str, str]:
-    """Return regular-file blob IDs, rejecting symlinks and submodules up front."""
+def snapshot(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
+    """Return regular-file modes and blob IDs, rejecting symlinks and submodules."""
     result = {}
     listing = git_bytes(
         "ls-tree", "-rz", "--full-tree", revision, "--", prefix or ".", cwd=repo
@@ -200,19 +243,37 @@ def snapshot(repo: Path, revision: str, prefix: str = "") -> dict[str, str]:
         metadata, raw_name = entry.split(b"\t", 1)
         mode, kind, oid = metadata.decode().split()
         name = os.fsdecode(raw_name)
-        safe_path(repo, name)
+        validate_name(name)
         if prefix:
             name = name.removeprefix(prefix + "/")
         if kind != "blob" or mode not in ("100644", "100755"):
             raise click.ClickException(
                 "Symlinks and submodules are not supported in papers."
             )
-        result[name] = oid
+        result[name] = (mode, oid)
     return result
 
 
-def blob(repo: Path, oid: str) -> bytes:
-    return git_bytes("cat-file", "blob", oid, cwd=repo)
+def blob(repo: Path, entry: tuple[str, str]) -> bytes:
+    return git_bytes("cat-file", "blob", entry[1], cwd=repo)
+
+
+def replace_file(target: Path, data: bytes, mode: int = 0o644) -> None:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+        temporary.chmod(mode)
+        temporary.replace(target)
+    except OSError as exc:
+        raise click.ClickException(
+            "Sync file replacement failed. Inspect the working tree before retrying; "
+            "earlier files may already have been updated."
+        ) from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def receipt_path(project: Path, paper: Path, url: str) -> Path:
@@ -223,15 +284,18 @@ def receipt_path(project: Path, paper: Path, url: str) -> Path:
     return path
 
 
-def expected_head(config: dict, receipt: Path) -> str | None:
+def expected_head(config: dict, receipt: Path, project: Path) -> str | None:
     value = (
         json_object(receipt.read_bytes(), "publish receipt") if receipt.exists() else {}
     )
-    expected = (
-        value.get("head")
-        if value.get("base") == config.get("base") and config
-        else config.get("base")
-    )
+    expected = config.get("base")
+    commit = value.get("commit")
+    if value.get("base") == expected and SHA.fullmatch(str(commit)):
+        try:
+            if git("merge-base", commit, "HEAD", cwd=project) == commit:
+                expected = value.get("head")
+        except click.ClickException:
+            pass
     if expected is not None and not SHA.fullmatch(str(expected)):
         raise click.ClickException(
             "Invalid recorded Overleaf revision; restore the connection metadata."
@@ -273,9 +337,16 @@ def overleaf() -> None:
 @click.argument("url", required=False)
 @click.option("--dir", "directory", default="paper", show_default=True)
 @click.option(
+    "--reconcile-bibliography",
+    is_flag=True,
+    help="Confirm root references.bib includes the Overleaf entries you want to keep.",
+)
+@click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
-def pull(url: str | None, directory: str, project: Path) -> None:
+def pull(
+    url: str | None, directory: str, project: Path, reconcile_bibliography: bool
+) -> None:
     """Import Overleaf edits for a workspace PR; stop on overlapping local edits."""
     project, paper = resolve(project, directory)
     config = load_config(paper)
@@ -285,8 +356,9 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             "This paper is already connected to a different Overleaf project."
         )
     require_clean(project, paper)
+    require_visible(project, paper)
     rel = paper.relative_to(project).as_posix()
-    ours = snapshot(project, "HEAD", rel)
+    ours = snapshot(project, current_commit(project), rel)
     ours.pop(CONFIG, None)
     if BIBLIOGRAPHY in ours:
         raise click.ClickException(
@@ -296,9 +368,9 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         repo, head, _ = fetch(project, url, env)
     theirs = snapshot(repo, head)
     remote_bib = theirs.pop(BIBLIOGRAPHY, None)
-    previous = expected_head(config, receipt_path(project, paper, url))
+    previous = expected_head(config, receipt_path(project, paper, url), project)
     base = snapshot(repo, previous) if previous else {}
-    base.pop(BIBLIOGRAPHY, None)
+    base_bib = base.pop(BIBLIOGRAPHY, None)
     if CONFIG in theirs or CONFIG in base:
         raise click.ClickException(
             "overleaf.json is reserved for workspace connection metadata."
@@ -333,6 +405,33 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     backup = cache_dir(project, url) / "overleaf-references.bib"
     if backup.is_symlink():
         raise click.ClickException("Symlinks are not supported in cache paths.")
+    bib_revision = remote_bib[1] if remote_bib else None
+    reconciled = (
+        reconcile_bibliography
+        or data is None
+        or not shared.exists()
+        or shared.read_bytes() == data
+        or (
+            remote_bib == base_bib
+            and (
+                previous != config.get("base")
+                or config.get("bibliography_reconciled") == bib_revision
+            )
+        )
+    )
+    # Read every blob before changing files, so a missing object cannot leave a partial import.
+    contents = {name: blob(repo, merged[name]) for name in changed}
+    git("update-ref", f"refs/overleaf/bases/{head}", head, cwd=repo)
+    controls = sorted(
+        name
+        for name in changed
+        if PurePosixPath(name).name in (".gitignore", ".gitattributes")
+    )
+    if controls:
+        click.echo(
+            "warning: Review imported Git tracking/diff rules: " + ", ".join(controls),
+            err=True,
+        )
     paper.mkdir(parents=True, exist_ok=True)
     for name in sorted(removed, reverse=True):
         safe_path(paper, name).unlink()
@@ -343,22 +442,44 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 child.rmdir()
             target.rmdir()
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(blob(repo, merged[name]))
+        replace_file(
+            target, contents[name], 0o755 if merged[name][0] == "100755" else 0o644
+        )
     if data is not None:
         if not shared.exists():
-            shared.write_bytes(data)
+            replace_file(shared, data)
             click.echo(
                 "Imported Overleaf's bibliography to root references.bib for review."
             )
         elif shared.read_bytes() != data:
-            backup.write_bytes(data)
+            replace_file(backup, data)
             click.echo(
                 f"warning: Overleaf's references.bib differs; the root copy stays canonical. "
                 f"Reconcile needed entries from {backup} before publication.",
                 err=True,
             )
-    (paper / CONFIG).write_text(
-        json.dumps({**config, "url": url, "base": head}, indent=2) + "\n"
+    if not reconciled:
+        click.echo(
+            "Publication is blocked until bibliography reconciliation is confirmed. "
+            "Merge the needed entries into root references.bib, then pull with "
+            "--reconcile-bibliography and commit the result for review.",
+            err=True,
+        )
+    replace_file(
+        paper / CONFIG,
+        (
+            json.dumps(
+                {
+                    **config,
+                    "url": url,
+                    "base": head,
+                    "bibliography": bib_revision,
+                    "bibliography_reconciled": bib_revision if reconciled else None,
+                },
+                indent=2,
+            )
+            + "\n"
+        ).encode(),
     )
     click.echo(
         f"Pulled Overleaf {head[:7]} into {rel}/, preserving committed local edits."
@@ -380,15 +501,15 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         raise click.ClickException("Run `asta workspace overleaf pull <url>` first.")
     require_clean(project, paper)
     require_clean(project, project / BIBLIOGRAPHY)
-    commit = git("rev-parse", "HEAD", cwd=project)
+    commit = current_commit(project)
     rel = paper.relative_to(project).as_posix()
     ours = snapshot(project, commit, rel)
     if CONFIG not in ours:
         raise click.ClickException(
             "Commit the Overleaf import and connection metadata first."
         )
-    config = json_object(blob(project, ours.pop(CONFIG)), CONFIG)
-    url = validate_url(config["url"])
+    config = parse_config(blob(project, ours.pop(CONFIG)))
+    url = config["url"]
     if BIBLIOGRAPHY in ours:
         raise click.ClickException("Use root references.bib, not paper/references.bib.")
     shared = snapshot(project, commit, BIBLIOGRAPHY)
@@ -398,7 +519,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         )
     ours[BIBLIOGRAPHY] = shared[BIBLIOGRAPHY]
     receipt = receipt_path(project, paper, url)
-    expected = expected_head(config, receipt)
+    expected = expected_head(config, receipt, project)
     with credentials() as env:
         repo, head, branch = fetch(project, url, env)
         if head != expected:
@@ -407,28 +528,44 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 "Pull and review them in a PR before publishing; nothing was pushed."
             )
         remote = snapshot(repo, head)
+        remote_bib = remote.get(BIBLIOGRAPHY)
+        if (
+            remote_bib is not None
+            and remote_bib[1] != ours[BIBLIOGRAPHY][1]
+            and not (
+                expected != config["base"]
+                or remote_bib[1] == config.get("bibliography_reconciled")
+            )
+        ):
+            raise click.ClickException(
+                "Overleaf references.bib has unreconciled entries. Merge the needed "
+                "entries into the root bibliography, then pull with "
+                "--reconcile-bibliography and commit for review; nothing was pushed."
+            )
         changed = sorted(name for name in ours if ours[name] != remote.get(name))
         deleted = sorted(remote.keys() - ours.keys())
         if not changed and not deleted:
             click.echo("Overleaf is already up to date.")
             return
-        click.echo("Changed: " + ", ".join(changed))
-        click.echo("Deleted: " + ", ".join(deleted))
+        if changed:
+            click.echo("Changed: " + ", ".join(changed))
+        if deleted:
+            click.echo("Deleted: " + ", ".join(deleted))
         if dry_run:
             click.echo("Dry run: nothing pushed.")
             return
         with tempfile.TemporaryDirectory() as tmp:
             index_env = dict(env, GIT_INDEX_FILE=str(Path(tmp) / "index"))
             git("read-tree", "--empty", cwd=repo, env=index_env)
-            for name, oid in sorted(ours.items()):
+            for name, entry in sorted(ours.items()):
                 stored = git(
-                    "hash-object", "-w", "--stdin", cwd=repo, data=blob(project, oid)
+                    "hash-object", "-w", "--stdin", cwd=repo, data=blob(project, entry)
                 )
                 git(
                     "update-index",
                     "--add",
                     "--cacheinfo",
-                    "100644",
+                    entry[0],
                     stored,
                     name,
                     cwd=repo,
@@ -456,5 +593,11 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             cwd=repo,
             env=env,
         )
-    receipt.write_text(json.dumps({"base": config["base"], "head": new}) + "\n")
+        git("update-ref", "refs/overleaf/published", new, cwd=repo)
+    replace_file(
+        receipt,
+        (
+            json.dumps({"base": config["base"], "head": new, "commit": commit}) + "\n"
+        ).encode(),
+    )
     click.echo(f"Published {rel}/ at {commit[:7]} to Overleaf.")
