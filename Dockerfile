@@ -1,4 +1,4 @@
-FROM mirror.gcr.io/library/node:22-slim AS asta
+FROM public.ecr.aws/docker/library/node:22-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
