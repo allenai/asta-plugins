@@ -1,7 +1,7 @@
 ---
 name: workspace
 description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
-allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
 # Workspace
@@ -16,6 +16,8 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
+
+When the user wants to see what changed since an earlier version — such as one they last read, recorded as a git tag or commit — offer `asta workspace what-changed <ref>`. It renders `<ref>` and the working tree with `make render`, writes `_site/what-changed.html` with the same diff the PR preview uses, and prints its preview URL. No PR or Pages deploy is needed. Tracking which version the user last read stays with the user; suggest a tag such as `git tag -f last-read` after they read.
 
 ## Save
 

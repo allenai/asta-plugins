@@ -90,6 +90,8 @@ The PR's “What changed” page uses the version of `what-changed.py` shipped w
 
 A custom script must accept `--old <site-dir>`, `--new <site-dir>`, `--out <html-file>`, and `--title <text>`. It must write a nonempty HTML file to `--out` and exit successfully to publish the page. `--old` is a snapshot of the deployed main site (empty before the first deploy); `--new` is the PR's rendered `_site/`.
 
+To see the same page locally against any git ref, run `asta workspace what-changed <ref>` (for example a tag marking the version you last read). It renders `<ref>` in a temporary worktree and the working tree with `make render`, runs the project's `scripts/what-changed.py` or the copy cached from the selected ref, and writes `_site/what-changed.html`. Selected refs older than the first release shipping that cached copy need `scripts/what-changed.py` or a newer ref.
+
 ### Managed paper HTML viewers
 
 For each discovered LaTeX paper, the shared preview generates `<paper-dir>/html/index.qmd` before `make check`. This page embeds the LaTeXML rendition in the Quarto site and links the PDF; the paper's HTML and PDF diffs remain in What changed. Keep the LaTeX source and bibliography committed, and ignore only the generated page, for example `/paper/html/index.qmd` in `.gitignore`. Viewer scripts are managed; copy them into `scripts/` only to customize or eject them.

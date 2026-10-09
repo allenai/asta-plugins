@@ -10,6 +10,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -27,7 +28,9 @@ ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
 CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS
+# Cached when the selected ref ships it; `asta workspace what-changed` runs it.
+DIFF_SCRIPT = "what-changed.py"
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT,)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -453,6 +456,118 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
         + b"\n",
     )
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
+
+
+def _git(project: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(project), *args], capture_output=True, text=True, check=False
+    )
+
+
+def diff_script(project: Path) -> Path:
+    """Locate what-changed.py the way the PR preview does: project copy first."""
+    local = project / "scripts" / DIFF_SCRIPT
+    if local.is_file():
+        return local
+    click.get_current_context().invoke(
+        sync, project=project, refresh=False, require_scripts=False
+    )
+    try:
+        state = json.loads((project / ".asta/cache/workspace.json").read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = {}
+    archive_sha = state.get("archive_sha256") if isinstance(state, dict) else None
+    scripts = state.get("scripts") if isinstance(state, dict) else None
+    if (
+        isinstance(archive_sha, str)
+        and re.fullmatch(r"[0-9a-f]{64}", archive_sha)
+        and isinstance(scripts, dict)
+        and DIFF_SCRIPT in scripts
+    ):
+        cached = project / ".asta/cache/scripts" / archive_sha / DIFF_SCRIPT
+        if cached.is_file() and not cached.is_symlink():
+            return cached
+    raise click.ClickException(
+        f"No {DIFF_SCRIPT} for this project: select a newer asta-plugins ref in "
+        f"docs.yml and run 'asta workspace sync --refresh', or add scripts/{DIFF_SCRIPT}"
+    )
+
+
+def render_site(directory: Path, label: str) -> Path:
+    click.echo(f"Rendering {label} with 'make render'", err=True)
+    try:
+        result = subprocess.run(["make", "render"], cwd=directory, check=False)
+    except FileNotFoundError as exc:
+        raise click.ClickException("make is required to render the workspace") from exc
+    site = directory / "_site"
+    if result.returncode != 0 or not site.is_dir():
+        raise click.ClickException(f"'make render' failed for {label}")
+    return site
+
+
+@workspace.command("what-changed")
+@click.argument("ref")
+@click.option(
+    "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
+)
+@click.option(
+    "--out",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="Output HTML path (default: _site/what-changed.html).",
+)
+def what_changed(ref: str, project: Path, out: Path | None) -> None:
+    """Show what changed in the rendered site since a git REF (tag, branch, commit).
+
+    Renders REF and the working tree with the project's own 'make render' and
+    compares them with the what-changed.py the PR preview uses.
+    """
+    project = project.resolve()
+    commit = _git(project, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    if commit.returncode != 0 or not commit.stdout.strip():
+        raise click.ClickException(f"Unknown git ref: {ref}")
+    script = diff_script(project)
+    out = (out or project / "_site" / "what-changed.html").resolve()
+    with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
+        baseline = Path(tmp) / "baseline"
+        added = _git(
+            project, "worktree", "add", "--detach", str(baseline), commit.stdout.strip()
+        )
+        if added.returncode != 0:
+            raise click.ClickException(
+                f"Could not check out {ref}: {added.stderr.strip()}"
+            )
+        try:
+            old_site = render_site(baseline, ref)
+            new_site = render_site(project, "the working tree")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--old",
+                    str(old_site),
+                    "--new",
+                    str(new_site),
+                    "--out",
+                    str(out),
+                    "--title",
+                    f"Changes since {ref}",
+                ],
+                check=False,
+            )
+        finally:
+            _git(project, "worktree", "remove", "--force", str(baseline))
+            _git(project, "worktree", "prune")
+    if result.returncode != 0:
+        raise click.ClickException(f"{DIFF_SCRIPT} failed")
+    click.echo(f"Wrote {out}")
+    try:
+        rel = out.relative_to(project / "_site")
+    except ValueError:
+        return
+    click.echo(
+        f"With 'asta workspace preview' running, open {preview_url(os.environ)}{rel.as_posix()}"
+    )
 
 
 PREVIEW_PORT = 4848
