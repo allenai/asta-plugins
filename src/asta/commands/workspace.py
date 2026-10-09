@@ -522,6 +522,47 @@ def render_site(directory: Path, label: str) -> Path:
     return site
 
 
+DIFF_STATE = Path(".asta/cache/what-changed.json")
+
+
+def _diff_path(path: Path) -> Path:
+    path = path.absolute()
+    if any(part.is_symlink() for part in (path, *path.parents)):
+        raise click.ClickException(f"Comparison paths must not use symlinks: {path}")
+    return path.resolve()
+
+
+def _previous_reports(project: Path, site: Path) -> dict[str, str]:
+    state_path = _diff_path(project / DIFF_STATE)
+    try:
+        state = json.loads(state_path.read_text())
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(
+            f"Invalid comparison report state: {state_path}"
+        ) from exc
+    if not isinstance(state, dict) or any(
+        not isinstance(name, str)
+        or not name
+        or Path(name).as_posix() != name
+        or Path(name).is_absolute()
+        or any(part in (".", "..") for part in Path(name).parts)
+        or not isinstance(digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        for name, digest in state.items()
+    ):
+        raise click.ClickException(f"Invalid comparison report state: {state_path}")
+    # A renderer can replace a report with a real page; only exclude our bytes.
+    return {
+        name: digest
+        for name, digest in state.items()
+        if (site / name).is_file()
+        and not (site / name).is_symlink()
+        and hashlib.sha256((site / name).read_bytes()).hexdigest() == digest
+    }
+
+
 @workspace.command("what-changed")
 @click.argument("ref")
 @click.option(
@@ -548,8 +589,9 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
         raise click.ClickException(
             "Could not locate the project within its git repository"
         )
+    out = _diff_path(out or project / "_site" / "what-changed.html")
+    _diff_path(project / DIFF_STATE)
     script = diff_script(project)
-    out = (out or project / "_site" / "what-changed.html").resolve()
     with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
         baseline = Path(tmp) / "baseline"
         added = _git(
@@ -562,9 +604,25 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
         try:
             old_site = render_site(baseline / prefix.stdout.rstrip("\n"), ref)
             new_site = render_site(project, "the working tree")
+            reports = _previous_reports(project, new_site)
+            _diff_path(out)
             out.parent.mkdir(parents=True, exist_ok=True)
             # Older or custom scripts may not recognize a previous diff report.
             out.unlink(missing_ok=True)
+            if reports:
+                comparison_site = Path(tmp) / "current"
+                shutil.copytree(
+                    new_site,
+                    comparison_site,
+                    symlinks=True,
+                    ignore=lambda directory, names: [
+                        name
+                        for name in names
+                        if (Path(directory) / name).relative_to(new_site).as_posix()
+                        in reports
+                    ],
+                )
+                new_site = comparison_site
             result = subprocess.run(
                 [
                     sys.executable,
@@ -591,15 +649,22 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                     )
     if result.returncode != 0:
         raise click.ClickException(f"{DIFF_SCRIPT} failed")
+    _diff_path(out)
     if not out.is_file() or out.stat().st_size == 0:
         raise click.ClickException(
             f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
         )
-    click.echo(f"Wrote {out}")
     try:
         rel = out.relative_to(project / "_site")
     except ValueError:
+        click.echo(f"Wrote {out}")
         return
+    reports[rel.as_posix()] = hashlib.sha256(out.read_bytes()).hexdigest()
+    _atomic_write(
+        _diff_path(project / DIFF_STATE),
+        json.dumps(reports, sort_keys=True).encode() + b"\n",
+    )
+    click.echo(f"Wrote {out}")
     click.echo(
         f"With 'asta workspace preview' running, open {preview_url(os.environ)}{rel.as_posix()}"
     )

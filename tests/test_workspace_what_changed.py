@@ -165,8 +165,18 @@ def test_unknown_ref(project: Path) -> None:
     assert "Unknown git ref: no-such-ref" in result.output
 
 
-@pytest.mark.parametrize("output_name", ["what-changed.html", "custom.html"])
-def test_repeat_run_excludes_previous_report(project: Path, output_name: str) -> None:
+@pytest.mark.parametrize(
+    "output_names",
+    [
+        ["what-changed.html", "what-changed.html"],
+        ["custom.html", "custom.html"],
+        ["custom.html", "what-changed.html", "another.html", "custom.html"],
+        ["reports/custom.html", "what-changed.html"],
+    ],
+)
+def test_repeat_run_excludes_previous_report(
+    project: Path, output_names: list[str]
+) -> None:
     # This project override has no built-in recognition of generated reports.
     (project / "scripts/what-changed.py").write_text(
         "from pathlib import Path\n"
@@ -176,14 +186,97 @@ def test_repeat_run_excludes_previous_report(project: Path, output_name: str) ->
         "pages = sorted(p.relative_to(site).as_posix() for p in site.rglob('*.html'))\n"
         "out.write_text('<html><body>' + ', '.join(pages) + '</body></html>')\n"
     )
-    out = project / "_site" / output_name
-    args = ["what-changed", "last-read", "--project", str(project)]
-    if output_name != "what-changed.html":
-        args += ["--out", str(out)]
-    for _ in range(2):
+    for output_name in output_names:
+        out = project / "_site" / output_name
+        args = ["what-changed", "last-read", "--project", str(project)]
+        if output_name != "what-changed.html":
+            args += ["--out", str(out)]
         result = CliRunner().invoke(workspace, args)
         assert result.exit_code == 0, result.output
         assert out.read_text() == "<html><body>index.html</body></html>"
+    for output_name in output_names:
+        assert (project / "_site" / output_name).is_file()
+
+
+def test_renderer_replacement_of_report_is_compared(project: Path) -> None:
+    args = ["what-changed", "last-read", "--project", str(project)]
+    result = CliRunner().invoke(
+        workspace, [*args, "--out", str(project / "_site/custom.html")]
+    )
+    assert result.exit_code == 0, result.output
+    Path(shutil.which("make")).write_text(
+        FAKE_MAKE + "\nif pathlib.Path('.git').is_dir():\n"
+        "    pathlib.Path('_site/custom.html').write_text("
+        "'<html><body><main>Real rendered page.</main></body></html>')\n"
+    )
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code == 0, result.output
+    report = (project / "_site/what-changed.html").read_text()
+    assert 'href="#p-custom-html"' in report
+    assert "Real rendered page" in report
+    assert "Real rendered page" in (project / "_site/custom.html").read_text()
+
+
+@pytest.mark.parametrize("output_name", ["what-changed.html", "custom.html"])
+@pytest.mark.parametrize("existing_target", [False, True])
+def test_symlink_output_preserves_external_target(
+    project: Path, output_name: str, existing_target: bool
+) -> None:
+    target = project.parent / "external.html"
+    if existing_target:
+        target.write_text("Keep this file")
+    (project / "_site").mkdir()
+    output = project / "_site" / output_name
+    output.symlink_to(target)
+    args = ["what-changed", "last-read", "--project", str(project)]
+    if output_name != "what-changed.html":
+        args += ["--out", str(output)]
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code != 0
+    assert "must not use symlinks" in result.output
+    assert "Wrote " not in result.output
+    assert output.is_symlink()
+    if existing_target:
+        assert target.read_text() == "Keep this file"
+    else:
+        assert not target.exists()
+
+
+def test_symlink_created_during_render_preserves_target(project: Path) -> None:
+    target = project.parent / "external.html"
+    target.write_text("Keep this file")
+    Path(shutil.which("make")).write_text(
+        FAKE_MAKE
+        + "\npathlib.Path('_site/what-changed.html').symlink_to("
+        + repr(str(target))
+        + ")\n"
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "must not use symlinks" in result.output
+    assert target.read_text() == "Keep this file"
+    assert (project / "_site/what-changed.html").is_symlink()
+    worktrees = subprocess.check_output(
+        ["git", "-C", str(project), "worktree", "list"], text=True
+    )
+    assert len(worktrees.strip().splitlines()) == 1
+
+
+def test_symlink_site_preserves_external_directory(project: Path) -> None:
+    target = project.parent / "external-site"
+    target.mkdir()
+    report = target / "what-changed.html"
+    report.write_text("Keep this file")
+    (project / "_site").symlink_to(target, target_is_directory=True)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "must not use symlinks" in result.output
+    assert report.read_text() == "Keep this file"
+    assert list(target.iterdir()) == [report]
 
 
 @pytest.mark.parametrize("stale_output", [False, True])

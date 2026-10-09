@@ -94,6 +94,8 @@ To see the same page locally against any git ref, run `asta workspace what-chang
 
 Use a trusted comparison ref: its Makefile and render-time code execute locally. The baseline contains only committed files; ignored files (for example data, `_freeze/`, `.env`, or `.asta/cache/`) are absent. Its render may fetch dependencies or re-execute code; a project that needs local ignored inputs can fail, with the build's stderr included in the error. The command does not copy today's ignored inputs into the historical baseline. The working-tree render updates `_site/` and may reload an active preview; later renders may remove `what-changed.html`, so rerun the comparison to regenerate it.
 
+Local comparison output paths must not use symlinks. Generated reports inside `_site/` are recorded in the ignored `.asta/cache/what-changed.json`; unchanged reports are omitted from subsequent comparisons, even when `--out` changes, and remain available on disk. If the renderer replaces a report with different content, that page is compared normally. Custom scripts receive a temporary copy of the current site when earlier reports need to be excluded.
+
 The bundled diff script needs only the Python standard library. A local custom script runs with the Python interpreter running `asta`; that environment must provide any additional dependencies. Inline script dependency metadata is not installed automatically. The PR preview continues to run custom scripts with its build environment's `python3`.
 
 ### Managed paper HTML viewers
