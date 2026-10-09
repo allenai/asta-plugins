@@ -168,7 +168,8 @@ preview-ready:
 PAPER_DIR ?= paper
 .PHONY: paper paper-clean
 # Main document: main.tex, else the single .tex file containing \documentclass.
-PAPER_MAIN = cd "$(PAPER_DIR)" && if [ -f main.tex ]; then main=main.tex; else \
+PAPER_MAIN = cd "$(PAPER_DIR)" 2>/dev/null || { echo "No paper directory $(PAPER_DIR)" >&2; exit 1; }; \
+	if [ -f main.tex ]; then main=main.tex; else \
 	set -- $$(grep -l '^[^%]*\\documentclass' *.tex 2>/dev/null); \
 	[ $$\# -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; \
 	main=$$1; fi

@@ -258,7 +258,7 @@ def test_paper_titles_and_html_are_escaped(tmp_path):
     document = (tmp_path / name / "html/index.qmd").read_text()
     metadata = yaml.safe_load(document.split("---")[1])
     assert metadata["title"] == name + " HTML"
-    assert "<code>other&lt;&gt;&amp;&quot;/main.tex</code>" in document
+    assert "<code>other&lt;&gt;&amp;&quot;/</code>" in document
     assert 'data-paper-preview="../../paper-previews/other%3C%3E%26%22"' in document
     assert "\\u003c" in document
 

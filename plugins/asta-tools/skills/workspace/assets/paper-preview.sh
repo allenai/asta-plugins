@@ -246,7 +246,7 @@ read -r tex_changed other_changed <<< "$flags"
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
 printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 
-if ! git ls-tree --name-only "$base" -- "$dir/" 2>/dev/null | grep -q '\.tex$'; then
+if ! git ls-tree -z --name-only "$base" -- "$dir/" 2>/dev/null | tr '\0' '\n' | grep -q '\.tex$'; then
   printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
   exit 0
 fi

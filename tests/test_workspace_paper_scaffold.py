@@ -108,7 +108,8 @@ def test_paper_target_reports_missing_source(tmp_path):
         text=True,
     )
     assert result.returncode != 0
-    assert "No main.tex in paper" in result.stderr
+    assert "No paper directory paper" in result.stderr
+    assert "latexmk" not in result.stderr
 
 
 @pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
