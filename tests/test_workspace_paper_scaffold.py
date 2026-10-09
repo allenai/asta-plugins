@@ -62,10 +62,11 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
-def test_paper_targets_select_directory_and_preserve_engine(tmp_path):
+@pytest.mark.parametrize("main_name", ["main.tex", "conference draft.tex"])
+def test_paper_targets_select_directory_and_preserve_engine(tmp_path, main_name):
     paper = tmp_path / "papers/custom name"
     paper.mkdir(parents=True)
-    (paper / "main.tex").write_text("Test source")
+    (paper / main_name).write_text(r"\documentclass{article}")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     tool = bin_dir / "latexmk"
@@ -94,7 +95,7 @@ def test_paper_targets_select_directory_and_preserve_engine(tmp_path):
         )
         directory, args = json.loads(call.read_text())
         assert directory == str(paper)
-        assert expected in args and "main.tex" in args
+        assert expected in args and main_name in args
         assert "-outdir=build" in args
         assert "-pdf" not in args and "-xelatex" not in args
 
@@ -287,7 +288,6 @@ def test_overleaf_named_main_requires_its_own_bibliography(
         assert "Bibliography test" in text and "[?]" not in text
     else:
         assert result.returncode != 0
-        assert (
-            "couldn't open database file references.bib"
-            in (paper / "build/conference.blg").read_text()
-        )
+        assert "references.bib" in result.stdout + result.stderr
+        bbl = paper / "build/conference.bbl"
+        assert not bbl.exists() or "Bibliography test" not in bbl.read_text()

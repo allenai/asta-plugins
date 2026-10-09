@@ -289,7 +289,7 @@ def test_quarto_renders_the_managed_viewer(tmp_path, directory):
     assert "const host = document.querySelector" in page
     assert 'href="../../paper-previews/paper/main.pdf"' not in page
     assert "createElement('iframe')" in page
-    assert f"<code>{directory}/main.tex</code>" in page
+    assert f"<code>{directory}/</code>" in page
 
 
 def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_path):

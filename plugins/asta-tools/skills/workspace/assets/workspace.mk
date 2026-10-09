@@ -170,9 +170,9 @@ PAPER_DIR ?= paper
 # Main document: main.tex, else the single .tex file containing \documentclass.
 PAPER_MAIN = cd "$(PAPER_DIR)" 2>/dev/null || { echo "No paper directory $(PAPER_DIR)" >&2; exit 1; }; \
 	if [ -f main.tex ]; then main=main.tex; else \
-	set -- $$(grep -l '^[^%]*\\documentclass' *.tex 2>/dev/null); \
-	[ $$\# -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; \
-	main=$$1; fi
+	main=; count=0; for file in *.tex; do \
+	if [ -f "$$file" ] && grep -q '^[^%]*\\documentclass' -- "$$file"; then main=$$file; count=$$((count+1)); fi; done; \
+	[ $$count -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; fi
 paper:
 	@$(PAPER_MAIN); latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$$main"
 

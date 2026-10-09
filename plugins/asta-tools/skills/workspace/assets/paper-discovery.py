@@ -41,7 +41,7 @@ def main_file(
     )
     if len(found) > 1:
         warnings.append(
-            f"Skipped {label}: several .tex files contain \\documentclass"
+            f"Skipped {label}: several .tex files contain \\documentclass: {', '.join(found)}"
             " (add main.tex to choose one)"
         )
     return found[0] if len(found) == 1 else None

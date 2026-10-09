@@ -129,7 +129,10 @@ def test_discovery_finds_single_documentclass_file_without_main_tex(tmp_path):
     result = discover(repo)
 
     assert result["papers"] == ["paper", "synced"]
-    assert any("ambiguous" in warning for warning in result["warnings"])
+    assert any(
+        "ambiguous" in warning and "a.tex, b.tex" in warning
+        for warning in result["warnings"]
+    )
 
 
 def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):

@@ -18,7 +18,7 @@ find_main() {
     [ -f "$file" ] && grep -q '^[^%]*\\documentclass' "$file" && found+=("${file##*/}")
   done
   if [ "${#found[@]}" -gt 1 ]; then
-    echo "::warning::$1 has several .tex files with \\documentclass; add main.tex to choose one" >&2
+    echo "::warning::$1 has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
   fi
   [ "${#found[@]}" -eq 1 ] && echo "${found[0]}"
 }
