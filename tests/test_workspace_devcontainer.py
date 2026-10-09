@@ -76,7 +76,11 @@ def test_tex_image_copies_upstream_full_instead_of_explicit_debian_tex_packages(
     assert "COPY --from=texlive/texlive:latest-full@sha256:" in tex_stage
     assert "grep -q 'TeX Live 2026'" in tex_stage
     # latexml still brings Debian's base TeX transitively.
-    assert "texlive-" not in tex_stage
+    packages = re.search(
+        r"apt-get install -y --no-install-recommends (.*?)&&", tex_stage, re.S
+    )
+    assert packages
+    assert not any(name.startswith("texlive-") for name in packages.group(1).split())
     assert "latexml" in tex_stage
 
 

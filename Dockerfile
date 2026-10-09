@@ -54,6 +54,11 @@ RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
     && pdflatex --version | grep -q 'TeX Live 2026' \
     && test "$(command -v pdflatex)" = /usr/local/bin/pdflatex \
     && latexmk --version && latexdiff --version && biber --version
+# Fontconfig settings outside the copied TeX tree expose bundled fonts by name.
+RUN cp "$(kpsewhich -var-value=TEXMFSYSVAR)/fonts/conf/texlive-fontconfig.conf" \
+      /etc/fonts/conf.d/09-texlive-fonts.conf \
+    && fc-cache -fs \
+    && fc-match -f '%{file}' 'TeX Gyre Termes' | grep -q '^/usr/local/texlive/2026/'
 # System defaults load before user and project latexmkrc files.
 COPY docker/latexmkrc /etc/LatexMk
 ENV LATEXMKRCSYS=/etc/LatexMk

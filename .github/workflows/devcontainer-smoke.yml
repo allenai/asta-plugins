@@ -156,6 +156,18 @@ jobs:
               assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
           PY
 
+      - name: XeLaTeX resolves bundled fonts by name
+        if: matrix.target == 'tex'
+        run: |
+          paper=$(mktemp -d "$RUNNER_TEMP/paper-fonts.XXXXXX")
+          printf '%s\n' '\documentclass{article}' '\usepackage{fontspec}' \
+            '\setmainfont{TeX Gyre Termes}' '\begin{document}Named font\end{document}' > "$paper/main.tex"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$paper:/w" -w /w asta-smoke \
+            xelatex -interaction=nonstopmode -halt-on-error main.tex
+          test -s "$paper/main.pdf"
+
       - name: HTML diff marks match the inline palette
         if: matrix.target == 'tex'
         run: |
