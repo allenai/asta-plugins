@@ -16,11 +16,18 @@ SHA = re.compile(r"[0-9a-f]{40}")
 
 
 def git_environment() -> dict:
-    # Hooks export repository routing; tracing can log authorization headers.
+    # Local Git hooks need no Overleaf token; tracing can log authorization headers.
     env = {
         key: value
         for key, value in os.environ.items()
-        if key not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX")
+        if key
+        not in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_PREFIX",
+            "OVERLEAF_TOKEN",
+        )
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
@@ -73,7 +80,8 @@ def validate_url(url: str | None) -> str:
 def credentials():
     """Answer Git's prompt from OVERLEAF_TOKEN, else leave normal credential helpers in place."""
     env = git_environment()
-    if not env.get("OVERLEAF_TOKEN"):
+    token = os.environ.get("OVERLEAF_TOKEN")
+    if not token:
         yield env, []
         return
     with tempfile.TemporaryDirectory() as tmp:
@@ -82,7 +90,9 @@ def credentials():
             '#!/bin/sh\ncase "$1" in Username*) echo git;; *) printf \'%s\\n\' "$OVERLEAF_TOKEN";; esac\n'
         )
         askpass.chmod(stat.S_IRWXU)
-        env.update(GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT="0")
+        env.update(
+            OVERLEAF_TOKEN=token, GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT="0"
+        )
         # An empty helper list stops Git from storing the token anywhere.
         yield env, ["-c", "credential.helper="]
 
@@ -239,6 +249,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     root, paper, prefix = resolve(project, directory)
     config = load_config(paper)
     url = validate_url(url or config.get("url"))
+    if config and url != config["url"]:
+        raise click.ClickException(
+            "This paper is linked to another Overleaf project. "
+            "Import the new project into a separate directory with --dir; nothing copied."
+        )
     require_clean(root, paper)
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"

@@ -216,6 +216,7 @@ def test_rejects_non_overleaf_urls(setup, url):
 @pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
 def test_token_uses_askpass_and_disables_helpers(monkeypatch):
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    assert "OVERLEAF_TOKEN" not in module.git_environment()
     with module.credentials() as (env, options):
         askpass = env["GIT_ASKPASS"]
         assert options == ["-c", "credential.helper="]
@@ -225,6 +226,57 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
         assert answer.stdout.strip() == "fixture-token"
         assert "fixture-token" not in open(askpass).read()
     assert not os.path.exists(askpass)
+
+
+def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    hook = hooks / "pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n"
+        'test -z "$OVERLEAF_TOKEN" || exit 1\n'
+        'printf checked > "$TEST_HOOK_MARKER"\n'
+    )
+    hook.chmod(0o700)
+    config = tmp_path / "gitconfig"
+    config.write_text(f"[core]\n\thooksPath = {hooks}\n")
+    marker = tmp_path / "hook-ran"
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("TEST_HOOK_MARKER", str(marker))
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert marker.read_text() == "checked"
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_text() == "reviewed edit\n"
+
+
+def test_pull_refuses_a_different_project_before_cloning(setup, monkeypatch):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    before = {path.name: path.read_bytes() for path in paper.iterdir()}
+    monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
+    result = run(project, "pull", "https://git.overleaf.com/7654321")
+    assert result.exit_code != 0
+    assert "another Overleaf project" in result.output
+    assert {path.name: path.read_bytes() for path in paper.iterdir()} == before
+
+
+@pytest.mark.parametrize(
+    "url", [URL + "/", URL + ".git", URL.replace("https://", "https://git@")]
+)
+def test_pull_accepts_the_same_project_url(setup, url):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    result = run(project, "pull", url)
+    assert result.exit_code == 0, result.output
 
 
 @pytest.mark.parametrize("remote_text", ["remote edit\n", None])
