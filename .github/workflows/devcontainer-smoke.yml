@@ -5,6 +5,7 @@ on:
     paths:
       - Dockerfile
       - docker/**
+      - image/skills-cli/**
       - src/asta/**
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
