@@ -36,9 +36,9 @@ def _run_paper_step(tmp_path: Path, *, download_fails: bool = False):
         'cp "$DISCOVERY_SOURCE" "$2"\n'
     )
     curl.chmod(0o755)
-    sudo = bin_dir / "sudo"
-    sudo.write_text("#!/bin/sh\nexit 1\n")
-    sudo.chmod(0o755)
+    docker = bin_dir / "docker"
+    docker.write_text("#!/bin/sh\nexit 1\n")
+    docker.chmod(0o755)
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "PR_BASE": "",
@@ -61,7 +61,9 @@ def test_paper_toolchain_failure_keeps_preview_diagnostic(tmp_path: Path) -> Non
     assert result.returncode != 0
     assert (
         project / "_site/paper-previews/paper/build-failed.txt"
-    ).read_text().strip() == ("Could not update LaTeX package lists.")
+    ).read_text().strip() == (
+        "Could not pull the LaTeX image ghcr.io/allenai/asta:latest-tex."
+    )
     assert (
         project / "_site/paper-previews/paper/preview.json"
     ).read_text().strip() == ('{"changed":false}')
@@ -1025,6 +1027,12 @@ def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy
     (bin_dir / "curl").chmod(0o755)
     (bin_dir / "sudo").write_text("#!/bin/sh\nexit 0\n")
     (bin_dir / "sudo").chmod(0o755)
+    # Run the image's command on the host: drop docker's options and the image.
+    (bin_dir / "docker").write_text(
+        '#!/bin/sh\n[ "$1" = run ] || exit 0\n'
+        'while [ "$1" != bash ]; do shift; done\nexec "$@"\n'
+    )
+    (bin_dir / "docker").chmod(0o755)
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "PR_BASE": "",
@@ -1060,3 +1068,35 @@ def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy
             f"Could not copy scripts/{asset}."
         )
         assert asset not in downloaded
+
+
+@pytest.mark.parametrize(
+    ("ref", "image"),
+    [
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@refs/tags/v0.108.0",
+            "ghcr.io/allenai/asta:v0.108.0-tex",
+        ),
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@refs/heads/main",
+            "ghcr.io/allenai/asta:latest-tex",
+        ),
+    ],
+)
+def test_paper_preview_builds_inside_the_released_tex_image(ref, image):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    assert step["env"]["WORKFLOW_REF"] == "${{ job.workflow_ref }}"
+    assert "apt-get" not in step["run"]
+    assert '"$tex_image" bash /tmp/paper-preview.sh "$base" "$d"' in step["run"]
+    case = step["run"].split('case "$WORKFLOW_REF" in', 1)[1].split("esac", 1)[0]
+    result = subprocess.run(
+        ["bash", "-c", f'case "$WORKFLOW_REF" in{case}esac; printf %s "$tex_image"'],
+        env={"WORKFLOW_REF": ref},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == image

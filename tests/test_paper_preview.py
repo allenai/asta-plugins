@@ -115,6 +115,7 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert len(commands) == 2
     assert all("-pdf" not in command for command in commands)
     assert all("$pdf_mode ||= 1;" in command for command in commands)
+    assert "export LATEXMKRCSYS=/dev/null" in SCRIPT.read_text()
     assert '$deps_escape = "none";' in commands[0]
 
 

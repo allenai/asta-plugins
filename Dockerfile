@@ -33,15 +33,21 @@ LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"}]'
 WORKDIR /app
 
 # Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
-# Match the paper preview's TeX packages so local and CI builds agree.
+# The CI paper preview runs inside this image, so local and CI builds agree.
 FROM asta AS tex
+# Debian's latexml depends on Debian's base LaTeX; the TeX Live symlinks in
+# /usr/local/bin take precedence over it on PATH.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      latexmk latexdiff latexml poppler-utils texlive-latex-base \
-      texlive-latex-recommended texlive-latex-extra \
-      texlive-fonts-recommended texlive-bibtex-extra \
-      texlive-luatex texlive-xetex texlive-publishers \
-      texlive-science texlive-pictures texlive-plain-generic biber \
+      latexml poppler-utils perl ghostscript fontconfig python3-pygments \
     && rm -rf /var/lib/apt/lists/*
+# Upstream TeX Live 2026, full scheme without docs/sources: Overleaf's default
+# for new projects.
+COPY --from=texlive/texlive:latest-full@sha256:a7ae4dfa9d521b5db14446872fa488b839021d1f604d0a3c74461784895f2a67 \
+    /usr/local/texlive /usr/local/texlive
+RUN /usr/local/texlive/2026/bin/*/tlmgr path add \
+    && pdflatex --version | grep -q 'TeX Live 2026' \
+    && test "$(command -v pdflatex)" = /usr/local/bin/pdflatex \
+    && latexmk --version && latexdiff --version && biber --version
 # System defaults load before user and project latexmkrc files.
 COPY docker/latexmkrc /etc/LatexMk
 # Ship the extension and editor defaults only with TeX. This replaces the

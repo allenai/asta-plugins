@@ -70,40 +70,13 @@ def test_skills_cli_is_pinned_in_the_image():
     assert "node_modules/.bin/skills /usr/local/bin/skills" in dockerfile
 
 
-def _packages(text: str) -> set[str]:
-    return set(
-        re.findall(
-            r"\b(?:latexmk|latexdiff|latexml|texlive-[\w-]+|biber|poppler-utils)\b",
-            text,
-        )
-    )
-
-
-def test_tex_image_matches_ci_paper_lane():
+def test_tex_image_is_upstream_tex_live_full():
     dockerfile = DOCKERFILE.read_text()
     tex_stage = dockerfile.split("FROM asta AS tex", 1)[1].split("\nFROM ", 1)[0]
-    tex_stage = "\n".join(
-        line for line in tex_stage.splitlines() if not line.startswith("LABEL ")
-    )
-    if not WORKFLOW.exists():
-        pytest.skip("Paper preview workflow is not present yet")
-    workflow = WORKFLOW.read_text()
-    if "- name: Build paper preview" not in workflow:
-        pytest.skip("Paper preview lane is not present yet")
-    assert _packages(tex_stage) >= {
-        "latexmk",
-        "biber",
-        "texlive-luatex",
-        "texlive-xetex",
-        "texlive-plain-generic",
-    }
-    lane = workflow.split("- name: Build paper preview", 1)[1].split(
-        "\n      - name:", 1
-    )[0]
-    lane = lane.split("apt-get install -y --no-install-recommends", 1)[1].split(
-        "; then", 1
-    )[0]
-    assert _packages(tex_stage) == _packages(lane)
+    assert "COPY --from=texlive/texlive:latest-full@sha256:" in tex_stage
+    assert "grep -q 'TeX Live 2026'" in tex_stage
+    assert "texlive-" not in tex_stage
+    assert "latexml" in tex_stage
 
 
 def test_codespaces_login_persistence_ships_in_the_image() -> None:
