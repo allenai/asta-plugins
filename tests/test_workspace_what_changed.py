@@ -155,6 +155,10 @@ def test_cleanup_failure_warns_without_hiding_report(
     assert (
         "Warning: baseline worktree cleanup failed: worktree is locked" in result.output
     )
+    worktrees = subprocess.check_output(
+        ["git", "-C", str(project), "worktree", "list"], text=True
+    )
+    assert len(worktrees.strip().splitlines()) == 1
 
 
 def test_unknown_ref(project: Path) -> None:
@@ -304,10 +308,60 @@ def test_requires_fresh_nonempty_html(
     assert "did not write nonempty HTML" in result.output
     assert "Wrote " not in result.output
     assert "open http" not in result.output
+    output = project / "_site/what-changed.html"
+    if stale_output:
+        assert output.read_text() == "A stale report"
+    else:
+        assert not output.exists()
     worktrees = subprocess.run(
         ["git", "worktree", "list"], cwd=project, capture_output=True, text=True
     ).stdout
     assert len(worktrees.strip().splitlines()) == 1
+
+
+@pytest.mark.parametrize("external_output", [False, True])
+@pytest.mark.parametrize("symlink_output", [False, True])
+def test_failed_comparison_preserves_previous_report(
+    project: Path, external_output: bool, symlink_output: bool
+) -> None:
+    output = (
+        project.parent / "saved-report.html"
+        if external_output
+        else project / "_site/custom.html"
+    )
+    args = [
+        "what-changed",
+        "last-read",
+        "--project",
+        str(project),
+        "--out",
+        str(output),
+    ]
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code == 0, result.output
+    previous = output.read_bytes()
+    state = project / workspace_module.DIFF_STATE
+    previous_state = state.read_bytes() if state.exists() else None
+    target = project.parent / "keep.html"
+    target.write_text("Keep this file")
+    (project / "scripts/what-changed.py").write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "out = Path(sys.argv[sys.argv.index('--out') + 1])\n"
+        + (
+            f"out.symlink_to({str(target)!r})\n"
+            if symlink_output
+            else "out.write_text('Partial report')\nsys.exit(1)\n"
+        )
+    )
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code != 0
+    assert "Wrote " not in result.output
+    assert output.read_bytes() == previous
+    assert target.read_text() == "Keep this file"
+    assert not list(output.parent.glob(".asta-what-changed-*"))
+    if previous_state is not None:
+        assert state.read_bytes() == previous_state
 
 
 def test_requires_a_diff_script(project: Path, monkeypatch) -> None:

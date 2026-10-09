@@ -592,68 +592,92 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
     out = _diff_path(out or project / "_site" / "what-changed.html")
     _diff_path(project / DIFF_STATE)
     script = diff_script(project)
-    with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
-        baseline = Path(tmp) / "baseline"
-        added = _git(
-            project, "worktree", "add", "--detach", str(baseline), commit.stdout.strip()
-        )
-        if added.returncode != 0:
-            raise click.ClickException(
-                f"Could not check out {ref}: {added.stderr.strip()}"
+    try:
+        with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
+            baseline = Path(tmp) / "baseline"
+            added = _git(
+                project,
+                "worktree",
+                "add",
+                "--detach",
+                str(baseline),
+                commit.stdout.strip(),
             )
-        try:
-            old_site = render_site(baseline / prefix.stdout.rstrip("\n"), ref)
-            new_site = render_site(project, "the working tree")
-            reports = _previous_reports(project, new_site)
-            _diff_path(out)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            # Older or custom scripts may not recognize a previous diff report.
-            out.unlink(missing_ok=True)
-            if reports:
-                comparison_site = Path(tmp) / "current"
-                shutil.copytree(
-                    new_site,
-                    comparison_site,
-                    symlinks=True,
-                    ignore=lambda directory, names: [
-                        name
-                        for name in names
-                        if (Path(directory) / name).relative_to(new_site).as_posix()
-                        in reports
-                    ],
+            if added.returncode != 0:
+                raise click.ClickException(
+                    f"Could not check out {ref}: {added.stderr.strip()}"
                 )
-                new_site = comparison_site
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(script),
-                    "--old",
-                    str(old_site),
-                    "--new",
-                    str(new_site),
-                    "--out",
-                    str(out),
-                    "--title",
-                    f"Changes since {ref}",
-                ],
-                check=False,
-            )
-        finally:
-            removed = _git(project, "worktree", "remove", "--force", str(baseline))
-            pruned = _git(project, "worktree", "prune")
-            for cleanup in (removed, pruned):
-                if cleanup.returncode != 0:
+            try:
+                old_site = render_site(baseline / prefix.stdout.rstrip("\n"), ref)
+                new_site = render_site(project, "the working tree")
+                reports = _previous_reports(project, new_site)
+                _diff_path(out)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                excluded = set(reports)
+                # Exclude the destination without deleting the previous good report.
+                if out.is_file():
+                    try:
+                        excluded.add(out.relative_to(new_site).as_posix())
+                    except ValueError:
+                        pass
+                if excluded:
+                    comparison_site = Path(tmp) / "current"
+                    shutil.copytree(
+                        new_site,
+                        comparison_site,
+                        symlinks=True,
+                        ignore=lambda directory, names: [
+                            name
+                            for name in names
+                            if (Path(directory) / name).relative_to(new_site).as_posix()
+                            in excluded
+                        ],
+                    )
+                    new_site = comparison_site
+                # A sibling staging directory keeps replacement atomic on this filesystem.
+                with tempfile.TemporaryDirectory(
+                    prefix=".asta-what-changed-", dir=out.parent
+                ) as staging:
+                    staged = Path(staging) / out.name
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(script),
+                            "--old",
+                            str(old_site),
+                            "--new",
+                            str(new_site),
+                            "--out",
+                            str(staged),
+                            "--title",
+                            f"Changes since {ref}",
+                        ],
+                        check=False,
+                    )
+                    if result.returncode != 0:
+                        raise click.ClickException(f"{DIFF_SCRIPT} failed")
+                    _diff_path(staged)
+                    if not staged.is_file() or staged.stat().st_size == 0:
+                        raise click.ClickException(
+                            f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
+                        )
+                    _diff_path(out)
+                    staged.replace(out)
+            finally:
+                removed = _git(project, "worktree", "remove", "--force", str(baseline))
+                if removed.returncode != 0:
                     click.echo(
-                        f"Warning: baseline worktree cleanup failed: {cleanup.stderr.strip()}",
+                        f"Warning: baseline worktree cleanup failed: {removed.stderr.strip()}",
                         err=True,
                     )
-    if result.returncode != 0:
-        raise click.ClickException(f"{DIFF_SCRIPT} failed")
-    _diff_path(out)
-    if not out.is_file() or out.stat().st_size == 0:
-        raise click.ClickException(
-            f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
-        )
+    finally:
+        # TemporaryDirectory must remove a failed-removal worktree before pruning.
+        pruned = _git(project, "worktree", "prune")
+        if pruned.returncode != 0:
+            click.echo(
+                f"Warning: baseline worktree cleanup failed: {pruned.stderr.strip()}",
+                err=True,
+            )
     try:
         rel = out.relative_to(project / "_site")
     except ValueError:
