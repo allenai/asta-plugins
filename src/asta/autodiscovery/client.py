@@ -5,12 +5,40 @@ import json
 import mimetypes
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 from typing import Any
 
 from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config, get_config_path
 from asta.utils.headers import identity_headers
+
+
+def _same_origin(url: str, base_url: str) -> bool:
+    a, b = urllib.parse.urlsplit(url), urllib.parse.urlsplit(base_url)
+    return (a.scheme, a.netloc) == (b.scheme, b.netloc)
+
+
+def _multipart(
+    fields: dict[str, str], filename: str, content_type: str, data: bytes
+) -> tuple[bytes, str]:
+    """A multipart/form-data body: the fields, then the file under the name 'file'."""
+    boundary = uuid.uuid4().hex
+    out = bytearray()
+    for name, value in fields.items():
+        out += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n"
+        ).encode()
+    out += (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode()
+    out += data + f"\r\n--{boundary}--\r\n".encode()
+    return bytes(out), f"multipart/form-data; boundary={boundary}"
 
 
 class AutoDiscoveryClient:
@@ -127,18 +155,29 @@ class AutoDiscoveryClient:
 
         with open(filepath, "rb") as f:
             data = f.read()
-        req = urllib.request.Request(
-            url_info["upload_url"],
-            data=data,
-            method="PUT",
-            headers={"Content-Type": content_type},
-        )
-        with urllib.request.urlopen(req, timeout=600) as resp:
-            resp.read()
+        url = urllib.parse.urljoin(self.base_url + "/", url_info["upload_url"])
+        method = url_info.get("upload_method") or "PUT"
+        fields = url_info.get("upload_fields")
+        if fields is None:
+            headers = {"Content-Type": content_type}
+        else:
+            data, form_type = _multipart(fields, filename, content_type, data)
+            headers = {"Content-Type": form_type}
+        # A presigned storage URL carries its own authorization; only the API's
+        # own upload endpoint gets the user's token.
+        if _same_origin(url, self.base_url):
+            headers = {**self.headers, **headers}
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else ""
+            raise Exception(f"Upload error {e.code}: {error_body}")
 
         return {
             "filename": filename,
-            "gcs_path": url_info["gcs_path"],
+            "storage_path": url_info.get("storage_path") or url_info.get("gcs_path"),
             "file_size_bytes": file_size,
             "content_type": content_type,
         }
