@@ -73,7 +73,7 @@ def test_skills_cli_is_pinned_in_the_image():
 def test_tex_image_copies_upstream_full_instead_of_explicit_debian_tex_packages():
     dockerfile = DOCKERFILE.read_text()
     tex_stage = dockerfile.split("FROM asta AS tex", 1)[1].split("\nFROM ", 1)[0]
-    assert "COPY --from=texlive/texlive:latest-full@sha256:" in tex_stage
+    assert "COPY --from=mirror.gcr.io/texlive/texlive:latest-full@sha256:" in tex_stage
     assert "grep -q 'TeX Live 2026'" in tex_stage
     # latexml still brings Debian's base TeX transitively.
     packages = re.search(

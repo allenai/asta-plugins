@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Upstream TeX Live 2026, full scheme without docs/sources: Overleaf's default
 # for new projects.
-COPY --from=texlive/texlive:latest-full@sha256:a7ae4dfa9d521b5db14446872fa488b839021d1f604d0a3c74461784895f2a67 \
+COPY --from=mirror.gcr.io/texlive/texlive:latest-full@sha256:a7ae4dfa9d521b5db14446872fa488b839021d1f604d0a3c74461784895f2a67 \
     /usr/local/texlive /usr/local/texlive
 # The upstream image links into /usr/bin, where Debian's TeX binaries already
 # sit and win; link into /usr/local/bin instead.
