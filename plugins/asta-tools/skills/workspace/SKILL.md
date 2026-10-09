@@ -19,6 +19,8 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 When the user wants to see what changed since an earlier version — such as one they last read, recorded as a git tag or commit — offer `asta workspace what-changed <ref>`. It renders `<ref>` and the working tree with `make render`, writes `_site/what-changed.html` with the same diff the PR preview uses, and prints its preview URL. No PR or Pages deploy is needed. Tracking which version the user last read stays with the user; suggest a tag such as `git tag -f last-read` after they read.
 
+Choose a trusted ref: its Makefile and render-time code run locally. The baseline is a fresh worktree containing only committed files; ignored files (for example data, `_freeze/`, `.env`, or `.asta/cache/`) are absent. Its build may fetch dependencies or re-execute code, and projects that need local ignored inputs may fail to render. Do not copy current ignored inputs into the baseline and describe them as historical data. The working-tree render updates `_site/`; an active preview may reload, and a later render may remove the comparison page. Rerun the comparison when needed.
+
 ## Save
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**

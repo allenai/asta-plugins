@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from asta.commands import workspace as workspace_module
 from asta.commands.workspace import workspace
 
 ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/assets"
@@ -74,6 +75,88 @@ def test_highlights_edit_since_ref(project: Path) -> None:
     assert len(worktrees.strip().splitlines()) == 1
 
 
+@pytest.mark.parametrize("explicit_project", [False, True])
+def test_subdirectory_uses_matching_baseline(
+    project: Path, monkeypatch: pytest.MonkeyPatch, explicit_project: bool
+) -> None:
+    nested = project / "research workspace" / "docs"
+    nested.mkdir(parents=True)
+    (project / "index.qmd").rename(nested / "index.qmd")
+    (project / "scripts").rename(nested / "scripts")
+    # A valid but unrelated root site makes a wrong-directory render succeed.
+    (project / "index.qmd").write_text("Unrelated repository-root page.\n")
+    git(project, "add", "index.qmd", "scripts", "research workspace")
+    git(project, "commit", "-qm", "nest workspace")
+    git(project, "tag", "-f", "last-read")
+    (nested / "index.qmd").write_text(
+        "The baseline finding holds.\nA newly drafted paragraph.\n"
+    )
+    args = ["what-changed", "last-read"]
+    if explicit_project:
+        monkeypatch.chdir(project)
+        args += ["--project", "research workspace/docs"]
+    else:
+        monkeypatch.chdir(nested)
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code == 0, result.output
+    report = (nested / "_site/what-changed.html").read_text()
+    assert "<ins" in report and "newly drafted paragraph" in report
+    assert "Unrelated repository-root page" not in report
+    page_diff = re.search(
+        r'<section class="page-diff changed".*?</section>', report, re.S
+    )
+    assert page_diff and "<del" not in page_diff.group()
+
+
+def test_baseline_missing_ignored_input_reports_build_stderr(
+    project: Path,
+) -> None:
+    (project / ".gitignore").write_text("_site/\n.asta/cache/\ninputs.csv\n")
+    git(project, "add", ".gitignore")
+    git(project, "commit", "-qm", "ignore local inputs")
+    git(project, "tag", "-f", "last-read")
+    (project / "inputs.csv").write_text("local-only data")
+    Path(shutil.which("make")).write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        "if not pathlib.Path('inputs.csv').exists():\n"
+        "    print('Missing local inputs.csv for render', file=sys.stderr)\n"
+        "    sys.exit(2)\n" + FAKE_MAKE
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "'make render' failed for last-read" in result.output
+    assert "Missing local inputs.csv for render" in result.output
+    assert "Wrote " not in result.output
+    worktrees = subprocess.check_output(
+        ["git", "-C", str(project), "worktree", "list"], text=True
+    )
+    assert len(worktrees.strip().splitlines()) == 1
+
+
+def test_cleanup_failure_warns_without_hiding_report(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = workspace_module._git
+
+    def fail_removal(directory, *args):
+        if args[:2] == ("worktree", "remove"):
+            return subprocess.CompletedProcess(args, 1, stderr="worktree is locked")
+        return original(directory, *args)
+
+    monkeypatch.setattr(workspace_module, "_git", fail_removal)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / "_site/what-changed.html").is_file()
+    assert (
+        "Warning: baseline worktree cleanup failed: worktree is locked" in result.output
+    )
+
+
 def test_unknown_ref(project: Path) -> None:
     result = CliRunner().invoke(
         workspace, ["what-changed", "no-such-ref", "--project", str(project)]
@@ -134,9 +217,12 @@ def test_requires_fresh_nonempty_html(
     assert len(worktrees.strip().splitlines()) == 1
 
 
-def test_requires_a_diff_script(project: Path) -> None:
+def test_requires_a_diff_script(project: Path, monkeypatch) -> None:
     git(project, "rm", "-q", "scripts/what-changed.py")
     (project / "workspace.mk").write_text("")
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: pytest.fail("unexpected fetch")
+    )
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
@@ -144,12 +230,15 @@ def test_requires_a_diff_script(project: Path) -> None:
     assert "No what-changed.py for this project" in result.output
 
 
-def test_template_with_real_quarto(tmp_path: Path) -> None:
+@pytest.mark.parametrize("directory", [".", "research workspace/docs"])
+def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
     source = os.environ.get("ASTA_TEST_WORKSPACE_TEMPLATE")
     if not source:
         pytest.skip("Set ASTA_TEST_WORKSPACE_TEMPLATE to a workspace-template checkout")
     assert shutil.which("make") and shutil.which("quarto")
-    project = tmp_path / "project"
+    repository = tmp_path / "project"
+    project = repository / directory
+    project.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, project, ignore=shutil.ignore_patterns(".git"))
     repo = ASSETS.parents[4]
     ref = subprocess.check_output(
@@ -166,10 +255,10 @@ def test_template_with_real_quarto(tmp_path: Path) -> None:
     files = subprocess.check_output(
         ["git", "-C", source, "ls-files"], text=True
     ).splitlines()
-    git(project, "init", "-q")
+    git(repository, "init", "-q")
     git(project, "add", *files)
-    git(project, "commit", "-qm", "template baseline")
-    git(project, "tag", "last-read")
+    git(repository, "commit", "-qm", "template baseline")
+    git(repository, "tag", "last-read")
     with (project / "index.qmd").open("a") as page:
         page.write("\nA newly drafted paragraph for local comparison.\n")
     for _ in range(2):

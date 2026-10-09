@@ -90,7 +90,11 @@ The PR's “What changed” page uses the version of `what-changed.py` shipped w
 
 A custom script must accept `--old <site-dir>`, `--new <site-dir>`, `--out <html-file>`, and `--title <text>`. It must write a nonempty HTML file to `--out` and exit successfully to publish the page. `--old` is a snapshot of the deployed main site (empty before the first deploy); `--new` is the PR's rendered `_site/`.
 
-To see the same page locally against any git ref, run `asta workspace what-changed <ref>` (for example a tag marking the version you last read). It renders `<ref>` in a temporary worktree and the working tree with `make render`, runs the project's `scripts/what-changed.py` or the copy cached from the selected ref, and writes `_site/what-changed.html`. Selected refs older than the first release shipping that cached copy need `scripts/what-changed.py` or a newer ref.
+To see the same page locally against any git ref, run `asta workspace what-changed <ref>` (for example a tag marking the version you last read). It renders `<ref>` in a temporary worktree and the working tree with `make render`, runs the project's `scripts/what-changed.py` or the copy cached from the asta-plugins ref selected in the working tree's `docs.yml`, and writes `_site/what-changed.html`. Asta-plugins refs older than the first release shipping that cached copy need `scripts/what-changed.py` or a newer asta-plugins ref in `docs.yml`. Use `--project <directory>` for a workspace in a repository subdirectory; the baseline uses the same relative directory at `<ref>`.
+
+Use a trusted comparison ref: its Makefile and render-time code execute locally. The baseline contains only committed files; ignored files (for example data, `_freeze/`, `.env`, or `.asta/cache/`) are absent. Its render may fetch dependencies or re-execute code; a project that needs local ignored inputs can fail, with the build's stderr included in the error. The command does not copy today's ignored inputs into the historical baseline. The working-tree render updates `_site/` and may reload an active preview; later renders may remove `what-changed.html`, so rerun the comparison to regenerate it.
+
+The bundled diff script needs only the Python standard library. A local custom script runs with the Python interpreter running `asta`; that environment must provide any additional dependencies. Inline script dependency metadata is not installed automatically. The PR preview continues to run custom scripts with its build environment's `python3`.
 
 ### Managed paper HTML viewers
 

@@ -494,14 +494,31 @@ def diff_script(project: Path) -> Path:
 
 
 def render_site(directory: Path, label: str) -> Path:
+    if not directory.is_dir():
+        raise click.ClickException(
+            f"Project directory does not exist for {label}: {directory}"
+        )
     click.echo(f"Rendering {label} with 'make render'", err=True)
     try:
-        result = subprocess.run(["make", "render"], cwd=directory, check=False)
+        result = subprocess.run(
+            ["make", "render"],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     except FileNotFoundError as exc:
         raise click.ClickException("make is required to render the workspace") from exc
+    if result.stdout:
+        click.echo(result.stdout, nl=False, err=True)
+    if result.returncode != 0:
+        detail = f":\n{result.stderr.strip()}" if result.stderr.strip() else ""
+        raise click.ClickException(f"'make render' failed for {label}{detail}")
+    if result.stderr:
+        click.echo(result.stderr, nl=False, err=True)
     site = directory / "_site"
-    if result.returncode != 0 or not site.is_dir():
-        raise click.ClickException(f"'make render' failed for {label}")
+    if not site.is_dir():
+        raise click.ClickException(f"'make render' did not produce _site for {label}")
     return site
 
 
@@ -519,12 +536,18 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
     Renders REF and the working tree with the project's own 'make render' and
-    compares them with the what-changed.py the PR preview uses.
+    compares them with the what-changed.py the PR preview uses. Choose a trusted
+    REF: its build code runs locally. The baseline contains only committed files.
     """
     project = project.resolve()
     commit = _git(project, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
     if commit.returncode != 0 or not commit.stdout.strip():
         raise click.ClickException(f"Unknown git ref: {ref}")
+    prefix = _git(project, "rev-parse", "--show-prefix")
+    if prefix.returncode != 0:
+        raise click.ClickException(
+            "Could not locate the project within its git repository"
+        )
     script = diff_script(project)
     out = (out or project / "_site" / "what-changed.html").resolve()
     with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
@@ -537,7 +560,7 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                 f"Could not check out {ref}: {added.stderr.strip()}"
             )
         try:
-            old_site = render_site(baseline, ref)
+            old_site = render_site(baseline / prefix.stdout.rstrip("\n"), ref)
             new_site = render_site(project, "the working tree")
             out.parent.mkdir(parents=True, exist_ok=True)
             # Older or custom scripts may not recognize a previous diff report.
@@ -558,8 +581,14 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                 check=False,
             )
         finally:
-            _git(project, "worktree", "remove", "--force", str(baseline))
-            _git(project, "worktree", "prune")
+            removed = _git(project, "worktree", "remove", "--force", str(baseline))
+            pruned = _git(project, "worktree", "prune")
+            for cleanup in (removed, pruned):
+                if cleanup.returncode != 0:
+                    click.echo(
+                        f"Warning: baseline worktree cleanup failed: {cleanup.stderr.strip()}",
+                        err=True,
+                    )
     if result.returncode != 0:
         raise click.ClickException(f"{DIFF_SCRIPT} failed")
     if not out.is_file() or out.stat().st_size == 0:
@@ -573,6 +602,10 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
         return
     click.echo(
         f"With 'asta workspace preview' running, open {preview_url(os.environ)}{rel.as_posix()}"
+    )
+    click.echo(
+        "Re-rendering the preview can remove this report; rerun the comparison to regenerate it.",
+        err=True,
     )
 
 
