@@ -115,8 +115,23 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert len(commands) == 2
     assert all("-pdf" not in command for command in commands)
     assert all("$pdf_mode ||= 1;" in command for command in commands)
-    assert "export LATEXMKRCSYS=/dev/null" in SCRIPT.read_text()
     assert '$deps_escape = "none";' in commands[0]
+
+
+@pytest.mark.parametrize("system_rc", [None, "", "/etc/LatexMk"])
+def test_preview_preserves_selected_system_rc_for_current_and_diff(tmp_path, system_rc):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    env.pop("LATEXMKRCSYS", None)
+    if system_rc is not None:
+        env["LATEXMKRCSYS"] = system_rc
+    capture = repo / "system-rc.txt"
+    env["FAKE_SYSTEM_RC_CAPTURE"] = str(capture)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('printf "%s\\n" "$LATEXMKRCSYS" >> "$FAKE_SYSTEM_RC_CAPTURE"\n')
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert capture.read_text().splitlines() == [system_rc or "/dev/null"] * 2
 
 
 def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):

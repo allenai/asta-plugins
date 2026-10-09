@@ -56,6 +56,7 @@ RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
     && latexmk --version && latexdiff --version && biber --version
 # System defaults load before user and project latexmkrc files.
 COPY docker/latexmkrc /etc/LatexMk
+ENV LATEXMKRCSYS=/etc/LatexMk
 # Ship the extension and editor defaults only with TeX. This replaces the
 # parent metadata label, so it repeats the auth hook.
 LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"},{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"],"settings":{"latex-workshop.latex.autoBuild.run":"onSave","latex-workshop.view.pdf.viewer":"tab","latex-workshop.latex.outDir":"%DIR%/build","latex-workshop.latex.recipes":[{"name":"latexmk","tools":["latexmk"]}],"latex-workshop.latex.tools":[{"name":"latexmk","command":"latexmk","args":["-synctex=1","-interaction=nonstopmode","-halt-on-error","-file-line-error","-outdir=%OUTDIR%","%DOC%"]}]}}}}]'
