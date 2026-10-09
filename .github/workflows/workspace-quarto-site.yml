@@ -166,11 +166,21 @@ jobs:
           }
           # Build inside the -tex image released with this workflow so CI matches
           # the dev container; untagged refs use the newest release.
+          [ -n "$WORKFLOW_REF" ] || fail_all 'The reusable workflow ref is missing; cannot select the LaTeX image.'
           case "$WORKFLOW_REF" in
             *@refs/tags/v*) tex_image="ghcr.io/allenai/asta:${WORKFLOW_REF##*@refs/tags/}-tex" ;;
-            *) tex_image=ghcr.io/allenai/asta:latest-tex ;;
+            *)
+              tex_image=ghcr.io/allenai/asta:latest-tex
+              echo '::warning::An untagged workflow ref uses mutable latest-tex; pin a release tag for a matching LaTeX toolchain.'
+              ;;
           esac
-          docker pull -q "$tex_image" || fail_all "Could not pull the LaTeX image $tex_image."
+          # A tag can be called while its validated images are being promoted.
+          for attempt in {1..5}; do
+            if docker pull -q "$tex_image"; then break; fi
+            [ "$attempt" -lt 5 ] || fail_all "Could not pull the LaTeX image $tex_image. For a new release, retry after its Docker promotion workflow succeeds."
+            echo '::warning::LaTeX image pull failed; retrying in 15 seconds.'
+            sleep 15
+          done
           if git ls-files --error-unmatch scripts/paper-preview.sh >/dev/null 2>&1; then
             echo '::notice::Using the project copy of scripts/paper-preview.sh'
             cp scripts/paper-preview.sh /tmp/paper-preview.sh || fail_all 'Could not copy scripts/paper-preview.sh.'
@@ -180,7 +190,8 @@ jobs:
           fi
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
-            if ! docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+                --user "$(id -u):$(id -g)" -e HOME=/tmp \
                 -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
                 "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1

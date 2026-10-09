@@ -138,7 +138,8 @@ jobs:
           base=$(git -C "$preview" rev-parse HEAD)
           sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/shared refs.bib"
           git -C "$preview" commit -qam 'edit bibliography'
-          docker run --rm \
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$preview:/w" \
             -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
             -w /w asta-smoke bash -euc '
@@ -146,6 +147,7 @@ jobs:
               bash /paper-preview.sh "$1" paper
             ' _ "$base"
           test -s "$preview/_site/paper-previews/paper/main.pdf"
+          test -s "$preview/_site/paper-previews/paper/html/index.html"
           grep -q 'Literate Programming Updated' "$preview/_site/paper-previews/paper/main.bbl"
           python3 - "$preview/_site/paper-previews/paper/preview.json" <<'PY'
           import json
@@ -168,7 +170,8 @@ jobs:
           base=$(git -C "$preview" rev-parse HEAD)
           sed -i 's/Dev container/Updated preview/;s/x=1/x=2/' "$preview/paper/main.tex"
           git -C "$preview" commit -qam 'edit paper'
-          docker run --rm \
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$preview:/w" \
             -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
             -w /w asta-smoke bash -euc '
