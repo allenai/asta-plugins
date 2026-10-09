@@ -21,16 +21,23 @@ DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass", re.MULTILINE)
 
 
 def main_file(
-    entry: Path, label: str, files: list[str], warnings: list[str]
+    entry: Path, label: str, files: list[str], warnings: list[str], base: str = ""
 ) -> str | None:
     """main.tex, else the single top-level .tex file with \\documentclass."""
     if "main.tex" in files:
         return "main.tex"
+
+    def content(name: str) -> str:
+        if base:
+            return subprocess.check_output(
+                ["git", "show", f"{base}:{label}/{name}"]
+            ).decode(errors="replace")
+        return (entry / name).read_text(errors="replace")
+
     found = sorted(
         name
         for name in files
-        if name.endswith(".tex")
-        and DOCUMENTCLASS.search((entry / name).read_text(errors="replace"))
+        if name.endswith(".tex") and DOCUMENTCLASS.search(content(name))
     )
     if len(found) > 1:
         warnings.append(
@@ -82,21 +89,20 @@ def base_papers(base: str, warnings: list[str]) -> set[str]:
         )
         return set()
     paths = {os.fsdecode(path) for path in result.stdout.split(b"\0") if path}
-    names = set()
+    directories: dict[str, list[str]] = {}
     for path in paths:
-        parts = path.split("/")
-        if len(parts) < 2 or not parts[-1].endswith(".tex"):
-            continue
-        name = "/".join(parts[:-1])
-        # Content isn't read at the base: any .tex beside a marker counts.
-        if parts[-1] != "main.tex" and f"{name}/overleaf.json" not in paths:
-            continue
+        parent, separator, filename = path.rpartition("/")
+        if separator:
+            directories.setdefault(parent, []).append(filename)
+    names = set()
+    for name, files in sorted(directories.items()):
         if name != "paper" and not any(
-            f"{name}/{marker}" in paths
-            for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
+            marker in files for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
         ):
             continue
-        if not all(valid_name(part) for part in parts[:-1]):
+        if main_file(Path(name), name, files, warnings, base) is None:
+            continue
+        if not all(valid_name(part) for part in name.split("/")):
             warnings.append(f"Skipped invalid base paper directory name: {name!r}")
             continue
         names.add(name)

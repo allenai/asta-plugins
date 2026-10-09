@@ -118,6 +118,47 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert '$deps_escape = "none";' in commands[0]
 
 
+def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    paper = repo / "paper"
+    (paper / "overleaf.json").write_text("{}")
+    (paper / "article.tex").write_text(r"\documentclass{article}" + "\nold\n")
+    (paper / "main.tex").write_text(r"\input{article.tex}")
+    run("git", "add", "paper", cwd=repo)
+    run("git", "commit", "-qm", "paper with shim", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    run("git", "rm", "paper/main.tex", cwd=repo)
+    (paper / "article.tex").write_text(r"\documentclass{article}" + "\nnew\n")
+    run("git", "add", "paper/article.tex", cwd=repo)
+    run("git", "commit", "-qm", "use original main document", cwd=repo)
+    (bin_dir / "latexmk").write_text(
+        '#!/bin/bash\nname="${@: -1}"\nstem="${name%.tex}"\n'
+        'mkdir -p build\nprintf pdf > "build/$stem.pdf"\n'
+        'printf compiled > "build/$stem.log"\nprintf bibliography > "build/$stem.bbl"\n'
+        'printf "PWD %s\\nINPUT %s\\n" "$PWD" "$name" > "build/$stem.fls"\n'
+        'printf "build/%s.pdf :" "$stem" > build/main.dep\n'
+        "printf '%s' '\\' >> build/main.dep\n"
+        'printf "\\n    %s\\n" "$name" >> build/main.dep\n'
+        'printf "%s\\n%s\\n" "$BIBINPUTS" "$TEXINPUTS" > search-paths.txt\n'
+    )
+    with (bin_dir / "latexdiff").open("a") as mock:
+        mock.write('printf "%s\\n" "$@" > latexdiff-args.txt\n')
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    artifacts = repo / "_site/paper-previews/paper"
+    assert (artifacts / "main.pdf").is_file()
+    assert (artifacts / "main.bbl").read_text() == "bibliography"
+    assert (artifacts / "html/index.html").is_file()
+    assert json.loads((artifacts / "preview.json").read_text())["diff"]
+    args = (repo / "latexdiff-args.txt").read_text().splitlines()
+    assert args[-2].endswith("/paper/main.tex")
+    assert args[-1] == "paper/article.tex"
+    for search_path in (paper / "search-paths.txt").read_text().splitlines():
+        assert str(paper) in search_path.split(":")
+        assert str(repo) not in search_path.split(":")
+
+
 def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     original_diff = r"""\providecommand{\DIFadd}[1]{{\color{blue}\uwave{#1}}}

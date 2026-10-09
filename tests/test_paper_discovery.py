@@ -1,6 +1,7 @@
 """Paper discovery keeps Quarto sections separate from preview papers."""
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -129,3 +130,49 @@ def test_discovery_finds_single_documentclass_file_without_main_tex(tmp_path):
 
     assert result["papers"] == ["paper", "synced"]
     assert any("ambiguous" in warning for warning in result["warnings"])
+
+
+def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "user.email", "test@example.invalid")
+    git(tmp_path, "config", "user.name", "Test")
+    for name, marker in [
+        ("paper", None),
+        ("custom", "latexmkrc"),
+        ("nested/paper", ".latexmkrc"),
+        ("synced", "overleaf.json"),
+        ("ambiguous", "latexmkrc"),
+        ("sections-only", "overleaf.json"),
+    ]:
+        directory = tmp_path / name
+        directory.mkdir(parents=True)
+        if marker:
+            (directory / marker).write_text("")
+        (directory / "article.tex").write_text(
+            "Section text" if name == "sections-only" else r"\documentclass{article}"
+        )
+        (directory / "section.tex").write_text(r"% \documentclass{commented}")
+        if name == "ambiguous":
+            (directory / "other.tex").write_text(r"\documentclass{article}")
+    git(
+        tmp_path,
+        "add",
+        "paper",
+        "custom",
+        "nested",
+        "synced",
+        "ambiguous",
+        "sections-only",
+    )
+    git(tmp_path, "commit", "-qm", "base papers")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    assert discover(tmp_path)["papers"] == ["custom", "nested/paper", "paper", "synced"]
+    for name in ("paper", "custom", "nested", "synced", "ambiguous", "sections-only"):
+        shutil.rmtree(tmp_path / name)
+
+    result = discover(tmp_path, base)
+
+    assert result["papers"] == []
+    assert result["removed"] == ["custom", "nested/paper", "paper", "synced"]
+    assert len(result["warnings"]) == 1
+    assert "ambiguous" in result["warnings"][0]
