@@ -540,6 +540,8 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
             old_site = render_site(baseline, ref)
             new_site = render_site(project, "the working tree")
             out.parent.mkdir(parents=True, exist_ok=True)
+            # Older or custom scripts may not recognize a previous diff report.
+            out.unlink(missing_ok=True)
             result = subprocess.run(
                 [
                     sys.executable,
@@ -560,6 +562,10 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
             _git(project, "worktree", "prune")
     if result.returncode != 0:
         raise click.ClickException(f"{DIFF_SCRIPT} failed")
+    if not out.is_file() or out.stat().st_size == 0:
+        raise click.ClickException(
+            f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
+        )
     click.echo(f"Wrote {out}")
     try:
         rel = out.relative_to(project / "_site")
