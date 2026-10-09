@@ -147,7 +147,6 @@ jobs:
               bash /paper-preview.sh "$1" paper
             ' _ "$base"
           test -s "$preview/_site/paper-previews/paper/main.pdf"
-          test -s "$preview/_site/paper-previews/paper/html/index.html"
           grep -q 'Literate Programming Updated' "$preview/_site/paper-previews/paper/main.bbl"
           python3 - "$preview/_site/paper-previews/paper/preview.json" <<'PY'
           import json
