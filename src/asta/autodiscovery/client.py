@@ -133,12 +133,16 @@ class AutoDiscoveryClient:
             method="PUT",
             headers={"Content-Type": content_type},
         )
-        with urllib.request.urlopen(req, timeout=600) as resp:
-            resp.read()
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else ""
+            raise Exception(f"Upload error {e.code}: {error_body}")
 
         return {
             "filename": filename,
-            "gcs_path": url_info["gcs_path"],
+            "storage_path": url_info.get("storage_path") or url_info.get("gcs_path"),
             "file_size_bytes": file_size,
             "content_type": content_type,
         }
