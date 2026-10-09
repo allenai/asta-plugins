@@ -44,7 +44,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # for new projects.
 COPY --from=texlive/texlive:latest-full@sha256:a7ae4dfa9d521b5db14446872fa488b839021d1f604d0a3c74461784895f2a67 \
     /usr/local/texlive /usr/local/texlive
-RUN /usr/local/texlive/2026/bin/*/tlmgr path add \
+# The upstream image links into /usr/bin, where Debian's TeX binaries already
+# sit and win; link into /usr/local/bin instead.
+RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
+    && "$tlmgr" option sys_bin /usr/local/bin \
+    && "$tlmgr" option sys_man /usr/local/share/man \
+    && "$tlmgr" option sys_info /usr/local/share/info \
+    && "$tlmgr" path add \
     && pdflatex --version | grep -q 'TeX Live 2026' \
     && test "$(command -v pdflatex)" = /usr/local/bin/pdflatex \
     && latexmk --version && latexdiff --version && biber --version
