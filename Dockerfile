@@ -1,4 +1,4 @@
-FROM node:22-slim AS asta
+FROM node:25-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
