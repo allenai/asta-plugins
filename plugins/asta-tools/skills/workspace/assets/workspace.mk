@@ -167,9 +167,13 @@ preview-ready:
 # The paper's latexmkrc selects its engine and bibliography search path.
 PAPER_DIR ?= paper
 .PHONY: paper paper-clean
+# Main document: main.tex, else the single .tex file containing \documentclass.
+PAPER_MAIN = cd "$(PAPER_DIR)" && if [ -f main.tex ]; then main=main.tex; else \
+	set -- $$(grep -l '^[^%]*\\documentclass' *.tex 2>/dev/null); \
+	[ $$\# -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; \
+	main=$$1; fi
 paper:
-	@test -f "$(PAPER_DIR)/main.tex" || { echo "No main.tex in $(PAPER_DIR)" >&2; exit 1; }
-	cd "$(PAPER_DIR)" && latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex
+	@$(PAPER_MAIN); latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$$main"
 
 paper-clean:
-	cd "$(PAPER_DIR)" && latexmk -C -outdir=build main.tex
+	@$(PAPER_MAIN); latexmk -C -outdir=build "$$main"

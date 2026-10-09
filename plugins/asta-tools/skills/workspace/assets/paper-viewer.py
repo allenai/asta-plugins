@@ -140,7 +140,7 @@ title: {json.dumps(title)}
 {GENERATED_MARKER}
 
 ```{{=html}}
-<p>The paper is written in <code>{html.escape(directory)}/main.tex</code>.
+<p>The paper is written in <code>{html.escape(directory)}/</code>.
 The preview builds PDF and HTML from that LaTeX source.</p>
 <div data-paper-preview="{html.escape(target, quote=True)}">
 <p data-paper-links></p>

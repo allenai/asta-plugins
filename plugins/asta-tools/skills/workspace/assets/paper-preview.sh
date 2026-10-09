@@ -2,7 +2,8 @@
 set -euo pipefail
 
 base=${1:-}
-# Paper directory relative to the repo root; each holds its own main.tex.
+# Paper directory relative to the repo root. Its main document is main.tex, or
+# else the single top-level .tex file containing \documentclass.
 dir=${2:-paper}
 dir=${dir%/}
 site_dir="_site/paper-previews/$dir"
@@ -10,28 +11,46 @@ if [[ -z "$dir" || "$dir" == /* || "$dir" == *//* || "$dir" =~ (^|/)(\.{1,2}|-[^
   echo "::error::Paper directory must be a safe relative path"
   exit 1
 fi
-test -f "$dir/main.tex" || exit 0
+find_main() {
+  local found=() file
+  if [ -f "$1/main.tex" ]; then echo main.tex; return 0; fi
+  for file in "$1"/*.tex; do
+    [ -f "$file" ] && grep -q '^[^%]*\\documentclass' "$file" && found+=("${file##*/}")
+  done
+  if [ "${#found[@]}" -gt 1 ]; then
+    echo "::warning::$1 has several .tex files with \\documentclass; add main.tex to choose one" >&2
+  fi
+  [ "${#found[@]}" -eq 1 ] && echo "${found[0]}"
+}
+main=$(find_main "$dir") || exit 0
+stem=${main%.tex}
 mkdir -p "$dir/build" "$site_dir"
 printf '{"changed":false}\n' > "$site_dir/preview.json"
 
-export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
-export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
+# Overleaf can't see the repo root, so a synced paper must build without it.
+if [ -f "$dir/overleaf.json" ]; then
+  export BIBINPUTS="$PWD/$dir:${BIBINPUTS:-}"
+  export TEXINPUTS="$PWD/$dir:${TEXINPUTS:-}"
+else
+  export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
+  export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
+fi
 # Preserve a configured engine; request a PDF when no rc selected one.
 # -e runs after rc files: override their escaping for this private dependency file.
 (cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out=build/main.dep \
-  -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)
-if [ ! -f "$dir/build/main.log" ]; then
-  echo "::error file=$dir/main.tex::LaTeX did not write $dir/build/main.log"
+  -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$main")
+if [ ! -f "$dir/build/$stem.log" ]; then
+  echo "::error file=$dir/$main::LaTeX did not write $dir/build/$stem.log"
   exit 1
 fi
-if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/main.log" || \
-   { [ -f "$dir/build/main.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/main.blg"; }; then
-  echo "::error file=$dir/main.tex::Unresolved paper citations or missing bibliography"
+if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || \
+   { [ -f "$dir/build/$stem.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg"; }; then
+  echo "::error file=$dir/$main::Unresolved paper citations or missing bibliography"
   exit 1
 fi
-cp "$dir/build/main.pdf" "$site_dir/main.pdf"
-if [ -s "$dir/build/main.bbl" ]; then
-  cp "$dir/build/main.bbl" "$site_dir/main.bbl"
+cp "$dir/build/$stem.pdf" "$site_dir/main.pdf"
+if [ -s "$dir/build/$stem.bbl" ]; then
+  cp "$dir/build/$stem.bbl" "$site_dir/main.bbl"
 fi
 
 convert_html() (
@@ -148,7 +167,7 @@ PY
   echo "::warning file=$source::LaTeXML conversion failed; see $log"
   return 1
 )
-convert_html "$dir/main.tex" "$site_dir/html/index.html" "$site_dir/html/latexml.log" || true
+convert_html "$dir/$main" "$site_dir/html/index.html" "$site_dir/html/latexml.log" || true
 
 test -n "$base" || exit 0
 fallback() {
@@ -156,16 +175,16 @@ fallback() {
   printf '{"changed":true,"diff":false}\n' > "$site_dir/preview.json"
   echo '::warning::Could not compare paper versions; the current paper PDF remains available'
 }
-if ! flags=$(python3 - "$base" "$dir" <<'PY'
+if ! flags=$(python3 - "$base" "$dir" "$stem" <<'PY'
 import pathlib
 import subprocess
 import sys
 
 root = pathlib.Path.cwd().resolve()
 paper_dir = root / sys.argv[2]
-fls = paper_dir / "build/main.fls"
+fls = paper_dir / f"build/{sys.argv[3]}.fls"
 if not fls.is_file():
-    raise SystemExit("LaTeX did not record paper inputs in build/main.fls")
+    raise SystemExit(f"LaTeX did not record paper inputs in {fls}")
 inputs = set()
 cwd = paper_dir
 for line in fls.read_text(errors="replace").splitlines():
@@ -227,7 +246,7 @@ read -r tex_changed other_changed <<< "$flags"
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
 printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 
-if ! git cat-file -e "$base:$dir/main.tex" 2>/dev/null; then
+if ! git ls-tree --name-only "$base" -- "$dir/" 2>/dev/null | grep -q '\.tex$'; then
   printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
   exit 0
 fi
@@ -258,7 +277,12 @@ if ! git worktree add --detach "$old" "$base" >/dev/null; then
   exit 0
 fi
 
-if ! latexdiff --flatten "$old/$dir/main.tex" "$dir/main.tex" > "$diff_tex"; then
+# The base may name its main document differently, e.g. a main.tex shim.
+if ! old_main=$(find_main "$old/$dir"); then
+  printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
+  exit 0
+fi
+if ! latexdiff --flatten "$old/$dir/$old_main" "$dir/$main" > "$diff_tex"; then
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
   exit 0
 fi

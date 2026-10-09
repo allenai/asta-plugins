@@ -105,3 +105,27 @@ def test_discovery_keeps_current_papers_when_base_is_missing(tmp_path):
     assert result["warnings"] == [
         "Could not read paper files at base missing-base; removals were omitted"
     ]
+
+
+def test_discovery_finds_single_documentclass_file_without_main_tex(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "paper").mkdir(parents=True)
+    git(repo, "init", "-q")
+    (repo / "paper/iclr2027_conference.tex").write_text(
+        "% \\documentclass{commented}\n\\documentclass{article}\n"
+    )
+    (repo / "paper/sections.tex").write_text("no class here\n")
+    (repo / "synced").mkdir()
+    (repo / "synced/overleaf.json").write_text("{}")
+    (repo / "synced/article.tex").write_text("\\documentclass{article}\n")
+    (repo / "ambiguous").mkdir()
+    (repo / "ambiguous/latexmkrc").write_text("$pdf_mode = 1;\n")
+    (repo / "ambiguous/a.tex").write_text("\\documentclass{article}\n")
+    (repo / "ambiguous/b.tex").write_text("\\documentclass{article}\n")
+    (repo / "notes").mkdir()
+    (repo / "notes/draft.tex").write_text("\\documentclass{article}\n")
+
+    result = discover(repo)
+
+    assert result["papers"] == ["paper", "synced"]
+    assert any("ambiguous" in warning for warning in result["warnings"])

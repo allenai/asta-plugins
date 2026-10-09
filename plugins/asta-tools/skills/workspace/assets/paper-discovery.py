@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,29 @@ def valid_name(name: str) -> bool:
         and not name.startswith("-")
         and not any(ord(char) < 32 or ord(char) == 127 for char in name)
     )
+
+
+DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass", re.MULTILINE)
+
+
+def main_file(
+    entry: Path, label: str, files: list[str], warnings: list[str]
+) -> str | None:
+    """main.tex, else the single top-level .tex file with \\documentclass."""
+    if "main.tex" in files:
+        return "main.tex"
+    found = sorted(
+        name
+        for name in files
+        if name.endswith(".tex")
+        and DOCUMENTCLASS.search((entry / name).read_text(errors="replace"))
+    )
+    if len(found) > 1:
+        warnings.append(
+            f"Skipped {label}: several .tex files contain \\documentclass"
+            " (add main.tex to choose one)"
+        )
+    return found[0] if len(found) == 1 else None
 
 
 def current_papers(root: Path, warnings: list[str]) -> set[str]:
@@ -28,11 +52,13 @@ def current_papers(root: Path, warnings: list[str]) -> set[str]:
             and not (entry / name).is_symlink()
         ]
         name = entry.relative_to(root).as_posix()
-        if name == "." or "main.tex" not in files:
+        if name == ".":
             continue
         if name != "paper" and not any(
-            rc in files for rc in ("latexmkrc", ".latexmkrc")
+            marker in files for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
         ):
+            continue
+        if main_file(entry, name, files, warnings) is None:
             continue
         if not all(valid_name(part) for part in entry.relative_to(root).parts):
             warnings.append(f"Skipped invalid paper directory name: {name!r}")
@@ -59,11 +85,15 @@ def base_papers(base: str, warnings: list[str]) -> set[str]:
     names = set()
     for path in paths:
         parts = path.split("/")
-        if len(parts) < 2 or parts[-1] != "main.tex":
+        if len(parts) < 2 or not parts[-1].endswith(".tex"):
             continue
         name = "/".join(parts[:-1])
+        # Content isn't read at the base: any .tex beside a marker counts.
+        if parts[-1] != "main.tex" and f"{name}/overleaf.json" not in paths:
+            continue
         if name != "paper" and not any(
-            f"{name}/{rc}" in paths for rc in ("latexmkrc", ".latexmkrc")
+            f"{name}/{marker}" in paths
+            for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
         ):
             continue
         if not all(valid_name(part) for part in parts[:-1]):
