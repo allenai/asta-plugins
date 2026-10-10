@@ -13,6 +13,10 @@ import click
 
 CONFIG = "overleaf.json"
 SHA = re.compile(r"[0-9a-f]{40}")
+WINDOWS_DEVICE = re.compile(
+    r"(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?",
+    re.IGNORECASE,
+)
 # Git's `rev-parse --local-env-vars` list, plus the namespace override.
 LOCAL_GIT_ENV = {
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -169,7 +173,7 @@ def tree(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, st
 
 def refuse(name: str, reason: str) -> None:
     raise click.ClickException(
-        f"Overleaf sync copies plain files only: {name} {reason}. "
+        f"Overleaf sync copies plain files only: {name!r} {reason}. "
         "Remove it or sync this paper by hand."
     )
 
@@ -181,8 +185,13 @@ def check_paths(names) -> None:
         parts = name.split("/")
         if (
             any(part in ("", ".", "..") or part.casefold() == ".git" for part in parts)
-            or "\\" in name
-            or ":" in name
+            or any(
+                part.endswith((".", " ")) or WINDOWS_DEVICE.fullmatch(part)
+                for part in parts
+            )
+            or any(
+                c in '\\:<>"|?*' or ord(c) < 32 or 127 <= ord(c) <= 159 for c in name
+            )
         ):
             refuse(name, "has an unsafe path")
         for end in range(1, len(parts) + 1):
@@ -275,6 +284,7 @@ def require_plain_attributes(root: Path, paths) -> None:
                 "eol",
                 "filter",
                 "crlf",
+                "working-tree-encoding",
             ],
             input=names,
             cwd=root,

@@ -165,7 +165,10 @@ def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
 
 
 @pytest.mark.parametrize("command", ["pull", "publish"])
-@pytest.mark.parametrize("attribute", ["text=auto", "eol=crlf", "filter=lfs", "crlf"])
+@pytest.mark.parametrize(
+    "attribute",
+    ["text=auto", "eol=crlf", "filter=lfs", "crlf", "working-tree-encoding=UTF-16"],
+)
 @pytest.mark.parametrize("location", ["root", "info", "global"])
 def test_sync_refuses_workspace_attributes_before_changes(
     setup, monkeypatch, command, attribute, location
@@ -542,6 +545,60 @@ def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
     assert result.exit_code != 0 and "unsafe path" in result.output
     assert not (project / "paper").exists()
     assert not (project / "escape.tex").exists()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "CON.tex",
+        "nested/nul.bib",
+        "COM1/figure.pdf",
+        "LPT9.tex",
+        "CONOUT$.tex",
+        "com¹.tex",
+        "article.tex.",
+        "figures /plot.pdf",
+        "question?.tex",
+        "pipe|name.tex",
+        'quote".tex',
+        "angle<.tex",
+        "star*.tex",
+        "line\nbreak.tex",
+        "tab\tname.tex",
+        "escape\x1b[2J.tex",
+        "delete\x7f.tex",
+        "control\x9b.tex",
+    ],
+)
+def test_pull_refuses_nonportable_names_before_deletions(setup, monkeypatch, name):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    overleaf_edit(seed, "old.tex", None)
+    paper = project / "paper"
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    real = module.tree
+
+    def remote_tree(repo, revision, prefix=""):
+        entries = real(repo, revision, prefix)
+        if repo.name == "overleaf":
+            entries[name] = ("100644", "unused")
+        return entries
+
+    monkeypatch.setattr(module, "tree", remote_tree)
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "unsafe path" in result.output
+    assert repr(name) in result.output
+    assert not any(
+        ord(c) < 32 and c != "\n" or 127 <= ord(c) <= 159 for c in result.output
+    )
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+
+
+def test_portable_names_remain_supported():
+    module.check_paths(
+        ["appendix.tex", "com0.tex", "auxiliary.tex", "figures/plot 1.pdf"]
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
