@@ -51,18 +51,21 @@ def git_environment() -> dict:
     return env
 
 
-def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
+def git_bytes(
+    *args: str, cwd: Path, env: dict | None = None, input: bytes | None = None
+) -> bytes:
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,
         env=git_environment() if env is None else env,
         capture_output=True,
+        input=input,
     )
     if result.returncode:
         index = 0
-        while args[index].startswith("-"):
+        while index < len(args) and args[index].startswith("-"):
             index += 2 if args[index] == "-c" else 1
-        operation = args[index]
+        operation = args[index] if index < len(args) else "command"
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
         if operation in ("clone", "push") and (
@@ -91,7 +94,7 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
 
 
 def git(*args: str, **kwargs) -> str:
-    return os.fsdecode(git_bytes(*args, **kwargs)).strip()
+    return os.fsdecode(git_bytes(*args, **kwargs)).rstrip("\n")
 
 
 def validate_url(url: str | None) -> str:
@@ -305,6 +308,24 @@ def require_plain_attributes(root: Path, paths) -> None:
                 )
 
 
+def require_unchanged_bytes(
+    root: Path, paper: Path, contents: dict[str, bytes]
+) -> None:
+    for name, data in contents.items():
+        if b"\r" not in data:
+            continue
+        raw = git_bytes("hash-object", "--stdin", "--no-filters", cwd=root, input=data)
+        converted = git_bytes(
+            "hash-object", "--stdin", "--path", str(paper / name), cwd=root, input=data
+        )
+        if raw != converted:
+            raise click.ClickException(
+                f"Git line-ending conversion would change {name!r} on commit. "
+                "Disable conversion for this paper (for example, a workspace-root "
+                "attribute rule with -text); nothing copied."
+            )
+
+
 def load_config(paper: Path) -> dict:
     path = paper / CONFIG
     if path.is_symlink():
@@ -418,6 +439,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     )
         require_visible(root, [paper / name for name in (*new, CONFIG)])
         require_plain_attributes(root, [paper / name for name in (*new, CONFIG)])
+        require_unchanged_bytes(root, paper, new)
         for name in (*new, CONFIG):
             for parent in (paper / name).parents:
                 if parent == root:
@@ -442,7 +464,10 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         except OSError:
             raise click.ClickException(
                 "Could not write the imported paper. Check permissions and free disk space, "
-                "then inspect `git diff` before retrying."
+                "then inspect `git diff` and `git status`. Pull may be partially applied. "
+                "Back up the paper directory before recovery: restore affected tracked "
+                "files with `git restore --source=HEAD -- <paths>` and remove only "
+                "newly imported files before retrying."
             ) from None
     click.echo(
         f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "

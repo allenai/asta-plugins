@@ -15,6 +15,166 @@ module = importlib.import_module("asta.commands.overleaf")
 URL = "https://git.overleaf.com/1234567"
 
 
+def git(cwd, *args):
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def run(project, *args):
+    return CliRunner().invoke(
+        cli, ["workspace", "overleaf", *args, "--project", str(project)]
+    )
+
+
+@pytest.mark.parametrize(
+    "scope", ["https://git.overleaf.com", URL, "https://git@git.overleaf.com"]
+)
+@pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
+def test_token_bypasses_url_scoped_store_helper(setup, monkeypatch, scope):
+    _, project = setup
+    config = project.parent / "credentials-config"
+    stored = project.parent / "stored-credentials"
+    stored.write_text("https://git:stale-fixture@git.overleaf.com/1234567\n")
+    before = stored.read_bytes()
+    git(project, "config", "--file", str(config), "credential.useHttpPath", "true")
+    git(
+        project,
+        "config",
+        "--file",
+        str(config),
+        f"credential.{scope}.helper",
+        f"store --file={stored}",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    request = b"protocol=https\nhost=git.overleaf.com\npath=1234567\nusername=git\n"
+    with module.credentials() as (env, options):
+        filled = subprocess.run(
+            ["git", *options, "credential", "fill"],
+            cwd=project,
+            env=env,
+            input=request + b"\n",
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert b"password=fixture-token\n" in filled
+        assert b"stale-fixture" not in filled
+        subprocess.run(
+            ["git", *options, "credential", "approve"],
+            cwd=project,
+            env=env,
+            input=filled + b"\n",
+            check=True,
+            capture_output=True,
+        )
+    assert stored.read_bytes() == before
+
+
+def test_personal_credential_helper_remains_available(setup, monkeypatch):
+    _, project = setup
+    config = project.parent / "credentials-config"
+    stored = project.parent / "stored-credentials"
+    stored.write_text("https://git:personal-fixture@git.overleaf.com\n")
+    git(
+        project,
+        "config",
+        "--file",
+        str(config),
+        "credential.https://git.overleaf.com.helper",
+        f"store --file={stored}",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    with module.credentials() as (env, options):
+        filled = subprocess.run(
+            ["git", *options, "credential", "fill"],
+            cwd=project,
+            env=env,
+            input=b"protocol=https\nhost=git.overleaf.com\nusername=git\n\n",
+            check=True,
+            capture_output=True,
+        ).stdout
+    assert b"password=personal-fixture\n" in filled
+
+
+@pytest.mark.parametrize("setting", ["true", "input"])
+def test_pull_refuses_autocrlf_before_deleting_sources(setup, setting):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    overleaf_edit(seed, "old.tex", None)
+    (seed / "main.tex").write_bytes(b"remote edit\r\n")
+    commit_all(seed)
+    git(seed, "push", "origin", "master")
+    git(project, "config", "core.autocrlf", setting)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "line-ending conversion" in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+
+
+def test_pull_allows_autocrlf_with_explicit_plain_bytes(setup):
+    seed, project = setup
+    git(project, "config", "core.autocrlf", "true")
+    (project / ".gitattributes").write_text("paper/** -text -crlf\n")
+    commit_all(project)
+    (seed / "main.tex").write_bytes(b"hello\r\n")
+    commit_all(seed)
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    commit_all(project)
+    assert module.git_bytes("show", "HEAD:paper/main.tex", cwd=project) == b"hello\r\n"
+    assert run(project, "publish", "--dry-run").exit_code == 0
+
+
+def test_partial_pull_failure_reports_recovery_and_can_retry(setup, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    record = (project / "paper/overleaf.json").read_bytes()
+    overleaf_edit(seed, "old.tex", None)
+    overleaf_edit(seed, "added.tex", "new source\n")
+    real = module.write_files
+
+    def partial_write(contents, dest):
+        real({"added.tex": contents["added.tex"]}, dest)
+        raise OSError("fixture disk failure")
+
+    monkeypatch.setattr(module, "write_files", partial_write)
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "partially applied" in result.output
+    assert "Back up" in result.output and "git restore --source=HEAD" in result.output
+    assert not (project / "paper/old.tex").exists()
+    assert (project / "paper/added.tex").exists()
+    assert (project / "paper/overleaf.json").read_bytes() == record
+    git(project, "restore", "--source=HEAD", "--", "paper/old.tex")
+    (project / "paper/added.tex").unlink()
+    monkeypatch.setattr(module, "write_files", real)
+    assert run(project, "pull").exit_code == 0
+    assert not (project / "paper/old.tex").exists()
+    assert (project / "paper/added.tex").read_text() == "new source\n"
+
+
+def test_git_failure_with_only_options_has_sanitized_error(tmp_path):
+    with pytest.raises(module.click.ClickException, match="git command failed"):
+        module.git_bytes("--invalid-fixture-option", cwd=tmp_path)
+
+
+def test_sync_preserves_whitespace_in_repository_root(setup):
+    _, project = setup
+    renamed = project.with_name(" project ")
+    project.rename(renamed)
+    result = run(renamed, "pull", URL)
+    assert result.exit_code == 0, result.output
+    commit_all(renamed)
+    assert run(renamed, "publish", "--dry-run").exit_code == 0
+
+
 def test_git_environment_removes_all_repository_overrides(tmp_path, monkeypatch):
     local_names = git(tmp_path, "rev-parse", "--local-env-vars").splitlines()
     for name in [*local_names, "GIT_NAMESPACE"]:
@@ -84,16 +244,6 @@ def test_sync_reports_unborn_workspace_head(tmp_path, command):
     assert "Commit the workspace's initial files" in result.output
 
 
-def git(cwd, *args):
-    return subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
-        cwd=cwd,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     monkeypatch.delenv("OVERLEAF_TOKEN", raising=False)
@@ -126,12 +276,6 @@ def setup(tmp_path, monkeypatch):
     git(project, "add", ".")
     git(project, "commit", "-m", "init")
     return seed, project
-
-
-def run(project, *args):
-    return CliRunner().invoke(
-        cli, ["workspace", "overleaf", *args, "--project", str(project)]
-    )
 
 
 def overleaf_edit(seed, name, text):
