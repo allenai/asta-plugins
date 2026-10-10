@@ -23,8 +23,9 @@ annotation() {
   fi
 }
 find_main() {
-  local selected
+  local selected status
   if selected=$(python3 - "$1" "${3:-}" <<'PY'
+import os
 import pathlib
 import re
 import subprocess
@@ -34,11 +35,16 @@ directory, base = sys.argv[1:]
 if base:
     prefix = directory + "/"
     files = {}
-    for entry in subprocess.check_output(["git", "ls-tree", "-rz", base, "--", prefix]).split(b"\0"):
+    try:
+        tree = subprocess.check_output(["git", "ls-tree", "-rz", base, "--", ":(literal)" + prefix], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        raise SystemExit(2)
+    for entry in tree.split(b"\0"):
         if not entry:
             continue
-        metadata, path = entry.decode().split("\t", 1)
-        mode, kind, oid = metadata.split()
+        metadata, path_bytes = entry.split(b"\t", 1)
+        path = os.fsdecode(path_bytes)
+        mode, kind, oid = metadata.decode().split()
         name = path.removeprefix(prefix)
         if mode in {"100644", "100755"} and kind == "blob" and "/" not in name:
             files[name] = oid
@@ -51,6 +57,8 @@ def content(name):
             return subprocess.check_output(["git", "show", files[name]]).decode(errors="replace")
         return files[name].read_text(errors="replace")
     except (OSError, subprocess.CalledProcessError):
+        if base:
+            raise SystemExit(2)
         return ""
 
 if "main.tex" in files:
@@ -67,8 +75,12 @@ PY
   ); then
     printf '%s\n' "$selected"
     return 0
-  elif [ -n "$selected" ]; then
-    annotation warning "" "${2:-$1} has several .tex files with \\documentclass: $selected; add main.tex to choose one" >&2
+  else
+    status=$?
+    if [ "$status" -eq 2 ]; then return 2; fi
+    if [ -n "$selected" ]; then
+      annotation warning "" "${2:-$1} has several .tex files with \\documentclass: $selected; add main.tex to choose one" >&2
+    fi
   fi
   return 1
 }
@@ -230,8 +242,15 @@ fallback() {
 }
 # Compare selections as well as recorded inputs: removing a shim changes the main,
 # while adding or deleting unused TeX files does not change the paper.
-old_main=$(find_main "$dir" "$dir at base $base" "$base") || old_main=""
+if old_main=$(find_main "$dir" "$dir at base $base" "$base"); then
+  :
+else
+  status=$?
+  if [ "$status" -eq 2 ]; then fallback; exit 0; fi
+  old_main=""
+fi
 if ! flags=$(python3 - "$base" "$dir" "$stem" "$main" "$old_main" <<'PY'
+import os
 import pathlib
 import subprocess
 import sys
@@ -286,10 +305,11 @@ if not seen_target or not expect_target:
 
 changed = subprocess.check_output(
     ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
-).decode().rstrip("\0").split("\0")
+)
+changed = [os.fsdecode(path) for path in changed.split(b"\0") if path]
 relevant = [
     path for path in changed
-    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
+    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc", f"{sys.argv[2]}/overleaf.json"}
 ]
 print(int(sys.argv[4] != sys.argv[5] or any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))
@@ -299,6 +319,10 @@ PY
   exit 0
 fi
 read -r tex_changed other_changed <<< "$flags"
+if [ -z "$old_main" ]; then
+  printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
+  exit 0
+fi
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
 printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 
@@ -330,10 +354,6 @@ if ! git worktree add --detach "$old" "$base" >/dev/null; then
 fi
 
 # The base may name its main document differently, e.g. a main.tex shim.
-if [ -z "$old_main" ]; then
-  printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
-  exit 0
-fi
 if ! latexdiff --flatten "$old/$dir/$old_main" "$dir/$main" > "$diff_tex"; then
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
   exit 0

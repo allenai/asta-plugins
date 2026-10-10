@@ -1132,3 +1132,112 @@ def test_invalid_trailing_dependency_output_uses_visible_fallback(tmp_path, suff
     assert json.loads(
         (repo / "_site/paper-previews/paper/preview.json").read_text()
     ) == {"changed": True, "diff": False}
+
+
+@pytest.mark.parametrize("failure", ["missing-base", "tree-read", "blob-read"])
+def test_unreadable_base_uses_fallback_not_new_paper(tmp_path, failure):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    if failure == "missing-base":
+        base = "missing-base"
+    else:
+        real_git = shutil.which("git")
+        command = "ls-tree" if failure == "tree-read" else "show"
+        (bin_dir / "git").write_text(
+            f"#!{sys.executable}\nimport os, sys\n"
+            f"if sys.argv[1] == {command!r}: sys.exit(1)\n"
+            f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
+        )
+        (bin_dir / "git").chmod(0o755)
+        if failure == "blob-read":
+            run("git", "mv", "paper/main.tex", "paper/article.tex", cwd=repo)
+            (repo / "paper/article.tex").write_text(r"\documentclass{article}")
+            run("git", "commit", "-qam", "named main", cwd=repo)
+            base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+            mock = bin_dir / "latexmk"
+            mock.write_text(mock.read_text().replace("main", "article"))
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    assert "Traceback" not in result.stderr
+    assert "Could not compare paper versions" in result.stdout
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {
+        "changed": True,
+        "diff": False,
+    }
+    assert (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires raw byte filenames")
+def test_unrelated_non_utf8_path_does_not_hide_existing_paper(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    path = os.fsencode(repo / "paper") + b"/notes-\xff.txt"
+    with open(path, "wb") as file:
+        file.write(b"old notes")
+    run("git", "add", "paper", cwd=repo)
+    run("git", "commit", "-qm", "raw filename", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    with open(path, "wb") as file:
+        file.write(b"new notes")
+    run("git", "commit", "-qam", "edit unrelated notes", cwd=repo)
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    assert "Traceback" not in result.stderr
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {"changed": False}
+
+
+@pytest.mark.parametrize("change", ["add", "delete"])
+def test_overleaf_marker_change_is_a_build_input(tmp_path, change):
+    repo, _, env, _ = paper_repo(tmp_path)
+    marker = repo / "paper/overleaf.json"
+    if change == "delete":
+        marker.write_text("{}")
+        run("git", "add", "paper/overleaf.json", cwd=repo)
+        run("git", "commit", "-qm", "synced paper", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    if change == "delete":
+        marker.unlink()
+    else:
+        marker.write_text("{}")
+    run("git", "add", "paper", cwd=repo)
+    run("git", "commit", "-qm", "change isolation", cwd=repo)
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {
+        "changed": True,
+        "diff": False,
+        "other_inputs": True,
+    }
+
+
+def test_glob_directory_does_not_select_another_base_paper(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("git", "mv", "paper", "paper[1]", cwd=repo)
+    (repo / "paper1").mkdir()
+    (repo / "paper1/main.tex").write_text("unrelated")
+    run("git", "add", "paper1/main.tex", cwd=repo)
+    run("git", "commit", "-qm", "two directories", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (repo / "paper[1]/main.tex").write_text("edited")
+    run("git", "commit", "-qam", "edit literal directory", cwd=repo)
+    run("bash", str(SCRIPT), base, "paper[1]", cwd=repo, env=env)
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper[1]/preview.json").read_text()
+    )
+    assert manifest["diff"] is True
+    assert "new" not in manifest
+
+
+def test_new_paper_does_not_allocate_diff_worktree(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path, old_paper=False)
+    (bin_dir / "mktemp").write_text("#!/bin/sh\nexit 1\n")
+    (bin_dir / "mktemp").chmod(0o755)
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {
+        "changed": True,
+        "diff": False,
+        "new": True,
+    }

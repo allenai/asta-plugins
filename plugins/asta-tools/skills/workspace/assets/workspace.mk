@@ -170,7 +170,7 @@ PAPER_DIR ?= paper
 # Main document: main.tex, else the single .tex file containing \documentclass.
 PAPER_MAIN = cd "$(PAPER_DIR)" 2>/dev/null || { echo "No paper directory $(PAPER_DIR)" >&2; exit 1; }; \
 	if [ -f main.tex ] && [ ! -L main.tex ]; then main=main.tex; else \
-	main=; count=0; for file in *.tex; do \
+	main=; count=0; for file in *.tex .*.tex; do \
 	if [ -f "$$file" ] && [ ! -L "$$file" ] && python3 -c 'import pathlib,re,sys; sys.exit(not re.search(r"(?m)^[^\n]*\\documentclass\s*[\[{]", re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", pathlib.Path(sys.argv[1]).read_text(errors="replace"))))' "$$file"; then main=$$file; count=$$((count+1)); fi; done; \
 	[ $$count -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; fi
 paper:

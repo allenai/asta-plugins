@@ -62,7 +62,9 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
-@pytest.mark.parametrize("main_name", ["main.tex", "conference draft.tex", "-pv.tex"])
+@pytest.mark.parametrize(
+    "main_name", ["main.tex", "conference draft.tex", "-pv.tex", ".draft.tex"]
+)
 @pytest.mark.parametrize(
     "declaration",
     [

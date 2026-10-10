@@ -319,3 +319,16 @@ def test_ambiguous_filenames_cannot_inject_actions_commands(tmp_path):
     assert "a%250A.tex" in result.stderr
     assert "b%0A::add-mask::injected.tex" in result.stderr
     assert "b\n::add-mask::injected.tex" in json.loads(result.stdout)["warnings"][0]
+
+
+@pytest.mark.parametrize("child_class", ["subfiles", "standalone"])
+def test_main_tex_resolves_multiple_document_classes(tmp_path, child_class):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "article.tex").write_text(r"\documentclass{article}")
+    (paper / "child.tex").write_text(r"\documentclass[article]{" + child_class + "}")
+    result = discover(tmp_path)
+    assert result["papers"] == []
+    assert "add main.tex to choose one" in result["warnings"][0]
+    (paper / "article.tex").rename(paper / "main.tex")
+    assert discover(tmp_path)["main_files"] == {"paper": "main.tex"}
