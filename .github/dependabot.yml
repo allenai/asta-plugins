@@ -8,3 +8,15 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Stay on even-numbered (LTS) Node majors; odd majors go end-of-life
+      # within months. The base image is pulled from public.ecr.aws, so the
+      # name is matched by suffix rather than as Docker Hub's "node".
+      - dependency-name: "*library/node"
+        versions:
+          - ">= 23, < 24"
+          - ">= 25, < 26"
+          - ">= 27, < 28"
+          - ">= 29, < 30"
+          - ">= 31, < 32"
+          - ">= 33, < 34"
