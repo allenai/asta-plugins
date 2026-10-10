@@ -77,6 +77,9 @@ stem=${main%.tex}
 mkdir -p "$dir/build" "$site_dir"
 printf '{"changed":false}\n' > "$site_dir/preview.json"
 
+# The -tex image selects its shared rc; otherwise skip host-wide defaults such
+# as Ubuntu's LuaLaTeX setting. User and project rc files still apply.
+export LATEXMKRCSYS="${LATEXMKRCSYS:-/dev/null}"
 # Overleaf can't see the repo root, so a synced paper must build without it.
 if [ -f "$dir/overleaf.json" ]; then
   export BIBINPUTS="$PWD/$dir:${BIBINPUTS:-}"

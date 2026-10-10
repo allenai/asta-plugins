@@ -357,6 +357,22 @@ def test_preview_does_not_build_symlink_or_documentclass_lookalike(tmp_path):
     assert not (paper / "latexmk-args.txt").exists()
 
 
+@pytest.mark.parametrize("system_rc", [None, "", "/etc/LatexMk"])
+def test_preview_preserves_selected_system_rc_for_current_and_diff(tmp_path, system_rc):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    env.pop("LATEXMKRCSYS", None)
+    if system_rc is not None:
+        env["LATEXMKRCSYS"] = system_rc
+    capture = repo / "system-rc.txt"
+    env["FAKE_SYSTEM_RC_CAPTURE"] = str(capture)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('printf "%s\\n" "$LATEXMKRCSYS" >> "$FAKE_SYSTEM_RC_CAPTURE"\n')
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert capture.read_text().splitlines() == [system_rc or "/dev/null"] * 2
+
+
 def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     original_diff = r"""\providecommand{\DIFadd}[1]{{\color{blue}\uwave{#1}}}
