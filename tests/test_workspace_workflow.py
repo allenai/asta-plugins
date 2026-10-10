@@ -47,7 +47,7 @@ def _run_paper_step(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$DOCKER_LOG"\n'
         '[ "$1" = pull ] || exit 0\n'
-        'attempt=$(wc -l < "$DOCKER_LOG")\n'
+        "attempt=$(grep -c '^pull ' \"$DOCKER_LOG\")\n"
         '[ "$attempt" -gt "$PULL_FAILURES" ]\n'
     )
     docker.chmod(0o755)
@@ -99,6 +99,20 @@ def test_paper_image_pull_retries_without_changing_the_selected_release(
         assert not runs
         assert (project / "_site/paper-previews/paper/build-failed.txt").is_file()
     assert "latest-tex" not in "\n".join(commands)
+
+
+@pytest.mark.parametrize("tag", ["v1/x", "v1.2.3+metadata"])
+def test_paper_image_invalid_release_tag_fails_before_pull(
+    tmp_path: Path, tag: str
+) -> None:
+    project, result = _run_paper_step(
+        tmp_path, workflow_ref=f"owner/repo/workflow.yml@refs/tags/{tag}"
+    )
+    assert result.returncode != 0
+    assert not (project / "docker.log").exists()
+    assert (
+        project / "_site/paper-previews/paper/build-failed.txt"
+    ).read_text().strip() == (f"The workflow tag {tag} is not a valid image tag.")
 
 
 def test_paper_image_missing_workflow_ref_fails_before_pull(tmp_path: Path) -> None:

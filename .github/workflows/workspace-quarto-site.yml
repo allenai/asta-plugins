@@ -168,19 +168,28 @@ jobs:
           # the dev container; untagged refs use the newest release.
           [ -n "$WORKFLOW_REF" ] || fail_all 'The reusable workflow ref is missing; cannot select the LaTeX image.'
           case "$WORKFLOW_REF" in
-            *@refs/tags/v*) tex_image="ghcr.io/allenai/asta:${WORKFLOW_REF##*@refs/tags/}-tex" ;;
+            *@refs/tags/v*)
+              tag=${WORKFLOW_REF##*@refs/tags/}
+              [[ "$tag" =~ ^v[0-9A-Za-z._-]+$ ]] || fail_all "The workflow tag $tag is not a valid image tag."
+              tex_image="ghcr.io/allenai/asta:$tag-tex"
+              ;;
             *)
               tex_image=ghcr.io/allenai/asta:latest-tex
               echo '::warning::An untagged workflow ref uses mutable latest-tex; pin a release tag for a matching LaTeX toolchain.'
               ;;
           esac
           # A tag can be called while its validated images are being promoted.
+          df -h /
+          pull_start=$SECONDS
           for attempt in {1..5}; do
             if docker pull -q "$tex_image"; then break; fi
             [ "$attempt" -lt 5 ] || fail_all "Could not pull the LaTeX image $tex_image. For a new release, retry after its Docker promotion workflow succeeds."
             echo '::warning::LaTeX image pull failed; retrying in 15 seconds.'
             sleep 15
           done
+          echo "LaTeX image pull: $((SECONDS - pull_start)) seconds"
+          docker image inspect "$tex_image" --format 'LaTeX image digests: {{join .RepoDigests ", "}}'
+          df -h /
           if git ls-files --error-unmatch scripts/paper-preview.sh >/dev/null 2>&1; then
             echo '::notice::Using the project copy of scripts/paper-preview.sh'
             cp scripts/paper-preview.sh /tmp/paper-preview.sh || fail_all 'Could not copy scripts/paper-preview.sh.'

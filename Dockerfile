@@ -54,6 +54,12 @@ RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
     && pdflatex --version | grep -q 'TeX Live 2026' \
     && test "$(command -v pdflatex)" = /usr/local/bin/pdflatex \
     && latexmk --version && latexdiff --version && biber --version
+# LaTeXML ships styles in Debian's tree, outside upstream TeX Live's search path.
+RUN local_tree=$(kpsewhich -var-value=TEXMFLOCAL) \
+    && mkdir -p "$local_tree/tex/latex" \
+    && cp -r /usr/share/texmf/tex/latex/latexml "$local_tree/tex/latex/" \
+    && mktexlsr "$local_tree" \
+    && kpsewhich latexml.sty
 # Fontconfig settings outside the copied TeX tree expose bundled fonts by name.
 RUN cp "$(kpsewhich -var-value=TEXMFSYSVAR)/fonts/conf/texlive-fontconfig.conf" \
       /etc/fonts/conf.d/09-texlive-fonts.conf \

@@ -37,6 +37,12 @@ Asta auth: run `asta auth login` in the container terminal (device-code flow: op
 | A PDF of the Quarto write-up itself (to share, print, or submit), with the `.qmd` staying primary | Run `quarto render index.qmd --to pdf` with a TeX toolchain such as the `-tex` image. Quarto builds this PDF through LaTeX, so the same source can also emit the `.tex` source that preprint servers and venues ask for (command below) without maintaining a separate paper. Run it on demand; keeping this rendering path outside the shared `make` targets and PR preview is deliberate. |
 | A separately written LaTeX paper that reuses the project bibliography | Write `paper/main.tex`; its `latexmkrc` locates the shared root `references.bib`. `make paper` builds it (or `make paper PAPER_DIR=<directory>` for another paper). These targets require shared rules from a release containing them; older projects can keep their own targets until upgrading. Every PR preview builds inside the `-tex` image and publishes its PDF, LaTeXML HTML and HTML/PDF diffs. In VS Code, LaTeX Workshop (in the `-tex` image) builds on save with SyncTeX. |
 
+The managed paper preview preserves the `-tex` image's latexmk defaults. On a
+host, it skips the system rc unless `LATEXMKRCSYS` explicitly selects one; user
+and project `latexmkrc` files still apply. Set `LATEXMKRCSYS=/etc/latexmkrc` if
+your host build needs that file. CI script overrides run offline as the runner
+UID/GID without a passwd entry; use local files and already-fetched history.
+
 The first path is one-way: Quarto writes LaTeX, nothing converts LaTeX back to `.qmd`. If the paper needs to diverge from the site (venue template, heavy hand edits), switch to the second path and let `paper/main.tex` become the primary copy.
 
 Keeping that intermediate LaTeX is useful even when you only want a PDF: preprint servers such as arXiv ask for the TeX source rather than the PDF of a LaTeX-produced paper, journals and conferences often do too, and the `.tex` is the starting point if the paper later moves to the second path. For LaTeX source, run `quarto render index.qmd --to latex -M cite-method:natbib`. This writes `_site/index.tex` with citation commands and a `\bibliography{references.bib}` line. Plain `--to latex` uses citeproc and writes formatted citations into the source instead. The generated `.tex` still needs the bibliography and a successful PDF build before it is ready to submit.

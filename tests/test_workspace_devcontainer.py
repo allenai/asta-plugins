@@ -80,7 +80,10 @@ def test_tex_image_copies_upstream_full_instead_of_explicit_debian_tex_packages(
         r"apt-get install -y --no-install-recommends (.*?)&&", tex_stage, re.S
     )
     assert packages
-    assert not any(name.startswith("texlive-") for name in packages.group(1).split())
+    assert not any(
+        name.startswith("texlive-")
+        for name in packages.group(1).replace("\\\n", " ").split()
+    )
     assert "latexml" in tex_stage
 
 
