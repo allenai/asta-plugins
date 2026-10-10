@@ -58,7 +58,7 @@ Sync limitations:
 
 - Both commands refuse unsupported plain-file layouts before copying or pushing: `.gitattributes`, Git LFS files, executable files, symlinks, submodules, unsafe paths and names differing only in letter case.
 - Both commands refuse ignored sync metadata; pull also refuses ignored imports. Adjust the workspace ignore rules so sources can be committed for review. Remote `overleaf.json` is reserved. Pull refuses remote `.gitignore` files and publish refuses committed paper `.gitignore` files; keep ignore rules in the workspace root so publication cannot make the next pull fail.
-- Hooks and signing still apply; publish refuses if they or Git conversions change exported bytes, and pushes nothing. Publication requires the workspace's Git identity, including repo-local settings.
+- Publish uses the workspace's Git identity, hooks and signing settings, including repo-local settings. Hooks run in the exported paper directory; hooks requiring the full workspace must be adapted for that layout. A failing hook or signer stops publication. Publish also refuses if hooks or Git conversions change exported bytes, and pushes nothing.
 - Case-only renames and reset remote history are unsupported. Both commands refuse control characters in file names before making changes. `--dir <directory>` selects a literal relative directory. Pull refuses when Overleaf replaces a directory with a file; move the workspace directory aside first. Deletions can leave empty directories.
 
 Known limits (not handled; avoid these setups):

@@ -400,13 +400,14 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook and askpass")
-def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch):
+@pytest.mark.parametrize("scope", ["global", "local", "default"])
+def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch, scope):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
-    hooks = tmp_path / "hooks"
-    hooks.mkdir()
+    hooks = project / (".git/hooks" if scope == "default" else "hooks")
+    hooks.mkdir(exist_ok=True)
     hook = hooks / "pre-commit"
     hook.write_text(
         "#!/bin/sh\n"
@@ -414,10 +415,13 @@ def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch):
         'printf checked > "$TEST_HOOK_MARKER"\n'
     )
     hook.chmod(0o700)
-    config = tmp_path / "gitconfig"
-    config.write_text(f"[core]\n\thooksPath = {hooks}\n")
+    if scope == "global":
+        config = tmp_path / "gitconfig"
+        config.write_text(f"[core]\n\thooksPath = {hooks}\n")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    elif scope == "local":
+        git(project, "config", "core.hooksPath", "hooks")
     marker = tmp_path / "hook-ran"
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     monkeypatch.setenv("TEST_HOOK_MARKER", str(marker))
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
     result = run(project, "publish")
@@ -425,6 +429,52 @@ def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch):
     assert marker.read_text() == "checked"
     git(seed, "pull", "-q", "origin", "master")
     assert (seed / "main.tex").read_text() == "reviewed edit\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook")
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_honors_workspace_hook_failure(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    before = (project / "paper/overleaf.json").read_bytes()
+    remote_before = git(seed, "rev-parse", "origin/master")
+    hook = project / ".git/hooks/pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o700)
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert (result.exit_code == 0) == dry_run, result.output
+    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
+
+
+def test_publish_honors_workspace_signing(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    key = tmp_path / "signing-key"
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
+        check=True,
+        capture_output=True,
+    )
+    git(project, "config", "commit.gpgsign", "true")
+    git(project, "config", "gpg.format", "ssh")
+    git(project, "config", "user.signingkey", str(key))
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "fetch", "-q", "origin")
+    allowed = tmp_path / "allowed-signers"
+    allowed.write_text("t@t " + key.with_suffix(".pub").read_text())
+    git(
+        seed,
+        "-c",
+        f"gpg.ssh.allowedSignersFile={allowed}",
+        "verify-commit",
+        "origin/master",
+    )
 
 
 def test_pull_refuses_a_different_project_before_cloning(setup, monkeypatch):

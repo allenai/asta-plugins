@@ -93,6 +93,33 @@ def git(*args: str, **kwargs) -> str:
     return os.fsdecode(git_bytes(*args, **kwargs)).rstrip("\n")
 
 
+def commit_settings(root: Path) -> list[str]:
+    hooks = (root / git("rev-parse", "--git-path", "hooks", cwd=root)).resolve()
+    options = ["-c", f"core.hooksPath={hooks}"]
+    for key in (
+        "commit.gpgsign",
+        "user.signingkey",
+        "gpg.format",
+        "gpg.program",
+        "gpg.openpgp.program",
+        "gpg.x509.program",
+        "gpg.ssh.program",
+        "gpg.ssh.defaultKeyCommand",
+    ):
+        result = subprocess.run(
+            ["git", "config", "--get", key],
+            cwd=root,
+            env=git_environment(),
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            value = os.fsdecode(result.stdout).rstrip("\n")
+            options.extend(["-c", f"{key}={value}"])
+        elif result.returncode != 1:
+            raise click.ClickException("Could not read workspace Git commit settings.")
+    return options
+
+
 def validate_url(url: str | None) -> str:
     match = re.fullmatch(
         r"https://(?:git@)?git\.overleaf\.com/([A-Za-z0-9]+)(?:\.git)?/?", url or ""
@@ -456,7 +483,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             return
         identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
-        git(*identity, "commit", "-q", "-m", message, cwd=repo)
+        git(*identity, *commit_settings(root), "commit", "-q", "-m", message, cwd=repo)
         if read_plain_files(repo, "HEAD") != ours:
             raise click.ClickException(
                 "Git configuration or hooks changed the exported files; nothing pushed. "
