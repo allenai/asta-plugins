@@ -1,5 +1,3 @@
-# Floating tag from the publisher's registry, so builds pick up Node 22 patch
-# releases and Debian fixes. Change the major here, deliberately.
 FROM public.ecr.aws/docker/library/node:22-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
