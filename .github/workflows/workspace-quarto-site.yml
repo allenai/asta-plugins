@@ -1,19 +1,6 @@
-# Reusable workflow: build, deploy, and PR-preview a Quarto site on GitHub
-# Pages. Scaffolded research projects (see the asta-tools `workspace` skill)
-# call this from a thin `docs.yml` stub, so the deploy machinery is maintained
-# once here rather than copied into every project.
-#
-# Contract with the calling repo:
-#   - A `make check` target runs the repo's quality gates and renders the site
-#     to `_site/` (the workspace skill's Makefile asset provides the baseline;
-#     repos add their own gates to that target, never as workflow steps).
-#   - The caller grants `contents: write` + `pull-requests: write`; jobs here
-#     downscope to least privilege individually.
-#   - Full history and PR head refs are fetched before `make check`, for
-#     repos whose checks derive content from git history.
+# Scratch probe: production paper step unchanged; site build and deployment omitted.
 name: Quarto site
-
-on:
+'on':
   workflow_call:
     inputs:
       quarto-version:
@@ -21,479 +8,105 @@ on:
         type: string
         default: release
       artifact-command:
-        description: Optional project command after rendering and paper previews, before publication
+        description: Optional project command after rendering and paper previews,
+          before publication
         type: string
-        default: ""
-
+        default: ''
 jobs:
-  # Build + quality gates (via `make check`). This is the required status
-  # check. Concurrency is keyed per PR (or per branch for main), so a new
-  # commit supersedes its own stale build while separate PRs and main never
-  # cancel each other.
   build:
-    if: >-
-      github.event.action != 'closed' &&
-      github.event_name != 'pull_request_target' && github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
-    outputs:
-      paper: ${{ steps.paper.outcome }}
     permissions:
       contents: read
-    concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # full history for checks that read git history
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: '0'
+    - name: Build paper preview
+      id: paper
+      continue-on-error: 'true'
+      env:
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        WORKFLOW_REF: ${{ job.workflow_ref }}
+      run: "if [ -e _site/paper-previews ]; then\n  echo '::error::Quarto output already\
+        \ uses paper-previews/; reserve that path for paper previews'\n  exit 1\n\
+        fi\nmkdir -p _site/paper-previews\nfail_discovery() {\n  echo \"$1\" > _site/paper-previews/build-failed.txt\n\
+        \  echo \"::error::$1\"\n  exit 1\n}\nbase=\"\"\nif [ -n \"$PR_BASE\" ] &&\
+        \ ! base=$(git merge-base \"$PR_BASE\" HEAD); then\n  echo '::warning::Could\
+        \ not find the PR merge base; publishing current papers without diffs or removals'\n\
+        \  base=\"\"\nfi\n# A project's committed scripts/<asset> is a customization\
+        \ and wins.\nif git ls-files --error-unmatch scripts/paper-discovery.py >/dev/null\
+        \ 2>&1; then\n  echo '::notice::Using the project copy of scripts/paper-discovery.py'\n\
+        \  cp scripts/paper-discovery.py /tmp/paper-discovery.py || fail_discovery\
+        \ 'Could not copy scripts/paper-discovery.py.'\nelse\n  discovery_script=\"\
+        https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha\
+        \ }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py\"\n  curl\
+        \ -fsSL \"$discovery_script\" -o /tmp/paper-discovery.py || fail_discovery\
+        \ 'Could not download the paper discovery script.'\nfi\ndiscovery=$(python3\
+        \ /tmp/paper-discovery.py \"$base\") || fail_discovery 'Could not discover\
+        \ paper projects.'\njq -e '(.papers | type == \"array\" and all(.[]; type\
+        \ == \"string\")) and (.removed | type == \"array\" and all(.[]; type == \"\
+        string\")) and (.warnings | type == \"array\" and all(.[]; type == \"string\"\
+        ))' <<< \"$discovery\" >/dev/null || fail_discovery 'Paper discovery returned\
+        \ invalid data.'\nmapfile -t papers < <(jq -r '.papers[]' <<< \"$discovery\"\
+        )\nmapfile -t removed < <(jq -r '.removed[]' <<< \"$discovery\")\nmapfile\
+        \ -t warnings < <(jq -r '.warnings[]' <<< \"$discovery\")\nstatus=0\nif [\
+        \ ${#warnings[@]} -gt 0 ]; then\n  printf '%s\\n' \"${warnings[@]}\" > _site/paper-previews/build-failed.txt\n\
+        \  status=1\nfi\nfor d in \"${removed[@]}\"; do\n  mkdir -p \"_site/paper-previews/$d\"\
+        \n  printf '{\"changed\":true,\"removed\":true}\\n' > \"_site/paper-previews/$d/preview.json\"\
+        \ndone\n[ ${#papers[@]} -gt 0 ] || exit \"$status\"\nfail_all() {\n  for d\
+        \ in \"${papers[@]}\"; do\n    mkdir -p \"_site/paper-previews/$d\"\n    echo\
+        \ \"$1\" > \"_site/paper-previews/$d/build-failed.txt\"\n    [ -f \"_site/paper-previews/$d/preview.json\"\
+        \ ] || printf '{\"changed\":false}\\n' > \"_site/paper-previews/$d/preview.json\"\
+        \n  done\n  exit 1\n}\n# Build inside the -tex image released with this workflow\
+        \ so CI matches\n# the dev container; untagged refs use the newest release.\n\
+        [ -n \"$WORKFLOW_REF\" ] || fail_all 'The reusable workflow ref is missing;\
+        \ cannot select the LaTeX image.'\ncase \"$WORKFLOW_REF\" in\n  *@refs/tags/v*)\n\
+        \    tag=${WORKFLOW_REF##*@refs/tags/}\n    [[ \"$tag\" =~ ^v[0-9A-Za-z._-]+$\
+        \ ]] || fail_all \"The workflow tag $tag is not a valid image tag.\"\n   \
+        \ tex_image=\"ghcr.io/allenai/asta:$tag-tex\"\n    ;;\n  *)\n    tex_image=ghcr.io/allenai/asta:latest-tex\n\
+        \    echo '::warning::An untagged workflow ref uses mutable latest-tex; pin\
+        \ a release tag for a matching LaTeX toolchain.'\n    ;;\nesac\n# A tag can\
+        \ be called while its validated images are being promoted.\ndf -h /\npull_start=$SECONDS\n\
+        for attempt in {1..5}; do\n  if docker pull -q \"$tex_image\"; then break;\
+        \ fi\n  [ \"$attempt\" -lt 5 ] || fail_all \"Could not pull the LaTeX image\
+        \ $tex_image. For a new release, retry after its Docker promotion workflow\
+        \ succeeds.\"\n  echo '::warning::LaTeX image pull failed; retrying in 15\
+        \ seconds.'\n  sleep 15\ndone\necho \"LaTeX image pull: $((SECONDS - pull_start))\
+        \ seconds\"\ndocker image inspect \"$tex_image\" --format 'LaTeX image digests:\
+        \ {{join .RepoDigests \", \"}}'\ndf -h /\nif git ls-files --error-unmatch\
+        \ scripts/paper-preview.sh >/dev/null 2>&1; then\n  echo '::notice::Using\
+        \ the project copy of scripts/paper-preview.sh'\n  cp scripts/paper-preview.sh\
+        \ /tmp/paper-preview.sh || fail_all 'Could not copy scripts/paper-preview.sh.'\n\
+        else\n  script=\"https://raw.githubusercontent.com/${{ job.workflow_repository\
+        \ }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh\"\
+        \n  curl -fsSL \"$script\" -o /tmp/paper-preview.sh || fail_all 'Could not\
+        \ download the paper preview script.'\nfi\n# Build every paper even if one\
+        \ fails; each failure is recorded on its own.\nfor d in \"${papers[@]}\";\
+        \ do\n  if ! docker run --rm --network none --cap-drop ALL --security-opt\
+        \ no-new-privileges \\\n      --user \"$(id -u):$(id -g)\" -e HOME=/tmp \\\
+        \n      -v \"$PWD:$PWD\" -w \"$PWD\" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro\
+        \ \\\n      \"$tex_image\" bash /tmp/paper-preview.sh \"$base\" \"$d\"; then\n\
+        \    status=1\n    mkdir -p \"_site/paper-previews/$d\"\n    if [ ! -f \"\
+        _site/paper-previews/$d/build-failed.txt\" ]; then\n      {\n        echo\
+        \ \"The paper in $d/ failed to build; the rest of the preview was published\
+        \ without it.\"\n        echo\n        if [ -f \"$d/build/main.log\" ]; then\
+        \ tail -n 200 \"$d/build/main.log\"; fi\n        for log in \"$d\"/build/*.blg;\
+        \ do\n          if [ -f \"$log\" ]; then tail -n 100 \"$log\"; fi\n      \
+        \  done\n      } > \"_site/paper-previews/$d/build-failed.txt\"\n    fi\n\
+        \    [ -f \"_site/paper-previews/$d/preview.json\" ] || printf '{\"changed\"\
+        :false}\\n' > \"_site/paper-previews/$d/preview.json\"\n    echo \"::error\
+        \ file=$d/main.tex::Paper preview failed; the rest of the preview will still\
+        \ publish\"\n  fi\ndone\nexit \"$status\"\n"
+    - name: Assert real caller identity and paper output
+      env:
+        CALLED_REF: ${{ job.workflow_ref }}
+        CALLER_REF: ${{ github.workflow_ref }}
+      run: 'test "$CALLED_REF" = allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@refs/heads/tex-disk-probe
 
-      # PR head refs are permanent; fetch them so provenance commits referenced
-      # by history-derived checks still resolve.
-      - name: Fetch PR refs
-        run: git fetch --no-tags origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
+        test "$CALLER_REF" = allenai/asta-plugins/.github/workflows/tex-caller-probe.yml@refs/heads/tex-disk-probe
 
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: ${{ inputs.quarto-version }}
+        test -s _site/paper-previews/paper/main.pdf
 
-      # The managed entry point needs the CLI from this workflow's own revision.
-      - name: Install Asta CLI for managed workspace rules
-        run: |
-          if [ ! -f workspace.mk ] && grep -Eq '^[[:space:]]*(-?include|sinclude)[[:space:]]+\.asta/cache/workspace\.mk([[:space:]]|$)' Makefile; then
-            python3 -m venv "$RUNNER_TEMP/asta-cli"
-            "$RUNNER_TEMP/asta-cli/bin/pip" install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
-            echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
-          fi
+        printf ''%s\n'' "Called workflow: $CALLED_REF" "Caller: $CALLER_REF" >> "$GITHUB_STEP_SUMMARY"
 
-      # Project script overrides are optional. Warn on drift without rejecting
-      # intentional customizations.
-      - name: Check vendored workspace scripts for drift
-        run: |
-          for asset in quarto-check.sh wait-for-preview.sh; do
-            [ -f "scripts/$asset" ] || continue
-            # `github` belongs to the caller; `job.workflow_*` identifies the
-            # called workflow and keeps co-located assets on the same commit.
-            canonical="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/$asset"
-            if curl -fsSL "$canonical" -o "/tmp/$asset.canonical"; then
-              if ! diff -u "scripts/$asset" "/tmp/$asset.canonical" > "/tmp/$asset.diff"; then
-                echo "::warning::scripts/$asset differs from the workspace skill's canonical copy — with Makefile.managed, remove an unmodified copy only after 'asta workspace sync --refresh --require-scripts' succeeds; re-copy assets/$asset for a standalone Makefile, or keep intentional customizations"
-                { echo "## $asset drift (vendored → canonical)"; echo '```diff'; cat "/tmp/$asset.diff"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-              fi
-            else
-              echo "could not fetch canonical $asset; skipping drift check"
-            fi
-          done
-
-      - name: Generate managed paper viewer pages
-        run: |
-          assets="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets"
-          tmpdir=$(mktemp -d)
-          trap 'rm -rf "$tmpdir"' EXIT
-          for name in paper-discovery.py paper-viewer.py; do
-            if git ls-files --error-unmatch "scripts/$name" >/dev/null 2>&1; then
-              cp "scripts/$name" "$tmpdir/$name"
-            else
-              curl -fsSL "$assets/$name" -o "$tmpdir/$name"
-            fi
-          done
-          set -o pipefail
-          python3 "$tmpdir/paper-discovery.py" | python3 "$tmpdir/paper-viewer.py"
-
-      # All quality gates live in the repo's `check` Makefile target — the
-      # single source of truth shared with local runs, so CI and local can't
-      # drift. Warnings are surfaced to the step summary from inside the target.
-      - name: Run docs checks
-        env:
-          ASTA_WORKSPACE_VIEWERS: "0"  # already generated by the workflow's revision above
-          ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
-          ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
-        run: make check
-
-      # A broken paper must not hold back the Quarto preview: publish the rest,
-      # say so in the PR comment, and fail the check only after deploy.
-      - name: Build paper preview
-        id: paper
-        continue-on-error: true
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          WORKFLOW_REF: ${{ job.workflow_ref }}
-        run: |
-          if [ -e _site/paper-previews ]; then
-            echo '::error::Quarto output already uses paper-previews/; reserve that path for paper previews'
-            exit 1
-          fi
-          mkdir -p _site/paper-previews
-          fail_discovery() {
-            echo "$1" > _site/paper-previews/build-failed.txt
-            echo "::error::$1"
-            exit 1
-          }
-          base=""
-          if [ -n "$PR_BASE" ] && ! base=$(git merge-base "$PR_BASE" HEAD); then
-            echo '::warning::Could not find the PR merge base; publishing current papers without diffs or removals'
-            base=""
-          fi
-          # A project's committed scripts/<asset> is a customization and wins.
-          if git ls-files --error-unmatch scripts/paper-discovery.py >/dev/null 2>&1; then
-            echo '::notice::Using the project copy of scripts/paper-discovery.py'
-            cp scripts/paper-discovery.py /tmp/paper-discovery.py || fail_discovery 'Could not copy scripts/paper-discovery.py.'
-          else
-            discovery_script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-discovery.py"
-            curl -fsSL "$discovery_script" -o /tmp/paper-discovery.py || fail_discovery 'Could not download the paper discovery script.'
-          fi
-          discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
-          jq -e '(.papers | type == "array" and all(.[]; type == "string")) and (.removed | type == "array" and all(.[]; type == "string")) and (.warnings | type == "array" and all(.[]; type == "string"))' <<< "$discovery" >/dev/null || fail_discovery 'Paper discovery returned invalid data.'
-          mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
-          mapfile -t removed < <(jq -r '.removed[]' <<< "$discovery")
-          mapfile -t warnings < <(jq -r '.warnings[]' <<< "$discovery")
-          status=0
-          if [ ${#warnings[@]} -gt 0 ]; then
-            printf '%s\n' "${warnings[@]}" > _site/paper-previews/build-failed.txt
-            status=1
-          fi
-          for d in "${removed[@]}"; do
-            mkdir -p "_site/paper-previews/$d"
-            printf '{"changed":true,"removed":true}\n' > "_site/paper-previews/$d/preview.json"
-          done
-          [ ${#papers[@]} -gt 0 ] || exit "$status"
-          fail_all() {
-            for d in "${papers[@]}"; do
-              mkdir -p "_site/paper-previews/$d"
-              echo "$1" > "_site/paper-previews/$d/build-failed.txt"
-              [ -f "_site/paper-previews/$d/preview.json" ] || printf '{"changed":false}\n' > "_site/paper-previews/$d/preview.json"
-            done
-            exit 1
-          }
-          # Build inside the -tex image released with this workflow so CI matches
-          # the dev container; untagged refs use the newest release.
-          [ -n "$WORKFLOW_REF" ] || fail_all 'The reusable workflow ref is missing; cannot select the LaTeX image.'
-          case "$WORKFLOW_REF" in
-            *@refs/tags/v*)
-              tag=${WORKFLOW_REF##*@refs/tags/}
-              [[ "$tag" =~ ^v[0-9A-Za-z._-]+$ ]] || fail_all "The workflow tag $tag is not a valid image tag."
-              tex_image="ghcr.io/allenai/asta:$tag-tex"
-              ;;
-            *)
-              tex_image=ghcr.io/allenai/asta:latest-tex
-              echo '::warning::An untagged workflow ref uses mutable latest-tex; pin a release tag for a matching LaTeX toolchain.'
-              ;;
-          esac
-          # A tag can be called while its validated images are being promoted.
-          df -h /
-          pull_start=$SECONDS
-          for attempt in {1..5}; do
-            if docker pull -q "$tex_image"; then break; fi
-            [ "$attempt" -lt 5 ] || fail_all "Could not pull the LaTeX image $tex_image. For a new release, retry after its Docker promotion workflow succeeds."
-            echo '::warning::LaTeX image pull failed; retrying in 15 seconds.'
-            sleep 15
-          done
-          echo "LaTeX image pull: $((SECONDS - pull_start)) seconds"
-          docker image inspect "$tex_image" --format 'LaTeX image digests: {{join .RepoDigests ", "}}'
-          df -h /
-          if git ls-files --error-unmatch scripts/paper-preview.sh >/dev/null 2>&1; then
-            echo '::notice::Using the project copy of scripts/paper-preview.sh'
-            cp scripts/paper-preview.sh /tmp/paper-preview.sh || fail_all 'Could not copy scripts/paper-preview.sh.'
-          else
-            script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
-            curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
-          fi
-          # Build every paper even if one fails; each failure is recorded on its own.
-          for d in "${papers[@]}"; do
-            if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-                --user "$(id -u):$(id -g)" -e HOME=/tmp \
-                -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
-                "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
-              status=1
-              mkdir -p "_site/paper-previews/$d"
-              if [ ! -f "_site/paper-previews/$d/build-failed.txt" ]; then
-                {
-                  echo "The paper in $d/ failed to build; the rest of the preview was published without it."
-                  echo
-                  if [ -f "$d/build/main.log" ]; then tail -n 200 "$d/build/main.log"; fi
-                  for log in "$d"/build/*.blg; do
-                    if [ -f "$log" ]; then tail -n 100 "$log"; fi
-                  done
-                } > "_site/paper-previews/$d/build-failed.txt"
-              fi
-              [ -f "_site/paper-previews/$d/preview.json" ] || printf '{"changed":false}\n' > "_site/paper-previews/$d/preview.json"
-              echo "::error file=$d/main.tex::Paper preview failed; the rest of the preview will still publish"
-            fi
-          done
-          exit "$status"
-
-      - name: Prepare Pages artifact
-        run: touch _site/.nojekyll  # serve asset dirs verbatim (no Jekyll)
-
-      # Generate the diff with the build job's read-only token. A project may
-      # customize this script, so it must not run in the write-enabled deploy job.
-      - name: Generate What changed
-        if: github.event_name == 'pull_request'
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -o pipefail
-          tmpdir=$(mktemp -d)
-          trap 'rm -rf "$tmpdir"' EXIT
-          baseline="$tmpdir/baseline"
-          mkdir "$baseline"
-          baseline_label="no deployed baseline"
-          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
-            # Pages may have been force-pushed since checkout fetched its branch.
-            if ! git fetch -q origin +gh-pages:refs/remotes/origin/gh-pages \
-                || ! git archive refs/remotes/origin/gh-pages | tar -x --anchored --exclude=pr-preview -C "$baseline"; then
-              echo "::warning::Could not read the deployed main site; skipping the diff page"
-              exit 0
-            fi
-            # The read-only build compares with this snapshot; main may redeploy before publication.
-            baseline_label="Pages $(git rev-parse --short=12 refs/remotes/origin/gh-pages)"
-          else
-            status=$?
-            if [ "$status" -ne 2 ]; then
-              echo "::warning::Could not check for the deployed main site; skipping the diff page"
-              exit 0
-            fi
-          fi
-          if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
-            gen=scripts/what-changed.py
-            echo "Using project-owned scripts/what-changed.py"
-          else
-            gen="$tmpdir/what-changed.py"
-            url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
-            if ! curl -fsSL "$url" -o "$gen"; then
-              echo "::warning::could not fetch what-changed.py; skipping the diff page"
-              exit 0
-            fi
-          fi
-          if [ -e _site/what-changed.html ]; then
-            echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
-          fi
-          tmpout="$tmpdir/what-changed.html"
-          if python3 "$gen" \
-            --old "$baseline" --new _site \
-            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
-              && [ -s "$tmpout" ]; then
-            mv "$tmpout" _site/what-changed.html
-          else
-            echo "::warning::what-changed page generation failed; preview still published"
-          fi
-
-      - name: Check project preview artifacts
-        if: inputs.artifact-command != ''
-        env:
-          ARTIFACT_COMMAND: ${{ inputs.artifact-command }}
-          SITE_DIR: _site
-          REQUIRE_WHAT_CHANGED: ${{ github.event_name == 'pull_request' }}
-          ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
-          ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
-        run: bash -e -o pipefail -c "$ARTIFACT_COMMAND"
-
-      - name: Upload rendered site
-        uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: _site
-          include-hidden-files: true  # keep .nojekyll
-
-  # Publish: main -> gh-pages root (keeping PR previews); a PR -> a preview under
-  # /pr-preview/pr-<N>/ with a link comment. Concurrency is keyed per PR (and
-  # separately for main), so main and any PR are always in different groups — a
-  # main deploy can't be queued behind or cancelled by a PR's write (including a
-  # PR-close cleanup that fires at merge). Concurrent writes from different
-  # groups reconcile via rebase-and-retry on push, not a global queue.
-  deploy:
-    needs: build
-    if: github.event_name == 'push' || github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      # `pages: read` lets us resolve the site's real served URL from the Pages
-      # API (private/internal repos serve from an obfuscated *.pages.github.io
-      # domain, not <owner>.github.io/<repo>). Degrades gracefully if absent.
-      pages: read
-    concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: site
-          path: _site
-
-      - name: Publish to gh-pages
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          # First deploy: create gh-pages from the empty tree without touching
-          # the main checkout (an orphan checkout here would make the worktree
-          # add below fail — a branch can't be checked out twice).
-          git fetch origin gh-pages:gh-pages 2>/dev/null \
-            || git branch gh-pages "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "Initialize gh-pages")"
-          tmp=$(mktemp -d)
-          git worktree add "$tmp" gh-pages
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Main deploy: replace the site root, keep pr-preview/.
-            find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
-            cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
-          else
-            # PR preview: publish under pr-preview/pr-<N>/.
-            rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
-            mkdir -p "$tmp/pr-preview/pr-$PR_NUMBER"
-            cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/pr-preview/pr-$PR_NUMBER/"
-
-            # Keep previews out of search indexes. A project Pages site can't use
-            # a path-scoped robots.txt (only the host-root one is honored), so
-            # inject a noindex meta tag into the preview's pages (main is left
-            # indexable).
-            find "$tmp/pr-preview/pr-$PR_NUMBER" -name '*.html' -print0 \
-              | xargs -0 sed -i 's#<head>#<head><meta name="robots" content="noindex, nofollow">#'
-          fi
-
-          cd "$tmp"
-          git add -A
-          # Always publish a run-ID marker commit. Even byte-identical renders
-          # then produce an observable Pages build for readiness checks.
-          git commit --allow-empty -m "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
-          for i in 1 2 3 4 5; do
-            git push origin gh-pages && break
-            [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
-            echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
-            git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
-          done
-
-          # For a PR, ensure exactly one preview-link comment (create or update),
-          # independent of whether the content changed. Best-effort — a comment
-          # hiccup shouldn't fail an otherwise-successful publish, so the whole
-          # block runs with errexit disabled and closes on a guaranteed success.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            set +e
-            # Resolve the site's real base URL from the Pages config. Private and
-            # internal repos serve from an obfuscated <random>.pages.github.io
-            # domain, NOT <owner>.github.io/<repo>, so hardcoding the latter
-            # yields a dead preview link there. Fall back to the canonical form
-            # if the Pages API is unavailable (e.g. token lacks `pages: read`).
-            base=$(gh api "repos/${{ github.repository }}/pages" --jq '.html_url' 2>/dev/null)
-            # On failure (e.g. Pages not configured yet -> 404, or a 5xx),
-            # `gh api` prints the raw error body to stdout and never applies
-            # --jq, so $base is a non-empty blob of error JSON. Guard on it
-            # actually being an https URL, not merely non-empty, before trusting
-            # it -- otherwise the error text lands inside the preview link.
-            case "$base" in
-              https://*) base="${base%/}" ;;
-              *) base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" ;;
-            esac
-            url="$base/pr-preview/pr-$PR_NUMBER/"
-            # Link the "what changed" page only if it was actually generated.
-            if [ -f "$tmp/pr-preview/pr-$PR_NUMBER/what-changed.html" ]; then
-              body=$(printf '📄 Preview: %s\n🔎 What changed: %swhat-changed.html' "$url" "$url")
-            else
-              body="📄 Preview: $url"
-            fi
-            # Surface the paper directly; it is otherwise one click deep.
-            pr_dir="$tmp/pr-preview/pr-$PR_NUMBER"
-            if [ -f "$pr_dir/paper-previews/build-failed.txt" ]; then
-              body=$(printf '%s\n⚠️ Paper discovery incomplete: %spaper-previews/build-failed.txt' "$body" "$url")
-            fi
-            while IFS= read -r -d '' manifest; do
-              paper_dir=$(dirname "$manifest")
-              d=${paper_dir#"$pr_dir/paper-previews/"}
-              encoded=$(python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe="/"))' "$d")
-              display=$(python3 -c 'import re, sys; name=" / ".join(p.replace("-", " ").title().replace("Latex", "LaTeX") for p in sys.argv[1].split("/")); print(re.sub(r"([\\`*_{}\[\]()#+.!|<>])", r"\\\1", name))' "$d")
-              label="Paper"; [ "$d" = paper ] || label="$display"
-              paper_url="${url}paper-previews/$encoded"
-              if [ -f "$paper_dir/main.pdf" ]; then
-                body=$(printf '%s\n📑 %s PDF: %s/main.pdf' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/html/index.html" ]; then
-                body=$(printf '%s\n📄 %s HTML: %s/html/index.html' "$body" "$label" "$paper_url")
-              elif [ -f "$paper_dir/html/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s/html/latexml.log' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/main.bbl" ]; then
-                body=$(printf '%s\n📚 %s bibliography (arXiv): %s/main.bbl' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/what-changed.pdf" ]; then
-                body=$(printf '%s\n🖍️ %s PDF diff: %s/what-changed.pdf' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/html-diff/index.html" ] && grep -q '"html_diff":true' "$paper_dir/preview.json"; then
-                body=$(printf '%s\n🔎 %s HTML diff: %s/html-diff/index.html' "$body" "$label" "$paper_url")
-              elif [ -f "$paper_dir/html-diff/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML diff conversion failed: %s/html-diff/latexml.log' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/build-failed.txt" ]; then
-                body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
-                body=$(printf '%s\n🗑️ %s removed' "$body" "$label")
-              fi
-            done < <(
-              if [ -f "$pr_dir/paper-previews/paper/preview.json" ]; then
-                printf '%s\0' "$pr_dir/paper-previews/paper/preview.json"
-              fi
-              find "$pr_dir/paper-previews" -name preview.json ! -path "$pr_dir/paper-previews/paper/preview.json" -print0 2>/dev/null | sort -z
-            )
-            # Guard the read: it runs the same set of transient failure modes as
-            # the writes below (a 5xx returns an HTML body that --jq can't parse),
-            # so an unguarded assignment would abort the step mid-publish.
-            existing=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --jq 'map(select(.body | startswith("📄 Preview:"))) | .[0].id // empty' 2>/dev/null)
-            if [ -n "$existing" ]; then
-              gh api "repos/${{ github.repository }}/issues/comments/$existing" -X PATCH -f body="$body" >/dev/null \
-                || echo "::warning::could not update preview comment"
-            else
-              gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null \
-                || echo "::warning::could not create preview comment"
-            fi
-            set -e
-          fi
-
-
-  # Report a paper failure even if publishing is skipped or fails first.
-  paper-gate:
-    needs: [build, deploy]
-    if: always() && needs.build.outputs.paper == 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fail the check if the paper did not build
-        run: |
-          echo "::error::The paper failed to build. See the build job's 'Build paper preview' log."
-          exit 1
-
-  # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
-  # (keyed on the PR number) so it cancels any still-running build/deploy for the
-  # PR first — otherwise a late deploy could recreate the preview after removal.
-  cleanup-preview:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-      - name: Remove PR preview
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages:gh-pages 2>/dev/null || exit 0
-          tmp=$(mktemp -d)
-          git worktree add "$tmp" gh-pages
-          rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
-          cd "$tmp"
-          git add -A
-          if git diff --cached --quiet; then echo "no preview to remove"; exit 0; fi
-          git commit -m "Remove preview for PR #$PR_NUMBER"
-          for i in 1 2 3 4 5; do
-            git push origin gh-pages && break
-            [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
-            echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
-            git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
-          done
+        '

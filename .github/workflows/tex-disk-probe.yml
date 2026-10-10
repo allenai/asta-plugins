@@ -1,0 +1,64 @@
+name: tex disk probe
+
+# Scratch: replays docker.yml's publish job for the tex target (both arches, one
+# runner) and pushes to a runner-local registry, which also stores the blobs on
+# this disk, so the measured headroom is a lower bound on the real job's.
+on:
+  push:
+    branches: [tex-disk-probe]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: public.ecr.aws/docker/library/registry:2
+        ports: ['5000:5000']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start disk monitor
+        run: |
+          df -h /
+          nohup sh -c 'while :; do df -B1 --output=avail / | tail -1 >> "$RUNNER_TEMP/avail"; sleep 1; done' >/dev/null 2>&1 &
+      - uses: docker/setup-qemu-action@v3
+        with:
+          image: mirror.gcr.io/tonistiigi/binfmt:latest@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=mirror.gcr.io/moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          target: tex
+          platforms: linux/amd64,linux/arm64
+          tags: localhost:5000/asta:probe-tex
+      - name: Measure final image size and pull on the same runner
+        run: |
+          set -euo pipefail
+          image=localhost:5000/asta
+          docker buildx imagetools inspect --raw "$image:probe-tex" > "$RUNNER_TEMP/index.json"
+          for arch in amd64 arm64; do
+            digest=$(jq -er --arg arch "$arch" '.manifests[] | select(.platform.architecture == $arch and .platform.os == "linux") | .digest' "$RUNNER_TEMP/index.json")
+            docker buildx imagetools inspect --raw "$image@$digest" > "$RUNNER_TEMP/manifest.json"
+            bytes=$(jq '[.layers[].size] | add' "$RUNNER_TEMP/manifest.json")
+            echo "$arch compressed image layers: $bytes bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          start=$SECONDS
+          docker pull "$image:probe-tex"
+          echo "Local-registry amd64 pull: $((SECONDS - start)) seconds" | tee -a "$GITHUB_STEP_SUMMARY"
+          bytes=$(docker image inspect "$image:probe-tex" --format '{{.Size}}')
+          echo "amd64 uncompressed image: $bytes bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp "$image:probe-tex" pdflatex --version
+      - name: Report disk
+        if: always()
+        run: |
+          df -h /
+          docker system df
+          docker buildx du | tail -3
+          min=$(sort -n "$RUNNER_TEMP/avail" | head -1)
+          echo "Built source: $(git rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Minimum free during build: $((min / 1024 / 1024 / 1024)) GiB ($min bytes)" | tee -a "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools inspect localhost:5000/asta:probe-tex | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,9 @@
+name: Real paper workflow caller probe
+on:
+  push:
+    branches: [tex-disk-probe]
+permissions:
+  contents: read
+jobs:
+  paper:
+    uses: ./.github/workflows/workspace-quarto-site.yml
