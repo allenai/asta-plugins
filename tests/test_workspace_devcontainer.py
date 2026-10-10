@@ -31,8 +31,10 @@ def test_asta_token_is_a_codespaces_secret():
 def test_preview_port_notifies_and_prints_link():
     config = _devcontainer()
     assert 4848 in config["forwardPorts"]
+    assert 4849 in config["forwardPorts"]
     # Browser Codespaces needs its forwarded URL; private ports may fail in a frame.
     assert config["portsAttributes"]["4848"]["onAutoForward"] == "notify"
+    assert config["portsAttributes"]["4849"]["onAutoForward"] == "notify"
     assert config["postAttachCommand"]["preview"] == "exec asta workspace preview"
 
 

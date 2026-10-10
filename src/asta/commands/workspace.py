@@ -1,7 +1,9 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import functools
 import hashlib
 import http.client
+import http.server
 import io
 import json
 import os
@@ -10,13 +12,15 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
 from collections.abc import Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import click
@@ -27,7 +31,9 @@ ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
 CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS
+# Cached when the selected ref ships it; `asta workspace what-changed` runs it.
+DIFF_SCRIPT = "what-changed.py"
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT,)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -455,16 +461,347 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
 
 
+def _git(project: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(project), *args], capture_output=True, text=True, check=False
+    )
+
+
+def diff_script(project: Path) -> Path:
+    """Locate what-changed.py the way the PR preview does: project copy first."""
+    local = project / "scripts" / DIFF_SCRIPT
+    if local.is_file():
+        return local
+    guidance = (
+        f"No {DIFF_SCRIPT} for this project: select a newer asta-plugins ref in "
+        f"docs.yml and run 'asta workspace sync --refresh', or add scripts/{DIFF_SCRIPT}"
+    )
+    try:
+        with redirect_stdout(sys.stderr):
+            click.get_current_context().invoke(
+                sync, project=project, refresh=False, require_scripts=False
+            )
+    except click.ClickException as exc:
+        raise click.ClickException(f"{exc.format_message()}. {guidance}") from exc
+    try:
+        state = json.loads((project / ".asta/cache/workspace.json").read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = {}
+    archive_sha = state.get("archive_sha256") if isinstance(state, dict) else None
+    scripts = state.get("scripts") if isinstance(state, dict) else None
+    if (
+        isinstance(archive_sha, str)
+        and re.fullmatch(r"[0-9a-f]{64}", archive_sha)
+        and isinstance(scripts, dict)
+        and DIFF_SCRIPT in scripts
+    ):
+        cached = project / ".asta/cache/scripts" / archive_sha / DIFF_SCRIPT
+        if (
+            cached.is_file()
+            and not cached.is_symlink()
+            and not cached.parent.is_symlink()
+        ):
+            return cached
+    raise click.ClickException(guidance)
+
+
+def render_site(directory: Path, label: str) -> Path:
+    if not directory.is_dir():
+        raise click.ClickException(
+            f"Project directory does not exist for {label}: {directory}"
+        )
+    click.echo(f"Rendering {label} with 'make render'", err=True)
+    with preview_process(
+        ["make", "render"],
+        directory,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
+        for line in process.stdout:
+            click.echo(line, nl=False, err=True)
+        process.wait()
+    if process.returncode != 0:
+        raise click.ClickException(f"'make render' failed for {label}")
+    site = directory / "_site"
+    if not site.is_dir():
+        raise click.ClickException(f"'make render' did not produce _site for {label}")
+    return site
+
+
+COMPARISON_DIR = Path(".asta/cache/what-changed")
+
+
+@contextmanager
+def _comparison_directory():
+    temporary = Path(tempfile.mkdtemp(prefix="asta-what-changed-"))
+    try:
+        yield temporary
+    finally:
+        try:
+            with preview_cleanup():
+                # Git owns baseline removal; keep failed removals recoverable.
+                if not (temporary / "baseline").exists():
+                    temporary.rmdir()
+        except OSError as exc:
+            click.echo(f"Warning: baseline directory cleanup failed: {exc}", err=True)
+
+
+def _publish(staged: Path, owned: Path) -> None:
+    """Replace the command-owned comparison directory with a finished one."""
+    previous = staged.with_name(staged.name + ".previous")
+    try:
+        if owned.exists() or owned.is_symlink():
+            owned.replace(previous)
+        staged.replace(owned)
+    except BaseException:
+        with preview_cleanup():
+            if previous.exists() or previous.is_symlink():
+                previous.replace(owned)
+        raise
+    try:
+        if previous.is_symlink() or previous.is_file():
+            previous.unlink()
+        elif previous.exists():
+            shutil.rmtree(previous)
+    except OSError as exc:
+        click.echo(f"Warning: previous comparison cleanup failed: {exc}", err=True)
+
+
+@workspace.command("what-changed")
+@click.argument("ref")
+@click.option(
+    "--project",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    default=Path("."),
+)
+def what_changed(ref: str, project: Path) -> None:
+    """Show what changed in the rendered site since a git REF (tag, branch, commit).
+
+    Renders REF and the working tree with the project's own 'make render' and
+    compares them with the what-changed.py the PR preview uses. The page is
+    written to a copy of the rendered site under .asta/cache/what-changed/,
+    which this command owns and replaces on each run. Rendering updates _site/;
+    the comparison page is written only to the cache. Choose a trusted REF: its
+    build code runs locally. The baseline contains only committed files.
+    """
+    try:
+        with preview_signals():
+            compare_workspace(ref, project)
+    except KeyboardInterrupt:
+        raise click.exceptions.Exit(130) from None
+    except PreviewTerminated as exc:
+        raise click.exceptions.Exit(128 + exc.signum) from None
+
+
+def compare_workspace(ref: str, project: Path) -> None:
+    project = project.resolve()
+    if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
+        raise click.ClickException("Workspace cache must not be a symlink")
+    try:
+        repository = _git(project, "rev-parse", "--show-toplevel")
+    except FileNotFoundError as exc:
+        raise click.ClickException("git is required to compare the workspace") from exc
+    if repository.returncode != 0:
+        raise click.ClickException(f"Not a git repository: {project}")
+    commit = _git(
+        project,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        f"{ref}^{{commit}}",
+    )
+    if commit.returncode != 0 or not commit.stdout.strip():
+        raise click.ClickException(f"Unknown git ref: {ref}")
+    prefix = _git(project, "rev-parse", "--show-prefix")
+    if prefix.returncode != 0:
+        raise click.ClickException(
+            "Could not locate the project within its git repository"
+        )
+    owned = project / COMPARISON_DIR
+    with _comparison_directory() as tmp:
+        baseline = tmp / "baseline"
+        added = None
+        try:
+            added = _git(
+                project,
+                "worktree",
+                "add",
+                "--detach",
+                str(baseline),
+                commit.stdout.strip(),
+            )
+            if added.returncode != 0:
+                raise click.ClickException(
+                    f"Could not check out {ref}: {added.stderr.strip()}"
+                )
+            baseline_project = baseline / prefix.stdout.rstrip("\n")
+            if not baseline_project.is_dir():
+                raise click.ClickException(
+                    f"Project directory does not exist for {ref}: {baseline_project}"
+                )
+            script = diff_script(project)
+            old_site = render_site(baseline_project, ref)
+            new_site = render_site(project, "the working tree")
+            # The page sits at the root of a site copy so its relative links
+            # to changed pages resolve, as in the PR preview.
+            if (project / ".asta").is_symlink() or owned.parent.is_symlink():
+                raise click.ClickException("Workspace cache must not be a symlink")
+            owned.parent.mkdir(parents=True, exist_ok=True)
+            staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
+            try:
+                shutil.copytree(new_site, staged, symlinks=True, dirs_exist_ok=True)
+                staged.chmod(0o700)
+                report = staged / "what-changed.html"
+                report.unlink(missing_ok=True)
+                with preview_process(
+                    [
+                        sys.executable,
+                        str(script),
+                        "--old",
+                        str(old_site),
+                        "--new",
+                        str(new_site),
+                        "--out",
+                        str(report),
+                        "--title",
+                        f"Changes since {ref}",
+                    ],
+                    project,
+                ) as process:
+                    returncode = process.wait()
+                if returncode != 0:
+                    raise click.ClickException(
+                        f"{DIFF_SCRIPT} failed (exit {returncode}): {script}"
+                    )
+                if (
+                    report.is_symlink()
+                    or not report.is_file()
+                    or report.stat().st_size == 0
+                ):
+                    raise click.ClickException(
+                        f"{DIFF_SCRIPT} did not write nonempty HTML"
+                    )
+                try:
+                    _publish(staged, owned)
+                except OSError as exc:
+                    raise click.ClickException(
+                        f"Could not publish the comparison: {exc}"
+                    ) from exc
+            finally:
+                with preview_cleanup():
+                    shutil.rmtree(staged, ignore_errors=True)
+        finally:
+            with preview_cleanup():
+                removed = _git(project, "worktree", "remove", "--force", str(baseline))
+                if removed.returncode != 0 and (
+                    added is None or added.returncode == 0 or baseline.exists()
+                ):
+                    click.echo(
+                        f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}",
+                        err=True,
+                    )
+    page = owned / "what-changed.html"
+    click.echo(f"Wrote {page}")
+    url = preview_url(os.environ, WHAT_CHANGED_PORT) + page.name
+    click.echo(f"View it with `asta workspace preview --what-changed`, at {url}")
+
+
 PREVIEW_PORT = 4848
+# A separate port, so the comparison can be viewed while the live preview runs.
+WHAT_CHANGED_PORT = 4849
 PREVIEW_STATE = Path(".asta/cache/preview.json")
 
 
-def preview_url(env: Mapping[str, str]) -> str:
+def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
     codespace = env.get("CODESPACE_NAME")
     if codespace:
         domain = env.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN") or "app.github.dev"
-        return f"https://{codespace}-{PREVIEW_PORT}.{domain}/"
-    return f"http://localhost:{PREVIEW_PORT}/"
+        return f"https://{codespace}-{port}.{domain}/"
+    return f"http://localhost:{port}/"
+
+
+def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
+    """Serve the what-changed site copy; requests resolve its path afresh, so a
+    rerun of what-changed is picked up without restarting."""
+    root = directory.absolute()
+    forwarded_host = None
+
+    class SiteHandler(http.server.SimpleHTTPRequestHandler):
+        def send_head(self):
+            try:
+                host = urlsplit("//" + self.headers.get("Host", "").lower())
+                valid_host = (
+                    host.hostname in ("localhost", "127.0.0.1", "::1", forwarded_host)
+                    and bool(host.hostname)
+                    and host.username is None
+                    and host.password is None
+                    and not host.path
+                    and not host.query
+                    and not host.fragment
+                    and (host.port is None or 0 < host.port <= 65535)
+                    and (
+                        host.hostname != forwarded_host or host.netloc == forwarded_host
+                    )
+                )
+            except ValueError:
+                valid_host = False
+            if not valid_host:
+                self.send_error(403, "Unrecognized preview host")
+                return None
+            try:
+                path = Path(self.translate_path(self.path)).resolve()
+                # Check each request: later comparisons can replace the site copy.
+                # A swap between this check and the open is a known limit: a
+                # process that can write this private cache already has the
+                # user's access.
+                paths = [path]
+                if path.is_dir():
+                    paths += [
+                        (path / name).resolve() for name in ("index.html", "index.htm")
+                    ]
+                if any(not candidate.is_relative_to(root) for candidate in paths):
+                    raise ValueError("Path leaves the comparison site")
+            except (OSError, RuntimeError, ValueError):
+                self.send_error(
+                    403, "Path leaves the comparison site or is unavailable"
+                )
+                return None
+            if path.exists() and not path.is_dir() and not path.is_file():
+                self.send_error(404, "Not a site file")
+                return None
+            return super().send_head()
+
+        def list_directory(self, path):
+            self.send_error(404, "Directory listing is disabled")
+            return None
+
+    handler = functools.partial(SiteHandler, directory=str(root))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    if os.environ.get("CODESPACE_NAME"):
+        forwarded_host = urlsplit(preview_url(os.environ, server.server_port)).hostname
+    return server
+
+
+def serve_what_changed(project: Path) -> None:
+    owned = project.resolve() / COMPARISON_DIR
+    if not (owned / "what-changed.html").is_file():
+        raise click.ClickException(
+            "No comparison page yet; run `asta workspace what-changed <ref>` first"
+        )
+    url = preview_url(os.environ, WHAT_CHANGED_PORT) + "what-changed.html"
+    try:
+        server = comparison_server(owned, WHAT_CHANGED_PORT)
+    except OSError as exc:
+        raise click.ClickException(
+            f"Port {WHAT_CHANGED_PORT} is in use ({exc.strerror}). If an earlier "
+            f"`asta workspace preview --what-changed` is running, it already "
+            f"serves the latest page: {url}"
+        ) from exc
+    click.echo(f"Serving What changed at {url} (Ctrl-C to stop)")
+    with server:
+        server.serve_forever()
 
 
 def preview_running() -> bool:
@@ -628,17 +965,27 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
     type=click.Path(path_type=Path, file_okay=False, exists=True),
     default=Path("."),
 )
-def preview(project: Path) -> None:
+@click.option(
+    "--what-changed",
+    "what_changed_page",
+    is_flag=True,
+    help="Serve the page from `asta workspace what-changed` on port 4849 instead.",
+)
+def preview(project: Path, what_changed_page: bool) -> None:
     """Ensure the project's live preview is running on port 4848.
 
     Safe to run repeatedly: if this project's preview is already running, prints
     its URL and exits. If that launcher is still starting, asks you to retry.
     Runs `make preview`, falling back to `quarto preview` if Make is unavailable
-    or has no `preview` rule.
+    or has no `preview` rule. With --what-changed, serves the latest
+    `asta workspace what-changed` page instead, until stopped.
     """
     try:
         with preview_signals():
-            preview_project(project)
+            if what_changed_page:
+                serve_what_changed(project)
+            else:
+                preview_project(project)
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
     except PreviewTerminated as exc:

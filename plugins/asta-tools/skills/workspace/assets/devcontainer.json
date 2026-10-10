@@ -23,11 +23,16 @@
     }
   },
   "forwardPorts": [
-    4848
+    4848,
+    4849
   ],
   "portsAttributes": {
     "4848": {
       "label": "Quarto Preview",
+      "onAutoForward": "notify"
+    },
+    "4849": {
+      "label": "What changed",
       "onAutoForward": "notify"
     }
   }

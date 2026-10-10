@@ -1,7 +1,7 @@
 ---
 name: workspace
 description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
-allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
 # Workspace
@@ -16,6 +16,10 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
+
+When the user wants to see what changed since an earlier version — such as one they last read, recorded as a git tag or commit — offer `asta workspace what-changed <ref>`. It renders `<ref>` and the working tree with `make render`, writes the page with the same diff the PR preview uses to `.asta/cache/what-changed/what-changed.html` (a site copy the command owns and replaces each run; `_site/` is left as rendered). Then run `asta workspace preview --what-changed` in the background: it serves that page on port 4849 (forwarded by the dev container, like 4848) and prints its URL — localhost, or the Codespaces-forwarded URL. A running server picks up later comparisons without a restart. No PR or Pages deploy is needed. Tracking which version the user last read stays with the user; suggest a tag such as `git tag -f last-read` after they read.
+
+Choose a trusted ref: its Makefile and render-time code run locally. The baseline is a fresh worktree containing only committed files; ignored files (for example data, `_freeze/`, `.env`, or `.asta/cache/`) are absent. Its build may fetch dependencies or re-execute code, and projects that need local ignored inputs may fail to render. Do not copy current ignored inputs into the baseline and describe them as historical data. The working-tree render updates `_site/`, so an active preview may reload. Run comparisons one at a time and avoid other renders, including live-preview rebuilds, until the comparison finishes; concurrent renders can mix versions in its report.
 
 ## Save
 
