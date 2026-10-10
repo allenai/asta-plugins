@@ -531,7 +531,9 @@ def test_site_files_are_never_modified(project: Path) -> None:
 
 
 @pytest.mark.parametrize("parent", [".asta", ".asta/cache"])
-def test_symlinked_cache_parent_is_not_written(project: Path, parent: str) -> None:
+def test_symlinked_cache_parent_is_not_written(
+    project: Path, parent: str, monkeypatch
+) -> None:
     external = project / "external"
     previous = external / (
         "cache/what-changed" if parent == ".asta" else "what-changed"
@@ -541,6 +543,12 @@ def test_symlinked_cache_parent_is_not_written(project: Path, parent: str) -> No
     link = project / parent
     link.parent.mkdir(parents=True, exist_ok=True)
     link.symlink_to(external, target_is_directory=True)
+    monkeypatch.setattr(
+        workspace_module, "diff_script", lambda *_: pytest.fail("unexpected sync")
+    )
+    monkeypatch.setattr(
+        workspace_module, "render_site", lambda *_: pytest.fail("unexpected render")
+    )
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
@@ -548,6 +556,7 @@ def test_symlinked_cache_parent_is_not_written(project: Path, parent: str) -> No
     assert "Workspace cache must not be a symlink" in result.output
     assert list(previous.iterdir()) == [previous / "keep.html"]
     assert (previous / "keep.html").read_text() == "Unrelated content"
+    assert not (project / "_site").exists()
 
 
 def test_preview_serves_the_page_and_later_runs(project: Path) -> None:
@@ -674,3 +683,109 @@ def test_symlinked_owned_directory_is_replaced_not_followed(
     assert not owned.is_symlink()
     assert (owned / "what-changed.html").is_file()
     assert sorted(p.name for p in external.iterdir()) == ["keep.html"]
+
+
+def test_missing_project_reports_directory_error(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "HEAD", "--project", str(tmp_path / "missing")]
+    )
+    assert result.exit_code == 2
+    assert "does not exist" in result.output
+    assert "Not a git repository" not in result.output
+
+
+@pytest.mark.parametrize("workflow", [None, "jobs:\n  docs:\n    uses: invalid\n"])
+def test_sync_error_keeps_cause_and_diff_script_guidance(
+    project: Path, workflow
+) -> None:
+    (project / "scripts/what-changed.py").unlink()
+    if workflow is not None:
+        path = project / ".github/workflows/docs.yml"
+        path.parent.mkdir(parents=True)
+        path.write_text(workflow)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert ("Missing" if workflow is None else "Expected one") in result.output
+    assert "docs.yml" in result.output
+    assert "No what-changed.py for this project" in result.output
+    assert "scripts/what-changed.py" in result.output
+    assert "asta workspace sync --refresh" in result.output
+
+
+def test_failed_render_does_not_repeat_streamed_log(project: Path) -> None:
+    Path(shutil.which("make")).write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "for i in range(100):\n"
+        "    print(f'build-diagnostic-{i:03d}', file=sys.stderr)\n"
+        "sys.exit(2)\n"
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "'make render' failed for last-read" in result.output
+    for i in range(100):
+        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 1
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize("domain", [None, "app.github.dev", "forwarded.example"])
+def test_comparison_preview_rejects_untrusted_hosts(
+    tmp_path: Path, monkeypatch, method: str, domain: str | None
+) -> None:
+    if domain is None:
+        monkeypatch.delenv("CODESPACE_NAME", raising=False)
+    else:
+        monkeypatch.setenv("CODESPACE_NAME", "test-space")
+        monkeypatch.setenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", domain)
+    (tmp_path / "what-changed.html").write_text("Private draft")
+    server = workspace_module.comparison_server(tmp_path, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    url = f"http://127.0.0.1:{port}/what-changed.html"
+    allowed = ["localhost", "127.0.0.1", f"localhost:{port}", f"127.0.0.1:{port}"]
+    if domain is not None:
+        allowed.append(f"test-space-{port}.{domain}")
+    rejected = ["", "attacker.example", "localhost.attacker.example", "127.0.0.1:1"]
+    if domain is None:
+        rejected.append(f"test-space-{port}.app.github.dev")
+    try:
+        for host in allowed:
+            with urlopen(
+                Request(url, headers={"Host": host}, method=method)
+            ) as response:
+                assert response.status == 200
+        for host in rejected:
+            with pytest.raises(HTTPError) as error:
+                urlopen(Request(url, headers={"Host": host}, method=method))
+            assert error.value.code == 403
+            assert b"Private draft" not in error.value.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_comparison_preview_has_no_directory_listing(
+    tmp_path: Path, method: str
+) -> None:
+    (tmp_path / "what-changed.html").write_text("Comparison")
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "private-name").symlink_to(tmp_path.parent / "outside")
+    server = workspace_module.comparison_server(tmp_path, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    try:
+        for path in ("", "empty/"):
+            with pytest.raises(HTTPError) as error:
+                urlopen(Request(base + path, method=method))
+            assert error.value.code == 404
+            assert b"private-name" not in error.value.read()
+        (tmp_path / "index.html").write_text("Project homepage")
+        assert urlopen(Request(base, method=method)).status == 200
+    finally:
+        server.shutdown()
+        server.server_close()

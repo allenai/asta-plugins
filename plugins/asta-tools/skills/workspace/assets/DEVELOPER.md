@@ -96,6 +96,8 @@ Use a trusted comparison ref: its Makefile and render-time code execute locally,
 
 The bundled diff script needs only the Python standard library. A local custom script runs with the Python interpreter running `asta`; that environment must provide any additional dependencies. Inline script dependency metadata is not installed automatically. The PR preview continues to run custom scripts with its build environment's `python3`.
 
+Run comparisons one at a time in a project: they share its render output. The comparison cache stays private to the user running the command; start `preview --what-changed` as that same user. If removing the previous cached copy fails, the command warns but still publishes the new page. After stopping comparisons, remove `.asta/cache/.what-changed-*.previous` to reclaim those leftover copies.
+
 ### Managed paper HTML viewers
 
 For each discovered LaTeX paper, the shared preview generates `<paper-dir>/html/index.qmd` before `make check`. This page embeds the LaTeXML rendition in the Quarto site and links the PDF; the paper's HTML and PDF diffs remain in What changed. Keep the LaTeX source and bibliography committed, and ignore only the generated page, for example `/paper/html/index.qmd` in `.gitignore`. Viewer scripts are managed; copy them into `scripts/` only to customize or eject them.

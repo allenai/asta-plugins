@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import click
@@ -471,10 +472,17 @@ def diff_script(project: Path) -> Path:
     local = project / "scripts" / DIFF_SCRIPT
     if local.is_file():
         return local
-    with redirect_stdout(sys.stderr):
-        click.get_current_context().invoke(
-            sync, project=project, refresh=False, require_scripts=False
-        )
+    guidance = (
+        f"No {DIFF_SCRIPT} for this project: select a newer asta-plugins ref in "
+        f"docs.yml and run 'asta workspace sync --refresh', or add scripts/{DIFF_SCRIPT}"
+    )
+    try:
+        with redirect_stdout(sys.stderr):
+            click.get_current_context().invoke(
+                sync, project=project, refresh=False, require_scripts=False
+            )
+    except click.ClickException as exc:
+        raise click.ClickException(f"{exc.format_message()}. {guidance}") from exc
     try:
         state = json.loads((project / ".asta/cache/workspace.json").read_text())
     except (FileNotFoundError, json.JSONDecodeError):
@@ -490,10 +498,7 @@ def diff_script(project: Path) -> Path:
         cached = project / ".asta/cache/scripts" / archive_sha / DIFF_SCRIPT
         if cached.is_file() and not cached.is_symlink():
             return cached
-    raise click.ClickException(
-        f"No {DIFF_SCRIPT} for this project: select a newer asta-plugins ref in "
-        f"docs.yml and run 'asta workspace sync --refresh', or add scripts/{DIFF_SCRIPT}"
-    )
+    raise click.ClickException(guidance)
 
 
 def render_site(directory: Path, label: str) -> Path:
@@ -512,15 +517,12 @@ def render_site(directory: Path, label: str) -> Path:
         )
     except FileNotFoundError as exc:
         raise click.ClickException("make is required to render the workspace") from exc
-    output = []
     with process:
         for line in process.stdout:
             click.echo(line, nl=False, err=True)
-            output.append(line)
         process.wait()
     if process.returncode != 0:
-        detail = f":\n{''.join(output).strip()}" if output else ""
-        raise click.ClickException(f"'make render' failed for {label}{detail}")
+        raise click.ClickException(f"'make render' failed for {label}")
     site = directory / "_site"
     if not site.is_dir():
         raise click.ClickException(f"'make render' did not produce _site for {label}")
@@ -565,7 +567,9 @@ def _publish(staged: Path, owned: Path) -> None:
 @workspace.command("what-changed")
 @click.argument("ref")
 @click.option(
-    "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
+    "--project",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    default=Path("."),
 )
 def what_changed(ref: str, project: Path) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
@@ -578,6 +582,8 @@ def what_changed(ref: str, project: Path) -> None:
     baseline contains only committed files.
     """
     project = project.resolve()
+    if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
+        raise click.ClickException("Workspace cache must not be a symlink")
     try:
         repository = _git(project, "rev-parse", "--show-toplevel")
     except FileNotFoundError as exc:
@@ -714,6 +720,9 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
 
     class SiteHandler(http.server.SimpleHTTPRequestHandler):
         def send_head(self):
+            if self.headers.get("Host", "").lower() not in allowed_hosts:
+                self.send_error(403, "Unrecognized preview host")
+                return None
             try:
                 path = Path(self.translate_path(self.path)).resolve()
                 # Check each request: later comparisons can replace the site copy.
@@ -729,8 +738,21 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
                 return None
             return super().send_head()
 
+        def list_directory(self, path):
+            self.send_error(404, "Directory listing is disabled")
+            return None
+
     handler = functools.partial(SiteHandler, directory=str(root))
-    return http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    allowed_hosts = {"localhost", "127.0.0.1"}
+    allowed_hosts.update(
+        f"{host}:{server.server_port}" for host in tuple(allowed_hosts)
+    )
+    if os.environ.get("CODESPACE_NAME"):
+        allowed_hosts.add(
+            urlsplit(preview_url(os.environ, server.server_port)).netloc.lower()
+        )
+    return server
 
 
 def serve_what_changed(project: Path) -> None:
