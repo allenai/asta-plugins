@@ -119,28 +119,6 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert '$deps_escape = "none";' in commands[0]
 
 
-def test_diff_does_not_depend_on_an_early_exiting_ls_tree_pipeline(tmp_path):
-    repo, base, env, bin_dir = paper_repo(tmp_path)
-    real_git = shutil.which("git")
-    (bin_dir / "git").write_text(
-        f"#!{sys.executable}\n"
-        "import os, sys\n"
-        "if sys.argv[1:3] == ['ls-tree', '-z']:\n"
-        "    os.write(1, b'paper/main.tex\\0')\n"
-        "    sys.exit(141)\n"
-        f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
-    )
-    (bin_dir / "git").chmod(0o755)
-
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
-
-    manifest = json.loads(
-        (repo / "_site/paper-previews/paper/preview.json").read_text()
-    )
-    assert manifest["diff"] is True
-    assert "new" not in manifest
-
-
 @pytest.mark.parametrize("change", ["edit", "add", "delete"])
 @pytest.mark.parametrize("main_name", ["main.tex", "article.tex"])
 def test_unrelated_top_level_tex_edit_does_not_mark_the_paper_changed(
@@ -1136,17 +1114,24 @@ def test_invalid_trailing_dependency_output_uses_visible_fallback(tmp_path, suff
     ) == {"changed": True, "diff": False}
 
 
-@pytest.mark.parametrize("failure", ["missing-base", "tree-read", "blob-read"])
+@pytest.mark.parametrize(
+    "failure", ["missing-base", "tree-read", "tree-read-sigpipe", "blob-read"]
+)
 def test_unreadable_base_uses_fallback_not_new_paper(tmp_path, failure):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     if failure == "missing-base":
         base = "missing-base"
     else:
         real_git = shutil.which("git")
-        command = "ls-tree" if failure == "tree-read" else "show"
+        command = "ls-tree" if failure.startswith("tree-read") else "show"
+        arguments = [command, "-rz"] if command == "ls-tree" else [command]
+        status = 141 if failure == "tree-read-sigpipe" else 1
+        marker = tmp_path / "git-failure-exercised"
         (bin_dir / "git").write_text(
-            f"#!{sys.executable}\nimport os, sys\n"
-            f"if sys.argv[1] == {command!r}: sys.exit(1)\n"
+            f"#!{sys.executable}\nimport os, sys\nfrom pathlib import Path\n"
+            f"if sys.argv[1:{len(arguments) + 1}] == {arguments!r}:\n"
+            f"    Path({str(marker)!r}).touch()\n"
+            f"    sys.exit({status})\n"
             f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
         )
         (bin_dir / "git").chmod(0o755)
@@ -1158,6 +1143,8 @@ def test_unreadable_base_uses_fallback_not_new_paper(tmp_path, failure):
             mock = bin_dir / "latexmk"
             mock.write_text(mock.read_text().replace("main", "article"))
     result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+    if failure != "missing-base":
+        assert marker.exists(), "the intended Git failure was not exercised"
     assert "Traceback" not in result.stderr
     assert "Could not compare paper versions" in result.stdout
     assert json.loads(
