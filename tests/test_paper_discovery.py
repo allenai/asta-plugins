@@ -280,6 +280,7 @@ def test_invalid_directory_is_reported_before_ambiguous_sources(tmp_path):
     [
         "\\documentclass\n{article}",
         "\\documentclass\n% class choice\n [draft]{article}",
+        r"\newcommand{\percent}{\%}\documentclass{article}",
     ],
 )
 def test_multiline_documentclass_is_found_in_current_and_base(tmp_path, declaration):
@@ -296,3 +297,20 @@ def test_multiline_documentclass_is_found_in_current_and_base(tmp_path, declarat
     assert discover(tmp_path)["main_files"] == {"paper": "article.tex"}
     shutil.rmtree(paper)
     assert discover(tmp_path, base)["removed"] == ["paper"]
+
+
+def test_ambiguous_filenames_cannot_inject_actions_commands(tmp_path):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    for name in ("a%0A.tex", "b\n::add-mask::injected.tex"):
+        (paper / name).write_text(r"\documentclass{article}")
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT)], cwd=tmp_path, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0
+    assert len(result.stderr.splitlines()) == 1
+    assert "a%250A.tex" in result.stderr
+    assert "b%0A::add-mask::injected.tex" in result.stderr
+    assert "b\n::add-mask::injected.tex" in json.loads(result.stdout)["warnings"][0]

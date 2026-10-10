@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -118,13 +119,108 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert '$deps_escape = "none";' in commands[0]
 
 
+def test_diff_does_not_depend_on_an_early_exiting_ls_tree_pipeline(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    real_git = shutil.which("git")
+    (bin_dir / "git").write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        "if sys.argv[1:3] == ['ls-tree', '-z']:\n"
+        "    os.write(1, b'paper/main.tex\\0')\n"
+        "    sys.exit(141)\n"
+        f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
+    )
+    (bin_dir / "git").chmod(0o755)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    )
+    assert manifest["diff"] is True
+    assert "new" not in manifest
+
+
+def test_unrelated_top_level_tex_edit_does_not_mark_the_paper_changed(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    notes = repo / "paper/notes.tex"
+    notes.write_text("old notes")
+    run("git", "add", "paper/notes.tex", cwd=repo)
+    run("git", "commit", "-qm", "unreferenced notes", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    notes.write_text("new notes")
+    run("git", "commit", "-qam", "edit only notes", cwd=repo)
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    ) == {"changed": False}
+
+
+def test_option_like_main_filename_is_passed_as_a_path(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    (repo / "paper/main.tex").unlink()
+    (repo / "paper/-pv.tex").write_text(r"\documentclass{article}")
+    (bin_dir / "latexmk").write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\nfrom pathlib import Path\n"
+        "Path('latexmk-args.json').write_text(json.dumps(sys.argv[1:]))\n"
+        "Path('build/-pv.log').write_text('compiled')\n"
+        "Path('build/-pv.pdf').write_text('pdf')\n"
+    )
+
+    run("bash", str(SCRIPT), "", cwd=repo, env=env)
+
+    assert json.loads((repo / "paper/latexmk-args.json").read_text())[-1] == "./-pv.tex"
+    assert (repo / "_site/paper-previews/paper/main.pdf").is_file()
+
+
+def test_actions_file_annotation_escapes_source_properties_and_message(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    (repo / "paper/main.tex").unlink()
+    name = "article%,:\n::add-mask::injected.tex"
+    (repo / "paper" / name).write_text(r"\documentclass{article}")
+    (bin_dir / "latexmk").write_text("#!/bin/sh\nexit 0\n")
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), ""], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert len(result.stdout.splitlines()) == 1
+    assert result.stdout.startswith(
+        "::error file=paper/article%25%2C%3A%0A%3A%3Aadd-mask%3A%3Ainjected.tex::"
+    )
+    assert "article%25,:%0A::add-mask::injected.log" in result.stdout
+
+
+def test_preview_ambiguity_annotation_escapes_filename_newlines(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    (repo / "paper/main.tex").unlink()
+    for name in ("a%0A.tex", "b\n::add-mask::injected.tex"):
+        (repo / "paper" / name).write_text(r"\documentclass{article}")
+
+    result = run("bash", str(SCRIPT), "", cwd=repo, env=env)
+
+    assert len(result.stderr.splitlines()) == 1
+    assert "a%250A.tex" in result.stderr
+    assert "b%0A::add-mask::injected.tex" in result.stderr
+    assert not (repo / "paper/latexmk-args.txt").exists()
+
+
+@pytest.mark.parametrize("remove_kind", ["delete", "rename"])
 @pytest.mark.parametrize("edit_article", [False, True])
 @pytest.mark.parametrize(
     "declaration",
-    [r"\documentclass{article}", "\\documentclass\n% class choice\n [draft]{article}"],
+    [
+        r"\documentclass{article}",
+        "\\documentclass\n% class choice\n [draft]{article}",
+        r"\newcommand{\percent}{\%}\documentclass{article}",
+    ],
 )
 def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(
-    tmp_path, edit_article, declaration
+    tmp_path, edit_article, declaration, remove_kind
 ):
     repo, _, env, bin_dir = paper_repo(tmp_path)
     paper = repo / "paper"
@@ -134,7 +230,10 @@ def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(
     run("git", "add", "paper", cwd=repo)
     run("git", "commit", "-qm", "paper with shim", cwd=repo)
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
-    run("git", "rm", "paper/main.tex", cwd=repo)
+    if remove_kind == "rename":
+        run("git", "mv", "paper/main.tex", "paper/archived.tex", cwd=repo)
+    else:
+        run("git", "rm", "paper/main.tex", cwd=repo)
     if edit_article:
         (paper / "article.tex").write_text(declaration + "\nnew\n")
     run("git", "add", "paper/article.tex", cwd=repo)

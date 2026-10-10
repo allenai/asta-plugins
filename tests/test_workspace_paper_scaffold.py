@@ -62,12 +62,13 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
-@pytest.mark.parametrize("main_name", ["main.tex", "conference draft.tex"])
+@pytest.mark.parametrize("main_name", ["main.tex", "conference draft.tex", "-pv.tex"])
 @pytest.mark.parametrize(
     "declaration",
     [
         r"\documentclass [draft]{article}",
         "\\documentclass\n% class choice\n [draft]{article}",
+        r"\newcommand{\percent}{\%}\documentclass{article}",
     ],
 )
 def test_paper_targets_select_directory_and_preserve_engine(
@@ -108,11 +109,11 @@ def test_paper_targets_select_directory_and_preserve_engine(
         )
         directory, args = json.loads(call.read_text())
         assert directory == str(paper)
-        assert expected in args and main_name in args
+        assert expected in args and f"./{main_name}" in args
         assert "-outdir=build" in args
         assert "-pdf" not in args and "-xelatex" not in args
         assert "latexmk " in result.stdout.decode()
-        assert f'"{main_name}"' in result.stdout.decode()
+        assert f'"./{main_name}"' in result.stdout.decode()
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")

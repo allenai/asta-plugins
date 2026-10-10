@@ -11,14 +11,25 @@ if [[ -z "$dir" || "$dir" == /* || "$dir" == *//* || "$dir" =~ (^|/)(\.{1,2}|-[^
   echo "::error::Paper directory must be a safe relative path"
   exit 1
 fi
+annotation() {
+  local level=$1 source=$2 message=$3
+  message=${message//%/%25}; message=${message//$'\r'/%0D}; message=${message//$'\n'/%0A}
+  source=${source//%/%25}; source=${source//$'\r'/%0D}; source=${source//$'\n'/%0A}
+  source=${source//:/%3A}; source=${source//,/%2C}
+  if [ -n "$source" ]; then
+    printf '::%s file=%s::%s\n' "$level" "$source" "$message"
+  else
+    printf '::%s::%s\n' "$level" "$message"
+  fi
+}
 find_main() {
   local found=() file
   if [ -f "$1/main.tex" ] && [ ! -L "$1/main.tex" ]; then echo main.tex; return 0; fi
   for file in "$1"/*.tex; do
-    [ -f "$file" ] && [ ! -L "$file" ] && python3 -c 'import pathlib,re,sys; sys.exit(not re.search(r"(?m)^[^%\n]*\\documentclass\s*[\[{]", re.sub(r"%[^\n]*", "", pathlib.Path(sys.argv[1]).read_text(errors="replace"))))' "$file" && found+=("${file##*/}")
+    [ -f "$file" ] && [ ! -L "$file" ] && python3 -c 'import pathlib,re,sys; sys.exit(not re.search(r"(?m)^[^\n]*\\documentclass\s*[\[{]", re.sub(r"(?<!\\)%[^\n]*", "", pathlib.Path(sys.argv[1]).read_text(errors="replace"))))' "$file" && found+=("${file##*/}")
   done
   if [ "${#found[@]}" -gt 1 ]; then
-    echo "::warning::${2:-$1} has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
+    annotation warning "" "${2:-$1} has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
   fi
   [ "${#found[@]}" -eq 1 ] && echo "${found[0]}"
 }
@@ -38,14 +49,14 @@ fi
 # Preserve a configured engine; request a PDF when no rc selected one.
 # -e runs after rc files: override their escaping for this private dependency file.
 (cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out="build/$stem.dep" \
-  -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$main")
+  -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "./$main")
 if [ ! -f "$dir/build/$stem.log" ]; then
-  echo "::error file=$dir/$main::LaTeX did not write $dir/build/$stem.log"
+  annotation error "$dir/$main" "LaTeX did not write $dir/build/$stem.log"
   exit 1
 fi
 if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || \
    { [ -f "$dir/build/$stem.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg"; }; then
-  echo "::error file=$dir/$main::Unresolved paper citations or missing bibliography"
+  annotation error "$dir/$main" "Unresolved paper citations or missing bibliography"
   exit 1
 fi
 cp "$dir/build/$stem.pdf" "$site_dir/main.pdf"
@@ -103,13 +114,13 @@ PY
         local bbl="$(dirname "$source")/build/$(basename "${source%.tex}").bbl"
         if [ -f "$bbl" ]; then
           ln -s "$PWD/$bbl" "$prepared_dir/$(basename "${source%.tex}").bbl" || \
-            echo "::warning file=$source::Could not link the compiled bibliography for LaTeXML"
+            annotation warning "$source" "Could not link the compiled bibliography for LaTeXML"
         fi
       else
-        echo "::warning file=$source::Could not prepare Quarto TeX for LaTeXML; trying the original"
+        annotation warning "$source" "Could not prepare Quarto TeX for LaTeXML; trying the original"
       fi
     else
-      echo "::warning file=$source::Could not create a temporary TeX directory; trying the original"
+      annotation warning "$source" "Could not create a temporary TeX directory; trying the original"
     fi
   fi
   if command -v latexmlc >/dev/null 2>&1; then
@@ -164,7 +175,7 @@ PY
     return 0
   fi
   rm -f "$target"
-  echo "::warning file=$source::LaTeXML conversion failed; see $log"
+  annotation warning "$source" "LaTeXML conversion failed; see $log"
   return 1
 )
 convert_html "$dir/$main" "$site_dir/html/index.html" "$site_dir/html/latexml.log" || true
@@ -231,10 +242,13 @@ if not seen_target or not expect_target:
 changed = subprocess.check_output(
     ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
 ).decode().rstrip("\0").split("\0")
+added_removed = set(subprocess.check_output(
+    ["git", "diff", "--name-only", "--diff-filter=AD", "--no-renames", "-z", sys.argv[1], "HEAD"]
+).decode().rstrip("\0").split("\0"))
 relevant = [
     path for path in changed
     # A removed top-level source can change the selected main without changing its inputs.
-    if path in inputs or (pathlib.PurePosixPath(path).parent == pathlib.PurePosixPath(sys.argv[2]) and path.endswith(".tex")) or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
+    if path in inputs or (path in added_removed and pathlib.PurePosixPath(path).parent == pathlib.PurePosixPath(sys.argv[2]) and path.endswith(".tex")) or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
 ]
 print(int(any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))
@@ -247,10 +261,6 @@ read -r tex_changed other_changed <<< "$flags"
 if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
 printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 
-if ! git ls-tree -z --name-only "$base" -- "$dir/" 2>/dev/null | tr '\0' '\n' | grep -q '\.tex$'; then
-  printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
-  exit 0
-fi
 if [ "$tex_changed" = 0 ]; then exit 0; fi
 if ! old=$(mktemp -d); then fallback; exit 0; fi
 if ! diff_tmp=$(mktemp "$dir/what-changed.XXXXXXXX"); then

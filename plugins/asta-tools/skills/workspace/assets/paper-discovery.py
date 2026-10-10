@@ -17,7 +17,7 @@ def valid_name(name: str) -> bool:
     )
 
 
-DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass\s*[\[{]", re.MULTILINE)
+DOCUMENTCLASS = re.compile(r"^[^\n]*\\documentclass\s*[\[{]", re.MULTILINE)
 
 
 def main_file(
@@ -43,7 +43,7 @@ def main_file(
         name
         for name in files
         if name.endswith(".tex")
-        and DOCUMENTCLASS.search(re.sub(r"%[^\n]*", "", content(name)))
+        and DOCUMENTCLASS.search(re.sub(r"(?<!\\)%[^\n]*", "", content(name)))
     )
     if len(found) > 1:
         warnings.append(
@@ -133,7 +133,8 @@ def main() -> None:
     removed = base_papers(base, warnings) - current.keys()
     warnings = list(dict.fromkeys(warnings))
     for warning in warnings:
-        print(f"::warning::{warning}", file=sys.stderr)
+        escaped = warning.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::warning::{escaped}", file=sys.stderr)
     print(
         json.dumps(
             {
