@@ -35,17 +35,16 @@ WORKDIR /app
 # Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
 # The CI paper preview runs inside this image, so local and CI builds agree.
 FROM asta AS tex
-# Debian's latexml depends on Debian's base LaTeX; the TeX Live symlinks in
-# /usr/local/bin take precedence over it on PATH.
+# TeX Live 2026 is the only TeX; no Debian TeX package is installed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      latexml poppler-utils perl ghostscript fontconfig python3-pygments \
-    && rm -rf /var/lib/apt/lists/*
+      poppler-utils perl ghostscript fontconfig python3-pygments \
+    && rm -rf /var/lib/apt/lists/* \
+    && ! dpkg -l 'texlive*' 2>/dev/null | grep -q '^ii'
 # Upstream TeX Live 2026, full scheme without docs/sources: Overleaf's default
 # for new projects.
 COPY --from=mirror.gcr.io/texlive/texlive:latest-full@sha256:a7ae4dfa9d521b5db14446872fa488b839021d1f604d0a3c74461784895f2a67 \
     /usr/local/texlive /usr/local/texlive
-# The upstream image links into /usr/bin, where Debian's TeX binaries already
-# sit and win; link into /usr/local/bin instead.
+# The upstream image links into /usr/bin; keep TeX Live's links in /usr/local/bin.
 RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
     && "$tlmgr" option sys_bin /usr/local/bin \
     && "$tlmgr" option sys_man /usr/local/share/man \
@@ -54,12 +53,6 @@ RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
     && pdflatex --version | grep -q 'TeX Live 2026' \
     && test "$(command -v pdflatex)" = /usr/local/bin/pdflatex \
     && latexmk --version && latexdiff --version && biber --version
-# LaTeXML ships styles in Debian's tree, outside upstream TeX Live's search path.
-RUN local_tree=$(kpsewhich -var-value=TEXMFLOCAL) \
-    && mkdir -p "$local_tree/tex/latex" \
-    && cp -r /usr/share/texmf/tex/latex/latexml "$local_tree/tex/latex/" \
-    && mktexlsr "$local_tree" \
-    && kpsewhich latexml.sty
 # Fontconfig settings outside the copied TeX tree expose bundled fonts by name.
 RUN cp "$(kpsewhich -var-value=TEXMFSYSVAR)/fonts/conf/texlive-fontconfig.conf" \
       /etc/fonts/conf.d/09-texlive-fonts.conf \
