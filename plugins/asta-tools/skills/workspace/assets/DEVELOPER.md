@@ -76,6 +76,10 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |
 
+Paper builds select `main.tex`, otherwise the single top-level `.tex` file with an uncommented `\documentclass`. If several files declare classes, including `subfiles` or `standalone` children, name the intended root `main.tex` to resolve the ambiguity. The selector recognizes declarations rather than evaluating TeX macros; ambiguous papers warn and skip. A single standalone document remains supported.
+
+The fallback used by `make paper` and `make paper-clean` requires Python 3, included in both workspace images. On a host without Python, use `main.tex` or install Python before invoking those targets for a differently named root. Paper diffs flatten the base source and compile the combined document with the current paper's inputs and Overleaf isolation; they do not rebuild the base PDF independently.
+
 For the optional `Makefile.managed` entry point, set `ASTA_WORKSPACE_LOCAL_GOALS` before the shared scaffold to list project-only targets that need no managed rules or Asta CLI. Mixed commands that also name a shared target still load the rules; a project-owned `workspace.mk` always takes precedence. That file replaces the managed rules completely, so retain the targets your project uses, including `dev` and `clean`.
 
 Managed rules stay cached until the version selected in `docs.yml` changes or you run `make update-workspace`. With a moving channel such as `@latest`, refresh before comparing a local build with CI, which uses the workflow's current revision. Pin a release tag or commit in `docs.yml` if both must stay on a fixed version.
