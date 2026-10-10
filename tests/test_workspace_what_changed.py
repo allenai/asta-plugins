@@ -158,12 +158,58 @@ def test_cleanup_failure_warns_without_hiding_report(
     assert result.exit_code == 0, result.output
     assert (project / ".asta/cache/what-changed/what-changed.html").is_file()
     assert (
-        "Warning: baseline worktree cleanup failed: worktree is locked" in result.output
+        "Warning: baseline worktree cleanup failed for " in result.output
+        and "worktree is locked" in result.output
     )
     worktrees = subprocess.check_output(
         ["git", "-C", str(project), "worktree", "list"], text=True
     )
-    assert len(worktrees.strip().splitlines()) == 1
+    # Failed removal leaves its registration for explicit, targeted cleanup.
+    assert len(worktrees.strip().splitlines()) == 2
+
+
+@pytest.mark.parametrize("outcome", ["success", "render-failure", "cleanup-failure"])
+def test_comparison_preserves_unavailable_worktree(
+    project: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    unrelated = project.with_name(project.name + "-unrelated")
+    offline = project.with_name(project.name + "-offline")
+    git(project, "worktree", "add", "--detach", str(unrelated), "HEAD")
+    (unrelated / "local-notes.txt").write_text("Uncommitted research notes")
+    registration = Path(
+        (unrelated / ".git").read_text().removeprefix("gitdir: ").strip()
+    )
+    git(project, "config", "gc.worktreePruneExpire", "now")
+    unrelated.rename(offline)
+    if outcome == "render-failure":
+        Path(shutil.which("make")).write_text(
+            "#!/usr/bin/env python3\nraise SystemExit(2)\n"
+        )
+    elif outcome == "cleanup-failure":
+        original = workspace_module._git
+
+        def fail_removal(directory, *args):
+            if args[:2] == ("worktree", "remove"):
+                return subprocess.CompletedProcess(args, 1, stderr="worktree is locked")
+            return original(directory, *args)
+
+        monkeypatch.setattr(workspace_module, "_git", fail_removal)
+    try:
+        result = CliRunner().invoke(
+            workspace, ["what-changed", "last-read", "--project", str(project)]
+        )
+        assert result.exit_code == (1 if outcome == "render-failure" else 0), (
+            result.output
+        )
+        assert registration.is_dir()
+        worktrees = subprocess.check_output(
+            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
+        )
+        assert f"worktree {unrelated}\n" in worktrees
+    finally:
+        offline.rename(unrelated)
+    git(unrelated, "status", "--porcelain")
+    assert (unrelated / "local-notes.txt").read_text() == "Uncommitted research notes"
 
 
 def test_unknown_ref(project: Path) -> None:

@@ -577,9 +577,9 @@ def what_changed(ref: str, project: Path) -> None:
     Renders REF and the working tree with the project's own 'make render' and
     compares them with the what-changed.py the PR preview uses. The page is
     written to a copy of the rendered site under .asta/cache/what-changed/,
-    which this command owns and replaces on each run; _site/ is never modified
-    by the comparison. Choose a trusted REF: its build code runs locally. The
-    baseline contains only committed files.
+    which this command owns and replaces on each run. Rendering updates _site/;
+    the comparison page is written only to the cache. Choose a trusted REF: its
+    build code runs locally. The baseline contains only committed files.
     """
     project = project.resolve()
     if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
@@ -606,93 +606,82 @@ def what_changed(ref: str, project: Path) -> None:
             "Could not locate the project within its git repository"
         )
     owned = project / COMPARISON_DIR
-    try:
-        with _comparison_directory() as tmp:
-            baseline = tmp / "baseline"
-            added = _git(
-                project,
-                "worktree",
-                "add",
-                "--detach",
-                str(baseline),
-                commit.stdout.strip(),
+    with _comparison_directory() as tmp:
+        baseline = tmp / "baseline"
+        added = _git(
+            project,
+            "worktree",
+            "add",
+            "--detach",
+            str(baseline),
+            commit.stdout.strip(),
+        )
+        if added.returncode != 0:
+            raise click.ClickException(
+                f"Could not check out {ref}: {added.stderr.strip()}"
             )
-            if added.returncode != 0:
+        try:
+            baseline_project = baseline / prefix.stdout.rstrip("\n")
+            if not baseline_project.is_dir():
                 raise click.ClickException(
-                    f"Could not check out {ref}: {added.stderr.strip()}"
+                    f"Project directory does not exist for {ref}: {baseline_project}"
                 )
+            script = diff_script(project)
+            old_site = render_site(baseline_project, ref)
+            new_site = render_site(project, "the working tree")
+            # The page sits at the root of a site copy so its relative links
+            # to changed pages resolve, as in the PR preview.
+            if (project / ".asta").is_symlink() or owned.parent.is_symlink():
+                raise click.ClickException("Workspace cache must not be a symlink")
+            owned.parent.mkdir(parents=True, exist_ok=True)
+            staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
-                baseline_project = baseline / prefix.stdout.rstrip("\n")
-                if not baseline_project.is_dir():
-                    raise click.ClickException(
-                        f"Project directory does not exist for {ref}: {baseline_project}"
-                    )
-                script = diff_script(project)
-                old_site = render_site(baseline_project, ref)
-                new_site = render_site(project, "the working tree")
-                # The page sits at the root of a site copy so its relative links
-                # to changed pages resolve, as in the PR preview.
-                if (project / ".asta").is_symlink() or owned.parent.is_symlink():
-                    raise click.ClickException("Workspace cache must not be a symlink")
-                owned.parent.mkdir(parents=True, exist_ok=True)
-                staged = Path(
-                    tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent)
+                shutil.copytree(new_site, staged, symlinks=True, dirs_exist_ok=True)
+                report = staged / "what-changed.html"
+                report.unlink(missing_ok=True)
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(script),
+                        "--old",
+                        str(old_site),
+                        "--new",
+                        str(new_site),
+                        "--out",
+                        str(report),
+                        "--title",
+                        f"Changes since {ref}",
+                    ],
+                    cwd=project,
+                    check=False,
                 )
+                if result.returncode != 0:
+                    raise click.ClickException(
+                        f"{DIFF_SCRIPT} failed (exit {result.returncode}): {script}"
+                    )
+                if (
+                    report.is_symlink()
+                    or not report.is_file()
+                    or report.stat().st_size == 0
+                ):
+                    raise click.ClickException(
+                        f"{DIFF_SCRIPT} did not write nonempty HTML"
+                    )
                 try:
-                    shutil.copytree(new_site, staged, symlinks=True, dirs_exist_ok=True)
-                    report = staged / "what-changed.html"
-                    report.unlink(missing_ok=True)
-                    result = subprocess.run(
-                        [
-                            sys.executable,
-                            str(script),
-                            "--old",
-                            str(old_site),
-                            "--new",
-                            str(new_site),
-                            "--out",
-                            str(report),
-                            "--title",
-                            f"Changes since {ref}",
-                        ],
-                        cwd=project,
-                        check=False,
-                    )
-                    if result.returncode != 0:
-                        raise click.ClickException(
-                            f"{DIFF_SCRIPT} failed (exit {result.returncode}): {script}"
-                        )
-                    if (
-                        report.is_symlink()
-                        or not report.is_file()
-                        or report.stat().st_size == 0
-                    ):
-                        raise click.ClickException(
-                            f"{DIFF_SCRIPT} did not write nonempty HTML"
-                        )
-                    try:
-                        _publish(staged, owned)
-                    except OSError as exc:
-                        raise click.ClickException(
-                            f"Could not publish the comparison: {exc}"
-                        ) from exc
-                finally:
-                    shutil.rmtree(staged, ignore_errors=True)
+                    _publish(staged, owned)
+                except OSError as exc:
+                    raise click.ClickException(
+                        f"Could not publish the comparison: {exc}"
+                    ) from exc
             finally:
-                removed = _git(project, "worktree", "remove", "--force", str(baseline))
-                if removed.returncode != 0:
-                    click.echo(
-                        f"Warning: baseline worktree cleanup failed: {removed.stderr.strip()}",
-                        err=True,
-                    )
-    finally:
-        # TemporaryDirectory must remove a failed-removal worktree before pruning.
-        pruned = _git(project, "worktree", "prune")
-        if pruned.returncode != 0:
-            click.echo(
-                f"Warning: baseline worktree cleanup failed: {pruned.stderr.strip()}",
-                err=True,
-            )
+                shutil.rmtree(staged, ignore_errors=True)
+        finally:
+            removed = _git(project, "worktree", "remove", "--force", str(baseline))
+            if removed.returncode != 0:
+                click.echo(
+                    f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}",
+                    err=True,
+                )
     page = owned / "what-changed.html"
     click.echo(f"Wrote {page}")
     url = preview_url(os.environ, WHAT_CHANGED_PORT) + page.name
