@@ -169,10 +169,11 @@ def test_cached_version_shaped_branch_prompts_refresh(
 def test_sync_replaces_corrupt_cached_archive(tmp_path: Path, monkeypatch) -> None:
     project = project_with_ref(tmp_path, "main")
     calls = []
+    archive = _archive({})
 
     def fetch(repository, ref):
         calls.append((repository, ref))
-        return b"rule", _archive({})
+        return b"rule", archive
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
     args = ["workspace", "sync", "--project", str(project)]
