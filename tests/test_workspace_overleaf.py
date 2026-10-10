@@ -589,3 +589,152 @@ def test_pull_imports_collaborator_bibliography_updates(setup):
     assert result.exit_code == 0, result.output
     assert (project / "paper/references.bib").read_text() == "@misc{collaborator}\n"
     assert (project / "references.bib").read_text() == "@misc{root}\n"
+
+
+@pytest.mark.parametrize("directory", ["paper[1]", "paper*"])
+def test_sync_uses_literal_paper_directory(setup, directory):
+    seed, project = setup
+    (project / "paper1").mkdir()
+    (project / "paper1/main.tex").write_text("unrelated paper\n")
+    commit_all(project)
+    assert run(project, "pull", URL, "--dir", directory).exit_code == 0
+    commit_all(project)
+    source = project / directory / "main.tex"
+    source.write_text("uncommitted edit\n")
+    result = run(project, "publish", "--dir", directory)
+    assert result.exit_code != 0 and "local changes" in result.output
+    commit_all(project)
+    result = run(project, "publish", "--dir", directory)
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_bytes() == source.read_bytes()
+    assert (project / "paper1/main.tex").read_text() == "unrelated paper\n"
+
+
+def test_publish_uses_repo_local_identity(setup, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("NAME", "EMAIL"):
+            monkeypatch.delenv(f"GIT_{role}_{field}")
+    git(project, "config", "user.name", "Workspace Author")
+    git(project, "config", "user.email", "workspace@example.invalid")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert git(seed, "log", "-1", "--format=%an <%ae>") == (
+        "Workspace Author <workspace@example.invalid>"
+    )
+
+
+@pytest.mark.parametrize("name", [".gitignore", "nested/.gitignore"])
+def test_publish_refuses_paper_ignore_rules_before_pushing(setup, name):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    path = project / "paper" / name
+    path.parent.mkdir(exist_ok=True)
+    path.write_text("*.aux\n")
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    record = (project / "paper/overleaf.json").read_bytes()
+    result = run(project, "publish")
+    assert result.exit_code != 0 and ".gitignore" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper/overleaf.json").read_bytes() == record
+
+
+def test_publish_then_pull_with_workspace_ignore_rules(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / ".gitignore").write_text("*.aux\n")
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "collaborator follow-up\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/main.tex").read_text() == "collaborator follow-up\n"
+
+
+@pytest.mark.parametrize("ignored_file", [False, True])
+def test_pull_directory_to_file_replacement(setup, ignored_file):
+    seed, project = setup
+    (seed / "nested/deep").mkdir(parents=True)
+    overleaf_edit(seed, "nested/deep/figure.tex", "figure\n")
+    assert run(project, "pull", URL).exit_code == 0
+    (project / ".gitignore").write_text("*.aux\n")
+    commit_all(project)
+    paper = project / "paper"
+    record = (paper / "overleaf.json").read_bytes()
+    if ignored_file:
+        (paper / "nested/local.aux").write_text("keep local\n")
+    git(seed, "rm", "-r", "nested")
+    (seed / "nested").write_text("now a file\n")
+    commit_all(seed)
+    git(seed, "push", "-q", "origin", "master")
+    result = run(project, "pull")
+    if ignored_file:
+        assert result.exit_code != 0 and "directory" in result.output.lower()
+        assert (paper / "nested/local.aux").read_text() == "keep local\n"
+        assert (paper / "nested/deep/figure.tex").read_text() == "figure\n"
+        assert (paper / "overleaf.json").read_bytes() == record
+    else:
+        assert result.exit_code == 0, result.output
+        assert (paper / "nested").read_text() == "now a file\n"
+        commit_all(project)
+        git(seed, "rm", "nested")
+        (seed / "nested").mkdir()
+        overleaf_edit(seed, "nested/figure.tex", "back to a directory\n")
+        result = run(project, "pull")
+        assert result.exit_code == 0, result.output
+        assert (paper / "nested/figure.tex").read_text() == "back to a directory\n"
+
+
+def test_pull_empty_remote_commit(setup):
+    seed, project = setup
+    git(seed, "rm", "-r", ".")
+    commit_all(seed)
+    git(seed, "push", "-q", "origin", "master")
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
+        seed, "rev-parse", "HEAD"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["{", "[]", "null", '"value"', "{}", '{"url": 42, "base": "' + "a" * 40 + '"}'],
+)
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_reports_invalid_metadata(setup, text, command, monkeypatch):
+    _, project = setup
+    paper = project / "paper"
+    paper.mkdir()
+    (paper / "overleaf.json").write_text(text)
+    commit_all(project)
+    monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
+    result = run(project, command)
+    assert result.exit_code == 1
+    assert (
+        "Invalid sync record" in result.output
+        and "paper/overleaf.json" in result.output
+    )
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("operation", ["clone", "push"])
+def test_git_rejection_names_the_operation(setup, monkeypatch, operation):
+    _, project = setup
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", b"rejected"),
+    )
+    with pytest.raises(module.click.ClickException) as error:
+        module.git_bytes(operation, cwd=project)
+    assert operation in str(error.value)
+    assert "changed during publish" not in str(error.value)

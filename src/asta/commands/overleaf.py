@@ -43,6 +43,10 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
         capture_output=True,
     )
     if result.returncode:
+        index = 0
+        while args[index].startswith("-"):
+            index += 2 if args[index] == "-c" else 1
+        operation = args[index]
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
         if b"401" in stderr or b"authentication failed" in stderr:
@@ -55,9 +59,11 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
             )
         if b"rejected" in stderr or b"fetch first" in stderr:
             raise click.ClickException(
-                "Overleaf changed during publish. Pull and review the changes first."
+                f"git {operation} was rejected. Check access and the remote state."
             )
-        raise click.ClickException(f"git {args[0]} failed (exit {result.returncode}).")
+        raise click.ClickException(
+            f"git {operation} failed (exit {result.returncode})."
+        )
     return result.stdout
 
 
@@ -119,7 +125,16 @@ def push(repo: Path) -> None:
 
 
 def tree(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
-    out = git_bytes("ls-tree", "-r", "-z", revision, "--", prefix or ".", cwd=repo)
+    out = git_bytes(
+        "--literal-pathspecs",
+        "ls-tree",
+        "-r",
+        "-z",
+        revision,
+        "--",
+        prefix or ".",
+        cwd=repo,
+    )
     result = {}
     for entry in filter(None, out.split(b"\0")):
         meta, path = entry.split(b"\t", 1)
@@ -172,6 +187,15 @@ def read_plain_files(repo: Path, revision: str, prefix: str = "") -> dict[str, b
     return result
 
 
+def check_ignore_files(names) -> None:
+    for name in names:
+        if name.rsplit("/", 1)[-1] == ".gitignore":
+            refuse(
+                name,
+                "can hide imported sources; keep ignore rules in the workspace root",
+            )
+
+
 def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
     root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
     paper = (root / directory).resolve()
@@ -181,7 +205,9 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
 
 
 def require_clean(root: Path, *paths: Path) -> None:
-    if git("status", "--porcelain", "--", *map(str, paths), cwd=root):
+    if git(
+        "--literal-pathspecs", "status", "--porcelain", "--", *map(str, paths), cwd=root
+    ):
         names = ", ".join(p.relative_to(root).as_posix() for p in paths)
         raise click.ClickException(f"Commit or discard local changes in {names} first.")
 
@@ -210,15 +236,23 @@ def load_config(paper: Path) -> dict:
         refuse(CONFIG, "is a symlink")
     if not path.exists():
         return {}
-    config = json.loads(path.read_text())
-    if not SHA.fullmatch(str(config.get("base", ""))):
-        raise click.ClickException(f"{CONFIG} has no valid base commit.")
-    config["url"] = validate_url(config.get("url"))
-    return config
+    try:
+        config = json.loads(path.read_text())
+        if not isinstance(config, dict) or not isinstance(config.get("base"), str):
+            raise ValueError("expected an object with a base commit")
+        if not SHA.fullmatch(config["base"]) or not isinstance(config.get("url"), str):
+            raise ValueError("expected a base commit and project URL")
+        config["url"] = validate_url(config["url"])
+        return config
+    except (ValueError, OSError, click.ClickException):
+        raise click.ClickException(
+            f"Invalid sync record: {path}. Restore its project URL and base commit from Git."
+        ) from None
 
 
 def save_config(paper: Path, url: str, base: str) -> None:
     text = json.dumps({"url": url, "base": base}, indent=2) + "\n"
+    paper.mkdir(parents=True, exist_ok=True)
     (paper / CONFIG).write_text(text)
 
 
@@ -261,19 +295,14 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         new = read_plain_files(repo, head)
         if CONFIG in new:
             refuse(CONFIG, "is reserved for workspace sync metadata")
-        for name in new:
-            if name.rsplit("/", 1)[-1] == ".gitignore":
-                refuse(
-                    name,
-                    "can hide imported sources; keep ignore rules in the workspace root",
-                )
+        check_ignore_files(new)
         base = read_plain_files(repo, config["base"]) if config else {}
         base.pop(CONFIG, None)
         ours = read_plain_files(root, "HEAD", prefix)
         ours.pop(CONFIG, None)
-        check_paths([*new, *(ours.keys() - new.keys())])
-        imported_paths = [paper / name for name in (*new, CONFIG)]
         deleted = base.keys() - new.keys()
+        check_paths([*new, *(ours.keys() - new.keys() - deleted)])
+        imported_paths = [paper / name for name in (*new, CONFIG)]
         for name in base.keys() | new.keys():
             if new.get(name) == base.get(name):
                 # Keep workspace edits when Overleaf did not change this file.
@@ -286,9 +315,26 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             target = paper / name
             if target.resolve() != target:
                 refuse(name, "passes through a symlink")
+        replaced_dirs = [paper / name for name in new if (paper / name).is_dir()]
+        for target in replaced_dirs:
+            for child in target.rglob("*"):
+                if child.is_symlink() or (
+                    not child.is_dir()
+                    and child.relative_to(paper).as_posix() not in deleted
+                ):
+                    raise click.ClickException(
+                        f"Directory {target.relative_to(root)} contains workspace files; "
+                        "move them aside before replacing it; nothing copied."
+                    )
         require_visible(root, imported_paths)
         for name in deleted:
             (paper / name).unlink(missing_ok=True)
+        for target in replaced_dirs:
+            for child in sorted(
+                target.rglob("*"), key=lambda p: len(p.parts), reverse=True
+            ):
+                child.rmdir()
+            target.rmdir()
         write_files(new, paper)
     save_config(paper, url, head)
     click.echo(
@@ -312,6 +358,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     require_clean(root, paper)
     ours = read_plain_files(root, "HEAD", prefix)
     ours.pop(CONFIG, None)
+    check_ignore_files(ours)
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -331,19 +378,18 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         if dry_run:
             click.echo("Dry run: nothing pushed.")
             return
-        identity = []
-        if subprocess.run(
+        identity_result = subprocess.run(
             ["git", "var", "GIT_COMMITTER_IDENT"],
             cwd=root,
             env=git_environment(),
             capture_output=True,
-        ).returncode:
-            identity = [
-                "-c",
-                "user.name=Asta Workspace",
-                "-c",
-                "user.email=asta@allenai.org",
-            ]
+        )
+        name, email = "Asta Workspace", "asta@allenai.org"
+        if not identity_result.returncode:
+            ident = os.fsdecode(identity_result.stdout).rsplit(" ", 2)[0]
+            name, email = ident.rsplit(" <", 1)
+            email = email.removesuffix(">")
+        identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
         git(*identity, "commit", "-q", "-m", message, cwd=repo)
         if read_plain_files(repo, "HEAD") != ours:
