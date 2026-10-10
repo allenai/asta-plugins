@@ -281,6 +281,7 @@ def test_invalid_directory_is_reported_before_ambiguous_sources(tmp_path):
         "\\documentclass\n{article}",
         "\\documentclass\n% class choice\n [draft]{article}",
         r"\newcommand{\percent}{\%}\documentclass{article}",
+        r"\\\% \documentclass{article}",
     ],
 )
 def test_multiline_documentclass_is_found_in_current_and_base(tmp_path, declaration):
@@ -291,6 +292,10 @@ def test_multiline_documentclass_is_found_in_current_and_base(tmp_path, declarat
     paper.mkdir()
     (paper / "article.tex").write_text(declaration)
     (paper / "comment.tex").write_text("% \\documentclass\n{article}")
+    for count in (2, 4):
+        (paper / f"comment-{count}.tex").write_text(
+            "\\" * count + r"% \documentclass{commented}"
+        )
     git(tmp_path, "add", "paper")
     git(tmp_path, "commit", "-qm", "multiline main")
     base = git(tmp_path, "rev-parse", "HEAD")

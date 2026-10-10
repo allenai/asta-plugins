@@ -69,6 +69,7 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
         r"\documentclass [draft]{article}",
         "\\documentclass\n% class choice\n [draft]{article}",
         r"\newcommand{\percent}{\%}\documentclass{article}",
+        r"\\\% \documentclass{article}",
     ],
 )
 def test_paper_targets_select_directory_and_preserve_engine(
@@ -78,6 +79,10 @@ def test_paper_targets_select_directory_and_preserve_engine(
     paper.mkdir(parents=True)
     (paper / main_name).write_text(declaration)
     (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
+    for count in (2, 4):
+        (paper / f"comment-{count}.tex").write_text(
+            "\\" * count + r"% \documentclass{commented}"
+        )
     (paper / "linked.tex").symlink_to(main_name)
     if main_name != "main.tex":
         (paper / "main.tex").symlink_to("missing")

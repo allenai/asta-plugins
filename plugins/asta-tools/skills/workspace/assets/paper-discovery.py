@@ -43,7 +43,9 @@ def main_file(
         name
         for name in files
         if name.endswith(".tex")
-        and DOCUMENTCLASS.search(re.sub(r"(?<!\\)%[^\n]*", "", content(name)))
+        and DOCUMENTCLASS.search(
+            re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", content(name))
+        )
     )
     if len(found) > 1:
         warnings.append(

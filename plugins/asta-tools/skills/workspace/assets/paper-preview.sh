@@ -23,15 +23,54 @@ annotation() {
   fi
 }
 find_main() {
-  local found=() file
-  if [ -f "$1/main.tex" ] && [ ! -L "$1/main.tex" ]; then echo main.tex; return 0; fi
-  for file in "$1"/*.tex; do
-    [ -f "$file" ] && [ ! -L "$file" ] && python3 -c 'import pathlib,re,sys; sys.exit(not re.search(r"(?m)^[^\n]*\\documentclass\s*[\[{]", re.sub(r"(?<!\\)%[^\n]*", "", pathlib.Path(sys.argv[1]).read_text(errors="replace"))))' "$file" && found+=("${file##*/}")
-  done
-  if [ "${#found[@]}" -gt 1 ]; then
-    annotation warning "" "${2:-$1} has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
+  local selected
+  if selected=$(python3 - "$1" "${3:-}" <<'PY'
+import pathlib
+import re
+import subprocess
+import sys
+
+directory, base = sys.argv[1:]
+if base:
+    prefix = directory + "/"
+    files = {}
+    for entry in subprocess.check_output(["git", "ls-tree", "-rz", base, "--", prefix]).split(b"\0"):
+        if not entry:
+            continue
+        metadata, path = entry.decode().split("\t", 1)
+        mode, kind, oid = metadata.split()
+        name = path.removeprefix(prefix)
+        if mode in {"100644", "100755"} and kind == "blob" and "/" not in name:
+            files[name] = oid
+else:
+    files = {path.name: path for path in pathlib.Path(directory).glob("*.tex") if path.is_file() and not path.is_symlink()}
+
+def content(name):
+    try:
+        if base:
+            return subprocess.check_output(["git", "show", files[name]]).decode(errors="replace")
+        return files[name].read_text(errors="replace")
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+if "main.tex" in files:
+    print("main.tex")
+    raise SystemExit(0)
+found = sorted(name for name in files if name.endswith(".tex") and re.search(
+    r"(?m)^[^\n]*\\documentclass\s*[\[{]",
+    re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", content(name)),
+))
+if found:
+    print(", ".join(found))
+raise SystemExit(0 if len(found) == 1 else 1)
+PY
+  ); then
+    printf '%s\n' "$selected"
+    return 0
+  elif [ -n "$selected" ]; then
+    annotation warning "" "${2:-$1} has several .tex files with \\documentclass: $selected; add main.tex to choose one" >&2
   fi
-  [ "${#found[@]}" -eq 1 ] && echo "${found[0]}"
+  return 1
 }
 main=$(find_main "$dir") || exit 0
 stem=${main%.tex}
@@ -186,7 +225,10 @@ fallback() {
   printf '{"changed":true,"diff":false}\n' > "$site_dir/preview.json"
   echo '::warning::Could not compare paper versions; the current paper PDF remains available'
 }
-if ! flags=$(python3 - "$base" "$dir" "$stem" <<'PY'
+# Compare selections as well as recorded inputs: removing a shim changes the main,
+# while adding or deleting unused TeX files does not change the paper.
+old_main=$(find_main "$dir" "$dir at base $base" "$base") || old_main=""
+if ! flags=$(python3 - "$base" "$dir" "$stem" "$main" "$old_main" <<'PY'
 import pathlib
 import subprocess
 import sys
@@ -242,15 +284,11 @@ if not seen_target or not expect_target:
 changed = subprocess.check_output(
     ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
 ).decode().rstrip("\0").split("\0")
-added_removed = set(subprocess.check_output(
-    ["git", "diff", "--name-only", "--diff-filter=AD", "--no-renames", "-z", sys.argv[1], "HEAD"]
-).decode().rstrip("\0").split("\0"))
 relevant = [
     path for path in changed
-    # A removed top-level source can change the selected main without changing its inputs.
-    if path in inputs or (path in added_removed and pathlib.PurePosixPath(path).parent == pathlib.PurePosixPath(sys.argv[2]) and path.endswith(".tex")) or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
+    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
 ]
-print(int(any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
+print(int(sys.argv[4] != sys.argv[5] or any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))
 PY
 ); then
@@ -289,7 +327,7 @@ if ! git worktree add --detach "$old" "$base" >/dev/null; then
 fi
 
 # The base may name its main document differently, e.g. a main.tex shim.
-if ! old_main=$(find_main "$old/$dir" "$dir at base $base"); then
+if [ -z "$old_main" ]; then
   printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
   exit 0
 fi

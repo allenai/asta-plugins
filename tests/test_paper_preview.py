@@ -141,15 +141,34 @@ def test_diff_does_not_depend_on_an_early_exiting_ls_tree_pipeline(tmp_path):
     assert "new" not in manifest
 
 
-def test_unrelated_top_level_tex_edit_does_not_mark_the_paper_changed(tmp_path):
-    repo, _, env, _ = paper_repo(tmp_path)
+@pytest.mark.parametrize("change", ["edit", "add", "delete"])
+@pytest.mark.parametrize("main_name", ["main.tex", "article.tex"])
+def test_unrelated_top_level_tex_edit_does_not_mark_the_paper_changed(
+    tmp_path, change, main_name
+):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    if main_name != "main.tex":
+        run("git", "mv", "paper/main.tex", f"paper/{main_name}", cwd=repo)
+        (repo / f"paper/{main_name}").write_text(r"\documentclass{article}")
+        mock = bin_dir / "latexmk"
+        mock.write_text(mock.read_text().replace("main", "article"))
+    for count in (2, 4):
+        (repo / f"paper/comment-{count}.tex").write_text(
+            "\\" * count + r"% \documentclass{commented}"
+        )
     notes = repo / "paper/notes.tex"
     notes.write_text("old notes")
-    run("git", "add", "paper/notes.tex", cwd=repo)
+    run("git", "add", "paper", cwd=repo)
     run("git", "commit", "-qm", "unreferenced notes", cwd=repo)
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
-    notes.write_text("new notes")
-    run("git", "commit", "-qam", "edit only notes", cwd=repo)
+    if change == "add":
+        notes = repo / "paper/more-notes.tex"
+    if change == "delete":
+        notes.unlink()
+    else:
+        notes.write_text("new notes")
+    run("git", "add", "paper", cwd=repo)
+    run("git", "commit", "-qm", "change only notes", cwd=repo)
 
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
@@ -158,10 +177,30 @@ def test_unrelated_top_level_tex_edit_does_not_mark_the_paper_changed(tmp_path):
     ) == {"changed": False}
 
 
+def test_added_recorded_tex_input_still_marks_the_paper_changed(tmp_path):
+    repo, base, env, _ = paper_repo(tmp_path)
+    (repo / "paper/included.tex").write_text("included text")
+    run("git", "add", "paper/included.tex", cwd=repo)
+    run("git", "commit", "-qm", "add included source", cwd=repo)
+    env["FAKE_LATEX_INPUT"] = "included.tex"
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    manifest = json.loads(
+        (repo / "_site/paper-previews/paper/preview.json").read_text()
+    )
+    assert manifest["changed"] is True
+    assert manifest["diff"] is True
+
+
 def test_option_like_main_filename_is_passed_as_a_path(tmp_path):
     repo, _, env, bin_dir = paper_repo(tmp_path)
     (repo / "paper/main.tex").unlink()
     (repo / "paper/-pv.tex").write_text(r"\documentclass{article}")
+    for count in (2, 4):
+        (repo / f"paper/comment-{count}.tex").write_text(
+            "\\" * count + r"% \documentclass{commented}"
+        )
     (bin_dir / "latexmk").write_text(
         f"#!{sys.executable}\n"
         "import json, sys\nfrom pathlib import Path\n"
