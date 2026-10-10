@@ -292,6 +292,7 @@ def test_multiline_documentclass_is_found_in_current_and_base(tmp_path, declarat
     paper.mkdir()
     (paper / "article.tex").write_text(declaration)
     (paper / "comment.tex").write_text("% \\documentclass\n{article}")
+    (paper / "escaped.tex").write_text(r"\\documentclass{not_a_declaration}")
     for count in (2, 4):
         (paper / f"comment-{count}.tex").write_text(
             "\\" * count + r"% \documentclass{commented}"

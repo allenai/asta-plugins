@@ -197,6 +197,7 @@ def test_option_like_main_filename_is_passed_as_a_path(tmp_path):
     repo, _, env, bin_dir = paper_repo(tmp_path)
     (repo / "paper/main.tex").unlink()
     (repo / "paper/-pv.tex").write_text(r"\documentclass{article}")
+    (repo / "paper/escaped.tex").write_text(r"\\documentclass{not_a_declaration}")
     for count in (2, 4):
         (repo / f"paper/comment-{count}.tex").write_text(
             "\\" * count + r"% \documentclass{commented}"
@@ -265,6 +266,7 @@ def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(
     paper = repo / "paper"
     (paper / "overleaf.json").write_text("{}")
     (paper / "article.tex").write_text(declaration + "\nold\n")
+    (paper / "escaped.tex").write_text(r"\\documentclass{not_a_declaration}")
     (paper / "main.tex").write_text(r"\input{article.tex}")
     run("git", "add", "paper", cwd=repo)
     run("git", "commit", "-qm", "paper with shim", cwd=repo)

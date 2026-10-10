@@ -65,7 +65,7 @@ if "main.tex" in files:
     print("main.tex")
     raise SystemExit(0)
 found = sorted(name for name in files if name.endswith(".tex") and re.search(
-    r"(?m)^[^\n]*\\documentclass\s*[\[{]",
+    r"(?m)^[^\n]*(?<!\\)(?:\\\\)*\\documentclass\s*[\[{]",
     re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", content(name)),
 ))
 if found:

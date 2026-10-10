@@ -81,6 +81,7 @@ def test_paper_targets_select_directory_and_preserve_engine(
     paper.mkdir(parents=True)
     (paper / main_name).write_text(declaration)
     (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
+    (paper / "escaped.tex").write_text(r"\\documentclass{not_a_declaration}")
     for count in (2, 4):
         (paper / f"comment-{count}.tex").write_text(
             "\\" * count + r"% \documentclass{commented}"

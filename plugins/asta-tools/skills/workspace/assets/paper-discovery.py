@@ -17,7 +17,9 @@ def valid_name(name: str) -> bool:
     )
 
 
-DOCUMENTCLASS = re.compile(r"^[^\n]*\\documentclass\s*[\[{]", re.MULTILINE)
+DOCUMENTCLASS = re.compile(
+    r"^[^\n]*(?<!\\)(?:\\\\)*\\documentclass\s*[\[{]", re.MULTILINE
+)
 
 
 def main_file(
