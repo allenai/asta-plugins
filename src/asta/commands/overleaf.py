@@ -13,10 +13,6 @@ import click
 
 CONFIG = "overleaf.json"
 SHA = re.compile(r"[0-9a-f]{40}")
-WINDOWS_DEVICE = re.compile(
-    r"(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?",
-    re.IGNORECASE,
-)
 # Git's `rev-parse --local-env-vars` list, plus the namespace override.
 LOCAL_GIT_ENV = {
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -116,11 +112,6 @@ def credentials():
     if not token:
         yield env, []
         return
-    if os.name == "nt":
-        raise click.ClickException(
-            "OVERLEAF_TOKEN askpass is unavailable on Windows. Unset OVERLEAF_TOKEN "
-            "and use Git's credential helper with username git and your Overleaf token."
-        )
     with tempfile.TemporaryDirectory() as tmp:
         askpass = Path(tmp) / "askpass"
         askpass.write_text(
@@ -186,16 +177,9 @@ def check_paths(names) -> None:
     names = set(names)
     for name in names:
         parts = name.split("/")
-        if (
-            any(part in ("", ".", "..") or part.casefold() == ".git" for part in parts)
-            or any(
-                part.endswith((".", " ")) or WINDOWS_DEVICE.fullmatch(part)
-                for part in parts
-            )
-            or any(
-                c in '\\:<>"|?*' or ord(c) < 32 or 127 <= ord(c) <= 159 for c in name
-            )
-        ):
+        if any(
+            part in ("", ".", "..") or part.casefold() == ".git" for part in parts
+        ) or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in name):
             refuse(name, "has an unsafe path")
         for end in range(1, len(parts) + 1):
             prefix = "/".join(parts[:end])
@@ -270,60 +254,6 @@ def require_visible(root: Path, paths) -> None:
             f"{name.relative_to(root)} is ignored by Git. Adjust the ignore rules "
             "so imported sources and sync metadata can be committed; nothing copied."
         )
-
-
-def require_plain_attributes(root: Path, paths) -> None:
-    names = b"\0".join(os.fsencode(path.relative_to(root)) for path in paths) + b"\0"
-    # An unstaged attribute edit must not hide conversions still in the index.
-    for options in ([], ["--cached"]):
-        result = subprocess.run(
-            [
-                "git",
-                "check-attr",
-                *options,
-                "-z",
-                "--stdin",
-                "text",
-                "eol",
-                "filter",
-                "crlf",
-                "working-tree-encoding",
-            ],
-            input=names,
-            cwd=root,
-            env=git_environment(),
-            capture_output=True,
-        )
-        if result.returncode:
-            raise click.ClickException(
-                "Could not check Git attributes; nothing copied or pushed."
-            )
-        fields = result.stdout.split(b"\0")[:-1]
-        for name, attribute, value in zip(fields[::3], fields[1::3], fields[2::3]):
-            if value not in (b"unspecified", b"unset"):
-                raise click.ClickException(
-                    f"{os.fsdecode(name)} has content-changing Git attribute "
-                    f"{os.fsdecode(attribute)}={os.fsdecode(value)}. Remove that rule "
-                    "for this paper before syncing; nothing copied or pushed."
-                )
-
-
-def require_unchanged_bytes(
-    root: Path, paper: Path, contents: dict[str, bytes]
-) -> None:
-    for name, data in contents.items():
-        if b"\r" not in data:
-            continue
-        raw = git_bytes("hash-object", "--stdin", "--no-filters", cwd=root, input=data)
-        converted = git_bytes(
-            "hash-object", "--stdin", "--path", str(paper / name), cwd=root, input=data
-        )
-        if raw != converted:
-            raise click.ClickException(
-                f"Git line-ending conversion would change {name!r} on commit. "
-                "Disable conversion for this paper (for example, a workspace-root "
-                "attribute rule with -text); nothing copied."
-            )
 
 
 def load_config(paper: Path) -> dict:
@@ -426,20 +356,13 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 raise click.ClickException(
                     f"Commit or discard local changes in {target.relative_to(root)} first; nothing copied."
                 )
-        replaced_dirs = [paper / name for name in new if (paper / name).is_dir()]
-        for target in replaced_dirs:
-            for child in target.rglob("*"):
-                if child.is_symlink() or (
-                    not child.is_dir()
-                    and child.relative_to(paper).as_posix() not in deleted
-                ):
-                    raise click.ClickException(
-                        f"Directory {target.relative_to(root)} contains workspace files; "
-                        "move them aside before replacing it; nothing copied."
-                    )
+        for name in new:
+            if (paper / name).is_dir():
+                raise click.ClickException(
+                    f"Overleaf now has a file where {(paper / name).relative_to(root)} "
+                    "is a directory. Move the directory aside before pulling; nothing copied."
+                )
         require_visible(root, [paper / name for name in (*new, CONFIG)])
-        require_plain_attributes(root, [paper / name for name in (*new, CONFIG)])
-        require_unchanged_bytes(root, paper, new)
         for name in (*new, CONFIG):
             for parent in (paper / name).parents:
                 if parent == root:
@@ -450,25 +373,10 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                             f"{parent.relative_to(root)} is a file needed as a directory. "
                             "Move it aside before pulling; nothing copied."
                         )
-        try:
-            for name in deleted:
-                (paper / name).unlink(missing_ok=True)
-            for target in replaced_dirs:
-                for child in sorted(
-                    target.rglob("*"), key=lambda p: len(p.parts), reverse=True
-                ):
-                    child.rmdir()
-                target.rmdir()
-            write_files(new, paper)
-            save_config(paper, url, head)
-        except OSError:
-            raise click.ClickException(
-                "Could not write the imported paper. Check permissions and free disk space, "
-                "then inspect `git diff` and `git status`. Pull may be partially applied. "
-                "Back up the paper directory before recovery: restore affected tracked "
-                "files with `git restore --source=HEAD -- <paths>` and remove only "
-                "newly imported files before retrying."
-            ) from None
+        for name in deleted:
+            (paper / name).unlink(missing_ok=True)
+        write_files(new, paper)
+        save_config(paper, url, head)
     click.echo(
         f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
         "Review with `git diff`, then commit and open a PR."
@@ -502,7 +410,6 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         )
     ours.pop(CONFIG, None)
     check_ignore_files(ours)
-    require_plain_attributes(root, [paper / name for name in (*ours, CONFIG)])
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)

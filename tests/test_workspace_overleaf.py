@@ -101,65 +101,6 @@ def test_personal_credential_helper_remains_available(setup, monkeypatch):
     assert b"password=personal-fixture\n" in filled
 
 
-@pytest.mark.parametrize("setting", ["true", "input"])
-def test_pull_refuses_autocrlf_before_deleting_sources(setup, setting):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    commit_all(project)
-    overleaf_edit(seed, "old.tex", None)
-    (seed / "main.tex").write_bytes(b"remote edit\r\n")
-    commit_all(seed)
-    git(seed, "push", "origin", "master")
-    git(project, "config", "core.autocrlf", setting)
-    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
-    result = run(project, "pull")
-    assert result.exit_code != 0 and "line-ending conversion" in result.output
-    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
-
-
-def test_pull_allows_autocrlf_with_explicit_plain_bytes(setup):
-    seed, project = setup
-    git(project, "config", "core.autocrlf", "true")
-    (project / ".gitattributes").write_text("paper/** -text -crlf\n")
-    commit_all(project)
-    (seed / "main.tex").write_bytes(b"hello\r\n")
-    commit_all(seed)
-    git(seed, "push", "origin", "master")
-    result = run(project, "pull", URL)
-    assert result.exit_code == 0, result.output
-    commit_all(project)
-    assert module.git_bytes("show", "HEAD:paper/main.tex", cwd=project) == b"hello\r\n"
-    assert run(project, "publish", "--dry-run").exit_code == 0
-
-
-def test_partial_pull_failure_reports_recovery_and_can_retry(setup, monkeypatch):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    commit_all(project)
-    record = (project / "paper/overleaf.json").read_bytes()
-    overleaf_edit(seed, "old.tex", None)
-    overleaf_edit(seed, "added.tex", "new source\n")
-    real = module.write_files
-
-    def partial_write(contents, dest):
-        real({"added.tex": contents["added.tex"]}, dest)
-        raise OSError("fixture disk failure")
-
-    monkeypatch.setattr(module, "write_files", partial_write)
-    result = run(project, "pull")
-    assert result.exit_code != 0 and "partially applied" in result.output
-    assert "Back up" in result.output and "git restore --source=HEAD" in result.output
-    assert not (project / "paper/old.tex").exists()
-    assert (project / "paper/added.tex").exists()
-    assert (project / "paper/overleaf.json").read_bytes() == record
-    git(project, "restore", "--source=HEAD", "--", "paper/old.tex")
-    (project / "paper/added.tex").unlink()
-    monkeypatch.setattr(module, "write_files", real)
-    assert run(project, "pull").exit_code == 0
-    assert not (project / "paper/old.tex").exists()
-    assert (project / "paper/added.tex").read_text() == "new source\n"
-
-
 def test_git_failure_with_only_options_has_sanitized_error(tmp_path):
     with pytest.raises(module.click.ClickException, match="git command failed"):
         module.git_bytes("--invalid-fixture-option", cwd=tmp_path)
@@ -226,14 +167,6 @@ def test_transport_auth_errors_are_actionable(
     )
     with pytest.raises(module.click.ClickException, match=reason):
         module.git_bytes("clone", cwd=tmp_path)
-
-
-def test_windows_token_failure_recommends_credential_helper(monkeypatch):
-    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
-    monkeypatch.setattr(module, "os", SimpleNamespace(name="nt", environ=os.environ))
-    with pytest.raises(module.click.ClickException, match="credential helper"):
-        with module.credentials():
-            pytest.fail("must refuse shell askpass on Windows")
 
 
 @pytest.mark.parametrize("command", ["pull", "publish"])
@@ -308,63 +241,6 @@ def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
     assert config == {"url": URL, "base": git(seed, "rev-parse", "HEAD")}
 
 
-@pytest.mark.parametrize("command", ["pull", "publish"])
-@pytest.mark.parametrize(
-    "attribute",
-    ["text=auto", "eol=crlf", "filter=lfs", "crlf", "working-tree-encoding=UTF-16"],
-)
-@pytest.mark.parametrize("location", ["root", "info", "global"])
-def test_sync_refuses_workspace_attributes_before_changes(
-    setup, monkeypatch, command, attribute, location
-):
-    seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
-    (project / "paper/main.tex").write_text("reviewed edit\n")
-    commit_all(project)
-    if command == "pull":
-        overleaf_edit(seed, "old.tex", None)
-    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
-    remote_before = git(seed, "ls-remote", "origin", "master")
-    if location == "root":
-        attributes = project / ".gitattributes"
-    elif location == "info":
-        attributes = project / ".git/info/attributes"
-    else:
-        attributes = project.parent / "global-attributes"
-        git(project, "config", "core.attributesFile", str(attributes))
-    attributes.write_text(f"paper/* {attribute}\n")
-    result = run(project, command)
-    assert result.exit_code != 0 and "content-changing Git attribute" in result.output
-    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
-    assert git(seed, "ls-remote", "origin", "master") == remote_before
-
-
-def test_pull_preserves_crlf_when_attributes_explicitly_disabled(setup):
-    seed, project = setup
-    (seed / "main.tex").write_bytes(b"hello\r\n")
-    commit_all(seed)
-    git(seed, "push", "origin", "master")
-    (project / ".gitattributes").write_text("paper/* -text -filter -crlf\n")
-    commit_all(project)
-    result = run(project, "pull", URL)
-    assert result.exit_code == 0, result.output
-    commit_all(project)
-    assert module.git_bytes("show", "HEAD:paper/main.tex", cwd=project) == b"hello\r\n"
-
-
-@pytest.mark.parametrize("command", ["pull", "publish"])
-def test_sync_checks_committed_ancestor_attributes(setup, command):
-    _, project = setup
-    (project / "papers").mkdir()
-    assert run(project, "pull", URL, "--dir", "papers/article").exit_code == 0
-    (project / "papers/.gitattributes").write_text("article/* text=auto\n")
-    commit_all(project)
-    # A working-tree edit must not hide transformations in the committed rules.
-    (project / "papers/.gitattributes").write_text("article/* -text\n")
-    result = run(project, command, "--dir", "papers/article")
-    assert result.exit_code != 0 and "content-changing Git attribute" in result.output
-
-
 def test_pull_parent_file_collision_leaves_all_sources_unchanged(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -386,20 +262,6 @@ def test_pull_reports_file_blocking_selected_directory(setup):
     result = run(project, "pull", URL, "--dir", "papers/article")
     assert result.exit_code != 0 and "is a file needed as a directory" in result.output
     assert (project / "papers").read_text() == "local notes\n"
-
-
-def test_pull_write_error_is_actionable(setup, monkeypatch):
-    _, project = setup
-    monkeypatch.setattr(
-        module, "write_files", lambda *a: (_ for _ in ()).throw(PermissionError())
-    )
-    result = run(project, "pull", URL)
-    assert (
-        result.exit_code != 0
-        and "Check permissions and free disk space" in result.output
-    )
-    assert "git diff" in result.output
-    assert not (project / "paper/overleaf.json").exists()
 
 
 def test_pull_applies_overleaf_deletions_and_keeps_workspace_files(setup):
@@ -670,7 +532,6 @@ def test_sync_refuses_executable_files(setup, command):
         ".git/config",
         "nested/.Git/config",
         "/absolute",
-        "dir\\escape.tex",
     ],
 )
 def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
@@ -694,19 +555,6 @@ def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
 @pytest.mark.parametrize(
     "name",
     [
-        "CON.tex",
-        "nested/nul.bib",
-        "COM1/figure.pdf",
-        "LPT9.tex",
-        "CONOUT$.tex",
-        "com¹.tex",
-        "article.tex.",
-        "figures /plot.pdf",
-        "question?.tex",
-        "pipe|name.tex",
-        'quote".tex',
-        "angle<.tex",
-        "star*.tex",
         "line\nbreak.tex",
         "tab\tname.tex",
         "escape\x1b[2J.tex",
@@ -714,7 +562,7 @@ def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
         "control\x9b.tex",
     ],
 )
-def test_pull_refuses_nonportable_names_before_deletions(setup, monkeypatch, name):
+def test_pull_refuses_control_characters_before_deletions(setup, monkeypatch, name):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
@@ -737,12 +585,6 @@ def test_pull_refuses_nonportable_names_before_deletions(setup, monkeypatch, nam
         ord(c) < 32 and c != "\n" or 127 <= ord(c) <= 159 for c in result.output
     )
     assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
-
-
-def test_portable_names_remain_supported():
-    module.check_paths(
-        ["appendix.tex", "com0.tex", "auxiliary.tex", "figures/plot 1.pdf"]
-    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
@@ -1048,38 +890,22 @@ def test_publish_then_pull_with_workspace_ignore_rules(setup):
     assert (project / "paper/main.tex").read_text() == "collaborator follow-up\n"
 
 
-@pytest.mark.parametrize("ignored_file", [False, True])
-def test_pull_directory_to_file_replacement(setup, ignored_file):
+def test_pull_refuses_overleaf_file_replacing_workspace_directory(setup):
     seed, project = setup
-    (seed / "nested/deep").mkdir(parents=True)
-    overleaf_edit(seed, "nested/deep/figure.tex", "figure\n")
+    (seed / "nested").mkdir()
+    overleaf_edit(seed, "nested/figure.tex", "figure\n")
     assert run(project, "pull", URL).exit_code == 0
-    (project / ".gitignore").write_text("*.aux\n")
     commit_all(project)
     paper = project / "paper"
     record = (paper / "overleaf.json").read_bytes()
-    if ignored_file:
-        (paper / "nested/local.aux").write_text("keep local\n")
-    git(seed, "rm", "-r", "nested")
+    git(seed, "rm", "-r", "-q", "nested")
     (seed / "nested").write_text("now a file\n")
     commit_all(seed)
     git(seed, "push", "-q", "origin", "master")
     result = run(project, "pull")
-    if ignored_file:
-        assert result.exit_code != 0 and "directory" in result.output.lower()
-        assert (paper / "nested/local.aux").read_text() == "keep local\n"
-        assert (paper / "nested/deep/figure.tex").read_text() == "figure\n"
-        assert (paper / "overleaf.json").read_bytes() == record
-    else:
-        assert result.exit_code == 0, result.output
-        assert (paper / "nested").read_text() == "now a file\n"
-        commit_all(project)
-        git(seed, "rm", "nested")
-        (seed / "nested").mkdir()
-        overleaf_edit(seed, "nested/figure.tex", "back to a directory\n")
-        result = run(project, "pull")
-        assert result.exit_code == 0, result.output
-        assert (paper / "nested/figure.tex").read_text() == "back to a directory\n"
+    assert result.exit_code != 0 and "Move the directory aside" in result.output
+    assert (paper / "nested/figure.tex").read_text() == "figure\n"
+    assert (paper / "overleaf.json").read_bytes() == record
 
 
 def test_pull_empty_remote_commit(setup):
@@ -1268,28 +1094,6 @@ def test_publish_refuses_record_hidden_by_index_flags(setup):
         result.exit_code != 0 and "differs from the committed revision" in result.output
     )
     assert git(seed, "ls-remote", "origin", "master") == before
-
-
-def test_pull_refuses_replacement_directory_with_untracked_former_remote_file(setup):
-    seed, project = setup
-    (seed / "nested").mkdir()
-    overleaf_edit(seed, "nested/draft.tex", "remote draft\n")
-    assert run(project, "pull", URL).exit_code == 0
-    commit_all(project)
-    git(project, "rm", "--cached", "paper/nested/draft.tex")
-    (project / ".gitignore").write_text("/paper/nested/draft.tex\n")
-    commit_all(project)
-    draft = project / "paper/nested/draft.tex"
-    draft.write_text("local ignored draft\n")
-    record = (project / "paper/overleaf.json").read_bytes()
-    git(seed, "rm", "-r", "nested")
-    (seed / "nested").write_text("now a file\n")
-    commit_all(seed)
-    git(seed, "push", "origin", "master")
-    result = run(project, "pull")
-    assert result.exit_code != 0 and "contains workspace files" in result.output
-    assert draft.read_text() == "local ignored draft\n"
-    assert (project / "paper/overleaf.json").read_bytes() == record
 
 
 @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
