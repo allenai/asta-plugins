@@ -3,6 +3,9 @@
 import importlib
 import json
 import os
+import re
+import shutil
+import stat
 import subprocess
 from types import SimpleNamespace
 
@@ -389,7 +392,11 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
     assert "OVERLEAF_TOKEN" not in module.git_environment()
     with module.credentials() as (env, options):
+        assert "OVERLEAF_TOKEN" not in env
         askpass = env["GIT_ASKPASS"]
+        token_file = module.Path(askpass).with_name("token")
+        assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
+        assert stat.S_IMODE(token_file.parent.stat().st_mode) == 0o700
         assert options == ["-c", "credential.helper="]
         answer = subprocess.run(
             [askpass, "Password for x"], env=env, capture_output=True, text=True
@@ -397,6 +404,37 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
         assert answer.stdout.strip() == "fixture-token"
         assert "fixture-token" not in open(askpass).read()
     assert not os.path.exists(askpass)
+    assert not token_file.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX transport hook and askpass")
+def test_transport_hooks_get_no_token_and_keep_utf8_locale(
+    setup, tmp_path, monkeypatch
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    hooks = tmp_path / "transport-hooks"
+    hooks.mkdir()
+    hook = hooks / "pre-push"
+    hook.write_text(
+        '#!/bin/sh\ntest -z "$OVERLEAF_TOKEN" || exit 1\n'
+        'printf "%s" "$LC_ALL" > "$TEST_HOOK_MARKER"\n'
+    )
+    hook.chmod(0o700)
+    config = tmp_path / "gitconfig"
+    config.write_text(f"[core]\n\thooksPath = {hooks}\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    marker = tmp_path / "transport-hook-ran"
+    monkeypatch.setenv("TEST_HOOK_MARKER", str(marker))
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert marker.read_text() == "C.UTF-8"
+    git(seed, "fetch", "-q", "origin")
+    assert git(seed, "show", "origin/master:main.tex") == "reviewed edit"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook and askpass")
@@ -449,8 +487,18 @@ def test_publish_honors_workspace_hook_failure(setup, dry_run):
     assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="SSH signing integration is tested on POSIX"
+)
 def test_publish_honors_workspace_signing(setup, tmp_path):
     seed, project = setup
+    version = re.search(r"(\d+)\.(\d+)", git(project, "--version"))
+    if (
+        not shutil.which("ssh-keygen")
+        or not version
+        or tuple(map(int, version.groups())) < (2, 34)
+    ):
+        pytest.skip("SSH commit signing requires ssh-keygen and Git >= 2.34")
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
@@ -475,6 +523,49 @@ def test_publish_honors_workspace_signing(setup, tmp_path):
         "verify-commit",
         "origin/master",
     )
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+@pytest.mark.parametrize("directory", ["paper", "linked/paper"])
+def test_sync_refuses_symlinked_paper_directory(setup, monkeypatch, directory, command):
+    _, project = setup
+    target = project / "actual"
+    target.mkdir()
+    marker = target / "keep.tex"
+    marker.write_text("keep this\n")
+    link = project / directory.split("/")[0]
+    link.symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
+    result = run(
+        project, command, *([URL] if command == "pull" else []), "--dir", directory
+    )
+    assert result.exit_code != 0 and "symlinked directory" in result.output
+    assert marker.read_text() == "keep this\n"
+    assert list(target.iterdir()) == [marker]
+
+
+@pytest.mark.parametrize(
+    "names",
+    [["caf\u00e9.tex", "cafe\u0301.tex"], ["caf\u00e9/a.tex", "cafe\u0301/b.tex"]],
+)
+def test_refuses_unicode_normalization_collisions(names):
+    with pytest.raises(module.click.ClickException, match="Unicode normalization"):
+        module.check_paths(names)
+
+
+def test_pull_reports_unborn_overleaf_project(setup):
+    seed, project = setup
+    git(
+        seed,
+        "--git-dir",
+        str(seed.parent / "overleaf.git"),
+        "update-ref",
+        "-d",
+        "refs/heads/master",
+    )
+    result = run(project, "pull", URL)
+    assert result.exit_code != 0 and "Overleaf project has no commits" in result.output
+    assert not (project / "paper").exists()
 
 
 def test_pull_refuses_a_different_project_before_cloning(setup, monkeypatch):

@@ -43,30 +43,38 @@ Keeping that intermediate LaTeX is useful even when you only want a PDF: preprin
 
 ## Sync a paper with Overleaf
 
-The workspace repo is the reviewed copy; Overleaf is where collaborators edit. Authenticate with your Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token); the token is never written to the repo or Git config. When the temporary directory forbids executing scripts, use the Git credential helper instead of `OVERLEAF_TOKEN`. The token is supplied only to clone and push, not to local staging or commit hooks. Use trusted Git configuration and transport hooks, which run with authentication.
+The workspace repo is the reviewed copy; Overleaf is where collaborators edit.
 
 1. On a branch, run `asta workspace overleaf pull https://git.overleaf.com/<project-id>` (later pulls need no URL). It copies the Overleaf project into `paper/`, applies files Overleaf deleted since the last pull, and records the Overleaf commit in `paper/overleaf.json`. Review with `git diff`, commit, and open a PR for the normal paper preview.
 2. After the PR merges, run `asta workspace overleaf publish --dry-run`, then `asta workspace overleaf publish`. It pushes the committed files in `paper/` without injecting files from the workspace root, then updates `paper/overleaf.json`; commit that file (through a branch and PR if the reviewed branch is protected). Further sync commands require the updated record to be committed. The CLI does not verify PR approval; the caller must publish only the reviewed revision.
 
 Dry-run checks the planned export and workspace Git identity, but does not run commit hooks or signing.
 
+### Authentication
+
+Use your own Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token). The same commands work with a service account later. The token is never written to the repo or Git config. With `OVERLEAF_TOKEN`, only Git's authentication prompt reads a temporary private token file, which is deleted after transport; the token is absent from Git and hook environments. Git configuration and hooks still execute as your account, so use trusted settings. If the temporary directory forbids executing scripts, use the Git credential helper instead.
+
+### Conflicts and project layout
+
 Publish refuses if Overleaf has changed since the recorded commit: pull first so those edits get reviewed too. Pull refuses uncommitted changes in `paper/`. It also stops before copying anything if an Overleaf update would overwrite or delete committed workspace edits; reconcile that file first. Workspace edits to files unchanged in Overleaf are kept. A paper already linked to one Overleaf project cannot be retargeted by passing a different URL; import the other project into a separate directory with `--dir`, relative to the workspace repository root even when `--project` points to a subdirectory.
 
 Sync preserves the project's filenames, bibliography files and LaTeX source layout; it does not require `main.tex` or any particular `.bib` file. Bibliographies use the same conflict protection as other sources. Reusing a workspace bibliography is a separate project edit: the agent should stage the chosen file under an agreed name in the paper directory and update the paper's citations/build configuration in a previewed PR. Sync does not merge bibliographies or choose a canonical copy. Preview setup is also separate: adapt it to the imported project's actual main document and compiler.
 
-Sync limitations:
+### Sync limitations
 
-- Both commands refuse unsupported plain-file layouts before copying or pushing: `.gitattributes`, Git LFS files, executable files, symlinks, submodules, unsafe paths and names differing only in letter case.
+- Both commands refuse unsupported plain-file layouts before copying or pushing: `.gitattributes`, Git LFS files, executable files, symlinks (including the selected paper directory), submodules, unsafe paths and names differing only in letter case or Unicode normalization.
 - Both commands refuse ignored sync metadata; pull also refuses ignored imports. Adjust the workspace ignore rules so sources can be committed for review. Remote `overleaf.json` is reserved. Pull refuses remote `.gitignore` files and publish refuses committed paper `.gitignore` files; keep ignore rules in the workspace root so publication cannot make the next pull fail.
 - Publish uses the workspace's Git identity, hooks and signing settings, including repo-local settings. Hooks run in the exported paper directory; hooks requiring the full workspace must be adapted for that layout. A failing hook or signer stops publication. Publish also refuses if hooks or Git conversions change exported bytes, and pushes nothing.
 - Case-only renames and reset remote history are unsupported. Both commands refuse control characters in file names before making changes. `--dir <directory>` selects a literal relative directory. Pull refuses when Overleaf replaces a directory with a file; move the workspace directory aside first. Deletions can leave empty directories.
 
-Known limits (not handled; avoid these setups):
+### Known limits (not handled; avoid these setups)
 
 - Windows: `OVERLEAF_TOKEN` is untested there (use a Git credential helper), and Windows-reserved names (`CON`, `NUL`, …), trailing dots or spaces and characters such as `:` or `?` are not checked.
 - Workspace Git attributes and line-ending conversion (`core.autocrlf`, `text`/`eol`, `filter`, `working-tree-encoding`) on paper files are not checked on pull, so committed bytes can differ from Overleaf's. Publish's final byte check still blocks a changed export.
 - Pull is not atomic: a disk or permission error partway through can leave `paper/` partially updated. Inspect `git status`, restore tracked files with `git restore --source=HEAD -- paper`, remove new untracked files, and retry.
 - The Overleaf bridge and sync record use SHA-1 commit IDs; SHA-256 repositories are unsupported.
+- Transport runs in a temporary Git clone: workspace-local or `includeIf gitdir:` credential helpers, proxy and CA settings are not inherited. Configure those settings globally or for `https://git.overleaf.com` to use your local credentials.
+- Filename collision checks cover case folding and NFC/NFD normalization, not every filesystem's naming rules. Normalization-only renames are unsupported. Sync reads source files into memory and is intended for ordinary paper projects, not large asset repositories.
 - Git failures report a sanitized command and exit code, with limited authentication/conflict guidance. Detailed stderr is withheld because it can contain credentials. Invalid sync metadata produces an error naming the record to restore from Git.
 - Inspect imported build configuration such as `latexmkrc` before executing it or opening a preview PR. Pushing through Git can drop Overleaf comments and tracked changes in edited regions.
 

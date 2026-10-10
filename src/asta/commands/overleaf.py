@@ -6,6 +6,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def git_environment() -> dict:
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
-    env.update(LC_ALL="C", LANGUAGE="")
+    env.update(LC_MESSAGES="C", LANGUAGE="")
     return env
 
 
@@ -140,14 +141,16 @@ def credentials():
         yield env, []
         return
     with tempfile.TemporaryDirectory() as tmp:
+        token_file = Path(tmp) / "token"
+        token_file.touch(mode=stat.S_IRUSR | stat.S_IWUSR)
+        token_file.write_text(token, encoding="utf-8")
         askpass = Path(tmp) / "askpass"
         askpass.write_text(
-            '#!/bin/sh\ncase "$1" in Username*) echo git;; *) printf \'%s\\n\' "$OVERLEAF_TOKEN";; esac\n'
+            '#!/bin/sh\ncase "$1" in Username*) echo git;; *) cat "$(dirname "$0")/token";; esac\n',
+            encoding="utf-8",
         )
         askpass.chmod(stat.S_IRWXU)
-        env.update(
-            OVERLEAF_TOKEN=token, GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT="0"
-        )
+        env.update(GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT="0")
         # An empty helper list stops Git from storing the token anywhere.
         yield env, ["-c", "credential.helper="]
 
@@ -165,7 +168,10 @@ def clone(url: str, dest: Path) -> str:
             cwd=dest.parent,
             env=env,
         )
-    return git("rev-parse", "HEAD", cwd=dest)
+    try:
+        return git("rev-parse", "--verify", "HEAD", cwd=dest)
+    except click.ClickException:
+        raise click.ClickException("Overleaf project has no commits to sync.") from None
 
 
 def push(repo: Path) -> None:
@@ -210,9 +216,13 @@ def check_paths(names) -> None:
             refuse(name, "has an unsafe path")
         for end in range(1, len(parts) + 1):
             prefix = "/".join(parts[:end])
-            other = seen.setdefault(prefix.casefold(), prefix)
+            key = unicodedata.normalize("NFC", prefix).casefold()
+            other = seen.setdefault(key, prefix)
             if other != prefix:
-                refuse(name, f"differs from {other} only in letter case")
+                refuse(
+                    name,
+                    f"differs from {other} only in letter case or Unicode normalization",
+                )
             if end < len(parts) and prefix in names:
                 refuse(name, f"uses file {prefix} as a directory")
 
@@ -251,7 +261,13 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
         raise click.ClickException(
             "Commit the workspace's initial files before syncing with Overleaf."
         ) from None
-    paper = (root / directory).resolve()
+    candidate = root / directory
+    for path in (candidate, *candidate.parents):
+        if path == root:
+            break
+        if path.is_symlink():
+            refuse(directory, "uses a symlinked directory")
+    paper = candidate.resolve()
     if root not in paper.parents:
         raise click.ClickException("--dir must be a subdirectory of the workspace.")
     return root, paper, paper.relative_to(root).as_posix() + "/"
@@ -290,7 +306,7 @@ def load_config(paper: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        config = json.loads(path.read_text())
+        config = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(config, dict) or not isinstance(config.get("base"), str):
             raise ValueError("expected an object with a base commit")
         if not SHA.fullmatch(config["base"]) or not isinstance(config.get("url"), str):
@@ -306,7 +322,7 @@ def load_config(paper: Path) -> dict:
 def save_config(paper: Path, url: str, base: str) -> None:
     text = json.dumps({"url": url, "base": base}, indent=2) + "\n"
     paper.mkdir(parents=True, exist_ok=True)
-    (paper / CONFIG).write_text(text)
+    (paper / CONFIG).write_text(text, encoding="utf-8")
 
 
 def write_files(contents: dict[str, bytes], dest: Path) -> None:
