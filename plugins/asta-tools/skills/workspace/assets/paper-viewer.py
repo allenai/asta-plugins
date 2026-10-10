@@ -132,7 +132,7 @@ def create_viewer(
     if page.is_symlink() or (page.exists() and not managed_viewer(page, tracked)):
         return
     folder.mkdir(parents=True, exist_ok=True)
-    title = "Paper HTML" if directory == "paper" else f"{directory} HTML"
+    title = "Paper" if directory == "paper" else f"{directory} paper"
     target = posixpath.relpath(f"paper-previews/{directory}", folder.as_posix())
     target = quote(target, safe="/.")
     source = f"{directory}/{main_file}"
@@ -144,53 +144,29 @@ title: {json.dumps(title)}
 
 ```{{=html}}
 <p>The paper is written in <code>{html.escape(source)}</code>.
-The preview builds PDF and HTML from that LaTeX source.</p>
+The preview builds a PDF from that LaTeX source.</p>
 <div data-paper-preview="{html.escape(target, quote=True)}">
 <p data-paper-links></p>
-<div data-paper-html>
-<p>The paper artifacts appear after the preview build. If HTML conversion fails,
-use the PDF link when available.</p>
+<div data-paper-pdf>
+<p>The paper PDF appears after the preview build.</p>
 </div>
 </div>
 
 <script>
 (() => {{
   const host = document.querySelector('[data-paper-preview]');
-  const links = host.querySelector('[data-paper-links]');
-  const htmlHost = host.querySelector('[data-paper-html]');
-  const base = host.dataset.paperPreview;
-  function addLink(url, label) {{
-    const link = document.createElement('a');
-    link.href = url;
-    link.textContent = label;
-    if (links.childNodes.length) links.append(' · ');
-    links.append(link);
-  }}
-  fetch(base + '/main.pdf', {{ method: 'HEAD' }}).then(response => {{
-    if (response.ok) addLink(base + '/main.pdf', 'Open paper PDF');
-  }}).catch(() => {{}});
-  const url = base + '/html/index.html';
+  const url = host.dataset.paperPreview + '/main.pdf';
   fetch(url, {{ method: 'HEAD' }}).then(response => {{
     if (!response.ok) return;
-    addLink(url, 'Open full HTML paper');
+    const link = document.createElement('a');
+    link.href = url;
+    link.textContent = 'Open paper PDF';
+    host.querySelector('[data-paper-links]').append(link);
     const frame = document.createElement('iframe');
     frame.src = url;
     frame.title = {json.dumps(title).replace("<", chr(92) + "u003c")};
-    frame.setAttribute('sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox');
-    frame.style.cssText = 'width:100%;min-height:70vh;border:0';
-    frame.addEventListener('load', () => {{
-      if (!frame.contentDocument) return;
-      for (const link of frame.contentDocument.querySelectorAll('a[href]')) {{
-        let destination;
-        try {{ destination = new URL(link.getAttribute('href'), new URL(url, document.baseURI)); }}
-        catch {{ continue; }}
-        if (['http:', 'https:'].includes(destination.protocol) && destination.origin !== location.origin) {{
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-        }}
-      }}
-    }});
-    htmlHost.replaceChildren(frame);
+    frame.style.cssText = 'width:100%;min-height:80vh;border:0';
+    host.querySelector('[data-paper-pdf]').replaceChildren(frame);
   }}).catch(() => {{}});
 }})();
 </script>

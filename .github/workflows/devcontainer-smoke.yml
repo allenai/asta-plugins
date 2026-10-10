@@ -112,7 +112,6 @@ jobs:
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |
-          docker run --rm asta-smoke latexmlc --VERSION
           docker run --rm asta-smoke kpsewhich ulem.sty | grep -q ulem.sty
           meta=$(docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' asta-smoke)
           docker run --rm -e ASTA_EDITOR_METADATA="$meta" \
@@ -155,18 +154,6 @@ jobs:
               assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
           PY
 
-      - name: pdfLaTeX resolves LaTeXML styles
-        if: matrix.target == 'tex'
-        run: |
-          paper=$(mktemp -d "$RUNNER_TEMP/paper-latexml.XXXXXX")
-          printf '%s\n' '\documentclass{article}' '\usepackage{latexml}' \
-            '\begin{document}LaTeXML styles\end{document}' > "$paper/main.tex"
-          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-            --user "$(id -u):$(id -g)" -e HOME=/tmp \
-            -v "$paper:/w" -w /w asta-smoke \
-            pdflatex -interaction=nonstopmode -halt-on-error main.tex
-          test -s "$paper/main.pdf"
-
       - name: XeLaTeX and LuaLaTeX resolve bundled fonts by name
         if: matrix.target == 'tex'
         run: |
@@ -182,7 +169,7 @@ jobs:
             rm "$paper/main.pdf"
           done
 
-      - name: HTML diff marks match the inline palette
+      - name: Paper diff PDF builds with the image toolchain
         if: matrix.target == 'tex'
         run: |
           preview=$(mktemp -d "$RUNNER_TEMP/paper-diff.XXXXXX")
@@ -205,5 +192,5 @@ jobs:
               bash /paper-preview.sh "$1" paper
             ' _ "$base"
           test -s "$preview/_site/paper-previews/paper/what-changed.pdf"
-          npm ci --prefix tests/dom
-          node tests/dom/check_paper_diff.mjs "$preview/_site/paper-previews/paper/html-diff/index.html"
+          test ! -e "$preview/_site/paper-previews/paper/html"
+          grep -q '"diff":true' "$preview/_site/paper-previews/paper/preview.json"

@@ -127,8 +127,8 @@ This reusable workflow targets GitHub.com; its `job.workflow_*` identity
 context is unavailable on GitHub Enterprise Server. Paper builds and project
 `paper-preview.sh` overrides run offline as the host UID/GID, without a passwd
 entry. Overrides must use the fetched history and local files, and must not
-fetch dependencies or require `whoami`/Git author identity. The full TeX Live
-2026 install takes precedence over the Debian base TeX pulled in by `latexml`.
+fetch dependencies or require `whoami`/Git author identity. The image's only
+TeX is the full TeX Live 2026 install.
 
 ## Specific Workflows
 

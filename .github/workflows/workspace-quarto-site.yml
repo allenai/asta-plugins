@@ -409,21 +409,11 @@ jobs:
               if [ -f "$paper_dir/main.pdf" ]; then
                 body=$(printf '%s\n📑 %s PDF: %s/main.pdf' "$body" "$label" "$paper_url")
               fi
-              if [ -f "$paper_dir/html/index.html" ]; then
-                body=$(printf '%s\n📄 %s HTML: %s/html/index.html' "$body" "$label" "$paper_url")
-              elif [ -f "$paper_dir/html/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML conversion failed: %s/html/latexml.log' "$body" "$label" "$paper_url")
-              fi
               if [ -f "$paper_dir/main.bbl" ]; then
                 body=$(printf '%s\n📚 %s bibliography (arXiv): %s/main.bbl' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/what-changed.pdf" ]; then
                 body=$(printf '%s\n🖍️ %s PDF diff: %s/what-changed.pdf' "$body" "$label" "$paper_url")
-              fi
-              if [ -f "$paper_dir/html-diff/index.html" ] && grep -q '"html_diff":true' "$paper_dir/preview.json"; then
-                body=$(printf '%s\n🔎 %s HTML diff: %s/html-diff/index.html' "$body" "$label" "$paper_url")
-              elif [ -f "$paper_dir/html-diff/latexml.log" ]; then
-                body=$(printf '%s\n⚠️ %s HTML diff conversion failed: %s/html-diff/latexml.log' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/build-failed.txt" ]; then
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")

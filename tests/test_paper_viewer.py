@@ -32,13 +32,10 @@ def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
     assert (
         'data-paper-preview="../../../paper-previews/research/other%20paper"' in nested
     )
-    assert (
-        "sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox'"
-        in nested
-    )
-    assert "allow-scripts" not in nested
+    assert "/main.pdf'" in nested
+    assert "html/index.html" not in nested
     assert "if (!response.ok) return" in nested
-    assert "use the PDF link when available" in nested
+    assert "The paper PDF appears after the preview build" in nested
 
 
 def test_viewer_displays_discovered_source_name(tmp_path):
@@ -104,7 +101,7 @@ def test_generated_viewer_refreshes_and_is_removed_after_paper_moves(tmp_path):
     current = old.read_text()
     prior_script = tmp_path / "old-viewer.py"
     prior_script.write_text(
-        SCRIPT.read_text().replace("The preview builds PDF and HTML", "Old template")
+        SCRIPT.read_text().replace("The preview builds a PDF", "Old template")
     )
     old.unlink()
     assert generate(tmp_path, "paper", script=prior_script).returncode == 0
@@ -124,7 +121,7 @@ def test_uncommitted_edits_survive_refresh_and_cleanup(tmp_path, discovered):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     assert generate(tmp_path, "paper").returncode == 0
     page = tmp_path / "paper/html/index.qmd"
-    custom = page.read_text().replace("The preview builds PDF and HTML", "My viewer")
+    custom = page.read_text().replace("The preview builds a PDF", "My viewer")
     page.write_text(custom)
     result = generate(tmp_path, *(("paper",) if discovered else ()))
     assert result.returncode == 0
@@ -293,7 +290,7 @@ def test_paper_titles_and_html_are_escaped(tmp_path):
     assert generate(tmp_path, name).returncode == 0
     document = (tmp_path / name / "html/index.qmd").read_text()
     metadata = yaml.safe_load(document.split("---")[1])
-    assert metadata["title"] == name + " HTML"
+    assert metadata["title"] == name + " paper"
     assert "<code>other&lt;&gt;&amp;&quot;/main.tex</code>" in document
     assert 'data-paper-preview="../../paper-previews/other%3C%3E%26%22"' in document
     assert "\\u003c" in document
