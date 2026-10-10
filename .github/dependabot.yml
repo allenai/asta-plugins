@@ -4,14 +4,3 @@ updates:
     directory: /image/skills-cli
     schedule:
       interval: weekly
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
-    ignore:
-      # Node majors are upgraded deliberately, so propose no major bumps.
-      # The base image is pinned by digest, so rebuilds of the current major's
-      # tag still arrive as digest updates. Matched by suffix because the image
-      # is pulled from public.ecr.aws rather than as Docker Hub's "node".
-      - dependency-name: "*library/node"
-        update-types: ["version-update:semver-major"]
