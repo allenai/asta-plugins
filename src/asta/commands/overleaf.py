@@ -13,6 +13,25 @@ import click
 
 CONFIG = "overleaf.json"
 SHA = re.compile(r"[0-9a-f]{40}")
+# Git's `rev-parse --local-env-vars` list, plus the namespace override.
+LOCAL_GIT_ENV = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+}
 
 
 def git_environment() -> dict:
@@ -20,14 +39,7 @@ def git_environment() -> dict:
     env = {
         key: value
         for key, value in os.environ.items()
-        if key
-        not in (
-            "GIT_DIR",
-            "GIT_WORK_TREE",
-            "GIT_INDEX_FILE",
-            "GIT_PREFIX",
-            "OVERLEAF_TOKEN",
-        )
+        if key not in LOCAL_GIT_ENV | {"OVERLEAF_TOKEN"}
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
@@ -50,12 +62,15 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
         if operation in ("clone", "push") and (
-            b"401" in stderr or b"authentication failed" in stderr
+            re.search(rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)401\b", stderr)
+            or b"authentication failed" in stderr
         ):
             raise click.ClickException(
                 "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper."
             )
-        if operation in ("clone", "push") and b"403" in stderr:
+        if operation in ("clone", "push") and re.search(
+            rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)403\b", stderr
+        ):
             raise click.ClickException(
                 "Overleaf access denied. Check your token and access to this project."
             )
@@ -94,6 +109,11 @@ def credentials():
     if not token:
         yield env, []
         return
+    if os.name == "nt":
+        raise click.ClickException(
+            "OVERLEAF_TOKEN askpass is unavailable on Windows. Unset OVERLEAF_TOKEN "
+            "and use Git's credential helper with username git and your Overleaf token."
+        )
     with tempfile.TemporaryDirectory() as tmp:
         askpass = Path(tmp) / "askpass"
         askpass.write_text(
@@ -202,6 +222,12 @@ def check_ignore_files(names) -> None:
 
 def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
     root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
+    try:
+        git("rev-parse", "--verify", "-q", "HEAD", cwd=root)
+    except click.ClickException:
+        raise click.ClickException(
+            "Commit the workspace's initial files before syncing with Overleaf."
+        ) from None
     paper = (root / directory).resolve()
     if root not in paper.parents:
         raise click.ClickException("--dir must be a subdirectory of the workspace.")
@@ -232,6 +258,41 @@ def require_visible(root: Path, paths) -> None:
             f"{name.relative_to(root)} is ignored by Git. Adjust the ignore rules "
             "so imported sources and sync metadata can be committed; nothing copied."
         )
+
+
+def require_plain_attributes(root: Path, paths) -> None:
+    names = b"\0".join(os.fsencode(path.relative_to(root)) for path in paths) + b"\0"
+    # An unstaged attribute edit must not hide conversions still in the index.
+    for options in ([], ["--cached"]):
+        result = subprocess.run(
+            [
+                "git",
+                "check-attr",
+                *options,
+                "-z",
+                "--stdin",
+                "text",
+                "eol",
+                "filter",
+                "crlf",
+            ],
+            input=names,
+            cwd=root,
+            env=git_environment(),
+            capture_output=True,
+        )
+        if result.returncode:
+            raise click.ClickException(
+                "Could not check Git attributes; nothing copied or pushed."
+            )
+        fields = result.stdout.split(b"\0")[:-1]
+        for name, attribute, value in zip(fields[::3], fields[1::3], fields[2::3]):
+            if value not in (b"unspecified", b"unset"):
+                raise click.ClickException(
+                    f"{os.fsdecode(name)} has content-changing Git attribute "
+                    f"{os.fsdecode(attribute)}={os.fsdecode(value)}. Remove that rule "
+                    "for this paper before syncing; nothing copied or pushed."
+                )
 
 
 def load_config(paper: Path) -> dict:
@@ -346,16 +407,33 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                         "move them aside before replacing it; nothing copied."
                     )
         require_visible(root, [paper / name for name in (*new, CONFIG)])
-        for name in deleted:
-            (paper / name).unlink(missing_ok=True)
-        for target in replaced_dirs:
-            for child in sorted(
-                target.rglob("*"), key=lambda p: len(p.parts), reverse=True
-            ):
-                child.rmdir()
-            target.rmdir()
-        write_files(new, paper)
-    save_config(paper, url, head)
+        require_plain_attributes(root, [paper / name for name in (*new, CONFIG)])
+        for name in (*new, CONFIG):
+            for parent in (paper / name).parents:
+                if parent == root:
+                    break
+                if parent.exists() and not parent.is_dir():
+                    if parent.relative_to(paper).as_posix() not in deleted:
+                        raise click.ClickException(
+                            f"{parent.relative_to(root)} is a file needed as a directory. "
+                            "Move it aside before pulling; nothing copied."
+                        )
+        try:
+            for name in deleted:
+                (paper / name).unlink(missing_ok=True)
+            for target in replaced_dirs:
+                for child in sorted(
+                    target.rglob("*"), key=lambda p: len(p.parts), reverse=True
+                ):
+                    child.rmdir()
+                target.rmdir()
+            write_files(new, paper)
+            save_config(paper, url, head)
+        except OSError:
+            raise click.ClickException(
+                "Could not write the imported paper. Check permissions and free disk space, "
+                "then inspect `git diff` before retrying."
+            ) from None
     click.echo(
         f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
         "Review with `git diff`, then commit and open a PR."
@@ -389,6 +467,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         )
     ours.pop(CONFIG, None)
     check_ignore_files(ours)
+    require_plain_attributes(root, [paper / name for name in (*ours, CONFIG)])
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -400,14 +479,16 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
         write_files(ours, repo)
         git("add", "-A", "-f", cwd=repo)
+        if read_plain_files(repo, git("write-tree", cwd=repo)) != ours:
+            raise click.ClickException(
+                "Git conversions changed the exported files; nothing pushed. "
+                "Content-changing Git filters and conversions are unsupported."
+            )
         changes = git("status", "--short", cwd=repo)
         if not changes:
             click.echo("Overleaf already matches the committed paper.")
             return
         click.echo(changes)
-        if dry_run:
-            click.echo("Dry run: nothing pushed.")
-            return
         identity_result = subprocess.run(
             ["git", "var", "GIT_COMMITTER_IDENT"],
             cwd=root,
@@ -426,6 +507,11 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             raise click.ClickException(
                 "Could not read the workspace's Git identity; check user.name and user.email."
             ) from None
+        if dry_run:
+            click.echo(
+                "Dry run: nothing pushed; commit hooks and signing were not run."
+            )
+            return
         identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
         git(*identity, "commit", "-q", "-m", message, cwd=repo)

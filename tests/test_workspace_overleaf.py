@@ -15,6 +15,75 @@ module = importlib.import_module("asta.commands.overleaf")
 URL = "https://git.overleaf.com/1234567"
 
 
+def test_git_environment_removes_all_repository_overrides(tmp_path, monkeypatch):
+    local_names = git(tmp_path, "rev-parse", "--local-env-vars").splitlines()
+    for name in [*local_names, "GIT_NAMESPACE"]:
+        monkeypatch.setenv(name, "fixture-override")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "personal-config")
+    env = module.git_environment()
+    assert not set([*local_names, "GIT_NAMESPACE"]) & env.keys()
+    assert env["GIT_CONFIG_GLOBAL"] == "personal-config"
+
+
+@pytest.mark.parametrize("operation", ["clone", "push"])
+@pytest.mark.parametrize("code", ["401", "403"])
+def test_transport_project_ids_do_not_report_auth_errors(
+    tmp_path, monkeypatch, operation, code
+):
+    monkeypatch.setattr(
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(
+                a[0],
+                128,
+                b"",
+                f"fatal: unable to access https://git.overleaf.com/{code}: Could not resolve host".encode(),
+            )
+        ),
+    )
+    with pytest.raises(module.click.ClickException, match=f"git {operation} failed"):
+        module.git_bytes(operation, cwd=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "diagnostic,reason",
+    [
+        (b"HTTP/2 401", "authentication failed"),
+        (b"The requested URL returned error: 403", "access denied"),
+        (b"fatal: Authentication failed", "authentication failed"),
+    ],
+)
+def test_transport_auth_errors_are_actionable(
+    tmp_path, monkeypatch, diagnostic, reason
+):
+    monkeypatch.setattr(
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(a[0], 128, b"", diagnostic)
+        ),
+    )
+    with pytest.raises(module.click.ClickException, match=reason):
+        module.git_bytes("clone", cwd=tmp_path)
+
+
+def test_windows_token_failure_recommends_credential_helper(monkeypatch):
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    monkeypatch.setattr(module, "os", SimpleNamespace(name="nt", environ=os.environ))
+    with pytest.raises(module.click.ClickException, match="credential helper"):
+        with module.credentials():
+            pytest.fail("must refuse shell askpass on Windows")
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_reports_unborn_workspace_head(tmp_path, command):
+    git(tmp_path, "init", "-b", "main")
+    result = run(tmp_path, command, *([URL] if command == "pull" else []))
+    assert result.exit_code != 0
+    assert "Commit the workspace's initial files" in result.output
+
+
 def git(cwd, *args):
     return subprocess.run(
         ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
@@ -95,6 +164,89 @@ def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
     assert config == {"url": URL, "base": git(seed, "rev-parse", "HEAD")}
 
 
+@pytest.mark.parametrize("command", ["pull", "publish"])
+@pytest.mark.parametrize("attribute", ["text=auto", "eol=crlf", "filter=lfs", "crlf"])
+@pytest.mark.parametrize("location", ["root", "info", "global"])
+def test_sync_refuses_workspace_attributes_before_changes(
+    setup, monkeypatch, command, attribute, location
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    if command == "pull":
+        overleaf_edit(seed, "old.tex", None)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    remote_before = git(seed, "ls-remote", "origin", "master")
+    if location == "root":
+        attributes = project / ".gitattributes"
+    elif location == "info":
+        attributes = project / ".git/info/attributes"
+    else:
+        attributes = project.parent / "global-attributes"
+        git(project, "config", "core.attributesFile", str(attributes))
+    attributes.write_text(f"paper/* {attribute}\n")
+    result = run(project, command)
+    assert result.exit_code != 0 and "content-changing Git attribute" in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == remote_before
+
+
+def test_pull_preserves_crlf_when_attributes_explicitly_disabled(setup):
+    seed, project = setup
+    (seed / "main.tex").write_bytes(b"hello\r\n")
+    commit_all(seed)
+    git(seed, "push", "origin", "master")
+    (project / ".gitattributes").write_text("paper/* -text -filter -crlf\n")
+    commit_all(project)
+    result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    commit_all(project)
+    assert module.git_bytes("show", "HEAD:paper/main.tex", cwd=project) == b"hello\r\n"
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_checks_committed_ancestor_attributes(setup, command):
+    _, project = setup
+    (project / "papers").mkdir()
+    assert run(project, "pull", URL, "--dir", "papers/article").exit_code == 0
+    (project / "papers/.gitattributes").write_text("article/* text=auto\n")
+    commit_all(project)
+    # A working-tree edit must not hide transformations in the committed rules.
+    (project / "papers/.gitattributes").write_text("article/* -text\n")
+    result = run(project, command, "--dir", "papers/article")
+    assert result.exit_code != 0 and "content-changing Git attribute" in result.output
+
+
+def test_pull_parent_file_collision_leaves_all_sources_unchanged(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / ".gitignore").write_text("paper/figs\n!paper/figs/\n")
+    commit_all(project)
+    (project / "paper/figs").write_text("local ignored notes\n")
+    overleaf_edit(seed, "old.tex", None)
+    (seed / "figs").mkdir()
+    overleaf_edit(seed, "figs/a.tex", "remote figure\n")
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "is a file needed as a directory" in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+
+
+def test_pull_write_error_is_actionable(setup, monkeypatch):
+    _, project = setup
+    monkeypatch.setattr(
+        module, "write_files", lambda *a: (_ for _ in ()).throw(PermissionError())
+    )
+    result = run(project, "pull", URL)
+    assert (
+        result.exit_code != 0
+        and "Check permissions and free disk space" in result.output
+    )
+    assert "git diff" in result.output
+    assert not (project / "paper/overleaf.json").exists()
+
+
 def test_pull_applies_overleaf_deletions_and_keeps_workspace_files(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -141,6 +293,7 @@ def test_pull_refuses_unsupported_files_before_writing(setup, name, text, reason
     assert not (project / "paper").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
 def test_pull_refuses_symlinks(setup):
     seed, project = setup
     os.symlink("main.tex", seed / "link.tex")
@@ -229,6 +382,7 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
     assert not os.path.exists(askpass)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook and askpass")
 def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -341,7 +495,9 @@ def test_sync_refuses_executable_files(setup, command):
     commit_all(project)
     repo = seed if command == "pull" else project
     name = "main.tex" if command == "pull" else "paper/main.tex"
-    (repo / name).chmod(0o755)
+    # Set the tracked mode explicitly; Windows cannot express POSIX execute bits.
+    if os.name != "nt":
+        (repo / name).chmod(0o755)
     git(repo, "update-index", "--chmod=+x", name)
     git(repo, "commit", "-m", "executable")
     if command == "pull":
@@ -380,6 +536,7 @@ def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
     assert not (project / "escape.tex").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
 def test_pull_refuses_ignored_symlink_destination(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -396,6 +553,7 @@ def test_pull_refuses_ignored_symlink_destination(setup):
     assert not git(project, "status", "--porcelain")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
 def test_pull_refuses_ignored_symlink_config(setup):
     _, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -413,8 +571,22 @@ def test_pull_refuses_ignored_symlink_config(setup):
     assert outside.read_bytes() == before
 
 
-@pytest.mark.parametrize("setting", ["autocrlf", "filter", "hook"])
-def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting):
+@pytest.mark.parametrize(
+    "setting",
+    [
+        "autocrlf",
+        pytest.param(
+            "filter",
+            marks=pytest.mark.skipif(os.name == "nt", reason="POSIX sed filter"),
+        ),
+        pytest.param(
+            "hook",
+            marks=pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting, dry_run):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     source = project / "paper/main.tex"
@@ -456,7 +628,14 @@ def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting):
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     before = git(seed, "ls-remote", "origin", "master")
     metadata = (project / "paper/overleaf.json").read_bytes()
-    result = run(project, "publish")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    if setting == "hook" and dry_run:
+        assert (
+            result.exit_code == 0
+            and "commit hooks and signing were not run" in result.output
+        )
+        assert git(seed, "ls-remote", "origin", "master") == before
+        return
     assert result.exit_code != 0 and "nothing pushed" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
     assert (project / "paper/overleaf.json").read_bytes() == metadata
@@ -816,7 +995,8 @@ def test_pull_preserves_ignored_file_after_workspace_untracks_it(setup):
     assert (project / "paper/old.tex").read_text() == "local ignored notes\n"
 
 
-def test_publish_requires_configured_identity(setup, monkeypatch):
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_requires_configured_identity(setup, monkeypatch, dry_run):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
@@ -826,7 +1006,7 @@ def test_publish_requires_configured_identity(setup, monkeypatch):
             monkeypatch.delenv(f"GIT_{role}_{field}")
     before = git(seed, "ls-remote", "origin", "master")
     record = (project / "paper/overleaf.json").read_bytes()
-    result = run(project, "publish")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert (
         result.exit_code != 0
         and "Configure Git user.name and user.email" in result.output
