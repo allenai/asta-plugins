@@ -6,6 +6,7 @@ name: tex disk probe
 on:
   push:
     branches: [tex-disk-probe]
+    paths: [Dockerfile]
 
 jobs:
   probe:

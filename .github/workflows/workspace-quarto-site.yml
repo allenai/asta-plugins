@@ -23,7 +23,7 @@ jobs:
         fetch-depth: '0'
     - name: Build paper preview
       id: paper
-      continue-on-error: 'true'
+      continue-on-error: true
       env:
         PR_BASE: ${{ github.event.pull_request.base.sha }}
         WORKFLOW_REF: ${{ job.workflow_ref }}
