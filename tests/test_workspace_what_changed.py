@@ -145,31 +145,67 @@ def test_baseline_missing_ignored_input_reports_build_stderr(
     assert len(worktrees.strip().splitlines()) == 1
 
 
-def test_cleanup_failure_warns_without_hiding_report(
-    project: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("phase", ["success", "render", "script", "checkout"])
+def test_locked_baseline_remains_recoverable(
+    project: Path, monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> None:
     original = workspace_module._git
+    baseline = None
 
-    def fail_removal(directory, *args):
-        if args[:2] == ("worktree", "remove"):
-            return subprocess.CompletedProcess(args, 1, stderr="worktree is locked")
-        return original(directory, *args)
+    def lock_baseline(directory, *args):
+        nonlocal baseline
+        result = original(directory, *args)
+        if args[:2] == ("worktree", "add"):
+            assert result.returncode == 0
+            baseline = Path(args[3])
+            git(project, "worktree", "lock", str(baseline))
+            if phase == "checkout":
+                return subprocess.CompletedProcess(
+                    args, 1, stderr="Checkout failed after registration"
+                )
+        return result
 
-    monkeypatch.setattr(workspace_module, "_git", fail_removal)
-    result = CliRunner().invoke(
-        workspace, ["what-changed", "last-read", "--project", str(project)]
-    )
-    assert result.exit_code == 0, result.output
-    assert (project / ".asta/cache/what-changed/what-changed.html").is_file()
+    monkeypatch.setattr(workspace_module, "_git", lock_baseline)
+    if phase == "render":
+        Path(shutil.which("make")).write_text(
+            "#!/usr/bin/env python3\nraise SystemExit(2)\n"
+        )
+    elif phase == "script":
+        (project / "scripts/what-changed.py").write_text("raise SystemExit(2)\n")
+    try:
+        result = CliRunner().invoke(
+            workspace, ["what-changed", "last-read", "--project", str(project)]
+        )
+        assert result.exit_code == (0 if phase == "success" else 1), result.output
+        assert baseline is not None
+        assert (
+            f"Warning: baseline worktree cleanup failed for {baseline}" in result.output
+        )
+        assert baseline.is_dir()
+        assert (baseline / "index.qmd").read_text() == "The baseline finding holds.\n"
+        git(baseline, "status", "--porcelain")
+        worktrees = subprocess.check_output(
+            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
+        )
+        assert f"worktree {baseline}\n" in worktrees and "locked\n" in worktrees
+        if phase == "success":
+            assert (project / ".asta/cache/what-changed/what-changed.html").is_file()
+        else:
+            assert "Wrote " not in result.output
+    finally:
+        if baseline is not None:
+            git(project, "worktree", "unlock", str(baseline))
+            git(project, "worktree", "remove", "--force", str(baseline))
+            if baseline.parent.exists():
+                baseline.parent.rmdir()
     assert (
-        "Warning: baseline worktree cleanup failed for " in result.output
-        and "worktree is locked" in result.output
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(project), "worktree", "list"]
+            ).splitlines()
+        )
+        == 1
     )
-    worktrees = subprocess.check_output(
-        ["git", "-C", str(project), "worktree", "list"], text=True
-    )
-    # Failed removal leaves its registration for explicit, targeted cleanup.
-    assert len(worktrees.strip().splitlines()) == 2
 
 
 @pytest.mark.parametrize("outcome", ["success", "render-failure", "cleanup-failure"])

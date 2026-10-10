@@ -534,13 +534,15 @@ COMPARISON_DIR = Path(".asta/cache/what-changed")
 
 @contextmanager
 def _comparison_directory():
-    temporary = tempfile.TemporaryDirectory(prefix="asta-what-changed-")
+    temporary = Path(tempfile.mkdtemp(prefix="asta-what-changed-"))
     try:
-        yield Path(temporary.name)
+        yield temporary
     finally:
         try:
             with preview_cleanup():
-                temporary.cleanup()
+                # Git owns baseline removal; keep failed removals recoverable.
+                if not (temporary / "baseline").exists():
+                    temporary.rmdir()
         except OSError as exc:
             click.echo(f"Warning: baseline directory cleanup failed: {exc}", err=True)
 
@@ -693,7 +695,9 @@ def compare_workspace(ref: str, project: Path) -> None:
         finally:
             with preview_cleanup():
                 removed = _git(project, "worktree", "remove", "--force", str(baseline))
-                if removed.returncode != 0 and (added is None or added.returncode == 0):
+                if removed.returncode != 0 and (
+                    added is None or added.returncode == 0 or baseline.exists()
+                ):
                     click.echo(
                         f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}",
                         err=True,
