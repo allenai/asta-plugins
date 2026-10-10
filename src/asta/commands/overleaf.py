@@ -275,7 +275,13 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
 
 def require_clean(root: Path, *paths: Path) -> None:
     if git(
-        "--literal-pathspecs", "status", "--porcelain", "--", *map(str, paths), cwd=root
+        "--literal-pathspecs",
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--",
+        *map(str, paths),
+        cwd=root,
     ):
         names = ", ".join(p.relative_to(root).as_posix() for p in paths)
         raise click.ClickException(f"Commit or discard local changes in {names} first.")
@@ -404,6 +410,12 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 raise click.ClickException(
                     f"Overleaf now has a file where {(paper / name).relative_to(root)} "
                     "is a directory. Move the directory aside before pulling; nothing copied."
+                )
+        for name in new.keys() | {CONFIG}:
+            if name not in committed and (paper / name).exists():
+                raise click.ClickException(
+                    f"Commit or discard local changes in {(paper / name).relative_to(root)} "
+                    "first; nothing copied."
                 )
         require_visible(root, [paper / name for name in (*new, CONFIG)])
         for name in (*new, CONFIG):

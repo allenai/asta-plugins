@@ -292,6 +292,46 @@ def test_pull_refuses_uncommitted_paper_changes(setup):
     assert (project / "paper" / "main.tex").read_text() == "local\n"
 
 
+@pytest.mark.parametrize("initial_import", [True, False])
+@pytest.mark.parametrize("during_clone", [True, False])
+def test_pull_preserves_untracked_sources(
+    setup, monkeypatch, initial_import, during_clone
+):
+    seed, project = setup
+    paper = project / "paper"
+    if initial_import:
+        paper.mkdir()
+        name = "main.tex"
+    else:
+        assert run(project, "pull", URL).exit_code == 0
+        commit_all(project)
+        name = "new.tex"
+        overleaf_edit(seed, "old.tex", None)
+        overleaf_edit(seed, name, "remote source\n")
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    target = paper / name
+    if during_clone:
+        real = module.clone
+
+        def clone(*args):
+            head = real(*args)
+            target.write_text("uncommitted local source\n")
+            return head
+
+        monkeypatch.setattr(module, "clone", clone)
+    else:
+        target.write_text("uncommitted local source\n")
+        git(project, "config", "status.showUntrackedFiles", "no")
+        assert git(project, "status", "--porcelain") == ""
+    result = run(project, "pull", *([URL] if initial_import else []))
+    assert result.exit_code != 0 and "local changes" in result.output
+    assert target.read_text() == "uncommitted local source\n"
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == {
+        **before,
+        name: b"uncommitted local source\n",
+    }
+
+
 @pytest.mark.parametrize(
     ("name", "text", "reason"),
     [
