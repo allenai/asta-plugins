@@ -233,6 +233,14 @@ def test_pull_parent_file_collision_leaves_all_sources_unchanged(setup):
     assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
 
 
+def test_pull_reports_file_blocking_selected_directory(setup):
+    _, project = setup
+    (project / "papers").write_text("local notes\n")
+    result = run(project, "pull", URL, "--dir", "papers/article")
+    assert result.exit_code != 0 and "is a file needed as a directory" in result.output
+    assert (project / "papers").read_text() == "local notes\n"
+
+
 def test_pull_write_error_is_actionable(setup, monkeypatch):
     _, project = setup
     monkeypatch.setattr(

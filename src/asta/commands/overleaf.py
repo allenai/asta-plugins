@@ -413,7 +413,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 if parent == root:
                     break
                 if parent.exists() and not parent.is_dir():
-                    if parent.relative_to(paper).as_posix() not in deleted:
+                    if parent not in {paper / item for item in deleted}:
                         raise click.ClickException(
                             f"{parent.relative_to(root)} is a file needed as a directory. "
                             "Move it aside before pulling; nothing copied."
