@@ -310,11 +310,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 ) from None
         base = read_plain_files(repo, config["base"]) if config else {}
         base.pop(CONFIG, None)
-        ours = read_plain_files(root, "HEAD", prefix)
+        committed = read_plain_files(root, "HEAD", prefix)
+        ours = committed.copy()
         ours.pop(CONFIG, None)
         deleted = (base.keys() - new.keys()) & ours.keys()
         check_paths([*new, *(ours.keys() - new.keys() - deleted)])
-        imported_paths = [paper / name for name in (*new, CONFIG)]
         for name in base.keys() | new.keys():
             if new.get(name) == base.get(name):
                 # Keep workspace edits when Overleaf did not change this file.
@@ -327,6 +327,13 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             target = paper / name
             if target.resolve() != target:
                 refuse(name, "passes through a symlink")
+        # Git's index flags can hide edits from status; verify bytes we will replace.
+        for name in (new.keys() | deleted | {CONFIG}) & committed.keys():
+            target = paper / name
+            if not target.is_file() or target.read_bytes() != committed[name]:
+                raise click.ClickException(
+                    f"Commit or discard local changes in {target.relative_to(root)} first; nothing copied."
+                )
         replaced_dirs = [paper / name for name in new if (paper / name).is_dir()]
         for target in replaced_dirs:
             for child in target.rglob("*"):
@@ -338,7 +345,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                         f"Directory {target.relative_to(root)} contains workspace files; "
                         "move them aside before replacing it; nothing copied."
                     )
-        require_visible(root, imported_paths)
+        require_visible(root, [paper / name for name in (*new, CONFIG)])
         for name in deleted:
             (paper / name).unlink(missing_ok=True)
         for target in replaced_dirs:

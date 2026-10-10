@@ -901,3 +901,68 @@ def test_pull_refuses_replacement_directory_with_untracked_former_remote_file(se
     assert result.exit_code != 0 and "contains workspace files" in result.output
     assert draft.read_text() == "local ignored draft\n"
     assert (project / "paper/overleaf.json").read_bytes() == record
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+@pytest.mark.parametrize("remote_edit", ["updated remote source\n", None])
+def test_pull_preserves_local_edits_hidden_by_index_flags(setup, flag, remote_edit):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    source = project / "paper/main.tex"
+    git(project, "update-index", flag, "paper/main.tex")
+    source.write_text("uncommitted local edits\n")
+    assert git(project, "status", "--porcelain") == ""
+    record = (project / "paper/overleaf.json").read_bytes()
+    overleaf_edit(seed, "main.tex", remote_edit)
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "local changes" in result.output
+    assert source.read_text() == "uncommitted local edits\n"
+    assert (project / "paper/overleaf.json").read_bytes() == record
+    assert (project / "paper/old.tex").read_text() == "old\n"
+
+
+def test_pull_preserves_sync_record_hidden_by_index_flags(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "update-index", "--assume-unchanged", "paper/overleaf.json")
+    record = project / "paper/overleaf.json"
+    record.write_bytes(record.read_bytes() + b" \n")
+    before = record.read_bytes()
+    overleaf_edit(seed, "main.tex", "remote update\n")
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "local changes" in result.output
+    assert record.read_bytes() == before
+    assert (project / "paper/main.tex").read_text() == "hello\n"
+
+
+def test_pull_allows_unrelated_update_after_workspace_deletes_and_ignores_file(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "rm", "paper/old.tex")
+    (project / ".gitignore").write_text("paper/old.tex\n")
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "unrelated Overleaf update\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert not (project / "paper/old.tex").exists()
+    assert (project / "paper/main.tex").read_text() == "unrelated Overleaf update\n"
+    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
+        seed, "rev-parse", "HEAD"
+    )
+
+
+def test_pull_preserves_hidden_local_edit_when_overleaf_did_not_change_file(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "update-index", "--assume-unchanged", "paper/old.tex")
+    local = project / "paper/old.tex"
+    local.write_text("hidden local notes\n")
+    overleaf_edit(seed, "main.tex", "unrelated update\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert local.read_text() == "hidden local notes\n"
+    assert (project / "paper/main.tex").read_text() == "unrelated update\n"
