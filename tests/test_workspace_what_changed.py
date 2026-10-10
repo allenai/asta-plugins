@@ -602,7 +602,8 @@ def test_comparison_preview_blocks_external_symlinks(
         ):
             with pytest.raises(HTTPError) as error:
                 urlopen(Request(base + path, method=method))
-            assert error.value.code == 403
+            # Path.resolve handles loops differently across supported Python versions.
+            assert error.value.code in ((403, 404) if path == "loop" else (403,))
             assert b"Private local data" not in error.value.read()
         # Replacing the site must not bypass the check in an already-running server.
         shutil.rmtree(site)
