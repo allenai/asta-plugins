@@ -7,7 +7,10 @@ import re
 import shutil
 import subprocess
 import tarfile
+import threading
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 from click.testing import CliRunner
@@ -213,6 +216,106 @@ def test_diff_failure_names_selected_script_and_exit_code(project: Path) -> None
     )
     assert result.exit_code != 0
     assert f"what-changed.py failed (exit 7): {script}" in result.output
+
+
+def test_project_script_runs_in_project_directory(
+    project: Path, tmp_path_factory, monkeypatch
+) -> None:
+    (project / "relative-input.txt").write_text("Project-specific report")
+    (project / "scripts/what-changed.py").write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "Path(sys.argv[sys.argv.index('--out') + 1]).write_text(\n"
+        "    Path('relative-input.txt').read_text())\n"
+    )
+    caller = tmp_path_factory.mktemp("caller")
+    (caller / "relative-input.txt").write_text("Wrong caller's report")
+    monkeypatch.chdir(caller)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        project / workspace_module.COMPARISON_DIR / "what-changed.html"
+    ).read_text() == ("Project-specific report")
+
+
+@pytest.mark.parametrize("previous", ["directory", "file", "symlink", "absent"])
+def test_publish_failure_preserves_previous_comparison(
+    project: Path, monkeypatch, previous: str
+) -> None:
+    owned = project / workspace_module.COMPARISON_DIR
+    owned.parent.mkdir(parents=True)
+    external = project / "external"
+    external.mkdir()
+    (external / "keep.html").write_text("External content")
+    if previous == "directory":
+        owned.mkdir()
+        (owned / "what-changed.html").write_text("Previous comparison")
+    elif previous == "file":
+        owned.write_text("Previous file")
+    elif previous == "symlink":
+        owned.symlink_to(external, target_is_directory=True)
+    original = Path.replace
+
+    def fail_publication(path, destination):
+        if path.name.startswith(".what-changed-") and not path.name.endswith(
+            ".previous"
+        ):
+            raise OSError("Publication failed")
+        return original(path, destination)
+
+    monkeypatch.setattr(Path, "replace", fail_publication)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "Wrote " not in result.output
+    if previous == "directory":
+        assert (owned / "what-changed.html").read_text() == "Previous comparison"
+    elif previous == "file":
+        assert owned.read_text() == "Previous file"
+    elif previous == "symlink":
+        assert owned.is_symlink() and owned.resolve() == external
+    else:
+        assert not owned.exists()
+    assert "Could not publish the comparison: Publication failed" in result.output
+    assert (external / "keep.html").read_text() == "External content"
+    assert not list(owned.parent.glob(".what-changed-*"))
+    assert (
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(project), "worktree", "list"]
+            ).splitlines()
+        )
+        == 1
+    )
+
+
+def test_previous_comparison_cleanup_failure_does_not_hide_new_report(
+    project: Path, monkeypatch
+) -> None:
+    args = ["what-changed", "last-read", "--project", str(project)]
+    assert CliRunner().invoke(workspace, args).exit_code == 0
+    owned = project / workspace_module.COMPARISON_DIR
+    previous_report = (owned / "what-changed.html").read_text()
+    (project / "index.qmd").write_text("The baseline finding holds.\nNew comparison.\n")
+    original = shutil.rmtree
+
+    def fail_previous_cleanup(path, *args, **kwargs):
+        if Path(path).name.endswith(".previous"):
+            raise PermissionError("Previous directory is read-only")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", fail_previous_cleanup)
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code == 0, result.output
+    assert "Warning: previous comparison cleanup failed:" in result.stderr
+    assert "Wrote " in result.stdout
+    assert "New comparison" in (owned / "what-changed.html").read_text()
+    saved = list(owned.parent.glob(".what-changed-*.previous"))
+    assert len(saved) == 1
+    assert (saved[0] / "what-changed.html").read_text() == previous_report
 
 
 @pytest.mark.parametrize("stale_output", [False, True])
@@ -428,9 +531,6 @@ def test_site_files_are_never_modified(project: Path) -> None:
 
 
 def test_preview_serves_the_page_and_later_runs(project: Path) -> None:
-    import threading
-    from urllib.request import urlopen
-
     args = ["what-changed", "last-read", "--project", str(project)]
     (project / "index.qmd").write_text("The baseline finding holds.\nFirst edit.\n")
     assert CliRunner().invoke(workspace, args).exit_code == 0
@@ -447,6 +547,49 @@ def test_preview_serves_the_page_and_later_runs(project: Path) -> None:
         )
         assert CliRunner().invoke(workspace, args).exit_code == 0
         assert "Second edit" in urlopen(base + "what-changed.html").read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_comparison_preview_blocks_external_symlinks(
+    tmp_path: Path, method: str
+) -> None:
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "page.html").write_text("Site page")
+    (site / "local-link.html").symlink_to("page.html")
+    external = tmp_path / "private"
+    external.mkdir()
+    (external / "secret.txt").write_text("Private local data")
+    (site / "secret.txt").symlink_to(external / "secret.txt")
+    (site / "private").symlink_to(external, target_is_directory=True)
+    (site / "indexed").mkdir()
+    (site / "indexed/index.html").symlink_to(external / "secret.txt")
+    (site / "loop").symlink_to("loop")
+    server = workspace_module.comparison_server(site, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    try:
+        assert urlopen(Request(base + "local-link.html", method=method)).status == 200
+        for path in (
+            "secret.txt",
+            "private/",
+            "private/secret.txt",
+            "indexed/",
+            "loop",
+        ):
+            with pytest.raises(HTTPError) as error:
+                urlopen(Request(base + path, method=method))
+            assert error.value.code == 403
+            assert b"Private local data" not in error.value.read()
+        # Replacing the site must not bypass the check in an already-running server.
+        shutil.rmtree(site)
+        site.symlink_to(external, target_is_directory=True)
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(base + "secret.txt", method=method))
+        assert error.value.code == 403
     finally:
         server.shutdown()
         server.server_close()

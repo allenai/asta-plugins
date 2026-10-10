@@ -544,11 +544,22 @@ def _comparison_directory():
 
 def _publish(staged: Path, owned: Path) -> None:
     """Replace the command-owned comparison directory with a finished one."""
-    if owned.is_symlink() or owned.is_file():
-        owned.unlink()
-    elif owned.exists():
-        shutil.rmtree(owned)
-    staged.replace(owned)
+    previous = staged.with_name(staged.name + ".previous")
+    if owned.exists() or owned.is_symlink():
+        owned.replace(previous)
+    try:
+        staged.replace(owned)
+    except BaseException:
+        if previous.exists() or previous.is_symlink():
+            previous.replace(owned)
+        raise
+    try:
+        if previous.is_symlink() or previous.is_file():
+            previous.unlink()
+        elif previous.exists():
+            shutil.rmtree(previous)
+    except OSError as exc:
+        click.echo(f"Warning: previous comparison cleanup failed: {exc}", err=True)
 
 
 @workspace.command("what-changed")
@@ -636,6 +647,7 @@ def what_changed(ref: str, project: Path) -> None:
                             "--title",
                             f"Changes since {ref}",
                         ],
+                        cwd=project,
                         check=False,
                     )
                     if result.returncode != 0:
@@ -650,7 +662,12 @@ def what_changed(ref: str, project: Path) -> None:
                         raise click.ClickException(
                             f"{DIFF_SCRIPT} did not write nonempty HTML"
                         )
-                    _publish(staged, owned)
+                    try:
+                        _publish(staged, owned)
+                    except OSError as exc:
+                        raise click.ClickException(
+                            f"Could not publish the comparison: {exc}"
+                        ) from exc
                 finally:
                     shutil.rmtree(staged, ignore_errors=True)
             finally:
@@ -691,9 +708,26 @@ def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
 def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
     """Serve the what-changed site copy; requests resolve its path afresh, so a
     rerun of what-changed is picked up without restarting."""
-    handler = functools.partial(
-        http.server.SimpleHTTPRequestHandler, directory=str(directory)
-    )
+    root = directory.absolute()
+
+    class SiteHandler(http.server.SimpleHTTPRequestHandler):
+        def send_head(self):
+            try:
+                path = Path(self.translate_path(self.path)).resolve()
+                # Check each request: later comparisons can replace the site copy.
+                paths = [path]
+                if path.is_dir():
+                    paths += [
+                        (path / name).resolve() for name in ("index.html", "index.htm")
+                    ]
+                if any(not candidate.is_relative_to(root) for candidate in paths):
+                    raise ValueError("Path leaves the comparison site")
+            except (OSError, RuntimeError, ValueError):
+                self.send_error(403, "Path leaves the comparison site")
+                return None
+            return super().send_head()
+
+    handler = functools.partial(SiteHandler, directory=str(root))
     return http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
