@@ -62,10 +62,33 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
-def test_paper_targets_select_directory_and_preserve_engine(tmp_path):
+@pytest.mark.parametrize(
+    "main_name", ["main.tex", "conference draft.tex", "-pv.tex", ".draft.tex"]
+)
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        r"\documentclass [draft]{article}",
+        "\\documentclass\n% class choice\n [draft]{article}",
+        r"\newcommand{\percent}{\%}\documentclass{article}",
+        r"\\\% \documentclass{article}",
+    ],
+)
+def test_paper_targets_select_directory_and_preserve_engine(
+    tmp_path, main_name, declaration
+):
     paper = tmp_path / "papers/custom name"
     paper.mkdir(parents=True)
-    (paper / "main.tex").write_text("Test source")
+    (paper / main_name).write_text(declaration)
+    (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
+    (paper / "escaped.tex").write_text(r"\\documentclass{not_a_declaration}")
+    for count in (2, 4):
+        (paper / f"comment-{count}.tex").write_text(
+            "\\" * count + r"% \documentclass{commented}"
+        )
+    (paper / "linked.tex").symlink_to(main_name)
+    if main_name != "main.tex":
+        (paper / "main.tex").symlink_to("missing")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     tool = bin_dir / "latexmk"
@@ -79,7 +102,7 @@ def test_paper_targets_select_directory_and_preserve_engine(tmp_path):
     call = tmp_path / "call.json"
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "CALL": str(call)}
     for target, expected in [("paper", "-synctex=1"), ("paper-clean", "-C")]:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "make",
                 "-f",
@@ -94,9 +117,11 @@ def test_paper_targets_select_directory_and_preserve_engine(tmp_path):
         )
         directory, args = json.loads(call.read_text())
         assert directory == str(paper)
-        assert expected in args and "main.tex" in args
+        assert expected in args and f"./{main_name}" in args
         assert "-outdir=build" in args
         assert "-pdf" not in args and "-xelatex" not in args
+        assert "latexmk " in result.stdout.decode()
+        assert f'"./{main_name}"' in result.stdout.decode()
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
@@ -108,7 +133,35 @@ def test_paper_target_reports_missing_source(tmp_path):
         text=True,
     )
     assert result.returncode != 0
-    assert "No main.tex in paper" in result.stderr
+    assert "No paper directory paper" in result.stderr
+    assert "latexmk" not in result.stderr
+
+
+@pytest.mark.skipif(not shutil.which("make"), reason="requires make")
+@pytest.mark.parametrize("target", ["paper", "paper-clean"])
+@pytest.mark.parametrize("failure", ["missing-directory", "no-main", "ambiguous"])
+def test_failed_main_selection_never_invokes_latexmk(tmp_path, target, failure):
+    paper = tmp_path / "paper"
+    if failure != "missing-directory":
+        paper.mkdir()
+        (paper / "section.tex").write_text(r"% \documentclass{commented}")
+        if failure == "ambiguous":
+            for name in ("a.tex", "b.tex"):
+                (paper / name).write_text(r"\documentclass{article}")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "latexmk"
+    tool.write_text("#!/bin/sh\ntouch latexmk-was-invoked\n")
+    tool.chmod(0o755)
+    result = subprocess.run(
+        ["make", "-f", str(ASSETS / "workspace.mk"), target],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert not list(tmp_path.rglob("latexmk-was-invoked"))
 
 
 @pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
@@ -133,6 +186,28 @@ def test_bibliography_rc_supports_string_evaluation(tmp_path, paper_dir):
         text=True,
     )
     assert result == f"{tmp_path}:existing:"
+
+
+@pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
+def test_overleaf_bibliography_rc_stays_inside_paper(tmp_path):
+    paper = tmp_path / "papers/imported"
+    paper.mkdir(parents=True)
+    (tmp_path / "references.bib").write_text("Root bibliography")
+    (paper / "overleaf.json").write_text("{}")
+    shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
+    result = subprocess.check_output(
+        [
+            "perl",
+            "-e",
+            "$search_path_separator = ':'; do './latexmkrc' or die $@; "
+            "print $ENV{'BIBINPUTS'};",
+        ],
+        cwd=paper,
+        env={**os.environ, "BIBINPUTS": "existing"},
+        text=True,
+    )
+
+    assert result == f"{paper}:existing:"
 
 
 @pytest.mark.parametrize("paper_dir", ["paper", "papers/a", "papers/custom name"])
@@ -196,3 +271,47 @@ def test_starter_resolves_shared_bibliography(tmp_path, paper_dir):
     assert "Shared bibliography test" in (paper / "build/main.bbl").read_text()
     text = subprocess.check_output(["pdftotext", str(pdf), "-"], text=True)
     assert "Shared bibliography test" in text and "[?]" not in text
+
+
+@pytest.mark.skipif(
+    not all(shutil.which(tool) for tool in ("make", "latexmk", "pdftotext")),
+    reason="requires the TeX image",
+)
+@pytest.mark.parametrize("local_bibliography", [False, True])
+def test_overleaf_named_main_requires_its_own_bibliography(
+    tmp_path, local_bibliography
+):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "overleaf.json").write_text("{}")
+    shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
+    (paper / "conference.tex").write_text(
+        r"\documentclass{article}\begin{document}"
+        r"A cited result \cite{sample}.\bibliographystyle{plain}"
+        r"\bibliography{references}\end{document}"
+    )
+    bibliography = (
+        "@article{sample, author={Example, A.}, title={Bibliography test}, "
+        "journal={Example Journal}, year={2026}}\n"
+    )
+    (tmp_path / "references.bib").write_text(bibliography)
+    if local_bibliography:
+        (paper / "references.bib").write_text(bibliography)
+    result = subprocess.run(
+        ["make", "-f", str(ASSETS / "workspace.mk"), "paper"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if local_bibliography:
+        assert result.returncode == 0, result.stdout + result.stderr
+        text = subprocess.check_output(
+            ["pdftotext", str(paper / "build/conference.pdf"), "-"], text=True
+        )
+        assert "Bibliography test" in text and "[?]" not in text
+    else:
+        assert result.returncode != 0
+        assert "references.bib" in result.stdout + result.stderr
+        bbl = paper / "build/conference.bbl"
+        assert not bbl.exists() or "Bibliography test" not in bbl.read_text()

@@ -167,9 +167,14 @@ preview-ready:
 # The paper's latexmkrc selects its engine and bibliography search path.
 PAPER_DIR ?= paper
 .PHONY: paper paper-clean
+# Main document: main.tex, else the single .tex file containing \documentclass.
+PAPER_MAIN = cd "$(PAPER_DIR)" 2>/dev/null || { echo "No paper directory $(PAPER_DIR)" >&2; exit 1; }; \
+	if [ -f main.tex ] && [ ! -L main.tex ]; then main=main.tex; else \
+	main=; count=0; for file in *.tex .*.tex; do \
+	if [ -f "$$file" ] && [ ! -L "$$file" ] && python3 -c 'import pathlib,re,sys; sys.exit(not re.search(r"(?m)^[^\n]*(?<!\\)(?:\\\\)*\\documentclass\s*[\[{]", re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", pathlib.Path(sys.argv[1]).read_text(errors="replace"))))' "$$file"; then main=$$file; count=$$((count+1)); fi; done; \
+	[ $$count -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; fi
 paper:
-	@test -f "$(PAPER_DIR)/main.tex" || { echo "No main.tex in $(PAPER_DIR)" >&2; exit 1; }
-	cd "$(PAPER_DIR)" && latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex
+	@$(PAPER_MAIN); printf 'latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "%s"\n' "./$$main"; latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "./$$main"
 
 paper-clean:
-	cd "$(PAPER_DIR)" && latexmk -C -outdir=build main.tex
+	@$(PAPER_MAIN); printf 'latexmk -C -outdir=build "%s"\n' "./$$main"; latexmk -C -outdir=build "./$$main"

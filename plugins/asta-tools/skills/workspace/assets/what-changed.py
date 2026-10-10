@@ -100,7 +100,6 @@ ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
 # up as a spurious "new"/"changed" page in the very diff it is the output of.
 WHAT_CHANGED_MARKER = "asta-what-changed"
 WHAT_CHANGED_META = f'<meta name="generator" content="{WHAT_CHANGED_MARKER}">'
-MAX_INLINE_PAPER_HTML_BYTES = 512_000
 _MARKER_RE = re.compile(
     r'(?is)<meta\b[^>]*\bname\s*=\s*["\']generator["\'][^>]*'
     r'\bcontent\s*=\s*["\']' + re.escape(WHAT_CHANGED_MARKER) + r'["\']'
@@ -144,12 +143,6 @@ def normalize(content):
     )
     # Bare date-modified paragraph, if the theme renders one.
     content = re.sub(r'(?is)<p class="date-modified">.*?</p>', "", content)
-    # LaTeXML stamps its build time into a footer on every conversion.
-    content = re.sub(
-        r'(?is)<footer\b(?=[^>]*\bclass=["\'][^"\']*\bltx_page_footer\b)[^>]*>.*?</footer>',
-        "",
-        content,
-    )
     return content
 
 
@@ -707,7 +700,6 @@ DIFF_STYLE = """
 .wc-scope .paper-thumbs { display: flex; flex-wrap: wrap; gap: .75rem; }
 .wc-scope .paper-thumbs img { max-width: 160px; height: auto;
     border: 1px solid var(--wc-border); }
-.wc-scope .paper-html { width: 100%; height: 36rem; border: 1px solid var(--wc-border); }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -1064,9 +1056,6 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
         )
 
     pdf = paper_url("what-changed.pdf" if state.get("diff") else "main.pdf")
-    html_diff = state.get("html_diff") is True and os.path.isfile(
-        os.path.join(new_root, "paper-previews", paper_dir, "html-diff", "index.html")
-    )
     if state.get("new"):
         note = "Paper added; the current paper PDF is available."
     elif state.get("diff") and state.get("other_inputs"):
@@ -1075,8 +1064,6 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
         note = "LaTeX edits are highlighted in the diff PDF."
     elif state.get("unhighlighted"):
         note = "LaTeX inputs changed, but the diff has no marked text; the current PDF is available without highlights."
-    elif html_diff:
-        note = "The HTML diff is available; the diff PDF could not be built."
     elif state.get("other_inputs"):
         note = "Paper inputs changed; the current PDF is available without highlights."
     else:
@@ -1108,66 +1095,10 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
             and len(thumbs) >= limit
         ):
             note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
-    html_current = os.path.isfile(
-        os.path.join(new_root, "paper-previews", paper_dir, "html", "index.html")
-    )
-    html_path = (
-        paper_url("html-diff/index.html")
-        if html_diff
-        else paper_url("html/index.html")
-        if html_current
-        else None
-    )
-    html_view = ""
-    rendered_rel = f"paper-previews/{paper_dir}/html/index.html"
-    old_rendered = os.path.join(old_root, rendered_rel)
-    new_rendered = os.path.join(new_root, rendered_rel)
-    rendered_diff = ""
-    if (
-        not html_diff
-        and not state.get("new")
-        and os.path.isfile(old_rendered)
-        and os.path.isfile(new_rendered)
-    ):
-        try:
-            small_enough = all(
-                os.path.getsize(path) <= MAX_INLINE_PAPER_HTML_BYTES
-                for path in (old_rendered, new_rendered)
-            )
-            if small_enough:
-                with open(old_rendered, encoding="utf-8") as source:
-                    old_content = normalize(extract_main(source.read()))
-                with open(new_rendered, encoding="utf-8") as source:
-                    new_content = normalize(extract_main(source.read()))
-                content_differs = (
-                    re.sub(r"\s+", " ", old_content).strip()
-                    != re.sub(r"\s+", " ", new_content).strip()
-                )
-                if content_differs:
-                    diff, changed = diff_content(
-                        strip_volatile(old_content), strip_volatile(new_content)
-                    )
-                    if changed:
-                        rendered_diff = diff
-        except (OSError, UnicodeDecodeError):
-            pass  # The current HTML link below still works when the old artifact is corrupt.
-    if rendered_diff:
-        html_view = (
-            '<p class="wc-note">Rendered HTML changes · '
-            f'<a href="{paper_url("html/index.html")}">Open the current HTML paper</a></p>'
-            f'<div class="diff-body">{rendered_diff}</div>'
-        )
-    elif html_path:
-        description = "HTML diff" if html_diff else "current HTML paper"
-        html_view = (
-            f'<p class="wc-note"><a href="{html_path}">Open the {description}</a></p>'
-            f'<iframe class="paper-html" src="{html_path}" sandbox="" '
-            f'title="{label} {description}" loading="lazy"></iframe>'
-        )
     section = (
         f'<section class="page-diff {status}" id="{section_id}">'
         f'<h2>{label} <span class="tag {status}">{status}</span></h2>'
-        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>{html_view}'
+        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
         f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
     )
     return section, status
