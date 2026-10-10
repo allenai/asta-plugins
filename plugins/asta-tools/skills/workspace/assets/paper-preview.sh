@@ -15,7 +15,7 @@ find_main() {
   local found=() file
   if [ -f "$1/main.tex" ] && [ ! -L "$1/main.tex" ]; then echo main.tex; return 0; fi
   for file in "$1"/*.tex; do
-    [ -f "$file" ] && [ ! -L "$file" ] && grep -Eq '^[^%]*\\documentclass[[:blank:]]*(\{|\[)' "$file" && found+=("${file##*/}")
+    [ -f "$file" ] && [ ! -L "$file" ] && python3 -c 'import pathlib,re,sys; sys.exit(not re.search(r"(?m)^[^%\n]*\\documentclass\s*[\[{]", re.sub(r"%[^\n]*", "", pathlib.Path(sys.argv[1]).read_text(errors="replace"))))' "$file" && found+=("${file##*/}")
   done
   if [ "${#found[@]}" -gt 1 ]; then
     echo "::warning::${2:-$1} has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
@@ -233,7 +233,8 @@ changed = subprocess.check_output(
 ).decode().rstrip("\0").split("\0")
 relevant = [
     path for path in changed
-    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
+    # A removed top-level source can change the selected main without changing its inputs.
+    if path in inputs or (pathlib.PurePosixPath(path).parent == pathlib.PurePosixPath(sys.argv[2]) and path.endswith(".tex")) or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc"}
 ]
 print(int(any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))

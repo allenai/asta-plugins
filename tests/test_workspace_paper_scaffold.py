@@ -63,10 +63,19 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
 @pytest.mark.parametrize("main_name", ["main.tex", "conference draft.tex"])
-def test_paper_targets_select_directory_and_preserve_engine(tmp_path, main_name):
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        r"\documentclass [draft]{article}",
+        "\\documentclass\n% class choice\n [draft]{article}",
+    ],
+)
+def test_paper_targets_select_directory_and_preserve_engine(
+    tmp_path, main_name, declaration
+):
     paper = tmp_path / "papers/custom name"
     paper.mkdir(parents=True)
-    (paper / main_name).write_text(r"\documentclass [draft]{article}")
+    (paper / main_name).write_text(declaration)
     (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
     (paper / "linked.tex").symlink_to(main_name)
     if main_name != "main.tex":

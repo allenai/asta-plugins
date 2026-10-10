@@ -273,3 +273,26 @@ def test_invalid_directory_is_reported_before_ambiguous_sources(tmp_path):
     assert discover(tmp_path)["warnings"] == [
         "Skipped invalid paper directory name: 'bad\\nname'"
     ]
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "\\documentclass\n{article}",
+        "\\documentclass\n% class choice\n [draft]{article}",
+    ],
+)
+def test_multiline_documentclass_is_found_in_current_and_base(tmp_path, declaration):
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "user.email", "test@example.invalid")
+    git(tmp_path, "config", "user.name", "Test")
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "article.tex").write_text(declaration)
+    (paper / "comment.tex").write_text("% \\documentclass\n{article}")
+    git(tmp_path, "add", "paper")
+    git(tmp_path, "commit", "-qm", "multiline main")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    assert discover(tmp_path)["main_files"] == {"paper": "article.tex"}
+    shutil.rmtree(paper)
+    assert discover(tmp_path, base)["removed"] == ["paper"]

@@ -294,7 +294,7 @@ def test_paper_titles_and_html_are_escaped(tmp_path):
     document = (tmp_path / name / "html/index.qmd").read_text()
     metadata = yaml.safe_load(document.split("---")[1])
     assert metadata["title"] == name + " HTML"
-    assert "<code>other&lt;&gt;&amp;&quot;/</code>" in document
+    assert "<code>other&lt;&gt;&amp;&quot;/main.tex</code>" in document
     assert 'data-paper-preview="../../paper-previews/other%3C%3E%26%22"' in document
     assert "\\u003c" in document
 
@@ -325,7 +325,7 @@ def test_quarto_renders_the_managed_viewer(tmp_path, directory):
     assert "const host = document.querySelector" in page
     assert 'href="../../paper-previews/paper/main.pdf"' not in page
     assert "createElement('iframe')" in page
-    assert f"<code>{directory}/</code>" in page
+    assert f"<code>{directory}/main.tex</code>" in page
 
 
 def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_path):
@@ -383,3 +383,18 @@ def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_p
     custom.write_text("custom")
     assert generate(tmp_path, "paper").returncode == 0
     assert custom.read_text() == "custom"
+
+
+@pytest.mark.parametrize("metadata", [{}, {"main_files": {}}])
+def test_legacy_discovery_retains_main_tex_source_link(tmp_path, metadata):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=json.dumps({"papers": ["paper"], **metadata}),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (
+        "<code>paper/main.tex</code>" in (tmp_path / "paper/html/index.qmd").read_text()
+    )

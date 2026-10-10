@@ -17,7 +17,7 @@ def valid_name(name: str) -> bool:
     )
 
 
-DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass[ \t]*[\[{]", re.MULTILINE)
+DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass\s*[\[{]", re.MULTILINE)
 
 
 def main_file(
@@ -42,7 +42,8 @@ def main_file(
     found = sorted(
         name
         for name in files
-        if name.endswith(".tex") and DOCUMENTCLASS.search(content(name))
+        if name.endswith(".tex")
+        and DOCUMENTCLASS.search(re.sub(r"%[^\n]*", "", content(name)))
     )
     if len(found) > 1:
         warnings.append(

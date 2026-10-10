@@ -118,17 +118,25 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert '$deps_escape = "none";' in commands[0]
 
 
-def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(tmp_path):
+@pytest.mark.parametrize("edit_article", [False, True])
+@pytest.mark.parametrize(
+    "declaration",
+    [r"\documentclass{article}", "\\documentclass\n% class choice\n [draft]{article}"],
+)
+def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(
+    tmp_path, edit_article, declaration
+):
     repo, _, env, bin_dir = paper_repo(tmp_path)
     paper = repo / "paper"
     (paper / "overleaf.json").write_text("{}")
-    (paper / "article.tex").write_text(r"\documentclass{article}" + "\nold\n")
+    (paper / "article.tex").write_text(declaration + "\nold\n")
     (paper / "main.tex").write_text(r"\input{article.tex}")
     run("git", "add", "paper", cwd=repo)
     run("git", "commit", "-qm", "paper with shim", cwd=repo)
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
     run("git", "rm", "paper/main.tex", cwd=repo)
-    (paper / "article.tex").write_text(r"\documentclass{article}" + "\nnew\n")
+    if edit_article:
+        (paper / "article.tex").write_text(declaration + "\nnew\n")
     run("git", "add", "paper/article.tex", cwd=repo)
     run("git", "commit", "-qm", "use original main document", cwd=repo)
     (bin_dir / "latexmk").write_text(

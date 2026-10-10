@@ -220,7 +220,7 @@ def main() -> None:
     tracked = tracked_files()
     remove_orphan_viewers(directories, tracked)
     for directory in directories:
-        create_viewer(directory, tracked, main_files.get(directory, ""))
+        create_viewer(directory, tracked, main_files.get(directory, "main.tex"))
 
 
 if __name__ == "__main__":
