@@ -49,15 +49,19 @@ def git_bytes(*args: str, cwd: Path, env: dict | None = None) -> bytes:
         operation = args[index]
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
-        if b"401" in stderr or b"authentication failed" in stderr:
+        if operation in ("clone", "push") and (
+            b"401" in stderr or b"authentication failed" in stderr
+        ):
             raise click.ClickException(
                 "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper."
             )
-        if b"403" in stderr:
+        if operation in ("clone", "push") and b"403" in stderr:
             raise click.ClickException(
                 "Overleaf access denied. Check your token and access to this project."
             )
-        if b"rejected" in stderr or b"fetch first" in stderr:
+        if operation in ("clone", "push") and (
+            b"rejected" in stderr or b"fetch first" in stderr
+        ):
             raise click.ClickException(
                 f"git {operation} was rejected. Check access and the remote state."
             )
@@ -296,11 +300,19 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         if CONFIG in new:
             refuse(CONFIG, "is reserved for workspace sync metadata")
         check_ignore_files(new)
+        if config:
+            try:
+                git("cat-file", "-e", f"{config['base']}^{{commit}}", cwd=repo)
+            except click.ClickException:
+                raise click.ClickException(
+                    "The recorded Overleaf commit is unavailable. Reset remote history "
+                    "is unsupported; import into a separate directory with --dir."
+                ) from None
         base = read_plain_files(repo, config["base"]) if config else {}
         base.pop(CONFIG, None)
         ours = read_plain_files(root, "HEAD", prefix)
         ours.pop(CONFIG, None)
-        deleted = base.keys() - new.keys()
+        deleted = (base.keys() - new.keys()) & ours.keys()
         check_paths([*new, *(ours.keys() - new.keys() - deleted)])
         imported_paths = [paper / name for name in (*new, CONFIG)]
         for name in base.keys() | new.keys():
@@ -350,6 +362,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
 def publish(directory: str, project: Path, dry_run: bool) -> None:
     """Push the committed paper directory to Overleaf without rewriting its layout."""
     root, paper, prefix = resolve(project, directory)
+    require_visible(root, [paper / CONFIG])
     config = load_config(paper)
     if not config:
         raise click.ClickException(
@@ -369,7 +382,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
         git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
         write_files(ours, repo)
-        git("add", "-A", cwd=repo)
+        git("add", "-A", "-f", cwd=repo)
         changes = git("status", "--short", cwd=repo)
         if not changes:
             click.echo("Overleaf already matches the committed paper.")
@@ -384,11 +397,18 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             env=git_environment(),
             capture_output=True,
         )
-        name, email = "Asta Workspace", "asta@allenai.org"
-        if not identity_result.returncode:
+        if identity_result.returncode:
+            raise click.ClickException(
+                "Configure Git user.name and user.email in the workspace before publishing."
+            )
+        try:
             ident = os.fsdecode(identity_result.stdout).rsplit(" ", 2)[0]
             name, email = ident.rsplit(" <", 1)
             email = email.removesuffix(">")
+        except ValueError:
+            raise click.ClickException(
+                "Could not read the workspace's Git identity; check user.name and user.email."
+            ) from None
         identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
         git(*identity, "commit", "-q", "-m", message, cwd=repo)

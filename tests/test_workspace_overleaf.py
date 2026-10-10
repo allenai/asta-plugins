@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -730,11 +731,133 @@ def test_sync_reports_invalid_metadata(setup, text, command, monkeypatch):
 def test_git_rejection_names_the_operation(setup, monkeypatch, operation):
     _, project = setup
     monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", b"rejected"),
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", b"rejected")
+        ),
     )
     with pytest.raises(module.click.ClickException) as error:
         module.git_bytes(operation, cwd=project)
     assert operation in str(error.value)
     assert "changed during publish" not in str(error.value)
+
+
+def test_publish_refuses_ignored_untracked_sync_record(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "rm", "--cached", "paper/overleaf.json")
+    (project / ".gitignore").write_text("paper/overleaf.json\n")
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "newer Overleaf content\n")
+    path = project / "paper/overleaf.json"
+    record = json.loads(path.read_text())
+    record["base"] = git(seed, "rev-parse", "HEAD")
+    path.write_text(json.dumps(record))
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    assert result.exit_code != 0 and "overleaf.json is ignored" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (seed / "main.tex").read_text() == "newer Overleaf content\n"
+    assert json.loads(path.read_text()) == record
+
+
+@pytest.mark.parametrize("pattern", ["*.png", "*.tex"])
+def test_publish_preserves_sources_matching_global_ignore_rules(
+    setup, monkeypatch, pattern
+):
+    seed, project = setup
+    overleaf_edit(seed, "figure.png", "figure content\n")
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    ignore = project.parent / "global-ignore"
+    ignore.write_text(pattern + "\n")
+    config = project.parent / "global-config"
+    config.write_text(f"[core]\nexcludesFile = {ignore}\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_text() == "reviewed edit\n"
+    assert (seed / "figure.png").read_text() == "figure content\n"
+
+
+@pytest.mark.parametrize("operation", ["ls-tree", "cat-file", "rev-parse", "commit"])
+@pytest.mark.parametrize("diagnostic", [b"path401", b"path403", b"rejected"])
+def test_local_git_failures_do_not_report_overleaf_auth(
+    setup, monkeypatch, operation, diagnostic
+):
+    _, project = setup
+    monkeypatch.setattr(
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", diagnostic)
+        ),
+    )
+    with pytest.raises(module.click.ClickException) as error:
+        module.git_bytes(operation, cwd=project)
+    assert str(error.value) == f"git {operation} failed (exit 1)."
+
+
+def test_pull_preserves_ignored_file_after_workspace_untracks_it(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "rm", "--cached", "paper/old.tex")
+    (project / ".gitignore").write_text("paper/old.tex\n")
+    commit_all(project)
+    (project / "paper/old.tex").write_text("local ignored notes\n")
+    overleaf_edit(seed, "old.tex", None)
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/old.tex").read_text() == "local ignored notes\n"
+
+
+def test_publish_requires_configured_identity(setup, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("NAME", "EMAIL"):
+            monkeypatch.delenv(f"GIT_{role}_{field}")
+    before = git(seed, "ls-remote", "origin", "master")
+    record = (project / "paper/overleaf.json").read_bytes()
+    result = run(project, "publish")
+    assert (
+        result.exit_code != 0
+        and "Configure Git user.name and user.email" in result.output
+    )
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper/overleaf.json").read_bytes() == record
+
+
+def test_pull_reports_unavailable_base_before_modifying_sources(setup):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    path = project / "paper/overleaf.json"
+    config = json.loads(path.read_text())
+    config["base"] = "0" * 40
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    result = run(project, "pull")
+    assert (
+        result.exit_code != 0 and "Reset remote history is unsupported" in result.output
+    )
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+
+
+def test_project_subdirectory_keeps_paper_relative_to_repository(setup):
+    _, project = setup
+    nested = project / "notes"
+    nested.mkdir()
+    result = CliRunner().invoke(
+        cli, ["workspace", "overleaf", "pull", URL, "--project", str(nested)]
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/main.tex").exists()
+    assert not (nested / "paper").exists()
