@@ -530,6 +530,26 @@ def test_site_files_are_never_modified(project: Path) -> None:
     assert "http://localhost:4849/what-changed.html" in result.stdout
 
 
+@pytest.mark.parametrize("parent", [".asta", ".asta/cache"])
+def test_symlinked_cache_parent_is_not_written(project: Path, parent: str) -> None:
+    external = project / "external"
+    previous = external / (
+        "cache/what-changed" if parent == ".asta" else "what-changed"
+    )
+    previous.mkdir(parents=True)
+    (previous / "keep.html").write_text("Unrelated content")
+    link = project / parent
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(external, target_is_directory=True)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "Workspace cache must not be a symlink" in result.output
+    assert list(previous.iterdir()) == [previous / "keep.html"]
+    assert (previous / "keep.html").read_text() == "Unrelated content"
+
+
 def test_preview_serves_the_page_and_later_runs(project: Path) -> None:
     args = ["what-changed", "last-read", "--project", str(project)]
     (project / "index.qmd").write_text("The baseline finding holds.\nFirst edit.\n")

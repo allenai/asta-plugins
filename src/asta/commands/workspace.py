@@ -626,6 +626,8 @@ def what_changed(ref: str, project: Path) -> None:
                 new_site = render_site(project, "the working tree")
                 # The page sits at the root of a site copy so its relative links
                 # to changed pages resolve, as in the PR preview.
+                if (project / ".asta").is_symlink() or owned.parent.is_symlink():
+                    raise click.ClickException("Workspace cache must not be a symlink")
                 owned.parent.mkdir(parents=True, exist_ok=True)
                 staged = Path(
                     tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent)
