@@ -75,7 +75,7 @@ def test_tex_image_copies_upstream_full_instead_of_explicit_debian_tex_packages(
     tex_stage = dockerfile.split("FROM asta AS tex", 1)[1].split("\nFROM ", 1)[0]
     assert "COPY --from=mirror.gcr.io/texlive/texlive:latest-full@sha256:" in tex_stage
     assert "grep -q 'TeX Live 2026'" in tex_stage
-    # latexml still brings Debian's base TeX transitively.
+    # TeX Live 2026 is the only TeX: no Debian TeX, directly or via latexml.
     packages = re.search(
         r"apt-get install -y --no-install-recommends (.*?)&&", tex_stage, re.S
     )
@@ -84,7 +84,7 @@ def test_tex_image_copies_upstream_full_instead_of_explicit_debian_tex_packages(
         name.startswith("texlive-")
         for name in packages.group(1).replace("\\\n", " ").split()
     )
-    assert "latexml" in tex_stage
+    assert "latexml" not in tex_stage
 
 
 def test_codespaces_login_persistence_ships_in_the_image() -> None:
