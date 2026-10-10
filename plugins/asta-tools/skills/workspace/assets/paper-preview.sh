@@ -14,6 +14,9 @@ test -f "$dir/main.tex" || exit 0
 mkdir -p "$dir/build" "$site_dir"
 printf '{"changed":false}\n' > "$site_dir/preview.json"
 
+# The -tex image selects its shared rc; otherwise skip host-wide defaults such
+# as Ubuntu's LuaLaTeX setting. User and project rc files still apply.
+export LATEXMKRCSYS="${LATEXMKRCSYS:-/dev/null}"
 export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
 export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
 # Preserve a configured engine; request a PDF when no rc selected one.

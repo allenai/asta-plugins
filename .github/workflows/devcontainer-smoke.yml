@@ -138,7 +138,8 @@ jobs:
           base=$(git -C "$preview" rev-parse HEAD)
           sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/shared refs.bib"
           git -C "$preview" commit -qam 'edit bibliography'
-          docker run --rm \
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$preview:/w" \
             -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
             -w /w asta-smoke bash -euc '
@@ -154,6 +155,33 @@ jobs:
               assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
           PY
 
+      - name: pdfLaTeX resolves LaTeXML styles
+        if: matrix.target == 'tex'
+        run: |
+          paper=$(mktemp -d "$RUNNER_TEMP/paper-latexml.XXXXXX")
+          printf '%s\n' '\documentclass{article}' '\usepackage{latexml}' \
+            '\begin{document}LaTeXML styles\end{document}' > "$paper/main.tex"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$paper:/w" -w /w asta-smoke \
+            pdflatex -interaction=nonstopmode -halt-on-error main.tex
+          test -s "$paper/main.pdf"
+
+      - name: XeLaTeX and LuaLaTeX resolve bundled fonts by name
+        if: matrix.target == 'tex'
+        run: |
+          paper=$(mktemp -d "$RUNNER_TEMP/paper-fonts.XXXXXX")
+          printf '%s\n' '\documentclass{article}' '\usepackage{fontspec}' \
+            '\setmainfont{TeX Gyre Termes}' '\begin{document}Named font\end{document}' > "$paper/main.tex"
+          for engine in xelatex lualatex; do
+            docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+              --user "$(id -u):$(id -g)" -e HOME=/tmp \
+              -v "$paper:/w" -w /w asta-smoke \
+              "$engine" -interaction=nonstopmode -halt-on-error main.tex
+            test -s "$paper/main.pdf"
+            rm "$paper/main.pdf"
+          done
+
       - name: HTML diff marks match the inline palette
         if: matrix.target == 'tex'
         run: |
@@ -168,7 +196,8 @@ jobs:
           base=$(git -C "$preview" rev-parse HEAD)
           sed -i 's/Dev container/Updated preview/;s/x=1/x=2/' "$preview/paper/main.tex"
           git -C "$preview" commit -qam 'edit paper'
-          docker run --rm \
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$preview:/w" \
             -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
             -w /w asta-smoke bash -euc '

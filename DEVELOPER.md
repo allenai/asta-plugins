@@ -117,6 +117,19 @@ The version lives in three places:
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
 
+Paper previews use the release's `:<tag>-tex` image when the reusable workflow
+is pinned to a `v*` tag. Branch and SHA refs use mutable `:latest-tex` with a
+warning; pin a release tag when the toolchain must match the workflow release.
+The pull retries for one minute to allow tag promotion to finish, then records
+a paper-build failure without blocking the rest of the site. If promotion is
+still running or failed, retry after the release's Docker workflow succeeds.
+This reusable workflow targets GitHub.com; its `job.workflow_*` identity
+context is unavailable on GitHub Enterprise Server. Paper builds and project
+`paper-preview.sh` overrides run offline as the host UID/GID, without a passwd
+entry. Overrides must use the fetched history and local files, and must not
+fetch dependencies or require `whoami`/Git author identity. The full TeX Live
+2026 install takes precedence over the Debian base TeX pulled in by `latexml`.
+
 ## Specific Workflows
 
 - **Extending the CLI** (commands, API endpoints, dependencies, passthrough tools) — [docs/cli-commands.md](docs/cli-commands.md)
