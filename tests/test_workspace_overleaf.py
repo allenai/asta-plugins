@@ -861,3 +861,43 @@ def test_project_subdirectory_keeps_paper_relative_to_repository(setup):
     assert result.exit_code == 0, result.output
     assert (project / "paper/main.tex").exists()
     assert not (nested / "paper").exists()
+
+
+def test_publish_refuses_record_hidden_by_index_flags(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "new remote revision\n")
+    git(project, "update-index", "--assume-unchanged", "paper/overleaf.json")
+    record = project / "paper/overleaf.json"
+    config = json.loads(record.read_text())
+    config["base"] = git(seed, "rev-parse", "HEAD")
+    record.write_text(json.dumps(config))
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    assert (
+        result.exit_code != 0 and "differs from the committed revision" in result.output
+    )
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+def test_pull_refuses_replacement_directory_with_untracked_former_remote_file(setup):
+    seed, project = setup
+    (seed / "nested").mkdir()
+    overleaf_edit(seed, "nested/draft.tex", "remote draft\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "rm", "--cached", "paper/nested/draft.tex")
+    (project / ".gitignore").write_text("/paper/nested/draft.tex\n")
+    commit_all(project)
+    draft = project / "paper/nested/draft.tex"
+    draft.write_text("local ignored draft\n")
+    record = (project / "paper/overleaf.json").read_bytes()
+    git(seed, "rm", "-r", "nested")
+    (seed / "nested").write_text("now a file\n")
+    commit_all(seed)
+    git(seed, "push", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code != 0 and "contains workspace files" in result.output
+    assert draft.read_text() == "local ignored draft\n"
+    assert (project / "paper/overleaf.json").read_bytes() == record

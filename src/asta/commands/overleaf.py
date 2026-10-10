@@ -370,6 +370,16 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         )
     require_clean(root, paper)
     ours = read_plain_files(root, "HEAD", prefix)
+    if CONFIG not in ours:
+        raise click.ClickException(
+            f"Commit {(paper / CONFIG).relative_to(root)} before publishing. "
+            "The sync record must belong to the committed paper revision."
+        )
+    if ours[CONFIG] != (paper / CONFIG).read_bytes():
+        raise click.ClickException(
+            f"Commit or restore {(paper / CONFIG).relative_to(root)} before publishing. "
+            "The sync record differs from the committed revision."
+        )
     ours.pop(CONFIG, None)
     check_ignore_files(ours)
     with tempfile.TemporaryDirectory() as tmp:
