@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import quote
 from urllib.request import urlopen
 
 import click
@@ -550,25 +551,64 @@ def _previous_reports(project: Path, site: Path) -> dict[str, str]:
         return {}
     except json.JSONDecodeError as exc:
         raise click.ClickException(invalid_state) from exc
+
+    def valid_digest(digest):
+        return isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+
     if not isinstance(state, dict) or any(
         not isinstance(name, str)
         or not name
         or Path(name).as_posix() != name
-        or Path(name).is_absolute()
         or any(part in (".", "..") for part in Path(name).parts)
-        or not isinstance(digest, str)
-        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        or not (
+            valid_digest(digest)
+            or isinstance(digest, list)
+            and 1 <= len(digest) <= 2
+            and all(valid_digest(item) for item in digest)
+        )
         for name, digest in state.items()
     ):
         raise click.ClickException(invalid_state)
     # A renderer can replace a report with a real page; only exclude our bytes.
-    return {
-        name: digest
-        for name, digest in state.items()
-        if (site / name).is_file()
-        and not (site / name).is_symlink()
-        and hashlib.sha256((site / name).read_bytes()).hexdigest() == digest
-    }
+    reports = {}
+    for name, recorded in state.items():
+        path = site / name
+        if path.is_file() and not path.is_symlink():
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest in (recorded if isinstance(recorded, list) else [recorded]):
+                reports[name] = digest
+    return reports
+
+
+def _report_key(out: Path, site: Path) -> str:
+    return (
+        out.relative_to(site).as_posix() if out.is_relative_to(site) else out.as_posix()
+    )
+
+
+def _check_report_destination(out: Path, site: Path, reports: dict[str, str]) -> None:
+    if out.exists() and (
+        not out.is_file()
+        or hashlib.sha256(out.read_bytes()).hexdigest()
+        != reports.get(_report_key(out, site))
+    ):
+        kind = "site page" if out.is_relative_to(site) else "file"
+        raise click.ClickException(
+            f"Refusing to overwrite an unrecognized {kind}: {out}. "
+            "Choose a different --out path."
+        )
+
+
+@contextmanager
+def _comparison_directory():
+    temporary = tempfile.TemporaryDirectory(prefix="asta-what-changed-")
+    try:
+        yield Path(temporary.name)
+    finally:
+        try:
+            temporary.cleanup()
+        except OSError as exc:
+            click.echo(f"Warning: baseline directory cleanup failed: {exc}", err=True)
 
 
 @workspace.command("what-changed")
@@ -589,7 +629,20 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
     REF: its build code runs locally. The baseline contains only committed files.
     """
     project = project.resolve()
-    commit = _git(project, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    try:
+        repository = _git(project, "rev-parse", "--show-toplevel")
+    except FileNotFoundError as exc:
+        raise click.ClickException("git is required to compare the workspace") from exc
+    if repository.returncode != 0:
+        raise click.ClickException(f"Not a git repository: {project}")
+    commit = _git(
+        project,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        f"{ref}^{{commit}}",
+    )
     if commit.returncode != 0 or not commit.stdout.strip():
         raise click.ClickException(f"Unknown git ref: {ref}")
     prefix = _git(project, "rev-parse", "--show-prefix")
@@ -600,8 +653,8 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
     out = _diff_path(out or project / "_site" / "what-changed.html", project)
     _diff_path(project / DIFF_STATE, project)
     try:
-        with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
-            baseline = Path(tmp) / "baseline"
+        with _comparison_directory() as tmp:
+            baseline = tmp / "baseline"
             added = _git(
                 project,
                 "worktree",
@@ -626,20 +679,11 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                 reports = _previous_reports(project, new_site)
                 _diff_path(out, project)
                 out.parent.mkdir(parents=True, exist_ok=True)
-                excluded = set(reports)
-                if out.is_file():
-                    try:
-                        destination = out.relative_to(new_site).as_posix()
-                    except ValueError:
-                        pass
-                    else:
-                        if destination not in reports:
-                            raise click.ClickException(
-                                f"Refusing to overwrite an unrecognized site page: {out}. "
-                                "Choose a different --out path."
-                            )
-                if excluded:
-                    comparison_site = Path(tmp) / "current"
+                _check_report_destination(out, new_site, reports)
+                site = new_site
+                excluded = {name for name in reports if not Path(name).is_absolute()}
+                if excluded or out.parent.is_relative_to(new_site):
+                    comparison_site = tmp / "current"
                     shutil.copytree(
                         new_site,
                         comparison_site,
@@ -673,13 +717,30 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                         check=False,
                     )
                     if result.returncode != 0:
-                        raise click.ClickException(f"{DIFF_SCRIPT} failed")
+                        raise click.ClickException(
+                            f"{DIFF_SCRIPT} failed (exit {result.returncode}): {script}"
+                        )
                     _diff_path(staged, project)
                     if not staged.is_file() or staged.stat().st_size == 0:
                         raise click.ClickException(
                             f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
                         )
                     _diff_path(out, project)
+                    _check_report_destination(out, site, reports)
+                    name = _report_key(out, site)
+                    digest = hashlib.sha256(staged.read_bytes()).hexdigest()
+                    state = dict(reports)
+                    # Recognize either version if publication is interrupted after recording it.
+                    previous = reports.get(name)
+                    state[name] = (
+                        [previous, digest]
+                        if previous and previous != digest
+                        else digest
+                    )
+                    _atomic_write(
+                        _diff_path(project / DIFF_STATE, project),
+                        json.dumps(state, sort_keys=True).encode() + b"\n",
+                    )
                     staged.replace(out)
             finally:
                 removed = _git(project, "worktree", "remove", "--force", str(baseline))
@@ -701,14 +762,9 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
     except ValueError:
         click.echo(f"Wrote {out}")
         return
-    reports[rel.as_posix()] = hashlib.sha256(out.read_bytes()).hexdigest()
-    _atomic_write(
-        _diff_path(project / DIFF_STATE, project),
-        json.dumps(reports, sort_keys=True).encode() + b"\n",
-    )
     click.echo(f"Wrote {out}")
     click.echo(
-        f"With 'asta workspace preview' running, open {preview_url(os.environ)}{rel.as_posix()}"
+        f"With 'asta workspace preview' running, open {preview_url(os.environ).rstrip('/')}/{quote(rel.as_posix())}"
     )
     click.echo(
         "Re-rendering the preview can remove this report; rerun the comparison to regenerate it.",

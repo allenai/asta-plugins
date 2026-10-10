@@ -172,6 +172,259 @@ def test_unknown_ref(project: Path) -> None:
     assert "Unknown git ref: no-such-ref" in result.output
 
 
+def test_project_outside_git_reports_repository_error(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "HEAD", "--project", str(tmp_path)]
+    )
+    assert result.exit_code != 0
+    assert "Not a git repository:" in result.output
+    assert "Unknown git ref" not in result.output
+
+
+def test_missing_git_reports_required_tool(project: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PATH", "")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "git is required" in result.output
+
+
+def test_option_like_ref_is_not_a_git_option(project: Path) -> None:
+    commit = subprocess.check_output(
+        ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
+    ).strip()
+    git(project, "update-ref", "refs/tags/-last-read", commit)
+    result = CliRunner().invoke(
+        workspace,
+        ["what-changed", "--project", str(project), "--", "-last-read"],
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        "Changes since -last-read" in (project / "_site/what-changed.html").read_text()
+    )
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_unrecognized_file_outside_site_is_preserved(
+    project: Path, external: bool
+) -> None:
+    out = (
+        project.parent / f"{project.name}-saved.html"
+        if external
+        else project / "index.qmd"
+    )
+    previous = "Keep this external file" if external else out.read_text()
+    if external:
+        out.write_text(previous)
+    result = CliRunner().invoke(
+        workspace,
+        ["what-changed", "last-read", "--project", str(project), "--out", str(out)],
+    )
+    assert result.exit_code != 0
+    assert "Refusing to overwrite an unrecognized file" in result.output
+    assert out.read_text() == previous
+    assert "Wrote " not in result.stdout
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_generated_report_outside_site_can_be_updated(
+    project: Path, external: bool
+) -> None:
+    out = (
+        project.parent / f"{project.name}-saved.html"
+        if external
+        else project / "saved.html"
+    )
+    args = ["what-changed", "last-read", "--project", str(project), "--out", str(out)]
+    first = CliRunner().invoke(workspace, args)
+    assert first.exit_code == 0, first.output
+    with (project / "index.qmd").open("a") as page:
+        page.write("A later finding.\n")
+    second = CliRunner().invoke(workspace, args)
+    assert second.exit_code == 0, second.output
+    assert "A later finding" in out.read_text()
+    out.write_text("An unrelated replacement")
+    third = CliRunner().invoke(workspace, args)
+    assert third.exit_code != 0
+    assert out.read_text() == "An unrelated replacement"
+
+
+def test_preview_url_encodes_output_path(project: Path) -> None:
+    out = project / "_site/reports/new finding #1.html"
+    result = CliRunner().invoke(
+        workspace,
+        ["what-changed", "last-read", "--project", str(project), "--out", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "http://localhost:4848/reports/new%20finding%20%231.html" in result.stdout
+
+
+@pytest.mark.parametrize("previous_report", [False, True])
+def test_custom_script_never_sees_output_staging_directory(
+    project: Path, previous_report: bool
+) -> None:
+    args = ["what-changed", "last-read", "--project", str(project)]
+    if previous_report:
+        first = CliRunner().invoke(workspace, args)
+        assert first.exit_code == 0, first.output
+    (project / "scripts/what-changed.py").write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "site = Path(sys.argv[sys.argv.index('--new') + 1])\n"
+        "out = Path(sys.argv[sys.argv.index('--out') + 1])\n"
+        "assert not list(site.rglob('.asta-what-changed-*'))\n"
+        "out.write_text('<html>Clean comparison inputs</html>')\n"
+    )
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code == 0, result.output
+    assert (
+        project / "_site/what-changed.html"
+    ).read_text() == "<html>Clean comparison inputs</html>"
+
+
+def test_diff_failure_names_selected_script_and_exit_code(project: Path) -> None:
+    script = project / "scripts/what-changed.py"
+    script.write_text("import sys\nsys.exit(7)\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert f"what-changed.py failed (exit 7): {script}" in result.output
+
+
+def test_custom_script_changes_to_snapshot_leave_rendered_pages_intact(
+    project: Path,
+) -> None:
+    (project / "scripts/what-changed.py").write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "site = Path(sys.argv[sys.argv.index('--new') + 1])\n"
+        "out = Path(sys.argv[sys.argv.index('--out') + 1])\n"
+        "(site / 'index.html').write_text('Modified comparison input')\n"
+        "out.write_text('<html>Comparison report</html>')\n"
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "The baseline finding holds" in (project / "_site/index.html").read_text()
+
+
+@pytest.mark.parametrize("previous_report", [False, True])
+def test_cleanup_interruption_leaves_report_recognized(
+    project: Path, monkeypatch, previous_report: bool
+) -> None:
+    original = workspace_module._git
+
+    def interrupt_removal(directory, *args):
+        if args[:2] == ("worktree", "remove"):
+            raise KeyboardInterrupt
+        return original(directory, *args)
+
+    args = ["what-changed", "last-read", "--project", str(project)]
+    if previous_report:
+        first = CliRunner().invoke(workspace, args)
+        assert first.exit_code == 0, first.output
+        with (project / "index.qmd").open("a") as page:
+            page.write("A later finding.\n")
+    with monkeypatch.context() as patch:
+        patch.setattr(workspace_module, "_git", interrupt_removal)
+        result = CliRunner().invoke(workspace, args)
+        assert result.exit_code != 0
+    assert (project / "_site/what-changed.html").is_file()
+    # The next comparison must neither include the old report nor reject its destination.
+    second = CliRunner().invoke(workspace, args)
+    assert second.exit_code == 0, second.output
+
+
+def test_baseline_directory_cleanup_failure_warns_and_keeps_report(
+    project: Path, monkeypatch
+) -> None:
+    original = workspace_module.tempfile.TemporaryDirectory.cleanup
+
+    def fail_cleanup(temporary):
+        original(temporary)
+        if Path(temporary.name).name.startswith("asta-what-changed-"):
+            raise PermissionError("baseline cleanup denied")
+
+    args = ["what-changed", "last-read", "--project", str(project)]
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            workspace_module.tempfile.TemporaryDirectory, "cleanup", fail_cleanup
+        )
+        result = CliRunner().invoke(workspace, args)
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: baseline directory cleanup failed: baseline cleanup denied"
+            in result.stderr
+        )
+        assert "Wrote " in result.stdout
+    second = CliRunner().invoke(workspace, args)
+    assert second.exit_code == 0, second.output
+
+
+@pytest.mark.parametrize("previous_report", [False, True])
+def test_state_write_failure_does_not_publish_report(
+    project: Path, monkeypatch, previous_report: bool
+) -> None:
+    args = ["what-changed", "last-read", "--project", str(project)]
+    out = project / "_site/what-changed.html"
+    if previous_report:
+        first = CliRunner().invoke(workspace, args)
+        assert first.exit_code == 0, first.output
+    previous = out.read_bytes() if out.exists() else None
+    with (project / "index.qmd").open("a") as page:
+        page.write("A later finding.\n")
+
+    def fail_state_write(*args):
+        raise PermissionError("state write denied")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(workspace_module, "_atomic_write", fail_state_write)
+        result = CliRunner().invoke(workspace, args)
+        assert result.exit_code != 0
+    if previous is None:
+        assert not out.exists()
+    else:
+        assert out.read_bytes() == previous
+    assert "Wrote " not in result.stdout
+    second = CliRunner().invoke(workspace, args)
+    assert second.exit_code == 0, second.output
+
+
+@pytest.mark.parametrize("previous_report", [False, True])
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, PermissionError])
+def test_interrupted_publication_recognizes_old_or_new_report(
+    project: Path, monkeypatch, previous_report: bool, failure
+) -> None:
+    args = ["what-changed", "last-read", "--project", str(project)]
+    out = project / "_site/what-changed.html"
+    if previous_report:
+        first = CliRunner().invoke(workspace, args)
+        assert first.exit_code == 0, first.output
+    previous = out.read_bytes() if out.exists() else None
+    with (project / "index.qmd").open("a") as page:
+        page.write("A later finding.\n")
+    original = Path.replace
+
+    def interrupt_publish(path, target):
+        if Path(target) == out:
+            raise failure
+        return original(path, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "replace", interrupt_publish)
+        result = CliRunner().invoke(workspace, args)
+        assert result.exit_code != 0
+    if previous is None:
+        assert not out.exists()
+    else:
+        assert out.read_bytes() == previous
+    second = CliRunner().invoke(workspace, args)
+    assert second.exit_code == 0, second.output
+
+
 @pytest.mark.parametrize(
     "output_names",
     [
@@ -335,7 +588,7 @@ def test_failed_comparison_preserves_previous_report(
     project: Path, external_output: bool, symlink_output: bool
 ) -> None:
     output = (
-        project.parent / "saved-report.html"
+        project.parent / f"{project.name}-saved-report.html"
         if external_output
         else project / "_site/custom.html"
     )
@@ -466,7 +719,11 @@ def test_symlinked_external_parent_allows_output(
     parent.symlink_to(
         project if inside_site else project.parent, target_is_directory=True
     )
-    out = parent / "_site/changes.html" if inside_site else parent / "saved.html"
+    out = (
+        parent / "_site/changes.html"
+        if inside_site
+        else parent / f"{project.name}-saved.html"
+    )
     result = CliRunner().invoke(
         workspace,
         ["what-changed", "last-read", "--project", str(project), "--out", str(out)],
@@ -505,7 +762,14 @@ def test_symlinked_site_subdirectory_preserves_target(
 
 
 @pytest.mark.parametrize(
-    "state_contents", ["{broken", "[]", '{"custom.html": "bad-hash"}']
+    "state_contents",
+    [
+        "{broken",
+        "[]",
+        '{"custom.html": "bad-hash"}',
+        '{"custom.html": []}',
+        '{"custom.html": ["bad-hash"]}',
+    ],
 )
 def test_invalid_report_state_preserves_reports_and_explains_recovery(
     project: Path, state_contents: str
