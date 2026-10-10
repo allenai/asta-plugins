@@ -422,7 +422,64 @@ def test_site_files_are_never_modified(project: Path) -> None:
     assert "newly drafted paragraph" in report
     # The page's relative links resolve against the site copy beside it.
     assert (owned / "index.html").is_file()
-    assert (owned / "what-changed.html").as_uri() in result.stdout
+    assert "file://" not in result.stdout
+    assert "asta workspace preview --what-changed" in result.stdout
+    assert "http://localhost:4849/what-changed.html" in result.stdout
+
+
+def test_preview_serves_the_page_and_later_runs(project: Path) -> None:
+    import threading
+    from urllib.request import urlopen
+
+    args = ["what-changed", "last-read", "--project", str(project)]
+    (project / "index.qmd").write_text("The baseline finding holds.\nFirst edit.\n")
+    assert CliRunner().invoke(workspace, args).exit_code == 0
+    owned = project / workspace_module.COMPARISON_DIR
+    server = workspace_module.comparison_server(owned, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    try:
+        assert "First edit" in urlopen(base + "what-changed.html").read().decode()
+        assert urlopen(base + "index.html").status == 200
+        # A rerun replaces the directory; the running server shows the new page.
+        (project / "index.qmd").write_text(
+            "The baseline finding holds.\nSecond edit.\n"
+        )
+        assert CliRunner().invoke(workspace, args).exit_code == 0
+        assert "Second edit" in urlopen(base + "what-changed.html").read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_preview_what_changed_requires_a_page(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        workspace, ["preview", "--what-changed", "--project", str(tmp_path)]
+    )
+    assert result.exit_code != 0
+    assert "asta workspace what-changed <ref>" in result.output
+
+
+def test_preview_what_changed_uses_codespace_url(project: Path, monkeypatch) -> None:
+    import socket
+
+    owned = project / workspace_module.COMPARISON_DIR
+    owned.mkdir(parents=True)
+    (owned / "what-changed.html").write_text("page")
+    monkeypatch.setenv("CODESPACE_NAME", "cs")
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen()
+    monkeypatch.setattr(workspace_module, "WHAT_CHANGED_PORT", blocker.getsockname()[1])
+    try:
+        result = CliRunner().invoke(
+            workspace, ["preview", "--what-changed", "--project", str(project)]
+        )
+    finally:
+        blocker.close()
+    assert result.exit_code != 0
+    port = workspace_module.WHAT_CHANGED_PORT
+    assert f"https://cs-{port}.app.github.dev/what-changed.html" in result.output
 
 
 def test_repeat_run_replaces_the_owned_directory(project: Path) -> None:

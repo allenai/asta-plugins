@@ -1,7 +1,9 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import functools
 import hashlib
 import http.client
+import http.server
 import io
 import json
 import os
@@ -668,19 +670,51 @@ def what_changed(ref: str, project: Path) -> None:
             )
     page = owned / "what-changed.html"
     click.echo(f"Wrote {page}")
-    click.echo(f"Open {page.as_uri()}")
+    url = preview_url(os.environ, WHAT_CHANGED_PORT) + page.name
+    click.echo(f"View it with `asta workspace preview --what-changed`, at {url}")
 
 
 PREVIEW_PORT = 4848
+# A separate port, so the comparison can be viewed while the live preview runs.
+WHAT_CHANGED_PORT = 4849
 PREVIEW_STATE = Path(".asta/cache/preview.json")
 
 
-def preview_url(env: Mapping[str, str]) -> str:
+def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
     codespace = env.get("CODESPACE_NAME")
     if codespace:
         domain = env.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN") or "app.github.dev"
-        return f"https://{codespace}-{PREVIEW_PORT}.{domain}/"
-    return f"http://localhost:{PREVIEW_PORT}/"
+        return f"https://{codespace}-{port}.{domain}/"
+    return f"http://localhost:{port}/"
+
+
+def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
+    """Serve the what-changed site copy; requests resolve its path afresh, so a
+    rerun of what-changed is picked up without restarting."""
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(directory)
+    )
+    return http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+
+
+def serve_what_changed(project: Path) -> None:
+    owned = project.resolve() / COMPARISON_DIR
+    if not (owned / "what-changed.html").is_file():
+        raise click.ClickException(
+            "No comparison page yet; run `asta workspace what-changed <ref>` first"
+        )
+    url = preview_url(os.environ, WHAT_CHANGED_PORT) + "what-changed.html"
+    try:
+        server = comparison_server(owned, WHAT_CHANGED_PORT)
+    except OSError as exc:
+        raise click.ClickException(
+            f"Port {WHAT_CHANGED_PORT} is in use ({exc.strerror}). If an earlier "
+            f"`asta workspace preview --what-changed` is running, it already "
+            f"serves the latest page: {url}"
+        ) from exc
+    click.echo(f"Serving What changed at {url} (Ctrl-C to stop)")
+    with server:
+        server.serve_forever()
 
 
 def preview_running() -> bool:
@@ -844,17 +878,27 @@ def run_make_preview(project: Path) -> tuple[int, bool]:
     type=click.Path(path_type=Path, file_okay=False, exists=True),
     default=Path("."),
 )
-def preview(project: Path) -> None:
+@click.option(
+    "--what-changed",
+    "what_changed_page",
+    is_flag=True,
+    help="Serve the page from `asta workspace what-changed` on port 4849 instead.",
+)
+def preview(project: Path, what_changed_page: bool) -> None:
     """Ensure the project's live preview is running on port 4848.
 
     Safe to run repeatedly: if this project's preview is already running, prints
     its URL and exits. If that launcher is still starting, asks you to retry.
     Runs `make preview`, falling back to `quarto preview` if Make is unavailable
-    or has no `preview` rule.
+    or has no `preview` rule. With --what-changed, serves the latest
+    `asta workspace what-changed` page instead, until stopped.
     """
     try:
         with preview_signals():
-            preview_project(project)
+            if what_changed_page:
+                serve_what_changed(project)
+            else:
+                preview_project(project)
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
     except PreviewTerminated as exc:
