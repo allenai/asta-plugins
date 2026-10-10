@@ -13,12 +13,12 @@ if [[ -z "$dir" || "$dir" == /* || "$dir" == *//* || "$dir" =~ (^|/)(\.{1,2}|-[^
 fi
 find_main() {
   local found=() file
-  if [ -f "$1/main.tex" ]; then echo main.tex; return 0; fi
+  if [ -f "$1/main.tex" ] && [ ! -L "$1/main.tex" ]; then echo main.tex; return 0; fi
   for file in "$1"/*.tex; do
-    [ -f "$file" ] && grep -q '^[^%]*\\documentclass' "$file" && found+=("${file##*/}")
+    [ -f "$file" ] && [ ! -L "$file" ] && grep -Eq '^[^%]*\\documentclass[[:blank:]]*(\{|\[)' "$file" && found+=("${file##*/}")
   done
   if [ "${#found[@]}" -gt 1 ]; then
-    echo "::warning::$1 has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
+    echo "::warning::${2:-$1} has several .tex files with \\documentclass: ${found[*]}; add main.tex to choose one" >&2
   fi
   [ "${#found[@]}" -eq 1 ] && echo "${found[0]}"
 }
@@ -37,7 +37,7 @@ else
 fi
 # Preserve a configured engine; request a PDF when no rc selected one.
 # -e runs after rc files: override their escaping for this private dependency file.
-(cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out=build/main.dep \
+(cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out="build/$stem.dep" \
   -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$main")
 if [ ! -f "$dir/build/$stem.log" ]; then
   echo "::error file=$dir/$main::LaTeX did not write $dir/build/$stem.log"
@@ -198,9 +198,9 @@ for line in fls.read_text(errors="replace").splitlines():
         except ValueError:
             pass
 
-deps = paper_dir / "build/main.dep"
+deps = paper_dir / f"build/{sys.argv[3]}.dep"
 if not deps.is_file():
-    raise SystemExit("LaTeX did not record paper dependencies in build/main.dep")
+    raise SystemExit(f"LaTeX did not record paper dependencies in {deps}")
 expect_target = True
 seen_target = False
 # Latexmk indents each unescaped pathname by four spaces. Multiple output
@@ -278,7 +278,7 @@ if ! git worktree add --detach "$old" "$base" >/dev/null; then
 fi
 
 # The base may name its main document differently, e.g. a main.tex shim.
-if ! old_main=$(find_main "$old/$dir"); then
+if ! old_main=$(find_main "$old/$dir" "$dir at base $base"); then
   printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
   exit 0
 fi

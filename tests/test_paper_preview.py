@@ -136,9 +136,9 @@ def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(tmp_path):
         'mkdir -p build\nprintf pdf > "build/$stem.pdf"\n'
         'printf compiled > "build/$stem.log"\nprintf bibliography > "build/$stem.bbl"\n'
         'printf "PWD %s\\nINPUT %s\\n" "$PWD" "$name" > "build/$stem.fls"\n'
-        'printf "build/%s.pdf :" "$stem" > build/main.dep\n'
-        "printf '%s' '\\' >> build/main.dep\n"
-        'printf "\\n    %s\\n" "$name" >> build/main.dep\n'
+        'printf "build/%s.pdf :" "$stem" > "build/$stem.dep"\n'
+        "printf '%s' '\\' >> \"build/$stem.dep\"\n"
+        'printf "\\n    %s\\n" "$name" >> "build/$stem.dep"\n'
         'printf "%s\\n%s\\n" "$BIBINPUTS" "$TEXINPUTS" > search-paths.txt\n'
     )
     with (bin_dir / "latexdiff").open("a") as mock:
@@ -154,9 +154,61 @@ def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(tmp_path):
     args = (repo / "latexdiff-args.txt").read_text().splitlines()
     assert args[-2].endswith("/paper/main.tex")
     assert args[-1] == "paper/article.tex"
+    assert (paper / "build/article.dep").is_file()
     for search_path in (paper / "search-paths.txt").read_text().splitlines():
         assert str(paper) in search_path.split(":")
         assert str(repo) not in search_path.split(":")
+
+
+@pytest.mark.parametrize("base_kind", ["sections-only", "ambiguous"])
+def test_base_without_main_has_clean_new_paper_preview(tmp_path, base_kind):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("git", "rm", "paper/main.tex", cwd=repo)
+    paper = repo / "paper"
+    paper.mkdir(exist_ok=True)
+    if base_kind == "ambiguous":
+        for name in ("a.tex", "b.tex"):
+            (paper / name).write_text(r"\documentclass{article}")
+    else:
+        (paper / "section.tex").write_text("Section only")
+    run("git", "add", "paper", cwd=repo)
+    run("git", "commit", "-qm", "no base main", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (paper / "main.tex").write_text("new")
+    run("git", "add", "paper/main.tex", cwd=repo)
+    run("git", "commit", "-qm", "new main", cwd=repo)
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert json.loads((repo / "_site/paper-previews/paper/preview.json").read_text())[
+        "new"
+    ]
+    assert (
+        len(
+            run("git", "worktree", "list", "--porcelain", cwd=repo).stdout.split(
+                "worktree "
+            )
+        )
+        == 2
+    )
+    assert not list(paper.glob("what-changed.*.tex"))
+    if base_kind == "ambiguous":
+        assert f"paper at base {base} has several" in result.stderr
+    else:
+        assert "::warning::" not in result.stderr
+
+
+def test_preview_does_not_build_symlink_or_documentclass_lookalike(tmp_path):
+    repo, base, env, _ = paper_repo(tmp_path)
+    paper = repo / "paper"
+    (paper / "main.tex").unlink()
+    (paper / "main.tex").symlink_to("missing")
+    (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
+    (paper / "linked.tex").symlink_to("lookalike.tex")
+
+    run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    assert not (paper / "latexmk-args.txt").exists()
 
 
 def test_html_diff_tags_latexdiff_macros_without_changing_pdf_source(tmp_path):

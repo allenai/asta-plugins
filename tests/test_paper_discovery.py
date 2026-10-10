@@ -1,9 +1,12 @@
 """Paper discovery keeps Quarto sections separate from preview papers."""
 
+import importlib.util
 import json
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 SCRIPT = (
     Path(__file__).parents[1]
@@ -64,6 +67,9 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
 
     assert discover(repo, base) == {
         "papers": ["added", "kept", "nested/sub", "paper"],
+        "main_files": dict.fromkeys(
+            ["added", "kept", "nested/sub", "paper"], "main.tex"
+        ),
         "removed": ["demoted", "gone", "nested/removed"],
         "warnings": [],
     }
@@ -87,6 +93,7 @@ def test_discovery_skips_invalid_names_but_keeps_valid_papers(tmp_path):
     assert result.returncode == 0
     assert json.loads(result.stdout) == {
         "papers": ["paper"],
+        "main_files": {"paper": "main.tex"},
         "removed": [],
         "warnings": ["Skipped invalid paper directory name: 'bad\\nname'"],
     }
@@ -179,3 +186,90 @@ def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):
     assert result["removed"] == ["custom", "nested/paper", "paper", "synced"]
     assert len(result["warnings"]) == 1
     assert "ambiguous" in result["warnings"][0]
+
+
+def test_discovery_skips_symlinks_and_gitlinks_in_current_and_base(tmp_path):
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "user.email", "test@example.invalid")
+    git(tmp_path, "config", "user.name", "Test")
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "article.tex").write_text(r"\documentclass [draft]{article}")
+    (paper / "main.tex").symlink_to("missing")
+    (paper / "external.tex").symlink_to("article.tex")
+    (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
+    git(tmp_path, "add", "paper")
+    git(tmp_path, "commit", "-qm", "paper with links")
+    commit = git(tmp_path, "rev-parse", "HEAD")
+    git(
+        tmp_path,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        f"160000,{commit},paper/submodule.tex",
+    )
+    git(tmp_path, "commit", "-qm", "paper gitlink")
+    base = git(tmp_path, "rev-parse", "HEAD")
+
+    result = discover(tmp_path, base)
+    assert result["main_files"] == {"paper": "article.tex"}
+    assert result["warnings"] == []
+    shutil.rmtree(paper)
+    result = discover(tmp_path, base)
+    assert result["removed"] == ["paper"]
+    assert result["warnings"] == []
+
+
+@pytest.mark.parametrize("base", ["", "base"])
+def test_unreadable_source_does_not_abort_main_discovery(tmp_path, monkeypatch, base):
+    spec = importlib.util.spec_from_file_location("paper_discovery", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def content(path, *args, **kwargs):
+        name = path.name if isinstance(path, Path) else path[-1].rsplit("/", 1)[-1]
+        if name == "broken.tex":
+            if base:
+                raise subprocess.CalledProcessError(128, path)
+            raise OSError("unreadable")
+        source = r"\documentclass{article}"
+        return source.encode() if base else source
+
+    monkeypatch.setattr(Path, "read_text", content)
+    monkeypatch.setattr(subprocess, "check_output", content)
+    warnings = []
+    assert (
+        module.main_file(
+            tmp_path, "paper", ["broken.tex", "article.tex"], warnings, base
+        )
+        == "article.tex"
+    )
+    assert warnings == ["Skipped unreadable paper source: paper/broken.tex"]
+
+
+def test_ambiguous_base_warning_is_not_repeated(tmp_path):
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "user.email", "test@example.invalid")
+    git(tmp_path, "config", "user.name", "Test")
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    for name in ("a.tex", "b.tex"):
+        (paper / name).write_text(r"\documentclass{article}")
+    git(tmp_path, "add", "paper")
+    git(tmp_path, "commit", "-qm", "ambiguous paper")
+
+    result = discover(tmp_path, "HEAD")
+    assert result["papers"] == []
+    assert len(result["warnings"]) == 1
+
+
+def test_invalid_directory_is_reported_before_ambiguous_sources(tmp_path):
+    paper = tmp_path / "bad\nname"
+    paper.mkdir()
+    (paper / "overleaf.json").write_text("{}")
+    for name in ("a.tex", "b.tex"):
+        (paper / name).write_text(r"\documentclass{article}")
+
+    assert discover(tmp_path)["warnings"] == [
+        "Skipped invalid paper directory name: 'bad\\nname'"
+    ]

@@ -169,12 +169,12 @@ PAPER_DIR ?= paper
 .PHONY: paper paper-clean
 # Main document: main.tex, else the single .tex file containing \documentclass.
 PAPER_MAIN = cd "$(PAPER_DIR)" 2>/dev/null || { echo "No paper directory $(PAPER_DIR)" >&2; exit 1; }; \
-	if [ -f main.tex ]; then main=main.tex; else \
+	if [ -f main.tex ] && [ ! -L main.tex ]; then main=main.tex; else \
 	main=; count=0; for file in *.tex; do \
-	if [ -f "$$file" ] && grep -q '^[^%]*\\documentclass' -- "$$file"; then main=$$file; count=$$((count+1)); fi; done; \
+	if [ -f "$$file" ] && [ ! -L "$$file" ] && grep -Eq '^[^%]*\\documentclass[[:blank:]]*(\{|\[)' -- "$$file"; then main=$$file; count=$$((count+1)); fi; done; \
 	[ $$count -eq 1 ] || { echo "$(PAPER_DIR): add main.tex, or keep exactly one .tex file with documentclass" >&2; exit 1; }; fi
 paper:
-	@$(PAPER_MAIN); latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$$main"
+	@$(PAPER_MAIN); printf 'latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "%s"\n' "$$main"; latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "$$main"
 
 paper-clean:
-	@$(PAPER_MAIN); latexmk -C -outdir=build "$$main"
+	@$(PAPER_MAIN); printf 'latexmk -C -outdir=build "%s"\n' "$$main"; latexmk -C -outdir=build "$$main"

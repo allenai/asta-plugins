@@ -112,7 +112,9 @@ def paper_directories(data: object) -> list[str]:
     return data["papers"]
 
 
-def create_viewer(directory: str, tracked: set[str] | None) -> None:
+def create_viewer(
+    directory: str, tracked: set[str] | None, main_file: str = ""
+) -> None:
     folder = Path(directory) / "html"
     # Nested repositories and symlinks belong to their own project.
     if any(
@@ -133,6 +135,7 @@ def create_viewer(directory: str, tracked: set[str] | None) -> None:
     title = "Paper HTML" if directory == "paper" else f"{directory} HTML"
     target = posixpath.relpath(f"paper-previews/{directory}", folder.as_posix())
     target = quote(target, safe="/.")
+    source = f"{directory}/{main_file}"
     content = f"""---
 title: {json.dumps(title)}
 ---
@@ -140,7 +143,7 @@ title: {json.dumps(title)}
 {GENERATED_MARKER}
 
 ```{{=html}}
-<p>The paper is written in <code>{html.escape(directory)}/</code>.
+<p>The paper is written in <code>{html.escape(source)}</code>.
 The preview builds PDF and HTML from that LaTeX source.</p>
 <div data-paper-preview="{html.escape(target, quote=True)}">
 <p data-paper-links></p>
@@ -204,14 +207,20 @@ use the PDF link when available.</p>
 
 def main() -> None:
     try:
-        directories = paper_directories(json.load(sys.stdin))
+        data = json.load(sys.stdin)
+        directories = paper_directories(data)
+        main_files = data.get("main_files", {})
+        if not isinstance(main_files, dict) or any(
+            not isinstance(name, str) for name in main_files.values()
+        ):
+            raise ValueError("Expected 'main_files' to map directories to source names")
     except ValueError as error:
         print(f"paper-viewer: {error}", file=sys.stderr)
         raise SystemExit(1) from None
     tracked = tracked_files()
     remove_orphan_viewers(directories, tracked)
     for directory in directories:
-        create_viewer(directory, tracked)
+        create_viewer(directory, tracked, main_files.get(directory, ""))
 
 
 if __name__ == "__main__":

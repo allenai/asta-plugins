@@ -17,7 +17,7 @@ def valid_name(name: str) -> bool:
     )
 
 
-DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass", re.MULTILINE)
+DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass[ \t]*[\[{]", re.MULTILINE)
 
 
 def main_file(
@@ -28,11 +28,16 @@ def main_file(
         return "main.tex"
 
     def content(name: str) -> str:
-        if base:
-            return subprocess.check_output(
-                ["git", "show", f"{base}:{label}/{name}"]
-            ).decode(errors="replace")
-        return (entry / name).read_text(errors="replace")
+        try:
+            if base:
+                return subprocess.check_output(
+                    ["git", "show", f"{base}:{label}/{name}"],
+                    stderr=subprocess.DEVNULL,
+                ).decode(errors="replace")
+            return (entry / name).read_text(errors="replace")
+        except (OSError, subprocess.CalledProcessError):
+            warnings.append(f"Skipped unreadable paper source: {label}/{name}")
+            return ""
 
     found = sorted(
         name
@@ -47,8 +52,8 @@ def main_file(
     return found[0] if len(found) == 1 else None
 
 
-def current_papers(root: Path, warnings: list[str]) -> set[str]:
-    papers = set()
+def current_papers(root: Path, warnings: list[str]) -> dict[str, str]:
+    papers = {}
     for directory, children, files in os.walk(root, followlinks=False):
         entry = Path(directory)
         children[:] = [
@@ -61,16 +66,21 @@ def current_papers(root: Path, warnings: list[str]) -> set[str]:
         name = entry.relative_to(root).as_posix()
         if name == ".":
             continue
+        files = [
+            file
+            for file in files
+            if not (entry / file).is_symlink() and (entry / file).is_file()
+        ]
         if name != "paper" and not any(
             marker in files for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
         ):
             continue
-        if main_file(entry, name, files, warnings) is None:
-            continue
         if not all(valid_name(part) for part in entry.relative_to(root).parts):
             warnings.append(f"Skipped invalid paper directory name: {name!r}")
             continue
-        papers.add(name)
+        main = main_file(entry, name, files, warnings)
+        if main is not None:
+            papers[name] = main
     return papers
 
 
@@ -79,18 +89,24 @@ def base_papers(base: str, warnings: list[str]) -> set[str]:
         return set()
     try:
         result = subprocess.run(
-            ["git", "ls-tree", "-rz", "--name-only", base],
+            ["git", "ls-tree", "-rz", base],
             capture_output=True,
             check=True,
         )
-    except subprocess.CalledProcessError:
+    except (OSError, subprocess.CalledProcessError):
         warnings.append(
             f"Could not read paper files at base {base}; removals were omitted"
         )
         return set()
-    paths = {os.fsdecode(path) for path in result.stdout.split(b"\0") if path}
     directories: dict[str, list[str]] = {}
-    for path in paths:
+    for record in result.stdout.split(b"\0"):
+        if not record:
+            continue
+        metadata, path_bytes = record.split(b"\t", 1)
+        # Symlinks and submodules are not readable LaTeX source blobs.
+        if metadata.split()[0] not in {b"100644", b"100755"}:
+            continue
+        path = os.fsdecode(path_bytes)
         parent, separator, filename = path.rpartition("/")
         if separator:
             directories.setdefault(parent, []).append(filename)
@@ -100,10 +116,10 @@ def base_papers(base: str, warnings: list[str]) -> set[str]:
             marker in files for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
         ):
             continue
-        if main_file(Path(name), name, files, warnings, base) is None:
-            continue
         if not all(valid_name(part) for part in name.split("/")):
             warnings.append(f"Skipped invalid base paper directory name: {name!r}")
+            continue
+        if main_file(Path(name), name, files, warnings, base) is None:
             continue
         names.add(name)
     return names
@@ -113,13 +129,15 @@ def main() -> None:
     base = sys.argv[1] if len(sys.argv) > 1 else ""
     warnings: list[str] = []
     current = current_papers(Path.cwd(), warnings)
-    removed = base_papers(base, warnings) - current
+    removed = base_papers(base, warnings) - current.keys()
+    warnings = list(dict.fromkeys(warnings))
     for warning in warnings:
         print(f"::warning::{warning}", file=sys.stderr)
     print(
         json.dumps(
             {
                 "papers": sorted(current),
+                "main_files": current,
                 "removed": sorted(removed),
                 "warnings": warnings,
             }

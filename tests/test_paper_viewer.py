@@ -41,6 +41,42 @@ def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
     assert "use the PDF link when available" in nested
 
 
+def test_viewer_displays_discovered_source_name(tmp_path):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "conference.tex").write_text(r"\documentclass{article}")
+    discovery = subprocess.run(
+        [sys.executable, str(ASSETS / "paper-discovery.py")],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=discovery.stdout,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "<code>paper/conference.tex</code>" in (paper / "html/index.qmd").read_text()
+
+
+@pytest.mark.parametrize("main_files", [[], {"paper": None}])
+def test_viewer_rejects_invalid_main_file_metadata(tmp_path, main_files):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=json.dumps({"papers": ["paper"], "main_files": main_files}),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "Expected 'main_files'" in result.stderr
+    assert not (tmp_path / "paper").exists()
+
+
 @pytest.mark.parametrize("suffix", ["qmd", "md", "html"])
 def test_project_viewer_wins(tmp_path, suffix):
     folder = tmp_path / "paper/html"

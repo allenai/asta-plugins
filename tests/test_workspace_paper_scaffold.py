@@ -66,7 +66,11 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
 def test_paper_targets_select_directory_and_preserve_engine(tmp_path, main_name):
     paper = tmp_path / "papers/custom name"
     paper.mkdir(parents=True)
-    (paper / main_name).write_text(r"\documentclass{article}")
+    (paper / main_name).write_text(r"\documentclass [draft]{article}")
+    (paper / "lookalike.tex").write_text(r"\documentclassfoo{article}")
+    (paper / "linked.tex").symlink_to(main_name)
+    if main_name != "main.tex":
+        (paper / "main.tex").symlink_to("missing")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     tool = bin_dir / "latexmk"
@@ -80,7 +84,7 @@ def test_paper_targets_select_directory_and_preserve_engine(tmp_path, main_name)
     call = tmp_path / "call.json"
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "CALL": str(call)}
     for target, expected in [("paper", "-synctex=1"), ("paper-clean", "-C")]:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "make",
                 "-f",
@@ -98,6 +102,8 @@ def test_paper_targets_select_directory_and_preserve_engine(tmp_path, main_name)
         assert expected in args and main_name in args
         assert "-outdir=build" in args
         assert "-pdf" not in args and "-xelatex" not in args
+        assert "latexmk " in result.stdout.decode()
+        assert f'"{main_name}"' in result.stdout.decode()
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
