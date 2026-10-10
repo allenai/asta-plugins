@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import email.utils
 import functools
 import hashlib
 import http.client
@@ -11,6 +12,7 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tarfile
@@ -496,7 +498,11 @@ def diff_script(project: Path) -> Path:
         and DIFF_SCRIPT in scripts
     ):
         cached = project / ".asta/cache/scripts" / archive_sha / DIFF_SCRIPT
-        if cached.is_file() and not cached.is_symlink():
+        if (
+            cached.is_file()
+            and not cached.is_symlink()
+            and not cached.parent.is_symlink()
+        ):
             return cached
     raise click.ClickException(guidance)
 
@@ -507,17 +513,13 @@ def render_site(directory: Path, label: str) -> Path:
             f"Project directory does not exist for {label}: {directory}"
         )
     click.echo(f"Rendering {label} with 'make render'", err=True)
-    try:
-        process = subprocess.Popen(
-            ["make", "render"],
-            cwd=directory,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-    except FileNotFoundError as exc:
-        raise click.ClickException("make is required to render the workspace") from exc
-    with process:
+    with preview_process(
+        ["make", "render"],
+        directory,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
         for line in process.stdout:
             click.echo(line, nl=False, err=True)
         process.wait()
@@ -539,7 +541,8 @@ def _comparison_directory():
         yield Path(temporary.name)
     finally:
         try:
-            temporary.cleanup()
+            with preview_cleanup():
+                temporary.cleanup()
         except OSError as exc:
             click.echo(f"Warning: baseline directory cleanup failed: {exc}", err=True)
 
@@ -547,13 +550,14 @@ def _comparison_directory():
 def _publish(staged: Path, owned: Path) -> None:
     """Replace the command-owned comparison directory with a finished one."""
     previous = staged.with_name(staged.name + ".previous")
-    if owned.exists() or owned.is_symlink():
-        owned.replace(previous)
     try:
+        if owned.exists() or owned.is_symlink():
+            owned.replace(previous)
         staged.replace(owned)
     except BaseException:
-        if previous.exists() or previous.is_symlink():
-            previous.replace(owned)
+        with preview_cleanup():
+            if previous.exists() or previous.is_symlink():
+                previous.replace(owned)
         raise
     try:
         if previous.is_symlink() or previous.is_file():
@@ -581,6 +585,16 @@ def what_changed(ref: str, project: Path) -> None:
     the comparison page is written only to the cache. Choose a trusted REF: its
     build code runs locally. The baseline contains only committed files.
     """
+    try:
+        with preview_signals():
+            compare_workspace(ref, project)
+    except KeyboardInterrupt:
+        raise click.exceptions.Exit(130) from None
+    except PreviewTerminated as exc:
+        raise click.exceptions.Exit(128 + exc.signum) from None
+
+
+def compare_workspace(ref: str, project: Path) -> None:
     project = project.resolve()
     if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
         raise click.ClickException("Workspace cache must not be a symlink")
@@ -608,19 +622,20 @@ def what_changed(ref: str, project: Path) -> None:
     owned = project / COMPARISON_DIR
     with _comparison_directory() as tmp:
         baseline = tmp / "baseline"
-        added = _git(
-            project,
-            "worktree",
-            "add",
-            "--detach",
-            str(baseline),
-            commit.stdout.strip(),
-        )
-        if added.returncode != 0:
-            raise click.ClickException(
-                f"Could not check out {ref}: {added.stderr.strip()}"
-            )
+        added = None
         try:
+            added = _git(
+                project,
+                "worktree",
+                "add",
+                "--detach",
+                str(baseline),
+                commit.stdout.strip(),
+            )
+            if added.returncode != 0:
+                raise click.ClickException(
+                    f"Could not check out {ref}: {added.stderr.strip()}"
+                )
             baseline_project = baseline / prefix.stdout.rstrip("\n")
             if not baseline_project.is_dir():
                 raise click.ClickException(
@@ -637,9 +652,10 @@ def what_changed(ref: str, project: Path) -> None:
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
                 shutil.copytree(new_site, staged, symlinks=True, dirs_exist_ok=True)
+                staged.chmod(0o700)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
-                result = subprocess.run(
+                with preview_process(
                     [
                         sys.executable,
                         str(script),
@@ -652,12 +668,12 @@ def what_changed(ref: str, project: Path) -> None:
                         "--title",
                         f"Changes since {ref}",
                     ],
-                    cwd=project,
-                    check=False,
-                )
-                if result.returncode != 0:
+                    project,
+                ) as process:
+                    returncode = process.wait()
+                if returncode != 0:
                     raise click.ClickException(
-                        f"{DIFF_SCRIPT} failed (exit {result.returncode}): {script}"
+                        f"{DIFF_SCRIPT} failed (exit {returncode}): {script}"
                     )
                 if (
                     report.is_symlink()
@@ -674,14 +690,16 @@ def what_changed(ref: str, project: Path) -> None:
                         f"Could not publish the comparison: {exc}"
                     ) from exc
             finally:
-                shutil.rmtree(staged, ignore_errors=True)
+                with preview_cleanup():
+                    shutil.rmtree(staged, ignore_errors=True)
         finally:
-            removed = _git(project, "worktree", "remove", "--force", str(baseline))
-            if removed.returncode != 0:
-                click.echo(
-                    f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}",
-                    err=True,
-                )
+            with preview_cleanup():
+                removed = _git(project, "worktree", "remove", "--force", str(baseline))
+                if removed.returncode != 0 and (added is None or added.returncode == 0):
+                    click.echo(
+                        f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}",
+                        err=True,
+                    )
     page = owned / "what-changed.html"
     click.echo(f"Wrote {page}")
     url = preview_url(os.environ, WHAT_CHANGED_PORT) + page.name
@@ -702,14 +720,54 @@ def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
     return f"http://localhost:{port}/"
 
 
+def _open_site_file(root: Path, path: Path):
+    # Pin each directory on POSIX so a concurrent symlink swap cannot redirect
+    # an already-checked request outside the site.
+    if os.open not in os.supports_dir_fd:
+        return path.open("rb")
+    descriptor = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        parts = path.relative_to(root.anchor).parts
+        for part in parts[:-1]:
+            child = os.open(
+                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
+            )
+            os.close(descriptor)
+            descriptor = child
+        stream = os.open(
+            parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor
+        )
+        return os.fdopen(stream, "rb")
+    finally:
+        os.close(descriptor)
+
+
 def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
     """Serve the what-changed site copy; requests resolve its path afresh, so a
     rerun of what-changed is picked up without restarting."""
     root = directory.absolute()
+    forwarded_host = None
 
     class SiteHandler(http.server.SimpleHTTPRequestHandler):
         def send_head(self):
-            if self.headers.get("Host", "").lower() not in allowed_hosts:
+            try:
+                host = urlsplit("//" + self.headers.get("Host", "").lower())
+                valid_host = (
+                    host.hostname in ("localhost", "127.0.0.1", "::1", forwarded_host)
+                    and bool(host.hostname)
+                    and host.username is None
+                    and host.password is None
+                    and not host.path
+                    and not host.query
+                    and not host.fragment
+                    and (host.port is None or 0 < host.port <= 65535)
+                    and (
+                        host.hostname != forwarded_host or host.netloc == forwarded_host
+                    )
+                )
+            except ValueError:
+                valid_host = False
+            if not valid_host:
                 self.send_error(403, "Unrecognized preview host")
                 return None
             try:
@@ -722,25 +780,63 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
                     ]
                 if any(not candidate.is_relative_to(root) for candidate in paths):
                     raise ValueError("Path leaves the comparison site")
-            except (OSError, RuntimeError, ValueError):
-                self.send_error(403, "Path leaves the comparison site")
+                if path.is_dir():
+                    parsed = urlsplit(self.path)
+                    if not parsed.path.endswith("/"):
+                        self.send_response(301)
+                        self.send_header(
+                            "Location", parsed._replace(path=parsed.path + "/").geturl()
+                        )
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return None
+                    path = next((p for p in paths[1:] if p.is_file()), None)
+                    if path is None:
+                        self.send_error(404, "Directory listing is disabled")
+                        return None
+                stream = _open_site_file(root, path)
+            except FileNotFoundError:
+                self.send_error(404, "File not found")
                 return None
-            return super().send_head()
-
-        def list_directory(self, path):
-            self.send_error(404, "Directory listing is disabled")
-            return None
+            except (OSError, RuntimeError, ValueError):
+                self.send_error(
+                    403, "Path leaves the comparison site or is unavailable"
+                )
+                return None
+            try:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    self.send_error(404, "Not a site file")
+                    stream.close()
+                    return None
+                modified = self.headers.get("If-Modified-Since")
+                if modified and not self.headers.get("If-None-Match"):
+                    try:
+                        since = email.utils.parsedate_to_datetime(modified)
+                        if (
+                            since.utcoffset() is not None
+                            and int(info.st_mtime) <= since.timestamp()
+                        ):
+                            self.send_response(304)
+                            self.end_headers()
+                            stream.close()
+                            return None
+                    except (ValueError, TypeError, OverflowError):
+                        pass
+                self.send_response(200)
+                self.send_header("Content-type", self.guess_type(str(path)))
+                self.send_header("Content-Length", str(info.st_size))
+                self.send_header("Last-Modified", self.date_time_string(info.st_mtime))
+                self.end_headers()
+                return stream
+            except BaseException:
+                stream.close()
+                raise
 
     handler = functools.partial(SiteHandler, directory=str(root))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
-    allowed_hosts = {"localhost", "127.0.0.1"}
-    allowed_hosts.update(
-        f"{host}:{server.server_port}" for host in tuple(allowed_hosts)
-    )
     if os.environ.get("CODESPACE_NAME"):
-        allowed_hosts.add(
-            urlsplit(preview_url(os.environ, server.server_port)).netloc.lower()
-        )
+        forwarded_host = urlsplit(preview_url(os.environ, server.server_port)).hostname
     return server
 
 

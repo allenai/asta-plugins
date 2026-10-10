@@ -5,9 +5,13 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import tarfile
 import threading
+import time
+from http.client import HTTPConnection
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -631,8 +635,8 @@ def test_preview_serves_the_page_and_later_runs(project: Path) -> None:
 def test_comparison_preview_blocks_external_symlinks(
     tmp_path: Path, method: str
 ) -> None:
-    site = tmp_path / "site"
-    site.mkdir()
+    site = tmp_path / "cache/site"
+    site.mkdir(parents=True)
     (site / "page.html").write_text("Site page")
     (site / "local-link.html").symlink_to("page.html")
     external = tmp_path / "private"
@@ -792,12 +796,34 @@ def test_comparison_preview_rejects_untrusted_hosts(
     threading.Thread(target=server.serve_forever, daemon=True).start()
     port = server.server_address[1]
     url = f"http://127.0.0.1:{port}/what-changed.html"
-    allowed = ["localhost", "127.0.0.1", f"localhost:{port}", f"127.0.0.1:{port}"]
+    allowed = [
+        "localhost",
+        "127.0.0.1",
+        f"localhost:{port}",
+        f"127.0.0.1:{port}",
+        "localhost:1",
+        "127.0.0.1:1",
+        "[::1]",
+        "[::1]:12345",
+    ]
     if domain is not None:
         allowed.append(f"test-space-{port}.{domain}")
-    rejected = ["", "attacker.example", "localhost.attacker.example", "127.0.0.1:1"]
+    rejected = [
+        "",
+        "attacker.example",
+        "localhost.attacker.example",
+        "localhost:invalid",
+        "localhost:65536",
+        "localhost@attacker.example",
+        "attacker@localhost",
+        "localhost/path",
+        "localhost?query",
+        "localhost#fragment",
+    ]
     if domain is None:
         rejected.append(f"test-space-{port}.app.github.dev")
+    else:
+        rejected.extend([f"test-space-{port}.{domain}:443", f"test-space-1.{domain}"])
     try:
         for host in allowed:
             with urlopen(
@@ -832,6 +858,247 @@ def test_comparison_preview_has_no_directory_listing(
             assert b"private-name" not in error.value.read()
         (tmp_path / "index.html").write_text("Project homepage")
         assert urlopen(Request(base, method=method)).status == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_comparison_cache_stays_private_after_copy(project: Path) -> None:
+    (project / "_site").mkdir(mode=0o755)
+    (project / "_site").chmod(0o755)
+    for _ in range(2):
+        result = CliRunner().invoke(
+            workspace, ["what-changed", "last-read", "--project", str(project)]
+        )
+        assert result.exit_code == 0, result.output
+        assert (
+            project / workspace_module.COMPARISON_DIR
+        ).stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize("swap", ["file", "parent", "cache-parent"])
+def test_comparison_preview_blocks_mid_request_symlink_swap(
+    tmp_path: Path, monkeypatch, method: str, swap: str
+) -> None:
+    site = tmp_path / "cache/site"
+    site.mkdir(parents=True)
+    (site / "pages").mkdir()
+    (site / "pages/report.html").write_text("Public page")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "report.html").write_text("Private outside content")
+    original = Path.resolve
+
+    def swap_after_check(path, *args, **kwargs):
+        resolved = original(path, *args, **kwargs)
+        if path != site / "pages/report.html":
+            return resolved
+        if swap == "file":
+            path.unlink()
+            path.symlink_to(outside / "report.html")
+        elif swap == "parent":
+            (site / "pages").rename(site / "saved-pages")
+            (site / "pages").symlink_to(outside, target_is_directory=True)
+        else:
+            (site.parent).rename(tmp_path / "saved-cache")
+            (outside / "site/pages").mkdir(parents=True)
+            shutil.copy(outside / "report.html", outside / "site/pages/report.html")
+            (tmp_path / "cache").symlink_to(outside, target_is_directory=True)
+        return resolved
+
+    monkeypatch.setattr(Path, "resolve", swap_after_check)
+    server = workspace_module.comparison_server(site, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/pages/report.html"
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(url, method=method))
+        assert error.value.code == 403
+        assert b"Private outside content" not in error.value.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("phase", ["render", "script"])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX termination")
+def test_termination_cleans_comparison_and_children(project: Path, phase: str) -> None:
+    owned = project / workspace_module.COMPARISON_DIR
+    owned.mkdir(parents=True)
+    (owned / "what-changed.html").write_text("Previous report")
+    ready = project / "child-ready"
+    child_code = (
+        "import os, pathlib, time\n"
+        f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        "time.sleep(60)\n"
+    )
+    if phase == "render":
+        Path(shutil.which("make")).write_text("#!/usr/bin/env python3\n" + child_code)
+    else:
+        (project / "scripts/what-changed.py").write_text(child_code)
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not any(
+            word in k.upper()
+            for word in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY")
+        )
+    }
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "asta.cli",
+            "workspace",
+            "what-changed",
+            "last-read",
+            "--project",
+            str(project),
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    child = None
+    try:
+        deadline = time.monotonic() + 10
+        while (
+            not ready.exists()
+            and process.poll() is None
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
+        assert ready.exists(), "Comparison never reached the blocked child"
+        child = int(ready.read_text())
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        assert process.returncode == 128 + signal.SIGTERM, (stdout, stderr)
+        assert (owned / "what-changed.html").read_text() == "Previous report"
+        assert not list(owned.parent.glob(".what-changed-*"))
+        assert (
+            len(
+                subprocess.check_output(
+                    ["git", "-C", str(project), "worktree", "list"]
+                ).splitlines()
+            )
+            == 1
+        )
+        with pytest.raises(ProcessLookupError):
+            os.kill(child, 0)
+    finally:
+        if child is not None:
+            try:
+                os.kill(child, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+
+
+def test_failed_checkout_removes_partial_registration(
+    project: Path, monkeypatch
+) -> None:
+    original = workspace_module._git
+
+    def failed_add(directory, *args):
+        result = original(directory, *args)
+        if args[:2] == ("worktree", "add"):
+            assert result.returncode == 0
+            return subprocess.CompletedProcess(
+                args, 1, stderr="Checkout failed after registration"
+            )
+        return result
+
+    monkeypatch.setattr(workspace_module, "_git", failed_add)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "Checkout failed after registration" in result.output
+    assert (
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(project), "worktree", "list"]
+            ).splitlines()
+        )
+        == 1
+    )
+
+
+def test_cached_diff_script_rejects_redirected_version(
+    project: Path, monkeypatch
+) -> None:
+    (project / "scripts/what-changed.py").unlink()
+    cache = project / ".asta/cache"
+    scripts = cache / "scripts"
+    scripts.mkdir(parents=True)
+    sha = "a" * 64
+    external = project / "external-scripts"
+    external.mkdir()
+    (external / "what-changed.py").write_text(
+        "raise RuntimeError('Redirected script ran')"
+    )
+    (scripts / sha).symlink_to(external, target_is_directory=True)
+    (cache / "workspace.json").write_text(
+        json.dumps({"archive_sha256": sha, "scripts": {"what-changed.py": "hash"}})
+    )
+    monkeypatch.setattr(workspace_module.sync, "callback", lambda **kwargs: None)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "No what-changed.py for this project" in result.output
+    assert "Redirected script ran" not in result.output
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_comparison_preview_preserves_http_file_behavior(
+    tmp_path: Path, method: str
+) -> None:
+    (tmp_path / "pages").mkdir()
+    content = b"<html>Comparison page</html>"
+    (tmp_path / "pages/index.html").write_bytes(content)
+    # Internal symlinks remain useful for rendered assets.
+    (tmp_path / "linked.html").symlink_to(tmp_path / "pages/index.html")
+    server = workspace_module.comparison_server(tmp_path, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}/"
+    try:
+        paths = (
+            ("pages", "pages/", "linked.html")
+            if method == "GET"
+            else ("pages/", "linked.html")
+        )
+        for path in paths:
+            with urlopen(Request(base + path, method=method)) as response:
+                assert response.status == 200
+                assert response.headers["Content-type"] == "text/html"
+                assert int(response.headers["Content-Length"]) == len(content)
+                assert response.read() == (content if method == "GET" else b"")
+                modified = response.headers["Last-Modified"]
+        with pytest.raises(HTTPError) as error:
+            urlopen(
+                Request(
+                    base + "linked.html",
+                    method=method,
+                    headers={"If-Modified-Since": modified},
+                )
+            )
+        assert error.value.code == 304
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(base + "missing.html", method=method))
+        assert error.value.code == 404
+        connection = HTTPConnection("127.0.0.1", server.server_port)
+        try:
+            connection.request(method, "/pages?view=1")
+            response = connection.getresponse()
+            assert response.status == 301
+            assert response.headers["Location"] == "/pages/?view=1"
+        finally:
+            connection.close()
     finally:
         server.shutdown()
         server.server_close()
