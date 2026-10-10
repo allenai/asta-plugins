@@ -18,7 +18,6 @@ from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import quote
 from urllib.request import urlopen
 
 import click
@@ -526,77 +525,7 @@ def render_site(directory: Path, label: str) -> Path:
     return site
 
 
-DIFF_STATE = Path(".asta/cache/what-changed.json")
-
-
-def _diff_path(path: Path, project: Path) -> Path:
-    path = path.absolute()
-    if path.is_symlink() or any(
-        part.is_symlink() and part.parent.resolve().is_relative_to(project)
-        for part in path.parents
-    ):
-        raise click.ClickException(f"Comparison paths must not use symlinks: {path}")
-    return path.resolve()
-
-
-def _previous_reports(project: Path, site: Path) -> dict[str, str]:
-    state_path = _diff_path(project / DIFF_STATE, project)
-    invalid_state = (
-        f"Invalid comparison report state: {state_path}. Restore it from a backup, "
-        "or remove the generated comparison reports and this state file before retrying."
-    )
-    try:
-        state = json.loads(state_path.read_text())
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError as exc:
-        raise click.ClickException(invalid_state) from exc
-
-    def valid_digest(digest):
-        return isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
-
-    if not isinstance(state, dict) or any(
-        not isinstance(name, str)
-        or not name
-        or Path(name).as_posix() != name
-        or any(part in (".", "..") for part in Path(name).parts)
-        or not (
-            valid_digest(digest)
-            or isinstance(digest, list)
-            and 1 <= len(digest) <= 2
-            and all(valid_digest(item) for item in digest)
-        )
-        for name, digest in state.items()
-    ):
-        raise click.ClickException(invalid_state)
-    # A renderer can replace a report with a real page; only exclude our bytes.
-    reports = {}
-    for name, recorded in state.items():
-        path = site / name
-        if path.is_file() and not path.is_symlink():
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if digest in (recorded if isinstance(recorded, list) else [recorded]):
-                reports[name] = digest
-    return reports
-
-
-def _report_key(out: Path, site: Path) -> str:
-    return (
-        out.relative_to(site).as_posix() if out.is_relative_to(site) else out.as_posix()
-    )
-
-
-def _check_report_destination(out: Path, site: Path, reports: dict[str, str]) -> None:
-    if out.exists() and (
-        not out.is_file()
-        or hashlib.sha256(out.read_bytes()).hexdigest()
-        != reports.get(_report_key(out, site))
-    ):
-        kind = "site page" if out.is_relative_to(site) else "file"
-        raise click.ClickException(
-            f"Refusing to overwrite an unrecognized {kind}: {out}. "
-            "Choose a different --out path."
-        )
+COMPARISON_DIR = Path(".asta/cache/what-changed")
 
 
 @contextmanager
@@ -611,22 +540,29 @@ def _comparison_directory():
             click.echo(f"Warning: baseline directory cleanup failed: {exc}", err=True)
 
 
+def _publish(staged: Path, owned: Path) -> None:
+    """Replace the command-owned comparison directory with a finished one."""
+    if owned.is_symlink() or owned.is_file():
+        owned.unlink()
+    elif owned.exists():
+        shutil.rmtree(owned)
+    staged.replace(owned)
+
+
 @workspace.command("what-changed")
 @click.argument("ref")
 @click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
-@click.option(
-    "--out",
-    type=click.Path(path_type=Path, dir_okay=False),
-    help="Output HTML path (default: _site/what-changed.html).",
-)
-def what_changed(ref: str, project: Path, out: Path | None) -> None:
+def what_changed(ref: str, project: Path) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
     Renders REF and the working tree with the project's own 'make render' and
-    compares them with the what-changed.py the PR preview uses. Choose a trusted
-    REF: its build code runs locally. The baseline contains only committed files.
+    compares them with the what-changed.py the PR preview uses. The page is
+    written to a copy of the rendered site under .asta/cache/what-changed/,
+    which this command owns and replaces on each run; _site/ is never modified
+    by the comparison. Choose a trusted REF: its build code runs locally. The
+    baseline contains only committed files.
     """
     project = project.resolve()
     try:
@@ -650,8 +586,7 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
         raise click.ClickException(
             "Could not locate the project within its git repository"
         )
-    out = _diff_path(out or project / "_site" / "what-changed.html", project)
-    _diff_path(project / DIFF_STATE, project)
+    owned = project / COMPARISON_DIR
     try:
         with _comparison_directory() as tmp:
             baseline = tmp / "baseline"
@@ -676,31 +611,16 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                 script = diff_script(project)
                 old_site = render_site(baseline_project, ref)
                 new_site = render_site(project, "the working tree")
-                reports = _previous_reports(project, new_site)
-                _diff_path(out, project)
-                out.parent.mkdir(parents=True, exist_ok=True)
-                _check_report_destination(out, new_site, reports)
-                site = new_site
-                excluded = {name for name in reports if not Path(name).is_absolute()}
-                if excluded or out.parent.is_relative_to(new_site):
-                    comparison_site = tmp / "current"
-                    shutil.copytree(
-                        new_site,
-                        comparison_site,
-                        symlinks=True,
-                        ignore=lambda directory, names: [
-                            name
-                            for name in names
-                            if (Path(directory) / name).relative_to(new_site).as_posix()
-                            in excluded
-                        ],
-                    )
-                    new_site = comparison_site
-                # A sibling staging directory keeps replacement atomic on this filesystem.
-                with tempfile.TemporaryDirectory(
-                    prefix=".asta-what-changed-", dir=out.parent
-                ) as staging:
-                    staged = Path(staging) / out.name
+                # The page sits at the root of a site copy so its relative links
+                # to changed pages resolve, as in the PR preview.
+                owned.parent.mkdir(parents=True, exist_ok=True)
+                staged = Path(
+                    tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent)
+                )
+                try:
+                    shutil.copytree(new_site, staged, symlinks=True, dirs_exist_ok=True)
+                    report = staged / "what-changed.html"
+                    report.unlink(missing_ok=True)
                     result = subprocess.run(
                         [
                             sys.executable,
@@ -710,7 +630,7 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                             "--new",
                             str(new_site),
                             "--out",
-                            str(staged),
+                            str(report),
                             "--title",
                             f"Changes since {ref}",
                         ],
@@ -720,28 +640,17 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                         raise click.ClickException(
                             f"{DIFF_SCRIPT} failed (exit {result.returncode}): {script}"
                         )
-                    _diff_path(staged, project)
-                    if not staged.is_file() or staged.stat().st_size == 0:
+                    if (
+                        report.is_symlink()
+                        or not report.is_file()
+                        or report.stat().st_size == 0
+                    ):
                         raise click.ClickException(
-                            f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
+                            f"{DIFF_SCRIPT} did not write nonempty HTML"
                         )
-                    _diff_path(out, project)
-                    _check_report_destination(out, site, reports)
-                    name = _report_key(out, site)
-                    digest = hashlib.sha256(staged.read_bytes()).hexdigest()
-                    state = dict(reports)
-                    # Recognize either version if publication is interrupted after recording it.
-                    previous = reports.get(name)
-                    state[name] = (
-                        [previous, digest]
-                        if previous and previous != digest
-                        else digest
-                    )
-                    _atomic_write(
-                        _diff_path(project / DIFF_STATE, project),
-                        json.dumps(state, sort_keys=True).encode() + b"\n",
-                    )
-                    staged.replace(out)
+                    _publish(staged, owned)
+                finally:
+                    shutil.rmtree(staged, ignore_errors=True)
             finally:
                 removed = _git(project, "worktree", "remove", "--force", str(baseline))
                 if removed.returncode != 0:
@@ -757,19 +666,9 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                 f"Warning: baseline worktree cleanup failed: {pruned.stderr.strip()}",
                 err=True,
             )
-    try:
-        rel = out.relative_to(project / "_site")
-    except ValueError:
-        click.echo(f"Wrote {out}")
-        return
-    click.echo(f"Wrote {out}")
-    click.echo(
-        f"With 'asta workspace preview' running, open {preview_url(os.environ).rstrip('/')}/{quote(rel.as_posix())}"
-    )
-    click.echo(
-        "Re-rendering the preview can remove this report; rerun the comparison to regenerate it.",
-        err=True,
-    )
+    page = owned / "what-changed.html"
+    click.echo(f"Wrote {page}")
+    click.echo(f"Open {page.as_uri()}")
 
 
 PREVIEW_PORT = 4848
