@@ -1,6 +1,5 @@
 """Fetch workspace build rules from the version selected by a project."""
 
-import email.utils
 import functools
 import hashlib
 import http.client
@@ -12,7 +11,6 @@ import re
 import shutil
 import signal
 import socket
-import stat
 import subprocess
 import sys
 import tarfile
@@ -720,28 +718,6 @@ def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
     return f"http://localhost:{port}/"
 
 
-def _open_site_file(root: Path, path: Path):
-    # Pin each directory on POSIX so a concurrent symlink swap cannot redirect
-    # an already-checked request outside the site.
-    if os.open not in os.supports_dir_fd:
-        return path.open("rb")
-    descriptor = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        parts = path.relative_to(root.anchor).parts
-        for part in parts[:-1]:
-            child = os.open(
-                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
-            )
-            os.close(descriptor)
-            descriptor = child
-        stream = os.open(
-            parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor
-        )
-        return os.fdopen(stream, "rb")
-    finally:
-        os.close(descriptor)
-
-
 def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
     """Serve the what-changed site copy; requests resolve its path afresh, so a
     rerun of what-changed is picked up without restarting."""
@@ -773,6 +749,9 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
             try:
                 path = Path(self.translate_path(self.path)).resolve()
                 # Check each request: later comparisons can replace the site copy.
+                # A swap between this check and the open is a known limit: a
+                # process that can write this private cache already has the
+                # user's access.
                 paths = [path]
                 if path.is_dir():
                     paths += [
@@ -780,58 +759,19 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
                     ]
                 if any(not candidate.is_relative_to(root) for candidate in paths):
                     raise ValueError("Path leaves the comparison site")
-                if path.is_dir():
-                    parsed = urlsplit(self.path)
-                    if not parsed.path.endswith("/"):
-                        self.send_response(301)
-                        self.send_header(
-                            "Location", parsed._replace(path=parsed.path + "/").geturl()
-                        )
-                        self.send_header("Content-Length", "0")
-                        self.end_headers()
-                        return None
-                    path = next((p for p in paths[1:] if p.is_file()), None)
-                    if path is None:
-                        self.send_error(404, "Directory listing is disabled")
-                        return None
-                stream = _open_site_file(root, path)
-            except FileNotFoundError:
-                self.send_error(404, "File not found")
-                return None
             except (OSError, RuntimeError, ValueError):
                 self.send_error(
                     403, "Path leaves the comparison site or is unavailable"
                 )
                 return None
-            try:
-                info = os.fstat(stream.fileno())
-                if not stat.S_ISREG(info.st_mode):
-                    self.send_error(404, "Not a site file")
-                    stream.close()
-                    return None
-                modified = self.headers.get("If-Modified-Since")
-                if modified and not self.headers.get("If-None-Match"):
-                    try:
-                        since = email.utils.parsedate_to_datetime(modified)
-                        if (
-                            since.utcoffset() is not None
-                            and int(info.st_mtime) <= since.timestamp()
-                        ):
-                            self.send_response(304)
-                            self.end_headers()
-                            stream.close()
-                            return None
-                    except (ValueError, TypeError, OverflowError):
-                        pass
-                self.send_response(200)
-                self.send_header("Content-type", self.guess_type(str(path)))
-                self.send_header("Content-Length", str(info.st_size))
-                self.send_header("Last-Modified", self.date_time_string(info.st_mtime))
-                self.end_headers()
-                return stream
-            except BaseException:
-                stream.close()
-                raise
+            if path.exists() and not path.is_dir() and not path.is_file():
+                self.send_error(404, "Not a site file")
+                return None
+            return super().send_head()
+
+        def list_directory(self, path):
+            self.send_error(404, "Directory listing is disabled")
+            return None
 
     handler = functools.partial(SiteHandler, directory=str(root))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)

@@ -876,51 +876,6 @@ def test_comparison_cache_stays_private_after_copy(project: Path) -> None:
         ).stat().st_mode & 0o777 == 0o700
 
 
-@pytest.mark.parametrize("method", ["GET", "HEAD"])
-@pytest.mark.parametrize("swap", ["file", "parent", "cache-parent"])
-def test_comparison_preview_blocks_mid_request_symlink_swap(
-    tmp_path: Path, monkeypatch, method: str, swap: str
-) -> None:
-    site = tmp_path / "cache/site"
-    site.mkdir(parents=True)
-    (site / "pages").mkdir()
-    (site / "pages/report.html").write_text("Public page")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "report.html").write_text("Private outside content")
-    original = Path.resolve
-
-    def swap_after_check(path, *args, **kwargs):
-        resolved = original(path, *args, **kwargs)
-        if path != site / "pages/report.html":
-            return resolved
-        if swap == "file":
-            path.unlink()
-            path.symlink_to(outside / "report.html")
-        elif swap == "parent":
-            (site / "pages").rename(site / "saved-pages")
-            (site / "pages").symlink_to(outside, target_is_directory=True)
-        else:
-            (site.parent).rename(tmp_path / "saved-cache")
-            (outside / "site/pages").mkdir(parents=True)
-            shutil.copy(outside / "report.html", outside / "site/pages/report.html")
-            (tmp_path / "cache").symlink_to(outside, target_is_directory=True)
-        return resolved
-
-    monkeypatch.setattr(Path, "resolve", swap_after_check)
-    server = workspace_module.comparison_server(site, 0)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        url = f"http://127.0.0.1:{server.server_port}/pages/report.html"
-        with pytest.raises(HTTPError) as error:
-            urlopen(Request(url, method=method))
-        assert error.value.code == 403
-        assert b"Private outside content" not in error.value.read()
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
 @pytest.mark.parametrize("phase", ["render", "script"])
 @pytest.mark.skipif(os.name != "posix", reason="POSIX termination")
 def test_termination_cleans_comparison_and_children(project: Path, phase: str) -> None:

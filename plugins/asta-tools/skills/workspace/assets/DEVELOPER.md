@@ -106,7 +106,7 @@ Use a trusted comparison ref: its Makefile and render-time code execute locally,
 
 The bundled diff script needs only the Python standard library. A local custom script runs with the Python interpreter running `asta`; that environment must provide any additional dependencies. Inline script dependency metadata is not installed automatically. The PR preview continues to run custom scripts with its build environment's `python3`.
 
-Run comparisons one at a time in a project: they share its render output. The comparison cache stays private to the user running the command; start `preview --what-changed` as that same user. If removing the previous cached copy fails, the command warns but still publishes the new page. After stopping comparisons, remove `.asta/cache/.what-changed-*.previous` to reclaim those leftover copies.
+Run comparisons one at a time in a project: they share its render output. The comparison cache stays private to the user running the command; start `preview --what-changed` as that same user. The server checks that each request stays inside that directory but does not guard against a symlink swapped in between the check and the read; a process that can do that already has your access. If removing the previous cached copy fails, the command warns but still publishes the new page. After stopping comparisons, remove `.asta/cache/.what-changed-*.previous` to reclaim those leftover copies.
 
 ### Managed paper viewers
 
