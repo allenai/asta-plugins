@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import threading
 from collections.abc import Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -469,9 +469,10 @@ def diff_script(project: Path) -> Path:
     local = project / "scripts" / DIFF_SCRIPT
     if local.is_file():
         return local
-    click.get_current_context().invoke(
-        sync, project=project, refresh=False, require_scripts=False
-    )
+    with redirect_stdout(sys.stderr):
+        click.get_current_context().invoke(
+            sync, project=project, refresh=False, require_scripts=False
+        )
     try:
         state = json.loads((project / ".asta/cache/workspace.json").read_text())
     except (FileNotFoundError, json.JSONDecodeError):
@@ -500,22 +501,24 @@ def render_site(directory: Path, label: str) -> Path:
         )
     click.echo(f"Rendering {label} with 'make render'", err=True)
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             ["make", "render"],
             cwd=directory,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            check=False,
         )
     except FileNotFoundError as exc:
         raise click.ClickException("make is required to render the workspace") from exc
-    if result.stdout:
-        click.echo(result.stdout, nl=False, err=True)
-    if result.returncode != 0:
-        detail = f":\n{result.stderr.strip()}" if result.stderr.strip() else ""
+    output = []
+    with process:
+        for line in process.stdout:
+            click.echo(line, nl=False, err=True)
+            output.append(line)
+        process.wait()
+    if process.returncode != 0:
+        detail = f":\n{''.join(output).strip()}" if output else ""
         raise click.ClickException(f"'make render' failed for {label}{detail}")
-    if result.stderr:
-        click.echo(result.stderr, nl=False, err=True)
     site = directory / "_site"
     if not site.is_dir():
         raise click.ClickException(f"'make render' did not produce _site for {label}")
@@ -525,23 +528,28 @@ def render_site(directory: Path, label: str) -> Path:
 DIFF_STATE = Path(".asta/cache/what-changed.json")
 
 
-def _diff_path(path: Path) -> Path:
+def _diff_path(path: Path, project: Path) -> Path:
     path = path.absolute()
-    if any(part.is_symlink() for part in (path, *path.parents)):
+    if path.is_symlink() or any(
+        part.is_symlink() and part.parent.resolve().is_relative_to(project)
+        for part in path.parents
+    ):
         raise click.ClickException(f"Comparison paths must not use symlinks: {path}")
     return path.resolve()
 
 
 def _previous_reports(project: Path, site: Path) -> dict[str, str]:
-    state_path = _diff_path(project / DIFF_STATE)
+    state_path = _diff_path(project / DIFF_STATE, project)
+    invalid_state = (
+        f"Invalid comparison report state: {state_path}. Restore it from a backup, "
+        "or remove the generated comparison reports and this state file before retrying."
+    )
     try:
         state = json.loads(state_path.read_text())
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError as exc:
-        raise click.ClickException(
-            f"Invalid comparison report state: {state_path}"
-        ) from exc
+        raise click.ClickException(invalid_state) from exc
     if not isinstance(state, dict) or any(
         not isinstance(name, str)
         or not name
@@ -552,7 +560,7 @@ def _previous_reports(project: Path, site: Path) -> dict[str, str]:
         or not re.fullmatch(r"[0-9a-f]{64}", digest)
         for name, digest in state.items()
     ):
-        raise click.ClickException(f"Invalid comparison report state: {state_path}")
+        raise click.ClickException(invalid_state)
     # A renderer can replace a report with a real page; only exclude our bytes.
     return {
         name: digest
@@ -589,9 +597,8 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
         raise click.ClickException(
             "Could not locate the project within its git repository"
         )
-    out = _diff_path(out or project / "_site" / "what-changed.html")
-    _diff_path(project / DIFF_STATE)
-    script = diff_script(project)
+    out = _diff_path(out or project / "_site" / "what-changed.html", project)
+    _diff_path(project / DIFF_STATE, project)
     try:
         with tempfile.TemporaryDirectory(prefix="asta-what-changed-") as tmp:
             baseline = Path(tmp) / "baseline"
@@ -608,18 +615,29 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                     f"Could not check out {ref}: {added.stderr.strip()}"
                 )
             try:
-                old_site = render_site(baseline / prefix.stdout.rstrip("\n"), ref)
+                baseline_project = baseline / prefix.stdout.rstrip("\n")
+                if not baseline_project.is_dir():
+                    raise click.ClickException(
+                        f"Project directory does not exist for {ref}: {baseline_project}"
+                    )
+                script = diff_script(project)
+                old_site = render_site(baseline_project, ref)
                 new_site = render_site(project, "the working tree")
                 reports = _previous_reports(project, new_site)
-                _diff_path(out)
+                _diff_path(out, project)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 excluded = set(reports)
-                # Exclude the destination without deleting the previous good report.
                 if out.is_file():
                     try:
-                        excluded.add(out.relative_to(new_site).as_posix())
+                        destination = out.relative_to(new_site).as_posix()
                     except ValueError:
                         pass
+                    else:
+                        if destination not in reports:
+                            raise click.ClickException(
+                                f"Refusing to overwrite an unrecognized site page: {out}. "
+                                "Choose a different --out path."
+                            )
                 if excluded:
                     comparison_site = Path(tmp) / "current"
                     shutil.copytree(
@@ -656,12 +674,12 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
                     )
                     if result.returncode != 0:
                         raise click.ClickException(f"{DIFF_SCRIPT} failed")
-                    _diff_path(staged)
+                    _diff_path(staged, project)
                     if not staged.is_file() or staged.stat().st_size == 0:
                         raise click.ClickException(
                             f"{DIFF_SCRIPT} did not write nonempty HTML to {out}"
                         )
-                    _diff_path(out)
+                    _diff_path(out, project)
                     staged.replace(out)
             finally:
                 removed = _git(project, "worktree", "remove", "--force", str(baseline))
@@ -685,7 +703,7 @@ def what_changed(ref: str, project: Path, out: Path | None) -> None:
         return
     reports[rel.as_posix()] = hashlib.sha256(out.read_bytes()).hexdigest()
     _atomic_write(
-        _diff_path(project / DIFF_STATE),
+        _diff_path(project / DIFF_STATE, project),
         json.dumps(reports, sort_keys=True).encode() + b"\n",
     )
     click.echo(f"Wrote {out}")

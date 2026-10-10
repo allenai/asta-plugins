@@ -1,10 +1,13 @@
 """`asta workspace what-changed` compares a git ref's rendered site with the working tree."""
 
+import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -301,6 +304,13 @@ def test_requires_fresh_nonempty_html(
     if stale_output:
         (project / "_site").mkdir()
         (project / "_site/what-changed.html").write_text("A stale report")
+        state = project / workspace_module.DIFF_STATE
+        state.parent.mkdir(parents=True)
+        state.write_text(
+            json.dumps(
+                {"what-changed.html": hashlib.sha256(b"A stale report").hexdigest()}
+            )
+        )
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
@@ -375,6 +385,202 @@ def test_requires_a_diff_script(project: Path, monkeypatch) -> None:
     )
     assert result.exit_code != 0
     assert "No what-changed.py for this project" in result.output
+
+
+@pytest.mark.parametrize("output_name", ["what-changed.html", "custom.html"])
+@pytest.mark.parametrize("previous_report", [False, True])
+def test_rendered_destination_is_preserved(
+    project: Path, output_name: str, previous_report: bool
+) -> None:
+    out = project / "_site" / output_name
+    args = ["what-changed", "last-read", "--project", str(project)]
+    if output_name != "what-changed.html":
+        args += ["--out", str(out)]
+    if previous_report:
+        result = CliRunner().invoke(workspace, args)
+        assert result.exit_code == 0, result.output
+    state = project / workspace_module.DIFF_STATE
+    previous_state = state.read_bytes() if state.exists() else None
+    page = "<html><body><main>A real research page.</main></body></html>"
+    Path(shutil.which("make")).write_text(
+        FAKE_MAKE + f"\npathlib.Path('_site/{output_name}').write_text({page!r})\n"
+    )
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code != 0
+    assert "Refusing to overwrite an unrecognized site page" in result.output
+    assert "Choose a different --out" in result.output
+    assert out.read_text() == page
+    assert "Wrote " not in result.stdout
+    if previous_state is not None:
+        assert state.read_bytes() == previous_state
+    else:
+        assert not state.exists()
+    assert (
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(project), "worktree", "list"], text=True
+            ).splitlines()
+        )
+        == 1
+    )
+
+
+def test_render_progress_is_visible_before_build_finishes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    Path(shutil.which("make")).write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys, time\n"
+        "release = pathlib.Path.cwd() / 'release-render'\n"
+        "print('render-progress:' + str(release), flush=True)\n"
+        "deadline = time.monotonic() + 3\n"
+        "while not release.exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "if not release.exists():\n"
+        "    sys.exit('Progress was buffered until render finished')\n" + FAKE_MAKE
+    )
+    original = workspace_module.click.echo
+    progress = []
+
+    def receive_progress(message=None, *args, **kwargs):
+        original(message, *args, **kwargs)
+        if isinstance(message, str) and message.startswith("render-progress:"):
+            assert kwargs.get("err") is True
+            progress.append(message)
+            Path(message.strip().removeprefix("render-progress:")).touch()
+
+    monkeypatch.setattr(workspace_module.click, "echo", receive_progress)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert len(progress) == 2
+    assert "render-progress:" not in result.stdout
+
+
+@pytest.mark.parametrize("inside_site", [False, True])
+def test_symlinked_external_parent_allows_output(
+    project: Path, inside_site: bool
+) -> None:
+    parent = project.parent / (project.name + "-linked-parent")
+    parent.symlink_to(
+        project if inside_site else project.parent, target_is_directory=True
+    )
+    out = parent / "_site/changes.html" if inside_site else parent / "saved.html"
+    result = CliRunner().invoke(
+        workspace,
+        ["what-changed", "last-read", "--project", str(project), "--out", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Changes since last-read" in out.read_text()
+
+
+@pytest.mark.parametrize("project_alias", [False, True])
+def test_symlinked_site_subdirectory_preserves_target(
+    project: Path, project_alias: bool
+) -> None:
+    target = project.parent / (project.name + "-external-reports")
+    target.mkdir()
+    (target / "custom.html").write_text("Keep this file")
+    (project / "_site").mkdir()
+    (project / "_site/reports").symlink_to(target, target_is_directory=True)
+    output_project = project
+    if project_alias:
+        output_project = project.parent / (project.name + "-alias")
+        output_project.symlink_to(project, target_is_directory=True)
+    result = CliRunner().invoke(
+        workspace,
+        [
+            "what-changed",
+            "last-read",
+            "--project",
+            str(project),
+            "--out",
+            str(output_project / "_site/reports/custom.html"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "must not use symlinks" in result.output
+    assert (target / "custom.html").read_text() == "Keep this file"
+
+
+@pytest.mark.parametrize(
+    "state_contents", ["{broken", "[]", '{"custom.html": "bad-hash"}']
+)
+def test_invalid_report_state_preserves_reports_and_explains_recovery(
+    project: Path, state_contents: str
+) -> None:
+    args = ["what-changed", "last-read", "--project", str(project)]
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code == 0, result.output
+    report = project / "_site/what-changed.html"
+    previous = report.read_bytes()
+    state = project / workspace_module.DIFF_STATE
+    state.write_text(state_contents)
+    result = CliRunner().invoke(workspace, args)
+    assert result.exit_code != 0
+    assert "Invalid comparison report state" in result.output
+    assert "remove the generated comparison reports" in result.output
+    assert report.read_bytes() == previous
+    assert state.read_text() == state_contents
+    assert "Wrote " not in result.stdout
+
+
+def test_missing_baseline_layout_does_not_fetch_script(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nested = project / "new-workspace"
+    nested.mkdir()
+    (project / "index.qmd").rename(nested / "index.qmd")
+    (project / "scripts").rename(nested / "scripts")
+    monkeypatch.setattr(
+        workspace_module, "diff_script", lambda *_: pytest.fail("unexpected sync")
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(nested)]
+    )
+    assert result.exit_code != 0
+    assert "Project directory does not exist for last-read:" in result.output
+    assert "new-workspace" in result.output
+    assert "Rendering " not in result.output
+    assert (
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(project), "worktree", "list"], text=True
+            ).splitlines()
+        )
+        == 1
+    )
+
+
+def test_internal_sync_status_uses_stderr(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / "scripts/what-changed.py").unlink()
+    workflow = project / ".github/workflows/docs.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "jobs:\n  docs:\n"
+        "    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@main\n"
+    )
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:gz") as bundle:
+        data = (ASSETS / "what-changed.py").read_bytes()
+        member = tarfile.TarInfo(
+            "source/" + workspace_module.ASSET_DIR + "what-changed.py"
+        )
+        member.size = len(data)
+        bundle.addfile(member, io.BytesIO(data))
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: (b"# rules", archive.getvalue())
+    )
+    args = ["what-changed", "last-read", "--project", str(project)]
+    for status in ("Loaded workspace.mk", "workspace.mk already cached"):
+        result = CliRunner().invoke(workspace, args)
+        assert result.exit_code == 0, result.output
+        assert status in result.stderr
+        assert status not in result.stdout
+        assert "Wrote " in result.stdout
 
 
 @pytest.mark.parametrize("directory", [".", "research workspace/docs"])
