@@ -50,6 +50,8 @@ The workspace repo is the reviewed copy; Overleaf is where collaborators edit.
 
 Dry-run checks the planned export and workspace Git identity, but does not run commit hooks or signing.
 
+If publication stops at a commit hook or signer, check your workspace's hook and signing configuration. Hooks run against the exported paper directory, so a hook requiring workspace-only configuration must use an appropriate configuration path. A failed push can also come from a pre-push hook. Error messages give this guidance without printing raw Git diagnostics, which may contain credentials.
+
 ### Authentication
 
 Use your own Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token). The same commands work with a service account later. Interactive terminals can prompt for the token; unattended runs require a token or working credential helper and fail instead of waiting for a terminal prompt.

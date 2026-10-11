@@ -65,6 +65,13 @@ def git_bytes(
         operation = args[index] if index < len(args) else "command"
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
+        if operation == "push" and (
+            b"hook declined" in stderr or b"pre-push" in stderr
+        ):
+            raise click.ClickException(
+                "Workspace pre-push hook failed; nothing pushed. "
+                "Check the hook against the exported paper directory and Overleaf remote."
+            )
         if operation in ("clone", "push") and (
             re.search(rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)401\b", stderr)
             or b"authentication failed" in stderr
@@ -88,6 +95,17 @@ def git_bytes(
             raise click.ClickException(
                 f"git {operation} failed (exit {result.returncode}). "
                 "Check your Overleaf credentials, project access, network and remote state."
+                + (
+                    " Also check workspace pre-push hooks."
+                    if operation == "push"
+                    else ""
+                )
+            )
+        if operation == "commit":
+            raise click.ClickException(
+                f"git commit failed (exit {result.returncode}). "
+                "Check workspace commit hooks and signing settings. "
+                "Hooks run in the exported paper directory, not the full workspace."
             )
         raise click.ClickException(
             f"git {operation} failed (exit {result.returncode})."
@@ -129,6 +147,7 @@ def commit_settings(root: Path) -> list[str]:
         elif result.returncode != 1:
             raise click.ClickException("Could not read workspace Git commit settings.")
     for key, value in settings.items():
+        # OpenPGP/X.509 keys are backend identifiers; only SSH file keys need rebasing.
         if (
             key == "user.signingkey"
             and settings.get("gpg.format") == "ssh"
@@ -288,9 +307,9 @@ def check_ignore_files(names) -> None:
             unicodedata.normalize("NFC", name.rsplit("/", 1)[-1]).casefold()
             == ".gitignore"
         ):
-            refuse(
-                name,
-                "can hide imported sources; keep ignore rules in the workspace root",
+            raise click.ClickException(
+                f"Overleaf sync refuses {name!r}: ignore rules can hide imported sources. "
+                "Keep ignore rules in the workspace root."
             )
 
 

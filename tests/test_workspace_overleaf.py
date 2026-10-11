@@ -109,6 +109,37 @@ def test_git_failure_with_only_options_has_sanitized_error(tmp_path):
         module.git_bytes("--invalid-fixture-option", cwd=tmp_path)
 
 
+@pytest.mark.parametrize(
+    "operation,diagnostic,guidance",
+    [
+        (
+            "commit",
+            b"fixture-secret signer failed",
+            "commit hooks and signing settings",
+        ),
+        (
+            "push",
+            b"pre-push hook declined: fixture-secret",
+            "Workspace pre-push hook failed",
+        ),
+        ("push", b"fixture-secret", "Also check workspace pre-push hooks"),
+    ],
+)
+def test_git_failure_gives_local_guidance_without_echoing_diagnostics(
+    tmp_path, monkeypatch, operation, diagnostic, guidance
+):
+    monkeypatch.setattr(
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", diagnostic)
+        ),
+    )
+    with pytest.raises(module.click.ClickException, match=guidance) as error:
+        module.git_bytes(operation, cwd=tmp_path)
+    assert "fixture-secret" not in str(error.value)
+
+
 def test_sync_preserves_whitespace_in_repository_root(setup):
     _, project = setup
     renamed = project.with_name(" project ")
@@ -566,6 +597,8 @@ def test_publish_honors_workspace_pre_push_failure(setup, dry_run):
     git(project, "config", "core.hooksPath", "hooks")
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert (result.exit_code == 0) == dry_run, result.output
+    if not dry_run:
+        assert "Also check workspace pre-push hooks" in result.output
     assert (project / "paper/overleaf.json").read_bytes() == before
     assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
 
@@ -618,6 +651,9 @@ def test_publish_honors_workspace_hook_failure(setup, dry_run):
     hook.chmod(0o700)
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert (result.exit_code == 0) == dry_run, result.output
+    if not dry_run:
+        assert "commit hooks and signing settings" in result.output
+        assert "not the full workspace" in result.output
     assert (project / "paper/overleaf.json").read_bytes() == before
     assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
 
@@ -1421,7 +1457,8 @@ def test_local_git_failures_do_not_report_overleaf_auth(
     )
     with pytest.raises(module.click.ClickException) as error:
         module.git_bytes(operation, cwd=project)
-    assert str(error.value) == f"git {operation} failed (exit 1)."
+    assert str(error.value).startswith(f"git {operation} failed (exit 1).")
+    assert "Overleaf" not in str(error.value)
 
 
 def test_pull_preserves_ignored_file_after_workspace_untracks_it(setup):
@@ -1557,7 +1594,13 @@ def test_sync_refuses_reserved_filename_aliases(setup, command, name):
         commit_all(project)
     before = git(seed, "ls-remote", "origin", "master")
     result = run(project, command, *([URL] if command == "pull" else []))
-    assert result.exit_code != 0 and "copies plain files only" in result.output
+    assert result.exit_code != 0
+    expected = (
+        "ignore rules can hide imported sources"
+        if "ignore" in name.casefold()
+        else "copies plain files only"
+    )
+    assert expected in result.output
     assert name in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
     if command == "pull":
