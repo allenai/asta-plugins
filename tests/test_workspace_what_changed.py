@@ -684,7 +684,7 @@ def test_working_copy_preserves_spaces_in_repository_path(project: Path) -> None
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])
-def test_working_copy_retains_local_inputs_and_git_index(
+def test_working_copy_keeps_render_inputs_and_git_index(
     project: Path, tmp_path_factory, linked_worktree: bool
 ) -> None:
     if linked_worktree:
@@ -695,6 +695,11 @@ def test_working_copy_retains_local_inputs_and_git_index(
         (project / ".gitignore").write_text("_site/\n.asta/cache/\nlocal-data/\n")
         (project / "local-data").mkdir()
         (project / "local-data/input.txt").write_text("Ignored data")
+        (project / ".env").write_text("SECRET=1")
+        (project / "notes").mkdir()
+        (project / "notes/.env.local").write_text("SECRET=2")
+        (project / "untracked dir").mkdir()
+        (project / "untracked dir/new.qmd").write_text("New page")
         (project / "untracked.txt").write_text("Untracked input")
         (project / "index.qmd").write_text("Edited working content")
         (project / "scripts/what-changed.py").unlink()
@@ -707,7 +712,10 @@ def test_working_copy_retains_local_inputs_and_git_index(
         (cache / ".what-changed-old.previous").mkdir()
         destination = tmp_path_factory.mktemp("snapshot") / "working"
         copied = workspace_module.working_copy(project, project, destination)
-        assert (copied / "local-data/input.txt").read_text() == "Ignored data"
+        assert not (copied / "local-data").exists()
+        assert not (copied / ".env").exists()
+        assert not (copied / "notes/.env.local").exists()
+        assert (copied / "untracked dir/new.qmd").read_text() == "New page"
         assert (copied / "untracked.txt").read_text() == "Untracked input"
         assert (copied / "index.qmd").read_text() == "Edited working content"
         assert not (copied / "scripts/what-changed.py").exists()

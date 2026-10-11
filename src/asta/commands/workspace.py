@@ -534,8 +534,26 @@ def render_site(directory: Path, label: str) -> Path:
 COMPARISON_DIR = Path(".asta/cache/what-changed")
 
 
+def _ls_files(repository: Path, *args: str) -> list[str]:
+    listed = _git(repository, "ls-files", "-z", *args)
+    if listed.returncode != 0:
+        raise click.ClickException(
+            f"Could not list the working tree: {listed.stderr.strip()}"
+        )
+    return [name for name in listed.stdout.split("\0") if name]
+
+
+def _is_env_file(name: str) -> bool:
+    base = Path(name).name
+    return base == ".env" or base.startswith(".env.")
+
+
 def working_copy(repository: Path, project: Path, destination: Path) -> Path:
-    """Keep live-preview output separate while retaining local inputs and Git context."""
+    """Copy render inputs only: Git-visible files plus the synced workspace cache.
+
+    Other ignored files (virtualenvs, outputs, caches) and untracked .env files
+    stay out, so comparisons stay quick and do not duplicate secrets.
+    """
     cloned = _git(
         repository,
         "clone",
@@ -553,23 +571,52 @@ def working_copy(repository: Path, project: Path, destination: Path) -> Path:
         raise click.ClickException(
             f"Could not index the working tree: {indexed.stderr.strip()}"
         )
+    untracked = [
+        name
+        for name in _ls_files(repository, "--others", "--exclude-standard")
+        if not _is_env_file(name)
+    ]
+    live = (project / "_site", project / ".quarto")
+    for name in dict.fromkeys(_ls_files(repository, "--cached") + untracked):
+        source = repository / name
+        if not os.path.lexists(source) or any(
+            source == path or path in source.parents for path in live
+        ):
+            continue
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir() and not source.is_symlink():
+            # A submodule or nested repository checkout.
+            shutil.copytree(
+                source,
+                target,
+                symlinks=True,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(".git"),
+            )
+        else:
+            shutil.copy2(source, target, follow_symlinks=False)
+
+    # The Makefile includes rules synced here; reuse them instead of re-syncing.
+    cache = project / ".asta/cache"
 
     def ignore(directory, names):
-        path = Path(directory)
-        omitted = {".git"}
-        if path == project:
-            omitted.update(("_site", ".quarto"))
-        if path == project / ".asta/cache":
-            omitted.update(
-                name
-                for name in names
-                if name == "what-changed" or name.startswith(".what-changed-")
-            )
-        return omitted
+        if Path(directory) != cache:
+            return set()
+        return {
+            name
+            for name in names
+            if name == "what-changed" or name.startswith(".what-changed-")
+        }
 
-    shutil.copytree(
-        repository, destination, symlinks=True, dirs_exist_ok=True, ignore=ignore
-    )
+    if cache.is_dir() and not cache.is_symlink():
+        shutil.copytree(
+            cache,
+            destination / cache.relative_to(repository),
+            symlinks=True,
+            dirs_exist_ok=True,
+            ignore=ignore,
+        )
     return destination / project.relative_to(repository)
 
 
