@@ -1505,6 +1505,66 @@ def test_publish_refuses_record_hidden_by_index_flags(setup):
 
 
 @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+@pytest.mark.parametrize("local_edit", ["uncommitted local edits\n", None])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_refuses_source_changes_hidden_by_index_flags(
+    setup, monkeypatch, flag, local_edit, dry_run
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    source = project / "paper/main.tex"
+    git(project, "update-index", flag, "paper/main.tex")
+    if local_edit is None:
+        source.unlink()
+    else:
+        source.write_text(local_edit)
+    assert git(project, "status", "--porcelain") == ""
+    record = (project / "paper/overleaf.json").read_bytes()
+    before = git(seed, "ls-remote", "origin", "master")
+    monkeypatch.setattr(
+        module, "clone", lambda *args: pytest.fail("must refuse before transport")
+    )
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code != 0 and "local changes" in result.output
+    assert "paper/main.tex" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert (project / "paper/overleaf.json").read_bytes() == record
+    if local_edit is None:
+        assert not source.exists()
+    else:
+        assert source.read_text() == local_edit
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+@pytest.mark.parametrize(
+    "name",
+    [".GITATTRIBUTES", "nested/.gitattributeſ", ".GitIgnore", "nested/.GITIGNORE"],
+)
+def test_sync_refuses_reserved_filename_aliases(setup, command, name):
+    seed, project = setup
+    if command == "publish":
+        assert run(project, "pull", URL).exit_code == 0
+        commit_all(project)
+    target = (seed if command == "pull" else project / "paper") / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("*\n")
+    if command == "pull":
+        git(seed, "add", name)
+        git(seed, "commit", "-m", "reserved filename")
+        git(seed, "push", "origin", "master")
+    else:
+        commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, command, *([URL] if command == "pull" else []))
+    assert result.exit_code != 0 and "copies plain files only" in result.output
+    assert name in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    if command == "pull":
+        assert not (project / "paper").exists()
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
 @pytest.mark.parametrize("remote_edit", ["updated remote source\n", None])
 def test_pull_preserves_local_edits_hidden_by_index_flags(setup, flag, remote_edit):
     seed, project = setup

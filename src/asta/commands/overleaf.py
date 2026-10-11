@@ -270,7 +270,10 @@ def read_plain_files(repo: Path, revision: str, prefix: str = "") -> dict[str, b
     for name, (mode, blob) in entries.items():
         if mode != "100644":
             refuse(name, "is executable, a symlink or a submodule")
-        if name.rsplit("/", 1)[-1] == ".gitattributes":
+        if (
+            unicodedata.normalize("NFC", name.rsplit("/", 1)[-1]).casefold()
+            == ".gitattributes"
+        ):
             refuse(name, "can change file contents in transit")
         data = git_bytes("cat-file", "blob", blob, cwd=repo)
         if data.startswith(b"version https://git-lfs.github.com/spec/"):
@@ -281,7 +284,10 @@ def read_plain_files(repo: Path, revision: str, prefix: str = "") -> dict[str, b
 
 def check_ignore_files(names) -> None:
     for name in names:
-        if name.rsplit("/", 1)[-1] == ".gitignore":
+        if (
+            unicodedata.normalize("NFC", name.rsplit("/", 1)[-1]).casefold()
+            == ".gitignore"
+        ):
             refuse(
                 name,
                 "can hide imported sources; keep ignore rules in the workspace root",
@@ -543,6 +549,18 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             f"Commit or restore {(paper / CONFIG).relative_to(root)} before publishing. "
             "The sync record differs from the committed revision."
         )
+    # Index flags can hide edits or deletions from git status.
+    for name, data in ours.items():
+        target = paper / name
+        if (
+            target.resolve() != target
+            or not target.is_file()
+            or target.read_bytes() != data
+        ):
+            raise click.ClickException(
+                f"Commit or discard local changes to {target.relative_to(root)} first; "
+                "nothing pushed."
+            )
     ours.pop(CONFIG, None)
     if not ours:
         raise click.ClickException(
