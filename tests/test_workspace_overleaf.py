@@ -1939,3 +1939,69 @@ def test_publish_requires_origin_remote(setup):
     assert result.exit_code != 0
     assert "`origin` remote" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
+
+
+@pytest.mark.parametrize("merged", [False, True])
+def test_merge_gate_preserves_previous_fetch_and_workspace_refs(setup, merged):
+    _, project = setup
+    git(project, "fetch", "-q", "origin", "main")
+    fetch_head = project / git(project, "rev-parse", "--git-path", "FETCH_HEAD")
+    before_fetch = fetch_head.read_bytes()
+    (project / "reviewed.txt").write_text("reviewed revision\n")
+    commit_all(project)
+    if merged:
+        git(project, "push", "-q", "origin", "HEAD:main")
+    before_refs = git(project, "show-ref")
+    assert module.on_default_branch(project) == merged
+    assert fetch_head.read_bytes() == before_fetch
+    assert git(project, "show-ref") == before_refs
+
+
+def test_merge_gate_accepts_older_merged_revision(setup):
+    _, project = setup
+    reviewed = git(project, "rev-parse", "HEAD")
+    (project / "later.txt").write_text("later merged revision\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    git(project, "switch", "-q", "--detach", reviewed)
+    assert module.on_default_branch(project)
+
+
+@pytest.mark.parametrize("name", ["experiment.log", "submission.bbl"])
+def test_untracked_build_suffix_assets_require_commit_for_export(setup, name):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    asset = project / "paper" / name
+    asset.write_bytes(b"paper asset\n")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert asset.read_bytes() == b"paper asset\n"
+    assert not (seed / name).exists()
+    git(project, "add", "--", "paper/overleaf.json", f"paper/{name}")
+    git(project, "commit", "-q", "-m", "review asset")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / name).read_bytes() == b"paper asset\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook")
+def test_workspace_only_hook_config_failure_explains_export_layout(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    (project / ".pre-commit-config.yaml").write_text("repos: []\n")
+    commit_all(project)
+    before_record = (project / "paper/overleaf.json").read_bytes()
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    hook = project / ".git/hooks/pre-commit"
+    hook.write_text("#!/bin/sh\ntest -f .pre-commit-config.yaml\n")
+    hook.chmod(0o700)
+    result = run(project, "publish")
+    assert result.exit_code != 0
+    assert "commit hooks and signing settings" in result.output
+    assert "exported paper directory, not the full workspace" in result.output
+    assert (project / "paper/overleaf.json").read_bytes() == before_record
+    assert git(seed, "ls-remote", "origin", "master") == before_remote

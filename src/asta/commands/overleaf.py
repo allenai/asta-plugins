@@ -10,6 +10,7 @@ import tempfile
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
 import click
 
@@ -544,27 +545,40 @@ def pull(url: str | None, directory: str, project: Path) -> None:
 
 
 def on_default_branch(root: Path) -> bool:
-    """Whether HEAD is on the default branch of the workspace's `origin` remote."""
+    """Whether HEAD is an ancestor of the default branch of workspace `origin`."""
     # Merging is the review gate: only revisions on the reviewed branch reach Overleaf.
+    gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
     try:
-        symref = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
-        match = re.search(r"^ref: refs/heads/(\S+)\tHEAD$", symref, re.M)
-        if not match:
-            raise click.ClickException("no default branch")
-        ref = f"refs/heads/{match.group(1)}"
-        git("fetch", "-q", "--no-tags", "origin", ref, cwd=root)
-    except click.ClickException:
-        raise click.ClickException(
-            "Could not read the default branch of the workspace's `origin` remote; "
-            "nothing pushed. Publish from a clone of the reviewed repository."
-        ) from None
-    merged = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"],
-        cwd=root,
-        env=git_environment(),
-        capture_output=True,
-    )
-    return merged.returncode == 0
+        try:
+            symref = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
+            match = re.search(r"^ref: refs/heads/(\S+)\tHEAD$", symref, re.M)
+            if not match:
+                raise click.ClickException("no default branch")
+            ref = f"refs/heads/{match.group(1)}"
+            git(
+                "fetch",
+                "-q",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "--refmap=",
+                "origin",
+                f"{ref}:{gate}",
+                cwd=root,
+            )
+        except click.ClickException:
+            raise click.ClickException(
+                "Could not read the default branch of the workspace's `origin` remote; "
+                "nothing pushed. Publish from a clone of the reviewed repository."
+            ) from None
+        merged = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "HEAD", gate],
+            cwd=root,
+            env=git_environment(),
+            capture_output=True,
+        )
+        return merged.returncode == 0
+    finally:
+        git("update-ref", "-d", gate, cwd=root)
 
 
 @overleaf.command()
