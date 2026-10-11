@@ -156,6 +156,14 @@ def test_transport_project_ids_do_not_report_auth_errors(
         (b"HTTP/2 401", "authentication failed"),
         (b"The requested URL returned error: 403", "access denied"),
         (b"fatal: Authentication failed", "authentication failed"),
+        (
+            b"fatal: could not read Username: terminal prompts disabled",
+            "authentication failed",
+        ),
+        (
+            b"fatal: could not read Password: terminal prompts disabled",
+            "authentication failed",
+        ),
         (b"Authentifizierung fehlgeschlagen (HTTP/2 401)", "authentication failed"),
         (b"Zugriff verweigert (HTTP/2 403)", "access denied"),
         (b"Authentifizierung fehlgeschlagen", "Check your Overleaf credentials"),
@@ -440,6 +448,51 @@ def test_rejects_non_overleaf_urls(setup, url):
     assert "git.overleaf.com/<project-id>" in result.output
 
 
+@pytest.mark.parametrize(
+    "interactive,caller_prompt,expected_prompt",
+    [(False, None, "0"), (False, "1", "0"), (True, None, None), (True, "0", "0")],
+)
+def test_credentials_prompt_only_in_interactive_terminal(
+    monkeypatch, interactive, caller_prompt, expected_prompt
+):
+    monkeypatch.delenv("OVERLEAF_TOKEN", raising=False)
+    monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+    if caller_prompt is not None:
+        monkeypatch.setenv("GIT_TERMINAL_PROMPT", caller_prompt)
+    monkeypatch.setattr(
+        module,
+        "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: interactive)),
+        raising=False,
+    )
+    with module.credentials() as (env, options):
+        assert env.get("GIT_TERMINAL_PROMPT") == expected_prompt
+        assert options == []
+
+
+def test_unattended_missing_credentials_fail_without_prompt(setup, monkeypatch):
+    _, project = setup
+    monkeypatch.delenv("GIT_ASKPASS", raising=False)
+    monkeypatch.delenv("SSH_ASKPASS", raising=False)
+    monkeypatch.setattr(
+        module,
+        "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: False)),
+        raising=False,
+    )
+    with module.credentials() as (env, options):
+        result = subprocess.run(
+            ["git", *options, "-c", "credential.helper=", "credential", "fill"],
+            cwd=project,
+            env=env,
+            input=b"url=https://git@git.overleaf.com/1234567\n\n",
+            capture_output=True,
+            timeout=5,
+        )
+    assert result.returncode != 0
+    assert b"terminal prompts disabled" in result.stderr
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
 def test_token_uses_askpass_and_disables_helpers(monkeypatch):
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
@@ -521,6 +574,7 @@ def test_publish_honors_workspace_pre_push_failure(setup, dry_run):
 @pytest.mark.parametrize("scope", ["global", "local", "default"])
 def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch, scope):
     seed, project = setup
+    monkeypatch.delenv("GIT_ASKPASS", raising=False)
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
@@ -530,6 +584,7 @@ def test_publish_keeps_token_out_of_commit_hooks(setup, tmp_path, monkeypatch, s
     hook.write_text(
         "#!/bin/sh\n"
         'test -z "$OVERLEAF_TOKEN" || exit 1\n'
+        'test -z "$GIT_ASKPASS" || exit 1\n'
         'printf checked > "$TEST_HOOK_MARKER"\n'
     )
     hook.chmod(0o700)
@@ -625,6 +680,8 @@ def test_publish_honors_workspace_signing(
     "signing_format,key",
     [
         ("openpgp", "ABCD1234"),
+        ("openpgp", "keys/signing-key"),
+        ("x509", "certificates/signing-key"),
         ("ssh", "key::ssh-ed25519 fixture"),
         ("ssh", "ssh-ed25519 fixture"),
     ],

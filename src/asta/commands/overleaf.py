@@ -5,6 +5,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unicodedata
 from contextlib import contextmanager
@@ -67,6 +68,8 @@ def git_bytes(
         if operation in ("clone", "push") and (
             re.search(rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)401\b", stderr)
             or b"authentication failed" in stderr
+            or b"could not read username" in stderr
+            or b"could not read password" in stderr
         ):
             raise click.ClickException(
                 "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper."
@@ -151,6 +154,8 @@ def validate_url(url: str | None) -> str:
 def credentials():
     """Answer Git's prompt from OVERLEAF_TOKEN, else leave normal credential helpers in place."""
     env = git_environment()
+    if not sys.stdin.isatty():
+        env["GIT_TERMINAL_PROMPT"] = "0"
     token = os.environ.get("OVERLEAF_TOKEN")
     if not token:
         yield env, []
