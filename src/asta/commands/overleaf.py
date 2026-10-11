@@ -44,7 +44,6 @@ def git_environment() -> dict:
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
-    env.update(LC_MESSAGES="C", LANGUAGE="")
     return env
 
 
@@ -78,9 +77,7 @@ def git_bytes(
             raise click.ClickException(
                 "Overleaf access denied. Check your token and access to this project."
             )
-        if operation in ("clone", "push") and (
-            b"rejected" in stderr or b"fetch first" in stderr
-        ):
+        if operation == "push" and (b"rejected" in stderr or b"fetch first" in stderr):
             raise click.ClickException(
                 f"git {operation} was rejected. Check access and the remote state."
             )
@@ -164,7 +161,7 @@ def credentials():
         token_file.write_text(token, encoding="utf-8")
         askpass = Path(tmp) / "askpass"
         askpass.write_text(
-            '#!/bin/sh\ncase "$1" in Username*) echo git;; *) cat "$(dirname "$0")/token";; esac\n',
+            '#!/bin/sh\ncat "$(dirname "$0")/token"\n',
             encoding="utf-8",
         )
         askpass.chmod(stat.S_IRWXU)
@@ -181,7 +178,7 @@ def clone(url: str, dest: Path) -> str:
             "--quiet",
             "--no-tags",
             "--no-checkout",
-            url,
+            url.replace("https://", "https://git@", 1),
             str(dest),
             cwd=dest.parent,
             env=env,
@@ -232,14 +229,20 @@ def refuse(name: str, reason: str) -> None:
     )
 
 
+def is_git_path(part: str) -> bool:
+    # Git's HFS+ ignorable characters and NTFS aliases of its administrative name.
+    normalized = re.sub(r"[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]", "", part)
+    return bool(re.match(r"^(?:\.git|git~1)[ .]*(?:$|[:\\])", normalized.casefold()))
+
+
 def check_paths(names) -> None:
     seen = {}
     names = set(names)
     for name in names:
-        parts = name.split("/")
-        if any(
-            part in ("", ".", "..") or part.casefold() == ".git" for part in parts
-        ) or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in name):
+        parts = re.split(r"[/\\]", name)
+        if any(part in ("", ".", "..") or is_git_path(part) for part in parts) or any(
+            ord(c) < 32 or 127 <= ord(c) <= 159 for c in name
+        ):
             refuse(name, "has an unsafe path")
         for end in range(1, len(parts) + 1):
             prefix = "/".join(parts[:end])
@@ -499,6 +502,10 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             "The sync record differs from the committed revision."
         )
     ours.pop(CONFIG, None)
+    if not ours:
+        raise click.ClickException(
+            "Refusing to publish an empty paper; nothing pushed."
+        )
     check_ignore_files(ours)
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"

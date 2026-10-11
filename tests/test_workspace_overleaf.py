@@ -199,7 +199,15 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(
         module,
         "git_bytes",
-        lambda *a, **k: real(*(str(remote) if x == URL else x for x in a), **k),
+        lambda *a, **k: real(
+            *(
+                str(remote)
+                if x in (URL, URL.replace("https://", "https://git@", 1))
+                else x
+                for x in a
+            ),
+            **k,
+        ),
     )
     git(tmp_path, "init", "--bare", "-b", "master", str(remote))
     seed = tmp_path / "seed"
@@ -466,7 +474,7 @@ def test_transport_hooks_get_no_token_and_keep_utf8_locale(
     hook = hooks / "pre-push"
     hook.write_text(
         '#!/bin/sh\ntest -z "$OVERLEAF_TOKEN" || exit 1\n'
-        'printf "%s" "$LC_ALL" > "$TEST_HOOK_MARKER"\n'
+        'printf "%s:%s:%s" "$LC_ALL" "$LC_MESSAGES" "$LANGUAGE" > "$TEST_HOOK_MARKER"\n'
     )
     hook.chmod(0o700)
     if scope == "global":
@@ -477,11 +485,13 @@ def test_transport_hooks_get_no_token_and_keep_utf8_locale(
         git(project, "config", "core.hooksPath", "hooks")
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
     monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    monkeypatch.setenv("LC_MESSAGES", "C.UTF-8")
+    monkeypatch.setenv("LANGUAGE", "fixture-language")
     marker = tmp_path / "transport-hook-ran"
     monkeypatch.setenv("TEST_HOOK_MARKER", str(marker))
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
-    assert marker.read_text() == "C.UTF-8"
+    assert marker.read_text() == "C.UTF-8:C.UTF-8:fixture-language"
     git(seed, "fetch", "-q", "origin")
     assert git(seed, "show", "origin/master:main.tex") == "reviewed edit"
 
@@ -832,6 +842,13 @@ def test_sync_refuses_executable_files(setup, command):
         "../escape.tex",
         ".git/config",
         "nested/.Git/config",
+        ".g\u200cit/config",
+        "nested/GIT~1/config",
+        ".git./config",
+        ".git /config",
+        ".git::$INDEX_ALLOCATION/config",
+        r".git\config",
+        r"nested\.git\config",
         "/absolute",
     ],
 )
@@ -842,7 +859,7 @@ def test_pull_refuses_unsafe_remote_tree_paths(setup, monkeypatch, name):
         module,
         "tree",
         lambda repo, revision, prefix="": (
-            {name: ("100644", "unused")}
+            {name: next(iter(real(repo, revision, prefix).values()))}
             if repo.name == "overleaf"
             else real(repo, revision, prefix)
         ),
@@ -1460,3 +1477,75 @@ def test_pull_preserves_hidden_local_edit_when_overleaf_did_not_change_file(setu
     assert result.exit_code == 0, result.output
     assert local.read_text() == "hidden local notes\n"
     assert (project / "paper/main.tex").read_text() == "unrelated update\n"
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_refuses_empty_export_without_changing_remote(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    for name in ("main.tex", "old.tex", "references.bib"):
+        git(project, "rm", f"paper/{name}")
+    commit_all(project)
+    before = (project / "paper/overleaf.json").read_bytes()
+    remote_before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code != 0 and "empty paper" in result.output
+    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert git(seed, "ls-remote", "origin", "master") == remote_before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
+def test_token_credentials_supply_fixed_username_without_prompt(setup, monkeypatch):
+    _, project = setup
+    monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
+    with module.credentials() as (env, options):
+        result = subprocess.run(
+            ["git", *options, "credential", "fill"],
+            cwd=project,
+            env=env,
+            input=b"url=https://git@git.overleaf.com/1234567\n\n",
+            check=True,
+            capture_output=True,
+        )
+    assert b"username=git\n" in result.stdout
+    assert b"password=fixture-token\n" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "operation,message", [("clone", "failed"), ("push", "was rejected")]
+)
+def test_git_rejection_classification_applies_only_to_push(
+    tmp_path, monkeypatch, operation, message
+):
+    monkeypatch.setattr(
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(
+                a[0], 128, b"", b"request rejected"
+            )
+        ),
+    )
+    with pytest.raises(module.click.ClickException, match=f"git {operation} {message}"):
+        module.git_bytes(operation, cwd=tmp_path)
+
+
+def test_git_environment_preserves_all_locale_settings(monkeypatch):
+    for key, value in (
+        ("LC_ALL", "C.UTF-8"),
+        ("LC_MESSAGES", "C.UTF-8"),
+        ("LANGUAGE", "fixture-language"),
+    ):
+        monkeypatch.setenv(key, value)
+        assert module.git_environment()[key] == value
+
+
+def test_clone_supplies_git_username_in_transport_url(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        module, "git", lambda *args, **kwargs: calls.append(args) or "a" * 40
+    )
+    module.clone(URL, tmp_path / "overleaf")
+    assert URL.replace("https://", "https://git@", 1) in calls[0]
+    assert URL not in calls[0]
