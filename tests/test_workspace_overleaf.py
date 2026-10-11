@@ -557,10 +557,27 @@ def test_credentials_prompt_only_in_interactive_terminal(
         assert options == []
 
 
-def test_unattended_missing_credentials_fail_without_prompt(setup, monkeypatch):
+@pytest.mark.parametrize(
+    "prompt_source", ["GIT_ASKPASS", "SSH_ASKPASS", "core.askPass"]
+)
+@pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
+def test_unattended_missing_credentials_fail_without_prompt(
+    setup, monkeypatch, prompt_source
+):
     _, project = setup
+    monkeypatch.delenv("OVERLEAF_TOKEN", raising=False)
     monkeypatch.delenv("GIT_ASKPASS", raising=False)
     monkeypatch.delenv("SSH_ASKPASS", raising=False)
+    marker = project.parent / "prompt-ran"
+    askpass = project.parent / "askpass"
+    askpass.write_text(
+        f'#!/bin/sh\nprintf invoked > "{marker}"\nprintf "%s\\n" fixture-password\n'
+    )
+    askpass.chmod(0o700)
+    if prompt_source == "core.askPass":
+        git(project, "config", prompt_source, str(askpass))
+    else:
+        monkeypatch.setenv(prompt_source, str(askpass))
     monkeypatch.setattr(
         module,
         "sys",
@@ -578,6 +595,31 @@ def test_unattended_missing_credentials_fail_without_prompt(setup, monkeypatch):
         )
     assert result.returncode != 0
     assert b"terminal prompts disabled" in result.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")
+def test_interactive_credentials_keep_personal_askpass(setup, monkeypatch):
+    _, project = setup
+    monkeypatch.delenv("OVERLEAF_TOKEN", raising=False)
+    askpass = project.parent / "askpass"
+    askpass.write_text("#!/bin/sh\nprintf '%s\\n' personal-fixture\n")
+    askpass.chmod(0o700)
+    monkeypatch.setenv("GIT_ASKPASS", str(askpass))
+    monkeypatch.setattr(
+        module, "sys", SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: True))
+    )
+    with module.credentials() as (env, options):
+        result = subprocess.run(
+            ["git", *options, "-c", "credential.helper=", "credential", "fill"],
+            cwd=project,
+            env=env,
+            input=b"url=https://git@git.overleaf.com/1234567\n\n",
+            capture_output=True,
+            timeout=5,
+            check=True,
+        )
+    assert b"password=personal-fixture\n" in result.stdout
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX askpass")

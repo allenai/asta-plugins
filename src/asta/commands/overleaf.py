@@ -48,6 +48,8 @@ def git_environment() -> dict:
     }
     if not sys.stdin.isatty():
         env["GIT_TERMINAL_PROMPT"] = "0"
+        # Empty overrides also suppress core.askPass and SSH_ASKPASS fallbacks.
+        env["GIT_ASKPASS"] = ""
     return env
 
 
