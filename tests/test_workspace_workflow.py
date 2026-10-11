@@ -1136,12 +1136,17 @@ def test_dependabot_pr_never_leaves_a_preview_for_a_bot_close(actor, action):
         "github.event.pull_request.user.login": "dependabot[bot]",
         "github.actor": actor,
     }
-    for job in ("deploy", "cleanup-preview"):
-        assert not _condition_enabled(workflow["jobs"][job]["if"], context)
+    assert not _condition_enabled(workflow["jobs"]["deploy"]["if"], context)
+    assert _condition_enabled(workflow["jobs"]["cleanup-preview"]["if"], context) == (
+        action == "closed" and actor != "dependabot[bot]"
+    )
     notice = workflow["jobs"]["preview-unavailable"]
     assert _condition_enabled(notice["if"], context) == (action != "closed")
     assert (
-        _condition_enabled(notice["name"][3:-2], context) == "No preview (Dependabot)"
+        _condition_enabled(
+            re.fullmatch(r"\$\{\{\s*(.*?)\s*\}\}", notice["name"]).group(1), context
+        )
+        == "No preview (Dependabot)"
     )
     assert _condition_enabled(workflow["jobs"]["build"]["if"], context) == (
         action != "closed"
@@ -1150,6 +1155,7 @@ def test_dependabot_pr_never_leaves_a_preview_for_a_bot_close(actor, action):
 
 def _condition_enabled(expression, context):
     # These workflow guards use only comparisons, boolean operators and always().
+    # Fixtures use canonical casing; unlike Python, GitHub ignores string case.
     expression = re.sub(
         r"\b(?:github|needs)\.[\w.]+",
         lambda match: repr(context.get(match.group(), "")),
@@ -1258,8 +1264,16 @@ def test_non_pr_events_publish_site_root(tmp_path, event):
         if step.get("name") == "Publish to gh-pages"
     )
     script = step["run"]
-    for key, value in {"event_name": event, "sha": "test-sha", "run_id": "42"}.items():
+    for key, value in {
+        "event_name": event,
+        "sha": "test-sha",
+        "run_id": "42",
+        "repository": "owner/site",
+        "repository_owner": "owner",
+        "event.repository.name": "site",
+    }.items():
         script = script.replace("${{ github." + key + " }}", value)
+    assert "${{" not in script, "Publish script has an unexpanded GitHub expression"
     origin = tmp_path / "origin.git"
     project = tmp_path / "site"
     subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
@@ -1292,6 +1306,109 @@ def test_non_pr_events_publish_site_root(tmp_path, event):
             text=True,
         ).splitlines()
         assert "pr-preview" not in paths
+    finally:
+        worktrees = subprocess.check_output(
+            [*git, "worktree", "list", "--porcelain"], text=True
+        )
+        for line in worktrees.splitlines():
+            if line.startswith("worktree ") and line[9:] != str(project):
+                subprocess.run(
+                    [*git, "worktree", "remove", "--force", line[9:]], check=True
+                )
+
+
+@pytest.mark.parametrize("has_preview", [True, False])
+def test_human_close_removes_legacy_dependabot_preview(tmp_path, has_preview):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    cleanup = workflow["jobs"]["cleanup-preview"]
+    assert _condition_enabled(
+        cleanup["if"],
+        {
+            "github.repository": "owner/site",
+            "github.event_name": "pull_request",
+            "github.event.action": "closed",
+            "github.event.pull_request.head.repo.full_name": "owner/site",
+            "github.event.pull_request.user.login": "dependabot[bot]",
+            "github.actor": "contributor",
+        },
+    )
+    script = next(
+        step["run"]
+        for step in cleanup["steps"]
+        if step.get("name") == "Remove PR preview"
+    )
+    origin = tmp_path / "origin.git"
+    project = tmp_path / "site"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+    subprocess.run(["git", "clone", "-q", str(origin), str(project)], check=True)
+    git = ["git", "-C", str(project)]
+    for args in (
+        ["config", "user.name", "test"],
+        ["config", "user.email", "test@example.invalid"],
+        ["checkout", "-qb", "gh-pages"],
+    ):
+        subprocess.run([*git, *args], check=True)
+    (project / "index.html").write_text("site root")
+    other_preview = project / "pr-preview/pr-43"
+    other_preview.mkdir(parents=True)
+    (other_preview / "index.html").write_text("another PR")
+    if has_preview:
+        preview = project / "pr-preview/pr-42"
+        preview.mkdir(parents=True)
+        (preview / "index.html").write_text("legacy preview")
+    for args in (
+        [
+            "add",
+            "index.html",
+            "pr-preview/pr-43/index.html",
+            *(["pr-preview/pr-42/index.html"] if has_preview else []),
+        ],
+        ["commit", "-qm", "previous publication"],
+        ["push", "-q", "origin", "gh-pages"],
+        ["checkout", "-qb", "main"],
+        ["branch", "-D", "gh-pages"],
+    ):
+        subprocess.run([*git, *args], check=True)
+    initial = subprocess.check_output(
+        ["git", "--git-dir", str(origin), "rev-parse", "gh-pages"], text=True
+    )
+    try:
+        result = subprocess.run(
+            ["bash", "-e", "-o", "pipefail", "-c", script],
+            cwd=project,
+            env=dict(os.environ, PR_NUMBER="42"),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        paths = subprocess.check_output(
+            [
+                "git",
+                "--git-dir",
+                str(origin),
+                "ls-tree",
+                "-r",
+                "--name-only",
+                "gh-pages",
+            ],
+            text=True,
+        ).splitlines()
+        assert paths == ["index.html", "pr-preview/pr-43/index.html"]
+        for path, content in (
+            ("index.html", "site root"),
+            ("pr-preview/pr-43/index.html", "another PR"),
+        ):
+            assert (
+                subprocess.check_output(
+                    ["git", "--git-dir", str(origin), "show", f"gh-pages:{path}"],
+                    text=True,
+                )
+                == content
+            )
+        current = subprocess.check_output(
+            ["git", "--git-dir", str(origin), "rev-parse", "gh-pages"], text=True
+        )
+        assert (current != initial) == has_preview
     finally:
         worktrees = subprocess.check_output(
             [*git, "worktree", "list", "--porcelain"], text=True
