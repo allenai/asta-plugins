@@ -1937,7 +1937,7 @@ def test_publish_requires_revision_on_origin_default_branch(setup, dry_run):
     args = ["publish", "--dry-run"] if dry_run else ["publish"]
     result = run(project, *args, merge=False)
     assert git(seed, "ls-remote", "origin", "master") == before
-    assert "not on origin's default branch" in result.output
+    assert "differs from the latest commit on origin's default branch" in result.output
     if dry_run:
         assert result.exit_code == 0, result.output
         assert "main.tex" in result.output
@@ -1977,19 +1977,46 @@ def test_merge_gate_preserves_previous_fetch_and_workspace_refs(setup, merged):
     if merged:
         git(project, "push", "-q", "origin", "HEAD:main")
     before_refs = git(project, "show-ref")
-    assert module.on_default_branch(project) == merged
+    assert module.matches_default_branch(project, "") == merged
     assert fetch_head.read_bytes() == before_fetch
     assert git(project, "show-ref") == before_refs
 
 
-def test_merge_gate_accepts_older_merged_revision(setup):
+def test_merge_gate_accepts_older_checkout_with_current_paper(setup):
     _, project = setup
+    (project / "paper").mkdir()
+    (project / "paper" / "main.tex").write_text("reviewed paper\n")
+    commit_all(project)
     reviewed = git(project, "rev-parse", "HEAD")
-    (project / "later.txt").write_text("later merged revision\n")
+    (project / "later.txt").write_text("later merged revision outside the paper\n")
     commit_all(project)
     git(project, "push", "-q", "origin", "HEAD:main")
     git(project, "switch", "-q", "--detach", reviewed)
-    assert module.on_default_branch(project)
+    assert module.matches_default_branch(project, "paper/")
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_refuses_older_checkout_after_later_paper_change(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper" / "retracted.tex").write_text("later removed\n")
+    commit_all(project)
+    reviewed = git(project, "rev-parse", "HEAD")
+    git(project, "rm", "-q", "paper/retracted.tex")
+    git(project, "commit", "-q", "-m", "remove section in review")
+    git(project, "push", "-q", "origin", "HEAD:main")
+    git(project, "switch", "-q", "--detach", reviewed)
+    before = git(seed, "ls-remote", "origin", "master")
+    args = ["publish", "--dry-run"] if dry_run else ["publish"]
+    result = run(project, *args, merge=False)
+    assert "differs from the latest commit" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+    if dry_run:
+        assert result.exit_code == 0, result.output
+    else:
+        assert result.exit_code != 0
+        assert "nothing pushed" in result.output
 
 
 @pytest.mark.parametrize("name", ["experiment.log", "submission.bbl"])
@@ -2052,7 +2079,7 @@ def test_merge_gate_workspace_transport_respects_terminal(
         return real(args, **kwargs)
 
     monkeypatch.setattr(module.subprocess, "run", inspect_transport)
-    assert module.on_default_branch(project)
+    assert module.matches_default_branch(project, "")
     assert observed == [
         ("ls-remote", None if interactive else "0"),
         ("fetch", None if interactive else "0"),

@@ -546,9 +546,10 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     )
 
 
-def on_default_branch(root: Path) -> bool:
-    """Whether HEAD is an ancestor of the default branch of workspace `origin`."""
-    # Merging is the review gate: only revisions on the reviewed branch reach Overleaf.
+def matches_default_branch(root: Path, prefix: str) -> bool:
+    """Whether the committed paper equals the paper on the tip of `origin`'s default branch."""
+    # Merging is the review gate. Comparing against the tip, not ancestry, also keeps an
+    # older checkout from republishing content a later reviewed change removed.
     gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
     try:
         try:
@@ -572,13 +573,7 @@ def on_default_branch(root: Path) -> bool:
                 "Could not read the default branch of the workspace's `origin` remote; "
                 "nothing pushed. Publish from a clone of the reviewed repository."
             ) from None
-        merged = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", "HEAD", gate],
-            cwd=root,
-            env=git_environment(),
-            capture_output=True,
-        )
-        return merged.returncode == 0
+        return tree(root, gate, prefix) == tree(root, "HEAD", prefix)
     finally:
         git("update-ref", "-d", gate, cwd=root)
 
@@ -627,10 +622,10 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         )
     check_ignore_files(ours)
     unmerged = (
-        "This workspace commit is not on origin's default branch. Merge it through "
-        "a reviewed PR, update your checkout, then publish"
+        "The paper differs from the latest commit on origin's default branch. Merge "
+        "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
-    if not on_default_branch(root):
+    if not matches_default_branch(root, prefix):
         if not dry_run:
             raise click.ClickException(f"{unmerged}; nothing pushed.")
         click.echo(f"{unmerged}; publish will refuse until then.")
