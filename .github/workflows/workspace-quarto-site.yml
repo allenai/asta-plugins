@@ -300,9 +300,15 @@ jobs:
   # main deploy can't be queued behind or cancelled by a PR's write (including a
   # PR-close cleanup that fires at merge). Concurrent writes from different
   # groups reconcile via rebase-and-retry on push, not a global queue.
+  # Fork and Dependabot-triggered PR runs get a read-only token, so they skip
+  # the preview; `preview-unavailable` says so. Other events are unchanged.
   deploy:
     needs: build
-    if: github.event_name == 'push' || github.event.action != 'closed'
+    if: >-
+      (github.event_name == 'push' || github.event.action != 'closed')
+      && !(github.event_name == 'pull_request'
+      && (github.event.pull_request.head.repo.full_name != github.repository
+      || github.actor == 'dependabot[bot]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -443,6 +449,33 @@ jobs:
           fi
 
 
+  # A skipped deploy would leave a PR silently without a preview, so say
+  # why and how to get one where the author looks: the checks list.
+  preview-unavailable:
+    name: ${{ github.actor == 'dependabot[bot]' && 'No preview (Dependabot)' || 'No preview (fork PR)' }}
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed'
+      && (github.event.pull_request.head.repo.full_name != github.repository
+      || github.actor == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Explain the missing preview
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          RUN_ACTOR: ${{ github.actor }}
+        run: |
+          if [ "$RUN_ACTOR" = 'dependabot[bot]' ]; then
+            why="This run was triggered by Dependabot. GitHub gives these PR runs a read-only token by default, so no preview can be published to $BASE_REPO's gh-pages."
+          else
+            why="This PR comes from ${HEAD_REPO:-a deleted fork}. GitHub gives fork PRs a read-only token, so no preview can be published to $BASE_REPO's gh-pages."
+          fi
+          why="$why The build check still renders and checks the site."
+          how="To get a preview, push these changes to a branch in $BASE_REPO (needs write access) and open a PR from that branch."
+          echo "::warning title=No PR preview::$why $how"
+          printf '## No PR preview\n\n%s\n\n%s\n' "$why" "$how" >> "$GITHUB_STEP_SUMMARY"
+
   # Report a paper failure even if publishing is skipped or fails first.
   paper-gate:
     needs: [build, deploy]
@@ -458,7 +491,10 @@ jobs:
   # (keyed on the PR number) so it cancels any still-running build/deploy for the
   # PR first — otherwise a late deploy could recreate the preview after removal.
   cleanup-preview:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write

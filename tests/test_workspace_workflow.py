@@ -1052,6 +1052,154 @@ def test_paper_overrides_stay_in_unprivileged_build() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "event,action,head_repo,actor,expected",
+    [
+        (
+            "pull_request",
+            "opened",
+            "owner/site",
+            "contributor",
+            (True, True, False, False),
+        ),
+        (
+            "pull_request",
+            "synchronize",
+            "contributor/site",
+            "contributor",
+            (True, False, False, True),
+        ),
+        ("pull_request", "opened", "", "contributor", (True, False, False, True)),
+        (
+            "pull_request",
+            "closed",
+            "owner/site",
+            "contributor",
+            (False, False, True, False),
+        ),
+        (
+            "pull_request",
+            "closed",
+            "contributor/site",
+            "contributor",
+            (False, False, False, False),
+        ),
+        (
+            "pull_request",
+            "opened",
+            "owner/site",
+            "dependabot[bot]",
+            (True, False, False, True),
+        ),
+        (
+            "pull_request",
+            "closed",
+            "owner/site",
+            "dependabot[bot]",
+            (False, False, False, False),
+        ),
+        ("push", "", "", "contributor", (True, True, False, False)),
+        ("push", "", "", "dependabot[bot]", (True, True, False, False)),
+        ("workflow_dispatch", "", "", "contributor", (True, True, False, False)),
+        ("schedule", "", "", "contributor", (True, True, False, False)),
+        ("release", "published", "", "contributor", (True, True, False, False)),
+    ],
+)
+def test_preview_job_conditions(event, action, head_repo, actor, expected) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    context = {
+        "github.repository": "owner/site",
+        "github.event_name": event,
+        "github.event.action": action,
+        "github.event.pull_request.head.repo.full_name": head_repo,
+        "github.actor": actor,
+    }
+    for job, enabled in zip(
+        ("build", "deploy", "cleanup-preview", "preview-unavailable"), expected
+    ):
+        assert (
+            _condition_enabled(workflow["jobs"][job].get("if", "True"), context)
+            == enabled
+        )
+
+
+def _condition_enabled(expression, context):
+    # These workflow guards use only comparisons, boolean operators, ! and always().
+    # Fixtures use canonical casing; unlike Python, GitHub ignores string case.
+    expression = re.sub(
+        r"\b(?:github|needs)\.[\w.]+",
+        lambda match: repr(context.get(match.group(), "")),
+        expression,
+    )
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    expression = re.sub(r"!(?!=)", " not ", expression)
+    expression = expression.replace("always()", "True")
+    return eval(expression, {"__builtins__": {}})
+
+
+@pytest.mark.parametrize(
+    "head_repo,actor,reason",
+    [
+        ("contributor/site", "contributor", "This PR comes from contributor/site"),
+        ("", "contributor", "This PR comes from a deleted fork"),
+        ("owner/site", "dependabot[bot]", "This run was triggered by Dependabot"),
+    ],
+)
+def test_preview_unavailable_explains_reason_and_remedy(
+    tmp_path, head_repo, actor, reason
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    notice = workflow["jobs"]["preview-unavailable"]
+    assert notice["permissions"] == {}
+    assert "No preview (fork PR)" in notice["name"]
+    assert "No preview (Dependabot)" in notice["name"]
+    summary = tmp_path / "summary.md"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", notice["steps"][0]["run"]],
+        env=dict(
+            os.environ,
+            HEAD_REPO=head_repo,
+            BASE_REPO="owner/site",
+            RUN_ACTOR=actor,
+            GITHUB_STEP_SUMMARY=str(summary),
+        ),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "::warning title=No PR preview::" in result.stdout
+    for output in (result.stdout, summary.read_text()):
+        assert reason in output
+        assert "read-only token" in output
+        assert "push these changes to a branch in owner/site" in output
+        assert "open a PR from that branch" in output
+        assert "build check still renders and checks the site" in output
+
+
+@pytest.mark.parametrize("deploy_result", ["skipped", "failure", "success"])
+@pytest.mark.parametrize("paper_result", ["failure", "success", "skipped"])
+def test_paper_failure_gate_survives_skipped_deploy(deploy_result, paper_result):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    gate = workflow["jobs"]["paper-gate"]
+    assert gate["needs"] == ["build", "deploy"]
+    assert "always()" in gate["if"]
+    assert _condition_enabled(
+        gate["if"],
+        {
+            "needs.build.outputs.paper": paper_result,
+            "needs.deploy.result": deploy_result,
+        },
+    ) == (paper_result == "failure")
+    if paper_result == "failure":
+        result = subprocess.run(
+            ["bash", "-e", "-c", gate["steps"][0]["run"]],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "::error::The paper failed to build" in result.stdout
+
+
 @pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])
 @pytest.mark.parametrize("copy_state", ["tracked", "untracked", "missing", "directory"])
 def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy_state):
