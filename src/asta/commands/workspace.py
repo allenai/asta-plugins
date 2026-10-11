@@ -262,6 +262,10 @@ def workspace() -> None:
 )
 def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
+    sync_workspace(project, refresh, require_scripts)
+
+
+def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
     project = project.resolve()
     if (project / "workspace.mk").exists():
         if require_scripts:
@@ -478,9 +482,7 @@ def diff_script(project: Path) -> Path:
     )
     try:
         with redirect_stdout(sys.stderr):
-            click.get_current_context().invoke(
-                sync, project=project, refresh=False, require_scripts=False
-            )
+            sync_workspace(project, refresh=False, require_scripts=False)
     except click.ClickException as exc:
         raise click.ClickException(f"{exc.format_message()}. {guidance}") from exc
     try:
@@ -532,6 +534,45 @@ def render_site(directory: Path, label: str) -> Path:
 COMPARISON_DIR = Path(".asta/cache/what-changed")
 
 
+def working_copy(repository: Path, project: Path, destination: Path) -> Path:
+    """Keep live-preview output separate while retaining local inputs and Git context."""
+    cloned = _git(
+        repository,
+        "clone",
+        "--shared",
+        "--no-checkout",
+        str(repository),
+        str(destination),
+    )
+    if cloned.returncode != 0:
+        raise click.ClickException(
+            f"Could not copy the working tree: {cloned.stderr.strip()}"
+        )
+    indexed = _git(destination, "reset", "--mixed", "HEAD")
+    if indexed.returncode != 0:
+        raise click.ClickException(
+            f"Could not index the working tree: {indexed.stderr.strip()}"
+        )
+
+    def ignore(directory, names):
+        path = Path(directory)
+        omitted = {".git"}
+        if path == project:
+            omitted.update(("_site", ".quarto"))
+        if path == project / ".asta/cache":
+            omitted.update(
+                name
+                for name in names
+                if name == "what-changed" or name.startswith(".what-changed-")
+            )
+        return omitted
+
+    shutil.copytree(
+        repository, destination, symlinks=True, dirs_exist_ok=True, ignore=ignore
+    )
+    return destination / project.relative_to(repository)
+
+
 @contextmanager
 def _comparison_directory():
     temporary = Path(tempfile.mkdtemp(prefix="asta-what-changed-"))
@@ -540,6 +581,7 @@ def _comparison_directory():
     finally:
         try:
             with preview_cleanup():
+                shutil.rmtree(temporary / "working", ignore_errors=True)
                 # Git owns baseline removal; keep failed removals recoverable.
                 if not (temporary / "baseline").exists():
                     temporary.rmdir()
@@ -578,11 +620,11 @@ def _publish(staged: Path, owned: Path) -> None:
 def what_changed(ref: str, project: Path) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
-    Renders REF and the working tree with the project's own 'make render' and
+    Renders REF and a private working-tree copy with the project's own 'make render' and
     compares them with the what-changed.py the PR preview uses. The page is
     written to a copy of the rendered site under .asta/cache/what-changed/,
-    which this command owns and replaces on each run. Rendering updates _site/;
-    the comparison page is written only to the cache. Choose a trusted REF: its
+    which this command owns and replaces on each run. Live _site/ is untouched.
+    Requires Git 2.30 or newer. Choose a trusted REF: its
     build code runs locally. The baseline contains only committed files.
     """
     try:
@@ -643,7 +685,10 @@ def compare_workspace(ref: str, project: Path) -> None:
                 )
             script = diff_script(project)
             old_site = render_site(baseline_project, ref)
-            new_site = render_site(project, "the working tree")
+            copied_project = working_copy(
+                Path(repository.stdout.strip()), project, tmp / "working"
+            )
+            new_site = render_site(copied_project, "the working tree")
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():
@@ -651,8 +696,12 @@ def compare_workspace(ref: str, project: Path) -> None:
             owned.parent.mkdir(parents=True, exist_ok=True)
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
-                shutil.copytree(new_site, staged, symlinks=True, dirs_exist_ok=True)
-                staged.chmod(0o700)
+                # Copy entries, not the root's metadata: staging stays 0700.
+                for entry in new_site.iterdir():
+                    if entry.is_dir() and not entry.is_symlink():
+                        shutil.copytree(entry, staged / entry.name, symlinks=True)
+                    else:
+                        shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
                 with preview_process(
@@ -669,7 +718,12 @@ def compare_workspace(ref: str, project: Path) -> None:
                         f"Changes since {ref}",
                     ],
                     project,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
                 ) as process:
+                    for line in process.stdout:
+                        click.echo(line, nl=False, err=True)
                     returncode = process.wait()
                 if returncode != 0:
                     raise click.ClickException(
@@ -725,7 +779,7 @@ def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
 def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
     """Serve the what-changed site copy; requests resolve its path afresh, so a
     rerun of what-changed is picked up without restarting."""
-    root = directory.absolute()
+    root = directory.parent.resolve() / directory.name
     forwarded_host = None
 
     class SiteHandler(http.server.SimpleHTTPRequestHandler):

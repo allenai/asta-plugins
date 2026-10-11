@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tarfile
@@ -13,7 +14,7 @@ import threading
 import time
 from http.client import HTTPConnection
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pytest
@@ -576,15 +577,43 @@ def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
     git(repository, "tag", "last-read")
     with (project / "index.qmd").open("a") as page:
         page.write("\nA newly drafted paragraph for local comparison.\n")
-    for _ in range(2):
-        result = CliRunner().invoke(
-            workspace, ["what-changed", "last-read", "--project", str(project)]
-        )
-        assert result.exit_code == 0, result.output
-        report = (project / ".asta/cache/what-changed/what-changed.html").read_text()
-        assert re.search(r"<ins\b[^>]*>[^<]*newly drafted paragraph", report)
-        assert "what-changed/what-changed.html" in result.stdout
-        assert 'href="#what-changed-html"' not in report
+    subprocess.run(["make", "render"], cwd=project, check=True)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    with workspace_module.preview_process(
+        ["quarto", "preview", "--no-browser", "--port", str(port)],
+        project,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    ) as live:
+        try:
+            deadline = time.monotonic() + 30
+            while True:
+                assert live.poll() is None, "Live Quarto preview exited"
+                try:
+                    with urlopen(f"http://127.0.0.1:{port}/", timeout=1) as response:
+                        assert response.status == 200
+                        break
+                except URLError:
+                    assert time.monotonic() < deadline, "Live preview never started"
+                    time.sleep(0.1)
+            live_page = (project / "_site/index.html").read_bytes()
+            for _ in range(2):
+                result = CliRunner().invoke(
+                    workspace, ["what-changed", "last-read", "--project", str(project)]
+                )
+                assert result.exit_code == 0, result.output
+                report = (
+                    project / ".asta/cache/what-changed/what-changed.html"
+                ).read_text()
+                assert re.search(r"<ins\b[^>]*>[^<]*newly drafted paragraph", report)
+                assert "what-changed/what-changed.html" in result.stdout
+                assert 'href="#what-changed-html"' not in report
+                assert live.poll() is None
+                assert (project / "_site/index.html").read_bytes() == live_page
+        finally:
+            workspace_module.stop_preview(live, signal.SIGTERM)
     manifest = json.loads((project / ".asta/cache/workspace.json").read_text())
     assert manifest["ref"] == ref
     assert "what-changed.py" in manifest["scripts"]
@@ -598,9 +627,13 @@ def test_site_files_are_never_modified(project: Path) -> None:
     (project / "index.qmd").write_text(
         "The baseline finding holds.\nA newly drafted paragraph.\n"
     )
+    (project / "_site").mkdir()
+    (project / "_site/index.html").write_text("Live preview")
+    (project / "_site/what-changed.html").write_text("Own page")
     args = ["what-changed", "last-read", "--project", str(project)]
     result = CliRunner().invoke(workspace, args)
     assert result.exit_code == 0, result.output
+    assert (project / "_site/index.html").read_text() == "Live preview"
     assert (project / "_site/what-changed.html").read_text() == "Own page"
     assert sorted(p.name for p in (project / "_site").iterdir()) == [
         "index.html",
@@ -614,6 +647,162 @@ def test_site_files_are_never_modified(project: Path) -> None:
     assert "file://" not in result.stdout
     assert "asta workspace preview --what-changed" in result.stdout
     assert "http://localhost:4849/what-changed.html" in result.stdout
+
+
+def test_live_preview_rebuild_cannot_change_diff_input(project: Path) -> None:
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    script = project / "scripts/what-changed.py"
+    # A live-preview rebuild between rendering and diffing used to replace --new.
+    script.write_text(
+        "from pathlib import Path\n"
+        "Path('_site').mkdir(exist_ok=True)\n"
+        "Path('_site/index.html').write_text('<main>Live preview rebuild</main>')\n"
+        "exec(compile(" + repr(script.read_text()) + ", __file__, 'exec'))\n"
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    owned = project / workspace_module.COMPARISON_DIR
+    assert "<ins>newly</ins>" in (owned / "what-changed.html").read_text()
+    assert "Live preview rebuild" not in (owned / "what-changed.html").read_text()
+    assert "newly drafted paragraph" in (owned / "index.html").read_text()
+
+
+@pytest.mark.parametrize("linked_worktree", [False, True])
+def test_working_copy_retains_local_inputs_and_git_index(
+    project: Path, tmp_path_factory, linked_worktree: bool
+) -> None:
+    if linked_worktree:
+        linked = tmp_path_factory.mktemp("linked") / "project"
+        git(project, "worktree", "add", "--detach", str(linked), "HEAD")
+        project = linked
+    try:
+        (project / ".gitignore").write_text("_site/\n.asta/cache/\nlocal-data/\n")
+        (project / "local-data").mkdir()
+        (project / "local-data/input.txt").write_text("Ignored data")
+        (project / "untracked.txt").write_text("Untracked input")
+        (project / "index.qmd").write_text("Edited working content")
+        (project / "scripts/what-changed.py").unlink()
+        (project / "_site").mkdir()
+        (project / "_site/index.html").write_text("Live output")
+        cache = project / ".asta/cache"
+        (cache / "what-changed").mkdir(parents=True)
+        (cache / "what-changed/what-changed.html").write_text("Old report")
+        (cache / "workspace.mk").write_text("Cached rules")
+        (cache / ".what-changed-old.previous").mkdir()
+        destination = tmp_path_factory.mktemp("snapshot") / "working"
+        copied = workspace_module.working_copy(project, project, destination)
+        assert (copied / "local-data/input.txt").read_text() == "Ignored data"
+        assert (copied / "untracked.txt").read_text() == "Untracked input"
+        assert (copied / "index.qmd").read_text() == "Edited working content"
+        assert not (copied / "scripts/what-changed.py").exists()
+        assert not (copied / "_site").exists()
+        assert not (copied / ".asta/cache/what-changed").exists()
+        assert not (copied / ".asta/cache/.what-changed-old.previous").exists()
+        assert (copied / ".asta/cache/workspace.mk").read_text() == "Cached rules"
+        tracked = subprocess.check_output(
+            ["git", "-C", str(copied), "ls-files"], text=True
+        ).splitlines()
+        assert "scripts/what-changed.py" in tracked and "index.qmd" in tracked
+        git(copied, "add", "untracked.txt")
+        original_tracked = subprocess.check_output(
+            ["git", "-C", str(project), "ls-files"], text=True
+        ).splitlines()
+        assert "untracked.txt" not in original_tracked
+    finally:
+        if linked_worktree:
+            git(project, "worktree", "remove", "--force", str(project))
+
+
+@pytest.mark.parametrize("phase", ["clone", "reset"])
+def test_failed_working_copy_preserves_report_and_cleans_up(
+    project: Path, monkeypatch, phase: str
+) -> None:
+    owned = project / workspace_module.COMPARISON_DIR
+    owned.mkdir(parents=True)
+    (owned / "what-changed.html").write_text("Previous report")
+    original = workspace_module._git
+    temporary = None
+
+    def fail_copy(directory, *args):
+        nonlocal temporary
+        if args[0] == "clone":
+            temporary = Path(args[-1]).parent
+        if args[0] == phase:
+            return subprocess.CompletedProcess(args, 1, stderr="Copy setup failed")
+        return original(directory, *args)
+
+    monkeypatch.setattr(workspace_module, "_git", fail_copy)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code != 0
+    assert "Copy setup failed" in result.output
+    assert (owned / "what-changed.html").read_text() == "Previous report"
+    assert temporary is not None and not temporary.exists()
+    assert (
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(project), "worktree", "list"]
+            ).splitlines()
+        )
+        == 1
+    )
+
+
+def test_diff_script_diagnostics_go_to_stderr(project: Path) -> None:
+    script = project / "scripts/what-changed.py"
+    script.write_text(
+        "print('Custom diff diagnostic')\nexec(compile("
+        + repr(script.read_text())
+        + ", __file__, 'exec'))\n"
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Custom diff diagnostic" in result.stderr
+    assert "Custom diff diagnostic" not in result.stdout
+    assert "Wrote " in result.stdout
+
+
+def test_cached_diff_lookup_works_without_click_context(project: Path) -> None:
+    (project / "scripts/what-changed.py").unlink()
+    sha = "a" * 64
+    cache = project / ".asta/cache"
+    cached = cache / "scripts" / sha / "what-changed.py"
+    cached.parent.mkdir(parents=True)
+    shutil.copy(ASSETS / "what-changed.py", cached)
+    (cache / "workspace.json").write_text(
+        json.dumps({"archive_sha256": sha, "scripts": {"what-changed.py": "hash"}})
+    )
+    (project / "workspace.mk").write_text("# Project-owned rules\n")
+    assert workspace_module.diff_script(project) == cached
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_comparison_server_accepts_symlinked_parent(
+    tmp_path: Path, method: str
+) -> None:
+    actual = tmp_path / "actual"
+    site = actual / "site"
+    site.mkdir(parents=True)
+    (site / "index.html").write_text("Comparison homepage")
+    alias = tmp_path / "alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    server = workspace_module.comparison_server(alias / "site", 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        response = urlopen(
+            Request(f"http://127.0.0.1:{server.server_port}/", method=method)
+        )
+        assert response.status == 200
+        if method == "GET":
+            assert response.read() == b"Comparison homepage"
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 @pytest.mark.parametrize("parent", [".asta", ".asta/cache"])
@@ -899,9 +1088,23 @@ def test_comparison_preview_has_no_directory_listing(
         server.server_close()
 
 
-def test_comparison_cache_stays_private_after_copy(project: Path) -> None:
+def test_comparison_cache_stays_private_throughout_copy(
+    project: Path, monkeypatch
+) -> None:
     (project / "_site").mkdir(mode=0o755)
     (project / "_site").chmod(0o755)
+    original = shutil.copystat
+    checked = []
+
+    def check_copy_permissions(source, destination, **kwargs):
+        original(source, destination, **kwargs)
+        path = Path(destination)
+        for parent in (path, *path.parents):
+            if parent.name.startswith(".what-changed-"):
+                assert parent.stat().st_mode & 0o777 == 0o700
+                checked.append(parent)
+
+    monkeypatch.setattr(shutil, "copystat", check_copy_permissions)
     for _ in range(2):
         result = CliRunner().invoke(
             workspace, ["what-changed", "last-read", "--project", str(project)]
@@ -910,6 +1113,7 @@ def test_comparison_cache_stays_private_after_copy(project: Path) -> None:
         assert (
             project / workspace_module.COMPARISON_DIR
         ).stat().st_mode & 0o777 == 0o700
+    assert checked
 
 
 @pytest.mark.parametrize("phase", ["render", "script"])
@@ -1036,7 +1240,9 @@ def test_cached_diff_script_rejects_redirected_version(
     (cache / "workspace.json").write_text(
         json.dumps({"archive_sha256": sha, "scripts": {"what-changed.py": "hash"}})
     )
-    monkeypatch.setattr(workspace_module.sync, "callback", lambda **kwargs: None)
+    monkeypatch.setattr(
+        workspace_module, "sync_workspace", lambda *args, **kwargs: None
+    )
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
