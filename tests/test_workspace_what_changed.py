@@ -47,6 +47,13 @@ def git(project: Path, *args: str) -> None:
     )
 
 
+def assert_single_worktree(project: Path) -> None:
+    worktrees = subprocess.check_output(
+        ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
+    )
+    assert sum(line.startswith("worktree ") for line in worktrees.splitlines()) == 1
+
+
 @pytest.fixture
 def project(
     tmp_path: Path,
@@ -76,13 +83,12 @@ def test_highlights_edit_since_ref(project: Path) -> None:
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
     assert result.exit_code == 0, result.output
+    assert "Copying " in result.stderr and "Git-visible render inputs" in result.stderr
+    assert "Copying " not in result.stdout
     page = (project / ".asta/cache/what-changed/what-changed.html").read_text()
     assert "Changes since last-read" in page
     assert "<ins" in page and "newly drafted paragraph" in page
-    worktrees = subprocess.run(
-        ["git", "worktree", "list"], cwd=project, capture_output=True, text=True
-    ).stdout
-    assert len(worktrees.strip().splitlines()) == 1
+    assert_single_worktree(project)
 
 
 @pytest.mark.parametrize("explicit_project", [False, True])
@@ -140,10 +146,7 @@ def test_baseline_missing_ignored_input_reports_build_stderr(
     assert "'make render' failed for last-read" in result.output
     assert "Missing local inputs.csv for render" in result.output
     assert "Wrote " not in result.output
-    worktrees = subprocess.check_output(
-        ["git", "-C", str(project), "worktree", "list"], text=True
-    )
-    assert len(worktrees.strip().splitlines()) == 1
+    assert_single_worktree(project)
 
 
 @pytest.mark.parametrize("phase", ["success", "render", "script", "checkout"])
@@ -199,14 +202,97 @@ def test_locked_baseline_remains_recoverable(
             git(project, "worktree", "remove", "--force", str(baseline))
             if baseline.parent.exists():
                 baseline.parent.rmdir()
-    assert (
-        len(
-            subprocess.check_output(
-                ["git", "-C", str(project), "worktree", "list"]
-            ).splitlines()
+    assert_single_worktree(project)
+
+
+@pytest.mark.parametrize("phase", ["success", "render", "setup"])
+def test_locked_working_copy_remains_recoverable(project: Path, monkeypatch, phase):
+    original = workspace_module._git
+    working = None
+
+    def lock_working(directory, *args):
+        nonlocal working
+        result = original(directory, *args)
+        if args[:2] == ("worktree", "add") and "--no-checkout" in args:
+            assert result.returncode == 0
+            working = Path(args[4])
+            git(project, "worktree", "lock", str(working))
+            if phase == "setup":
+                return subprocess.CompletedProcess(
+                    args, 1, stderr="Setup failed after registration"
+                )
+        return result
+
+    monkeypatch.setattr(workspace_module, "_git", lock_working)
+    if phase == "render":
+        Path(shutil.which("make")).write_text(
+            "#!/usr/bin/env python3\nimport pathlib\n"
+            "if pathlib.Path.cwd().name == 'working': raise SystemExit(2)\n" + FAKE_MAKE
         )
-        == 1
+    try:
+        result = CliRunner().invoke(
+            workspace, ["what-changed", "last-read", "--project", str(project)]
+        )
+        assert result.exit_code == (0 if phase == "success" else 1), result.output
+        assert working is not None
+        assert (
+            f"Warning: working worktree cleanup failed for {working}" in result.output
+        )
+        assert working.is_dir() and (working / ".git").is_file()
+        git(working, "status", "--porcelain")
+        worktrees = subprocess.check_output(
+            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
+        )
+        assert f"worktree {working}\n" in worktrees and "locked\n" in worktrees
+        assert not (working.parent / "baseline").exists()
+    finally:
+        if working is not None:
+            git(project, "worktree", "unlock", str(working))
+            git(project, "worktree", "remove", "--force", str(working))
+            working.parent.rmdir()
+    assert_single_worktree(project)
+
+
+def test_subdirectory_uses_git_prefix_with_repository_alias(project: Path, monkeypatch):
+    nested = project / "site"
+    nested.mkdir()
+    (project / "index.qmd").rename(nested / "index.qmd")
+    (project / "scripts").rename(nested / "scripts")
+    git(project, "add", ".")
+    git(project, "commit", "-qm", "nested workspace")
+    git(project, "tag", "-f", "last-read")
+    (nested / "index.qmd").write_text("An edit through an aliased repository.\n")
+    cache = nested / ".asta/cache"
+    cache.mkdir(parents=True)
+    (cache / "workspace.mk").write_text("Cached build rules")
+    original = workspace_module._git
+    alias = project.with_name(project.name + "-alias")
+    alias.symlink_to(project, target_is_directory=True)
+
+    def alias_toplevel(directory, *args):
+        result = original(directory, *args)
+        if args == ("rev-parse", "--show-toplevel"):
+            result.stdout = str(alias) + "\n"
+        return result
+
+    monkeypatch.setattr(workspace_module, "_git", alias_toplevel)
+    original_render = workspace_module.render_site
+
+    def render(directory, label):
+        if label == "the working tree":
+            assert (
+                directory / ".asta/cache/workspace.mk"
+            ).read_text() == "Cached build rules"
+        return original_render(directory, label)
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(nested)]
     )
+    assert result.exit_code == 0, result.output
+    page = (nested / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
+    assert "<ins" in page and "aliased repository" in page
+    assert_single_worktree(project)
 
 
 @pytest.mark.parametrize("outcome", ["success", "render-failure", "cleanup-failure"])
@@ -251,6 +337,29 @@ def test_comparison_preserves_unavailable_worktree(
         offline.rename(unrelated)
     git(unrelated, "status", "--porcelain")
     assert (unrelated / "local-notes.txt").read_text() == "Uncommitted research notes"
+
+
+@pytest.mark.parametrize("version", ["2.29.9", "2.24.4", "1.9.5"])
+def test_old_git_has_actionable_error(project: Path, monkeypatch, version):
+    original = workspace_module._git
+
+    def older_git(directory, *args):
+        assert args[:2] != ("worktree", "add")
+        if args == ("--version",):
+            return subprocess.CompletedProcess(
+                args, 0, stdout=f"git version {version}\n"
+            )
+        return original(directory, *args)
+
+    monkeypatch.setattr(workspace_module, "_git", older_git)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 1
+    assert "Git 2.30 or newer is required" in result.output
+    assert version in result.output
+    assert "Unknown git ref" not in result.output
+    assert_single_worktree(project)
 
 
 def test_unknown_ref(project: Path) -> None:
@@ -369,14 +478,7 @@ def test_publish_failure_preserves_previous_comparison(
     assert "Could not publish the comparison: Publication failed" in result.output
     assert (external / "keep.html").read_text() == "External content"
     assert not list(owned.parent.glob(".what-changed-*"))
-    assert (
-        len(
-            subprocess.check_output(
-                ["git", "-C", str(project), "worktree", "list"]
-            ).splitlines()
-        )
-        == 1
-    )
+    assert_single_worktree(project)
 
 
 def test_previous_comparison_cleanup_failure_does_not_hide_new_report(
@@ -437,10 +539,7 @@ def test_requires_fresh_nonempty_html(
         assert not owned.exists()
     assert not (project / "_site/what-changed.html").exists()
     assert not list(owned.parent.glob(".what-changed-*"))
-    worktrees = subprocess.run(
-        ["git", "worktree", "list"], cwd=project, capture_output=True, text=True
-    ).stdout
-    assert len(worktrees.strip().splitlines()) == 1
+    assert_single_worktree(project)
 
 
 def test_requires_a_diff_script(project: Path, monkeypatch) -> None:
@@ -506,14 +605,7 @@ def test_missing_baseline_layout_does_not_fetch_script(
     assert "Project directory does not exist for last-read:" in result.output
     assert "new-workspace" in result.output
     assert "Rendering " not in result.output
-    assert (
-        len(
-            subprocess.check_output(
-                ["git", "-C", str(project), "worktree", "list"], text=True
-            ).splitlines()
-        )
-        == 1
-    )
+    assert_single_worktree(project)
 
 
 def test_internal_sync_status_uses_stderr(
@@ -711,7 +803,7 @@ def test_working_copy_keeps_render_inputs_and_git_index(
         (cache / "workspace.mk").write_text("Cached rules")
         (cache / ".what-changed-old.previous").mkdir()
         destination = tmp_path_factory.mktemp("snapshot") / "working"
-        copied = workspace_module.working_copy(project, project, destination)
+        copied = workspace_module.working_copy(project, "", destination)
         assert not (copied / "local-data").exists()
         assert not (copied / ".env").exists()
         assert not (copied / "notes/.env.local").exists()
@@ -761,7 +853,7 @@ def test_working_copy_preserves_staged_changes(
             ["git", "-C", str(project), "ls-files", "--stage", "-z"]
         )
         destination = tmp_path_factory.mktemp("snapshot") / "working"
-        copied = workspace_module.working_copy(project, project, destination)
+        copied = workspace_module.working_copy(project, "", destination)
         assert (
             subprocess.check_output(
                 ["git", "-C", str(copied), "ls-files", "--stage", "-z"]
@@ -816,19 +908,17 @@ def test_both_renders_find_the_main_checkout(project: Path) -> None:
         "uses the venv"
         in (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
     )
-    worktrees = subprocess.check_output(
-        ["git", "-C", str(project), "worktree", "list"]
-    ).splitlines()
-    assert len(worktrees) == 1
+    assert_single_worktree(project)
 
 
-def test_render_uses_staged_page_list(project: Path) -> None:
+@pytest.mark.parametrize("intent_to_add", [False, True])
+def test_render_uses_staged_page_list(project: Path, intent_to_add: bool) -> None:
     (project / "removed.qmd").write_text("The removed finding.")
     git(project, "add", "removed.qmd")
     git(project, "commit", "-qm", "add removed page")
     git(project, "tag", "-f", "last-read")
     (project / "added.qmd").write_text("The newly staged finding.")
-    git(project, "add", "added.qmd")
+    git(project, "add", *(["-N"] if intent_to_add else []), "added.qmd")
     git(project, "rm", "removed.qmd")
     Path(shutil.which("make")).write_text(
         "#!/usr/bin/env python3\n"
@@ -898,14 +988,7 @@ def test_failed_working_copy_preserves_report_and_cleans_up(
     assert "Copy setup failed" in result.output
     assert (owned / "what-changed.html").read_text() == "Previous report"
     assert temporary is not None and not temporary.exists()
-    assert (
-        len(
-            subprocess.check_output(
-                ["git", "-C", str(project), "worktree", "list"]
-            ).splitlines()
-        )
-        == 1
-    )
+    assert_single_worktree(project)
 
 
 def test_diff_script_diagnostics_go_to_stderr(project: Path) -> None:
@@ -1066,8 +1149,6 @@ def test_preview_what_changed_requires_a_page(tmp_path: Path) -> None:
 
 
 def test_preview_what_changed_uses_codespace_url(project: Path, monkeypatch) -> None:
-    import socket
-
     owned = project / workspace_module.COMPARISON_DIR
     owned.mkdir(parents=True)
     (owned / "what-changed.html").write_text("page")
@@ -1185,8 +1266,6 @@ def test_comparison_preview_rejects_untrusted_hosts(
         f"127.0.0.1:{port}",
         "localhost:1",
         "127.0.0.1:1",
-        "[::1]",
-        "[::1]:12345",
     ]
     if domain is not None:
         allowed.append(f"test-space-{port}.{domain}")
@@ -1201,6 +1280,8 @@ def test_comparison_preview_rejects_untrusted_hosts(
         "localhost/path",
         "localhost?query",
         "localhost#fragment",
+        "[::1]",
+        "[::1]:12345",
     ]
     if domain is None:
         rejected.append(f"test-space-{port}.app.github.dev")
@@ -1329,14 +1410,7 @@ def test_termination_cleans_comparison_and_children(project: Path, phase: str) -
         assert process.returncode == 128 + signal.SIGTERM, (stdout, stderr)
         assert (owned / "what-changed.html").read_text() == "Previous report"
         assert not list(owned.parent.glob(".what-changed-*"))
-        assert (
-            len(
-                subprocess.check_output(
-                    ["git", "-C", str(project), "worktree", "list"]
-                ).splitlines()
-            )
-            == 1
-        )
+        assert_single_worktree(project)
         with pytest.raises(ProcessLookupError):
             os.kill(child, 0)
     finally:
@@ -1370,14 +1444,7 @@ def test_failed_checkout_removes_partial_registration(
     )
     assert result.exit_code != 0
     assert "Checkout failed after registration" in result.output
-    assert (
-        len(
-            subprocess.check_output(
-                ["git", "-C", str(project), "worktree", "list"]
-            ).splitlines()
-        )
-        == 1
-    )
+    assert_single_worktree(project)
 
 
 def test_cached_diff_script_rejects_redirected_version(

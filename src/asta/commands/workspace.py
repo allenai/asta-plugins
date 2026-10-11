@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -548,7 +549,7 @@ def _is_env_file(name: str) -> bool:
     return base == ".env" or base.startswith(".env.")
 
 
-def working_copy(repository: Path, project: Path, destination: Path) -> Path:
+def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
     """Copy render inputs only: Git-visible files plus the synced workspace cache.
 
     Other ignored files (virtualenvs, outputs, caches) and untracked .env files
@@ -556,6 +557,7 @@ def working_copy(repository: Path, project: Path, destination: Path) -> Path:
     a linked worktree, like the baseline, so `git rev-parse --git-common-dir`
     finds the main checkout (and its ignored .venv) from both renders.
     """
+    project = repository / prefix
     added = _git(
         repository,
         "worktree",
@@ -592,7 +594,9 @@ def working_copy(repository: Path, project: Path, destination: Path) -> Path:
         if not _is_env_file(name)
     ]
     live = (project / "_site", project / ".quarto")
-    for name in dict.fromkeys(_ls_files(repository, "--cached") + untracked):
+    files = dict.fromkeys(_ls_files(repository, "--cached") + untracked)
+    click.echo(f"Copying {len(files)} Git-visible render inputs", err=True)
+    for name in files:
         source = repository / name
         if not os.path.lexists(source) or any(
             source == path or path in source.parents for path in live
@@ -627,12 +631,12 @@ def working_copy(repository: Path, project: Path, destination: Path) -> Path:
     if cache.is_dir() and not cache.is_symlink():
         shutil.copytree(
             cache,
-            destination / cache.relative_to(repository),
+            destination / prefix / ".asta/cache",
             symlinks=True,
             dirs_exist_ok=True,
             ignore=ignore,
         )
-    return destination / project.relative_to(repository)
+    return destination / prefix
 
 
 @contextmanager
@@ -643,12 +647,13 @@ def _comparison_directory():
     finally:
         try:
             with preview_cleanup():
-                shutil.rmtree(temporary / "working", ignore_errors=True)
-                # Git owns baseline removal; keep failed removals recoverable.
-                if not (temporary / "baseline").exists():
+                # Git owns both worktrees; keep failed removals recoverable.
+                if not any(
+                    (temporary / name).exists() for name in ("baseline", "working")
+                ):
                     temporary.rmdir()
         except OSError as exc:
-            click.echo(f"Warning: baseline directory cleanup failed: {exc}", err=True)
+            click.echo(f"Warning: comparison directory cleanup failed: {exc}", err=True)
 
 
 def _publish(staged: Path, owned: Path) -> None:
@@ -708,6 +713,16 @@ def compare_workspace(ref: str, project: Path) -> None:
         raise click.ClickException("git is required to compare the workspace") from exc
     if repository.returncode != 0:
         raise click.ClickException(f"Not a git repository: {project}")
+    version = _git(project, "--version")
+    parsed = re.search(r"\bgit version (\d+)\.(\d+)", version.stdout)
+    if version.returncode != 0 or not parsed:
+        raise click.ClickException(
+            "Cannot determine Git version; Git 2.30 or newer is required"
+        )
+    if tuple(map(int, parsed.groups())) < (2, 30):
+        raise click.ClickException(
+            f"Git 2.30 or newer is required; found {version.stdout.strip()}"
+        )
     commit = _git(
         project,
         "rev-parse",
@@ -748,7 +763,9 @@ def compare_workspace(ref: str, project: Path) -> None:
             script = diff_script(project)
             old_site = render_site(baseline_project, ref)
             copied_project = working_copy(
-                Path(repository.stdout.rstrip("\n")), project, tmp / "working"
+                Path(repository.stdout.rstrip("\n")),
+                prefix.stdout.rstrip("\n"),
+                tmp / "working",
             )
             new_site = render_site(copied_project, "the working tree")
             # The page sits at the root of a site copy so its relative links
@@ -811,13 +828,23 @@ def compare_workspace(ref: str, project: Path) -> None:
         finally:
             with preview_cleanup():
                 if (tmp / "working").exists():
-                    _git(project, "worktree", "remove", "--force", str(tmp / "working"))
+                    working = tmp / "working"
+                    removed = _git(
+                        project, "worktree", "remove", "--force", str(working)
+                    )
+                    if removed.returncode != 0:
+                        click.echo(
+                            f"Warning: working worktree cleanup failed for {working}: {removed.stderr.strip()}. "
+                            f"Resolve the cause, then run 'git worktree remove --force {shlex.quote(str(working))}'.",
+                            err=True,
+                        )
                 removed = _git(project, "worktree", "remove", "--force", str(baseline))
                 if removed.returncode != 0 and (
                     added is None or added.returncode == 0 or baseline.exists()
                 ):
                     click.echo(
-                        f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}",
+                        f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}. "
+                        f"Resolve the cause, then run 'git worktree remove --force {shlex.quote(str(baseline))}'.",
                         err=True,
                     )
     page = owned / "what-changed.html"
@@ -851,7 +878,7 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
             try:
                 host = urlsplit("//" + self.headers.get("Host", "").lower())
                 valid_host = (
-                    host.hostname in ("localhost", "127.0.0.1", "::1", forwarded_host)
+                    host.hostname in ("localhost", "127.0.0.1", forwarded_host)
                     and bool(host.hostname)
                     and host.username is None
                     and host.password is None
