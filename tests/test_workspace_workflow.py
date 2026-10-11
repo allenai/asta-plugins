@@ -1052,6 +1052,14 @@ def test_paper_overrides_stay_in_unprivileged_build() -> None:
         )
 
 
+def test_fork_prs_skip_preview_writes() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    same_repo = "github.event.pull_request.head.repo.full_name == github.repository"
+    assert same_repo not in workflow["jobs"]["build"]["if"]
+    for job in ("deploy", "cleanup-preview"):
+        assert same_repo in workflow["jobs"][job]["if"]
+
+
 @pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])
 @pytest.mark.parametrize("copy_state", ["tracked", "untracked", "missing", "directory"])
 def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy_state):

@@ -300,9 +300,13 @@ jobs:
   # main deploy can't be queued behind or cancelled by a PR's write (including a
   # PR-close cleanup that fires at merge). Concurrent writes from different
   # groups reconcile via rebase-and-retry on push, not a global queue.
+  # Fork PRs get a read-only token, so they build but don't publish a preview.
   deploy:
     needs: build
-    if: github.event_name == 'push' || github.event.action != 'closed'
+    if: >-
+      github.event_name == 'push'
+      || (github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -458,7 +462,9 @@ jobs:
   # (keyed on the PR number) so it cancels any still-running build/deploy for the
   # PR first — otherwise a late deploy could recreate the preview after removal.
   cleanup-preview:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: write
