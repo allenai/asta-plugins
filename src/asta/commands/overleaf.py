@@ -46,6 +46,8 @@ def git_environment() -> dict:
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
+    if not sys.stdin.isatty():
+        env["GIT_TERMINAL_PROMPT"] = "0"
     return env
 
 
@@ -174,8 +176,6 @@ def validate_url(url: str | None) -> str:
 def credentials():
     """Answer Git's prompt from OVERLEAF_TOKEN, else leave normal credential helpers in place."""
     env = git_environment()
-    if not sys.stdin.isatty():
-        env["GIT_TERMINAL_PROMPT"] = "0"
     token = os.environ.get("OVERLEAF_TOKEN")
     if not token:
         yield env, []

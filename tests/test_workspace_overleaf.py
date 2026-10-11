@@ -2030,3 +2030,51 @@ def test_workspace_only_hook_config_failure_explains_export_layout(setup):
     assert "exported paper directory, not the full workspace" in result.output
     assert (project / "paper/overleaf.json").read_bytes() == before_record
     assert git(seed, "ls-remote", "origin", "master") == before_remote
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_merge_gate_workspace_transport_respects_terminal(
+    setup, monkeypatch, interactive
+):
+    _, project = setup
+    monkeypatch.delenv("GIT_TERMINAL_PROMPT", raising=False)
+    monkeypatch.setattr(
+        module,
+        "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: interactive)),
+    )
+    real = module.subprocess.run
+    observed = []
+
+    def inspect_transport(args, **kwargs):
+        if args[1] in ("ls-remote", "fetch"):
+            observed.append((args[1], kwargs["env"].get("GIT_TERMINAL_PROMPT")))
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", inspect_transport)
+    assert module.on_default_branch(project)
+    assert observed == [
+        ("ls-remote", None if interactive else "0"),
+        ("fetch", None if interactive else "0"),
+    ]
+
+
+def test_workspace_missing_credentials_fail_without_terminal(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "1")
+    monkeypatch.delenv("GIT_ASKPASS", raising=False)
+    monkeypatch.delenv("SSH_ASKPASS", raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setattr(
+        module, "sys", SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: False))
+    )
+    result = subprocess.run(
+        ["git", "-c", "credential.helper=", "credential", "fill"],
+        cwd=tmp_path,
+        env=module.git_environment(),
+        input=b"url=https://example.com/workspace.git\n\n",
+        capture_output=True,
+        timeout=5,
+    )
+    assert result.returncode != 0
+    assert b"terminal prompts disabled" in result.stderr
