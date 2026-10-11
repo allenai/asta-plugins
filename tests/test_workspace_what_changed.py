@@ -595,7 +595,7 @@ def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
                     with urlopen(f"http://127.0.0.1:{port}/", timeout=1) as response:
                         assert response.status == 200
                         break
-                except URLError:
+                except (URLError, TimeoutError):
                     assert time.monotonic() < deadline, "Live preview never started"
                     time.sleep(0.1)
             live_page = (project / "_site/index.html").read_bytes()
