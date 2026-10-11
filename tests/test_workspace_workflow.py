@@ -1112,6 +1112,7 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
         "github.event_name": event,
         "github.event.action": action,
         "github.event.pull_request.head.repo.full_name": head_repo,
+        "github.event.pull_request.user.login": "contributor",
         "github.actor": actor,
     }
     for job, enabled in zip(
@@ -1121,6 +1122,30 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
             _condition_enabled(workflow["jobs"][job].get("if", "True"), context)
             == enabled
         )
+
+
+@pytest.mark.parametrize("actor", ["contributor", "dependabot[bot]"])
+@pytest.mark.parametrize("action", ["opened", "synchronize", "closed"])
+def test_dependabot_pr_never_leaves_a_preview_for_a_bot_close(actor, action):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    context = {
+        "github.repository": "owner/site",
+        "github.event_name": "pull_request",
+        "github.event.action": action,
+        "github.event.pull_request.head.repo.full_name": "owner/site",
+        "github.event.pull_request.user.login": "dependabot[bot]",
+        "github.actor": actor,
+    }
+    for job in ("deploy", "cleanup-preview"):
+        assert not _condition_enabled(workflow["jobs"][job]["if"], context)
+    notice = workflow["jobs"]["preview-unavailable"]
+    assert _condition_enabled(notice["if"], context) == (action != "closed")
+    assert (
+        _condition_enabled(notice["name"][3:-2], context) == "No preview (Dependabot)"
+    )
+    assert _condition_enabled(workflow["jobs"]["build"]["if"], context) == (
+        action != "closed"
+    )
 
 
 def _condition_enabled(expression, context):
@@ -1136,15 +1161,37 @@ def _condition_enabled(expression, context):
 
 
 @pytest.mark.parametrize(
-    "head_repo,actor,reason",
+    "head_repo,actor,author,reason",
     [
-        ("contributor/site", "contributor", "This PR comes from contributor/site"),
-        ("", "contributor", "This PR comes from a deleted fork"),
-        ("owner/site", "dependabot[bot]", "This run was triggered by Dependabot"),
+        (
+            "contributor/site",
+            "contributor",
+            "contributor",
+            "This PR comes from contributor/site",
+        ),
+        ("", "contributor", "contributor", "This PR comes from a deleted fork"),
+        (
+            "owner/site",
+            "dependabot[bot]",
+            "contributor",
+            "This run was triggered by Dependabot",
+        ),
+        (
+            "owner/site",
+            "contributor",
+            "dependabot[bot]",
+            "This PR was opened by Dependabot",
+        ),
+        (
+            "owner/site",
+            "dependabot[bot]",
+            "dependabot[bot]",
+            "This PR was opened by Dependabot",
+        ),
     ],
 )
 def test_preview_unavailable_explains_reason_and_remedy(
-    tmp_path, head_repo, actor, reason
+    tmp_path, head_repo, actor, author, reason
 ) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     notice = workflow["jobs"]["preview-unavailable"]
@@ -1159,6 +1206,7 @@ def test_preview_unavailable_explains_reason_and_remedy(
             HEAD_REPO=head_repo,
             BASE_REPO="owner/site",
             RUN_ACTOR=actor,
+            PR_AUTHOR=author,
             GITHUB_STEP_SUMMARY=str(summary),
         ),
         capture_output=True,
@@ -1172,6 +1220,9 @@ def test_preview_unavailable_explains_reason_and_remedy(
         assert "push these changes to a branch in owner/site" in output
         assert "open a PR from that branch using your own account" in output
         assert "build check still renders and checks the site" in output
+        if author == "dependabot[bot]":
+            assert "even on a later human-triggered run" in output
+            assert "a bot-triggered close could not remove the preview" in output
 
 
 @pytest.mark.parametrize("deploy_result", ["skipped", "failure", "success"])

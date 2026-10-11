@@ -27,8 +27,11 @@ workflows, so it can't live with the skill. Maintain it together with
 `plugins/asta-tools/skills/workspace/` (its `assets/docs.yml` stub and
 `assets/Makefile` `check` target form one contract with it).
 
-Fork PRs and Dependabot-triggered PR runs still build and check the site, but
-do not publish previews because their tokens are read-only by default. A
+Fork PRs, Dependabot-authored PRs and Dependabot-triggered PR runs still build
+and check the site, but do not publish previews. Fork and Dependabot-triggered
+runs have read-only tokens by default. Dependabot-authored PRs stay excluded
+even when a human triggers a later run, because a bot-triggered close could
+not remove the preview. A
 `No preview (fork PR)` or `No preview (Dependabot)` check explains this in a
 warning and job summary. To publish a preview, someone with repository write
 access can push the changes to a branch in the repository and open a PR from
