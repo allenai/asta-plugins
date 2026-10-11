@@ -34,6 +34,7 @@ def run(project, *args, merge=True):
         subprocess.run(
             ["git", "push", "-q", "-f", "--no-verify", "origin", "HEAD:main"],
             cwd=project,
+            check=True,
             capture_output=True,
         )
     return CliRunner().invoke(
@@ -226,7 +227,7 @@ def test_transport_auth_errors_are_actionable(
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_sync_reports_unborn_workspace_head(tmp_path, command):
     git(tmp_path, "init", "-b", "main")
-    result = run(tmp_path, command, *([URL] if command == "pull" else []))
+    result = run(tmp_path, command, *([URL] if command == "pull" else []), merge=False)
     assert result.exit_code != 0
     assert "Commit the workspace's initial files" in result.output
 
@@ -2002,7 +2003,7 @@ def test_publish_requires_origin_remote(setup):
     (project / "paper" / "main.tex").write_text("edit\n")
     commit_all(project)
     before = git(seed, "ls-remote", "origin", "master")
-    result = run(project, "publish")
+    result = run(project, "publish", merge=False)
     assert result.exit_code != 0
     assert "`origin` remote" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
