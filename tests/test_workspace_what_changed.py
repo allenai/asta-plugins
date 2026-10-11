@@ -669,6 +669,20 @@ def test_live_preview_rebuild_cannot_change_diff_input(project: Path) -> None:
     assert "newly drafted paragraph" in (owned / "index.html").read_text()
 
 
+def test_working_copy_preserves_spaces_in_repository_path(project: Path) -> None:
+    renamed = project.with_name(project.name + " workspace ")
+    project.rename(renamed)
+    (renamed / "index.qmd").write_text("A newly drafted paragraph.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(renamed)]
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        "newly drafted paragraph"
+        in (renamed / workspace_module.COMPARISON_DIR / "index.html").read_text()
+    )
+
+
 @pytest.mark.parametrize("linked_worktree", [False, True])
 def test_working_copy_retains_local_inputs_and_git_index(
     project: Path, tmp_path_factory, linked_worktree: bool

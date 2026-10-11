@@ -686,7 +686,7 @@ def compare_workspace(ref: str, project: Path) -> None:
             script = diff_script(project)
             old_site = render_site(baseline_project, ref)
             copied_project = working_copy(
-                Path(repository.stdout.strip()), project, tmp / "working"
+                Path(repository.stdout.rstrip("\n")), project, tmp / "working"
             )
             new_site = render_site(copied_project, "the working tree")
             # The page sits at the root of a site copy so its relative links
