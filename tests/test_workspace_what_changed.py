@@ -156,7 +156,7 @@ def test_locked_baseline_remains_recoverable(
     def lock_baseline(directory, *args):
         nonlocal baseline
         result = original(directory, *args)
-        if args[:2] == ("worktree", "add"):
+        if args[:2] == ("worktree", "add") and "--no-checkout" not in args:
             assert result.returncode == 0
             baseline = Path(args[3])
             git(project, "worktree", "lock", str(baseline))
@@ -790,6 +790,38 @@ def test_working_copy_preserves_staged_changes(
             git(project, "worktree", "remove", "--force", str(project))
 
 
+def test_both_renders_find_the_main_checkout(project: Path) -> None:
+    # Renders that locate an ignored virtualenv via the main checkout, as
+    # `git rev-parse --git-common-dir` scripts do, must work in both copies.
+    (project / ".gitignore").write_text("_site/\n.asta/cache/\n.venv/\n")
+    git(project, "commit", "-qam", "ignore venv")
+    git(project, "tag", "-f", "last-read")
+    (project / ".venv").mkdir()
+    (project / ".venv/marker").write_text("main venv")
+    make = Path(shutil.which("make"))
+    make.write_text(
+        make.read_text() + "import subprocess\n"
+        "common = subprocess.check_output(\n"
+        "    ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],\n"
+        "    text=True,\n"
+        ").strip()\n"
+        "assert (pathlib.Path(common).parent / '.venv/marker').is_file(), common\n"
+    )
+    (project / "index.qmd").write_text("A finding that uses the venv.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert (
+        "uses the venv"
+        in (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
+    )
+    worktrees = subprocess.check_output(
+        ["git", "-C", str(project), "worktree", "list"]
+    ).splitlines()
+    assert len(worktrees) == 1
+
+
 def test_render_uses_staged_page_list(project: Path) -> None:
     (project / "removed.qmd").write_text("The removed finding.")
     git(project, "add", "removed.qmd")
@@ -831,7 +863,7 @@ def test_render_uses_staged_page_list(project: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("phase", ["clone", "ls-files", "update-index"])
+@pytest.mark.parametrize("phase", ["worktree", "ls-files", "update-index"])
 def test_failed_working_copy_preserves_report_and_cleans_up(
     project: Path, monkeypatch, phase: str
 ) -> None:
@@ -843,9 +875,10 @@ def test_failed_working_copy_preserves_report_and_cleans_up(
 
     def fail_copy(directory, *args):
         nonlocal temporary
-        if args[0] == "clone":
-            temporary = Path(args[-1]).parent
-        if args[0] == phase:
+        copying = "--no-checkout" in args
+        if copying:
+            temporary = Path(args[-2]).parent
+        if args[0] == phase and (copying or phase != "worktree"):
             return subprocess.CompletedProcess(args, 1, stderr="Copy setup failed")
         return original(directory, *args)
 

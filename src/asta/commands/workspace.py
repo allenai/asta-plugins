@@ -552,19 +552,22 @@ def working_copy(repository: Path, project: Path, destination: Path) -> Path:
     """Copy render inputs only: Git-visible files plus the synced workspace cache.
 
     Other ignored files (virtualenvs, outputs, caches) and untracked .env files
-    stay out, so comparisons stay quick and do not duplicate secrets.
+    stay out, so comparisons stay quick and do not duplicate secrets. The copy is
+    a linked worktree, like the baseline, so `git rev-parse --git-common-dir`
+    finds the main checkout (and its ignored .venv) from both renders.
     """
-    cloned = _git(
+    added = _git(
         repository,
-        "clone",
-        "--shared",
+        "worktree",
+        "add",
+        "--detach",
         "--no-checkout",
-        str(repository),
         str(destination),
+        "HEAD",
     )
-    if cloned.returncode != 0:
+    if added.returncode != 0:
         raise click.ClickException(
-            f"Could not copy the working tree: {cloned.stderr.strip()}"
+            f"Could not copy the working tree: {added.stderr.strip()}"
         )
     entries = _git(repository, "ls-files", "--stage", "-z")
     if entries.returncode != 0:
@@ -807,6 +810,8 @@ def compare_workspace(ref: str, project: Path) -> None:
                     shutil.rmtree(staged, ignore_errors=True)
         finally:
             with preview_cleanup():
+                if (tmp / "working").exists():
+                    _git(project, "worktree", "remove", "--force", str(tmp / "working"))
                 removed = _git(project, "worktree", "remove", "--force", str(baseline))
                 if removed.returncode != 0 and (
                     added is None or added.returncode == 0 or baseline.exists()
