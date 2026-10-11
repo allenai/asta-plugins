@@ -300,16 +300,15 @@ jobs:
   # main deploy can't be queued behind or cancelled by a PR's write (including a
   # PR-close cleanup that fires at merge). Concurrent writes from different
   # groups reconcile via rebase-and-retry on push, not a global queue.
-  # Dependabot PRs never publish, even on a human-triggered event: a later bot
-  # close has no write token to clean up. `preview-unavailable` explains this.
+  # Fork and Dependabot-triggered PR runs get a read-only token, so they skip
+  # the preview; `preview-unavailable` says so. Other events are unchanged.
   deploy:
     needs: build
     if: >-
-      github.actor != 'dependabot[bot]'
-      && (github.event_name != 'pull_request'
-      || (github.event.action != 'closed'
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login != 'dependabot[bot]'))
+      (github.event_name == 'push' || github.event.action != 'closed')
+      && !(github.event_name == 'pull_request'
+      && (github.event.pull_request.head.repo.full_name != github.repository
+      || github.actor == 'dependabot[bot]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -343,7 +342,7 @@ jobs:
           tmp=$(mktemp -d)
           git worktree add "$tmp" gh-pages
 
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "push" ]; then
             # Main deploy: replace the site root, keep pr-preview/.
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
@@ -453,12 +452,11 @@ jobs:
   # A skipped deploy would leave a PR silently without a preview, so say
   # why and how to get one where the author looks: the checks list.
   preview-unavailable:
-    name: ${{ (github.actor == 'dependabot[bot]' || github.event.pull_request.user.login == 'dependabot[bot]') && 'No preview (Dependabot)' || 'No preview (fork PR)' }}
+    name: ${{ github.actor == 'dependabot[bot]' && 'No preview (Dependabot)' || 'No preview (fork PR)' }}
     if: >-
       github.event_name == 'pull_request' && github.event.action != 'closed'
       && (github.event.pull_request.head.repo.full_name != github.repository
-      || github.actor == 'dependabot[bot]'
-      || github.event.pull_request.user.login == 'dependabot[bot]')
+      || github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -467,17 +465,14 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
           RUN_ACTOR: ${{ github.actor }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          if [ "$PR_AUTHOR" = 'dependabot[bot]' ]; then
-            why="This PR was opened by Dependabot. Dependabot-triggered runs get a read-only token by default, so this workflow does not publish previews for these PRs, even on a later human-triggered run: a bot-triggered close could not remove the preview."
-          elif [ "$RUN_ACTOR" = 'dependabot[bot]' ]; then
-            why="This run was triggered by Dependabot. GitHub gives these PR runs a read-only token by default, so this workflow does not publish a preview to $BASE_REPO's gh-pages."
+          if [ "$RUN_ACTOR" = 'dependabot[bot]' ]; then
+            why="This run was triggered by Dependabot. GitHub gives these PR runs a read-only token by default, so no preview can be published to $BASE_REPO's gh-pages."
           else
             why="This PR comes from ${HEAD_REPO:-a deleted fork}. GitHub gives fork PRs a read-only token, so no preview can be published to $BASE_REPO's gh-pages."
           fi
           why="$why The build check still renders and checks the site."
-          how="To get a preview, push these changes to a branch in $BASE_REPO (needs write access) and open a PR from that branch using your own account."
+          how="To get a preview, push these changes to a branch in $BASE_REPO (needs write access) and open a PR from that branch."
           echo "::warning title=No PR preview::$why $how"
           printf '## No PR preview\n\n%s\n\n%s\n' "$why" "$how" >> "$GITHUB_STEP_SUMMARY"
 

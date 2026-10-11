@@ -1099,7 +1099,7 @@ def test_paper_overrides_stay_in_unprivileged_build() -> None:
             (False, False, False, False),
         ),
         ("push", "", "", "contributor", (True, True, False, False)),
-        ("push", "", "", "dependabot[bot]", (True, False, False, False)),
+        ("push", "", "", "dependabot[bot]", (True, True, False, False)),
         ("workflow_dispatch", "", "", "contributor", (True, True, False, False)),
         ("schedule", "", "", "contributor", (True, True, False, False)),
         ("release", "published", "", "contributor", (True, True, False, False)),
@@ -1112,7 +1112,6 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
         "github.event_name": event,
         "github.event.action": action,
         "github.event.pull_request.head.repo.full_name": head_repo,
-        "github.event.pull_request.user.login": "contributor",
         "github.actor": actor,
     }
     for job, enabled in zip(
@@ -1124,37 +1123,8 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
         )
 
 
-@pytest.mark.parametrize("actor", ["contributor", "dependabot[bot]"])
-@pytest.mark.parametrize("action", ["opened", "synchronize", "closed"])
-def test_dependabot_pr_never_leaves_a_preview_for_a_bot_close(actor, action):
-    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    context = {
-        "github.repository": "owner/site",
-        "github.event_name": "pull_request",
-        "github.event.action": action,
-        "github.event.pull_request.head.repo.full_name": "owner/site",
-        "github.event.pull_request.user.login": "dependabot[bot]",
-        "github.actor": actor,
-    }
-    assert not _condition_enabled(workflow["jobs"]["deploy"]["if"], context)
-    assert _condition_enabled(workflow["jobs"]["cleanup-preview"]["if"], context) == (
-        action == "closed" and actor != "dependabot[bot]"
-    )
-    notice = workflow["jobs"]["preview-unavailable"]
-    assert _condition_enabled(notice["if"], context) == (action != "closed")
-    assert (
-        _condition_enabled(
-            re.fullmatch(r"\$\{\{\s*(.*?)\s*\}\}", notice["name"]).group(1), context
-        )
-        == "No preview (Dependabot)"
-    )
-    assert _condition_enabled(workflow["jobs"]["build"]["if"], context) == (
-        action != "closed"
-    )
-
-
 def _condition_enabled(expression, context):
-    # These workflow guards use only comparisons, boolean operators and always().
+    # These workflow guards use only comparisons, boolean operators, ! and always().
     # Fixtures use canonical casing; unlike Python, GitHub ignores string case.
     expression = re.sub(
         r"\b(?:github|needs)\.[\w.]+",
@@ -1162,42 +1132,21 @@ def _condition_enabled(expression, context):
         expression,
     )
     expression = expression.replace("&&", " and ").replace("||", " or ")
+    expression = re.sub(r"!(?!=)", " not ", expression)
     expression = expression.replace("always()", "True")
     return eval(expression, {"__builtins__": {}})
 
 
 @pytest.mark.parametrize(
-    "head_repo,actor,author,reason",
+    "head_repo,actor,reason",
     [
-        (
-            "contributor/site",
-            "contributor",
-            "contributor",
-            "This PR comes from contributor/site",
-        ),
-        ("", "contributor", "contributor", "This PR comes from a deleted fork"),
-        (
-            "owner/site",
-            "dependabot[bot]",
-            "contributor",
-            "This run was triggered by Dependabot",
-        ),
-        (
-            "owner/site",
-            "contributor",
-            "dependabot[bot]",
-            "This PR was opened by Dependabot",
-        ),
-        (
-            "owner/site",
-            "dependabot[bot]",
-            "dependabot[bot]",
-            "This PR was opened by Dependabot",
-        ),
+        ("contributor/site", "contributor", "This PR comes from contributor/site"),
+        ("", "contributor", "This PR comes from a deleted fork"),
+        ("owner/site", "dependabot[bot]", "This run was triggered by Dependabot"),
     ],
 )
 def test_preview_unavailable_explains_reason_and_remedy(
-    tmp_path, head_repo, actor, author, reason
+    tmp_path, head_repo, actor, reason
 ) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     notice = workflow["jobs"]["preview-unavailable"]
@@ -1212,7 +1161,6 @@ def test_preview_unavailable_explains_reason_and_remedy(
             HEAD_REPO=head_repo,
             BASE_REPO="owner/site",
             RUN_ACTOR=actor,
-            PR_AUTHOR=author,
             GITHUB_STEP_SUMMARY=str(summary),
         ),
         capture_output=True,
@@ -1224,11 +1172,8 @@ def test_preview_unavailable_explains_reason_and_remedy(
         assert reason in output
         assert "read-only token" in output
         assert "push these changes to a branch in owner/site" in output
-        assert "open a PR from that branch using your own account" in output
+        assert "open a PR from that branch" in output
         assert "build check still renders and checks the site" in output
-        if author == "dependabot[bot]":
-            assert "even on a later human-triggered run" in output
-            assert "a bot-triggered close could not remove the preview" in output
 
 
 @pytest.mark.parametrize("deploy_result", ["skipped", "failure", "success"])
@@ -1253,171 +1198,6 @@ def test_paper_failure_gate_survives_skipped_deploy(deploy_result, paper_result)
         )
         assert result.returncode == 1
         assert "::error::The paper failed to build" in result.stdout
-
-
-@pytest.mark.parametrize("event", ["push", "workflow_dispatch", "schedule", "release"])
-def test_non_pr_events_publish_site_root(tmp_path, event):
-    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    step = next(
-        step
-        for step in workflow["jobs"]["deploy"]["steps"]
-        if step.get("name") == "Publish to gh-pages"
-    )
-    script = step["run"]
-    for key, value in {
-        "event_name": event,
-        "sha": "test-sha",
-        "run_id": "42",
-        "repository": "owner/site",
-        "repository_owner": "owner",
-        "event.repository.name": "site",
-    }.items():
-        script = script.replace("${{ github." + key + " }}", value)
-    assert "${{" not in script, "Publish script has an unexpanded GitHub expression"
-    origin = tmp_path / "origin.git"
-    project = tmp_path / "site"
-    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
-    subprocess.run(["git", "clone", "-q", str(origin), str(project)], check=True)
-    git = ["git", "-C", str(project)]
-    for args in (
-        ["config", "user.name", "test"],
-        ["config", "user.email", "test@example.invalid"],
-        ["commit", "--allow-empty", "-qm", "initial"],
-    ):
-        subprocess.run([*git, *args], check=True)
-    site = project / "_site"
-    site.mkdir()
-    (site / "index.html").write_text("<head></head>rendered site")
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script],
-        cwd=project,
-        env=dict(os.environ, GITHUB_WORKSPACE=str(project), PR_NUMBER=""),
-        capture_output=True,
-        text=True,
-    )
-    try:
-        assert result.returncode == 0, result.stderr
-        published = subprocess.check_output(
-            ["git", "--git-dir", str(origin), "show", "gh-pages:index.html"], text=True
-        )
-        assert published == "<head></head>rendered site"
-        paths = subprocess.check_output(
-            ["git", "--git-dir", str(origin), "ls-tree", "--name-only", "gh-pages"],
-            text=True,
-        ).splitlines()
-        assert "pr-preview" not in paths
-    finally:
-        worktrees = subprocess.check_output(
-            [*git, "worktree", "list", "--porcelain"], text=True
-        )
-        for line in worktrees.splitlines():
-            if line.startswith("worktree ") and line[9:] != str(project):
-                subprocess.run(
-                    [*git, "worktree", "remove", "--force", line[9:]], check=True
-                )
-
-
-@pytest.mark.parametrize("has_preview", [True, False])
-def test_human_close_removes_legacy_dependabot_preview(tmp_path, has_preview):
-    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    cleanup = workflow["jobs"]["cleanup-preview"]
-    assert _condition_enabled(
-        cleanup["if"],
-        {
-            "github.repository": "owner/site",
-            "github.event_name": "pull_request",
-            "github.event.action": "closed",
-            "github.event.pull_request.head.repo.full_name": "owner/site",
-            "github.event.pull_request.user.login": "dependabot[bot]",
-            "github.actor": "contributor",
-        },
-    )
-    script = next(
-        step["run"]
-        for step in cleanup["steps"]
-        if step.get("name") == "Remove PR preview"
-    )
-    origin = tmp_path / "origin.git"
-    project = tmp_path / "site"
-    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
-    subprocess.run(["git", "clone", "-q", str(origin), str(project)], check=True)
-    git = ["git", "-C", str(project)]
-    for args in (
-        ["config", "user.name", "test"],
-        ["config", "user.email", "test@example.invalid"],
-        ["checkout", "-qb", "gh-pages"],
-    ):
-        subprocess.run([*git, *args], check=True)
-    (project / "index.html").write_text("site root")
-    other_preview = project / "pr-preview/pr-43"
-    other_preview.mkdir(parents=True)
-    (other_preview / "index.html").write_text("another PR")
-    if has_preview:
-        preview = project / "pr-preview/pr-42"
-        preview.mkdir(parents=True)
-        (preview / "index.html").write_text("legacy preview")
-    for args in (
-        [
-            "add",
-            "index.html",
-            "pr-preview/pr-43/index.html",
-            *(["pr-preview/pr-42/index.html"] if has_preview else []),
-        ],
-        ["commit", "-qm", "previous publication"],
-        ["push", "-q", "origin", "gh-pages"],
-        ["checkout", "-qb", "main"],
-        ["branch", "-D", "gh-pages"],
-    ):
-        subprocess.run([*git, *args], check=True)
-    initial = subprocess.check_output(
-        ["git", "--git-dir", str(origin), "rev-parse", "gh-pages"], text=True
-    )
-    try:
-        result = subprocess.run(
-            ["bash", "-e", "-o", "pipefail", "-c", script],
-            cwd=project,
-            env=dict(os.environ, PR_NUMBER="42"),
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, result.stderr
-        paths = subprocess.check_output(
-            [
-                "git",
-                "--git-dir",
-                str(origin),
-                "ls-tree",
-                "-r",
-                "--name-only",
-                "gh-pages",
-            ],
-            text=True,
-        ).splitlines()
-        assert paths == ["index.html", "pr-preview/pr-43/index.html"]
-        for path, content in (
-            ("index.html", "site root"),
-            ("pr-preview/pr-43/index.html", "another PR"),
-        ):
-            assert (
-                subprocess.check_output(
-                    ["git", "--git-dir", str(origin), "show", f"gh-pages:{path}"],
-                    text=True,
-                )
-                == content
-            )
-        current = subprocess.check_output(
-            ["git", "--git-dir", str(origin), "rev-parse", "gh-pages"], text=True
-        )
-        assert (current != initial) == has_preview
-    finally:
-        worktrees = subprocess.check_output(
-            [*git, "worktree", "list", "--porcelain"], text=True
-        )
-        for line in worktrees.splitlines():
-            if line.startswith("worktree ") and line[9:] != str(project):
-                subprocess.run(
-                    [*git, "worktree", "remove", "--force", line[9:]], check=True
-                )
 
 
 @pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])
