@@ -480,10 +480,12 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         if config:
             try:
                 git("cat-file", "-e", f"{config['base']}^{{commit}}", cwd=repo)
+                git("merge-base", "--is-ancestor", config["base"], head, cwd=repo)
             except click.ClickException:
                 raise click.ClickException(
-                    "The recorded Overleaf commit is unavailable. Reset remote history "
-                    "is unsupported; import into a separate directory with --dir."
+                    "Overleaf history no longer continues from the recorded commit. "
+                    "Reset remote history is unsupported; nothing copied. "
+                    "Import into a separate directory with --dir."
                 ) from None
         base = read_plain_files(repo, config["base"]) if config else {}
         base.pop(CONFIG, None)

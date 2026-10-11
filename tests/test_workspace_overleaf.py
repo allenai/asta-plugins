@@ -1567,6 +1567,31 @@ def test_pull_reports_unavailable_base_before_modifying_sources(setup):
     assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
 
 
+@pytest.mark.parametrize("diverge", [False, True])
+def test_pull_refuses_reset_history_with_base_on_another_branch(setup, diverge):
+    seed, project = setup
+    overleaf_edit(seed, "main.tex", "before reset\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    git(seed, "branch", "preserved-base")
+    git(seed, "push", "origin", "preserved-base")
+    git(seed, "reset", "--hard", "HEAD~1")
+    if diverge:
+        (seed / "main.tex").write_text("different history\n")
+        git(seed, "add", "main.tex")
+        git(seed, "commit", "-m", "diverge")
+    git(seed, "push", "--force", "origin", "master")
+
+    result = run(project, "pull")
+
+    assert result.exit_code != 0
+    assert "Reset remote history is unsupported" in result.output
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+    assert git(project, "status", "--porcelain") == ""
+
+
 def test_project_subdirectory_keeps_paper_relative_to_repository(setup):
     _, project = setup
     nested = project / "notes"
