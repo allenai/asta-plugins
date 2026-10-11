@@ -1058,6 +1058,12 @@ def test_fork_prs_skip_preview_writes() -> None:
     assert same_repo not in workflow["jobs"]["build"]["if"]
     for job in ("deploy", "cleanup-preview"):
         assert same_repo in workflow["jobs"][job]["if"]
+    notice = workflow["jobs"]["preview-unavailable"]
+    assert same_repo.replace("==", "!=") in notice["if"]
+    assert "github.event.action != 'closed'" in notice["if"]
+    assert notice["permissions"] == {}
+    script = notice["steps"][0]["run"]
+    assert "::warning" in script and "push this branch to" in script
 
 
 @pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])

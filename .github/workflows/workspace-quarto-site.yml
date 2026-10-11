@@ -300,7 +300,8 @@ jobs:
   # main deploy can't be queued behind or cancelled by a PR's write (including a
   # PR-close cleanup that fires at merge). Concurrent writes from different
   # groups reconcile via rebase-and-retry on push, not a global queue.
-  # Fork PRs get a read-only token, so they build but don't publish a preview.
+  # Fork PRs get a read-only token, so they build but don't publish a preview;
+  # `preview-unavailable` tells the author why.
   deploy:
     needs: build
     if: >-
@@ -446,6 +447,26 @@ jobs:
             set -e
           fi
 
+
+  # A skipped deploy would leave a fork PR silently without a preview, so say
+  # why and how to get one where the author looks: the checks list.
+  preview-unavailable:
+    name: No preview (fork PR)
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Explain the missing preview
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          why="This PR comes from the fork $HEAD_REPO. GitHub gives fork PRs a read-only token, so no preview can be published to $BASE_REPO's gh-pages; the build check still renders and checks the site."
+          how="To get a preview, push this branch to $BASE_REPO (needs write access) and open the PR from that branch."
+          echo "::warning title=No PR preview for this fork PR::$why $how"
+          printf '## No PR preview\n\n%s\n\n%s\n' "$why" "$how" >> "$GITHUB_STEP_SUMMARY"
 
   # Report a paper failure even if publishing is skipped or fails first.
   paper-gate:
