@@ -1549,3 +1549,70 @@ def test_clone_supplies_git_username_in_transport_url(tmp_path, monkeypatch):
     module.clone(URL, tmp_path / "overleaf")
     assert URL.replace("https://", "https://git@", 1) in calls[0]
     assert URL not in calls[0]
+
+
+LATEX_OUTPUTS = (
+    "main.aux",
+    "main.log",
+    "main.bbl",
+    "main.blg",
+    "main.fls",
+    "main.fdb_latexmk",
+    "main.synctex.gz",
+    "main.out",
+    "main.pdf",
+)
+
+
+def compile_locally(paper):
+    for name in LATEX_OUTPUTS:
+        (paper / name).write_text("build output\n")
+
+
+def test_local_latex_build_does_not_block_pull_or_publish(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    compile_locally(paper)
+    overleaf_edit(seed, "main.tex", "collaborator\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (paper / "main.tex").read_text() == "collaborator\n"
+    git(project, "add", "--", "paper/main.tex", "paper/overleaf.json")
+    git(project, "commit", "-q", "-m", "sync")
+    (paper / "main.tex").write_text("reviewed\n")
+    git(project, "add", "--", "paper/main.tex")
+    git(project, "commit", "-q", "-m", "edit")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_text() == "reviewed\n"
+    for name in LATEX_OUTPUTS:
+        assert not (seed / name).exists()
+        assert (paper / name).read_text() == "build output\n"
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_untracked_non_build_files_still_block_sync(setup, command):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    compile_locally(paper)
+    # A PDF without a matching .tex is a source (e.g. a figure), not a build output.
+    (paper / "figure.pdf").write_text("figure\n")
+    result = run(project, command)
+    assert result.exit_code != 0
+    assert "local changes" in result.output
+
+
+def test_modified_tracked_build_output_still_blocks_sync(setup):
+    seed, project = setup
+    overleaf_edit(seed, "main.bbl", "committed bbl\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper" / "main.bbl").write_text("rebuilt\n")
+    result = run(project, "pull")
+    assert result.exit_code != 0
+    assert "local changes" in result.output

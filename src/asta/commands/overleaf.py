@@ -311,16 +311,53 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
     return root, paper, relative + "/"
 
 
+# Untracked outputs of a local LaTeX build (LaTeX Workshop, latexmk) never block sync.
+BUILD_SUFFIXES = (
+    ".aux",
+    ".bbl",
+    ".bcf",
+    ".blg",
+    ".dvi",
+    ".fdb_latexmk",
+    ".fls",
+    ".lof",
+    ".log",
+    ".lot",
+    ".nav",
+    ".out",
+    ".run.xml",
+    ".snm",
+    ".synctex.gz",
+    ".synctex(busy)",
+    ".toc",
+    ".xdv",
+)
+
+
+def is_build_output(path: Path) -> bool:
+    name = path.name
+    if name.endswith(BUILD_SUFFIXES):
+        return True
+    # A PDF is a build output only when it sits next to the .tex it was built from.
+    return name.endswith(".pdf") and path.with_name(name[:-4] + ".tex").is_file()
+
+
 def require_clean(root: Path, *paths: Path) -> None:
-    if git(
+    status = git_bytes(
         "--literal-pathspecs",
         "status",
         "--porcelain",
+        "-z",
         "--untracked-files=all",
         "--",
         *map(str, paths),
         cwd=root,
-    ):
+    )
+    for entry in status.split(b"\0"):
+        if not entry:
+            continue
+        if entry.startswith(b"?? ") and is_build_output(root / os.fsdecode(entry[3:])):
+            continue
         names = ", ".join(p.relative_to(root).as_posix() for p in paths)
         raise click.ClickException(f"Commit or discard local changes in {names} first.")
 
