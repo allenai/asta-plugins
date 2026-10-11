@@ -52,7 +52,7 @@ Dry-run checks the planned export and workspace Git identity, but does not run c
 
 ### Authentication
 
-Use your own Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token). The same commands work with a service account later. The token is never written to the repo or Git config. With `OVERLEAF_TOKEN`, only Git's authentication prompt reads a temporary private token file, which is deleted after transport; the token is absent from Git and hook environments. Git configuration and hooks still execute as your account, so use trusted settings. If the temporary directory forbids executing scripts, use the Git credential helper instead.
+Use your own Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token). The same commands work with a service account later. The token is never written to the repo or Git config. With `OVERLEAF_TOKEN`, Git's authentication prompt reads a temporary private token file, deleted after transport. The token value is absent from Git and hook environments, but transport hooks can invoke askpass or read that file. Git configuration, credential helpers and hooks execute as your account and must be trusted. If the temporary directory forbids executing scripts, use the Git credential helper instead.
 
 ### Conflicts and project layout
 
@@ -64,7 +64,7 @@ Sync preserves the project's filenames, bibliography files and LaTeX source layo
 
 - Both commands refuse unsupported plain-file layouts before copying or pushing: `.gitattributes`, Git LFS files, executable files, symlinks (including the selected paper directory), submodules, unsafe paths and names differing only in letter case or Unicode normalization.
 - Both commands refuse ignored sync metadata; pull also refuses ignored imports. Adjust the workspace ignore rules so sources can be committed for review. Remote `overleaf.json` is reserved. Pull refuses remote `.gitignore` files and publish refuses committed paper `.gitignore` files; keep ignore rules in the workspace root so publication cannot make the next pull fail.
-- Publish uses the workspace's Git identity, hooks and signing settings, including repo-local settings. Hooks run in the exported paper directory; hooks requiring the full workspace must be adapted for that layout. A failing hook or signer stops publication. Publish also refuses if hooks or Git conversions change exported bytes, and pushes nothing.
+- Publish uses the workspace's Git identity, hooks and signing settings, including repo-local settings. Hooks run in the exported paper directory; hooks requiring the full workspace must be adapted for that layout. Relative SSH signing-key and signing-program paths are resolved from the workspace. Shell commands such as `gpg.ssh.defaultKeyCommand` run from the export and must use absolute paths or commands available on `PATH`. A failing hook or signer stops publication. Publish also refuses if hooks or Git conversions change exported bytes, and pushes nothing.
 - Case-only renames and reset remote history are unsupported. Both commands refuse control characters in file names before making changes. `--dir <directory>` selects a literal relative directory. Pull refuses when Overleaf replaces a directory with a file; move the workspace directory aside first. Deletions can leave empty directories.
 
 ### Known limits (not handled; avoid these setups)
@@ -75,7 +75,7 @@ Sync preserves the project's filenames, bibliography files and LaTeX source layo
 - The Overleaf bridge and sync record use SHA-1 commit IDs; SHA-256 repositories are unsupported.
 - Transport runs in a temporary Git clone: workspace-local or `includeIf gitdir:` credential helpers, proxy and CA settings are not inherited. Configure those settings globally or for `https://git.overleaf.com` to use your local credentials.
 - Filename collision checks cover case folding and NFC/NFD normalization, not every filesystem's naming rules. Normalization-only renames are unsupported. Sync reads source files into memory and is intended for ordinary paper projects, not large asset repositories.
-- Git failures report a sanitized command and exit code, with limited authentication/conflict guidance. Detailed stderr is withheld because it can contain credentials. Invalid sync metadata produces an error naming the record to restore from Git.
+- Git failures report a sanitized command and exit code, with limited authentication/conflict guidance. Detailed stderr is withheld because it can contain credentials. A non-English `LC_ALL` can prevent specific error classification; transport failures still suggest checking credentials, access, network and remote state without changing the locale used by hooks. Invalid sync metadata produces an error naming the record to restore from Git.
 - Inspect imported build configuration such as `latexmkrc` before executing it or opening a preview PR. Pushing through Git can drop Overleaf comments and tracked changes in edited regions.
 
 ## Back a claim with supporting evidence

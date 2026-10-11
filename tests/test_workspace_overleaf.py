@@ -156,11 +156,16 @@ def test_transport_project_ids_do_not_report_auth_errors(
         (b"HTTP/2 401", "authentication failed"),
         (b"The requested URL returned error: 403", "access denied"),
         (b"fatal: Authentication failed", "authentication failed"),
+        (b"Authentifizierung fehlgeschlagen (HTTP/2 401)", "authentication failed"),
+        (b"Zugriff verweigert (HTTP/2 403)", "access denied"),
+        (b"Authentifizierung fehlgeschlagen", "Check your Overleaf credentials"),
     ],
 )
 def test_transport_auth_errors_are_actionable(
     tmp_path, monkeypatch, diagnostic, reason
 ):
+    monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
+    assert module.git_environment()["LC_ALL"] == "de_DE.UTF-8"
     monkeypatch.setattr(
         module,
         "subprocess",
@@ -530,7 +535,13 @@ def test_publish_honors_workspace_hook_failure(setup, dry_run):
 @pytest.mark.skipif(
     os.name == "nt", reason="SSH signing integration is tested on POSIX"
 )
-def test_publish_honors_workspace_signing(setup, tmp_path):
+@pytest.mark.parametrize(
+    "relative_key,relative_program",
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_publish_honors_workspace_signing(
+    setup, tmp_path, relative_key, relative_program
+):
     seed, project = setup
     version = re.search(r"(\d+)\.(\d+)", git(project, "--version"))
     if (
@@ -542,7 +553,7 @@ def test_publish_honors_workspace_signing(setup, tmp_path):
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
-    key = tmp_path / "signing-key"
+    key = project / ".git/signing-key"
     subprocess.run(
         ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
         check=True,
@@ -550,7 +561,17 @@ def test_publish_honors_workspace_signing(setup, tmp_path):
     )
     git(project, "config", "commit.gpgsign", "true")
     git(project, "config", "gpg.format", "ssh")
-    git(project, "config", "user.signingkey", str(key))
+    git(
+        project,
+        "config",
+        "user.signingkey",
+        str(key.relative_to(project)) if relative_key else str(key),
+    )
+    if relative_program:
+        program = project / ".git/sign-paper"
+        program.write_text('#!/bin/sh\nexec ssh-keygen "$@"\n')
+        program.chmod(0o700)
+        git(project, "config", "gpg.ssh.program", str(program.relative_to(project)))
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
     git(seed, "fetch", "-q", "origin")
@@ -563,6 +584,42 @@ def test_publish_honors_workspace_signing(setup, tmp_path):
         "verify-commit",
         "origin/master",
     )
+
+
+@pytest.mark.parametrize(
+    "signing_format,key",
+    [
+        ("openpgp", "ABCD1234"),
+        ("ssh", "key::ssh-ed25519 fixture"),
+        ("ssh", "ssh-ed25519 fixture"),
+    ],
+)
+def test_commit_settings_preserves_key_identifiers_and_path_commands(
+    setup, signing_format, key
+):
+    _, project = setup
+    git(project, "config", "gpg.format", signing_format)
+    git(project, "config", "user.signingkey", key)
+    git(project, "config", "gpg.program", "gpg")
+    options = module.commit_settings(project)
+    assert f"user.signingkey={key}" in options
+    assert "gpg.program=gpg" in options
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_sync_refuses_absolute_directory(setup, monkeypatch, command):
+    _, project = setup
+    monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
+    result = run(
+        project,
+        command,
+        *([URL] if command == "pull" else []),
+        "--dir",
+        str(project / "paper"),
+    )
+    assert result.exit_code != 0
+    assert "--dir must be relative to the workspace" in result.output
+    assert not (project / "paper").exists()
 
 
 @pytest.mark.parametrize("command", ["pull", "publish"])
@@ -668,6 +725,7 @@ def test_pull_refuses_initial_import_over_existing_source(setup):
     commit_all(project)
     result = run(project, "pull", URL)
     assert result.exit_code != 0
+    assert "Both workspace and Overleaf changed main.tex" in result.output
     assert (project / "paper/main.tex").read_text() == "existing paper\n"
     assert not (project / "paper/overleaf.json").exists()
 

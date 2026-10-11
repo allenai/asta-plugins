@@ -84,6 +84,11 @@ def git_bytes(
             raise click.ClickException(
                 f"git {operation} was rejected. Check access and the remote state."
             )
+        if operation in ("clone", "push"):
+            raise click.ClickException(
+                f"git {operation} failed (exit {result.returncode}). "
+                "Check your Overleaf credentials, project access, network and remote state."
+            )
         raise click.ClickException(
             f"git {operation} failed (exit {result.returncode})."
         )
@@ -97,6 +102,7 @@ def git(*args: str, **kwargs) -> str:
 def commit_settings(root: Path) -> list[str]:
     hooks = (root / git("rev-parse", "--git-path", "hooks", cwd=root)).resolve()
     options = ["-c", f"core.hooksPath={hooks}"]
+    settings = {}
     for key in (
         "commit.gpgsign",
         "user.signingkey",
@@ -115,9 +121,17 @@ def commit_settings(root: Path) -> list[str]:
         )
         if result.returncode == 0:
             value = os.fsdecode(result.stdout).rstrip("\n")
-            options.extend(["-c", f"{key}={value}"])
+            settings[key] = value
         elif result.returncode != 1:
             raise click.ClickException("Could not read workspace Git commit settings.")
+    for key, value in settings.items():
+        if (
+            key == "user.signingkey"
+            and settings.get("gpg.format") == "ssh"
+            and not value.startswith(("key::", "ssh-"))
+        ) or (key.endswith(".program") and "/" in value):
+            value = str((root / Path(value).expanduser()).resolve())
+        options.extend(["-c", f"{key}={value}"])
     return options
 
 
@@ -261,6 +275,8 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
         raise click.ClickException(
             "Commit the workspace's initial files before syncing with Overleaf."
         ) from None
+    if Path(directory).is_absolute():
+        raise click.ClickException("--dir must be relative to the workspace.")
     candidate = root / directory
     for path in (candidate, *candidate.parents):
         if path == root:
@@ -473,7 +489,6 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 f"Overleaf has changed since commit {config['base'][:7]}. Run "
                 "`asta workspace overleaf pull`, review those edits in a PR, then publish."
             )
-        git("rm", "-r", "-q", "--ignore-unmatch", ".", cwd=repo)
         write_files(ours, repo)
         git("add", "-A", "-f", cwd=repo)
         if read_plain_files(repo, git("write-tree", cwd=repo)) != ours:
