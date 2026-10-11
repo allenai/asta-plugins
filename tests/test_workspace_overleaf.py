@@ -428,6 +428,51 @@ def test_pull_refuses_case_collision_with_workspace_file(setup):
     assert (project / "paper" / "Fig.png").read_text() == "workspace\n"
 
 
+@pytest.mark.parametrize(
+    ("old", "new"), [("old.tex", "Old.tex"), ("café.tex", "cafe\u0301.tex")]
+)
+@pytest.mark.parametrize("aliasing_filesystem", [False, True])
+def test_pull_rename_preserves_files_or_refuses_existing_alias(
+    setup, monkeypatch, old, new, aliasing_filesystem
+):
+    seed, project = setup
+    if old != "old.tex":
+        git(seed, "mv", "old.tex", old)
+        git(seed, "commit", "-m", "name")
+        git(seed, "push", "-q", "origin", "master")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    git(seed, "mv", old, new)
+    (seed / new).write_text("renamed remote source\n")
+    (seed / "main.tex").write_text("collaborator edit\n")
+    git(seed, "add", "--", new, "main.tex")
+    git(seed, "commit", "-m", "rename and edit")
+    git(seed, "push", "-q", "origin", "master")
+    exists = module.Path.exists
+    destination_exists = exists(paper / new)
+    if aliasing_filesystem:
+        # Model an existing destination alias, as on a case/NFC-insensitive volume.
+        monkeypatch.setattr(
+            module.Path,
+            "exists",
+            lambda path: exists(paper / old) if path == paper / new else exists(path),
+        )
+    result = run(project, "pull")
+    if aliasing_filesystem or destination_exists:
+        assert result.exit_code != 0, result.output
+        assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+    else:
+        assert result.exit_code == 0, result.output
+        assert not (paper / old).exists()
+        assert (paper / new).read_bytes() == (seed / new).read_bytes()
+        assert (paper / "main.tex").read_bytes() == (seed / "main.tex").read_bytes()
+        assert json.loads((paper / "overleaf.json").read_text())["base"] == git(
+            seed, "rev-parse", "HEAD"
+        )
+
+
 def test_publish_refuses_gitattributes_in_paper(setup):
     _, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -1809,3 +1854,35 @@ def test_modified_tracked_build_output_still_blocks_sync(setup):
     result = run(project, "pull")
     assert result.exit_code != 0
     assert "local changes" in result.output
+
+
+def test_publish_pdf_asset_requires_commit_even_with_matching_tex(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    paper = project / "paper"
+    (paper / "figure.tex").write_text("figure source\n")
+    commit_all(project)
+    asset = paper / "figure.pdf"
+    asset.write_bytes(b"paper figure asset\n")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert not (seed / "figure.pdf").exists()
+    assert asset.read_bytes() == b"paper figure asset\n"
+    git(project, "add", "--", "paper/figure.pdf", "paper/overleaf.json")
+    git(project, "commit", "-q", "-m", "include reviewed figure")
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "figure.pdf").read_bytes() == asset.read_bytes()
+    git(project, "add", "--", "paper/overleaf.json")
+    git(project, "commit", "-q", "-m", "record publication")
+    before_record = (paper / "overleaf.json").read_bytes()
+    before_remote = git(seed, "rev-parse", "HEAD")
+    asset.write_bytes(b"unreviewed figure change\n")
+    result = run(project, "publish")
+    assert result.exit_code != 0
+    assert "local changes" in result.output
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == before_remote
+    assert (paper / "overleaf.json").read_bytes() == before_record
+    assert (seed / "figure.pdf").read_bytes() == b"paper figure asset\n"
