@@ -453,24 +453,28 @@ def test_token_uses_askpass_and_disables_helpers(monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX transport hook and askpass")
+@pytest.mark.parametrize("scope", ["global", "local", "default"])
 def test_transport_hooks_get_no_token_and_keep_utf8_locale(
-    setup, tmp_path, monkeypatch
+    setup, tmp_path, monkeypatch, scope
 ):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
-    hooks = tmp_path / "transport-hooks"
-    hooks.mkdir()
+    hooks = project / (".git/hooks" if scope == "default" else "hooks")
+    hooks.mkdir(exist_ok=True)
     hook = hooks / "pre-push"
     hook.write_text(
         '#!/bin/sh\ntest -z "$OVERLEAF_TOKEN" || exit 1\n'
         'printf "%s" "$LC_ALL" > "$TEST_HOOK_MARKER"\n'
     )
     hook.chmod(0o700)
-    config = tmp_path / "gitconfig"
-    config.write_text(f"[core]\n\thooksPath = {hooks}\n")
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    if scope == "global":
+        config = tmp_path / "gitconfig"
+        config.write_text(f"[core]\n\thooksPath = {hooks}\n")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    elif scope == "local":
+        git(project, "config", "core.hooksPath", "hooks")
     monkeypatch.setenv("OVERLEAF_TOKEN", "fixture-token")
     monkeypatch.setenv("LC_ALL", "C.UTF-8")
     marker = tmp_path / "transport-hook-ran"
@@ -480,6 +484,27 @@ def test_transport_hooks_get_no_token_and_keep_utf8_locale(
     assert marker.read_text() == "C.UTF-8"
     git(seed, "fetch", "-q", "origin")
     assert git(seed, "show", "origin/master:main.tex") == "reviewed edit"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pre-push hook")
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_honors_workspace_pre_push_failure(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    before = (project / "paper/overleaf.json").read_bytes()
+    remote_before = git(seed, "rev-parse", "origin/master")
+    hooks = project / "hooks"
+    hooks.mkdir()
+    hook = hooks / "pre-push"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o700)
+    git(project, "config", "core.hooksPath", "hooks")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert (result.exit_code == 0) == dry_run, result.output
+    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX commit hook and askpass")
@@ -604,6 +629,43 @@ def test_commit_settings_preserves_key_identifiers_and_path_commands(
     options = module.commit_settings(project)
     assert f"user.signingkey={key}" in options
     assert "gpg.program=gpg" in options
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+@pytest.mark.parametrize("directory", [".git", ".git/objects", "paper/../.git", ".GIT"])
+def test_sync_refuses_git_directory(setup, monkeypatch, command, directory):
+    _, project = setup
+    before = git(project, "rev-parse", "HEAD")
+    config = (project / ".git/config").read_bytes()
+    monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
+    result = run(
+        project, command, *([URL] if command == "pull" else []), "--dir", directory
+    )
+    assert result.exit_code != 0 and "unsafe path" in result.output
+    assert git(project, "rev-parse", "HEAD") == before
+    assert (project / ".git/config").read_bytes() == config
+    assert not (project / ".git/overleaf.json").exists()
+
+
+@pytest.mark.parametrize("command", ["pull", "publish"])
+@pytest.mark.parametrize("directory", ["admin", "admin/objects", "private"])
+def test_sync_refuses_separate_git_directory(setup, monkeypatch, command, directory):
+    _, project = setup
+    metadata = project / "private/admin"
+    metadata.parent.mkdir()
+    (project / ".git").rename(metadata)
+    (project / ".git").write_text("gitdir: private/admin\n")
+    directory = "private/" + directory if directory != "private" else directory
+    before = git(project, "rev-parse", "HEAD")
+    config = (metadata / "config").read_bytes()
+    monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
+    result = run(
+        project, command, *([URL] if command == "pull" else []), "--dir", directory
+    )
+    assert result.exit_code != 0 and "Git administrative" in result.output
+    assert git(project, "rev-parse", "HEAD") == before
+    assert (metadata / "config").read_bytes() == config
+    assert not (metadata / "overleaf.json").exists()
 
 
 @pytest.mark.parametrize("command", ["pull", "publish"])

@@ -99,9 +99,13 @@ def git(*args: str, **kwargs) -> str:
     return os.fsdecode(git_bytes(*args, **kwargs)).rstrip("\n")
 
 
-def commit_settings(root: Path) -> list[str]:
+def hook_settings(root: Path) -> list[str]:
     hooks = (root / git("rev-parse", "--git-path", "hooks", cwd=root)).resolve()
-    options = ["-c", f"core.hooksPath={hooks}"]
+    return ["-c", f"core.hooksPath={hooks}"]
+
+
+def commit_settings(root: Path) -> list[str]:
+    options = hook_settings(root)
     settings = {}
     for key in (
         "commit.gpgsign",
@@ -188,9 +192,18 @@ def clone(url: str, dest: Path) -> str:
         raise click.ClickException("Overleaf project has no commits to sync.") from None
 
 
-def push(repo: Path) -> None:
+def push(repo: Path, root: Path) -> None:
     with credentials() as (env, options):
-        git(*options, "push", "--quiet", "origin", "HEAD", cwd=repo, env=env)
+        git(
+            *options,
+            *hook_settings(root),
+            "push",
+            "--quiet",
+            "origin",
+            "HEAD",
+            cwd=repo,
+            env=env,
+        )
 
 
 def tree(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, str]]:
@@ -286,7 +299,13 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
     paper = candidate.resolve()
     if root not in paper.parents:
         raise click.ClickException("--dir must be a subdirectory of the workspace.")
-    return root, paper, paper.relative_to(root).as_posix() + "/"
+    relative = paper.relative_to(root).as_posix()
+    check_paths([relative])
+    for option in ("--absolute-git-dir", "--git-common-dir"):
+        metadata = (root / git("rev-parse", option, cwd=root)).resolve()
+        if paper == metadata or metadata in paper.parents or paper in metadata.parents:
+            refuse(directory, "overlaps Git administrative files")
+    return root, paper, relative + "/"
 
 
 def require_clean(root: Path, *paths: Path) -> None:
@@ -532,7 +551,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 "Git configuration or hooks changed the exported files; nothing pushed. "
                 "Content-changing Git filters and conversions are unsupported."
             )
-        push(repo)
+        push(repo, root)
         published = git("rev-parse", "HEAD", cwd=repo)
     save_config(paper, config["url"], published)
     click.echo(
