@@ -1077,6 +1077,31 @@ def test_require_scripts_accepts_pre_viewer_managed_rules(tmp_path, monkeypatch,
 
 
 @pytest.mark.parametrize("cached", [False, True])
+def test_require_scripts_accepts_viewer_rules_without_optional_diff(
+    tmp_path, monkeypatch, cached
+):
+    project = project_with_ref(tmp_path, "pre-local-diff-release")
+    rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\nworkspace-viewers:\n\t@true\n"
+    required = workspace_module.CHECK_SCRIPTS + workspace_module.VIEWER_SCRIPTS
+    archive = _archive(
+        {workspace_module.ASSET_DIR + name: b"script" for name in required},
+        scripts=False,
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (rules, archive))
+    args = ["workspace", "sync", "--project", str(project), "--require-scripts"]
+    runner = CliRunner()
+    assert runner.invoke(cli, args).exit_code == 0
+    if cached:
+        monkeypatch.setattr(
+            workspace_module, "load_asset", lambda *_: pytest.fail("unexpected fetch")
+        )
+        assert runner.invoke(cli, args).exit_code == 0
+    state = json.loads((project / ".asta/cache/workspace.json").read_text())
+    assert set(state["scripts"]) == set(required)
+    assert workspace_module.DIFF_SCRIPT not in state["scripts"]
+
+
+@pytest.mark.parametrize("cached", [False, True])
 def test_viewer_rules_require_the_viewer_helpers(tmp_path, monkeypatch, cached):
     project = project_with_ref(tmp_path, "main")
     rules = workspace_module.MANAGED_SCRIPTS_MARKER + b"\nworkspace-viewers:\n\t@true\n"

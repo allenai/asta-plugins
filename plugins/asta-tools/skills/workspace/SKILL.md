@@ -1,7 +1,7 @@
 ---
 name: workspace
 description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
-allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
 # Workspace
@@ -16,6 +16,10 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
+
+When the user wants to see what changed since an earlier version, offer `asta workspace what-changed <ref>` (Git 2.30 or newer). It runs the project's `make render` at the named ref and in a private working-tree copy, then reuses the PR preview's diff script. It publishes only to `.asta/cache/what-changed/`; live preview can stay open. Run `asta workspace preview --what-changed` in the background and give the user its port-4849 URL (localhost or Codespaces-forwarded). A running server picks up later comparisons. No PR or Pages deploy is needed. Tracking the last-read version stays with the user; suggest `git tag -f last-read` after they read.
+
+Choose a trusted ref and keep source files stable while the copy is made. The baseline contains only committed files; do not present current ignored inputs as historical data. Run comparisons one at a time. See [the developer guide](assets/DEVELOPER.md#auto-deploy-githubworkflowsdocsyml) for build prerequisites, copying costs, cleanup and serving limits.
 
 ## Save
 

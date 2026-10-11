@@ -100,6 +100,30 @@ The PR's “What changed” page uses the version of `what-changed.py` shipped w
 
 A custom script must accept `--old <site-dir>`, `--new <site-dir>`, `--out <html-file>`, and `--title <text>`. It must write a nonempty HTML file to `--out` and exit successfully to publish the page. `--old` is a snapshot of the deployed main site (empty before the first deploy); `--new` is the PR's rendered `_site/`.
 
+### Local comparisons
+
+Run `asta workspace what-changed <ref>`, for example a tag marking the version you last read. Git 2.30 or newer is required and checked before checkout. The command renders `<ref>` and a private working-tree copy with `make render`, then runs the project's `scripts/what-changed.py` or the copy cached from the asta-plugins ref selected in the working tree's `docs.yml`. Older asta-plugins refs need a project script or a newer selected ref. Use `--project <directory>` for a workspace in a repository subdirectory; both renders use Git's relative project prefix.
+
+The page is written only to `.asta/cache/what-changed/what-changed.html`. This command-owned directory contains a rendered-site copy so links resolve, and is replaced on each successful comparison. Both renders leave the live `_site/` untouched. A failed comparison preserves the previous page.
+
+#### Render inputs and trust
+
+Use a trusted ref: its Makefile and render-time code execute locally, and checkout can run Git hooks or LFS filters. `make render` must finish its build in the foreground; background services must detach their output streams. The baseline contains committed files; submodules are not initialized. Ignored inputs such as data, `_freeze/`, `.env` or `.asta/cache/` are absent unless `make render` prepares them. Missing inputs produce build diagnostics.
+
+The working-tree copy contains repository-wide tracked files with local edits, staged additions/deletions, untracked files that are not ignored, and synced `.asta/cache/` rules. Keeping repository-wide inputs supports Makefiles that reference sibling directories; the command prints the candidate file count before copying. Other ignored files (virtualenvs, data, outputs, logs), untracked `.env` / `.env.*`, and this project's `_site/`, `.quarto/` and previous comparisons stay out. Copying large Git-visible inputs still costs time and temporary disk space.
+
+Both renders run in temporary linked worktrees with independent indexes, so scripts using `git rev-parse --git-common-dir` can find the main checkout's `.venv` without copying it. The copy preserves index file entries, not every index flag: `git add -N` (intent-to-add) paths retain working contents but appear as staged empty blobs. Fully stage or unstage these paths before comparing if your build relies on staging status. Keep source files stable while copying. Symlinked inputs and absolute output paths may remain shared; custom builds must write within their private copy. Live preview can stay open.
+
+The bundled diff script needs only Python's standard library. Custom scripts run with the interpreter running `asta`, which must provide additional dependencies; inline script metadata is not installed automatically. The PR preview continues to use its build environment's `python3`.
+
+#### Preview and cleanup
+
+Run `asta workspace preview --what-changed` to serve the cached site on port 4849, forwarded alongside live preview's port 4848. It prints the localhost or Codespaces URL. Local forwards may use another host port; use the URL shown by your container tools. Later comparisons appear without restarting the server. A request during directory replacement may need a reload.
+
+Publish comparisons sequentially. The cache stays private to the command's user; run its preview as the same user. Host checks accept the configured Codespaces hostname and localhost/IPv4 loopback, including proxies that rewrite Host to localhost. Live Codespaces proxy behavior has not been verified. The server checks request containment and disables directory listings, but accepts the same-user symlink-swap race: a process able to replace private cache files already has your access.
+
+Cleanup removes only the two temporary worktrees, without pruning others. Failed removal preserves the checkout and registration and prints the affected path. Resolve the cause (for a lock, run `git worktree unlock <worktree-path>`), then `git worktree remove --force <worktree-path>` and remove its empty parent directory. If removing an older published cache fails, the command warns but still publishes the new page. After stopping comparisons, remove `.asta/cache/.what-changed-*.previous` to reclaim those copies.
+
 ### Managed paper viewers
 
 For each discovered LaTeX paper, the shared preview generates `<paper-dir>/html/index.qmd` before `make check`. This page embeds and links the paper PDF in the Quarto site; the latexdiff PDF of changes remains in What changed. Keep the LaTeX source and bibliography committed, and ignore only the generated page, for example `/paper/html/index.qmd` in `.gitignore`. Viewer scripts are managed; copy them into `scripts/` only to customize or eject them.
