@@ -1078,6 +1078,39 @@ def test_pull_refuses_remote_metadata_and_ignore_rules_before_writing(setup, nam
 
 
 @pytest.mark.parametrize(
+    "name", ["Overleaf.json", "overleaf.jſon", "Overleaf.json/content.tex"]
+)
+@pytest.mark.parametrize("existing_paper", [False, True])
+def test_pull_refuses_sync_record_aliases_before_writing(setup, name, existing_paper):
+    seed, project = setup
+    paper = project / "paper"
+    if existing_paper:
+        assert run(project, "pull", URL).exit_code == 0
+        commit_all(project)
+    before = {
+        str(path.relative_to(paper)): path.read_bytes()
+        for path in paper.rglob("*")
+        if path.is_file()
+    }
+    (seed / name).parent.mkdir(parents=True, exist_ok=True)
+    overleaf_edit(seed, name, "valuable remote content\n")
+    remote_head = git(seed, "ls-remote", "origin", "master")
+
+    result = run(project, "pull", URL)
+
+    assert result.exit_code != 0
+    assert "only in letter case or Unicode normalization" in result.output
+    assert "overleaf.json" in result.output
+    assert {
+        str(path.relative_to(paper)): path.read_bytes()
+        for path in paper.rglob("*")
+        if path.is_file()
+    } == before
+    assert paper.exists() == existing_paper
+    assert git(seed, "ls-remote", "origin", "master") == remote_head
+
+
+@pytest.mark.parametrize(
     "bibliographies", [[], ["citations.bib"], ["references.bib", "extra.bib"]]
 )
 def test_roundtrip_preserves_arbitrary_latex_layout_without_root_bibliography(

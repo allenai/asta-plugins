@@ -460,7 +460,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         ours = committed.copy()
         ours.pop(CONFIG, None)
         deleted = (base.keys() - new.keys()) & ours.keys()
-        check_paths([*new, *(ours.keys() - new.keys() - deleted)])
+        check_paths([CONFIG, *new, *(ours.keys() - new.keys() - deleted)])
         for name in base.keys() | new.keys():
             if new.get(name) == base.get(name):
                 # Keep workspace edits when Overleaf did not change this file.
