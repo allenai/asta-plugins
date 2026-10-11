@@ -27,6 +27,13 @@ workflows, so it can't live with the skill. Maintain it together with
 `plugins/asta-tools/skills/workspace/` (its `assets/docs.yml` stub and
 `assets/Makefile` `check` target form one contract with it).
 
+Fork PRs and Dependabot-triggered PR runs still build and check the site, but
+do not publish previews because their tokens are read-only by default. A
+`No preview (fork PR)` or `No preview (Dependabot)` check explains this in a
+warning and job summary. To publish a preview, someone with repository write
+access can push the changes to a branch in the repository and open a PR from
+that branch using their own account.
+
 ## Development Setup
 
 Prerequisites: Python 3.11+, `uv`, `make`, and Node.js 20+ / `npx`

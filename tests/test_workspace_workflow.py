@@ -1052,18 +1052,204 @@ def test_paper_overrides_stay_in_unprivileged_build() -> None:
         )
 
 
-def test_fork_prs_skip_preview_writes() -> None:
+@pytest.mark.parametrize(
+    "event,action,head_repo,actor,expected",
+    [
+        (
+            "pull_request",
+            "opened",
+            "owner/site",
+            "contributor",
+            (True, True, False, False),
+        ),
+        (
+            "pull_request",
+            "synchronize",
+            "contributor/site",
+            "contributor",
+            (True, False, False, True),
+        ),
+        ("pull_request", "opened", "", "contributor", (True, False, False, True)),
+        (
+            "pull_request",
+            "closed",
+            "owner/site",
+            "contributor",
+            (False, False, True, False),
+        ),
+        (
+            "pull_request",
+            "closed",
+            "contributor/site",
+            "contributor",
+            (False, False, False, False),
+        ),
+        (
+            "pull_request",
+            "opened",
+            "owner/site",
+            "dependabot[bot]",
+            (True, False, False, True),
+        ),
+        (
+            "pull_request",
+            "closed",
+            "owner/site",
+            "dependabot[bot]",
+            (False, False, False, False),
+        ),
+        ("push", "", "", "contributor", (True, True, False, False)),
+        ("push", "", "", "dependabot[bot]", (True, False, False, False)),
+        ("workflow_dispatch", "", "", "contributor", (True, True, False, False)),
+        ("schedule", "", "", "contributor", (True, True, False, False)),
+        ("release", "published", "", "contributor", (True, True, False, False)),
+    ],
+)
+def test_preview_job_conditions(event, action, head_repo, actor, expected) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    same_repo = "github.event.pull_request.head.repo.full_name == github.repository"
-    assert same_repo not in workflow["jobs"]["build"]["if"]
-    for job in ("deploy", "cleanup-preview"):
-        assert same_repo in workflow["jobs"][job]["if"]
+    context = {
+        "github.repository": "owner/site",
+        "github.event_name": event,
+        "github.event.action": action,
+        "github.event.pull_request.head.repo.full_name": head_repo,
+        "github.actor": actor,
+    }
+    for job, enabled in zip(
+        ("build", "deploy", "cleanup-preview", "preview-unavailable"), expected
+    ):
+        assert (
+            _condition_enabled(workflow["jobs"][job].get("if", "True"), context)
+            == enabled
+        )
+
+
+def _condition_enabled(expression, context):
+    # These workflow guards use only comparisons, boolean operators and always().
+    expression = re.sub(
+        r"\b(?:github|needs)\.[\w.]+",
+        lambda match: repr(context.get(match.group(), "")),
+        expression,
+    )
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    expression = expression.replace("always()", "True")
+    return eval(expression, {"__builtins__": {}})
+
+
+@pytest.mark.parametrize(
+    "head_repo,actor,reason",
+    [
+        ("contributor/site", "contributor", "This PR comes from contributor/site"),
+        ("", "contributor", "This PR comes from a deleted fork"),
+        ("owner/site", "dependabot[bot]", "This run was triggered by Dependabot"),
+    ],
+)
+def test_preview_unavailable_explains_reason_and_remedy(
+    tmp_path, head_repo, actor, reason
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     notice = workflow["jobs"]["preview-unavailable"]
-    assert same_repo.replace("==", "!=") in notice["if"]
-    assert "github.event.action != 'closed'" in notice["if"]
     assert notice["permissions"] == {}
-    script = notice["steps"][0]["run"]
-    assert "::warning" in script and "push this branch to" in script
+    assert "No preview (fork PR)" in notice["name"]
+    assert "No preview (Dependabot)" in notice["name"]
+    summary = tmp_path / "summary.md"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", notice["steps"][0]["run"]],
+        env=dict(
+            os.environ,
+            HEAD_REPO=head_repo,
+            BASE_REPO="owner/site",
+            RUN_ACTOR=actor,
+            GITHUB_STEP_SUMMARY=str(summary),
+        ),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "::warning title=No PR preview::" in result.stdout
+    for output in (result.stdout, summary.read_text()):
+        assert reason in output
+        assert "read-only token" in output
+        assert "push these changes to a branch in owner/site" in output
+        assert "open a PR from that branch using your own account" in output
+        assert "build check still renders and checks the site" in output
+
+
+@pytest.mark.parametrize("deploy_result", ["skipped", "failure", "success"])
+@pytest.mark.parametrize("paper_result", ["failure", "success", "skipped"])
+def test_paper_failure_gate_survives_skipped_deploy(deploy_result, paper_result):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    gate = workflow["jobs"]["paper-gate"]
+    assert gate["needs"] == ["build", "deploy"]
+    assert "always()" in gate["if"]
+    assert _condition_enabled(
+        gate["if"],
+        {
+            "needs.build.outputs.paper": paper_result,
+            "needs.deploy.result": deploy_result,
+        },
+    ) == (paper_result == "failure")
+    if paper_result == "failure":
+        result = subprocess.run(
+            ["bash", "-e", "-c", gate["steps"][0]["run"]],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "::error::The paper failed to build" in result.stdout
+
+
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch", "schedule", "release"])
+def test_non_pr_events_publish_site_root(tmp_path, event):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        step
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Publish to gh-pages"
+    )
+    script = step["run"]
+    for key, value in {"event_name": event, "sha": "test-sha", "run_id": "42"}.items():
+        script = script.replace("${{ github." + key + " }}", value)
+    origin = tmp_path / "origin.git"
+    project = tmp_path / "site"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+    subprocess.run(["git", "clone", "-q", str(origin), str(project)], check=True)
+    git = ["git", "-C", str(project)]
+    for args in (
+        ["config", "user.name", "test"],
+        ["config", "user.email", "test@example.invalid"],
+        ["commit", "--allow-empty", "-qm", "initial"],
+    ):
+        subprocess.run([*git, *args], check=True)
+    site = project / "_site"
+    site.mkdir()
+    (site / "index.html").write_text("<head></head>rendered site")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env=dict(os.environ, GITHUB_WORKSPACE=str(project), PR_NUMBER=""),
+        capture_output=True,
+        text=True,
+    )
+    try:
+        assert result.returncode == 0, result.stderr
+        published = subprocess.check_output(
+            ["git", "--git-dir", str(origin), "show", "gh-pages:index.html"], text=True
+        )
+        assert published == "<head></head>rendered site"
+        paths = subprocess.check_output(
+            ["git", "--git-dir", str(origin), "ls-tree", "--name-only", "gh-pages"],
+            text=True,
+        ).splitlines()
+        assert "pr-preview" not in paths
+    finally:
+        worktrees = subprocess.check_output(
+            [*git, "worktree", "list", "--porcelain"], text=True
+        )
+        for line in worktrees.splitlines():
+            if line.startswith("worktree ") and line[9:] != str(project):
+                subprocess.run(
+                    [*git, "worktree", "remove", "--force", line[9:]], check=True
+                )
 
 
 @pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])
