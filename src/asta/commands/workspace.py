@@ -566,7 +566,19 @@ def working_copy(repository: Path, project: Path, destination: Path) -> Path:
         raise click.ClickException(
             f"Could not copy the working tree: {cloned.stderr.strip()}"
         )
-    indexed = _git(destination, "reset", "--mixed", "HEAD")
+    entries = _git(repository, "ls-files", "--stage", "-z")
+    if entries.returncode != 0:
+        raise click.ClickException(
+            f"Could not read the working-tree index: {entries.stderr.strip()}"
+        )
+    # Rebuild a standalone index, including staging in linked/split-index worktrees.
+    indexed = subprocess.run(
+        ["git", "-C", str(destination), "update-index", "-z", "--index-info"],
+        input=entries.stdout,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if indexed.returncode != 0:
         raise click.ClickException(
             f"Could not index the working tree: {indexed.stderr.strip()}"

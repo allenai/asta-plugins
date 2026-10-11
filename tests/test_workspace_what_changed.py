@@ -737,7 +737,101 @@ def test_working_copy_keeps_render_inputs_and_git_index(
             git(project, "worktree", "remove", "--force", str(project))
 
 
-@pytest.mark.parametrize("phase", ["clone", "reset"])
+@pytest.mark.parametrize("linked_worktree", [False, True])
+@pytest.mark.parametrize("split_index", [False, True])
+def test_working_copy_preserves_staged_changes(
+    project: Path, tmp_path_factory, linked_worktree: bool, split_index: bool
+) -> None:
+    if linked_worktree:
+        linked = tmp_path_factory.mktemp("linked") / "project"
+        git(project, "worktree", "add", "--detach", str(linked), "HEAD")
+        project = linked
+    try:
+        (project / "removed.qmd").write_text("Old page")
+        git(project, "add", "removed.qmd")
+        git(project, "commit", "-qm", "add old page")
+        (project / "index.qmd").write_text("Staged content")
+        (project / "staged page\tnew.qmd").write_text("Staged new page")
+        git(project, "add", "index.qmd", "staged page\tnew.qmd")
+        git(project, "rm", "--cached", "removed.qmd")
+        (project / "index.qmd").write_text("Unstaged content")
+        if split_index:
+            git(project, "update-index", "--split-index")
+        original_index = subprocess.check_output(
+            ["git", "-C", str(project), "ls-files", "--stage", "-z"]
+        )
+        destination = tmp_path_factory.mktemp("snapshot") / "working"
+        copied = workspace_module.working_copy(project, project, destination)
+        assert (
+            subprocess.check_output(
+                ["git", "-C", str(copied), "ls-files", "--stage", "-z"]
+            )
+            == original_index
+        )
+        assert (
+            subprocess.check_output(
+                ["git", "-C", str(copied), "show", ":index.qmd"], text=True
+            )
+            == "Staged content"
+        )
+        assert (copied / "index.qmd").read_text() == "Unstaged content"
+        assert (copied / "staged page\tnew.qmd").read_text() == "Staged new page"
+        # A staged deletion can remain on disk as an untracked render input.
+        assert (copied / "removed.qmd").read_text() == "Old page"
+        git(copied, "add", "removed.qmd")
+        assert (
+            subprocess.check_output(
+                ["git", "-C", str(project), "ls-files", "--stage", "-z"]
+            )
+            == original_index
+        )
+    finally:
+        if linked_worktree:
+            git(project, "worktree", "remove", "--force", str(project))
+
+
+def test_render_uses_staged_page_list(project: Path) -> None:
+    (project / "removed.qmd").write_text("The removed finding.")
+    git(project, "add", "removed.qmd")
+    git(project, "commit", "-qm", "add removed page")
+    git(project, "tag", "-f", "last-read")
+    (project / "added.qmd").write_text("The newly staged finding.")
+    git(project, "add", "added.qmd")
+    git(project, "rm", "removed.qmd")
+    Path(shutil.which("make")).write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, subprocess\n"
+        "files = subprocess.check_output(['git', 'ls-files', '-z'], text=True)\n"
+        "pathlib.Path('_site').mkdir(exist_ok=True)\n"
+        "for name in files.split('\\0'):\n"
+        "    path = pathlib.Path(name)\n"
+        "    if path.suffix == '.qmd':\n"
+        "        page = '<main><p>' + path.read_text() + '</p></main>'\n"
+        "        (pathlib.Path('_site') / path.with_suffix('.html')).write_text(page)\n"
+    )
+    original_index = subprocess.check_output(
+        ["git", "-C", str(project), "ls-files", "--stage", "-z"]
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    report = (
+        project / workspace_module.COMPARISON_DIR / "what-changed.html"
+    ).read_text()
+    assert "newly staged finding" in report
+    assert "removed finding" in report
+    assert (project / workspace_module.COMPARISON_DIR / "added.html").is_file()
+    assert not (project / workspace_module.COMPARISON_DIR / "removed.html").exists()
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(project), "ls-files", "--stage", "-z"]
+        )
+        == original_index
+    )
+
+
+@pytest.mark.parametrize("phase", ["clone", "ls-files", "update-index"])
 def test_failed_working_copy_preserves_report_and_cleans_up(
     project: Path, monkeypatch, phase: str
 ) -> None:
@@ -755,7 +849,15 @@ def test_failed_working_copy_preserves_report_and_cleans_up(
             return subprocess.CompletedProcess(args, 1, stderr="Copy setup failed")
         return original(directory, *args)
 
+    original_run = subprocess.run
+
+    def fail_index(command, *args, **kwargs):
+        if phase == "update-index" and "update-index" in command:
+            return subprocess.CompletedProcess(command, 1, stderr="Copy setup failed")
+        return original_run(command, *args, **kwargs)
+
     monkeypatch.setattr(workspace_module, "_git", fail_copy)
+    monkeypatch.setattr(subprocess, "run", fail_index)
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
