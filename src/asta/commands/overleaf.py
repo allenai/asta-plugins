@@ -543,6 +543,30 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     )
 
 
+def on_default_branch(root: Path) -> bool:
+    """Whether HEAD is on the default branch of the workspace's `origin` remote."""
+    # Merging is the review gate: only revisions on the reviewed branch reach Overleaf.
+    try:
+        symref = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
+        match = re.search(r"^ref: refs/heads/(\S+)\tHEAD$", symref, re.M)
+        if not match:
+            raise click.ClickException("no default branch")
+        ref = f"refs/heads/{match.group(1)}"
+        git("fetch", "-q", "--no-tags", "origin", ref, cwd=root)
+    except click.ClickException:
+        raise click.ClickException(
+            "Could not read the default branch of the workspace's `origin` remote; "
+            "nothing pushed. Publish from a clone of the reviewed repository."
+        ) from None
+    merged = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"],
+        cwd=root,
+        env=git_environment(),
+        capture_output=True,
+    )
+    return merged.returncode == 0
+
+
 @overleaf.command()
 @dir_option
 @project_option
@@ -586,6 +610,14 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             "Refusing to publish an empty paper; nothing pushed."
         )
     check_ignore_files(ours)
+    unmerged = (
+        "This workspace commit is not on origin's default branch. Merge it through "
+        "a reviewed PR, update your checkout, then publish"
+    )
+    if not on_default_branch(root):
+        if not dry_run:
+            raise click.ClickException(f"{unmerged}; nothing pushed.")
+        click.echo(f"{unmerged}; publish will refuse until then.")
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
@@ -642,5 +674,5 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
     save_config(paper, config["url"], published)
     click.echo(
         f"Published Overleaf commit {published[:7]}. Commit "
-        f"{(paper / CONFIG).relative_to(root)} so the next publish starts from it."
+        f"{(paper / CONFIG).relative_to(root)} and merge it so the next publish starts from it."
     )

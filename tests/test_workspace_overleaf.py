@@ -28,7 +28,14 @@ def git(cwd, *args):
     ).stdout.strip()
 
 
-def run(project, *args):
+def run(project, *args, merge=True):
+    if merge and args[:1] == ("publish",):
+        # Stand in for merging the reviewed revision into origin's default branch.
+        subprocess.run(
+            ["git", "push", "-q", "-f", "--no-verify", "origin", "HEAD:main"],
+            cwd=project,
+            capture_output=True,
+        )
     return CliRunner().invoke(
         cli, ["workspace", "overleaf", *args, "--project", str(project)]
     )
@@ -263,6 +270,10 @@ def setup(tmp_path, monkeypatch):
     (project / "references.bib").write_text("@misc{root}\n")
     git(project, "add", ".")
     git(project, "commit", "-m", "init")
+    origin = tmp_path / "workspace.git"
+    git(tmp_path, "init", "--bare", "-q", "-b", "main", str(origin))
+    git(project, "remote", "add", "origin", str(origin))
+    git(project, "push", "-q", "origin", "main")
     return seed, project
 
 
@@ -1886,3 +1897,45 @@ def test_publish_pdf_asset_requires_commit_even_with_matching_tex(setup):
     assert git(seed, "ls-remote", "origin", "master").split()[0] == before_remote
     assert (paper / "overleaf.json").read_bytes() == before_record
     assert (seed / "figure.pdf").read_bytes() == b"paper figure asset\n"
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_requires_revision_on_origin_default_branch(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "-q", "origin", "main")
+    git(project, "switch", "-q", "-c", "feature")
+    (project / "paper" / "main.tex").write_text("unreviewed\n")
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    args = ["publish", "--dry-run"] if dry_run else ["publish"]
+    result = run(project, *args, merge=False)
+    assert git(seed, "ls-remote", "origin", "master") == before
+    assert "not on origin's default branch" in result.output
+    if dry_run:
+        assert result.exit_code == 0, result.output
+        assert "main.tex" in result.output
+    else:
+        assert result.exit_code != 0
+        assert "nothing pushed" in result.output
+    git(project, "switch", "-q", "main")
+    git(project, "merge", "-q", "feature")
+    git(project, "push", "-q", "origin", "main")
+    result = run(project, "publish", merge=False)
+    assert result.exit_code == 0, result.output
+    assert git(seed, "ls-remote", "origin", "master") != before
+
+
+def test_publish_requires_origin_remote(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "remote", "remove", "origin")
+    (project / "paper" / "main.tex").write_text("edit\n")
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    assert result.exit_code != 0
+    assert "`origin` remote" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
