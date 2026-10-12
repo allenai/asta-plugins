@@ -534,12 +534,22 @@ def last_sync(
     prefix: str,
     reviewed: str | None = None,
     local: dict[str, bytes] | None = None,
+    dry_run: bool = False,
 ) -> str:
     """Newest Overleaf commit since `base` whose files match a published workspace commit.
 
     Publish records nothing in the workspace; its Overleaf commit names the workspace
     commit it sent, and counts as a sync point only if the content still matches it.
     """
+
+    def warn_fallback() -> None:
+        click.echo(
+            "Could not verify workspace publication history from `origin`. "
+            "Pulling from the recorded sync instead; published edits may "
+            "need conflict resolution.",
+            err=True,
+        )
+
     try:
         git("cat-file", "-e", f"{base}^{{commit}}", cwd=repo)
         git("merge-base", "--is-ancestor", base, head, cwd=repo)
@@ -562,16 +572,18 @@ def last_sync(
                 try:
                     reviewed = stack.enter_context(default_branch(root))
                 except click.ClickException:
-                    click.echo(
-                        "Could not verify workspace publication history from `origin`. "
-                        "Pulling from the recorded sync instead; published edits may "
-                        "need conflict resolution.",
-                        err=True,
-                    )
+                    warn_fallback()
                     return base
             try:
-                source = publication_source(root, match.group(1), reviewed)
+                source = publication_source(
+                    root, match.group(1), reviewed, dry_run=dry_run
+                )
             except click.ClickException:
+                if local is None:
+                    raise
+                warn_fallback()
+                return base
+            if source is None:
                 continue
             published = read_plain_files(root, source, prefix)
             published.pop(CONFIG, None)
@@ -582,8 +594,12 @@ def last_sync(
                         git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
                     except click.ClickException:
                         try:
-                            if not complete_history(root, reviewed):
+                            if not complete_history(root, dry_run=dry_run):
                                 continue
+                        except click.ClickException:
+                            warn_fallback()
+                            return base
+                        try:
                             git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
                         except click.ClickException:
                             continue
@@ -591,35 +607,53 @@ def last_sync(
     return base
 
 
-def complete_history(root: Path, reviewed: str) -> bool:
+def complete_history(root: Path, *, dry_run: bool = False) -> bool:
     if git("rev-parse", "--is-shallow-repository", cwd=root) != "true":
         return False
-    git(
-        "fetch",
-        "-q",
-        "--no-tags",
-        "--no-write-fetch-head",
-        "--refmap=",
-        "--unshallow",
-        "origin",
-        reviewed,
-        cwd=root,
-    )
+    if dry_run:
+        raise click.ClickException(
+            "Could not verify a workspace publication from shallow history during dry-run. "
+            "Fetch complete `origin` history first; dry-run leaves shallow history unchanged."
+        )
+    try:
+        ref = default_branch_ref(root)
+        git(
+            "fetch",
+            "-q",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "--unshallow",
+            "origin",
+            ref,
+            cwd=root,
+        )
+    except click.ClickException:
+        raise click.ClickException(
+            "Could not fetch complete history from the workspace's `origin` remote. "
+            "Check its URL, credentials and network access."
+        ) from None
     return True
 
 
-def publication_source(root: Path, marker: str, reviewed: str) -> str:
-    def verify() -> str:
-        source = git("rev-parse", "--verify", "-q", f"{marker}^{{commit}}", cwd=root)
-        git("merge-base", "--is-ancestor", source, reviewed, cwd=root)
-        return source
+def publication_source(
+    root: Path, marker: str, reviewed: str, *, dry_run: bool = False
+) -> str | None:
+    def verify() -> str | None:
+        try:
+            source = git(
+                "rev-parse", "--verify", "-q", f"{marker}^{{commit}}", cwd=root
+            )
+            git("merge-base", "--is-ancestor", source, reviewed, cwd=root)
+            return source
+        except click.ClickException:
+            return None
 
-    try:
-        return verify()
-    except click.ClickException:
-        if not complete_history(root, reviewed):
-            raise
-        return verify()
+    source = verify()
+    if source is None and complete_history(root, dry_run=dry_run):
+        # Keep the original review gate even if origin advances during this fetch.
+        source = verify()
+    return source
 
 
 project_option = click.option(
@@ -744,7 +778,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         save_config(paper, url, head)
     click.echo(
         f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
-        "Review with `git diff`, then commit and open a PR."
+        + (
+            "Resolve conflicts, review with `git diff`, then commit and open a PR."
+            if conflicted
+            else "Review with `git diff`, then commit and open a PR."
+        )
     )
     if conflicted:
         click.echo(
@@ -756,17 +794,21 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         sys.exit(CONFLICT_EXIT)
 
 
+def default_branch_ref(root: Path) -> str:
+    symref = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
+    match = re.search(r"^ref: refs/heads/(\S+)\tHEAD$", symref, re.M)
+    if not match:
+        raise click.ClickException("Could not determine origin's default branch.")
+    return f"refs/heads/{match.group(1)}"
+
+
 @contextmanager
-def default_branch(root: Path):
+def default_branch(root: Path, *, publishing: bool = False):
     """Fetch the reviewed history without changing workspace branch refs or FETCH_HEAD."""
     gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
     try:
         try:
-            symref = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
-            match = re.search(r"^ref: refs/heads/(\S+)\tHEAD$", symref, re.M)
-            if not match:
-                raise click.ClickException("no default branch")
-            ref = f"refs/heads/{match.group(1)}"
+            ref = default_branch_ref(root)
             git(
                 "fetch",
                 "-q",
@@ -781,6 +823,7 @@ def default_branch(root: Path):
             raise click.ClickException(
                 "Could not fetch the default branch of the workspace's `origin` remote. "
                 "Check its URL, credentials and network access."
+                + (" Nothing pushed." if publishing else "")
             ) from None
         yield git("rev-parse", gate, cwd=root)
     finally:
@@ -834,7 +877,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         "The paper differs from the latest commit on origin's default branch. Merge "
         "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
-    with default_branch(root) as default:
+    with default_branch(root, publishing=True) as default:
         # Comparing the tip prevents republishing content a later reviewed edit removed.
         reviewed = (
             default
@@ -848,13 +891,23 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
-            if (
-                last_sync(repo, head, config["base"], root, prefix, reviewed=default)
-                != head
-            ):
+            try:
+                synced = last_sync(
+                    repo,
+                    head,
+                    config["base"],
+                    root,
+                    prefix,
+                    reviewed=default,
+                    dry_run=dry_run,
+                )
+            except click.ClickException as exc:
+                raise click.ClickException(f"{exc.message} Nothing pushed.") from None
+            if synced != head:
                 raise click.ClickException(
                     "Overleaf has changed since the last sync. Run "
-                    "`asta workspace overleaf pull`, review those edits in a PR, then publish."
+                    "`asta workspace overleaf pull`, review those edits in a PR, then publish; "
+                    "nothing pushed."
                 )
             marked = sorted(
                 name

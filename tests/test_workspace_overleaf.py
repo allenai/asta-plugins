@@ -1364,6 +1364,7 @@ def test_bibliography_overlapping_edits_get_conflict_markers(setup):
     result = run(project, "pull")
     assert result.exit_code == CONFLICT_EXIT, result.output
     assert "same lines in: references.bib" in result.output
+    assert "Resolve conflicts, review with `git diff`" in result.output
     merged = (project / "paper/references.bib").read_text()
     assert "<<<<<<< workspace\n@misc{workspace_edit}\n" in merged
     assert "@misc{collaborator}\n>>>>>>> overleaf\n" in merged
@@ -1753,6 +1754,247 @@ def test_unrecognized_bridge_history_requires_pull_and_review(setup, rewrite):
     assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
         seed, "rev-parse", "HEAD"
     )
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("source_present", [False, True])
+def test_dry_run_does_not_complete_older_publication_history(setup, source_present):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    source = git(project, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_text("next reviewed publication\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    if source_present:
+        git(shallow, "fetch", "--depth=1", "origin", source)
+    shallow_file = shallow / git(shallow, "rev-parse", "--git-path", "shallow")
+    fetch_head = shallow / git(shallow, "rev-parse", "--git-path", "FETCH_HEAD")
+    before_shallow = shallow_file.read_bytes()
+    before_fetch = fetch_head.read_bytes() if fetch_head.exists() else None
+    before_refs = git(shallow, "show-ref")
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    before_record = (shallow / "paper/overleaf.json").read_bytes()
+
+    result = run(shallow, "publish", "--dry-run", merge=False)
+
+    assert result.exit_code == 1, result.output
+    assert "shallow history" in result.output and "dry-run" in result.output
+    assert "nothing pushed" in result.output.lower()
+    assert "Overleaf has changed" not in result.output
+    assert shallow_file.read_bytes() == before_shallow
+    assert (fetch_head.read_bytes() if fetch_head.exists() else None) == before_fetch
+    assert git(shallow, "show-ref") == before_refs
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+    assert (shallow / "paper/overleaf.json").read_bytes() == before_record
+    assert not git(shallow, "status", "--porcelain")
+    published = run(shallow, "publish", merge=False)
+    assert published.exit_code == 0, published.output
+    assert git(shallow, "rev-parse", "--is-shallow-repository") == "false"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", ["pull", "publish"])
+@pytest.mark.parametrize("source_present", [False, True])
+@pytest.mark.parametrize("failure", ["fetch", "discovery"])
+def test_history_fetch_failure_has_command_specific_diagnostics(
+    setup, monkeypatch, command, source_present, failure
+):
+    seed, project = setup
+    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\n")
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("ONE\ntwo\nthree\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    source = git(project, "rev-parse", "HEAD")
+    (project / "outside.txt").write_text("later reviewed workspace edit\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    if source_present:
+        git(shallow, "fetch", "--depth=1", "origin", source)
+    if command == "pull":
+        overleaf_edit(seed, "main.tex", "ONE\ntwo\nTHREE\n")
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    before_record = (shallow / "paper/overleaf.json").read_bytes()
+    real_run = module.subprocess.run
+    discoveries = 0
+
+    def fail_fetch(args, **kwargs):
+        nonlocal discoveries
+        if args[0] == "git" and "ls-remote" in args and "--symref" in args:
+            discoveries += 1
+        if args[0] == "git" and (
+            (failure == "fetch" and "fetch" in args and "--unshallow" in args)
+            or (
+                failure == "discovery"
+                and "ls-remote" in args
+                and "--symref" in args
+                and discoveries == 2
+            )
+        ):
+            return subprocess.CompletedProcess(
+                args, 128, b"", b"authentication failed: fixture-secret"
+            )
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", fail_fetch)
+    result = run(shallow, command, merge=False)
+
+    assert "fixture-secret" not in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+    assert git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    if command == "publish":
+        assert result.exit_code == 1
+        assert (
+            "Could not fetch complete" in result.output
+            and "credentials" in result.output
+        )
+        assert "nothing pushed" in result.output.lower()
+        assert "Overleaf has changed" not in result.output
+        assert (shallow / "paper/overleaf.json").read_bytes() == before_record
+        assert not git(shallow, "status", "--porcelain")
+    else:
+        assert result.exit_code == 0, result.output
+        assert "Pulling from the recorded sync" in result.output
+        assert (shallow / "paper/main.tex").read_text() == "ONE\ntwo\nTHREE\n"
+        assert (
+            json.loads((shallow / "paper/overleaf.json").read_text())["base"]
+            == before_remote.split()[0]
+        )
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("branch", ["main", "papers/reviewed"])
+def test_history_completion_uses_advertised_ref_after_default_branch_advances(
+    setup, monkeypatch, branch
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    (project / "paper/main.tex").write_text("next reviewed publication\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    reviewed = git(project, "rev-parse", "HEAD")
+    if branch != "main":
+        git(project, "push", "-q", "origin", f"HEAD:refs/heads/{branch}")
+        git(
+            project.parent / "workspace.git",
+            "symbolic-ref",
+            "HEAD",
+            f"refs/heads/{branch}",
+        )
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    before_refs = git(shallow, "show-ref")
+    fetch_head = shallow / git(shallow, "rev-parse", "--git-path", "FETCH_HEAD")
+    git(shallow, "fetch", "--depth=1", "origin", f"refs/heads/{branch}")
+    before_fetch = fetch_head.read_bytes()
+    real_run = module.subprocess.run
+    attempts = []
+
+    def advertised_only(args, **kwargs):
+        if args[0] == "git" and "fetch" in args and "--unshallow" in args:
+            attempts.append(args[-1])
+            (project / "paper/main.tex").write_text(
+                "reviewed after the gate was fetched\n"
+            )
+            commit_all(project)
+            git(project, "push", "-q", "origin", f"HEAD:refs/heads/{branch}")
+            # Model a server that accepts advertised refs but refuses ancestor OID wants.
+            if not args[-1].startswith("refs/heads/"):
+                return subprocess.CompletedProcess(
+                    args, 128, b"", b"unadvertised object fixture-secret"
+                )
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", advertised_only)
+    result = run(shallow, "publish", merge=False)
+
+    assert result.exit_code == 0, result.output
+    assert attempts == [f"refs/heads/{branch}"]
+    assert "fixture-secret" not in result.output
+    assert git(shallow, "show-ref") == before_refs
+    assert fetch_head.read_bytes() == before_fetch
+    assert not git(shallow, "status", "--porcelain")
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_text() == "next reviewed publication\n"
+    assert (
+        git(seed, "log", "-1", "--format=%s") == f"Publish workspace commit {reviewed}"
+    )
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_history_completion_does_not_accept_newly_reviewed_publication(
+    setup, monkeypatch
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed paper\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    reviewed = git(project, "rev-parse", "HEAD")
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    (project / "outside.txt").write_text("revision not yet merged at the gate\n")
+    commit_all(project)
+    future = git(project, "rev-parse", "HEAD")
+    (seed / "main.tex").write_text("reviewed paper\n")
+    git(seed, "add", "main.tex")
+    git(seed, "commit", "-q", "-m", f"Publish workspace commit {future}")
+    git(seed, "push", "-q", "origin", "master")
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    before_record = (shallow / "paper/overleaf.json").read_bytes()
+    real_run = module.subprocess.run
+    attempts = []
+
+    def advance_branch(args, **kwargs):
+        if args[0] == "git" and "fetch" in args and "--unshallow" in args:
+            attempts.append(args[-1])
+            git(project, "push", "-q", "origin", "HEAD:main")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", advance_branch)
+    result = run(shallow, "publish", merge=False)
+
+    assert len(attempts) == 1
+    assert result.exit_code == 1 and "Overleaf has changed" in result.output
+    assert git(shallow, "rev-parse", "HEAD") == reviewed
+    assert git(shallow, "rev-parse", "--is-shallow-repository") == "false"
+    assert (shallow / "paper/overleaf.json").read_bytes() == before_record
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+    assert not git(shallow, "status", "--porcelain")
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
@@ -2620,6 +2862,7 @@ def test_publish_requires_origin_remote(setup):
     result = run(project, "publish", merge=False)
     assert result.exit_code != 0
     assert "`origin` remote" in result.output
+    assert "nothing pushed" in result.output.lower()
     assert git(seed, "ls-remote", "origin", "master") == before
 
 
