@@ -1,0 +1,21 @@
+\documentclass{article}
+\usepackage[normalem]{ulem}
+\usepackage{color}
+\begin{document}
+Dev container smoke test. Inline math: $x=1$.
+% Keep text, formatting and math in one mark to test the full wrapper boundary.
+\ifdefined\DIFadd
+\DIFadd{Mixed addition \textbf{bold addition} $a=3$ addition tail.}
+\DIFdel{Mixed deletion \textit{italic deletion} $b=4$ deletion tail.}
+\fi
+\textcolor{red}{\sout{author strikethrough}}
+\begin{figure}
+\centering Figure placeholder.
+\caption{Dev container figure caption.}
+\end{figure}
+\begin{table}
+\centering
+\begin{tabular}{c}Value\\1\end{tabular}
+\caption{Dev container table caption.}
+\end{table}
+\end{document}

@@ -1,7 +1,12 @@
-FROM node:20-slim
+FROM public.ecr.aws/docker/library/node:22-slim AS asta
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY image/skills-cli/package.json image/skills-cli/package-lock.json /opt/skills-cli/
+RUN npm ci --prefix /opt/skills-cli --omit=dev --engine-strict \
+    && npm cache clean --force \
+    && ln -s /opt/skills-cli/node_modules/.bin/skills /usr/local/bin/skills
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -18,6 +23,47 @@ ENV PATH="/root/.local/bin:$PATH"
 
 # Source repo at /opt/asta-plugins — use with:
 #   claude plugin marketplace add /opt/asta-plugins   (Claude Code)
-#   npx skills add /opt/asta-plugins                  (any agent)
+#   skills add /opt/asta-plugins                      (any agent)
+
+# Codespaces runs this on create, alongside the project's own postCreateCommand,
+# so project devcontainer.json files carry no auth setup.
+COPY docker/asta-persist-auth /usr/local/bin/asta-persist-auth
+LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"}]'
 
 WORKDIR /app
+
+# Published as ghcr.io/allenai/asta:<tag>-tex for workspaces with a paper/.
+# The CI paper preview runs inside this image, so local and CI builds agree.
+FROM asta AS tex
+# TeX Live 2026 is the only TeX; no Debian TeX package is installed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      poppler-utils perl ghostscript fontconfig python3-pygments \
+    && rm -rf /var/lib/apt/lists/* \
+    && ! dpkg -l 'texlive*' 2>/dev/null | grep -q '^ii'
+# Upstream TeX Live 2026, full scheme without docs/sources: Overleaf's default
+# for new projects.
+COPY --from=mirror.gcr.io/texlive/texlive:latest-full@sha256:a7ae4dfa9d521b5db14446872fa488b839021d1f604d0a3c74461784895f2a67 \
+    /usr/local/texlive /usr/local/texlive
+# The upstream image links into /usr/bin; keep TeX Live's links in /usr/local/bin.
+RUN tlmgr=$(echo /usr/local/texlive/2026/bin/*/tlmgr) \
+    && "$tlmgr" option sys_bin /usr/local/bin \
+    && "$tlmgr" option sys_man /usr/local/share/man \
+    && "$tlmgr" option sys_info /usr/local/share/info \
+    && "$tlmgr" path add \
+    && pdflatex --version | grep -q 'TeX Live 2026' \
+    && test "$(command -v pdflatex)" = /usr/local/bin/pdflatex \
+    && latexmk --version && latexdiff --version && biber --version
+# Fontconfig settings outside the copied TeX tree expose bundled fonts by name.
+RUN cp "$(kpsewhich -var-value=TEXMFSYSVAR)/fonts/conf/texlive-fontconfig.conf" \
+      /etc/fonts/conf.d/09-texlive-fonts.conf \
+    && fc-cache -fs \
+    && fc-match -f '%{file}' 'TeX Gyre Termes' | grep -q '^/usr/local/texlive/2026/'
+# System defaults load before user and project latexmkrc files.
+COPY docker/latexmkrc /etc/LatexMk
+ENV LATEXMKRCSYS=/etc/LatexMk
+# Ship the extension and editor defaults only with TeX. This replaces the
+# parent metadata label, so it repeats the auth hook.
+LABEL devcontainer.metadata='[{"postCreateCommand":"asta-persist-auth"},{"customizations":{"vscode":{"extensions":["james-yu.latex-workshop"],"settings":{"latex-workshop.latex.autoBuild.run":"onSave","latex-workshop.view.pdf.viewer":"tab","latex-workshop.latex.outDir":"%DIR%/build","latex-workshop.latex.recipes":[{"name":"latexmk","tools":["latexmk"]}],"latex-workshop.latex.tools":[{"name":"latexmk","command":"latexmk","args":["-synctex=1","-interaction=nonstopmode","-halt-on-error","-file-line-error","-outdir=%OUTDIR%","%DOC%"]}]}}}}]'
+
+# A plain `docker build .` still produces the slim image.
+FROM asta

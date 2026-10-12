@@ -105,6 +105,13 @@ push-version-tag:
 		exit 1; \
 	fi; \
 	VERSION=$$(uv run python scripts/manage-version.py show); \
+	SHA=$$(git rev-parse HEAD); \
+	git fetch -q origin main && \
+	if ! git merge-base --is-ancestor $$SHA origin/main; then \
+		echo "HEAD ($$SHA) is not on origin/main; check out the merged release commit" >&2; \
+		exit 1; \
+	fi; \
+	scripts/wait-for-main-image.sh $$SHA && \
 	git tag v$$VERSION && \
 	git push origin v$$VERSION && \
 	echo "Pushed tag v$$VERSION"
@@ -138,7 +145,7 @@ docker-claude-asta: docker
 docker-codex-asta: docker
 	docker run --rm -it -e ASTA_TOKEN -e OPENAI_API_KEY asta:latest sh -c '\
 		npm install -g @openai/codex && \
-		npx --yes skills@latest add /opt/asta-plugins -g --yes && \
+		skills add /opt/asta-plugins -g --yes && \
 		echo "Ready. Run: codex" && \
 		exec bash'
 

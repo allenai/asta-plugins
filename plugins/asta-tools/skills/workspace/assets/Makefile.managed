@@ -1,0 +1,25 @@
+# Optional compact entry point; CLI 0.105.0 supports rules with project scripts.
+# Before removing scripts, require a CLI supporting `sync --require-scripts`.
+# A local workspace.mk takes precedence when a project customizes shared rules.
+# Shared scripts are cached by `asta workspace sync`; commit scripts/<name> to customize one.
+.DEFAULT_GOAL := preview
+ifneq ($(wildcard workspace.mk),)
+include workspace.mk
+else ifeq ($(filter-out dev $(ASTA_WORKSPACE_LOCAL_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))),)
+# Project-only goals and host container startup do not need managed rules.
+.PHONY: dev
+dev:
+	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
+else
+ifneq ($(origin ASTA_PLUGINS_REF),undefined)
+$(error ASTA_PLUGINS_REF cannot select managed rules; unset ASTA_PLUGINS_REF and change the ref in .github/workflows/docs.yml)
+endif
+include .asta/cache/workspace.mk
+.asta/cache/workspace.mk: .github/workflows/docs.yml
+	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
+	@asta workspace sync
+endif
+
+.PHONY: update-workspace
+update-workspace:
+	asta workspace sync --refresh

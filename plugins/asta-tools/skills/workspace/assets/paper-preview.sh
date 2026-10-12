@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+base=${1:-}
+# Paper directory relative to the repo root. Its main document is main.tex, or
+# else the single top-level .tex file containing \documentclass.
+dir=${2:-paper}
+dir=${dir%/}
+site_dir="_site/paper-previews/$dir"
+if [[ -z "$dir" || "$dir" == /* || "$dir" == *//* || "$dir" =~ (^|/)(\.{1,2}|-[^/]*)(/|$) || "$dir" =~ [[:cntrl:]] ]]; then
+  echo "::error::Paper directory must be a safe relative path"
+  exit 1
+fi
+annotation() {
+  local level=$1 source=$2 message=$3
+  message=${message//%/%25}; message=${message//$'\r'/%0D}; message=${message//$'\n'/%0A}
+  source=${source//%/%25}; source=${source//$'\r'/%0D}; source=${source//$'\n'/%0A}
+  source=${source//:/%3A}; source=${source//,/%2C}
+  if [ -n "$source" ]; then
+    printf '::%s file=%s::%s\n' "$level" "$source" "$message"
+  else
+    printf '::%s::%s\n' "$level" "$message"
+  fi
+}
+find_main() {
+  local selected status
+  if selected=$(python3 - "$1" "${3:-}" <<'PY'
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+directory, base = sys.argv[1:]
+if base:
+    prefix = directory + "/"
+    files = {}
+    try:
+        tree = subprocess.check_output(["git", "ls-tree", "-rz", base, "--", ":(literal)" + prefix], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        raise SystemExit(2)
+    for entry in tree.split(b"\0"):
+        if not entry:
+            continue
+        metadata, path_bytes = entry.split(b"\t", 1)
+        path = os.fsdecode(path_bytes)
+        mode, kind, oid = metadata.decode().split()
+        name = path.removeprefix(prefix)
+        if mode in {"100644", "100755"} and kind == "blob" and "/" not in name:
+            files[name] = oid
+else:
+    files = {path.name: path for path in pathlib.Path(directory).glob("*.tex") if path.is_file() and not path.is_symlink()}
+
+def content(name):
+    try:
+        if base:
+            return subprocess.check_output(["git", "show", files[name]]).decode(errors="replace")
+        return files[name].read_text(errors="replace")
+    except (OSError, subprocess.CalledProcessError):
+        if base:
+            raise SystemExit(2)
+        return ""
+
+if "main.tex" in files:
+    print("main.tex")
+    raise SystemExit(0)
+found = sorted(name for name in files if name.endswith(".tex") and re.search(
+    r"(?m)^[^\n]*(?<!\\)(?:\\\\)*\\documentclass\s*[\[{]",
+    re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", content(name)),
+))
+if found:
+    print(", ".join(found))
+raise SystemExit(0 if len(found) == 1 else 1)
+PY
+  ); then
+    printf '%s\n' "$selected"
+    return 0
+  else
+    status=$?
+    if [ "$status" -eq 2 ]; then return 2; fi
+    if [ -n "$selected" ]; then
+      annotation warning "" "${2:-$1} has several .tex files with \\documentclass: $selected; add main.tex to choose one" >&2
+    fi
+  fi
+  return 1
+}
+main=$(find_main "$dir") || exit 0
+stem=${main%.tex}
+mkdir -p "$dir/build" "$site_dir"
+printf '{"changed":false}\n' > "$site_dir/preview.json"
+
+# The -tex image selects its shared rc; otherwise skip host-wide defaults such
+# as Ubuntu's LuaLaTeX setting. User and project rc files still apply.
+export LATEXMKRCSYS="${LATEXMKRCSYS:-/dev/null}"
+# Overleaf can't see the repo root, so a synced paper must build without it.
+if [ -f "$dir/overleaf.json" ]; then
+  export BIBINPUTS="$PWD/$dir:${BIBINPUTS:-}"
+  export TEXINPUTS="$PWD/$dir:${TEXINPUTS:-}"
+else
+  export BIBINPUTS="$PWD:$PWD/$dir:${BIBINPUTS:-}"
+  export TEXINPUTS="$PWD/$dir:$PWD:${TEXINPUTS:-}"
+fi
+# Preserve a configured engine; request a PDF when no rc selected one.
+# -e runs after rc files: override their escaping for this private dependency file.
+(cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out="build/$stem.dep" \
+  -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "./$main")
+if [ ! -f "$dir/build/$stem.log" ]; then
+  annotation error "$dir/$main" "LaTeX did not write $dir/build/$stem.log"
+  exit 1
+fi
+if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || \
+   { [ -f "$dir/build/$stem.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg"; }; then
+  annotation error "$dir/$main" "Unresolved paper citations or missing bibliography"
+  exit 1
+fi
+cp "$dir/build/$stem.pdf" "$site_dir/main.pdf"
+if [ -s "$dir/build/$stem.bbl" ]; then
+  cp "$dir/build/$stem.bbl" "$site_dir/main.bbl"
+fi
+
+
+test -n "$base" || exit 0
+fallback() {
+  rm -f "$site_dir/preview.json" "$site_dir/what-changed.pdf" "$site_dir"/diff-page-*.png
+  printf '{"changed":true,"diff":false}\n' > "$site_dir/preview.json"
+  echo '::warning::Could not compare paper versions; the current paper PDF remains available'
+}
+# Compare selections as well as recorded inputs: removing a shim changes the main,
+# while adding or deleting unused TeX files does not change the paper.
+if old_main=$(find_main "$dir" "$dir at base $base" "$base"); then
+  :
+else
+  status=$?
+  if [ "$status" -eq 2 ]; then fallback; exit 0; fi
+  old_main=""
+fi
+if ! flags=$(python3 - "$base" "$dir" "$stem" "$main" "$old_main" <<'PY'
+import os
+import pathlib
+import subprocess
+import sys
+
+root = pathlib.Path.cwd().resolve()
+paper_dir = root / sys.argv[2]
+fls = paper_dir / f"build/{sys.argv[3]}.fls"
+if not fls.is_file():
+    raise SystemExit(f"LaTeX did not record paper inputs in {fls}")
+inputs = set()
+cwd = paper_dir
+for line in fls.read_text(errors="replace").splitlines():
+    if line.startswith("PWD "):
+        cwd = pathlib.Path(line[4:])
+    elif line.startswith("INPUT "):
+        path = pathlib.Path(line[6:])
+        path = (path if path.is_absolute() else cwd / path).resolve()
+        try:
+            inputs.add(path.relative_to(root).as_posix())
+        except ValueError:
+            pass
+
+deps = paper_dir / f"build/{sys.argv[3]}.dep"
+if not deps.is_file():
+    raise SystemExit(f"LaTeX did not record paper dependencies in {deps}")
+expect_target = True
+seen_target = False
+# Latexmk indents each unescaped pathname by four spaces. Multiple output
+# formats and optional phony rules can produce more than one target.
+# A final pathname ending in a backslash is ambiguous and uses the fallback.
+for line in deps.read_text(errors="replace").splitlines():
+    if not line or line.startswith("#"):
+        continue
+    continued = line.endswith("\\")
+    entry = line[:-1] if continued else line
+    if expect_target:
+        if not entry.endswith(" :"):
+            raise SystemExit("LaTeX wrote an invalid paper dependency target")
+        seen_target = True
+    else:
+        if not entry.startswith("    ") or not entry[4:]:
+            raise SystemExit("LaTeX wrote an invalid paper dependency path")
+        name = entry[4:]
+        path = (paper_dir / name).resolve()
+        try:
+            inputs.add(path.relative_to(root).as_posix())
+        except ValueError:
+            pass
+    expect_target = not continued
+if not seen_target or not expect_target:
+    raise SystemExit("LaTeX wrote an incomplete paper dependency list")
+
+changed = subprocess.check_output(
+    ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
+)
+changed = [os.fsdecode(path) for path in changed.split(b"\0") if path]
+relevant = [
+    path for path in changed
+    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc", f"{sys.argv[2]}/overleaf.json"}
+]
+print(int(sys.argv[4] != sys.argv[5] or any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
+      int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))
+PY
+); then
+  fallback
+  exit 0
+fi
+read -r tex_changed other_changed <<< "$flags"
+if [ -z "$old_main" ]; then
+  printf '{"changed":true,"diff":false,"new":true}\n' > "$site_dir/preview.json"
+  exit 0
+fi
+if [ "$tex_changed" = 0 ] && [ "$other_changed" = 0 ]; then exit 0; fi
+printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
+
+if [ "$tex_changed" = 0 ]; then exit 0; fi
+if ! old=$(mktemp -d); then fallback; exit 0; fi
+if ! diff_tmp=$(mktemp "$dir/what-changed.XXXXXXXX"); then
+  rm -rf "$old"
+  fallback
+  exit 0
+fi
+diff_tex="$diff_tmp.tex"
+if ! mv "$diff_tmp" "$diff_tex"; then
+  rm -f "$diff_tmp"
+  rm -rf "$old"
+  fallback
+  exit 0
+fi
+diff_name=${diff_tex##*/}
+diff_stem=${diff_name%.tex}
+cleanup() {
+  git worktree remove --force "$old" 2>/dev/null || true
+  rm -rf "$old"
+  rm -f "$diff_tex"
+}
+trap cleanup EXIT
+if ! git worktree add --detach "$old" "$base" >/dev/null; then
+  fallback
+  exit 0
+fi
+
+# The base may name its main document differently, e.g. a main.tex shim.
+if ! latexdiff --flatten "$old/$dir/$old_main" "$dir/$main" > "$diff_tex"; then
+  echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
+  exit 0
+fi
+if ! python3 - "$diff_tex" <<'PY'
+import pathlib
+import re
+import sys
+
+body = pathlib.Path(sys.argv[1]).read_text(errors="replace").partition(r"\begin{document}")[2]
+if not re.search(r"\\DIF(?:add|del)(?:begin|end)?(?:\{|\b)", body):
+    raise SystemExit(1)
+PY
+then
+  printf '{"changed":true,"diff":false,"other_inputs":%s,"unhighlighted":true}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
+  exit 0
+fi
+if (cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
+  -halt-on-error -file-line-error -outdir=build "$diff_name"); then
+  cp "$dir/build/$diff_stem.pdf" "$site_dir/what-changed.pdf"
+  if ! pdftoppm -f 1 -l 12 -png -r 54 "$site_dir/what-changed.pdf" "$site_dir/diff-page" >/dev/null 2>&1; then
+    rm -f "$site_dir"/diff-page-*.png
+    echo '::warning::Could not render paper diff thumbnails; the diff PDF remains available'
+  fi
+  pages=$(pdfinfo "$site_dir/what-changed.pdf" 2>/dev/null | awk '/^Pages:/ {print $2; exit}') || pages=""
+  if [[ "$pages" =~ ^[0-9]+$ ]]; then
+    printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12,"page_count":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" "$pages" > "$site_dir/preview.json"
+  else
+    printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
+  fi
+else
+  printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
+  echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
+fi

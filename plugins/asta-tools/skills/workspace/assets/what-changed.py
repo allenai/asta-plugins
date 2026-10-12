@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate a "What changed" page for a Quarto site preview.
+"""Generate a "What changed" page for a Quarto and paper preview.
 
 Given two rendered site trees — a baseline (what's live on the site's gh-pages
 root, i.e. `main`) and a candidate (this PR's freshly rendered `_site/`) — emit
 a single self-contained HTML page that shows, per document, the rendered content
-with inline additions/removals highlighted. Reviewers get one link that lands
-them on exactly what changed, instead of the site root to hunt through.
+with inline additions/removals highlighted. A changed LaTeX paper is linked as a
+diff PDF above the Quarto sections. Reviewers get one link that lands them on
+the changes instead of the site root to hunt through.
 
 Design notes:
   * Compares the rendered `<main>` content of each page, not the source `.qmd`,
@@ -44,12 +45,14 @@ Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 
 import argparse
 import difflib
+import glob
 import html
+import json
 import os
 import re
 import sys
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 # Inline formatting tags may live *inside* an <ins>/<del>; anything else is
 # treated as structural and closes the wrapper so we never nest a block element
@@ -606,13 +609,14 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None):
+def list_pages(root, out_path=None, paper_dirs=()):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
     Skips any page that is itself a "What changed" artifact — matched by output
     exact output path (when it falls under this input root) or by the generator's
     self-identifying marker — so the generator never diffs its own output while
-    preserving a legitimate same-named page in another directory.
+    preserving a legitimate same-named page in another directory. Paper output
+    stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
@@ -623,13 +627,26 @@ def list_pages(root, out_path=None):
             full = os.path.join(dirpath, f)
             if excluded and os.path.realpath(full) == excluded:
                 continue
+            rel = os.path.relpath(full, root)
+            parts = rel.split(os.sep)
+            if parts[0] == "paper-previews" and (
+                any(
+                    parts[: len(name.split("/")) + 1]
+                    == ["paper-previews", *name.split("/")]
+                    for name in paper_dirs
+                )
+                or any(
+                    os.path.isfile(os.path.join(root, *parts[:i], "preview.json"))
+                    for i in range(2, len(parts))
+                )
+            ):
+                continue
             try:
                 with open(full, encoding="utf-8") as fh:
                     if is_what_changed_artifact(fh.read(4096)):
                         continue
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 continue
-            rel = os.path.relpath(full, root)
             pages[rel] = full
     return pages
 
@@ -680,6 +697,9 @@ DIFF_STYLE = """
 .wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
     padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
     white-space: pre-wrap; overflow-wrap: break-word; }
+.wc-scope .paper-thumbs { display: flex; flex-wrap: wrap; gap: .75rem; }
+.wc-scope .paper-thumbs img { max-width: 160px; height: auto;
+    border: 1px solid var(--wc-border); }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -1000,11 +1020,123 @@ def pick_template(new_pages):
         return None, 0
 
 
+def paper_identity(paper_dir):
+    label = (
+        "Paper"
+        if paper_dir == "paper"
+        else " / ".join(
+            html.escape(part.replace("-", " ").title().replace("Latex", "LaTeX"))
+            for part in paper_dir.split("/")
+        )
+    )
+    section_id = (
+        "paper-diff"
+        if paper_dir == "paper"
+        else f"paper-diff-{paper_dir.encode().hex()}"
+    )
+    return label, section_id
+
+
+def paper_preview(old_root, new_root, paper_dir="paper"):
+    manifest = os.path.join(new_root, "paper-previews", paper_dir, "preview.json")
+    if not os.path.isfile(manifest):
+        return None
+    try:
+        with open(manifest, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    if not state.get("changed"):
+        return None
+    label, section_id = paper_identity(paper_dir)
+    if state.get("removed"):
+        section = (
+            f'<section class="page-diff removed" id="{section_id}">'
+            f'<h2>{label} <span class="tag removed">removed</span></h2>'
+            '<p class="wc-note">Paper removed; no paper PDF is published in this preview.</p>'
+            "</section>"
+        )
+        return section, "removed"
+
+    def paper_url(filename):
+        return html.escape(
+            f"paper-previews/{quote(paper_dir, safe='/')}/{filename}", quote=True
+        )
+
+    pdf = paper_url("what-changed.pdf" if state.get("diff") else "main.pdf")
+    if state.get("new"):
+        note = "Paper added; the current paper PDF is available."
+    elif state.get("diff") and state.get("other_inputs"):
+        note = "LaTeX edits are highlighted; other paper inputs may not be."
+    elif state.get("diff"):
+        note = "LaTeX edits are highlighted in the diff PDF."
+    elif state.get("unhighlighted"):
+        note = "LaTeX inputs changed, but the diff has no marked text; the current PDF is available without highlights."
+    elif state.get("other_inputs"):
+        note = "Paper inputs changed; the current PDF is available without highlights."
+    else:
+        note = "The LaTeX diff could not be built; the current paper PDF is available."
+    status = "new" if state.get("new") else "changed"
+    thumbs = []
+    if state.get("diff"):
+        pages = []
+        for path in glob.glob(
+            os.path.join(new_root, "paper-previews", paper_dir, "diff-page-*.png")
+        ):
+            filename = os.path.basename(path)
+            match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
+            if not match:
+                continue
+            pages.append((int(match.group(1)), filename))
+        for page, filename in sorted(pages):
+            thumbs.append(
+                f'<a href="{pdf}#page={page}"><img src="{paper_url(filename)}" '
+                f'alt="Paper diff page {page}" loading="lazy"></a>'
+            )
+        limit = state.get("thumbnail_limit")
+        page_count = state.get("page_count")
+        if (
+            isinstance(limit, int)
+            and limit > 0
+            and isinstance(page_count, int)
+            and page_count > limit
+            and len(thumbs) >= limit
+        ):
+            note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
+    section = (
+        f'<section class="page-diff {status}" id="{section_id}">'
+        f'<h2>{label} <span class="tag {status}">{status}</span></h2>'
+        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
+        f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
+    )
+    return section, status
+
+
 def build(old_root, new_root, preview_url, title, out_path=None):
-    old_pages = list_pages(old_root, out_path)
-    new_pages = list_pages(new_root, out_path)
     sections = []
     toc = []
+    paper_root = os.path.join(new_root, "paper-previews")
+    paper_dirs = []
+    if os.path.isdir(paper_root):
+        for directory, _, files in os.walk(paper_root):
+            if "preview.json" in files:
+                paper_dirs.append(
+                    os.path.relpath(directory, paper_root).replace(os.sep, "/")
+                )
+    old_pages = list_pages(old_root, out_path, paper_dirs)
+    new_pages = list_pages(new_root, out_path, paper_dirs)
+    for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
+        paper_section = paper_preview(old_root, new_root, paper_dir)
+        if paper_section:
+            section, paper_status = paper_section
+            sections.append(section)
+            label, section_id = paper_identity(paper_dir)
+            toc.append(
+                f'<a href="#{section_id}">{label} <span class="tag {paper_status}">'
+                f"{paper_status}</span></a>"
+            )
     for rel in sorted(set(old_pages) | set(new_pages)):
         new_doc = (
             open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None

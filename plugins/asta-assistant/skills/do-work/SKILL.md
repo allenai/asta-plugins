@@ -1,7 +1,7 @@
 ---
 name: do-work
 description: Execute the approved plan in work/<slug>/README.md (status ready), write outputs into work/<slug>/data/, record what happened in the Results section, then hand off to review-work. Use when there is a ready work item.
-allowed-tools: Read(work/**) Read(project.md) Edit(work/**) Write(work/**) Bash(*) Skill(asta-assistant:review-work) Skill(asta-assistant:save-work) Skill(asta-tools:*) Skill(asta-preview:*)
+allowed-tools: Read(work/**) Read(project.md) Edit(work/**) Write(work/**) Bash(*) Skill(asta-assistant:review-work) Skill(asta-assistant:save-work) Skill(asta-tools:*)
 ---
 
 # Do Work
