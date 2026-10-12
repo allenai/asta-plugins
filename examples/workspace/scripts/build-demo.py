@@ -1,10 +1,7 @@
 """Build the fixed edited-paper demo into the rendered site, never into source."""
 
-import hashlib
-import json
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import warnings
 from importlib.util import module_from_spec, spec_from_file_location
@@ -30,18 +27,8 @@ def run(*args, cwd=None, capture=False):
 def build(site):
     site = site.resolve()
     ref = refresh.workflow_ref()
-    cache = ROOT / ".asta/cache"
-    missing_cache = "demo needs a workspace cache; run `asta workspace sync` first"
-    if not all((cache / name).is_file() for name in ("workspace.json", "workspace.mk")):
-        raise ValueError(missing_cache)
-    state = json.loads((cache / "workspace.json").read_text())
-    if state["repository"] != "allenai/asta-plugins" or state["ref"] != ref:
-        raise ValueError("demo needs the managed archive selected in docs.yml")
-    archive = cache / "archives" / state["archive_sha256"]
-    if not archive.is_file():
-        raise ValueError(missing_cache)
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != state["archive_sha256"]:
-        raise ValueError("managed archive checksum mismatch")
+    repo = Path(run("git", "rev-parse", "--show-toplevel", capture=True))
+    project = ROOT.relative_to(repo)
     baseline = run("git", "rev-parse", "HEAD", capture=True)
     if run("git", "status", "--porcelain", "--untracked-files=no", capture=True):
         raise ValueError(
@@ -50,23 +37,15 @@ def build(site):
     with tempfile.TemporaryDirectory() as temporary:
         temporary = Path(temporary)
         edited = temporary / "edited"
-        assets = temporary / "assets"
-        assets.mkdir()
-        # Read only the two selected assets; no archive path is extracted.
-        with tarfile.open(archive) as source:
-            members = source.getmembers()
-            for name in ("paper-preview.sh", "what-changed.py"):
-                suffix = f"/plugins/asta-tools/skills/workspace/assets/{name}"
-                matches = [m for m in members if m.name.endswith(suffix) and m.isfile()]
-                if len(matches) != 1:
-                    raise ValueError(f"managed archive has no unique {name}")
-                (assets / name).write_bytes(source.extractfile(matches[0]).read())
+        # The edited worktree's own assets build the demo, matching the release.
+        assets = edited / "plugins/asta-tools/skills/workspace/assets"
         run("git", "worktree", "add", "--detach", str(edited), baseline)
         try:
             run(
                 "git",
                 "apply",
                 "--index",
+                f"--directory={project}",
                 str(ROOT / "scripts/demo-edits.patch"),
                 cwd=edited,
             )
@@ -82,11 +61,8 @@ def build(site):
                 cwd=edited,
             )
             changed = run("git", "rev-parse", "HEAD", cwd=edited, capture=True)
-            shutil.copytree(cache, edited / ".asta/cache")
-            # The worktree's docs.yml is newer than the copied cache.
-            (edited / ".asta/cache/workspace.mk").touch()
-            run("make", "render", cwd=edited)
-            run("bash", str(assets / "paper-preview.sh"), baseline, "paper", cwd=edited)
+            run("make", "render", cwd=edited / project)
+            run("bash", str(assets / "paper-preview.sh"), baseline, "paper", cwd=edited / project)
             run(
                 "python3",
                 str(ROOT / "scripts/refresh-demo.py"),
@@ -94,7 +70,7 @@ def build(site):
                 "--old",
                 str(site),
                 "--new",
-                str(edited / "_site"),
+                str(edited / project / "_site"),
                 "--generator",
                 str(assets / "what-changed.py"),
                 "--ref",

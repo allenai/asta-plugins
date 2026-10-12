@@ -1,0 +1,84 @@
+name: Example workspace
+
+# Builds examples/workspace in the published -tex image. Releases call this after
+# `latest` moves and deploy only a passing build; PRs run it only when the example
+# itself changes, and the check is not required.
+on:
+  workflow_call:
+    inputs:
+      ref-name:
+        description: Final release tag whose -tex image and assets build the demo
+        type: string
+        required: true
+  pull_request:
+    paths:
+      - examples/workspace/**
+      - .github/workflows/example-workspace.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: example-workspace-${{ github.event.pull_request.number || inputs.ref-name || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
+    defaults:
+      run:
+        working-directory: examples/workspace
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and validate the example and its edited demo
+        shell: bash
+        env:
+          ASTA_EXAMPLE_REF: ${{ inputs.ref-name || github.sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          make check
+          make preview-artifact-check
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - if: inputs.ref-name != ''
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: examples/workspace/_site
+
+  deploy:
+    needs: build
+    if: inputs.ref-name != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  report:
+    # A failed demo never holds a release; the previous deployment stays up.
+    needs: [build, deploy]
+    if: failure() && inputs.ref-name != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref-name }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Example workspace failed to build for $REF" \
+            --body "The post-release example build failed; the previous demo is still published. Run: $RUN"

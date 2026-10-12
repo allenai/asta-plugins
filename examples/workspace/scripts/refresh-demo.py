@@ -1,7 +1,8 @@
-"""Keep the template's static, edited-paper demonstration reproducible."""
+"""Keep the example workspace's edited-paper demonstration reproducible."""
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -16,15 +17,14 @@ PAPERS = ("paper",)
 
 
 def workflow_ref() -> str:
-    workflow = (ROOT / ".github/workflows/docs.yml").read_text(encoding="utf-8")
-    match = re.search(
-        r"^\s*uses:\s*allenai/asta-plugins/\.github/workflows/workspace-quarto-site\.yml@(\S+)\s*$",
-        workflow,
-        re.MULTILINE,
-    )
-    if not match:
-        raise ValueError("docs.yml has no asta-plugins workspace workflow ref")
-    return match.group(1)
+    """The asta-plugins ref the demo is built from: the release tag, else HEAD."""
+    ref = os.environ.get("ASTA_EXAMPLE_REF")
+    if ref:
+        return ref
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
 
 
 class Links(HTMLParser):
