@@ -273,6 +273,13 @@ class TestUserInfo:
             {"id_token": ""},
             {"id_token": "malformed"},
             {"id_token": "e30.bm90LWpzb24."},
+            {"id_token": "e30.e30"},
+            {"id_token": "e30.e30.signature.extra"},
+            {"id_token": "e30.e30.signature.extra.extra"},
+            {"id_token": "e30.e30!!!!."},
+            {"id_token": "e30.e30    ."},
+            {"id_token": 42},
+            {"id_token": ["e30", "e30", "signature"]},
         ],
     )
     def test_get_user_info_missing_or_malformed_token(self, tokens):
