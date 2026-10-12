@@ -198,7 +198,8 @@ class TokenManager:
             # Read claims only; the gateway verifies the signature.
             payload = tokens["id_token"].split(".")[1]
             payload += "=" * (-len(payload) % 4)
-            return json.loads(base64.urlsafe_b64decode(payload))
+            claims = json.loads(base64.urlsafe_b64decode(payload))
+            return claims if isinstance(claims, dict) else None
         except Exception:
             return None
 
