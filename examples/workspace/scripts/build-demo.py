@@ -62,7 +62,13 @@ def build(site):
             )
             changed = run("git", "rev-parse", "HEAD", cwd=edited, capture=True)
             run("make", "render", cwd=edited / project)
-            run("bash", str(assets / "paper-preview.sh"), baseline, "paper", cwd=edited / project)
+            run(
+                "bash",
+                str(assets / "paper-preview.sh"),
+                baseline,
+                "paper",
+                cwd=edited / project,
+            )
             run(
                 "python3",
                 str(ROOT / "scripts/refresh-demo.py"),

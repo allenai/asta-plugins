@@ -179,9 +179,12 @@ class DemoTests(unittest.TestCase):
     def check_render_failure(self, fail_cleanup=False, dirty=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            git = lambda *args: subprocess.check_output(
-                ["git", "-C", str(root), *args], text=True
-            ).strip()
+
+            def git(*args):
+                return subprocess.check_output(
+                    ["git", "-C", str(root), *args], text=True
+                ).strip()
+
             git("init", "-q")
             git("config", "user.name", "Demo test")
             git("config", "user.email", "demo@example.invalid")

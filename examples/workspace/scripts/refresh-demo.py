@@ -22,7 +22,10 @@ def workflow_ref() -> str:
     if ref:
         return ref
     return subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, text=True,
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        text=True,
         stdout=subprocess.PIPE,
     ).stdout.strip()
 
