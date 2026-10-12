@@ -3,6 +3,7 @@ High-level token management with automatic refresh.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -10,7 +11,6 @@ import urllib.error
 import urllib.request
 import webbrowser
 
-from jose import jwt
 from rich.console import Console
 from rich.panel import Panel
 
@@ -195,23 +195,16 @@ class TokenManager:
             return None
 
         try:
-            # Decode without verification (just reading claims)
-            # Disable all validation checks
-            return jwt.decode(
-                tokens["id_token"],
-                key="",
-                options={
-                    "verify_signature": False,
-                    "verify_aud": False,
-                    "verify_iat": False,
-                    "verify_exp": False,
-                    "verify_nbf": False,
-                    "verify_iss": False,
-                    "verify_sub": False,
-                    "verify_jti": False,
-                    "verify_at_hash": False,
-                },
+            # Read claims only; the gateway verifies the signature.
+            parts = tokens["id_token"].split(".")
+            if len(parts) != 3:
+                return None
+            payload = parts[1]
+            payload += "=" * (-len(payload) % 4)
+            claims = json.loads(
+                base64.b64decode(payload, altchars=b"-_", validate=True)
             )
+            return claims if isinstance(claims, dict) else None
         except Exception:
             return None
 

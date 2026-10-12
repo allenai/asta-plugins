@@ -16,7 +16,6 @@ dependencies = [
     "pyhocon>=0.3.60",
     "httpx>=0.26.0",
     "rich>=13.7.0",
-    "python-jose[cryptography]>=3.3.0",
     "keyring>=24.3.0",
     "platformdirs>=4.1.0",
     "asta-agent[a2a-client]>=1.0.7",

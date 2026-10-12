@@ -1,9 +1,11 @@
 """Tests for authentication module."""
 
+import base64
 import json
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from asta.auth.storage import TokenStorage
@@ -234,6 +236,60 @@ class TestAuthCommands:
             assert "JWT Payload:" in result.output
             assert "test@example.com" in result.output
             assert "access:semantic-scholar" in result.output
+
+
+class TestUserInfo:
+    @pytest.mark.parametrize(
+        ("claims", "expected"),
+        [
+            ({"sub": "test-user", "exp": 0}, {"sub": "test-user", "exp": 0}),
+            ({}, {}),
+            ([], None),
+            ([{"sub": "test-user"}], None),
+            ("test-user", None),
+            (42, None),
+            (True, None),
+            (None, None),
+        ],
+    )
+    def test_get_user_info_claims(self, claims, expected):
+        payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode()
+        storage = MagicMock(spec=TokenStorage)
+        storage.load_tokens.return_value = {
+            "id_token": f"eyJhbGciOiJub25lIn0.{payload.rstrip('=')}."
+        }
+        manager = TokenManager(
+            "test.auth0.com", "test-client", "test-audience", storage=storage
+        )
+
+        assert manager.get_user_info() == expected
+
+    @pytest.mark.parametrize(
+        "tokens",
+        [
+            None,
+            {},
+            {"id_token": None},
+            {"id_token": ""},
+            {"id_token": "malformed"},
+            {"id_token": "e30.bm90LWpzb24."},
+            {"id_token": "e30.e30"},
+            {"id_token": "e30.e30.signature.extra"},
+            {"id_token": "e30.e30.signature.extra.extra"},
+            {"id_token": "e30.e30!!!!."},
+            {"id_token": "e30.e30    ."},
+            {"id_token": 42},
+            {"id_token": ["e30", "e30", "signature"]},
+        ],
+    )
+    def test_get_user_info_missing_or_malformed_token(self, tokens):
+        storage = MagicMock(spec=TokenStorage)
+        storage.load_tokens.return_value = tokens
+        manager = TokenManager(
+            "test.auth0.com", "test-client", "test-audience", storage=storage
+        )
+
+        assert manager.get_user_info() is None
 
 
 class TestTokenVerification:
