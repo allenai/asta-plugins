@@ -188,8 +188,9 @@ for line in deps.read_text(errors="replace").splitlines():
 if not seen_target or not expect_target:
     raise SystemExit("LaTeX wrote an incomplete paper dependency list")
 
+# --relative matches the project-relative inputs when the project is below the git root.
 changed = subprocess.check_output(
-    ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
+    ["git", "diff", "--relative", "--name-only", "-z", sys.argv[1], "HEAD"]
 )
 changed = [os.fsdecode(path) for path in changed.split(b"\0") if path]
 relevant = [

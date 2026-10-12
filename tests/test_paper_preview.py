@@ -383,6 +383,24 @@ def test_nested_paper_builds_pdf_and_diff(tmp_path):
     assert (repo / "_site/paper-previews/lit-review/latex/what-changed.pdf").exists()
 
 
+def test_project_below_git_root_builds_diff(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    project = repo / "examples/workspace"
+    (project / "paper").mkdir(parents=True)
+    (project / "paper/main.tex").write_text("old")
+    run("git", "add", "examples/workspace/paper/main.tex", cwd=repo)
+    run("git", "commit", "-qm", "add project paper", cwd=repo)
+    base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    (project / "paper/main.tex").write_text("new")
+    run("git", "commit", "-qam", "edit project paper", cwd=repo)
+
+    run("bash", str(SCRIPT), base, "paper", cwd=project, env=env)
+
+    site = project / "_site/paper-previews/paper"
+    assert (site / "what-changed.pdf").exists()
+    assert json.loads((site / "preview.json").read_text())["diff"] is True
+
+
 def test_paper_directory_with_spaces_and_quotes_builds(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
     name = 'my paper &"'
