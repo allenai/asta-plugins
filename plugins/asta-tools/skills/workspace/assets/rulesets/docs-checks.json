@@ -14,8 +14,8 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          {"context": "docs / build"},
-          {"context": "docs / paper-gate"}
+          {"context": "docs / build", "integration_id": 15368},
+          {"context": "docs / paper-gate", "integration_id": 15368}
         ]
       }
     }
