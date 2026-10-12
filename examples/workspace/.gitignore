@@ -1,0 +1,29 @@
+# Quarto build artifacts (the workspace skill appends any of these lines
+# missing from the project's .gitignore).
+_site/
+quarto-render.*
+
+# Fetched from the pinned asta-plugins commit; see workspace-assets in Makefile.
+_extensions/evidence/
+
+# LaTeX build artifacts
+paper/build/
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+# The paper preview's temporary latexdiff source.
+paper/what-changed.tex
+
+
+/.quarto/
+
+# CLI-managed workspace rules and archive
+.asta/cache/
+
+# Rendered demo output; CI publishes it with the site.
+demo/showcase/
+__pycache__/
+
+# Generated paper viewer; commit a copy only to customize it.
+/paper/html/index.qmd
+/paper/html/paper-viewer.js

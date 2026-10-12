@@ -1,0 +1,11 @@
+---
+title: "A small literature review"
+documentclass: article
+---
+
+This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see `DEVELOPER.md`). The separate `paper/main.tex` is edited directly. Both cite the project-root `references.bib`.
+
+## Example claim
+
+[Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. The highlighted claim exposes its source quote on hover or keyboard focus.
+

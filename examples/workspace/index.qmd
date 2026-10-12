@@ -1,0 +1,10 @@
+---
+title: "One workspace, two paper paths"
+---
+
+This demo has one shared [bibliography](references.bib) and two writing paths:
+
+1. [Literature review](lit-review/index.qmd): edit the Quarto source. Quarto can also render it to PDF or LaTeX on demand (see `DEVELOPER.md`).
+2. [Separate paper](paper/main.tex): edit LaTeX directly, while citing the same bibliography.
+
+On a pull request, the preview builds a PDF of the separate paper. [The saved diff demo](demo/index.qmd) shows edits to the paper and the Quarto literature review. New files appear as “added” in What changed; edits to existing files show a diff.
