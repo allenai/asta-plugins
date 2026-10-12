@@ -233,7 +233,8 @@ def test_sync_reports_unborn_workspace_head(tmp_path, command):
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, request):
+    workspace_format = getattr(request, "param", "sha1")
     monkeypatch.delenv("OVERLEAF_TOKEN", raising=False)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -267,12 +268,21 @@ def setup(tmp_path, monkeypatch):
     git(seed, "push", "origin", "master")
     project = tmp_path / "project"
     project.mkdir()
-    git(project, "init", "-b", "main")
+    git(project, "init", f"--object-format={workspace_format}", "-b", "main")
     (project / "references.bib").write_text("@misc{root}\n")
     git(project, "add", ".")
     git(project, "commit", "-m", "init")
     origin = tmp_path / "workspace.git"
-    git(tmp_path, "init", "--bare", "-q", "-b", "main", str(origin))
+    git(
+        tmp_path,
+        "init",
+        f"--object-format={workspace_format}",
+        "--bare",
+        "-q",
+        "-b",
+        "main",
+        str(origin),
+    )
     git(project, "remote", "add", "origin", str(origin))
     git(project, "push", "-q", "origin", "main")
     return seed, project
@@ -1358,18 +1368,74 @@ def test_bibliography_overlapping_edits_get_conflict_markers(setup):
     assert "@misc{collaborator}\n>>>>>>> overleaf\n" in merged
 
 
-def test_pull_merges_non_overlapping_edits(setup):
+@pytest.mark.parametrize(
+    "name",
+    ["main.tex", "references.bib", "custom.sty", "custom.cls", "notes.txt", "notes.md"],
+)
+def test_pull_merges_non_overlapping_edits(setup, name):
     seed, project = setup
-    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\nfour\n")
+    overleaf_edit(seed, name, "one\ntwo\nthree\nfour\n")
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    (project / "paper/main.tex").write_text("ONE\ntwo\nthree\nfour\n")
+    (project / "paper" / name).write_text("ONE\ntwo\nthree\nfour\n")
     commit_all(project)
-    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\nFOUR\n")
+    overleaf_edit(seed, name, "one\ntwo\nthree\nFOUR\n")
     result = run(project, "pull")
     assert result.exit_code == 0, result.output
     assert "same lines" not in result.output
-    assert (project / "paper/main.tex").read_text() == "ONE\ntwo\nthree\nFOUR\n"
+    assert (project / "paper" / name).read_text() == "ONE\ntwo\nthree\nFOUR\n"
+
+
+@pytest.mark.parametrize(
+    "name,header",
+    [
+        ("figure.pdf", "%PDF-1.4\n"),
+        ("figure.eps", "%!PS-Adobe-3.0\n"),
+        ("figure.svg", "<svg>\n"),
+        ("figure.png", ""),
+        ("figure.dat", ""),
+        ("main.tex", "\0"),
+    ],
+)
+def test_pull_refuses_concurrent_asset_edits_without_writing(setup, name, header):
+    seed, project = setup
+    overleaf_edit(seed, name, header + "one\ntwo\nthree\nfour\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    paper = project / "paper"
+    (paper / name).write_text(header + "ONE\ntwo\nthree\nfour\n")
+    commit_all(project)
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    overleaf_edit(seed, name, header + "one\ntwo\nthree\nFOUR\n")
+    overleaf_edit(seed, "old.tex", None)
+    overleaf_edit(seed, "new.tex", "new source\n")
+
+    result = run(project, "pull")
+
+    assert result.exit_code != 0, result.output
+    assert name in result.output and "nothing copied" in result.output
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("side", ["workspace", "overleaf"])
+def test_pull_preserves_one_sided_asset_edits(setup, side):
+    seed, project = setup
+    overleaf_edit(seed, "figure.pdf", "%PDF-1.4\noriginal\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    changed = "%PDF-1.4\nchanged\n"
+    if side == "workspace":
+        (project / "paper/figure.pdf").write_text(changed)
+        commit_all(project)
+        overleaf_edit(seed, "main.tex", "remote source edit\n")
+    else:
+        overleaf_edit(seed, "figure.pdf", changed)
+
+    result = run(project, "pull")
+
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/figure.pdf").read_text() == changed
 
 
 def test_publish_refuses_unresolved_conflict_markers(setup):
@@ -1387,6 +1453,7 @@ def test_publish_refuses_unresolved_conflict_markers(setup):
     assert git(seed, "ls-remote", "origin", "master") == before
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 def test_pull_after_publish_starts_from_published_commit(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -1397,6 +1464,13 @@ def test_pull_after_publish_starts_from_published_commit(setup):
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
     assert (project / "paper/overleaf.json").read_bytes() == record
+    published_source = git(project, "rev-parse", "HEAD")
+    git(seed, "pull", "-q", "origin", "master")
+    assert git(seed, "log", "-1", "--format=%s") == (
+        f"Publish workspace commit {published_source}"
+    )
+    again = run(project, "publish")
+    assert again.exit_code == 0 and "already matches" in again.output
     overleaf_edit(seed, "main.tex", "collaborator edit\n")
     result = run(project, "pull")
     assert result.exit_code == 0, result.output

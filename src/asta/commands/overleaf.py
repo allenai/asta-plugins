@@ -447,12 +447,34 @@ def write_files(contents: dict[str, bytes], dest: Path) -> None:
 
 
 MARKER = re.compile(rb"^(<<<<<<<|>>>>>>>) ", re.M)
-PUBLISH_MESSAGE = re.compile(r"^Publish workspace commit ([0-9a-f]{7,40})$")
+PUBLISH_MESSAGE = re.compile(
+    r"^Publish workspace commit ([0-9a-f]{7,40}|[0-9a-f]{64})$"
+)
+MERGE_SUFFIXES = {
+    ".tex",
+    ".ltx",
+    ".bib",
+    ".bst",
+    ".sty",
+    ".cls",
+    ".clo",
+    ".def",
+    ".cfg",
+    ".dtx",
+    ".ins",
+    ".txt",
+    ".md",
+}
 
 
-def merge_text(ours: bytes, base: bytes, theirs: bytes) -> tuple[bytes | None, bool]:
-    """Line-by-line three-way merge; None when any side is binary."""
-    if any(b"\0" in data for data in (ours, base, theirs)):
+def merge_text(
+    name: str, ours: bytes, base: bytes, theirs: bytes
+) -> tuple[bytes | None, bool]:
+    """Three-way merge of known text sources; None when unsuitable for line merging."""
+    # ASCII assets such as PDFs and EPS can contain no NUL and still be unsafe to merge.
+    if Path(name).suffix.lower() not in MERGE_SUFFIXES or any(
+        b"\0" in data for data in (ours, base, theirs)
+    ):
         return None, False
     with tempfile.TemporaryDirectory() as tmp:
         paths = []
@@ -576,7 +598,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     raise click.ClickException(
                         f"Both workspace and Overleaf changed {name}. Reconcile it first; nothing copied."
                     )
-                merged, clean = merge_text(ours[name], base[name], new[name])
+                merged, clean = merge_text(name, ours[name], base[name], new[name])
                 if merged is None:
                     raise click.ClickException(
                         f"Both workspace and Overleaf changed {name}, which is not text "
