@@ -1358,6 +1358,52 @@ def test_bibliography_overlapping_edits_get_conflict_markers(setup):
     assert "@misc{collaborator}\n>>>>>>> overleaf\n" in merged
 
 
+def test_pull_merges_non_overlapping_edits(setup):
+    seed, project = setup
+    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\nfour\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper/main.tex").write_text("ONE\ntwo\nthree\nfour\n")
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\nFOUR\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert "same lines" not in result.output
+    assert (project / "paper/main.tex").read_text() == "ONE\ntwo\nthree\nFOUR\n"
+
+
+def test_publish_refuses_unresolved_conflict_markers(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper/main.tex").write_text(
+        "<<<<<<< workspace\nours\n=======\ntheirs\n>>>>>>> overleaf\n"
+    )
+    commit_all(project)
+    before = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish")
+    assert result.exit_code != 0
+    assert "Unresolved conflict markers in: main.tex" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before
+
+
+def test_pull_after_publish_starts_from_published_commit(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    record = (project / "paper/overleaf.json").read_bytes()
+    (project / "paper/main.tex").write_text("reviewed edit\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/overleaf.json").read_bytes() == record
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert "same lines" not in result.output
+    assert (project / "paper/main.tex").read_text() == "collaborator edit\n"
+
+
 def test_bibliography_refuses_edit_deleted_on_overleaf(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
