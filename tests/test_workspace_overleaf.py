@@ -510,8 +510,9 @@ def test_publish_pushes_committed_paper_without_injecting_workspace_bibliography
     assert (seed / "main.tex").read_text() == "reviewed\n"
     assert (seed / "references.bib").read_text() == "@misc{overleaf}\n"
     assert not (seed / "overleaf.json").exists()
-    config = json.loads((project / "paper" / "overleaf.json").read_text())
-    assert config["base"] == git(seed, "rev-parse", "HEAD")
+    assert not git(project, "status", "--porcelain")
+    again = run(project, "publish")
+    assert again.exit_code == 0 and "already matches" in again.output
 
 
 def test_publish_refuses_when_overleaf_moved(setup):

@@ -446,6 +446,54 @@ def write_files(contents: dict[str, bytes], dest: Path) -> None:
         target.write_bytes(data)
 
 
+MARKER = re.compile(rb"^(<<<<<<<|>>>>>>>) ", re.M)
+PUBLISH_MESSAGE = re.compile(r"^Publish workspace commit ([0-9a-f]{7,40})$")
+
+
+def merge_text(ours: bytes, base: bytes, theirs: bytes) -> tuple[bytes | None, bool]:
+    """Line-by-line three-way merge; None when any side is binary."""
+    if any(b"\0" in data for data in (ours, base, theirs)):
+        return None, False
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = []
+        for label, data in (("ours", ours), ("base", base), ("theirs", theirs)):
+            path = Path(tmp) / label
+            path.write_bytes(data)
+            paths.append(str(path))
+        result = subprocess.run(
+            ["git", "merge-file", "-p", "-L", "workspace", "-L", "last sync",
+             "-L", "overleaf", *paths],
+            env=git_environment(),
+            capture_output=True,
+        )
+    if result.returncode < 0 or result.returncode > 127:
+        return None, False
+    return result.stdout, result.returncode == 0
+
+
+def last_sync(repo: Path, head: str, base: str, root: Path, prefix: str) -> str:
+    """Newest Overleaf commit since `base` whose files match a published workspace commit.
+
+    Publish records nothing in the workspace; its Overleaf commit names the workspace
+    commit it sent, and counts as a sync point only if the content still matches it.
+    """
+    commits = git("rev-list", "--first-parent", f"{base}..{head}", cwd=repo).split()
+    for commit in commits:
+        message = git("log", "-1", "--format=%s", commit, cwd=repo)
+        match = PUBLISH_MESSAGE.match(message)
+        if not match:
+            continue
+        try:
+            source = git("rev-parse", "--verify", "-q", f"{match.group(1)}^{{commit}}", cwd=root)
+        except click.ClickException:
+            continue
+        published = read_plain_files(root, source, prefix)
+        published.pop(CONFIG, None)
+        if published == read_plain_files(repo, commit):
+            return commit
+    return base
+
+
 project_option = click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
@@ -489,21 +537,33 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     "Reset remote history is unsupported; nothing copied. "
                     "Import into a separate directory with --dir."
                 ) from None
-        base = read_plain_files(repo, config["base"]) if config else {}
+        base = read_plain_files(repo, last_sync(repo, head, config["base"], root, prefix)) if config else {}
         base.pop(CONFIG, None)
         committed = read_plain_files(root, "HEAD", prefix)
         ours = committed.copy()
         ours.pop(CONFIG, None)
         deleted = (base.keys() - new.keys()) & ours.keys()
         check_paths([CONFIG, *new, *(ours.keys() - new.keys() - deleted)])
+        conflicted = []
         for name in base.keys() | new.keys():
             if new.get(name) == base.get(name):
                 # Keep workspace edits when Overleaf did not change this file.
                 new.pop(name, None)
             elif ours.get(name) not in (base.get(name), new.get(name)):
-                raise click.ClickException(
-                    f"Both workspace and Overleaf changed {name}. Reconcile it first; nothing copied."
-                )
+                if name not in new or name not in ours:
+                    raise click.ClickException(
+                        f"Workspace and Overleaf disagree on whether {name} exists. "
+                        "Reconcile it first; nothing copied."
+                    )
+                merged, clean = merge_text(ours[name], base.get(name, b""), new[name])
+                if merged is None:
+                    raise click.ClickException(
+                        f"Both workspace and Overleaf changed {name}, which is not text "
+                        "that can be merged line by line. Reconcile it first; nothing copied."
+                    )
+                new[name] = merged
+                if not clean:
+                    conflicted.append(name)
         for name in new.keys() | deleted:
             target = paper / name
             if target.resolve() != target:
@@ -546,10 +606,17 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
         "Review with `git diff`, then commit and open a PR."
     )
+    if conflicted:
+        click.echo(
+            "Both sides changed the same lines in: "
+            + ", ".join(sorted(conflicted))
+            + ". Resolve the conflict markers in the PR; publish refuses files that still have them.",
+            err=True,
+        )
 
 
-def matches_default_branch(root: Path, prefix: str) -> bool:
-    """Whether the committed paper equals the paper on the tip of `origin`'s default branch."""
+def matches_default_branch(root: Path, prefix: str) -> str | None:
+    """The tip of `origin`'s default branch if its paper equals the committed paper."""
     # Merging is the review gate. Comparing against the tip, not ancestry, also keeps an
     # older checkout from republishing content a later reviewed change removed.
     gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
@@ -575,7 +642,9 @@ def matches_default_branch(root: Path, prefix: str) -> bool:
                 "Could not read the default branch of the workspace's `origin` remote; "
                 "nothing pushed. Publish from a clone of the reviewed repository."
             ) from None
-        return tree(root, gate, prefix) == tree(root, "HEAD", prefix)
+        if tree(root, gate, prefix) != tree(root, "HEAD", prefix):
+            return None
+        return git("rev-parse", gate, cwd=root)
     finally:
         git("update-ref", "-d", gate, cwd=root)
 
@@ -627,17 +696,23 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         "The paper differs from the latest commit on origin's default branch. Merge "
         "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
-    if not matches_default_branch(root, prefix):
+    reviewed = matches_default_branch(root, prefix)
+    if not reviewed:
         if not dry_run:
             raise click.ClickException(f"{unmerged}; nothing pushed.")
         click.echo(f"{unmerged}; publish will refuse until then.")
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "overleaf"
         head = clone(config["url"], repo)
-        if head != config["base"]:
+        if last_sync(repo, head, config["base"], root, prefix) != head:
             raise click.ClickException(
-                f"Overleaf has changed since commit {config['base'][:7]}. Run "
+                f"Overleaf has changed since the last sync. Run "
                 "`asta workspace overleaf pull`, review those edits in a PR, then publish."
+            )
+        marked = sorted(name for name, data in ours.items() if MARKER.search(data))
+        if marked:
+            raise click.ClickException(
+                "Unresolved conflict markers in: " + ", ".join(marked) + "; nothing pushed."
             )
         write_files(ours, repo)
         git("add", "-A", "-f", cwd=repo)
@@ -675,7 +750,8 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
             return
         identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
-        message = f"Publish workspace commit {git('rev-parse', 'HEAD', cwd=root)[:12]}"
+        # Later syncs recognize this commit as a sync point by the reviewed commit it names.
+        message = f"Publish workspace commit {reviewed or git('rev-parse', 'HEAD', cwd=root)}"
         git(*identity, *commit_settings(root), "commit", "-q", "-m", message, cwd=repo)
         if read_plain_files(repo, "HEAD") != ours:
             raise click.ClickException(
@@ -684,8 +760,4 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             )
         push(repo, root)
         published = git("rev-parse", "HEAD", cwd=repo)
-    save_config(paper, config["url"], published)
-    click.echo(
-        f"Published Overleaf commit {published[:7]}. Commit "
-        f"{(paper / CONFIG).relative_to(root)} and merge it so the next publish starts from it."
-    )
+    click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
