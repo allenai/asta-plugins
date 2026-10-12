@@ -43,6 +43,7 @@ Add components only when needed; don't proactively offer.
 | **Quarto build tool** | Always — it's the project structure. |
 | **Version workflow stub** | Always for managed rules; enable automatic Pages deploy only when needed. |
 | **GitHub Pages deploy** | When you have no user-reachable port, or the user asks for a deployed URL. |
+| **Recommended repo protections** | Alongside GitHub Pages deploy; optional, the workspace works without them. |
 | **Dev container** | User wants to avoid installing host dependencies, or wants browser-only access from another machine. See subsection for the two flows. |
 
 Before writing any file in the steps below, check whether the target path already exists. If it does, ask the user before overwriting, or merge the asset's contents into the existing file.
@@ -101,6 +102,23 @@ highlights rendered additions and removals against the deployed base site and
 collapses unchanged sections. The single preview comment links to the changes
 first and the full preview second, so reviewers can inspect the affected
 content directly.
+
+### Recommended repo protections
+
+None of these is required for the workspace to work. When you set up Pages, recommend the ones that fit, ask the user, and apply only the ones they accept. The defaults ship as GitHub ruleset files in `assets/rulesets/`, released with each version:
+
+| Ruleset | Recommend when |
+|---|---|
+| `default-branch.json` — blocks force-pushes and deletion of the default branch | Every repo. |
+| `docs-checks.json` — requires the `docs / build` and `docs / paper-gate` checks | The repo has a paper or co-authors, and `docs.yml` runs on pull requests. |
+
+Apply an accepted ruleset with `gh api repos/{owner}/{repo}/rulesets -X POST --input <file>` when your token has admin on the repo. Check first with `gh api repos/{owner}/{repo} --jq .permissions.admin`. Otherwise give the user that one command. If the repo already has a ruleset with the same name, update it with `PUT repos/{owner}/{repo}/rulesets/<id>` instead of adding a duplicate. When the project needs something different (another caller job id than `docs`, or a non-default branch), adapt a copy of the file rather than writing one from scratch. Rulesets on private repos need a paid GitHub plan; if the API refuses, tell the user and move on.
+
+Don't recommend these by default:
+
+- Required approvals: whether to require review is the team's call.
+- Required signed commits: each contributor's machine needs signing set up first.
+- Protecting `gh-pages`: the workflow pushes to it, so protection breaks deploys.
 
 ### Dev container
 
