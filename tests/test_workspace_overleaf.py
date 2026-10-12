@@ -291,7 +291,7 @@ def overleaf_edit(seed, name, text):
 
 def commit_all(project):
     git(project, "add", "-A")
-    git(project, "commit", "-q", "-m", "sync")
+    git(project, "commit", "-q", "--allow-empty", "-m", "sync")
 
 
 def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
@@ -964,11 +964,19 @@ def test_pull_keeps_committed_workspace_edits_on_conflict(setup, remote_text):
     before = (project / "paper/overleaf.json").read_bytes()
     overleaf_edit(seed, "main.tex", remote_text)
     result = run(project, "pull")
-    assert result.exit_code != 0
-    assert "Both workspace and Overleaf changed main.tex" in result.output
-    assert (project / "paper/main.tex").read_text() == "reviewed workspace edit\n"
-    assert (project / "paper/overleaf.json").read_bytes() == before
-    assert not git(project, "status", "--porcelain")
+    if remote_text is None:
+        assert result.exit_code != 0 and "disagree on whether main.tex" in result.output
+        assert (project / "paper/main.tex").read_text() == "reviewed workspace edit\n"
+        assert (project / "paper/overleaf.json").read_bytes() == before
+        assert not git(project, "status", "--porcelain")
+        return
+    assert result.exit_code == 0, result.output
+    merged = (project / "paper/main.tex").read_text()
+    assert "<<<<<<< workspace\nreviewed workspace edit\n" in merged
+    assert "remote edit\n>>>>>>> overleaf\n" in merged
+    assert "main.tex" in result.output
+    publish = run(project, "publish")
+    assert publish.exit_code != 0
 
 
 def test_pull_preserves_local_edits_to_unchanged_remote_file(setup):
@@ -1898,7 +1906,7 @@ def test_local_latex_build_does_not_block_pull_or_publish(setup):
     assert result.exit_code == 0, result.output
     assert (paper / "main.tex").read_text() == "collaborator\n"
     git(project, "add", "--", "paper/main.tex", "paper/overleaf.json")
-    git(project, "commit", "-q", "-m", "sync")
+    git(project, "commit", "-q", "--allow-empty", "-m", "sync")
     (paper / "main.tex").write_text("reviewed\n")
     git(project, "add", "--", "paper/main.tex")
     git(project, "commit", "-q", "-m", "edit")
@@ -1956,7 +1964,7 @@ def test_publish_pdf_asset_requires_commit_even_with_matching_tex(setup):
     git(seed, "pull", "-q", "origin", "master")
     assert (seed / "figure.pdf").read_bytes() == asset.read_bytes()
     git(project, "add", "--", "paper/overleaf.json")
-    git(project, "commit", "-q", "-m", "record publication")
+    git(project, "commit", "-q", "--allow-empty", "-m", "record publication")
     before_record = (paper / "overleaf.json").read_bytes()
     before_remote = git(seed, "rev-parse", "HEAD")
     asset.write_bytes(b"unreviewed figure change\n")
