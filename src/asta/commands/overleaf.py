@@ -504,6 +504,8 @@ def merge_text(
         result = subprocess.run(
             [
                 "git",
+                "-c",
+                "merge.conflictStyle=merge",
                 "merge-file",
                 "-p",
                 "-L",
@@ -514,6 +516,7 @@ def merge_text(
                 "overleaf",
                 *paths,
             ],
+            cwd=tmp,
             env=git_environment(),
             capture_output=True,
         )
@@ -547,24 +550,28 @@ def last_sync(
             "Reset remote history is unsupported; nothing synced. "
             "Import into a separate directory with --dir."
         ) from None
-    commits = git("rev-list", "--first-parent", f"{base}..{head}", cwd=repo).split()
+    commits = git(
+        "log", "--first-parent", "--format=%H %s", f"{base}..{head}", cwd=repo
+    ).splitlines()
     with ExitStack() as stack:
-        for commit in commits:
-            message = git("log", "-1", "--format=%s", commit, cwd=repo)
+        for entry in commits:
+            commit, message = entry.split(" ", 1)
             match = PUBLISH_MESSAGE.match(message)
             if not match:
                 continue
             if reviewed is None:
-                reviewed = stack.enter_context(default_branch(root))
+                try:
+                    reviewed = stack.enter_context(default_branch(root))
+                except click.ClickException:
+                    click.echo(
+                        "Could not verify workspace publication history from `origin`. "
+                        "Pulling from the recorded sync instead; published edits may "
+                        "need conflict resolution.",
+                        err=True,
+                    )
+                    return base
             try:
-                source = git(
-                    "rev-parse",
-                    "--verify",
-                    "-q",
-                    f"{match.group(1)}^{{commit}}",
-                    cwd=root,
-                )
-                git("merge-base", "--is-ancestor", source, reviewed, cwd=root)
+                source = publication_source(root, match.group(1), reviewed)
             except click.ClickException:
                 continue
             published = read_plain_files(root, source, prefix)
@@ -575,9 +582,45 @@ def last_sync(
                     try:
                         git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
                     except click.ClickException:
-                        continue
+                        try:
+                            if not complete_history(root, reviewed):
+                                continue
+                            git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
+                        except click.ClickException:
+                            continue
                 return commit
     return base
+
+
+def complete_history(root: Path, reviewed: str) -> bool:
+    if git("rev-parse", "--is-shallow-repository", cwd=root) != "true":
+        return False
+    git(
+        "fetch",
+        "-q",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--refmap=",
+        "--unshallow",
+        "origin",
+        reviewed,
+        cwd=root,
+    )
+    return True
+
+
+def publication_source(root: Path, marker: str, reviewed: str) -> str:
+    def verify() -> str:
+        source = git("rev-parse", "--verify", "-q", f"{marker}^{{commit}}", cwd=root)
+        git("merge-base", "--is-ancestor", source, reviewed, cwd=root)
+        return source
+
+    try:
+        return verify()
+    except click.ClickException:
+        if not complete_history(root, reviewed):
+            raise
+        return verify()
 
 
 project_option = click.option(
@@ -725,41 +768,24 @@ def default_branch(root: Path):
             if not match:
                 raise click.ClickException("no default branch")
             ref = f"refs/heads/{match.group(1)}"
-            depth = (
-                ["--unshallow"]
-                if git("rev-parse", "--is-shallow-repository", cwd=root) == "true"
-                else []
-            )
             git(
                 "fetch",
                 "-q",
                 "--no-tags",
                 "--no-write-fetch-head",
                 "--refmap=",
-                *depth,
                 "origin",
                 f"{ref}:{gate}",
                 cwd=root,
             )
         except click.ClickException:
             raise click.ClickException(
-                "Could not read the default branch of the workspace's `origin` remote; "
-                "nothing synced. Sync from a clone of the reviewed repository."
+                "Could not fetch the default branch of the workspace's `origin` remote. "
+                "Check its URL, credentials and network access."
             ) from None
         yield git("rev-parse", gate, cwd=root)
     finally:
         git("update-ref", "-d", gate, cwd=root)
-
-
-def matches_default_branch(root: Path, prefix: str) -> str | None:
-    """The tip of `origin`'s default branch if its paper equals the committed paper."""
-    # Comparing the tip also prevents republishing content a later reviewed edit removed.
-    with default_branch(root) as reviewed:
-        return (
-            reviewed
-            if tree(root, reviewed, prefix) == tree(root, "HEAD", prefix)
-            else None
-        )
 
 
 @overleaf.command()
@@ -810,6 +836,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
     with default_branch(root) as default:
+        # Comparing the tip prevents republishing content a later reviewed edit removed.
         reviewed = (
             default
             if tree(root, default, prefix) == tree(root, "HEAD", prefix)
