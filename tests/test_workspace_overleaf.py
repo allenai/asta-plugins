@@ -1344,21 +1344,30 @@ def test_roundtrip_preserves_arbitrary_latex_layout_without_root_bibliography(
     assert module.read_plain_files(seed, "HEAD") == expected
 
 
-@pytest.mark.parametrize("remote_text", ["@misc{collaborator}\n", None])
-def test_bibliography_uses_same_conflict_protection_as_other_sources(
-    setup, remote_text
-):
+def test_bibliography_overlapping_edits_get_conflict_markers(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/references.bib").write_text("@misc{workspace_edit}\n")
+    commit_all(project)
+    overleaf_edit(seed, "references.bib", "@misc{collaborator}\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert "same lines in: references.bib" in result.output
+    merged = (project / "paper/references.bib").read_text()
+    assert "<<<<<<< workspace\n@misc{workspace_edit}\n" in merged
+    assert "@misc{collaborator}\n>>>>>>> overleaf\n" in merged
+
+
+def test_bibliography_refuses_edit_deleted_on_overleaf(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/references.bib").write_text("@misc{workspace_edit}\n")
     commit_all(project)
     before = (project / "paper/overleaf.json").read_bytes()
-    overleaf_edit(seed, "references.bib", remote_text)
+    overleaf_edit(seed, "references.bib", None)
     result = run(project, "pull")
-    assert (
-        result.exit_code != 0
-        and "Both workspace and Overleaf changed references.bib" in result.output
-    )
+    assert result.exit_code != 0
+    assert "disagree on whether references.bib exists" in result.output
     assert (project / "paper/references.bib").read_text() == "@misc{workspace_edit}\n"
     assert (project / "paper/overleaf.json").read_bytes() == before
 
@@ -2029,7 +2038,8 @@ def test_merge_gate_preserves_previous_fetch_and_workspace_refs(setup, merged):
     if merged:
         git(project, "push", "-q", "origin", "HEAD:main")
     before_refs = git(project, "show-ref")
-    assert module.matches_default_branch(project, "") == merged
+    tip = git(project, "rev-parse", "HEAD") if merged else None
+    assert module.matches_default_branch(project, "") == tip
     assert fetch_head.read_bytes() == before_fetch
     assert git(project, "show-ref") == before_refs
 

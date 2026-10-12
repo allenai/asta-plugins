@@ -461,8 +461,18 @@ def merge_text(ours: bytes, base: bytes, theirs: bytes) -> tuple[bytes | None, b
             path.write_bytes(data)
             paths.append(str(path))
         result = subprocess.run(
-            ["git", "merge-file", "-p", "-L", "workspace", "-L", "last sync",
-             "-L", "overleaf", *paths],
+            [
+                "git",
+                "merge-file",
+                "-p",
+                "-L",
+                "workspace",
+                "-L",
+                "last sync",
+                "-L",
+                "overleaf",
+                *paths,
+            ],
             env=git_environment(),
             capture_output=True,
         )
@@ -484,7 +494,9 @@ def last_sync(repo: Path, head: str, base: str, root: Path, prefix: str) -> str:
         if not match:
             continue
         try:
-            source = git("rev-parse", "--verify", "-q", f"{match.group(1)}^{{commit}}", cwd=root)
+            source = git(
+                "rev-parse", "--verify", "-q", f"{match.group(1)}^{{commit}}", cwd=root
+            )
         except click.ClickException:
             continue
         published = read_plain_files(root, source, prefix)
@@ -537,7 +549,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     "Reset remote history is unsupported; nothing copied. "
                     "Import into a separate directory with --dir."
                 ) from None
-        base = read_plain_files(repo, last_sync(repo, head, config["base"], root, prefix)) if config else {}
+        base = (
+            read_plain_files(repo, last_sync(repo, head, config["base"], root, prefix))
+            if config
+            else {}
+        )
         base.pop(CONFIG, None)
         committed = read_plain_files(root, "HEAD", prefix)
         ours = committed.copy()
@@ -555,7 +571,12 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                         f"Workspace and Overleaf disagree on whether {name} exists. "
                         "Reconcile it first; nothing copied."
                     )
-                merged, clean = merge_text(ours[name], base.get(name, b""), new[name])
+                if name not in base:
+                    # No common ancestor (e.g. an initial import over existing source).
+                    raise click.ClickException(
+                        f"Both workspace and Overleaf changed {name}. Reconcile it first; nothing copied."
+                    )
+                merged, clean = merge_text(ours[name], base[name], new[name])
                 if merged is None:
                     raise click.ClickException(
                         f"Both workspace and Overleaf changed {name}, which is not text "
@@ -706,13 +727,15 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         head = clone(config["url"], repo)
         if last_sync(repo, head, config["base"], root, prefix) != head:
             raise click.ClickException(
-                f"Overleaf has changed since the last sync. Run "
+                "Overleaf has changed since the last sync. Run "
                 "`asta workspace overleaf pull`, review those edits in a PR, then publish."
             )
         marked = sorted(name for name, data in ours.items() if MARKER.search(data))
         if marked:
             raise click.ClickException(
-                "Unresolved conflict markers in: " + ", ".join(marked) + "; nothing pushed."
+                "Unresolved conflict markers in: "
+                + ", ".join(marked)
+                + "; nothing pushed."
             )
         write_files(ours, repo)
         git("add", "-A", "-f", cwd=repo)
@@ -751,7 +774,9 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
             return
         identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         # Later syncs recognize this commit as a sync point by the reviewed commit it names.
-        message = f"Publish workspace commit {reviewed or git('rev-parse', 'HEAD', cwd=root)}"
+        message = (
+            f"Publish workspace commit {reviewed or git('rev-parse', 'HEAD', cwd=root)}"
+        )
         git(*identity, *commit_settings(root), "commit", "-q", "-m", message, cwd=repo)
         if read_plain_files(repo, "HEAD") != ours:
             raise click.ClickException(
