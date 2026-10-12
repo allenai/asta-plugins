@@ -56,6 +56,15 @@ installs it as a dependency. The default `npx plugins add` and `npx skills add`
 commands install all four groups. For selective npx installs, include
 `asta-tools` alongside the layer you select.
 
+The CLI requires Python 3.11+ and `uv`. Its security-patched `cryptography`
+50.0.0 dependency has no Intel macOS or 32-bit Windows wheels. On Intel macOS,
+installation falls back to a source build requiring Xcode command-line tools,
+Rust 1.83+ and OpenSSL 3+; see the [upstream build instructions](https://cryptography.io/en/50.0.0/installation/#building-cryptography-on-macos).
+Upstream [no longer supports these platforms](https://cryptography.io/en/50.0.0/changelog/#v49-0-0),
+and Asta's CI does not validate Intel macOS source builds. On Windows, use
+64-bit Python. Downgrading below 50.0.0 to regain a wheel would restore a
+security vulnerability fixed by this upgrade.
+
 ## Documentation and Usage
 
 Once installed, for information about how to use the plugins simply ask the LLM (e.g., Claude), e.g.,
