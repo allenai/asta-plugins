@@ -1,10 +1,7 @@
-import hashlib
 import importlib.util
-import io
 import json
 import os
 import subprocess
-import tarfile
 import tempfile
 import unittest
 import warnings
@@ -19,13 +16,14 @@ spec.loader.exec_module(demo)
 
 
 class DemoTests(unittest.TestCase):
-    def test_missing_cache_reports_how_to_prepare_it(self):
+    def test_outside_a_git_checkout_fails_before_creating_a_demo(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with (
                 patch.object(demo, "ROOT", root),
                 patch.object(demo.refresh, "workflow_ref", return_value="fixture"),
-                self.assertRaisesRegex(ValueError, "asta workspace sync"),
+                patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(root.parent)}),
+                self.assertRaises(subprocess.CalledProcessError),
             ):
                 demo.build(root / "_site")
             self.assertFalse((root / "_site").exists())
@@ -217,30 +215,6 @@ class DemoTests(unittest.TestCase):
             )
             git("commit", "-qm", "Baseline")
             head = git("rev-parse", "HEAD")
-            cache = root / ".asta/cache"
-            (cache / "archives").mkdir(parents=True)
-            archive = io.BytesIO()
-            with tarfile.open(fileobj=archive, mode="w:gz") as bundle:
-                for name in ("paper-preview.sh", "what-changed.py"):
-                    info = tarfile.TarInfo(
-                        f"src/plugins/asta-tools/skills/workspace/assets/{name}"
-                    )
-                    info.size = 1
-                    bundle.addfile(info, io.BytesIO(b"\n"))
-            data = archive.getvalue()
-            digest = hashlib.sha256(data).hexdigest()
-            (cache / "archives" / digest).write_bytes(data)
-            (cache / "workspace.json").write_text(
-                json.dumps(
-                    {
-                        "repository": "allenai/asta-plugins",
-                        "ref": "fixture",
-                        "archive_sha256": digest,
-                    }
-                )
-            )
-            (cache / "workspace.mk").write_text("cached rules\n")
-            os.utime(cache / "workspace.mk", (1, 1))
             if dirty:
                 (root / "references.bib").write_text("uncommitted change\n")
 
@@ -250,10 +224,6 @@ class DemoTests(unittest.TestCase):
                 if fail_cleanup and args[:3] == ("git", "worktree", "remove"):
                     raise subprocess.CalledProcessError(3, args)
                 if args[0] == "make":
-                    self.assertGreaterEqual(
-                        (cwd / ".asta/cache/workspace.mk").stat().st_mtime_ns,
-                        (cwd / ".github/workflows/docs.yml").stat().st_mtime_ns,
-                    )
                     self.assertEqual(
                         original_run(
                             "git",
