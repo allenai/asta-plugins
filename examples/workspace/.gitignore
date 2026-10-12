@@ -5,6 +5,7 @@ quarto-render.*
 
 # Fetched from the pinned asta-plugins commit; see workspace-assets in Makefile.
 _extensions/evidence/
+!_extensions/evidence
 
 # LaTeX build artifacts
 paper/build/

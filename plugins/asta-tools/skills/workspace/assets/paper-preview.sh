@@ -239,7 +239,9 @@ if ! git worktree add --detach "$old" "$base" >/dev/null; then
 fi
 
 # The base may name its main document differently, e.g. a main.tex shim.
-if ! latexdiff --flatten "$old/$dir/$old_main" "$dir/$main" > "$diff_tex"; then
+# The base worktree is the repo root; projects may live in a subdirectory.
+prefix=$(git rev-parse --show-prefix)
+if ! latexdiff --flatten "$old/$prefix$dir/$old_main" "$dir/$main" > "$diff_tex"; then
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
   exit 0
 fi
