@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "name": "asta-image-skills-cli",
+  "version": "1.0.0",
+  "dependencies": {
+    "skills": "1.7.0"
+  }
+}

@@ -145,7 +145,7 @@ docker-claude-asta: docker
 docker-codex-asta: docker
 	docker run --rm -it -e ASTA_TOKEN -e OPENAI_API_KEY asta:latest sh -c '\
 		npm install -g @openai/codex && \
-		npx --yes skills@latest add /opt/asta-plugins -g --yes && \
+		skills add /opt/asta-plugins -g --yes && \
 		echo "Ready. Run: codex" && \
 		exec bash'
 

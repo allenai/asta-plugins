@@ -4,7 +4,12 @@ on:
   pull_request:
     paths:
       - Dockerfile
+      - docker/**
+      - image/skills-cli/**
+      - src/asta/**
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
+      - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
+      - tests/dom/**
       - tests/fixtures/devcontainer-smoke/**
       - .github/workflows/devcontainer-smoke.yml
       - .github/workflows/docker.yml
@@ -36,6 +41,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
         if: inputs.published-images == true
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - uses: docker/login-action@v3
         if: inputs.published-images == true
         with:
@@ -70,6 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           meta=$(docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' asta-smoke)
+          echo "$meta" | jq -e 'any(.[]; .postCreateCommand == "asta-persist-auth")'
           if [ "${{ matrix.target }}" = tex ]; then
             echo "$meta" | jq -e 'any(.[]; .customizations.vscode.extensions | index("james-yu.latex-workshop"))'
           else
@@ -77,6 +85,7 @@ jobs:
           fi
       - name: Check CLI, skills install, Codespaces rebuild and Quarto
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/codespace-storage"
           docker run --rm \
             -v "$PWD/tests/fixtures/devcontainer-smoke:/w" \
@@ -91,13 +100,97 @@ jobs:
             python3 /w/check-post-create.py rebuild
       - name: Preview answers on port 4848
         run: |
-          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
-            python3 /w/check-post-attach.py
+          set -euo pipefail
+          for command in asset cli; do
+            docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
+              python3 /w/check-post-attach.py --preview-command "$command"
+          done
+          for stop_signal in SIGTERM SIGHUP; do
+            docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w asta-smoke \
+              python3 /w/check-post-attach.py --preview-command cli --stop-signal "$stop_signal"
+          done
       - name: Sample paper compiles with SyncTeX
         if: matrix.target == 'tex'
         run: |
-          docker run --rm -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
-            latexmk -synctex=1 -e '$pdf_mode ||= 1;' -interaction=nonstopmode -halt-on-error \
-              -file-line-error -outdir=build main.tex
+          docker run --rm asta-smoke kpsewhich ulem.sty | grep -q ulem.sty
+          meta=$(docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' asta-smoke)
+          docker run --rm -e ASTA_EDITOR_METADATA="$meta" \
+            -v "$PWD/tests/fixtures/devcontainer-smoke:/w" -w /w/paper asta-smoke \
+            python3 /w/check-latex-editor.py
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.pdf
           test -s tests/fixtures/devcontainer-smoke/paper/build/main.synctex.gz
+      - name: Shared paper preview builds with the image toolchain
+        if: matrix.target == 'tex'
+        run: |
+          preview=$(mktemp -d "$RUNNER_TEMP/paper-preview.XXXXXX")
+          mkdir "$preview/paper"
+          cp tests/fixtures/devcontainer-smoke/paper/main.tex "$preview/paper/"
+          cp tests/fixtures/devcontainer-smoke/paper/refs.bib "$preview/paper/shared refs.bib"
+          sed -i 's/{refs.bib}/{shared refs.bib}/' "$preview/paper/main.tex"
+          grep -q '{shared refs.bib}' "$preview/paper/main.tex"
+          printf '%s\n' '$deps_escape = "unix";' > "$preview/paper/latexmkrc"
+          git -C "$preview" init -q
+          git -C "$preview" config user.name 'Smoke test'
+          git -C "$preview" config user.email 'test@example.invalid'
+          git -C "$preview" add paper/main.tex 'paper/shared refs.bib' paper/latexmkrc
+          git -C "$preview" commit -qm base
+          base=$(git -C "$preview" rev-parse HEAD)
+          sed -i 's/Literate Programming/Literate Programming Updated/' "$preview/paper/shared refs.bib"
+          git -C "$preview" commit -qam 'edit bibliography'
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$preview:/w" \
+            -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
+            -w /w asta-smoke bash -euc '
+              git config --global --add safe.directory /w
+              bash /paper-preview.sh "$1" paper
+            ' _ "$base"
+          test -s "$preview/_site/paper-previews/paper/main.pdf"
+          grep -q 'Literate Programming Updated' "$preview/_site/paper-previews/paper/main.bbl"
+          python3 - "$preview/_site/paper-previews/paper/preview.json" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1]) as manifest:
+              assert json.load(manifest) == {"changed": True, "diff": False, "other_inputs": True}
+          PY
+
+      - name: XeLaTeX and LuaLaTeX resolve bundled fonts by name
+        if: matrix.target == 'tex'
+        run: |
+          paper=$(mktemp -d "$RUNNER_TEMP/paper-fonts.XXXXXX")
+          printf '%s\n' '\documentclass{article}' '\usepackage{fontspec}' \
+            '\setmainfont{TeX Gyre Termes}' '\begin{document}Named font\end{document}' > "$paper/main.tex"
+          for engine in xelatex lualatex; do
+            docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+              --user "$(id -u):$(id -g)" -e HOME=/tmp \
+              -v "$paper:/w" -w /w asta-smoke \
+              "$engine" -interaction=nonstopmode -halt-on-error main.tex
+            test -s "$paper/main.pdf"
+            rm "$paper/main.pdf"
+          done
+
+      - name: Paper diff PDF builds with the image toolchain
+        if: matrix.target == 'tex'
+        run: |
+          preview=$(mktemp -d "$RUNNER_TEMP/paper-diff.XXXXXX")
+          mkdir "$preview/paper"
+          cp tests/fixtures/devcontainer-smoke/paper-diff/main.tex "$preview/paper/"
+          git -C "$preview" init -q
+          git -C "$preview" config user.name 'Smoke test'
+          git -C "$preview" config user.email 'test@example.invalid'
+          git -C "$preview" add paper/main.tex
+          git -C "$preview" commit -qm base
+          base=$(git -C "$preview" rev-parse HEAD)
+          sed -i 's/Dev container/Updated preview/;s/x=1/x=2/' "$preview/paper/main.tex"
+          git -C "$preview" commit -qam 'edit paper'
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$preview:/w" \
+            -v "$PWD/plugins/asta-tools/skills/workspace/assets/paper-preview.sh:/paper-preview.sh:ro" \
+            -w /w asta-smoke bash -euc '
+              git config --global --add safe.directory /w
+              bash /paper-preview.sh "$1" paper
+            ' _ "$base"
+          test -s "$preview/_site/paper-previews/paper/what-changed.pdf"
+          test ! -e "$preview/_site/paper-previews/paper/html"
+          grep -q '"diff":true' "$preview/_site/paper-previews/paper/preview.json"
