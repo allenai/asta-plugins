@@ -3,7 +3,7 @@
 _site/
 quarto-render.*
 
-# Fetched from the pinned asta-plugins commit; see workspace-assets in Makefile.
+# A committed symlink loads the evidence extension from this checkout.
 _extensions/evidence/
 !_extensions/evidence
 
@@ -14,7 +14,6 @@ paper/*.fdb_latexmk
 paper/*.synctex.gz
 # The paper preview's temporary latexdiff source.
 paper/what-changed.tex
-
 
 /.quarto/
 

@@ -19,8 +19,8 @@ bibliography: references.bib
 metadata-files:
   - evidence.yml
 
-# Hover-viewable supporting quotes for claims. `make workspace-assets` fetches
-# this extension from asta-plugins before rendering; it is not vendored here.
+# Hover-viewable supporting quotes use this checkout's evidence extension
+# through the committed _extensions/evidence symlink.
 # The filter is a no-op when a document has no `.ev` spans.
 filters:
   - _extensions/evidence/snippet.lua

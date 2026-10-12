@@ -1,4 +1,4 @@
-"""Exercise release failure reporting without GitHub writes."""
+"""Exercise release deployment selection and reporting without GitHub writes."""
 
 import json
 import os
@@ -6,16 +6,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-REPORT = yaml.safe_load((ROOT / ".github/workflows/example-workspace.yml").read_text())[
-    "jobs"
-]["report"]["steps"][0]["run"]
+WORKFLOW = yaml.safe_load(
+    (ROOT / ".github/workflows/example-workspace.yml").read_text()
+)
+REPORT = WORKFLOW["jobs"]["report"]["steps"][0]["run"]
+RELEASE = WORKFLOW["jobs"]["deploy"]["steps"][0]["run"]
 TITLE = "Example workspace failed to build for v0.109.0"
 
 
-def reporter(tmp_path, issues=(), *, lookup_fails=False):
+def reporter(
+    tmp_path, issues=(), *, lookup_fails=False, build="failure", deploy="skipped"
+):
     state = tmp_path / "issues.json"
     state.write_text(json.dumps(list(issues)))
     log = tmp_path / "calls.jsonl"
@@ -53,6 +58,8 @@ elif args[:2] != ["issue", "comment"]:
         "TEST_LOG": str(log),
         "TEST_ISSUES": str(state),
         "LOOKUP_FAILS": "1" if lookup_fails else "0",
+        "BUILD_RESULT": build,
+        "DEPLOY_RESULT": deploy,
     }
 
     def run(attempt):
@@ -67,7 +74,11 @@ elif args[:2] != ["issue", "comment"]:
         )
 
     def calls():
-        return [json.loads(line) for line in log.read_text().splitlines()]
+        return (
+            [json.loads(line) for line in log.read_text().splitlines()]
+            if log.exists()
+            else []
+        )
 
     return run, calls
 
@@ -101,3 +112,104 @@ def test_failed_lookup_does_not_create_a_duplicate_issue(tmp_path):
     run, calls = reporter(tmp_path, lookup_fails=True)
     assert run(127).returncode != 0
     assert [call[1] for call in calls()] == ["list"]
+
+
+def test_build_failure_preserves_any_existing_site(tmp_path):
+    run, calls = reporter(tmp_path)
+    assert run(128).returncode == 0
+    body = calls()[-1][-1]
+    assert "deployment was not attempted" in body
+    assert "Any previously published demo is unchanged" in body
+
+
+def test_deployment_failure_does_not_claim_the_live_site_is_unchanged(tmp_path):
+    run, calls = reporter(tmp_path, build="success", deploy="failure")
+    assert run(129).returncode == 0
+    body = calls()[-1][-1]
+    assert "deployment failed after a successful build" in body
+    assert "live site's state is unconfirmed" in body
+    assert "unchanged" not in body
+    assert "failed to build" not in body
+
+
+def test_successful_or_superseded_release_does_not_open_an_issue(tmp_path):
+    run, calls = reporter(tmp_path, build="success", deploy="success")
+    assert run(130).returncode == 0
+    assert calls() == []
+
+
+def release_gate(tmp_path, ref, pages, *, lookup_fails=False):
+    gh = tmp_path / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\n"
+        + """import json, os, sys
+assert sys.argv[1:] == ["api", "--paginate", "--slurp", "repos/allenai/asta-plugins/tags?per_page=100"]
+if os.environ["LOOKUP_FAILS"] == "1":
+    sys.exit(22)
+print(os.environ["TEST_TAG_PAGES"])
+"""
+    )
+    gh.chmod(0o755)
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-c", RELEASE],
+        cwd=tmp_path,
+        env={
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "allenai/asta-plugins",
+            "GITHUB_OUTPUT": str(output),
+            "REF": ref,
+            "TEST_TAG_PAGES": json.dumps(
+                [[{"name": tag} for tag in page] for page in pages]
+            ),
+            "LOOKUP_FAILS": "1" if lookup_fails else "0",
+        },
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    return result, output.read_text() if output.exists() else ""
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [("v0.9.0", "false"), ("v0.10.0", "true"), ("v0.11.0-rc.1", "false")],
+)
+def test_only_the_newest_final_tag_deploys_even_when_older_build_finishes_last(
+    tmp_path, ref, expected
+):
+    result, output = release_gate(
+        tmp_path, ref, [["v0.11.0-rc.1", "latest", "v0.9.0"], ["v0.10.0"]]
+    )
+    assert result.returncode == 0, result.stderr
+    assert output == f"current={expected}\n"
+
+
+@pytest.mark.parametrize("pages", [[], [["latest", "v0.11.0-rc.1"]]])
+def test_no_final_tags_fails_closed(tmp_path, pages):
+    result, output = release_gate(tmp_path, "v0.10.0", pages)
+    assert result.returncode != 0
+    assert output == ""
+
+
+def test_unreadable_tags_fail_closed(tmp_path):
+    result, output = release_gate(tmp_path, "v0.10.0", [["v0.10.0"]], lookup_fails=True)
+    assert result.returncode != 0
+    assert output == ""
+
+
+def test_release_selection_runs_under_the_shared_pages_lock():
+    deploy = WORKFLOW["jobs"]["deploy"]
+    assert deploy["concurrency"] == {
+        "group": "pages",
+        "cancel-in-progress": False,
+        "queue": "max",
+    }
+    assert deploy["steps"][0]["id"] == "release"
+    assert deploy["steps"][1]["if"] == "steps.release.outputs.current == 'true'"
+
+
+def test_shared_asset_changes_trigger_the_example_check():
+    # PyYAML's YAML 1.1 loader interprets the GitHub Actions key 'on' as True.
+    paths = WORKFLOW[True]["pull_request"]["paths"]
+    assert "plugins/asta-tools/skills/workspace/assets/**" in paths

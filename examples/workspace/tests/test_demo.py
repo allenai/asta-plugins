@@ -28,11 +28,25 @@ class DemoTests(unittest.TestCase):
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes((ROOT / name).read_bytes())
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "add",
+                    "evidence.yml",
+                    "lit-review/index.qmd",
+                    "paper/main.tex",
+                    "references.bib",
+                ],
+                cwd=root,
+                check=True,
+            )
             subprocess.run(
                 [
                     "git",
                     "apply",
                     "--check",
+                    "--3way",
                     str(ROOT / "scripts/demo-edits.patch"),
                 ],
                 cwd=root,

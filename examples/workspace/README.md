@@ -17,3 +17,13 @@ A small example workspace for the [Asta workspace skill](../../plugins/asta-tool
 ## Getting a LaTeX PDF
 
 The Quarto review can be rendered to PDF or `.tex` on demand with `quarto render`. The committed `paper/main.tex` gets a PDF, an HTML view and diffs in the preview. Both reuse `references.bib`.
+
+## Release deployment setup
+
+A repository administrator must enable **Settings → Pages → Source: GitHub Actions**. In **Settings → Environments → github-pages**, select **Selected branches and tags**, then add a **Tag** rule for `v*`. Keep any required approvals; a branch-only rule does not authorize release-tag deployments. See GitHub's [deployment branch and tag rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#deployment-branches-and-tags).
+
+This example owns the repository's Pages site root. Pages was disabled when this workflow was added, and there was no existing site publisher. The reusable `workspace-quarto-site.yml` serves caller repositories, not this repository. Before enabling another publisher here, combine its content with this site instead of replacing the root independently.
+
+Only the newest final `vX.Y.Z` tag can deploy. Deployment jobs share the `pages` concurrency group and recheck remote tags after acquiring the lock, so a late older build cannot replace a newer demo. The [deployment queue](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#example-queueing-multiple-pending-runs) retains pending jobs instead of letting an older build cancel a queued newer one. Prerelease tags are excluded. A failed build never attempts deployment and preserves any existing site; a failed deployment requires checking the live site before retrying. Each release tag reuses one failure issue.
+
+Local demo tests need Python 3.11 or newer, matching the Asta package requirement and published TeX image.
