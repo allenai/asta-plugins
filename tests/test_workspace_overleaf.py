@@ -1534,6 +1534,119 @@ def test_pull_fetches_publication_source_from_reviewed_history(setup, missing):
     assert (fetch_head.read_bytes() if fetch_head.exists() else None) == before_fetch
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("followup", [False, True])
+@pytest.mark.parametrize("local_edit", [None, "separate-line", "same-line"])
+def test_pull_into_older_checkout_imports_published_edits(setup, followup, local_edit):
+    seed, project = setup
+    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\nfour\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    stale = project.parent / "stale"
+    git(
+        project.parent,
+        "clone",
+        "--no-local",
+        git(project, "remote", "get-url", "origin"),
+        str(stale),
+    )
+    if local_edit:
+        (stale / "paper/main.tex").write_text(
+            "one\ntwo\nthree\nFOUR\n"
+            if local_edit == "separate-line"
+            else "local\ntwo\nthree\nfour\n"
+        )
+        commit_all(stale)
+    (project / "paper/main.tex").write_text("published\ntwo\nthree\nfour\n")
+    (project / "paper/added.tex").write_text("published addition\n")
+    git(project, "rm", "paper/old.tex")
+    commit_all(project)
+    source = git(project, "rev-parse", "HEAD")
+    assert run(project, "publish").exit_code == 0
+    if followup:
+        overleaf_edit(seed, "references.bib", "@misc{followup}\n")
+    remote_head = git(seed, "ls-remote", "origin", "master").split()[0]
+    before_refs = git(stale, "show-ref")
+    assert (
+        subprocess.run(
+            ["git", "cat-file", "-e", source], cwd=stale, capture_output=True
+        ).returncode
+        != 0
+    )
+
+    result = run(stale, "pull")
+
+    assert result.exit_code == 0, result.output
+    content = (stale / "paper/main.tex").read_text()
+    if local_edit == "same-line":
+        assert "same lines" in result.output
+        assert (
+            content
+            == "<<<<<<< workspace\nlocal\n=======\npublished\n>>>>>>> overleaf\ntwo\nthree\nfour\n"
+        )
+    else:
+        assert "same lines" not in result.output
+        assert content == (
+            "published\ntwo\nthree\nFOUR\n"
+            if local_edit
+            else "published\ntwo\nthree\nfour\n"
+        )
+    assert (stale / "paper/added.tex").read_text() == "published addition\n"
+    assert not (stale / "paper/old.tex").exists()
+    assert (stale / "paper/references.bib").read_bytes() == (
+        b"@misc{followup}\n"
+        if followup
+        else (project / "paper/references.bib").read_bytes()
+    )
+    assert (
+        json.loads((stale / "paper/overleaf.json").read_text())["base"] == remote_head
+    )
+    assert git(stale, "diff", "--", "paper/main.tex")
+    assert git(stale, "show-ref") == before_refs
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_pull_skips_unseen_publication_and_uses_previous_local_publication(setup):
+    seed, project = setup
+    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\nfour\n")
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("ONE\ntwo\nthree\nfour\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    first = git(project, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_text("ONE\ntwo\nthree\nFOUR\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    git(project, "switch", "-q", "-c", "older-checkout", first)
+    (project / "paper/main.tex").write_text("ONE\nTWO\nthree\nfour\n")
+    commit_all(project)
+
+    result = run(project, "pull")
+
+    assert result.exit_code == 0, result.output
+    assert "same lines" not in result.output
+    assert (project / "paper/main.tex").read_text() == "ONE\nTWO\nthree\nFOUR\n"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_pull_preserves_local_revert_of_ancestor_publication(setup):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    original = (project / "paper/main.tex").read_bytes()
+    (project / "paper/main.tex").write_text("published edit\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    (project / "paper/main.tex").write_bytes(original)
+    commit_all(project)
+
+    result = run(project, "pull")
+
+    assert result.exit_code == 0, result.output
+    assert "same lines" not in result.output
+    assert (project / "paper/main.tex").read_bytes() == original
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_unmerged_publication_marker_does_not_bypass_review(setup, command):
     seed, project = setup

@@ -514,6 +514,7 @@ def last_sync(
     root: Path,
     prefix: str,
     reviewed: str | None = None,
+    local: dict[str, bytes] | None = None,
 ) -> str:
     """Newest Overleaf commit since `base` whose files match a published workspace commit.
 
@@ -552,6 +553,12 @@ def last_sync(
             published = read_plain_files(root, source, prefix)
             published.pop(CONFIG, None)
             if published == read_plain_files(repo, commit):
+                if local is not None and local != published:
+                    # Pull must not skip published edits absent from this checkout.
+                    try:
+                        git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
+                    except click.ClickException:
+                        continue
                 return commit
     return base
 
@@ -599,15 +606,18 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     "Reset remote history is unsupported; nothing copied. "
                     "Import into a separate directory with --dir."
                 ) from None
+        committed = read_plain_files(root, "HEAD", prefix)
+        ours = committed.copy()
+        ours.pop(CONFIG, None)
         base = (
-            read_plain_files(repo, last_sync(repo, head, config["base"], root, prefix))
+            read_plain_files(
+                repo,
+                last_sync(repo, head, config["base"], root, prefix, local=ours),
+            )
             if config
             else {}
         )
         base.pop(CONFIG, None)
-        committed = read_plain_files(root, "HEAD", prefix)
-        ours = committed.copy()
-        ours.pop(CONFIG, None)
         deleted = (base.keys() - new.keys()) & ours.keys()
         check_paths([CONFIG, *new, *(ours.keys() - new.keys() - deleted)])
         conflicted = []
