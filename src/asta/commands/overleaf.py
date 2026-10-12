@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -446,7 +446,9 @@ def write_files(contents: dict[str, bytes], dest: Path) -> None:
         target.write_bytes(data)
 
 
-MARKER = re.compile(rb"^(<<<<<<<|>>>>>>>) ", re.M)
+MARKER = re.compile(
+    rb"^(?:<<<<<<< workspace|\|{7} last sync|>>>>>>> overleaf)\r?$", re.M
+)
 PUBLISH_MESSAGE = re.compile(
     r"^Publish workspace commit ([0-9a-f]{7,40}|[0-9a-f]{64})$"
 )
@@ -499,32 +501,58 @@ def merge_text(
             capture_output=True,
         )
     if result.returncode < 0 or result.returncode > 127:
-        return None, False
+        raise click.ClickException(
+            f"git merge-file failed (exit {result.returncode}); nothing copied."
+        )
     return result.stdout, result.returncode == 0
 
 
-def last_sync(repo: Path, head: str, base: str, root: Path, prefix: str) -> str:
+def last_sync(
+    repo: Path,
+    head: str,
+    base: str,
+    root: Path,
+    prefix: str,
+    reviewed: str | None = None,
+) -> str:
     """Newest Overleaf commit since `base` whose files match a published workspace commit.
 
     Publish records nothing in the workspace; its Overleaf commit names the workspace
     commit it sent, and counts as a sync point only if the content still matches it.
     """
+    try:
+        git("cat-file", "-e", f"{base}^{{commit}}", cwd=repo)
+        git("merge-base", "--is-ancestor", base, head, cwd=repo)
+    except click.ClickException:
+        raise click.ClickException(
+            "Overleaf history no longer continues from the recorded commit. "
+            "Reset remote history is unsupported; nothing synced. "
+            "Import into a separate directory with --dir."
+        ) from None
     commits = git("rev-list", "--first-parent", f"{base}..{head}", cwd=repo).split()
-    for commit in commits:
-        message = git("log", "-1", "--format=%s", commit, cwd=repo)
-        match = PUBLISH_MESSAGE.match(message)
-        if not match:
-            continue
-        try:
-            source = git(
-                "rev-parse", "--verify", "-q", f"{match.group(1)}^{{commit}}", cwd=root
-            )
-        except click.ClickException:
-            continue
-        published = read_plain_files(root, source, prefix)
-        published.pop(CONFIG, None)
-        if published == read_plain_files(repo, commit):
-            return commit
+    with ExitStack() as stack:
+        for commit in commits:
+            message = git("log", "-1", "--format=%s", commit, cwd=repo)
+            match = PUBLISH_MESSAGE.match(message)
+            if not match:
+                continue
+            if reviewed is None:
+                reviewed = stack.enter_context(default_branch(root))
+            try:
+                source = git(
+                    "rev-parse",
+                    "--verify",
+                    "-q",
+                    f"{match.group(1)}^{{commit}}",
+                    cwd=root,
+                )
+                git("merge-base", "--is-ancestor", source, reviewed, cwd=root)
+            except click.ClickException:
+                continue
+            published = read_plain_files(root, source, prefix)
+            published.pop(CONFIG, None)
+            if published == read_plain_files(repo, commit):
+                return commit
     return base
 
 
@@ -658,10 +686,9 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         )
 
 
-def matches_default_branch(root: Path, prefix: str) -> str | None:
-    """The tip of `origin`'s default branch if its paper equals the committed paper."""
-    # Merging is the review gate. Comparing against the tip, not ancestry, also keeps an
-    # older checkout from republishing content a later reviewed change removed.
+@contextmanager
+def default_branch(root: Path):
+    """Fetch the reviewed history without changing workspace branch refs or FETCH_HEAD."""
     gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
     try:
         try:
@@ -670,12 +697,18 @@ def matches_default_branch(root: Path, prefix: str) -> str | None:
             if not match:
                 raise click.ClickException("no default branch")
             ref = f"refs/heads/{match.group(1)}"
+            depth = (
+                ["--unshallow"]
+                if git("rev-parse", "--is-shallow-repository", cwd=root) == "true"
+                else []
+            )
             git(
                 "fetch",
                 "-q",
                 "--no-tags",
                 "--no-write-fetch-head",
                 "--refmap=",
+                *depth,
                 "origin",
                 f"{ref}:{gate}",
                 cwd=root,
@@ -683,13 +716,22 @@ def matches_default_branch(root: Path, prefix: str) -> str | None:
         except click.ClickException:
             raise click.ClickException(
                 "Could not read the default branch of the workspace's `origin` remote; "
-                "nothing pushed. Publish from a clone of the reviewed repository."
+                "nothing synced. Sync from a clone of the reviewed repository."
             ) from None
-        if tree(root, gate, prefix) != tree(root, "HEAD", prefix):
-            return None
-        return git("rev-parse", gate, cwd=root)
+        yield git("rev-parse", gate, cwd=root)
     finally:
         git("update-ref", "-d", gate, cwd=root)
+
+
+def matches_default_branch(root: Path, prefix: str) -> str | None:
+    """The tip of `origin`'s default branch if its paper equals the committed paper."""
+    # Comparing the tip also prevents republishing content a later reviewed edit removed.
+    with default_branch(root) as reviewed:
+        return (
+            reviewed
+            if tree(root, reviewed, prefix) == tree(root, "HEAD", prefix)
+            else None
+        )
 
 
 @overleaf.command()
@@ -739,72 +781,92 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         "The paper differs from the latest commit on origin's default branch. Merge "
         "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
-    reviewed = matches_default_branch(root, prefix)
-    if not reviewed:
-        if not dry_run:
-            raise click.ClickException(f"{unmerged}; nothing pushed.")
-        click.echo(f"{unmerged}; publish will refuse until then.")
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp) / "overleaf"
-        head = clone(config["url"], repo)
-        if last_sync(repo, head, config["base"], root, prefix) != head:
-            raise click.ClickException(
-                "Overleaf has changed since the last sync. Run "
-                "`asta workspace overleaf pull`, review those edits in a PR, then publish."
-            )
-        marked = sorted(name for name, data in ours.items() if MARKER.search(data))
-        if marked:
-            raise click.ClickException(
-                "Unresolved conflict markers in: "
-                + ", ".join(marked)
-                + "; nothing pushed."
-            )
-        write_files(ours, repo)
-        git("add", "-A", "-f", cwd=repo)
-        if read_plain_files(repo, git("write-tree", cwd=repo)) != ours:
-            raise click.ClickException(
-                "Git conversions changed the exported files; nothing pushed. "
-                "Content-changing Git filters and conversions are unsupported."
-            )
-        changes = git("status", "--short", cwd=repo)
-        if not changes:
-            click.echo("Overleaf already matches the committed paper.")
-            return
-        click.echo(changes)
-        identity_result = subprocess.run(
-            ["git", "var", "GIT_COMMITTER_IDENT"],
-            cwd=root,
-            env=git_environment(),
-            capture_output=True,
+    with default_branch(root) as default:
+        reviewed = (
+            default
+            if tree(root, default, prefix) == tree(root, "HEAD", prefix)
+            else None
         )
-        if identity_result.returncode:
-            raise click.ClickException(
-                "Configure Git user.name and user.email in the workspace before publishing."
+        if not reviewed:
+            if not dry_run:
+                raise click.ClickException(f"{unmerged}; nothing pushed.")
+            click.echo(f"{unmerged}; publish will refuse until then.")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "overleaf"
+            head = clone(config["url"], repo)
+            if (
+                last_sync(repo, head, config["base"], root, prefix, reviewed=default)
+                != head
+            ):
+                raise click.ClickException(
+                    "Overleaf has changed since the last sync. Run "
+                    "`asta workspace overleaf pull`, review those edits in a PR, then publish."
+                )
+            marked = sorted(
+                name
+                for name, data in ours.items()
+                if Path(name).suffix.lower() in MERGE_SUFFIXES
+                and b"\0" not in data
+                and MARKER.search(data)
             )
-        try:
-            ident = os.fsdecode(identity_result.stdout).rsplit(" ", 2)[0]
-            name, email = ident.rsplit(" <", 1)
-            email = email.removesuffix(">")
-        except ValueError:
-            raise click.ClickException(
-                "Could not read the workspace's Git identity; check user.name and user.email."
-            ) from None
-        if dry_run:
-            click.echo(
-                "Dry run: nothing pushed; commit hooks and signing were not run."
+            if marked:
+                raise click.ClickException(
+                    "Unresolved conflict markers in: "
+                    + ", ".join(marked)
+                    + "; nothing pushed."
+                )
+            write_files(ours, repo)
+            git("add", "-A", "-f", cwd=repo)
+            if read_plain_files(repo, git("write-tree", cwd=repo)) != ours:
+                raise click.ClickException(
+                    "Git conversions changed the exported files; nothing pushed. "
+                    "Content-changing Git filters and conversions are unsupported."
+                )
+            changes = git("status", "--short", cwd=repo)
+            if not changes:
+                click.echo("Overleaf already matches the committed paper.")
+                return
+            click.echo(changes)
+            identity_result = subprocess.run(
+                ["git", "var", "GIT_COMMITTER_IDENT"],
+                cwd=root,
+                env=git_environment(),
+                capture_output=True,
             )
-            return
-        identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
-        # Later syncs recognize this commit as a sync point by the reviewed commit it names.
-        message = (
-            f"Publish workspace commit {reviewed or git('rev-parse', 'HEAD', cwd=root)}"
-        )
-        git(*identity, *commit_settings(root), "commit", "-q", "-m", message, cwd=repo)
-        if read_plain_files(repo, "HEAD") != ours:
-            raise click.ClickException(
-                "Git configuration or hooks changed the exported files; nothing pushed. "
-                "Content-changing Git filters and conversions are unsupported."
+            if identity_result.returncode:
+                raise click.ClickException(
+                    "Configure Git user.name and user.email in the workspace before publishing."
+                )
+            try:
+                ident = os.fsdecode(identity_result.stdout).rsplit(" ", 2)[0]
+                name, email = ident.rsplit(" <", 1)
+                email = email.removesuffix(">")
+            except ValueError:
+                raise click.ClickException(
+                    "Could not read the workspace's Git identity; check user.name and user.email."
+                ) from None
+            if dry_run:
+                click.echo(
+                    "Dry run: nothing pushed; commit hooks and signing were not run."
+                )
+                return
+            identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
+            # Later syncs recognize this commit as a sync point by the reviewed commit it names.
+            message = f"Publish workspace commit {reviewed or git('rev-parse', 'HEAD', cwd=root)}"
+            git(
+                *identity,
+                *commit_settings(root),
+                "commit",
+                "-q",
+                "-m",
+                message,
+                cwd=repo,
             )
-        push(repo, root)
-        published = git("rev-parse", "HEAD", cwd=repo)
+            if read_plain_files(repo, "HEAD") != ours:
+                raise click.ClickException(
+                    "Git configuration or hooks changed the exported files; nothing pushed. "
+                    "Content-changing Git filters and conversions are unsupported."
+                )
+            push(repo, root)
+            published = git("rev-parse", "HEAD", cwd=repo)
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
