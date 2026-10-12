@@ -79,6 +79,19 @@ jobs:
           REF: ${{ inputs.ref-name }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create --repo "$GITHUB_REPOSITORY" \
-            --title "Example workspace failed to build for $REF" \
-            --body "The post-release example build failed; the previous demo is still published. Run: $RUN"
+          set -euo pipefail
+          title="Example workspace failed to build for $REF"
+          body="The post-release example build failed; the previous demo is still published. Run: $RUN"
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+            --search "\"$title\" in:title" --limit 100 --json number,title,state \
+            | jq -r --arg title "$title" \
+              '[.[] | select(.title == $title)] | first // empty | [.number, .state] | @tsv')
+          if [ -n "$issue" ]; then
+            read -r number state <<< "$issue"
+            if [ "$state" = CLOSED ]; then
+              gh issue reopen "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

@@ -16,6 +16,29 @@ spec.loader.exec_module(demo)
 
 
 class DemoTests(unittest.TestCase):
+    def test_fixed_edit_patch_applies_to_the_example_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in (
+                "evidence.yml",
+                "lit-review/index.qmd",
+                "paper/main.tex",
+                "references.bib",
+            ):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / name).read_bytes())
+            subprocess.run(
+                [
+                    "git",
+                    "apply",
+                    "--check",
+                    str(ROOT / "scripts/demo-edits.patch"),
+                ],
+                cwd=root,
+                check=True,
+            )
+
     def test_outside_a_git_checkout_fails_before_creating_a_demo(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
