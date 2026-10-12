@@ -3,8 +3,9 @@ from pathlib import Path
 
 import yaml
 
-WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
-ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github/workflows/workspace-quarto-site.yml"
+ASSETS = ROOT / "plugins/asta-tools/skills/workspace/assets"
 RULESETS = ASSETS / "rulesets"
 
 
@@ -15,13 +16,32 @@ def _load(name: str) -> dict:
 def _check_context(job: str) -> str:
     """The context GitHub reports for a reusable-workflow job: `<caller job> / <job name>`."""
     stub = yaml.load((ASSETS / "docs.yml").read_text(), Loader=yaml.BaseLoader)
-    (caller_id,) = stub["jobs"]
-    caller = stub["jobs"][caller_id].get("name", caller_id)
+    callers = [
+        (job_id, config)
+        for job_id, config in stub["jobs"].items()
+        if config.get("uses", "").startswith(
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
+        )
+    ]
+    assert len(callers) == 1, "Expected one caller of workspace-quarto-site.yml"
+    caller_id, caller_job = callers[0]
+    caller = caller_job.get("name", caller_id)
     jobs = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)["jobs"]
+    for job_id, config in ((caller_id, caller_job), (job, jobs[job])):
+        assert "strategy" not in config, (
+            f"{job_id}: matrix check names need ruleset updates"
+        )
+        assert "${{" not in config.get("name", job_id), (
+            f"{job_id}: dynamic check names need ruleset updates"
+        )
     return f"{caller} / {jobs[job].get('name', job)}"
 
 
 def test_rulesets_target_the_default_branch():
+    assert {path.name for path in RULESETS.glob("*.json")} == {
+        "default-branch.json",
+        "docs-checks.json",
+    }
     for path in RULESETS.glob("*.json"):
         ruleset = json.loads(path.read_text())
         assert ruleset["target"] == "branch", path
