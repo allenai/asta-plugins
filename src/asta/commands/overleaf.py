@@ -504,9 +504,8 @@ def merge_text(
         result = subprocess.run(
             [
                 "git",
-                "-c",
-                "merge.conflictStyle=merge",
                 "merge-file",
+                "--no-diff3",
                 "-p",
                 "-L",
                 "workspace",
