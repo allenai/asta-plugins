@@ -65,3 +65,11 @@ def test_docs_checks_require_github_actions_source():
     (rule,) = _load("docs-checks.json")["rules"]
     checks = rule["parameters"]["required_status_checks"]
     assert all(check.get("integration_id") == 15368 for check in checks)
+
+
+def test_pages_asset_serves_gh_pages_root():
+    pages = json.loads((ASSETS / "github-pages.json").read_text())
+    assert pages == {
+        "build_type": "legacy",
+        "source": {"branch": "gh-pages", "path": "/"},
+    }
