@@ -92,7 +92,15 @@ def git_bytes(
             raise click.ClickException(
                 "Overleaf access denied. Check your token and access to this project."
             )
-        if operation == "push" and (b"rejected" in stderr or b"fetch first" in stderr):
+        if operation == "push" and (
+            b"fetch first" in stderr or b"non-fast-forward" in stderr
+        ):
+            raise click.ClickException(
+                "Overleaf changed while publishing; nothing pushed. "
+                "Run `asta workspace overleaf pull`, review the changes in a PR, "
+                "then publish again."
+            )
+        if operation == "push" and b"rejected" in stderr:
             raise click.ClickException(
                 f"git {operation} was rejected. Check access and the remote state."
             )
@@ -457,6 +465,8 @@ MERGE_SUFFIXES = {
     ".ltx",
     ".bib",
     ".bst",
+    ".bbx",
+    ".cbx",
     ".sty",
     ".cls",
     ".clo",
@@ -464,9 +474,16 @@ MERGE_SUFFIXES = {
     ".cfg",
     ".dtx",
     ".ins",
+    ".tikz",
+    ".pgf",
+    ".csv",
+    ".tsv",
+    ".dat",
     ".txt",
     ".md",
 }
+# Distinct from the exit status 1 used for errors, so callers can detect conflicts.
+CONFLICT_EXIT = 3
 
 
 def merge_text(
@@ -694,6 +711,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             + ". Resolve the conflict markers in the PR; publish refuses files that still have them.",
             err=True,
         )
+        sys.exit(CONFLICT_EXIT)
 
 
 @contextmanager

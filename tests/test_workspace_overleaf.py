@@ -15,6 +15,7 @@ from click.testing import CliRunner
 from asta.cli import cli
 
 module = importlib.import_module("asta.commands.overleaf")
+CONFLICT_EXIT = module.CONFLICT_EXIT
 URL = "https://git.overleaf.com/1234567"
 
 
@@ -980,7 +981,7 @@ def test_pull_keeps_committed_workspace_edits_on_conflict(setup, remote_text):
         assert (project / "paper/overleaf.json").read_bytes() == before
         assert not git(project, "status", "--porcelain")
         return
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == CONFLICT_EXIT, result.output
     merged = (project / "paper/main.tex").read_text()
     assert "<<<<<<< workspace\nreviewed workspace edit\n" in merged
     assert "remote edit\n>>>>>>> overleaf\n" in merged
@@ -1361,7 +1362,7 @@ def test_bibliography_overlapping_edits_get_conflict_markers(setup):
     commit_all(project)
     overleaf_edit(seed, "references.bib", "@misc{collaborator}\n")
     result = run(project, "pull")
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == CONFLICT_EXIT, result.output
     assert "same lines in: references.bib" in result.output
     merged = (project / "paper/references.bib").read_text()
     assert "<<<<<<< workspace\n@misc{workspace_edit}\n" in merged
@@ -1393,7 +1394,7 @@ def test_pull_merges_non_overlapping_edits(setup, name):
         ("figure.eps", "%!PS-Adobe-3.0\n"),
         ("figure.svg", "<svg>\n"),
         ("figure.png", ""),
-        ("figure.dat", ""),
+        ("figure.xlsx", ""),
         ("main.tex", "\0"),
     ],
 )
@@ -1577,15 +1578,16 @@ def test_pull_into_older_checkout_imports_published_edits(setup, followup, local
 
     result = run(stale, "pull")
 
-    assert result.exit_code == 0, result.output
     content = (stale / "paper/main.tex").read_text()
     if local_edit == "same-line":
+        assert result.exit_code == CONFLICT_EXIT, result.output
         assert "same lines" in result.output
         assert (
             content
             == "<<<<<<< workspace\nlocal\n=======\npublished\n>>>>>>> overleaf\ntwo\nthree\nfour\n"
         )
     else:
+        assert result.exit_code == 0, result.output
         assert "same lines" not in result.output
         assert content == (
             "published\ntwo\nthree\nFOUR\n"
@@ -2601,3 +2603,36 @@ def test_workspace_missing_credentials_fail_without_terminal(tmp_path, monkeypat
     )
     assert result.returncode != 0
     assert b"terminal prompts disabled" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["fig.tikz", "fig.pgf", "data.csv", "data.tsv", "data.dat", "a.bbx", "a.cbx"],
+)
+def test_figure_and_data_sources_merge_line_by_line(setup, name):
+    seed, project = setup
+    overleaf_edit(seed, name, "one\ntwo\nthree\nfour\n")
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper" / name).write_text("ONE\ntwo\nthree\nfour\n")
+    commit_all(project)
+    overleaf_edit(seed, name, "one\ntwo\nthree\nFOUR\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper" / name).read_text() == "ONE\ntwo\nthree\nFOUR\n"
+
+
+def test_publish_reports_overleaf_race(setup, monkeypatch):
+    _, project = setup
+    stderr = b" ! [rejected] HEAD -> master (fetch first)"
+    monkeypatch.setattr(
+        module,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", stderr)
+        ),
+    )
+    with pytest.raises(module.click.ClickException) as error:
+        module.git_bytes("push", cwd=project)
+    assert "Overleaf changed while publishing" in str(error.value)
+    assert "overleaf pull" in str(error.value)
