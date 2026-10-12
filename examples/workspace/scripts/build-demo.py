@@ -45,7 +45,7 @@ def build(site):
                 "git",
                 "apply",
                 "--index",
-                f"--directory={project}",
+                *([f"--directory={project}"] if project != Path(".") else []),
                 str(ROOT / "scripts/demo-edits.patch"),
                 cwd=edited,
             )
