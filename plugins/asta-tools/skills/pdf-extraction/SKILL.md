@@ -1,314 +1,173 @@
 ---
 name: pdf-extraction
-description: Extract text from PDFs using olmOCR or remote OCR. Use when user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
+description: Extract text from PDFs using the Asta remote OCR API. Use when the user asks to "extract text from PDF", "OCR a document", "read a PDF", or needs to process scanned documents.
 allowed-tools: Bash(asta pdf-extraction *) Read(.asta/documents/*) Write(.asta/documents/*) Read(*/markdown/*) Bash(mv *) Bash(cp *)
 ---
 
 # PDF Text Extraction
 
-Extract high-quality text from PDFs using two OCR engines:
-
-- **`asta pdf-extraction olmocr`** — cloud-based extraction via [olmOCR](https://github.com/allenai/olmOCR) (best for large batches, S3, and complex layouts)
-- **`asta pdf-extraction remote`** — quick single-file extraction via the Asta remote OCR API
+Extract text from a local PDF with the Asta remote OCR API. The command returns
+markdown that preserves document structure, headings, formatting, tables, lists,
+and emphasis.
 
 ## Quick Start
-
-### olmocr (cloud batch extraction)
-
-```bash
-# Extract text from a PDF using a temporary workspace
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs document.pdf \
-  --markdown
-
-# Output will be in $TEMP_WORKSPACE/markdown/document.md
-
-# Batch extract text from all PDFs in a directory
-TEMP_WORKSPACE=$(mktemp -d)
-find /path/to/pdfs -name "*.pdf" > "$TEMP_WORKSPACE/pdf-list.txt"
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs "$TEMP_WORKSPACE/pdf-list.txt" \
-  --markdown
-
-# Batch extract text from PDFs stored in S3
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs s3://my-bucket/prefix/*.pdf \
-  --markdown
-```
-
-**Key arguments:**
-- `<workspace>` - Output directory (required: positional argument)
-- `--pdfs` - PDF file(s) to process (required: single path, path with wildcard, S3 path with wildcard, or a text file with paths)
-- `--markdown` - Generate markdown output (recommended)
-- `--workers` - Parallel workers (default: 20)
-
-### remote (single-file extraction)
 
 ```bash
 # Print extracted markdown to stdout
 asta pdf-extraction remote paper.pdf
 
-# Save to a file
+# Save extracted markdown to a file
 asta pdf-extraction remote paper.pdf -o paper.md
 
-# Process a large PDF in steps (pages 0-49, then 50-99, etc.)
-asta pdf-extraction remote paper.pdf --start-page 0  --max-pages 50 -o paper-part1.md
-asta pdf-extraction remote paper.pdf --start-page 50 --max-pages 50 -o paper-part2.md
+# Extract the first 50 pages
+asta pdf-extraction remote paper.pdf \
+  --start-page 0 \
+  --max-pages 50 \
+  -o paper-part-1.md
+
+# Extract pages 50-99
+asta pdf-extraction remote paper.pdf \
+  --start-page 50 \
+  --max-pages 50 \
+  -o paper-part-2.md
+
+# Extract embedded images next to the markdown file
+asta pdf-extraction remote paper.pdf -o output/paper.md --images
 ```
 
-**Key arguments:**
-- `<pdf>` - PDF file to process (required: local path)
-- `-o / --output` - Output file path (default: stdout)
-- `--start-page` - First page to process, 0-indexed (default: 0)
-- `--max-pages` - Maximum number of pages to process (default: 50)
-- `--images` - Extract and save embedded images alongside the markdown; images are saved in the same directory as the output file and referenced by filename in the markdown
+## Arguments
 
-**Requirements:** Asta login (same as `olmocr`).
+- `<pdf>`: local PDF path (required; the file must exist and be readable)
+- `-o / --output`: markdown output path (default: stdout)
+- `--start-page`: first page to process, using zero-based page numbering
+  (default: `0`)
+- `--max-pages`: maximum number of pages to process (default: `50`)
+- `--images / --no-images`: save embedded images alongside the markdown
+  (default: `--no-images`)
 
-## Workspace Best Practices
+The command requires an authenticated Asta session.
 
-### Use Temporary Workspace, Move Final Output
+## Procedure
 
-**Recommended workflow:**
+### 1. Confirm the input and output
+
+Identify the local PDF and where the user wants the markdown saved. Prefer an
+explicit `-o` path so the result is available for later work. The command
+creates missing parent directories for the output file.
+
+### 2. Choose a page range
+
+For PDFs of 50 pages or fewer, use the defaults:
 
 ```bash
-# 1. Create temporary workspace (not in .asta/documents)
-TEMP_WORKSPACE=$(mktemp -d)
-
-# 2. Extract text
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs research-paper.pdf \
-  --markdown
-
-# 3. Move final output to permanent location
-mkdir -p ~/.asta/documents/research
-mv "$TEMP_WORKSPACE/markdown/research-paper.md" ~/.asta/documents/research/
-
-# 4. Clean up temporary files
-rm -rf "$TEMP_WORKSPACE"
+asta pdf-extraction remote document.pdf -o document.md
 ```
 
-**Why use a temporary workspace?**
-- olmOCR creates several intermediate files (JSON, work queues, etc.)
-- You typically only need the final markdown output
-- Keeping .asta/documents clean with only final outputs
-- Easy cleanup of temporary files
+For longer PDFs, process consecutive ranges in separate commands. Page numbers
+are zero-based, so the second 50-page range begins at page `50`:
 
-**Where to store final outputs:**
-- `~/.asta/documents/` - For indexing with `asta documents`
-- User's project directory - For project-specific documents
-- Any location convenient for the user's workflow
+```bash
+asta pdf-extraction remote document.pdf \
+  --start-page 0 --max-pages 50 -o document-part-001.md
+asta pdf-extraction remote document.pdf \
+  --start-page 50 --max-pages 50 -o document-part-002.md
+asta pdf-extraction remote document.pdf \
+  --start-page 100 --max-pages 50 -o document-part-003.md
+```
+
+Keep the part numbers zero-padded so the files sort in page order.
+
+### 3. Extract images when needed
+
+Use `--images` when figures, diagrams, or other embedded images are important:
+
+```bash
+asta pdf-extraction remote document.pdf \
+  -o extracted/document.md \
+  --images
+```
+
+The images are saved in the output file's directory and referenced by filename
+in the markdown. Always provide `-o` with `--images`; without it, images are
+written to the current directory.
+
+### 4. Verify the result
+
+After extraction, check that:
+
+- The output file exists and is not empty.
+- The first and last requested pages are present.
+- Headings, tables, equations, and multi-column text are readable.
+- Image references resolve when `--images` was requested.
+
+If the document was processed in parts, retain the original PDF and page ranges
+with the extracted files so their order and provenance remain clear.
 
 ## Common Workflows
 
-### Extract Single PDF
+### Extract a scanned PDF
 
 ```bash
-# Create temporary workspace and extract
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs paper.pdf \
-  --markdown
-
-# Review the extracted text
-cat "$TEMP_WORKSPACE/markdown/paper.md"
-
-# Move to permanent location
-mkdir -p ~/.asta/documents/papers
-mv "$TEMP_WORKSPACE/markdown/paper.md" ~/.asta/documents/papers/
-
-# Clean up
-rm -rf "$TEMP_WORKSPACE"
+asta pdf-extraction remote scanned-document.pdf \
+  -o extracted/scanned-document.md
 ```
 
-### Extract Multiple PDFs
+### Extract only a selected range
+
+To extract pages 21-30 as displayed in a PDF viewer, start at zero-based page
+`20` and request 10 pages:
 
 ```bash
-# Process all PDFs in a directory
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs papers/*.pdf \
-  --markdown \
-  --workers 10
-
-# Move all extracted markdown files
-mkdir -p ~/.asta/documents/batch
-mv "$TEMP_WORKSPACE/markdown/"*.md ~/.asta/documents/batch/
-
-# Clean up
-rm -rf "$TEMP_WORKSPACE"
+asta pdf-extraction remote report.pdf \
+  --start-page 20 \
+  --max-pages 10 \
+  -o report-pages-21-30.md
 ```
 
-### Extract and Index in Documents
+### Extract text for an Asta document index
 
-```bash
-# 1. Extract text to temporary workspace
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs research-paper.pdf \
-  --markdown
-
-# 2. Move to documents directory
-mkdir -p ~/.asta/documents/research
-FINAL_PATH=~/.asta/documents/research/research-paper.md
-mv "$TEMP_WORKSPACE/markdown/research-paper.md" "$FINAL_PATH"
-
-# 3. Index in asta documents
-asta documents add "file://${FINAL_PATH}" \
-  --name="Research Paper (OCR)" \
-  --summary="Extracted via olmOCR" \
-  --tags="ocr,extracted,research"
-
-# 4. Clean up temporary workspace
-rm -rf "$TEMP_WORKSPACE"
-```
-
-## S3 Support
-
-olmOCR supports reading PDFs from S3 and using S3 as a workspace.
-
-### Read PDFs from S3
-
-```bash
-# Extract PDF stored in S3
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs s3://my-bucket/documents/paper.pdf \
-  --markdown
-
-# Output will be in local workspace
-cat "$TEMP_WORKSPACE/markdown/paper.md"
-```
-
-### Use S3 as Workspace
-
-```bash
-# Use S3 bucket as workspace (requires AWS credentials)
-asta pdf-extraction olmocr s3://my-bucket/ocr-workspace \
-  --pdfs document.pdf \
-  --markdown
-
-# Output will be in s3://my-bucket/ocr-workspace/markdown/document.md
-```
-
-**S3 Configuration:**
-- Requires AWS credentials configured (via `~/.aws/credentials` or environment variables)
-- Uses standard boto3 credential resolution
-- Can mix local and S3 paths (e.g., S3 PDFs to local workspace, or vice versa)
-
-## Output Structure
-
-After extraction, the workspace directory contains:
-
-```
-workspace/
-├── markdown/           # Markdown output (if --markdown used)
-│   └── document.md
-├── output/            # Raw JSON output
-│   └── document.json
-└── work_queue/        # Internal work tracking
-```
-
-The extracted text is saved as markdown, preserving:
-- Document structure
-- Headings and formatting
-- Tables (as markdown tables)
-- Lists and emphasis
-
-## Advanced Options
-
-### Control Parallelism
-
-```bash
-# Process with 50 parallel workers (faster for large batches)
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs papers/*.pdf \
-  --workers 50 \
-  --markdown
-```
-
-### Filter Documents
-
-```bash
-# Apply filters to skip non-English or form-like documents
-TEMP_WORKSPACE=$(mktemp -d)
-asta pdf-extraction olmocr "$TEMP_WORKSPACE" \
-  --pdfs documents/*.pdf \
-  --apply_filter \
-  --markdown
-```
-
-### Workspace Statistics
-
-```bash
-# View statistics about a workspace
-asta pdf-extraction olmocr ~/workspace/output --stats
-```
-
-## Performance and Cost
-
-- **Speed**: ~10-20 seconds per page (cloud GPU)
-- **Cost**: ~$0.001-0.01 per typical PDF (10-50 pages)
-- **No setup**: Works immediately, API configuration handled automatically
+Save the markdown under the user's dataset or document directory, then use the
+`asta-documents` or `local-paper-index` skill to index it. Preserve a link to
+the source PDF in the index metadata when possible.
 
 ## Troubleshooting
 
-### "workspace is required"
+### Authentication error
 
-The first argument must be a workspace directory:
+Confirm that the user is logged in to Asta, then retry the same command.
 
-```bash
-# ✓ Correct
-asta pdf-extraction olmocr ~/workspace/output --pdfs file.pdf ...
+### Remote OCR API error
 
-# ✗ Wrong (missing workspace)
-asta pdf-extraction olmocr --pdfs file.pdf ...
-```
+The command reports the HTTP status and response from the service. Verify the
+network connection and retry. If a large request repeatedly fails, reduce
+`--max-pages` and process smaller page ranges.
 
-### "Connection failed"
+### Empty or incomplete output
 
-1. Verify internet connection
-2. Check if the service is currently available
+- Confirm that `--start-page` is within the document.
+- Check whether the requested range extends beyond the final page.
+- Retry with fewer pages.
+- For image-only or unusually complex pages, inspect the corresponding page in
+  the source PDF before accepting the extraction.
 
-### "No output files"
+### Images were written to the wrong directory
 
-Check the output directories:
-- Markdown: `<workspace>/markdown/`
-- JSON: `<workspace>/output/`
-
-### S3 Access Issues
-
-1. Verify AWS credentials are configured
-2. Check bucket permissions (read for --pdfs, read/write for workspace)
-3. Ensure IAM user/role has s3:GetObject, s3:PutObject, s3:ListBucket permissions
-
-## Choosing an Engine
-
-| | `olmocr` | `remote` |
-|---|---|---|
-| Input | Local file, S3 path, or glob | Local file only |
-| Output | Files in workspace directory | Stdout or single file |
-| Batch processing | Yes (--workers) | No |
-| S3 support | Yes | No |
-| Auth required | Asta login | Asta login |
-| Best for | Large batches, complex layouts | Quick single-file extraction |
+Run the command with both `--images` and an explicit `-o` path. Images are saved
+next to the output file; if no output file is provided, they are saved in the
+current directory.
 
 ## When to Use This Skill
 
-✅ Use PDF extraction when:
-- User wants to extract text from a PDF
-- User mentions "OCR", "read PDF", "extract from document"
-- Processing scanned or image-based PDFs
-- Dealing with complex layouts (tables, multi-column, equations)
-- Need high-quality text extraction for downstream tasks
+Use PDF extraction when:
 
-❌ Don't use when:
-- User wants to process images directly (both engines are PDF-specific)
-- User needs real-time/streaming extraction
+- The user wants text or markdown extracted from a PDF.
+- The PDF is scanned or contains image-based text that requires optical
+  character recognition (OCR).
+- The document has tables, equations, multiple columns, or complex formatting.
+- Extracted text is needed for indexing or downstream analysis.
 
-## Additional Resources
+Do not use it when:
 
-- **olmOCR GitHub**: https://github.com/allenai/olmOCR
+- The input is an image rather than a PDF.
+- The user only needs paper metadata or short searchable snippets.
+- The user needs real-time or streaming extraction.

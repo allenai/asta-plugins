@@ -1,0 +1,25 @@
+#!/bin/sh
+# Keep `asta auth login` across Codespaces rebuilds: the home directory is
+# recreated on rebuild, /workspaces is not. Never deletes credentials — on a
+# conflict it leaves both copies in place and says so.
+set -eu
+[ "${CODESPACES:-}" = true ] || exit 0
+src="$HOME/.config/asta-cli"
+dest=/workspaces/.asta-auth
+warn() { echo "asta-persist-auth: $*; Asta login will not survive a rebuild" >&2; exit 0; }
+
+if [ -L "$src" ]; then
+  [ "$(readlink "$src")" = "$dest" ] && exit 0
+  warn "$src is already a symlink to $(readlink "$src")"
+fi
+[ ! -e "$src" ] || [ -d "$src" ] || warn "$src is not a directory"
+mkdir -p "$dest" "$HOME/.config"
+if [ -d "$src" ] && [ -n "$(ls -A "$src")" ]; then
+  [ -z "$(ls -A "$dest")" ] || warn "credentials exist in both $src and $dest; remove the one you don't want, then rebuild"
+  rmdir "$dest"
+  mv "$src" "$dest"
+elif [ -d "$src" ]; then
+  rmdir "$src"
+fi
+chmod 700 "$dest"
+ln -s "$dest" "$src"

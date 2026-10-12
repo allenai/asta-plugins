@@ -27,6 +27,13 @@ workflows, so it can't live with the skill. Maintain it together with
 `plugins/asta-tools/skills/workspace/` (its `assets/docs.yml` stub and
 `assets/Makefile` `check` target form one contract with it).
 
+PRs from forks and Dependabot-triggered PR runs get read-only tokens, so they
+still build and check the site but skip the preview deploy and its cleanup. A
+`No preview (fork PR)` or `No preview (Dependabot)` check explains why in a
+warning and job summary, and how to get a preview: push the changes to a branch
+in the repository and open a PR from that branch. All other events deploy as
+before.
+
 ## Development Setup
 
 Prerequisites: Python 3.11+, `uv`, `make`, and Node.js 20+ / `npx`
@@ -97,11 +104,17 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. `make push-version-tag` — verifies all three version files match, fails if the
-   tag already exists, then creates and pushes the git tag. **Pushing the tag is
-   what triggers `docker.yml`**, which builds and publishes
-   `ghcr.io/allenai/asta:<tag>` and `:latest`. Nothing further is required for the
-   image.
+5. `make push-version-tag` — verifies all three version files match and that
+   `HEAD` is on `origin/main`, then waits for the `Docker` workflow run on that
+   commit to succeed (`scripts/wait-for-main-image.sh`, needs `gh`) before it
+   creates and pushes the git tag. It exits without tagging if that run failed
+   or none exists. Every `main` push publishes run-specific candidates
+   (`ghcr.io/allenai/asta:sha-<commit>-run-<id>-attempt-<n>` and `…-tex`) and
+   smoke-tests them by digest; candidates never move `:latest`. The tag does not
+   rebuild: `docker.yml` promotes the validated candidate digests to `:<tag>` /
+   `:<tag>-tex`, and a final `vX.Y.Z` tag (not `-rc.N`) then moves `:latest` /
+   `:latest-tex` to the highest final release. Promotion reads the candidate
+   run's artifacts, so tag within the repository's artifact-retention window.
 6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
@@ -110,6 +123,19 @@ The version lives in three places:
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
+
+Paper previews use the release's `:<tag>-tex` image when the reusable workflow
+is pinned to a `v*` tag. Branch and SHA refs use mutable `:latest-tex` with a
+warning; pin a release tag when the toolchain must match the workflow release.
+The pull retries for one minute to allow tag promotion to finish, then records
+a paper-build failure without blocking the rest of the site. If promotion is
+still running or failed, retry after the release's Docker workflow succeeds.
+This reusable workflow targets GitHub.com; its `job.workflow_*` identity
+context is unavailable on GitHub Enterprise Server. Paper builds and project
+`paper-preview.sh` overrides run offline as the host UID/GID, without a passwd
+entry. Overrides must use the fetched history and local files, and must not
+fetch dependencies or require `whoami`/Git author identity. The image's only
+TeX is the full TeX Live 2026 install.
 
 ## Specific Workflows
 
