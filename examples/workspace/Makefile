@@ -47,6 +47,7 @@ demo-check:
 
 preview-artifact-check: demo-build
 	python3 scripts/refresh-demo.py check "$${SITE_DIR:-_site}/demo/showcase"
+	bash ../../plugins/asta-tools/skills/workspace/assets/paper-preview.sh "" paper
 	sh scripts/check-paper.sh "$${SITE_DIR:-_site}"
 
 print-asta-plugins-ref:
