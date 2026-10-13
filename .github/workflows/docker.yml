@@ -33,9 +33,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pin base image to its current digest
+        id: base
+        run: |
+          context=$(scripts/base-image-context.sh)
+          echo "context=$context" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         id: build
         with:
+          build-contexts: ${{ steps.base.outputs.context }}
           push: true
           target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64

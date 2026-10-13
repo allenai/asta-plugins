@@ -122,7 +122,7 @@ version:
 
 # Build Docker image
 docker:
-	docker build -t asta:latest .
+	docker build $(DOCKER_BUILD_FLAGS) -t asta:latest .
 
 # Build and smoke-test Docker image
 docker-test: docker
