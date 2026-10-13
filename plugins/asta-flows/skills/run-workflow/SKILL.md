@@ -8,7 +8,7 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(comm
 
 ## Workflows
 
-- [Theory generation](workflows/theory-generation.md): Paper Finder, then Theorizer passes over the literature, one per extraction schema.
+- [Theory generation](workflows/theory-generation.md): Theorizer plans a search query and schema, Paper Finder finds the papers, then Theorizer passes over the literature, one per extraction schema.
 - [Data Driven Theory Generation](workflows/data-driven-theory-generation.md): Paper Finder, Data Search, AutoDS, then Theorizer to explain experimental findings.
 - [Secondary reproduction](workflows/secondary-reproduction.md): re-test an AutoDS run's hypotheses on independent data, then build theories from the verdicts with Theorizer.
 
@@ -43,7 +43,7 @@ Assume the person wants the workflow carried out autonomously unless they say ot
 
 ## Agents
 
-**Paper Finder** finds and fetches papers: `theorize papers search` asks it for the question's papers, and `theorize papers fetch --top` fetches them in its order. `theorize papers import` adds the person's own documents: a folder (read recursively), a glob or files, of markdown, text or PDF. When the person says their papers are the corpus, add none.
+**Paper Finder** finds and fetches papers: `theorize papers search` searches with the plan's query, and `theorize papers fetch --top` fetches them in its order. `theorize papers import` adds the person's own documents: a folder (read recursively), a glob or files, of markdown, text or PDF. When the person says their papers are the corpus, add none.
 
 **Data Search** finds the data a question can be tested on. There is no command for it; it is your own work with the web and a shell.
 

@@ -14,7 +14,7 @@ Show the person this table, with the values for their run. Everything not in it 
 | 2 | Paper Finder | Gathers the literature on the hypotheses' themes | 5 themes plus the run's intent; 20 papers per theme (`papers fetch --top`) |
 | 3 | Data Search | Finds independent data for each hypothesis | chosen during the run |
 | 4 | Reproduce | Re-runs each hypothesis's test on the new data | one test per hypothesis |
-| 5 | Theorizer | Builds theories that must explain the verdicts; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`, objective novelty; usually 2 to 4 more schemas |
+| 5 | Theorizer | Builds theories that must explain the verdicts; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
 
 ## Verdicts
 
@@ -37,7 +37,7 @@ A favorable estimate that misses the threshold is undecided, not support. Read t
 
 1. **Selection.** From the run's `mcts_node_*.json` files, take every surprising node, plus the N highest and N lowest by posterior mean, without duplicates. Each becomes one hypothesis. Copy its hypothesis text verbatim, and keep its plan, code, prior and posterior means, and belief change. Do not group, merge or reword.
 
-2. **Literature,** alongside step 3. Cluster the hypotheses into themes and add one for the run's overall intent, taken from its metadata. Run [Theory generation](theory-generation.md)'s step 1 with one search per theme into the same project, in place of the single search on the question:
+2. **Literature,** alongside step 3. Cluster the hypotheses into themes and add one for the run's overall intent, taken from its metadata. Run [Theory generation](theory-generation.md)'s step 2 with one search per theme into the same project, in place of the single search on the question:
 
    ```bash
    theorize -p <run>/theory init --model gpt-6-sol --extraction-model gpt-6-luna
@@ -52,12 +52,12 @@ A favorable estimate that misses the threshold is undecided, not support. Read t
    - **Run.** Run exactly the committed test, without looking at the source result. A separate subagent given only the design and the data is the cleanest way. Record the effect size, p, n, the code and a figure. If the test cannot run, record that and why.
    - **Audit.** Try to refute the result. Use a control suited to it: a negative control for an effect, a positive control for a null, a block permutation for clustered or time data. Check sensitivity to influential points. Rule out a setup artifact before calling a failure to reproduce. Set the verdict. Flag the source finding as an error only when confident the run's own result is wrong.
 
-5. **Theories.** Reconstruct what the run's user set out to learn, from its stated intent and dataset descriptions, and use it as the question. Theorizer reads only the papers, so the verdicts go in as its mission statement. Run [Theory generation](theory-generation.md)'s steps 2 to 6, adding the mission to the plan, and the mission and `--objective novelty` to every generation:
+5. **Theories.** Reconstruct what the run's user set out to learn, from its stated intent and dataset descriptions, and use it as the question. Theorizer reads only the papers, so the verdicts go in as its mission statement. Run [Theory generation](theory-generation.md)'s steps 3 to 7, adding the mission to the plan and to every generation:
 
    ```bash
    theorize -p <run>/theory plan "<the question>" --mission-statement "$(cat <run>/mission.md)"
-   theorize -p <run>/theory theories generate --max-data-tokens 750000 --mission-statement "$(cat <run>/mission.md)" --objective novelty
-   theorize -p <run>/theory theories generate --extraction extraction-schema-2 --max-data-tokens 750000 --mission-statement "$(cat <run>/mission.md)" --objective novelty --save-as theories-schema-2
+   theorize -p <run>/theory theories generate --max-data-tokens 750000 --mission-statement "$(cat <run>/mission.md)"
+   theorize -p <run>/theory theories generate --extraction extraction-schema-2 --max-data-tokens 750000 --mission-statement "$(cat <run>/mission.md)" --save-as theories-schema-2
    ```
 
    The mission, in `<run>/mission.md`:

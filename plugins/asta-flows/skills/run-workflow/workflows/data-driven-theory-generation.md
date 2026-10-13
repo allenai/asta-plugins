@@ -60,7 +60,7 @@ WHAT THE SEARCH COULD NOT SETTLE:
 
 The run directory holds three things: `theory/` is the Theorizer project, `data/` holds the datasets, and `autods/` holds the search.
 
-1. **Papers.** Run [Theory generation](theory-generation.md)'s step 1 into `<run>/theory`. The papers also give Data Search its leads.
+1. **Papers.** Run [Theory generation](theory-generation.md)'s steps 1 and 2 into `<run>/theory`. The papers also give Data Search its leads.
 
 2. **Data.** Data Search finds one dataset the question can be tested on, and writes the description AutoDS reads. No command does this yet. If the person named data, use it, and only describe it.
    - **Find it** from the deposits the papers name: look in `<run>/theory/paperstore.json` for data-availability statements, repository DOIs (Dryad, Zenodo, figshare) and accessions. Search the portals only if the papers name none that fits. Take one dataset that loads and tests in minutes, and download it into `<run>/data/`.
@@ -91,7 +91,7 @@ The run directory holds three things: `theory/` is the Theorizer project, `data/
    - When it ends, read every node. For each large belief change, ask what caused it. A bug, a leak or a quantity true by construction swings belief hard and means nothing; mark it as an artifact. A confirmation of the prior is a real, low-surprise result.
    - Say why the search stopped, and how many experiments ran and failed. A partial search, described as partial, is still usable.
 
-4. **Theories,** once AutoDS has ended. Write the mission from its findings, in the shape above, to `<run>/mission.md`. Then run [Theory generation](theory-generation.md)'s steps 2 to 6, adding the mission to the plan and to every generation:
+4. **Theories,** once AutoDS has ended. Write the mission from its findings, in the shape above, to `<run>/mission.md`. Then run [Theory generation](theory-generation.md)'s steps 3 to 7, adding the mission to the plan and to every generation:
 
    ```bash
    theorize -p <run>/theory plan "<the question>" --mission-statement "$(cat <run>/mission.md)"
