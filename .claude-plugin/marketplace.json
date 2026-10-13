@@ -29,7 +29,7 @@
     {
       "name": "asta-flows",
       "source": "./plugins/asta-flows",
-      "description": "Executes named, typed chains of research steps using the skills in asta-tools. Requires installation of asta-tools",
+      "description": "Run research workflows using Semantic Scholar and Asta tools.",
       "version": "0.109.0",
       "author": {
         "name": "Ai2 Asta Team"
