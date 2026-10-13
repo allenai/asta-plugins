@@ -12,7 +12,7 @@ None of these is required for the workspace to work. The defaults ship as GitHub
    - it already has rulesets, including inherited ones (`gh api 'repos/{owner}/{repo}/rulesets?includes_parents=true'` is not empty), or branch protection on the default branch (which also covers merge queues);
    - for `docs-checks.json`: `docs.yml` does not run on every pull request to the default branch (path filters, manual-only), or another workflow job could report `docs / build` or `docs / paper-gate`.
 2. Show the user each recommended file and what it does, and ask which to apply.
-3. If `gh api repos/{owner}/{repo} --jq .permissions.admin` is `true`, apply each accepted file with `gh api repos/{owner}/{repo}/rulesets -X POST --input <skill-dir>/assets/rulesets/<file>`. Otherwise give the user that command and the file. Rulesets on private repos need a paid GitHub plan; if the API refuses, tell the user and move on.
+3. Apply each accepted file with `gh api repos/{owner}/{repo}/rulesets -X POST --input <skill-dir>/assets/rulesets/<file>`. If GitHub refuses, give the user that command, the file and GitHub's error, and move on.
 4. Read each ruleset back with `gh api repos/{owner}/{repo}/rulesets/<id>` and confirm it matches the file.
 
 Don't recommend these by default:
