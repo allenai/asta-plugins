@@ -15,8 +15,9 @@ Then show them this table, with the values for their question. Everything not in
 
 | Step | Agent | What it does | Configuration |
 |---|---|---|---|
-| 1 | Paper Finder | Searches for the question, fetches the top papers' full text, and fills any gap to the target | 100 papers (`papers fetch --top`) |
-| 2 | Theorizer | Plans the extraction, extracts findings from every paper, and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
+| 1 | Theorizer, Paper Finder | Plans a search query and an extraction schema from the question, searches with that query, fetches the top papers' full text, and fills any gap to the target with more searches | 100 papers (`papers fetch --top`) |
+| 2 | Theorizer | Extracts findings from every paper and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
+| | Check-in | Shows you the first theories, then you steer another generation or go on | |
 | 3 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
 | 4 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
 
@@ -24,11 +25,12 @@ Then show them this table, with the values for their question. Everything not in
 
 `<run>/theory` is the Theorizer project. Every step saves into it, so the passes share one corpus and one theory store.
 
-1. **Papers.** Paper Finder searches for the question and fetches the top papers into the project:
+1. **Plan and papers.** Theorizer plans the run from the question: a search query, an extraction query and a first schema. Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 
    ```bash
    theorize -p <run>/theory init --model gpt-6-sol --extraction-model gpt-6-luna
-   theorize -p <run>/theory papers search "<the question>"
+   theorize -p <run>/theory plan "<the question>"
+   theorize -p <run>/theory papers search "<the plan's search query>"
    theorize -p <run>/theory papers fetch --top <papers>
    theorize -p <run>/theory show papers
    ```
@@ -40,18 +42,32 @@ Then show them this table, with the values for their question. Everything not in
    theorize -p <run>/theory papers fetch --top <papers still needed> --from search-2
    ```
 
+   If the target is still not reached, go on with the papers that have full text. Theorizer extracts from full text only, so do not add abstract-only papers some other way. When you report the theories, say how many papers they rest on, out of the target.
+
    If the person gave papers, `papers import` adds them: see [Bring Your Own Papers](#bring-your-own-papers). When they say their papers are the corpus, import them and search for none.
 
-2. **First pass.** Theorizer plans the extraction from the question, extracts from every paper, and generates theories:
+   If the person gave an angle, pass it to `plan` as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
+
+2. **First pass.** Theorizer extracts from every paper with the plan's schema, and generates theories:
 
    ```bash
-   theorize -p <run>/theory plan "<the question>"
    theorize -p <run>/theory extract
    theorize -p <run>/theory theories generate --max-data-tokens 750000
    theorize -p <run>/theory show theories
    ```
 
    `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`. For a corpus of hundreds of papers, `--objective attribution-batched` reads the rest in further batches, at more cost.
+
+   **Check in and wait.** Stop here even in an autonomous run: variable discovery and the schema passes cost several times the first pass. List the first theories, one line each, and offer two ways on:
+
+   - **Steer the theories.** Generate again from the same findings, with the person's direction (a focus, a mechanism, a kind of explanation, theories to set aside) in the mission statement. Nothing is extracted again.
+
+     ```bash
+     theorize -p <run>/theory theories generate --max-data-tokens 750000 --mission-statement "<the question, then their direction>" --save-as theories-steer-<n>
+     ```
+
+     Report and publish it as in step 5, then check in again.
+   - **Go on** to steps 3 and 4.
 
 3. **Missed variables.** Ask each paper which variables are worth extracting beyond the ones the first schema records, then design new schemas from the answers. List the first schema's fields with `theorize -p <run>/theory show plan`, and name them in the context:
 
