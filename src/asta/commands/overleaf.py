@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -504,9 +504,6 @@ def write_files(contents: dict[str, bytes], dest: Path) -> None:
 MARKER = re.compile(
     rb"^(?:<<<<<<< workspace|\|{7} last sync|>>>>>>> overleaf)\r?$", re.M
 )
-PUBLISH_MESSAGE = re.compile(
-    r"^Publish workspace commit ([0-9a-f]{7,40}|[0-9a-f]{64})$"
-)
 MERGE_SUFFIXES = {
     ".tex",
     ".ltx",
@@ -574,272 +571,166 @@ def merge_text(
     return result.stdout, result.returncode == 0
 
 
-def last_sync(
-    repo: Path,
-    head: str,
-    base: str,
-    root: Path,
-    prefix: str,
-    url: str,
-    reviewed: str | None = None,
-    local: dict[str, bytes] | None = None,
-    dry_run: bool = False,
-    head_only: bool = False,
-    reviewed_ref: str | None = None,
-) -> str:
-    """Newest Overleaf commit since `base` whose files match a published workspace commit.
+RECORD = "sync.json"
 
-    Publish records nothing in the workspace; its Overleaf commit names the workspace
-    commit it sent, and counts as a sync point only if the content still matches it.
-    """
 
-    def warn_fallback() -> None:
-        recorded_files = read_plain_files(repo, base)
-        remote_files = read_plain_files(repo, head)
-        for entry in commits:
-            commit, _, message = entry.partition(" ")
-            match = PUBLISH_MESSAGE.match(message)
-            if not match:
-                continue
-            # Without origin, the old base cannot distinguish post-publication
-            # edits from reverts. Equal copies and unpublished files remain safe.
-            published = read_plain_files(repo, commit)
-            if any(
-                published.get(name) != recorded_files.get(name)
-                and local.get(name) != remote_files.get(name)
-                for name in recorded_files.keys() | published.keys()
+def record_ref(url: str) -> str:
+    return f"refs/asta/overleaf/{url.rsplit('/', 1)[1]}"
+
+
+def has_origin(root: Path) -> bool:
+    result = subprocess.run(
+        ["git", "config", "--get", "remote.origin.url"],
+        cwd=root,
+        env=git_environment(),
+        capture_output=True,
+    )
+    if result.returncode not in (0, 1):
+        raise click.ClickException("Could not read workspace Git remotes.")
+    return result.returncode == 0
+
+
+def published_record(
+    root: Path, url: str, *, publishing: bool = False
+) -> tuple[str | None, str | None, str | None]:
+    """Read publish's record on `origin`: (record commit, Overleaf commit, source)."""
+    ref = record_ref(url)
+    suffix = " Nothing pushed." if publishing else " Nothing copied."
+    unavailable = (
+        "Could not read the Overleaf sync record from the workspace's `origin` remote. "
+        "Check its URL, credentials and network access." + suffix
+    )
+    try:
+        advertised = git("ls-remote", "origin", ref, cwd=root)
+    except click.ClickException:
+        raise OriginAccessError(unavailable) from None
+    if not any(line.endswith(f"\t{ref}") for line in advertised.splitlines()):
+        return None, None, None
+    gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
+    try:
+        try:
+            git(
+                "fetch",
+                "-q",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "--refmap=",
+                "origin",
+                f"{ref}:{gate}",
+                cwd=root,
+            )
+        except click.ClickException:
+            raise OriginAccessError(unavailable) from None
+        commit = git("rev-parse", gate, cwd=root)
+        try:
+            record = json.loads(
+                git_bytes("cat-file", "blob", f"{gate}:{RECORD}", cwd=root)
+            )
+            overleaf = record["overleaf"]
+            if (
+                not isinstance(overleaf, str)
+                or not SHA.fullmatch(overleaf)
+                or not isinstance(record["workspace"], str)
+                or not re.fullmatch(FULL_OID, record["workspace"])
+                or validate_url(record.get("url")) != url
             ):
-                raise click.ClickException(
-                    "Using the recorded sync could discard workspace or Overleaf edits "
-                    "to a published file. Restore origin access and retry; nothing copied."
-                )
-        click.echo(
-            "Could not verify workspace publication history from `origin`. "
-            "Pulling from the recorded sync instead; published edits may "
-            "need conflict resolution.",
-            err=True,
-        )
+                raise ValueError("unexpected sync record")
+        except (GitCommandError, KeyError, TypeError, ValueError, ProjectURLError):
+            raise click.ClickException(
+                f"Invalid Overleaf sync record at origin's {ref}. "
+                "Restore it from its history or delete it to fall back to "
+                f"{CONFIG}.{suffix}"
+            ) from None
+        return commit, overleaf, record["workspace"]
+    finally:
+        try:
+            git("update-ref", "-d", gate, cwd=root)
+        except click.ClickException:
+            click.echo("Could not remove the temporary Overleaf record ref.", err=True)
 
+
+def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str) -> str:
+    """The newer of the committed base and the published record, in Overleaf history."""
     if resolve_commit(repo, base) is None or not is_ancestor(repo, base, head):
         raise click.ClickException(
             "Overleaf history no longer continues from the recorded commit. "
-            "Reset remote history is unsupported; nothing synced. "
+            f"Reset remote history is unsupported; {done} "
             "Import into a separate directory with --dir."
         )
-    if head == base:
+    if recorded is None or recorded == base:
         return base
-    if head_only:
-        commits = [git("log", "-1", "--format=%H %s", head, cwd=repo)]
-    else:
-        commits = git(
-            "log", "--first-parent", "--format=%H %s", f"{base}..{head}", cwd=repo
-        ).splitlines()
-    with ExitStack() as stack:
-        publications = {}
-        source_ancestry = {}
-        marker_chains = {}
-        marker_anchors = {}
-
-        def publication_files(source: str):
-            published = read_plain_files(root, source, prefix)
-            try:
-                record = json.loads(published.pop(CONFIG))
-                recorded = record["base"]
-                if (
-                    not isinstance(recorded, str)
-                    or not SHA.fullmatch(recorded)
-                    or validate_url(record.get("url")) != url
-                ):
-                    return None
-            except (KeyError, TypeError, ValueError, ProjectURLError):
-                return None
-            return published, recorded
-
-        def marker_chain(commit: str, recorded: str):
-            pair = commit, recorded
-            if pair in marker_chains:
-                return marker_chains[pair]
-            marker_chains[pair] = None
-            if resolve_commit(repo, recorded) is None or not is_ancestor(
-                repo, recorded, commit
-            ):
-                return None
-            chain = git(
-                "log",
-                "--first-parent",
-                "--reverse",
-                "--format=%H %P%x09%s",
-                f"{recorded}..{commit}",
-                cwd=repo,
-            ).splitlines()
-            previous, entries = recorded, []
-            for entry in chain:
-                ancestry, _, message = entry.partition("\t")
-                current, *parents = ancestry.split()
-                if parents != [previous] or not PUBLISH_MESSAGE.match(message):
-                    return None
-                entries.append((current, message))
-                previous = current
-            if previous != commit:
-                return None
-            marker_chains[pair] = entries
-            for current, _ in entries:
-                marker_anchors.setdefault(current, set()).add(recorded)
-            return entries
-
-        def publication(commit: str, message: str):
-            if commit in publications:
-                return publications[commit]
-            publications[commit] = None
-            match = PUBLISH_MESSAGE.match(message)
-            if not match:
-                return None
-            source = resolve_commit(root, match.group(1))
-            if source is None:
-                # The unseen source can anchor after an ordinary edit already
-                # reviewed elsewhere, so the local record cannot precheck its chain.
-                source = publication_source(
-                    root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
-                )
-            if source is None:
-                return None
-            files = publication_files(source)
-            if files is None:
-                return None
-            published, recorded = files
-            if (
-                (
-                    recorded not in marker_anchors.get(commit, ())
-                    and marker_chain(commit, recorded) is None
-                )
-                or published != read_plain_files(repo, commit)
-                or publication_source(
-                    root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
-                )
-                is None
-            ):
-                return None
-            result = source, published, recorded
-            publications[commit] = result
-            return result
-
-        def continues_publications(commit: str, recorded: str) -> bool:
-            # A reviewed pull anchors the chain; ordinary edits and backwards
-            # workspace sources must be pulled and reviewed before another publish.
-            chain = marker_chain(commit, recorded)
-            if chain is None:
-                return False
-            previous, previous_source = recorded, None
-            for current, message in chain:
-                candidate = publication(current, message)
-                if candidate is None or candidate[2] != recorded:
-                    return False
-                source = candidate[0]
-                if previous_source is not None:
-                    pair = previous_source, source
-                    if pair not in source_ancestry:
-                        follows = is_ancestor(root, *pair)
-                        if not follows and complete_history(
-                            root, dry_run=dry_run, ref=reviewed_ref
-                        ):
-                            follows = is_ancestor(root, *pair)
-                        source_ancestry[pair] = follows
-                    if not source_ancestry[pair]:
-                        return False
-                previous, previous_source = current, source
-            return previous == commit
-
-        for entry in commits:
-            commit, _, message = entry.partition(" ")
-            if not PUBLISH_MESSAGE.match(message):
-                continue
-            if reviewed is None:
-                try:
-                    reviewed, reviewed_ref = stack.enter_context(default_branch(root))
-                except OriginAccessError:
-                    warn_fallback()
-                    return base
-            try:
-                candidate = publication(commit, message)
-                if candidate is None:
-                    continue
-                source, published, recorded = candidate
-                if not continues_publications(commit, recorded):
-                    continue
-                if local is not None and local != published:
-                    # Pull must not skip published edits absent from this checkout.
-                    if not is_ancestor(root, source, "HEAD"):
-                        if not complete_history(
-                            root, dry_run=dry_run, ref=reviewed_ref
-                        ):
-                            continue
-                        if not is_ancestor(root, source, "HEAD"):
-                            continue
-                return commit
-            except OriginAccessError:
-                if local is None:
-                    raise
-                warn_fallback()
-                return base
-    return base
-
-
-def complete_history(
-    root: Path, *, dry_run: bool = False, ref: str | None = None
-) -> bool:
-    if git("rev-parse", "--is-shallow-repository", cwd=root) != "true":
-        return False
-    if dry_run:
-        raise click.ClickException(
-            "Could not verify a workspace publication from shallow history during dry-run. "
-            "Fetch complete `origin` history first; dry-run leaves shallow history unchanged."
-        )
-    try:
-        ref = ref or default_branch_ref(root)
+    if resolve_commit(repo, recorded) is None or not is_ancestor(repo, recorded, head):
         click.echo(
-            "Fetching complete workspace history from `origin`; this clone will no longer be shallow.",
+            "The published sync record is not in Overleaf history; "
+            f"using {CONFIG} instead.",
             err=True,
         )
-        git(
-            "fetch",
-            "-q",
-            "--no-tags",
-            "--no-write-fetch-head",
-            "--refmap=",
-            "--unshallow",
-            "origin",
-            ref,
+        return base
+    return recorded if is_ancestor(repo, base, recorded) else base
+
+
+def confirm_publication(repo: Path, pushed: str) -> str:
+    """Overleaf's commit for this push; the bridge may translate pushed commits."""
+    try:
+        with credentials() as (env, options):
+            git(
+                *options,
+                "fetch",
+                "-q",
+                "--no-tags",
+                "origin",
+                "HEAD",
+                cwd=repo,
+                env=env,
+            )
+        head = git("rev-parse", "FETCH_HEAD", cwd=repo)
+        if head == pushed or tree(repo, head) == tree(repo, pushed):
+            return head
+    except click.ClickException:
+        pass
+    raise click.ClickException(
+        f"Published Overleaf commit {pushed[:7]}, but could not confirm Overleaf's copy "
+        "to record the sync point. Before publishing again, run `asta workspace "
+        "overleaf pull` and merge its sync-record PR."
+    )
+
+
+def record_publication(
+    root: Path,
+    url: str,
+    previous: str | None,
+    overleaf: str,
+    workspace: str,
+    identity: list[str],
+) -> None:
+    ref = record_ref(url)
+    data = json.dumps(
+        {"url": url, "overleaf": overleaf, "workspace": workspace}, indent=2
+    )
+    try:
+        blob = git(
+            "hash-object", "-w", "--stdin", cwd=root, input=(data + "\n").encode()
+        )
+        listing = f"100644 blob {blob}\t{RECORD}\n".encode()
+        record_tree = git("mktree", cwd=root, input=listing)
+        commit = git(
+            *identity,
+            "commit-tree",
+            "--no-gpg-sign",
+            *(["-p", previous] if previous else []),
+            "-m",
+            f"Record Overleaf commit {overleaf}",
+            record_tree,
             cwd=root,
         )
+        # Fast-forward only: a concurrent publisher's record is never overwritten.
+        git("push", "--quiet", "origin", f"{commit}:{ref}", cwd=root)
     except click.ClickException:
-        raise OriginAccessError(
-            "Could not fetch complete history from the workspace's `origin` remote. "
-            "Check its URL, credentials and network access."
+        raise click.ClickException(
+            f"Published Overleaf commit {overleaf[:7]}, but could not record it at "
+            f"origin's {ref}. Before publishing again, run `asta workspace overleaf "
+            "pull` and merge its sync-record PR."
         ) from None
-    return True
-
-
-def publication_source(
-    root: Path,
-    marker: str,
-    reviewed: str,
-    *,
-    dry_run: bool = False,
-    ref: str | None = None,
-) -> str | None:
-    def verify() -> str | None:
-        source = resolve_commit(root, marker)
-        return (
-            source
-            if source is not None and is_ancestor(root, source, reviewed)
-            else None
-        )
-
-    source = verify()
-    if source is None and complete_history(root, dry_run=dry_run, ref=ref):
-        # Keep the original review gate even if origin advances during this fetch.
-        source = verify()
-    return source
 
 
 project_option = click.option(
@@ -876,26 +767,39 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             refuse(CONFIG, "is reserved for workspace sync metadata")
         check_paths([CONFIG, *new])
         check_ignore_files(new)
-        if config and (
-            resolve_commit(repo, config["base"]) is None
-            or not is_ancestor(repo, config["base"], head)
-        ):
-            raise click.ClickException(
-                "Overleaf history no longer continues from the recorded commit. "
-                "Reset remote history is unsupported; nothing copied. "
-                "Import into a separate directory with --dir."
-            )
         committed = read_plain_files(root, "HEAD", prefix)
         ours = committed.copy()
         ours.pop(CONFIG, None)
-        base = (
-            read_plain_files(
-                repo,
-                last_sync(repo, head, config["base"], root, prefix, url, local=ours),
+        base = {}
+        if config:
+            recorded = None
+            if has_origin(root):
+                _, recorded, source = published_record(root, url)
+                if (
+                    recorded is not None
+                    and resolve_commit(repo, recorded) is not None
+                    and not (
+                        resolve_commit(root, source) is not None
+                        and is_ancestor(root, source, "HEAD")
+                    )
+                    and read_plain_files(repo, recorded) != ours
+                ):
+                    # Older checkouts import the published edits for review.
+                    click.echo(
+                        "This checkout predates the last publication; "
+                        f"merging from {CONFIG} instead.",
+                        err=True,
+                    )
+                    recorded = None
+            else:
+                click.echo(
+                    f"No `origin` remote; using {CONFIG} as the last sync. "
+                    "Edits published from another clone may need conflict resolution.",
+                    err=True,
+                )
+            base = read_plain_files(
+                repo, last_sync(repo, head, config["base"], recorded, "nothing copied.")
             )
-            if config
-            else {}
-        )
         base.pop(CONFIG, None)
         deleted = (base.keys() - new.keys()) & ours.keys()
         check_paths([CONFIG, *new, *(ours.keys() - new.keys() - deleted)])
@@ -1115,27 +1019,11 @@ def publish(
             if not dry_run:
                 raise click.ClickException(f"{unmerged}; nothing pushed.")
             click.echo(f"{unmerged}; publish will refuse until then.")
+        previous, recorded, _ = published_record(root, config["url"], publishing=True)
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
-            try:
-                synced = last_sync(
-                    repo,
-                    head,
-                    config["base"],
-                    root,
-                    prefix,
-                    config["url"],
-                    reviewed=default,
-                    dry_run=dry_run,
-                    head_only=True,
-                    reviewed_ref=reviewed_ref,
-                )
-            except click.ClickException as exc:
-                message = exc.message.replace("nothing synced.", "nothing pushed.")
-                if "nothing pushed" not in message.lower():
-                    message += " Nothing pushed."
-                raise click.ClickException(message) from None
+            synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
             if synced != head:
                 raise click.ClickException(
                     "Overleaf has changed since the last sync. Run "
@@ -1191,7 +1079,7 @@ def publish(
                 )
                 return
             identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
-            # Later syncs recognize this commit as a sync point by the reviewed commit it names.
+            # Informational; later syncs read the sync point from the workspace record.
             message = f"Publish workspace commit {reviewed}"
             git(
                 *identity,
@@ -1208,5 +1096,8 @@ def publish(
                     "Content-changing Git filters and conversions are unsupported."
                 )
             push(repo, root, expected_commit=expected_commit, reviewed_ref=reviewed_ref)
-            published = git("rev-parse", "HEAD", cwd=repo)
+            published = confirm_publication(repo, git("rev-parse", "HEAD", cwd=repo))
+            record_publication(
+                root, config["url"], previous, published, reviewed, identity
+            )
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
