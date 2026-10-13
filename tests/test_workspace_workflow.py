@@ -1332,3 +1332,22 @@ def test_paper_preview_builds_inside_the_released_tex_image(ref, image):
     )
     assert result.stdout.splitlines()[-1] == f"image={image}"
     assert ("::warning::" in result.stdout) == (image.endswith("latest-tex"))
+
+
+def test_runner_disk_is_freed_before_the_paper_image_pull() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["build"]["steps"]
+    names = [step.get("name") for step in steps]
+    free = names.index("Free runner disk for the LaTeX image")
+    assert free + 1 == names.index("Build paper preview")
+    run = steps[free]["run"]
+    assert run.splitlines()[0] == (
+        "git ls-files -- 'main.tex' '*/main.tex' | grep -q . || exit 0"
+    )
+    removed = re.search(r"sudo rm -rf (.+)", run).group(1).split()
+    assert removed == [
+        "/usr/local/lib/android",
+        "/usr/share/dotnet",
+        "/opt/ghc",
+        "/usr/local/.ghcup",
+    ]
