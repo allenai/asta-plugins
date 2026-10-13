@@ -3093,14 +3093,9 @@ def test_record_push_failure_explains_recovery(setup, tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX hook")
-def test_record_pre_push_failure_is_not_bypassed(setup, tmp_path):
+def test_record_push_skips_workspace_pre_push_hooks(setup, tmp_path):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    (project / "paper/main.tex").write_text("first publication\n")
-    commit_all(project)
-    assert run(project, "publish").exit_code == 0
-    previous, _ = origin_record(tmp_path)
-    config = (project / "paper/overleaf.json").read_bytes()
     hook = project / ".git/hooks/pre-push"
     hook.write_text(
         "#!/bin/sh\n"
@@ -3109,26 +3104,55 @@ def test_record_pre_push_failure_is_not_bypassed(setup, tmp_path):
         "done\n"
     )
     hook.chmod(0o755)
-    (project / "paper/main.tex").write_text("second publication\n")
+    (project / "paper/main.tex").write_text("first publication\n")
     commit_all(project)
     result = run(project, "publish")
-    assert result.exit_code == 1, result.output
-    assert "Published Overleaf commit" in result.output
-    assert "merge its sync-record PR" in result.output
-    assert origin_record(tmp_path)[0] == previous
-    assert (project / "paper/overleaf.json").read_bytes() == config
-    assert not git(project, "for-each-ref", "refs/asta")
-    git(seed, "fetch", "origin", "master")
-    assert git(seed, "show", "FETCH_HEAD:main.tex") == "second publication"
-    hook.unlink()
-    assert "Overleaf has changed" in run(project, "publish").output
-    pulled = run(project, "pull")
-    assert pulled.exit_code == 0, pulled.output
-    assert git(project, "diff", "--name-only") == "paper/overleaf.json"
-    commit_all(project)
-    (project / "paper/main.tex").write_text("next publication\n")
+    assert result.exit_code == 0, result.output
+    assert origin_record(tmp_path)[1]["workspace"] == git(project, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_text("second publication\n")
     commit_all(project)
     assert run(project, "publish").exit_code == 0
+
+
+def test_record_not_matching_reviewed_history_falls_back(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    # An unreviewed Overleaf edit attested by a forged record is not trusted.
+    git(seed, "fetch", "-q", "origin", "master")
+    git(seed, "reset", "-q", "--hard", "FETCH_HEAD")
+    (seed / "main.tex").write_text("unreviewed\n")
+    git(seed, "commit", "-qam", "edit")
+    git(seed, "push", "-q", "origin", "HEAD:master")
+    origin = tmp_path / "workspace.git"
+    _, record = origin_record(tmp_path)
+    record["overleaf"] = git(seed, "rev-parse", "HEAD")
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=origin,
+        input=json.dumps(record),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "mktree"],
+        cwd=origin,
+        input=f"100644 blob {blob}\tsync.json\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    git(origin, "update-ref", RECORD_REF, git(origin, "commit-tree", tree, "-m", "x"))
+    result = run(project, "publish")
+    assert result.exit_code == 1
+    assert "does not match a paper on origin's default branch" in result.output
+    assert "Overleaf has changed" in result.output
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == "unreviewed\n"
 
 
 @pytest.mark.parametrize("command", ["pull", "publish"])

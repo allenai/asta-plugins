@@ -650,6 +650,38 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             click.echo("Could not remove the temporary Overleaf record ref.", err=True)
 
 
+def paper_files(repo: Path, revision: str, prefix: str = "") -> dict[str, bytes]:
+    # Bytes, not blob IDs: Overleaf and the workspace may use different hash functions.
+    files = read_plain_files(repo, revision, prefix)
+    files.pop(CONFIG, None)
+    return files
+
+
+def reviewed_record(
+    root: Path,
+    repo: Path,
+    prefix: str,
+    default: str,
+    recorded: str | None,
+    source: str | None,
+) -> str | None:
+    """The record's Overleaf commit when it matches reviewed workspace history."""
+    if recorded is None or resolve_commit(repo, recorded) is None:
+        return recorded  # last_sync reports a record missing from Overleaf history.
+    if (
+        resolve_commit(root, source) is not None
+        and is_ancestor(root, source, default)
+        and paper_files(repo, recorded) == paper_files(root, source, prefix)
+    ):
+        return recorded
+    click.echo(
+        "The Overleaf sync record does not match a paper on origin's default branch; "
+        f"using {CONFIG} instead.",
+        err=True,
+    )
+    return None
+
+
 def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str) -> str:
     """The newer of the committed base and the published record, in Overleaf history."""
     if resolve_commit(repo, base) is None or not is_ancestor(repo, base, head):
@@ -728,7 +760,8 @@ def record_publication(
             cwd=root,
         )
         # Fast-forward only: a concurrent publisher's record is never overwritten.
-        git("push", "--quiet", "origin", f"{commit}:{ref}", cwd=root)
+        # Branch pre-push hooks do not apply to this metadata ref.
+        git("push", "--quiet", "--no-verify", "origin", f"{commit}:{ref}", cwd=root)
     except click.ClickException:
         raise click.ClickException(
             f"Published Overleaf commit {overleaf[:7]}, but could not record it at "
@@ -779,6 +812,11 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             recorded = None
             if has_origin(root):
                 with published_record(root, url) as (_, recorded, source):
+                    if recorded is not None:
+                        with default_branch(root) as (default, _):
+                            recorded = reviewed_record(
+                                root, repo, prefix, default, recorded, source
+                            )
                     if (
                         recorded is not None
                         and resolve_commit(repo, recorded) is not None
@@ -1027,12 +1065,13 @@ def publish(
             published_record(root, config["url"], publishing=True) as (
                 previous,
                 recorded,
-                _,
+                source,
             ),
             tempfile.TemporaryDirectory() as tmp,
         ):
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
+            recorded = reviewed_record(root, repo, prefix, default, recorded, source)
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
             if synced != head:
                 raise click.ClickException(
