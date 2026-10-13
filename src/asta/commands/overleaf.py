@@ -93,7 +93,11 @@ def git_bytes(
                 "Overleaf access denied. Check your token and access to this project."
             )
         if operation == "push" and (
-            b"fetch first" in stderr or b"non-fast-forward" in stderr
+            re.search(
+                rb"^\s*! \[rejected\] [^\r\n]+ \((?:non-fast-forward|fetch first)\)\s*$",
+                stderr,
+                re.M,
+            )
         ):
             raise click.ClickException(
                 "Overleaf changed while publishing; nothing pushed. "
@@ -532,9 +536,12 @@ def last_sync(
     base: str,
     root: Path,
     prefix: str,
+    url: str,
     reviewed: str | None = None,
     local: dict[str, bytes] | None = None,
     dry_run: bool = False,
+    head_only: bool = False,
+    reviewed_ref: str | None = None,
 ) -> str:
     """Newest Overleaf commit since `base` whose files match a published workspace commit.
 
@@ -559,55 +566,143 @@ def last_sync(
             "Reset remote history is unsupported; nothing synced. "
             "Import into a separate directory with --dir."
         ) from None
-    commits = git(
-        "log", "--first-parent", "--format=%H %s", f"{base}..{head}", cwd=repo
-    ).splitlines()
+    if head == base:
+        return base
+    if head_only:
+        commits = [git("log", "-1", "--format=%H %s", head, cwd=repo)]
+    else:
+        commits = git(
+            "log", "--first-parent", "--format=%H %s", f"{base}..{head}", cwd=repo
+        ).splitlines()
     with ExitStack() as stack:
-        for entry in commits:
-            commit, _, message = entry.partition(" ")
+        publications = {}
+
+        def publication(commit: str, message: str):
+            if commit in publications:
+                return publications[commit]
             match = PUBLISH_MESSAGE.match(message)
             if not match:
+                return None
+            source = publication_source(
+                root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
+            )
+            if source is None:
+                publications[commit] = None
+                return None
+            published = read_plain_files(root, source, prefix)
+            try:
+                record = json.loads(published.pop(CONFIG))
+                recorded = record["base"]
+                if (
+                    not isinstance(recorded, str)
+                    or not SHA.fullmatch(recorded)
+                    or record.get("url") != url
+                ):
+                    return None
+            except (KeyError, TypeError, ValueError):
+                return None
+            result = (
+                (source, published, recorded)
+                if published == read_plain_files(repo, commit)
+                else None
+            )
+            publications[commit] = result
+            return result
+
+        def continues_publications(commit: str, recorded: str) -> bool:
+            # A reviewed pull anchors the chain; ordinary edits and backwards
+            # workspace sources must be pulled and reviewed before another publish.
+            try:
+                git("merge-base", "--is-ancestor", recorded, commit, cwd=repo)
+            except click.ClickException:
+                return False
+            chain = git(
+                "log",
+                "--first-parent",
+                "--reverse",
+                "--format=%H %P%x09%s",
+                f"{recorded}..{commit}",
+                cwd=repo,
+            ).splitlines()
+            previous, previous_source = recorded, None
+            for entry in chain:
+                ancestry, _, message = entry.partition("\t")
+                current, *parents = ancestry.split()
+                if parents != [previous]:
+                    return False
+                candidate = publication(current, message)
+                if candidate is None or candidate[2] != recorded:
+                    return False
+                source = candidate[0]
+                if previous_source is not None:
+                    try:
+                        git(
+                            "merge-base",
+                            "--is-ancestor",
+                            previous_source,
+                            source,
+                            cwd=root,
+                        )
+                    except click.ClickException:
+                        if not complete_history(
+                            root, dry_run=dry_run, ref=reviewed_ref
+                        ):
+                            return False
+                        try:
+                            git(
+                                "merge-base",
+                                "--is-ancestor",
+                                previous_source,
+                                source,
+                                cwd=root,
+                            )
+                        except click.ClickException:
+                            return False
+                previous, previous_source = current, source
+            return previous == commit
+
+        for entry in commits:
+            commit, _, message = entry.partition(" ")
+            if not PUBLISH_MESSAGE.match(message):
                 continue
             if reviewed is None:
                 try:
-                    reviewed = stack.enter_context(default_branch(root))
+                    reviewed, reviewed_ref = stack.enter_context(default_branch(root))
                 except click.ClickException:
                     warn_fallback()
                     return base
             try:
-                source = publication_source(
-                    root, match.group(1), reviewed, dry_run=dry_run
-                )
-            except click.ClickException:
-                if local is None:
-                    raise
-                warn_fallback()
-                return base
-            if source is None:
-                continue
-            published = read_plain_files(root, source, prefix)
-            published.pop(CONFIG, None)
-            if published == read_plain_files(repo, commit):
+                candidate = publication(commit, message)
+                if candidate is None:
+                    continue
+                source, published, recorded = candidate
+                if not continues_publications(commit, recorded):
+                    continue
                 if local is not None and local != published:
                     # Pull must not skip published edits absent from this checkout.
                     try:
                         git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
                     except click.ClickException:
-                        try:
-                            if not complete_history(root, dry_run=dry_run):
-                                continue
-                        except click.ClickException:
-                            warn_fallback()
-                            return base
+                        if not complete_history(
+                            root, dry_run=dry_run, ref=reviewed_ref
+                        ):
+                            continue
                         try:
                             git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
                         except click.ClickException:
                             continue
                 return commit
+            except click.ClickException:
+                if local is None:
+                    raise
+                warn_fallback()
+                return base
     return base
 
 
-def complete_history(root: Path, *, dry_run: bool = False) -> bool:
+def complete_history(
+    root: Path, *, dry_run: bool = False, ref: str | None = None
+) -> bool:
     if git("rev-parse", "--is-shallow-repository", cwd=root) != "true":
         return False
     if dry_run:
@@ -616,7 +711,11 @@ def complete_history(root: Path, *, dry_run: bool = False) -> bool:
             "Fetch complete `origin` history first; dry-run leaves shallow history unchanged."
         )
     try:
-        ref = default_branch_ref(root)
+        ref = ref or default_branch_ref(root)
+        click.echo(
+            "Fetching complete workspace history from `origin`; this clone will no longer be shallow.",
+            err=True,
+        )
         git(
             "fetch",
             "-q",
@@ -637,7 +736,12 @@ def complete_history(root: Path, *, dry_run: bool = False) -> bool:
 
 
 def publication_source(
-    root: Path, marker: str, reviewed: str, *, dry_run: bool = False
+    root: Path,
+    marker: str,
+    reviewed: str,
+    *,
+    dry_run: bool = False,
+    ref: str | None = None,
 ) -> str | None:
     def verify() -> str | None:
         try:
@@ -650,7 +754,7 @@ def publication_source(
             return None
 
     source = verify()
-    if source is None and complete_history(root, dry_run=dry_run):
+    if source is None and complete_history(root, dry_run=dry_run, ref=ref):
         # Keep the original review gate even if origin advances during this fetch.
         source = verify()
     return source
@@ -705,7 +809,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         base = (
             read_plain_files(
                 repo,
-                last_sync(repo, head, config["base"], root, prefix, local=ours),
+                last_sync(repo, head, config["base"], root, prefix, url, local=ours),
             )
             if config
             else {}
@@ -825,7 +929,7 @@ def default_branch(root: Path, *, publishing: bool = False):
                 "Check its URL, credentials and network access."
                 + (" Nothing pushed." if publishing else "")
             ) from None
-        yield git("rev-parse", gate, cwd=root)
+        yield git("rev-parse", gate, cwd=root), ref
     finally:
         git("update-ref", "-d", gate, cwd=root)
 
@@ -877,7 +981,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         "The paper differs from the latest commit on origin's default branch. Merge "
         "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
-    with default_branch(root, publishing=True) as default:
+    with default_branch(root, publishing=True) as (default, reviewed_ref):
         # Comparing the tip prevents republishing content a later reviewed edit removed.
         reviewed = (
             default
@@ -898,8 +1002,11 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                     config["base"],
                     root,
                     prefix,
+                    config["url"],
                     reviewed=default,
                     dry_run=dry_run,
+                    head_only=True,
+                    reviewed_ref=reviewed_ref,
                 )
             except click.ClickException as exc:
                 raise click.ClickException(f"{exc.message} Nothing pushed.") from None
@@ -959,7 +1066,7 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                 return
             identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
             # Later syncs recognize this commit as a sync point by the reviewed commit it names.
-            message = f"Publish workspace commit {reviewed or git('rev-parse', 'HEAD', cwd=root)}"
+            message = f"Publish workspace commit {reviewed}"
             git(
                 *identity,
                 *commit_settings(root),
