@@ -161,11 +161,13 @@ def test_sync_preserves_whitespace_in_repository_root(setup):
 
 def test_git_environment_removes_all_repository_overrides(tmp_path, monkeypatch):
     local_names = git(tmp_path, "rev-parse", "--local-env-vars").splitlines()
-    for name in [*local_names, "GIT_NAMESPACE"]:
+    # Older Git versions report this internal override; newer versions omit it.
+    overrides = [*local_names, "GIT_NAMESPACE", "GIT_INTERNAL_SUPER_PREFIX"]
+    for name in overrides:
         monkeypatch.setenv(name, "fixture-override")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", "personal-config")
     env = module.git_environment()
-    assert not set([*local_names, "GIT_NAMESPACE"]) & env.keys()
+    assert not set(overrides) & env.keys()
     assert env["GIT_CONFIG_GLOBAL"] == "personal-config"
 
 
