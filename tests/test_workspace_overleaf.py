@@ -2071,13 +2071,10 @@ def test_history_fetch_failure_has_command_specific_diagnostics(
         assert (shallow / "paper/overleaf.json").read_bytes() == before_record
         assert not git(shallow, "status", "--porcelain")
     else:
-        assert result.exit_code == 0, result.output
-        assert "Pulling from the recorded sync" in result.output
-        assert (shallow / "paper/main.tex").read_text() == "ONE\ntwo\nTHREE\n"
-        assert (
-            json.loads((shallow / "paper/overleaf.json").read_text())["base"]
-            == before_remote.split()[0]
-        )
+        assert result.exit_code == 1, result.output
+        assert "could discard workspace or Overleaf edits" in result.output
+        assert (shallow / "paper/main.tex").read_text() == "ONE\ntwo\nthree\n"
+        assert (shallow / "paper/overleaf.json").read_bytes() == before_record
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
@@ -2199,7 +2196,9 @@ def test_history_completion_does_not_accept_newly_reviewed_publication(
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("unavailable", ["missing", "renamed", "offline"])
 @pytest.mark.parametrize("conflict", [False, True])
-def test_pull_falls_back_to_recorded_sync_without_origin(setup, unavailable, conflict):
+def test_pull_refuses_ambiguous_publication_files_without_origin(
+    setup, unavailable, conflict
+):
     seed, project = setup
     overleaf_edit(seed, "main.tex", "one\ntwo\nthree\n")
     assert run(project, "pull", URL).exit_code == 0
@@ -2216,26 +2215,15 @@ def test_pull_falls_back_to_recorded_sync_without_origin(setup, unavailable, con
     else:
         git(project, "remote", "set-url", "origin", str(project.parent / "offline.git"))
 
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    remote = git(seed, "ls-remote", "origin", "master")
     result = run(project, "pull")
-
-    assert result.exit_code == (CONFLICT_EXIT if conflict else 0), result.output
-    assert "Pulling from the recorded sync" in result.output
+    assert result.exit_code == 1, result.output
+    assert "could discard workspace or Overleaf edits" in result.output
+    assert "Restore origin access" in result.output
     assert "offline.git" not in result.output
-    content = (project / "paper/main.tex").read_text()
-    if conflict:
-        assert "<<<<<<< workspace\nONE\n" in content
-        assert "remote\n>>>>>>> overleaf\n" in content
-    else:
-        assert content == "ONE\ntwo\nTHREE\n"
-    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
-        seed, "rev-parse", "HEAD"
-    )
-    if not conflict:
-        commit_all(project)
-        before = git(seed, "ls-remote", "origin", "master")
-        publish = run(project, "publish", merge=False)
-        assert publish.exit_code == 1 and "`origin` remote" in publish.output
-        assert git(seed, "ls-remote", "origin", "master") == before
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == remote
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
@@ -2732,7 +2720,7 @@ def test_publish_reports_unavailable_recorded_base_without_pushing(setup, dry_ru
     before_remote = git(seed, "ls-remote", "origin", "master")
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert result.exit_code == 1, result.output
-    assert "Reset remote history is unsupported; nothing synced" in result.output
+    assert "Reset remote history is unsupported; nothing pushed" in result.output
     assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
     assert git(seed, "ls-remote", "origin", "master") == before_remote
     assert not git(project, "status", "--porcelain")
@@ -3577,3 +3565,402 @@ def test_pull_caches_repeated_publication_and_ancestry_checks(
     assert len(ancestry) == len(set(ancestry))
     if not invalid_record:
         assert set(ancestry) == set(zip(sources, sources[1:]))
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("unavailable", ["missing", "offline", "completion", "shallow"])
+@pytest.mark.parametrize("change", ["text", "asset", "addition", "deletion"])
+@pytest.mark.parametrize("followup", [False, True])
+def test_origin_fallback_does_not_overwrite_local_publication_revert(
+    setup, monkeypatch, unavailable, change, followup
+):
+    seed, project = setup
+    if change == "asset":
+        (seed / "figure.pdf").write_bytes(b"%PDF-1.4\noriginal\n")
+        commit_all(seed)
+        git(seed, "push", "origin", "master")
+    assert run(project, "pull", URL).exit_code == 0
+    originals = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    name = {
+        "text": "main.tex",
+        "asset": "figure.pdf",
+        "addition": "added.tex",
+        "deletion": "old.tex",
+    }[change]
+    target = project / "paper" / name
+    if change == "deletion":
+        target.unlink()
+    else:
+        target.write_bytes(
+            b"%PDF-1.4\npublished\n" if change == "asset" else b"published edit\n"
+        )
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    if followup:
+        overleaf_edit(seed, name, "remote follow-up\n")
+    if name in originals:
+        target.write_bytes(originals[name])
+    else:
+        target.unlink()
+    commit_all(project)
+    if unavailable == "missing":
+        git(project, "remote", "remove", "origin")
+    elif unavailable == "offline":
+        git(project, "remote", "set-url", "origin", str(project.parent / "offline.git"))
+    elif unavailable == "shallow":
+        git(project, "push", "origin", "main")
+        shallow = project.parent / "shallow"
+        git(
+            project.parent,
+            "clone",
+            "--depth=1",
+            (project.parent / "workspace.git").as_uri(),
+            str(shallow),
+        )
+        project = shallow
+        git(project, "remote", "remove", "origin")
+    else:
+        # Force the same fallback used when ancestry needs unavailable history.
+        def fail_completion(*args, **kwargs):
+            raise module.OriginAccessError("fixture origin failure")
+
+        monkeypatch.setattr(module, "publication_source", fail_completion)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    refs = git(project, "show-ref")
+    remote = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code == 1, result.output
+    assert "could discard workspace or Overleaf edits" in result.output
+    assert "Restore origin access" in result.output
+    assert "nothing copied" in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(project, "show-ref") == refs
+    assert git(seed, "ls-remote", "origin", "master") == remote
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", ["pull", "publish", "dry-run"])
+@pytest.mark.parametrize(
+    "invalid,source_present",
+    [
+        ("ordinary-parent", True),
+        ("merge-parent", True),
+        ("different-project", True),
+        ("different-bytes", True),
+    ],
+)
+def test_invalid_publication_chain_does_not_complete_history(
+    setup, monkeypatch, command, invalid, source_present
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    if invalid == "ordinary-parent":
+        overleaf_edit(seed, "main.tex", "ordinary edit\n")
+    elif invalid == "merge-parent":
+        git(seed, "switch", "-c", "side")
+        (seed / "side.tex").write_text("side\n")
+        commit_all(seed)
+        git(seed, "switch", "master")
+        overleaf_edit(seed, "main.tex", "ordinary edit\n")
+        git(seed, "merge", "--no-ff", "side", "-m", "merge")
+        git(seed, "push", "origin", "master")
+    (project / "paper/main.tex").write_text("publication\n")
+    if invalid == "different-project":
+        record = project / "paper/overleaf.json"
+        record.write_text(
+            record.read_text().replace(URL, "https://git.overleaf.com/different")
+        )
+    commit_all(project)
+    source = git(project, "rev-parse", "HEAD")
+    overleaf_edit(
+        seed,
+        "main.tex",
+        "other bytes\n" if invalid == "different-bytes" else "publication\n",
+    )
+    git(seed, "commit", "--amend", "-m", f"Publish workspace commit {source}")
+    git(seed, "push", "--force", "origin", "master")
+    if invalid == "different-project":
+        record.write_text(
+            record.read_text().replace("https://git.overleaf.com/different", URL)
+        )
+    (project / "outside.txt").write_text("later reviewed change\n")
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    if source_present:
+        # Present source, but its ancestry remains hidden by shallow boundaries.
+        git(shallow, "fetch", "--depth=1", "origin", source)
+    shallow_file = shallow / git(shallow, "rev-parse", "--git-path", "shallow")
+    before_shallow = shallow_file.read_bytes()
+    refs = git(shallow, "show-ref")
+    fetch_head = shallow / git(shallow, "rev-parse", "--git-path", "FETCH_HEAD")
+    before_fetch = fetch_head.read_bytes() if fetch_head.exists() else None
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    result = (
+        run(shallow, "publish", "--dry-run", merge=False)
+        if command == "dry-run"
+        else run(shallow, command, merge=False)
+    )
+    assert shallow_file.exists(), result.output
+    assert shallow_file.read_bytes() == before_shallow
+    assert "shallow history" not in result.output
+    assert "Fetching complete" not in result.output
+    assert git(shallow, "show-ref") == refs
+    assert (fetch_head.read_bytes() if fetch_head.exists() else None) == before_fetch
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+    if command != "pull":
+        assert result.exit_code == 1 and "Overleaf has changed" in result.output
+        assert "nothing pushed" in result.output
+    else:
+        assert result.exit_code == (
+            CONFLICT_EXIT if invalid == "different-bytes" else 0
+        ), result.output
+
+
+@pytest.mark.parametrize("command", ["pull", "publish", "dry-run"])
+def test_gate_cleanup_failure_does_not_hide_original_error(setup, monkeypatch, command):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    real = module.subprocess.run
+
+    def fail_git(args, **kwargs):
+        if "update-ref" in args and "-d" in args:
+            return subprocess.CompletedProcess(
+                args, 128, b"", b"fixture-secret cleanup"
+            )
+        if "ls-remote" in args and "--symref" in args:
+            return subprocess.CompletedProcess(args, 128, b"", b"fixture-secret origin")
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", fail_git)
+    result = (
+        run(project, "publish", "--dry-run", merge=False)
+        if command == "dry-run"
+        else run(project, command, merge=False)
+    )
+    assert (
+        "Could not fetch" in result.output
+        or "Pulling from the recorded sync" in result.output
+    )
+    assert "git update-ref failed" not in result.output
+    assert "fixture-secret" not in result.output
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_reset_history_publish_uses_one_nothing_pushed_suffix(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(seed, "switch", "--orphan", "reset")
+    (seed / "main.tex").write_text("reset\n")
+    commit_all(seed)
+    git(seed, "push", "--force", "origin", "HEAD:master")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code == 1, result.output
+    assert "Reset remote history" in result.output
+    assert "nothing synced" not in result.output
+    assert result.output.lower().count("nothing pushed") == 1
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_pull_checkpoints_publication_chain(setup, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    sources = []
+    for i in range(2):
+        (project / "paper/main.tex").write_text(f"publication {i}\n")
+        commit_all(project)
+        sources.append(git(project, "rev-parse", "HEAD"))
+        assert run(project, "publish").exit_code == 0
+    remote_head = git(seed, "ls-remote", "origin", "master").split()[0]
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert git(project, "diff", "--name-only") == "paper/overleaf.json"
+    assert (
+        json.loads((project / "paper/overleaf.json").read_text())["base"] == remote_head
+    )
+    commit_all(project)
+    (project / "paper/main.tex").write_text("publication after checkpoint\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    real_read = module.read_plain_files
+
+    def forbid_old_sources(repo, revision, prefix=""):
+        if repo == project and revision in sources:
+            pytest.fail("checkpointed sources must not be reverified")
+        return real_read(repo, revision, prefix)
+
+    monkeypatch.setattr(module, "read_plain_files", forbid_old_sources)
+    assert run(project, "publish").exit_code == 0
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_pull_rejects_metadata_path_collision_before_history_fetch(setup, monkeypatch):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    git(seed, "pull", "--ff-only")
+    (seed / "overleaf.json").mkdir()
+    overleaf_edit(seed, "overleaf.json/child.tex", "blocked\n")
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+
+    def refuse_fetch(*args, **kwargs):
+        pytest.fail("path validation must precede publication verification")
+
+    monkeypatch.setattr(module, "last_sync", refuse_fetch)
+    result = run(project, "pull")
+    assert result.exit_code == 1, result.output
+    assert "uses file overleaf.json as a directory" in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_fallback_refuses_ambiguous_unseen_publication_without_origin(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    stale = project.parent / "stale"
+    git(project.parent, "clone", str(project.parent / "workspace.git"), str(stale))
+    (project / "paper/main.tex").write_text("unseen publication\n")
+    commit_all(project)
+    source = git(project, "rev-parse", "HEAD")
+    assert run(project, "publish").exit_code == 0
+    assert module.resolve_commit(stale, source) is None
+    git(stale, "remote", "remove", "origin")
+    before = {p.name: p.read_bytes() for p in (stale / "paper").iterdir()}
+    result = run(stale, "pull")
+    assert result.exit_code == 1, result.output
+    assert "could discard workspace or Overleaf edits" in result.output
+    assert {p.name: p.read_bytes() for p in (stale / "paper").iterdir()} == before
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_invalid_subject_after_ordinary_edit_preserves_shallow_history(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("next reviewed paper\n")
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    overleaf_edit(seed, "main.tex", "ordinary edit\n")
+    overleaf_edit(seed, "main.tex", "invented publication\n")
+    git(
+        seed,
+        "commit",
+        "--amend",
+        "-m",
+        f"Publish workspace commit {'a' * len(git(project, 'rev-parse', 'HEAD'))}",
+    )
+    git(seed, "push", "--force", "origin", "master")
+    shallow_file = shallow / git(shallow, "rev-parse", "--git-path", "shallow")
+    before = shallow_file.read_bytes()
+    result = run(shallow, "publish", "--dry-run", merge=False)
+    assert result.exit_code == 1 and "shallow history" in result.output
+    assert "Overleaf has changed" not in result.output
+    assert shallow_file.read_bytes() == before
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_unseen_source_with_newer_pull_anchor_preserves_local_revert(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    originals = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    overleaf_edit(seed, "main.tex", "ordinary edit reviewed elsewhere\n")
+    assert run(project, "pull").exit_code == 0
+    (project / "paper/main.tex").write_text("published from newer pull\n")
+    commit_all(project)
+    source = git(project, "rev-parse", "HEAD")
+    assert run(project, "publish").exit_code == 0
+    for name, content in originals.items():
+        (project / "paper" / name).write_bytes(content)
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    shallow = project.parent / "shallow"
+    git(
+        project.parent,
+        "clone",
+        "--depth=1",
+        (project.parent / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    assert module.resolve_commit(shallow, source) is None
+    result = run(shallow, "pull")
+    assert result.exit_code == 0, result.output
+    assert (shallow / "paper/main.tex").read_bytes() == originals["main.tex"]
+    assert git(shallow, "diff", "--name-only") == "paper/overleaf.json"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("local_revert", [True, False])
+@pytest.mark.parametrize("unavailable", ["missing", "offline", "renamed"])
+def test_fallback_preserves_partial_local_and_remote_reverts(
+    setup, local_revert, unavailable
+):
+    seed, project = setup
+    overleaf_edit(seed, "main.tex", "one\ntwo\nthree\n")
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("ONE\ntwo\nthree\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    if local_revert:
+        # Revert one published line and edit another: the file differs from base.
+        (project / "paper/main.tex").write_text("one\ntwo\nTHREE\n")
+        commit_all(project)
+    else:
+        overleaf_edit(seed, "main.tex", "one\ntwo\nthree\n")
+    if unavailable == "missing":
+        git(project, "remote", "remove", "origin")
+    elif unavailable == "offline":
+        git(project, "remote", "set-url", "origin", str(project.parent / "offline.git"))
+    else:
+        git(project, "remote", "rename", "origin", "upstream")
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    remote = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "pull")
+    assert result.exit_code == 1, result.output
+    assert "could discard workspace or Overleaf edits" in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == remote
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("publication", [True, False])
+def test_fallback_still_merges_files_without_publication_changes(setup, publication):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    if publication:
+        (project / "paper/main.tex").write_text("published paper\n")
+        commit_all(project)
+        assert run(project, "publish").exit_code == 0
+    overleaf_edit(seed, "old.tex", "ordinary collaborator edit\n")
+    git(project, "remote", "remove", "origin")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/old.tex").read_text() == "ordinary collaborator edit\n"
+    assert (project / "paper/main.tex").read_text() == (
+        "published paper\n" if publication else "hello\n"
+    )
+    if publication:
+        assert "Pulling from the recorded sync" in result.output

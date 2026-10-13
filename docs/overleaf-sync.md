@@ -22,10 +22,29 @@ older reviewed content still needs pull and review.
 
 Publish checks the Overleaf tip first, refusing an ordinary edit without scanning
 older publications. A publication tip verifies its prior chain. Pull considers
-newest candidates first. Publication results, including invalid records, and
-consecutive source-ancestry results are cached within the command. Chain walks
-still read first-parent logs for each candidate, so history traversal can grow
-with the number of publications since the recorded pull.
+newest candidates first. Publication results, including invalid records,
+consecutive source-ancestry results, and structural chain checks are cached
+within the command. Before completing workspace history, recognition checks
+the available source's project
+record, exact paper bytes, and the Overleaf chain's marker subjects and single
+parents. If the source is absent, its recorded anchor cannot be inspected yet.
+Checking that candidate against the local record would reject a valid
+publication anchored by a newer pull reviewed elsewhere, and could overwrite
+a subsequent local revert. Recognition therefore obtains the source before
+checking its actual anchor.
+
+A marker whose source is absent can still require history completion, even if
+that source ultimately does not exist. An absent historical
+publication and an invented ID cannot be distinguished from shallow local
+objects alone. Dry-run reports unverifiable shallow history in that case,
+without fetching it; it does not claim a collaborator edit is established.
+
+Chain walks still read first-parent logs for each candidate, so history traversal
+can grow with publications since the recorded pull. Pull always advances
+`overleaf.json` to the current Overleaf head, including a verified publication
+with no paper changes. Periodically pull, review and commit that checkpoint to
+bound subsequent verification to publications after it. Publication continues
+to leave the workspace record unchanged.
 
 ## Fetching and failures
 
@@ -45,7 +64,25 @@ transport failures. Publication file reads, local Git failures and gate-ref
 resolution failures propagate sanitized errors before copying. Missing objects
 and non-ancestry are expected negative verification results; other Git exit
 statuses are errors. Publish reports origin-access guidance and nothing pushed
-when transport fails.
+when transport fails. On fallback, pull compares candidate publication bytes
+against the recorded files, the checkout, and the remote tip. If a publication
+changed a file and its workspace and Overleaf copies now differ, pull refuses
+before copying. The older base cannot distinguish an unseen publication,
+subsequent edits, and local or remote reverts, including partial reverts. Restore
+origin access and retry. No unverified marker becomes a merge base, and the sync
+record stays unchanged on this refusal. Files without publication changes still
+merge from the recorded base with a warning; equal published copies remain safe.
+
+Remote plain-file checks and collisions with the generated sync-record path run
+before publication recognition. Modify/delete and concurrent-change checks use
+the selected merge base. Running them against the older recorded base first
+would reject edits already reconciled in a publication. A structurally valid
+publication may therefore require history completion before a later content
+refusal; the announced permanent history change is not rolled back.
+
+Temporary review-ref cleanup reports a sanitized warning on failure without
+masking the operation's result. Such a failure can leave that temporary ref in
+the workspace; branch refs remain untouched.
 
 `--expected-commit` accepts a full SHA-1 or SHA-256 ID, including uppercase input.
 It requires the exact checkout and fetched default tip, then checks the

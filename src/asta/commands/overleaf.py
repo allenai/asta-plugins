@@ -16,6 +16,7 @@ import click
 
 CONFIG = "overleaf.json"
 SHA = re.compile(r"[0-9a-f]{40}")
+FULL_OID = r"[0-9a-f]{40}(?:[0-9a-f]{24})?"
 # Git's `rev-parse --local-env-vars` list, plus the namespace override.
 LOCAL_GIT_ENV = {
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -62,6 +63,10 @@ class GitCommandError(click.ClickException):
 
 class OriginAccessError(click.ClickException):
     """Transport or discovery failed while fetching reviewed workspace history."""
+
+
+class ProjectURLError(click.ClickException):
+    """A supplied project URL is outside the supported Overleaf Git format."""
 
 
 def git_bytes(
@@ -210,7 +215,7 @@ def validate_url(url: str | None) -> str:
         r"https://(?:git@)?git\.overleaf\.com/([A-Za-z0-9]+)(?:\.git)?/?", url or ""
     )
     if not match:
-        raise click.ClickException(
+        raise ProjectURLError(
             "Give the project's Git URL: https://git.overleaf.com/<project-id>."
         )
     return f"https://git.overleaf.com/{match[1]}"
@@ -561,6 +566,7 @@ def merge_text(
             env=git_environment(),
             capture_output=True,
         )
+    # merge-file reports conflict counts from 1 to 127, capped at 127.
     if result.returncode < 0 or result.returncode > 127:
         raise click.ClickException(
             f"git merge-file failed (exit {result.returncode}); nothing copied."
@@ -588,6 +594,25 @@ def last_sync(
     """
 
     def warn_fallback() -> None:
+        recorded_files = read_plain_files(repo, base)
+        remote_files = read_plain_files(repo, head)
+        for entry in commits:
+            commit, _, message = entry.partition(" ")
+            match = PUBLISH_MESSAGE.match(message)
+            if not match:
+                continue
+            # Without origin, the old base cannot distinguish post-publication
+            # edits from reverts. Equal copies and unpublished files remain safe.
+            published = read_plain_files(repo, commit)
+            if any(
+                published.get(name) != recorded_files.get(name)
+                and local.get(name) != remote_files.get(name)
+                for name in recorded_files.keys() | published.keys()
+            ):
+                raise click.ClickException(
+                    "Using the recorded sync could discard workspace or Overleaf edits "
+                    "to a published file. Restore origin access and retry; nothing copied."
+                )
         click.echo(
             "Could not verify workspace publication history from `origin`. "
             "Pulling from the recorded sync instead; published edits may "
@@ -612,19 +637,10 @@ def last_sync(
     with ExitStack() as stack:
         publications = {}
         source_ancestry = {}
+        marker_chains = {}
+        marker_anchors = {}
 
-        def publication(commit: str, message: str):
-            if commit in publications:
-                return publications[commit]
-            publications[commit] = None
-            match = PUBLISH_MESSAGE.match(message)
-            if not match:
-                return None
-            source = publication_source(
-                root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
-            )
-            if source is None:
-                return None
+        def publication_files(source: str):
             published = read_plain_files(root, source, prefix)
             try:
                 record = json.loads(published.pop(CONFIG))
@@ -635,23 +651,19 @@ def last_sync(
                     or validate_url(record.get("url")) != url
                 ):
                     return None
-            except (KeyError, TypeError, ValueError, click.ClickException):
+            except (KeyError, TypeError, ValueError, ProjectURLError):
                 return None
-            result = (
-                (source, published, recorded)
-                if published == read_plain_files(repo, commit)
-                else None
-            )
-            publications[commit] = result
-            return result
+            return published, recorded
 
-        def continues_publications(commit: str, recorded: str) -> bool:
-            # A reviewed pull anchors the chain; ordinary edits and backwards
-            # workspace sources must be pulled and reviewed before another publish.
+        def marker_chain(commit: str, recorded: str):
+            pair = commit, recorded
+            if pair in marker_chains:
+                return marker_chains[pair]
+            marker_chains[pair] = None
             if resolve_commit(repo, recorded) is None or not is_ancestor(
                 repo, recorded, commit
             ):
-                return False
+                return None
             chain = git(
                 "log",
                 "--first-parent",
@@ -660,12 +672,65 @@ def last_sync(
                 f"{recorded}..{commit}",
                 cwd=repo,
             ).splitlines()
-            previous, previous_source = recorded, None
+            previous, entries = recorded, []
             for entry in chain:
                 ancestry, _, message = entry.partition("\t")
                 current, *parents = ancestry.split()
-                if parents != [previous]:
-                    return False
+                if parents != [previous] or not PUBLISH_MESSAGE.match(message):
+                    return None
+                entries.append((current, message))
+                previous = current
+            if previous != commit:
+                return None
+            marker_chains[pair] = entries
+            for current, _ in entries:
+                marker_anchors.setdefault(current, set()).add(recorded)
+            return entries
+
+        def publication(commit: str, message: str):
+            if commit in publications:
+                return publications[commit]
+            publications[commit] = None
+            match = PUBLISH_MESSAGE.match(message)
+            if not match:
+                return None
+            source = resolve_commit(root, match.group(1))
+            if source is None:
+                # The unseen source can anchor after an ordinary edit already
+                # reviewed elsewhere, so the local record cannot precheck its chain.
+                source = publication_source(
+                    root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
+                )
+            if source is None:
+                return None
+            files = publication_files(source)
+            if files is None:
+                return None
+            published, recorded = files
+            if (
+                (
+                    recorded not in marker_anchors.get(commit, ())
+                    and marker_chain(commit, recorded) is None
+                )
+                or published != read_plain_files(repo, commit)
+                or publication_source(
+                    root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
+                )
+                is None
+            ):
+                return None
+            result = source, published, recorded
+            publications[commit] = result
+            return result
+
+        def continues_publications(commit: str, recorded: str) -> bool:
+            # A reviewed pull anchors the chain; ordinary edits and backwards
+            # workspace sources must be pulled and reviewed before another publish.
+            chain = marker_chain(commit, recorded)
+            if chain is None:
+                return False
+            previous, previous_source = recorded, None
+            for current, message in chain:
                 candidate = publication(current, message)
                 if candidate is None or candidate[2] != recorded:
                     return False
@@ -809,6 +874,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         new = read_plain_files(repo, head)
         if CONFIG in new:
             refuse(CONFIG, "is reserved for workspace sync metadata")
+        check_paths([CONFIG, *new])
         check_ignore_files(new)
         if config and (
             resolve_commit(repo, config["base"]) is None
@@ -931,7 +997,7 @@ def require_expected_tip(root: Path, expected: str, ref: str | None) -> None:
             "nothing pushed. Check origin access and retry."
         ) from None
     branch = re.search(r"^ref: (refs/heads/\S+)\tHEAD$", advertised, re.M)
-    tip = re.search(r"^([0-9a-f]{40}(?:[0-9a-f]{24})?)\tHEAD$", advertised, re.M)
+    tip = re.search(rf"^({FULL_OID})\tHEAD$", advertised, re.M)
     if not branch or not tip or branch.group(1) != ref or tip.group(1) != expected:
         raise click.ClickException(
             "Origin's default branch changed since the expected commit; nothing pushed. "
@@ -964,7 +1030,10 @@ def default_branch(root: Path, *, publishing: bool = False):
             ) from None
         yield git("rev-parse", gate, cwd=root), ref
     finally:
-        git("update-ref", "-d", gate, cwd=root)
+        try:
+            git("update-ref", "-d", gate, cwd=root)
+        except click.ClickException:
+            click.echo("Could not remove the temporary Overleaf review ref.", err=True)
 
 
 @overleaf.command()
@@ -982,7 +1051,7 @@ def publish(
     root, paper, prefix = resolve(project, directory)
     if expected_commit is not None:
         expected_commit = expected_commit.lower()
-        if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", expected_commit):
+        if not re.fullmatch(FULL_OID, expected_commit):
             raise click.BadParameter(
                 "needs a full commit id", param_hint="--expected-commit"
             )
@@ -1063,7 +1132,10 @@ def publish(
                     reviewed_ref=reviewed_ref,
                 )
             except click.ClickException as exc:
-                raise click.ClickException(f"{exc.message} Nothing pushed.") from None
+                message = exc.message.replace("nothing synced.", "nothing pushed.")
+                if "nothing pushed" not in message.lower():
+                    message += " Nothing pushed."
+                raise click.ClickException(message) from None
             if synced != head:
                 raise click.ClickException(
                     "Overleaf has changed since the last sync. Run "
