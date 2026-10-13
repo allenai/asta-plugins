@@ -15,21 +15,29 @@ Then show them this table, with the values for their question. Everything not in
 
 | Step | Agent | What it does | Configuration |
 |---|---|---|---|
-| 1 | Theorizer, Paper Finder | Plans a search query and an extraction schema from the question, searches with that query, fetches the top papers' full text, and fills any gap to the target with more searches | 100 papers (`papers fetch --top`) |
-| 2 | Theorizer | Extracts findings from every paper and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
+| 1 | Theorizer | Plans a paper search query, an extraction query and a first extraction schema from the question | `gpt-6-sol` |
+| 2 | Paper Finder | Searches with the plan's query, fetches the top papers' full text, and fills any gap to the target with more searches | 100 papers (`papers fetch --top`) |
+| 3 | Theorizer | Extracts findings from every paper and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
 | | Check-in | Shows you the first theories, then you steer another generation or go on | |
-| 3 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
-| 4 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
+| 4 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
+| 5 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
 
 ## Steps
 
 `<run>/theory` is the Theorizer project. Every step saves into it, so the passes share one corpus and one theory store.
 
-1. **Plan and papers.** Theorizer plans the run from the question: a search query, an extraction query and a first schema. Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
+1. **Plan.** Theorizer plans the run from the question: a paper search query, an extraction query and a first schema:
 
    ```bash
    theorize -p <run>/theory init --model gpt-6-sol --extraction-model gpt-6-luna
    theorize -p <run>/theory plan "<the question>"
+   ```
+
+   If the person gave an angle, pass it as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
+
+2. **Papers.** Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
+
+   ```bash
    theorize -p <run>/theory papers search "<the plan's search query>"
    theorize -p <run>/theory papers fetch --top <papers>
    theorize -p <run>/theory show papers
@@ -46,9 +54,7 @@ Then show them this table, with the values for their question. Everything not in
 
    If the person gave papers, `papers import` adds them: see [Bring Your Own Papers](#bring-your-own-papers). When they say their papers are the corpus, import them and search for none.
 
-   If the person gave an angle, pass it to `plan` as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
-
-2. **First pass.** Theorizer extracts from every paper with the plan's schema, and generates theories:
+3. **First pass.** Theorizer extracts from every paper with the plan's schema, and generates theories:
 
    ```bash
    theorize -p <run>/theory extract
@@ -66,10 +72,10 @@ Then show them this table, with the values for their question. Everything not in
      theorize -p <run>/theory theories generate --max-data-tokens 750000 --mission-statement "<the question, then their direction>" --save-as theories-steer-<n>
      ```
 
-     Report and publish it as in step 5, then check in again.
-   - **Go on** to steps 3 and 4.
+     Report and publish it as in step 6, then check in again.
+   - **Go on** to steps 4 and 5.
 
-3. **Missed variables.** Ask each paper which variables are worth extracting beyond the ones the first schema records, then design new schemas from the answers. List the first schema's fields with `theorize -p <run>/theory show plan`, and name them in the context:
+4. **Missed variables.** Ask each paper which variables are worth extracting beyond the ones the first schema records, then design new schemas from the answers. List the first schema's fields with `theorize -p <run>/theory show plan`, and name them in the context:
 
    ```bash
    theorize -p <run>/theory discover --context "The first extraction already records: <its field names>. Propose variables it does not capture."
@@ -78,7 +84,7 @@ Then show them this table, with the values for their question. Everything not in
 
    It prints the new schemas as `schemas#0`, `schemas#1` and so on, usually 2 to 4 of them. Each has its own extraction query. `theorize -p <run>/theory load schemas` prints them in full.
 
-4. **Schema passes.** For each schema, extract with it, then generate from that extraction. Number the schema IDs on from the first pass's `schema-1`, so each theory's evidence stays with its own schema:
+5. **Schema passes.** For each schema, extract with it, then generate from that extraction. Number the schema IDs on from the first pass's `schema-1`, so each theory's evidence stays with its own schema:
 
    ```bash
    theorize -p <run>/theory extract --schema schemas#0 --schema-id schema-2 --save-as extraction-schema-2
@@ -87,9 +93,9 @@ Then show them this table, with the values for their question. Everything not in
 
    Then `schemas#1` as `schema-3`, and so on. The passes are independent: run them one after another or side by side.
 
-5. **Updates.** After every generation, tell the person what the pass produced. If you have a tool for publishing artifacts, publish the theories with it too.
+6. **Updates.** After every generation, tell the person what the pass produced. If you have a tool for publishing artifacts, publish the theories with it too.
 
-6. **Comparison.** Theories from different schemas often restate each other. Name the ones that do, and the ones only one schema produced. That tells the person which explanations rest on one slice of the evidence.
+7. **Comparison.** Theories from different schemas often restate each other. Name the ones that do, and the ones only one schema produced. That tells the person which explanations rest on one slice of the evidence.
 
 ## Bring Your Own Papers
 
