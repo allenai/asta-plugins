@@ -1807,6 +1807,140 @@ def test_sync_keeps_shallow_history_when_publication_is_at_tip(
     )
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("source_present", [False, True])
+@pytest.mark.parametrize("command", ["pull", "publish", "dry-run"])
+def test_sync_refuses_incomplete_shallow_record_verification(
+    setup, tmp_path, source_present, command
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    original = (project / "paper/main.tex").read_bytes()
+    config = (project / "paper/overleaf.json").read_bytes()
+    (project / "paper/main.tex").write_text("reviewed publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    source = git(project, "rev-parse", "HEAD")
+    # A reviewed revert intentionally restores the last pull's bytes, while
+    # Overleaf still holds the published edit. Falling back to base undoes it.
+    (project / "paper/main.tex").write_bytes(original)
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    shallow = tmp_path / "shallow"
+    git(
+        tmp_path,
+        "clone",
+        "--depth=1",
+        (tmp_path / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    git(shallow, "config", "user.name", "t")
+    git(shallow, "config", "user.email", "t@t")
+    if source_present:
+        # Having the object does not prove ancestry through a shallow boundary.
+        git(shallow, "fetch", "--no-write-fetch-head", "origin", source)
+    assert (module.resolve_commit(shallow, source) is not None) == source_present
+    if source_present:
+        assert not module.is_ancestor(shallow, source, "HEAD")
+    shallow_file = shallow / git(shallow, "rev-parse", "--git-path", "shallow")
+    before_shallow = shallow_file.read_bytes()
+    before_refs = git(shallow, "show-ref")
+    fetch_head = shallow / git(shallow, "rev-parse", "--git-path", "FETCH_HEAD")
+    fetch_head.write_bytes(b"existing fetch state\n")
+    before = {p.name: p.read_bytes() for p in (shallow / "paper").iterdir()}
+    remote = git(seed, "ls-remote", "origin", "master")
+    record = origin_record(tmp_path)
+    args = ("publish", "--dry-run") if command == "dry-run" else (command,)
+
+    result = run(shallow, *args, merge=False)
+
+    assert result.exit_code == 1, result.output
+    assert "shallow workspace history" in result.output
+    assert (
+        "nothing copied" if command == "pull" else "nothing pushed"
+    ) in result.output
+    assert {p.name: p.read_bytes() for p in (shallow / "paper").iterdir()} == before
+    assert shallow_file.read_bytes() == before_shallow
+    assert git(shallow, "show-ref") == before_refs
+    assert fetch_head.read_bytes() == b"existing fetch state\n"
+    assert git(seed, "ls-remote", "origin", "master") == remote
+    assert origin_record(tmp_path) == record
+    assert not git(shallow, "status", "--porcelain")
+    assert not git(shallow, "for-each-ref", "refs/asta")
+
+    # Fetching history is an explicit user action; a retry preserves the revert.
+    git(shallow, "fetch", "--unshallow", "origin")
+    retried = run(shallow, *args, merge=False)
+    assert retried.exit_code == 0, retried.output
+    assert (shallow / "paper/main.tex").read_bytes() == original
+    if command == "pull":
+        assert git(shallow, "diff", "--name-only") == "paper/overleaf.json"
+    else:
+        assert (shallow / "paper/overleaf.json").read_bytes() == config
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_pull_refuses_hidden_checkout_ancestry_even_when_record_is_reviewed(
+    setup, tmp_path
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    original = (project / "paper/main.tex").read_bytes()
+    (project / "paper/main.tex").write_text("reviewed publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    source = git(project, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_bytes(original)
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    shallow = tmp_path / "shallow"
+    git(
+        tmp_path,
+        "clone",
+        "--depth=1",
+        (tmp_path / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    # A parallel documentation branch makes the source reachable from the new
+    # default tip, while the checkout's own shallow boundary still hides it.
+    git(project, "checkout", "-b", "parallel", source)
+    (project / "README.md").write_text("unrelated documentation\n")
+    commit_all(project)
+    git(project, "checkout", "main")
+    git(project, "merge", "--no-ff", "parallel", "-m", "Merge documentation")
+    git(project, "push", "origin", "main")
+    with module.default_branch(shallow) as (default, _):
+        assert module.is_ancestor(shallow, source, default)
+        assert not module.is_ancestor(shallow, source, "HEAD")
+    before = {p.name: p.read_bytes() for p in (shallow / "paper").iterdir()}
+    shallow_file = shallow / git(shallow, "rev-parse", "--git-path", "shallow")
+    before_shallow = shallow_file.read_bytes()
+    before_refs = git(shallow, "show-ref")
+    fetch_head = shallow / git(shallow, "rev-parse", "--git-path", "FETCH_HEAD")
+    fetch_head.write_bytes(b"existing fetch state\n")
+    remote = git(seed, "ls-remote", "origin", "master")
+    record = origin_record(tmp_path)
+
+    result = run(shallow, "pull", merge=False)
+
+    assert result.exit_code == 1, result.output
+    assert "shallow workspace history" in result.output
+    assert "nothing copied" in result.output
+    assert {p.name: p.read_bytes() for p in (shallow / "paper").iterdir()} == before
+    assert shallow_file.read_bytes() == before_shallow
+    assert git(shallow, "show-ref") == before_refs
+    assert fetch_head.read_bytes() == b"existing fetch state\n"
+    assert git(seed, "ls-remote", "origin", "master") == remote
+    assert origin_record(tmp_path) == record
+    assert not git(shallow, "for-each-ref", "refs/asta")
+    assert not git(shallow, "status", "--porcelain")
+    git(shallow, "fetch", "--unshallow", "origin")
+    retried = run(shallow, "pull", merge=False)
+    assert retried.exit_code == 0, retried.output
+    assert (shallow / "paper/main.tex").read_bytes() == original
+    assert git(shallow, "diff", "--name-only") == "paper/overleaf.json"
+
+
 @pytest.mark.parametrize("style", ["merge", "diff3", "zdiff3"])
 @pytest.mark.parametrize("scope", ["caller", "global"])
 def test_merge_conflict_style_is_independent_of_caller_config(

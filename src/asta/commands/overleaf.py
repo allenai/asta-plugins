@@ -662,6 +662,16 @@ def paper_files(repo: Path, revision: str, prefix: str = "") -> dict[str, bytes]
     return files
 
 
+def refuse_incomplete_record_history(root: Path, *, publishing: bool = False) -> None:
+    """A shallow non-ancestor result cannot justify falling back to an older base."""
+    if git("rev-parse", "--is-shallow-repository", cwd=root) == "true":
+        raise click.ClickException(
+            "Could not verify the Overleaf sync record against shallow workspace history. "
+            "Fetch the workspace history from `origin` and retry; "
+            + ("nothing pushed." if publishing else "nothing copied.")
+        )
+
+
 def reviewed_record(
     root: Path,
     repo: Path,
@@ -669,15 +679,20 @@ def reviewed_record(
     default: str,
     recorded: str | None,
     source: str | None,
+    *,
+    publishing: bool = False,
 ) -> str | None:
     """The record's Overleaf commit when it matches reviewed workspace history."""
     if recorded is None or resolve_commit(repo, recorded) is None:
         return recorded  # last_sync reports a record missing from Overleaf history.
-    if (
-        resolve_commit(root, source) is not None
-        and is_ancestor(root, source, default)
-        and paper_files(repo, recorded) == paper_files(root, source, prefix)
-    ):
+    reviewed = resolve_commit(root, source) is not None and is_ancestor(
+        root, source, default
+    )
+    if not reviewed:
+        # Missing objects and false ancestry can both be shallow-history gaps,
+        # rather than evidence that the record names unreviewed content.
+        refuse_incomplete_record_history(root, publishing=publishing)
+    if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
         return recorded
     click.echo(
         "The Overleaf sync record does not match a paper on origin's default branch; "
@@ -834,6 +849,9 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                         )
                         and read_plain_files(repo, recorded) != ours
                     ):
+                        # Verification against origin does not prove this checkout
+                        # predates the publication when its ancestry is shallow.
+                        refuse_incomplete_record_history(root)
                         # Older checkouts import the published edits for review.
                         # A shallow clone can hide ancestry; matching paper bytes
                         # above still allow it to use the published sync point.
@@ -1081,7 +1099,9 @@ def publish(
         ):
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
-            recorded = reviewed_record(root, repo, prefix, default, recorded, source)
+            recorded = reviewed_record(
+                root, repo, prefix, default, recorded, source, publishing=True
+            )
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
             if synced != head:
                 raise click.ClickException(

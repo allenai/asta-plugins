@@ -65,6 +65,15 @@ of progressively newer papers.
   can be checked. Retry once origin access or its default branch is restored.
   With no `origin` remote, pull warns and uses `base` alone; that compatibility
   path cannot verify publications made from other clones.
+- A shallow checkout refuses when the record's workspace commit is missing or
+  its ancestry cannot be verified, either against origin's default tip or the
+  checkout's own history. A shallow boundary can hide a reviewed publication;
+  treating it as unreviewed or unseen and falling back to `base` could undo a
+  workspace revert. Fetch the workspace history from `origin` explicitly and
+  retry (for example, `git fetch --unshallow origin`). Both commands refuse
+  before copying or pushing; dry-run also refuses. The CLI never deepens history
+  automatically. Shallow checkouts with verifiable ancestry still work normally,
+  as does pull when the checkout's paper already matches the trusted record.
 - An invalid record refuses both commands before copying files or pushing to
   Overleaf. The ref must point directly to a commit; trees and tags are invalid,
   even with a valid `sync.json`. Restore the ref from its history or delete it
