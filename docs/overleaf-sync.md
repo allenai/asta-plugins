@@ -46,8 +46,10 @@ content, and Overleaf access alone cannot move it either.
   accepted the paper; the same pull-and-PR recovery applies.
 - Pull refuses, with nothing copied, if `origin` exists but the record cannot be
   read, and warns and uses `base` alone when there is no `origin` remote.
-- An invalid record refuses both commands. Restore the ref from its history or
-  delete it to fall back to `paper/overleaf.json`.
+- An invalid record refuses both commands before copying files or pushing to
+  Overleaf. The ref must point directly to a commit; trees and tags are invalid,
+  even with a valid `sync.json`. Restore the ref from its history or delete it
+  to fall back to `paper/overleaf.json`.
 - A record whose Overleaf commit is missing from Overleaf history produces a
   warning and falls back to `base`.
 

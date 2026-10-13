@@ -621,8 +621,11 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             )
         except click.ClickException:
             raise OriginAccessError(unavailable) from None
-        commit = git("rev-parse", gate, cwd=root)
         try:
+            # The fetched object becomes commit-tree's parent; peeling a tag is unsafe.
+            if git("cat-file", "-t", gate, cwd=root) != "commit":
+                raise ValueError("sync record ref must point directly to a commit")
+            commit = git("rev-parse", gate, cwd=root)
             record = json.loads(
                 git_bytes("cat-file", "blob", f"{gate}:{RECORD}", cwd=root)
             )

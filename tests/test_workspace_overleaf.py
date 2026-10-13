@@ -3186,6 +3186,53 @@ def test_unreadable_sync_record_refuses(setup, monkeypatch, command):
     assert git(seed, "ls-remote", "origin", "master") == remote
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("object_type", ["tree", "tag-tree", "tag-commit"])
+@pytest.mark.parametrize("command", ["pull", "publish", "dry-run"])
+def test_noncommit_sync_record_refuses_before_changes(
+    setup, tmp_path, object_type, command
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("first publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    origin = tmp_path / "workspace.git"
+    commit, _ = origin_record(tmp_path)
+    target = git(origin, "rev-parse", f"{commit}^{{tree}}")
+    if object_type.startswith("tag-"):
+        if object_type == "tag-commit":
+            target = commit
+        git(origin, "tag", "-a", "invalid-record", "-m", "tagged record", target)
+        target = git(origin, "rev-parse", "refs/tags/invalid-record")
+    git(origin, "update-ref", RECORD_REF, target)
+    assert git(origin, "cat-file", "-t", target) != "commit"
+    if command == "pull":
+        overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    else:
+        (project / "paper/main.tex").write_text("second publication\n")
+        commit_all(project)
+        git(project, "push", "origin", "main")
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    remote = git(seed, "ls-remote", "origin", "master")
+    result = run(
+        project,
+        "publish" if command == "dry-run" else command,
+        *(["--dry-run"] if command == "dry-run" else []),
+        merge=False,
+    )
+    assert result.exit_code == 1, result.output
+    assert "Invalid Overleaf sync record" in result.output
+    assert ("Nothing copied" if command == "pull" else "Nothing pushed") in (
+        result.output
+    )
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == remote
+    assert git(origin, "rev-parse", RECORD_REF) == target
+    assert not git(project, "for-each-ref", "refs/asta")
+    assert not git(project, "status", "--porcelain")
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_invalid_sync_record_refuses(setup, tmp_path, command):
     seed, project = setup
