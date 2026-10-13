@@ -27,17 +27,21 @@ head_digest() {
 
 # Docker publishes its official images to both registries; Docker Hub doesn't
 # count manifest HEAD requests against its pull limit.
-digest=$(head_digest "https://public.ecr.aws/token/?scope=repository:docker/library/$repo:pull" \
-    "https://public.ecr.aws/v2/docker/library/$repo/manifests/$tag") ||
-    digest=$(head_digest "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/$repo:pull" \
-        "https://registry-1.docker.io/v2/library/$repo/manifests/$tag") ||
-    { echo "could not resolve $ref on public.ecr.aws or Docker Hub" >&2; exit 1; }
+if digest=$(head_digest "https://public.ecr.aws/token/?scope=repository:docker/library/$repo:pull" \
+    "https://public.ecr.aws/v2/docker/library/$repo/manifests/$tag"); then
+    source="public.ecr.aws/docker/library/$repo@$digest"
+elif digest=$(head_digest "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/$repo:pull" \
+    "https://registry-1.docker.io/v2/library/$repo/manifests/$tag"); then
+    source="docker.io/library/$repo@$digest"
+else
+    echo "could not resolve $ref on public.ecr.aws or Docker Hub" >&2
+    exit 1
+fi
 
 if curl -fsSI --retry 2 --max-time 20 -H "Accept: $accept" \
     "https://mirror.gcr.io/v2/library/$repo/manifests/$digest" >/dev/null; then
     source="mirror.gcr.io/library/$repo@$digest"
 else
-    echo "mirror.gcr.io lacks $repo@$digest; pulling it from public.ecr.aws" >&2
-    source="public.ecr.aws/docker/library/$repo@$digest"
+    echo "mirror.gcr.io lacks $repo@$digest; pulling it from $source" >&2
 fi
 printf '%s=docker-image://%s\n' "$ref" "$source"
