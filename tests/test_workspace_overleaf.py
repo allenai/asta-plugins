@@ -2666,6 +2666,78 @@ def test_pull_reports_unavailable_base_before_modifying_sources(setup):
     assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("check", ["pull-initial", "pull-shared", "publish", "preview"])
+@pytest.mark.parametrize("operation", ["lookup", "ancestry"])
+def test_recorded_history_propagates_git_failures(setup, monkeypatch, check, operation):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    paper = project / "paper"
+    base = json.loads((paper / "overleaf.json").read_text())["base"]
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    before_refs = git(project, "show-ref")
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    real = module.subprocess.run
+    observed = []
+
+    def fail_history(args, **kwargs):
+        cwd = kwargs.get("cwd")
+        lookup = f"{base}^{{commit}}" in args and (
+            ("cat-file" in args and "-e" in args)
+            or ("rev-parse" in args and "--verify" in args)
+        )
+        ancestry = "merge-base" in args and "--is-ancestor" in args and base in args
+        if (
+            cwd is not None
+            and cwd.name == "overleaf"
+            and (lookup if operation == "lookup" else ancestry)
+        ):
+            observed.append(args)
+            if len(observed) == (2 if check == "pull-shared" else 1):
+                return subprocess.CompletedProcess(
+                    args, 128, b"", b"fixture-secret unrelated Git failure"
+                )
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", fail_history)
+    command = "pull" if check.startswith("pull") else "publish"
+    result = run(
+        project, command, *(["--dry-run"] if check == "preview" else []), merge=False
+    )
+    assert len(observed) == (2 if check == "pull-shared" else 1)
+    assert result.exit_code == 1, result.output
+    assert "failed (exit 128)" in result.output
+    assert "Reset remote history" not in result.output
+    assert "recorded sync" not in result.output
+    assert "fixture-secret" not in result.output
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+    assert git(project, "show-ref") == before_refs
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_reports_unavailable_recorded_base_without_pushing(setup, dry_run):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    paper = project / "paper"
+    record = paper / "overleaf.json"
+    config = json.loads(record.read_text())
+    config["base"] = "0" * 40
+    record.write_text(json.dumps(config))
+    commit_all(project)
+    before = {p.name: p.read_bytes() for p in paper.iterdir()}
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code == 1, result.output
+    assert "Reset remote history is unsupported; nothing synced" in result.output
+    assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+    assert not git(project, "status", "--porcelain")
+
+
 @pytest.mark.parametrize("diverge", [False, True])
 def test_pull_refuses_reset_history_with_base_on_another_branch(setup, diverge):
     seed, project = setup

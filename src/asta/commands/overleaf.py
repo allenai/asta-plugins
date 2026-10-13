@@ -595,15 +595,12 @@ def last_sync(
             err=True,
         )
 
-    try:
-        git("cat-file", "-e", f"{base}^{{commit}}", cwd=repo)
-        git("merge-base", "--is-ancestor", base, head, cwd=repo)
-    except click.ClickException:
+    if resolve_commit(repo, base) is None or not is_ancestor(repo, base, head):
         raise click.ClickException(
             "Overleaf history no longer continues from the recorded commit. "
             "Reset remote history is unsupported; nothing synced. "
             "Import into a separate directory with --dir."
-        ) from None
+        )
     if head == base:
         return base
     if head_only:
@@ -813,16 +810,15 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         if CONFIG in new:
             refuse(CONFIG, "is reserved for workspace sync metadata")
         check_ignore_files(new)
-        if config:
-            try:
-                git("cat-file", "-e", f"{config['base']}^{{commit}}", cwd=repo)
-                git("merge-base", "--is-ancestor", config["base"], head, cwd=repo)
-            except click.ClickException:
-                raise click.ClickException(
-                    "Overleaf history no longer continues from the recorded commit. "
-                    "Reset remote history is unsupported; nothing copied. "
-                    "Import into a separate directory with --dir."
-                ) from None
+        if config and (
+            resolve_commit(repo, config["base"]) is None
+            or not is_ancestor(repo, config["base"], head)
+        ):
+            raise click.ClickException(
+                "Overleaf history no longer continues from the recorded commit. "
+                "Reset remote history is unsupported; nothing copied. "
+                "Import into a separate directory with --dir."
+            )
         committed = read_plain_files(root, "HEAD", prefix)
         ours = committed.copy()
         ours.pop(CONFIG, None)
