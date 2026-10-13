@@ -21,8 +21,12 @@ paper: there it merges from `base`, so the published edits arrive for review
 instead of being skipped.
 
 Moving the sync point therefore needs write access to the workspace repository.
-An Overleaf collaborator can still edit anything, but those edits always reach
-the workspace through pull and review.
+Record writers are trusted to attest that these commits were synced; readers
+validate the record's format and Overleaf ancestry, not the writer's attestation.
+Default-branch protection does not protect this metadata ref. Grant workspace
+write access only to people trusted to move the sync point. Overleaf access alone
+cannot move it, so collaborators with only that access send edits through pull
+and review.
 
 ## Failure handling
 
@@ -35,6 +39,10 @@ the workspace through pull and review.
   imports the published files as Overleaf edits matching the workspace, so its
   PR changes only `paper/overleaf.json`. If that history was reset, restore it
   before pulling or publishing again.
+- The record push runs the workspace's pre-push hooks from the workspace root.
+  Hooks must support `refs/asta/overleaf/*`, not just branch pushes. A failing
+  hook or remote policy can stop the record push after Overleaf has accepted the
+  paper; the same pull-and-PR recovery applies. Hooks are not bypassed.
 - Pull refuses, with nothing copied, if `origin` exists but the record cannot be
   read, and warns and uses `base` alone when there is no `origin` remote.
 - An invalid record refuses both commands. Restore the ref from its history or
@@ -43,7 +51,9 @@ the workspace through pull and review.
   warning and falls back to `base`.
 
 Fetching the record uses a temporary ref and transfers only record commits, so
-shallow workspace history and existing refs are unchanged.
+shallow workspace history and existing refs are unchanged. Publish keeps that
+ref until it has pushed the next record, protecting the previous parent from
+garbage collection, then removes it on success or failure.
 
 ## Hosted evidence
 

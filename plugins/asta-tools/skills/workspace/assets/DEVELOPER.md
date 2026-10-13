@@ -63,14 +63,14 @@ still race with the push.
 
 How sync knows where it left off:
 
-- The last sync point is the newer of two records in the workspace repo: the Overleaf commit in `paper/overleaf.json`, which pull writes and you merge through a PR, and the record publish pushes to `origin` at `refs/asta/overleaf/<project-id>`. Only people who can push to the workspace repo can move it; Overleaf commit messages play no part.
-- Publish exports the committed `paper/` tree (deleting files absent from it) once the paper matches `origin`'s default branch and Overleaf has no edits since the last sync. It then pushes that record, so no sync-record PR is needed. Dry-run pushes nothing.
+- The last sync point is the newer of two records in the workspace repo: the Overleaf commit in `paper/overleaf.json`, which pull writes and you merge through a PR, and the record publish pushes to `origin` at `refs/asta/overleaf/<project-id>`. Workspace writers are trusted to move it, even if they cannot merge to the protected default branch; Overleaf access alone cannot move it.
+- Publish exports the committed `paper/` tree (deleting files absent from it) once the paper matches `origin`'s default branch and Overleaf has no edits since the last sync. It then pushes that record, so no sync-record PR is needed. Dry-run pushes nothing and does not run commit hooks, pre-push hooks or signing.
 - If Overleaf has edits, publish refuses: pull, review the edits in a PR, then publish. If the record push fails after publishing, the error says so; pull and merge that PR before publishing again.
 - Pull reads the record from `origin` and refuses if it can't. A checkout without the published commit merges from `paper/overleaf.json`, so it imports the published edits for review. Without an `origin` remote, pull uses `paper/overleaf.json` alone, and edits published from another clone may need conflict resolution.
 
-See the [sync design notes](../../../../../docs/overleaf-sync.md) for the record format and failure handling.
+See the [sync design notes](https://github.com/allenai/asta-plugins/blob/main/docs/overleaf-sync.md) for the record format and failure handling.
 
-If publication stops at a commit hook or signer, check your workspace's hook and signing configuration. Hooks run against the exported paper directory, so a hook requiring workspace-only configuration must use an appropriate configuration path. A failed push can also come from a pre-push hook. Error messages give this guidance without printing raw Git diagnostics, which may contain credentials.
+If publication stops at a commit hook or signer, check your workspace's hook and signing configuration. Paper hooks run against the exported paper directory, so a hook requiring workspace-only configuration must use an appropriate configuration path. The later record push runs pre-push hooks from the workspace root; they must accept `refs/asta/overleaf/*`. If one fails after the paper was published, fix the hook, then pull and merge the sync-record PR before publishing again. Error messages give this guidance without printing raw Git diagnostics, which may contain credentials.
 
 ### Authentication
 

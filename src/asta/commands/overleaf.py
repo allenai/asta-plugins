@@ -590,9 +590,8 @@ def has_origin(root: Path) -> bool:
     return result.returncode == 0
 
 
-def published_record(
-    root: Path, url: str, *, publishing: bool = False
-) -> tuple[str | None, str | None, str | None]:
+@contextmanager
+def published_record(root: Path, url: str, *, publishing: bool = False):
     """Read publish's record on `origin`: (record commit, Overleaf commit, source)."""
     ref = record_ref(url)
     suffix = " Nothing pushed." if publishing else " Nothing copied."
@@ -605,7 +604,8 @@ def published_record(
     except click.ClickException:
         raise OriginAccessError(unavailable) from None
     if not any(line.endswith(f"\t{ref}") for line in advertised.splitlines()):
-        return None, None, None
+        yield None, None, None
+        return
     gate = f"refs/asta/overleaf-gate/{uuid4().hex}"
     try:
         try:
@@ -641,7 +641,8 @@ def published_record(
                 "Restore it from its history or delete it to fall back to "
                 f"{CONFIG}.{suffix}"
             ) from None
-        return commit, overleaf, record["workspace"]
+        # Keep the parent reachable until a subsequent record has been pushed.
+        yield commit, overleaf, record["workspace"]
     finally:
         try:
             git("update-ref", "-d", gate, cwd=root)
@@ -777,23 +778,23 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         if config:
             recorded = None
             if has_origin(root):
-                _, recorded, source = published_record(root, url)
-                if (
-                    recorded is not None
-                    and resolve_commit(repo, recorded) is not None
-                    and not (
-                        resolve_commit(root, source) is not None
-                        and is_ancestor(root, source, "HEAD")
-                    )
-                    and read_plain_files(repo, recorded) != ours
-                ):
-                    # Older checkouts import the published edits for review.
-                    click.echo(
-                        "This checkout predates the last publication; "
-                        f"merging from {CONFIG} instead.",
-                        err=True,
-                    )
-                    recorded = None
+                with published_record(root, url) as (_, recorded, source):
+                    if (
+                        recorded is not None
+                        and resolve_commit(repo, recorded) is not None
+                        and not (
+                            resolve_commit(root, source) is not None
+                            and is_ancestor(root, source, "HEAD")
+                        )
+                        and read_plain_files(repo, recorded) != ours
+                    ):
+                        # Older checkouts import the published edits for review.
+                        click.echo(
+                            "This checkout predates the last publication; "
+                            f"merging from {CONFIG} instead.",
+                            err=True,
+                        )
+                        recorded = None
             else:
                 click.echo(
                     f"No `origin` remote; using {CONFIG} as the last sync. "
@@ -1022,8 +1023,14 @@ def publish(
             if not dry_run:
                 raise click.ClickException(f"{unmerged}; nothing pushed.")
             click.echo(f"{unmerged}; publish will refuse until then.")
-        previous, recorded, _ = published_record(root, config["url"], publishing=True)
-        with tempfile.TemporaryDirectory() as tmp:
+        with (
+            published_record(root, config["url"], publishing=True) as (
+                previous,
+                recorded,
+                _,
+            ),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")

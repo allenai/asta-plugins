@@ -2954,6 +2954,33 @@ def test_publish_records_sync_point_on_workspace_origin(setup, tmp_path):
     assert (project / "paper/main.tex").read_text() == "collaborator edit\n"
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_publish_keeps_previous_record_reachable_until_push(
+    setup, tmp_path, monkeypatch
+):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("first publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    previous, _ = origin_record(tmp_path)
+    (project / "paper/main.tex").write_text("second publication\n")
+    commit_all(project)
+    real = module.record_publication
+
+    def prune_before_record(*args, **kwargs):
+        git(project, "prune", "--expire=now")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, "record_publication", prune_before_record)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    current, _ = origin_record(tmp_path)
+    assert git(tmp_path / "workspace.git", "rev-parse", f"{current}^") == previous
+    assert not git(project, "for-each-ref", "refs/asta")
+    assert not git(project, "status", "--porcelain")
+
+
 def test_forged_publication_subject_does_not_move_sync_point(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -3065,8 +3092,47 @@ def test_record_push_failure_explains_recovery(setup, tmp_path):
     assert run(project, "publish").exit_code == 0
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX hook")
+def test_record_pre_push_failure_is_not_bypassed(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("first publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    previous, _ = origin_record(tmp_path)
+    config = (project / "paper/overleaf.json").read_bytes()
+    hook = project / ".git/hooks/pre-push"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "while read local_ref local_oid remote_ref remote_oid; do\n"
+        '  case "$remote_ref" in refs/asta/overleaf/*) exit 1;; esac\n'
+        "done\n"
+    )
+    hook.chmod(0o755)
+    (project / "paper/main.tex").write_text("second publication\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 1, result.output
+    assert "Published Overleaf commit" in result.output
+    assert "merge its sync-record PR" in result.output
+    assert origin_record(tmp_path)[0] == previous
+    assert (project / "paper/overleaf.json").read_bytes() == config
+    assert not git(project, "for-each-ref", "refs/asta")
+    git(seed, "fetch", "origin", "master")
+    assert git(seed, "show", "FETCH_HEAD:main.tex") == "second publication"
+    hook.unlink()
+    assert "Overleaf has changed" in run(project, "publish").output
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert git(project, "diff", "--name-only") == "paper/overleaf.json"
+    commit_all(project)
+    (project / "paper/main.tex").write_text("next publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
-def test_unreadable_sync_record_refuses(setup, tmp_path, command):
+def test_unreadable_sync_record_refuses(setup, monkeypatch, command):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
@@ -3081,14 +3147,11 @@ def test_unreadable_sync_record_refuses(setup, tmp_path, command):
             raise module.GitCommandError("git ls-remote failed (exit 128).", 128)
         return real(*args, **kwargs)
 
-    module_patch = pytest.MonkeyPatch()
-    module_patch.setattr(module, "git_bytes", offline)
-    try:
+    with monkeypatch.context() as module_patch:
+        module_patch.setattr(module, "git_bytes", offline)
         before = (project / "paper/main.tex").read_bytes()
         remote = git(seed, "ls-remote", "origin", "master")
         result = run(project, command, merge=False)
-    finally:
-        module_patch.undo()
     assert result.exit_code == 1
     assert "Could not read the Overleaf sync record" in result.output
     assert ("Nothing pushed" if command == "publish" else "Nothing copied") in (
