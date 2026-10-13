@@ -62,7 +62,7 @@ Then show them this table, with the values for their question. Everything not in
    theorize -p <run>/theory show theories
    ```
 
-   `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`. For a corpus of hundreds of papers, `--objective attribution-batched` reads the rest in further batches, at more cost.
+   `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`.
 
    **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer two ways on:
 
