@@ -307,6 +307,106 @@ def commit_all(project):
     git(project, "commit", "-q", "-m", "sync")
 
 
+def prepare_expected_publication(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("checked paper\n")
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    return seed, project, git(project, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_expected_publish_accepts_the_checked_tip(setup, dry_run):
+    seed, project, expected = prepare_expected_publication(setup)
+    result = run(
+        project,
+        "publish",
+        "--expected-commit",
+        expected,
+        *(["--dry-run"] if dry_run else []),
+        merge=False,
+    )
+    assert result.exit_code == 0, result.output
+    if not dry_run:
+        git(seed, "pull", "--ff-only")
+        assert (
+            git(seed, "log", "-1", "--format=%s")
+            == f"Publish workspace commit {expected}"
+        )
+
+
+@pytest.mark.parametrize("expected", ["short", "a" * 39, "a" * 41, "a" * 63, "a" * 65])
+def test_expected_publish_rejects_partial_commit_ids(setup, expected):
+    _, project = setup
+    result = run(project, "publish", "--expected-commit", expected, merge=False)
+    assert result.exit_code == 2 and "full commit id" in result.output
+
+
+def test_expected_publish_requires_the_exact_checkout(setup):
+    seed, project, _ = prepare_expected_publication(setup)
+    expected = git(project, "rev-parse", "HEAD~1")
+    before = git(seed, "ls-remote", "origin", "HEAD")
+    result = run(project, "publish", "--expected-commit", expected, merge=False)
+    assert result.exit_code == 1 and "Check out the expected" in result.output
+    assert git(seed, "ls-remote", "origin", "HEAD") == before
+
+
+def test_expected_publish_refuses_a_new_tip_even_with_identical_paper(setup):
+    seed, project, expected = prepare_expected_publication(setup)
+    git(project, "commit", "--allow-empty", "-m", "New merge, same paper")
+    git(project, "push", "origin", "main")
+    git(project, "checkout", expected)
+    before = git(seed, "ls-remote", "origin", "HEAD")
+    result = run(project, "publish", "--expected-commit", expected, merge=False)
+    assert result.exit_code == 1 and "default branch changed" in result.output
+    assert git(seed, "ls-remote", "origin", "HEAD") == before
+
+
+@pytest.mark.parametrize(
+    "change", ["paper", "unrelated", "default_branch", "unavailable"]
+)
+def test_expected_publish_rechecks_origin_after_preparing_the_export(
+    setup, monkeypatch, change
+):
+    seed, project, expected = prepare_expected_publication(setup)
+    before = git(seed, "ls-remote", "origin", "HEAD")
+    origin = project.parent / "workspace.git"
+    merger = project.parent / "merger"
+    git(project.parent, "clone", str(origin), str(merger))
+    real = module.git
+    changed = False
+
+    def advance(*args, **kwargs):
+        nonlocal changed
+        result = real(*args, **kwargs)
+        if "commit" in args and kwargs["cwd"].name == "overleaf":
+            changed = True
+            if change == "unavailable":
+                git(project, "remote", "remove", "origin")
+            elif change == "default_branch":
+                git(merger, "push", "origin", "HEAD:release")
+                git(origin, "symbolic-ref", "HEAD", "refs/heads/release")
+            else:
+                path = merger / ("paper/main.tex" if change == "paper" else "README.md")
+                path.write_text("New reviewed change\n")
+                commit_all(merger)
+                git(merger, "push", "origin", "main")
+        return result
+
+    monkeypatch.setattr(module, "git", advance)
+    result = run(project, "publish", "--expected-commit", expected, merge=False)
+    assert changed and result.exit_code == 1, result.output
+    assert "nothing pushed" in result.output
+    assert (
+        "Could not verify origin"
+        if change == "unavailable"
+        else "default branch changed"
+    ) in result.output
+    assert git(seed, "ls-remote", "origin", "HEAD") == before
+
+
 def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
     seed, project = setup
     result = run(project, "pull", URL)

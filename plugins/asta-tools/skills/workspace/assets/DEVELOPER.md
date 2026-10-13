@@ -54,6 +54,13 @@ The workspace repo is the reviewed copy; Overleaf is where collaborators edit.
 1. On a branch, run `asta workspace overleaf pull https://git.overleaf.com/<project-id>` (later pulls need no URL). It copies the Overleaf project into `paper/`, applies files Overleaf deleted since the last pull, and records the Overleaf commit in `paper/overleaf.json`. Review with `git diff`, commit, and open a PR for the normal paper preview.
 2. After the PR merges, run `asta workspace overleaf publish --dry-run`, then `asta workspace overleaf publish`.
 
+Scheduled publishers can pass `--expected-commit <full-id>` to bind publication
+to the commit whose checks passed. It requires the exact checkout and fetched
+default tip, then rechecks the advertised default branch immediately before
+pushing. A changed or unavailable branch refuses with nothing pushed. GitHub
+and Overleaf have no shared transaction; a merge after that final check can
+still race with the push.
+
 Publication checks and behavior:
 
 - Publish refuses an empty paper directory and shows added, modified and deleted files before pushing. It exports the entire committed `paper/` tree, so files missing from that tree are deleted in Overleaf. It neither injects workspace-root files nor rewrites `paper/overleaf.json`; no follow-up sync-record PR is needed.

@@ -229,8 +229,16 @@ def clone(url: str, dest: Path) -> str:
         raise click.ClickException("Overleaf project has no commits to sync.") from None
 
 
-def push(repo: Path, root: Path) -> None:
+def push(
+    repo: Path,
+    root: Path,
+    *,
+    expected_commit: str | None = None,
+    reviewed_ref: str | None = None,
+) -> None:
     with credentials() as (env, options):
+        if expected_commit is not None:
+            require_expected_tip(root, expected_commit, reviewed_ref)
         git(
             *options,
             *hook_settings(root),
@@ -907,6 +915,23 @@ def default_branch_ref(root: Path) -> str:
     return f"refs/heads/{match.group(1)}"
 
 
+def require_expected_tip(root: Path, expected: str, ref: str | None) -> None:
+    try:
+        advertised = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
+    except click.ClickException:
+        raise click.ClickException(
+            "Could not verify origin's default branch immediately before publication; "
+            "nothing pushed. Check origin access and retry."
+        ) from None
+    branch = re.search(r"^ref: (refs/heads/\S+)\tHEAD$", advertised, re.M)
+    tip = re.search(r"^([0-9a-f]{40}(?:[0-9a-f]{24})?)\tHEAD$", advertised, re.M)
+    if not branch or not tip or branch.group(1) != ref or tip.group(1) != expected:
+        raise click.ClickException(
+            "Origin's default branch changed since the expected commit; nothing pushed. "
+            "Retry after checks pass on the new tip."
+        )
+
+
 @contextmanager
 def default_branch(root: Path, *, publishing: bool = False):
     """Fetch the reviewed history without changing workspace branch refs or FETCH_HEAD."""
@@ -939,9 +964,24 @@ def default_branch(root: Path, *, publishing: bool = False):
 @dir_option
 @project_option
 @click.option("--dry-run", is_flag=True, help="Show what would change; push nothing.")
-def publish(directory: str, project: Path, dry_run: bool) -> None:
+@click.option(
+    "--expected-commit",
+    help="Require this full workspace commit to remain the default-branch tip.",
+)
+def publish(
+    directory: str, project: Path, dry_run: bool, expected_commit: str | None
+) -> None:
     """Push the committed paper directory to Overleaf without rewriting its layout."""
     root, paper, prefix = resolve(project, directory)
+    if expected_commit is not None:
+        if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", expected_commit):
+            raise click.BadParameter(
+                "needs a full commit id", param_hint="--expected-commit"
+            )
+        if git("rev-parse", "HEAD", cwd=root) != expected_commit:
+            raise click.ClickException(
+                "Check out the expected workspace commit; nothing pushed."
+            )
     require_visible(root, [paper / CONFIG])
     config = load_config(paper)
     if not config:
@@ -983,6 +1023,11 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
         "changes through a reviewed PR, update your checkout to that commit, then publish"
     )
     with default_branch(root, publishing=True) as (default, reviewed_ref):
+        if expected_commit is not None and default != expected_commit:
+            raise click.ClickException(
+                "Origin's default branch changed since the expected commit; nothing pushed. "
+                "Retry after checks pass on the new tip."
+            )
         # Comparing the tip prevents republishing content a later reviewed edit removed.
         reviewed = (
             default
@@ -1082,6 +1127,6 @@ def publish(directory: str, project: Path, dry_run: bool) -> None:
                     "Git configuration or hooks changed the exported files; nothing pushed. "
                     "Content-changing Git filters and conversions are unsupported."
                 )
-            push(repo, root)
+            push(repo, root, expected_commit=expected_commit, reviewed_ref=reviewed_ref)
             published = git("rev-parse", "HEAD", cwd=repo)
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
