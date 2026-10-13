@@ -1,0 +1,53 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - demo/index.qmd
+    - lit-review/index.qmd
+    - paper/html/index.qmd
+  resources:
+    - paper/html/paper-viewer.js
+  preview:
+    port: 4848
+
+bibliography: references.bib
+
+# Supporting-evidence store for the `.ev` hover snippets (see
+# _extensions/evidence/README.md). Merged into document metadata so a claim can
+# back itself with a verbatim quote by key: `[90 tasks]{.ev key="…"}`.
+metadata-files:
+  - evidence.yml
+
+# Hover-viewable supporting quotes use this checkout's evidence extension
+# through the committed _extensions/evidence symlink.
+# The filter is a no-op when a document has no `.ev` spans.
+filters:
+  - _extensions/evidence/snippet.lua
+
+website:
+  title: "Asta workspace example"
+  navbar:
+    right:
+      - text: Diff demo
+        href: demo/index.html
+      - text: Lit review
+        href: lit-review/index.html
+      - text: Separate paper PDF
+        href: paper-previews/paper/main.pdf
+  sidebar:
+    contents:
+      - index.qmd
+      - demo/index.qmd
+      - lit-review/index.qmd
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    toc-location: left
+    include-in-header:
+      - _extensions/evidence/evidence.head.html
+    include-after-body:
+      - _extensions/evidence/evidence.body.html
