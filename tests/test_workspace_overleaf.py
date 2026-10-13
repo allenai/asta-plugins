@@ -3023,6 +3023,58 @@ def test_publish_records_commit_translated_by_bridge(setup, tmp_path):
         assert origin_record(tmp_path)[1]["overleaf"] == translated
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("already_published", [False, True])
+def test_publish_records_its_commit_before_a_concurrent_overleaf_edit(
+    setup, tmp_path, monkeypatch, already_published
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    if already_published:
+        (project / "paper/main.tex").write_text("first publication\n")
+        commit_all(project)
+        assert run(project, "publish").exit_code == 0
+    before_config = (project / "paper/overleaf.json").read_bytes()
+    (project / "paper/main.tex").write_text("published paper\n")
+    commit_all(project)
+    expected = git(project, "rev-parse", "HEAD")
+    pushed = None
+    real_push = module.push
+
+    def push_then_edit(repo, root, **kwargs):
+        nonlocal pushed
+        real_push(repo, root, **kwargs)
+        pushed = git(repo, "rev-parse", "HEAD")
+        overleaf_edit(seed, "main.tex", "collaborator edit after publication\n")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "push", push_then_edit)
+        result = run(project, "publish", "--expected-commit", expected)
+    assert result.exit_code == 0, result.output
+    _, record = origin_record(tmp_path)
+    remote_head = git(seed, "rev-parse", "HEAD")
+    assert record == {"url": URL, "overleaf": pushed, "workspace": expected}
+    assert remote_head != pushed
+    assert git(seed, "rev-parse", f"{remote_head}^") == pushed
+    assert (project / "paper/overleaf.json").read_bytes() == before_config
+    assert not git(project, "status", "--porcelain")
+    assert not git(project, "for-each-ref", "refs/asta")
+
+    # Recording the collaborator's head would hide their edit from pull.
+    refused = run(project, "publish", merge=False)
+    assert refused.exit_code == 1 and "Overleaf has changed" in refused.output
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_head
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == (
+        "collaborator edit after publication\n"
+    )
+    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == (
+        remote_head
+    )
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX hook")
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize(
@@ -3152,7 +3204,7 @@ def test_record_not_matching_reviewed_history_falls_back(setup, tmp_path):
     assert "Overleaf has changed" in result.output
     pulled = run(project, "pull")
     # Falling back to the last pull brings the unreviewed edit in for review.
-    assert pulled.exit_code == 3, pulled.output
+    assert pulled.exit_code == CONFLICT_EXIT, pulled.output
     assert "unreviewed" in (project / "paper/main.tex").read_text()
 
 
@@ -3184,6 +3236,24 @@ def test_unreadable_sync_record_refuses(setup, monkeypatch, command):
     )
     assert (project / "paper/main.tex").read_bytes() == before
     assert git(seed, "ls-remote", "origin", "master") == remote
+
+
+def test_pull_missing_origin_default_branch_refuses_before_copying(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    git(tmp_path / "workspace.git", "symbolic-ref", "HEAD", "refs/heads/missing")
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    result = run(project, "pull")
+    assert result.exit_code == 1, result.output
+    assert "Could not fetch the default branch" in result.output
+    assert "Nothing copied." in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert not git(project, "status", "--porcelain")
+    assert not git(project, "for-each-ref", "refs/asta")
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)

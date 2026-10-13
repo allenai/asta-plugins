@@ -29,23 +29,42 @@ workspace may use different hash functions. Otherwise both commands warn and use
 merge to the default branch therefore cannot move the sync point to unreviewed
 content, and Overleaf access alone cannot move it either.
 
+This check attests content already merged into the default branch; it does not
+require successive records' workspace commits to move forward. A workspace
+writer can attest an older reviewed paper paired with matching Overleaf files.
+For example, after publication T, reverting Overleaf to reviewed paper S and
+writing a record for S makes that revert count as synced. Pull will not bring
+it in for another review, and publish may replace it with the current reviewed
+paper. Record parents support fast-forward pushes, not verification of a chain
+of progressively newer papers.
+
 ## Failure handling
 
-- After pushing, publish fetches Overleaf's head and records it only when it
-  descends from the prior sync point and is the pushed commit or has the same
-  tree. A bridge can translate the pushed commit while retaining that history;
-  an unrelated same-tree replacement is refused. Otherwise, or if the record
-  push fails, publish exits 1 after the Overleaf push without advancing the
-  record. When Overleaf still descends from `paper/overleaf.json`'s base, pull
-  imports the published files as Overleaf edits matching the workspace, so its
-  PR changes only `paper/overleaf.json`. If that history was reset, restore it
-  before pulling or publishing again.
+- After pushing, publish fetches Overleaf's head and requires it to descend from
+  the prior sync point. If it also descends from the pushed commit, publish records
+  that pushed commit, leaving any later collaborator edits for the next pull.
+  Otherwise it records the head only when its tree matches the pushed commit,
+  allowing a bridge to translate the commit while retaining history. An unrelated
+  same-tree replacement is refused. A translated commit followed by further edits
+  cannot be confirmed by either check and still needs recovery. If confirmation
+  or the record push fails, publish exits 1 after the Overleaf push without
+  advancing the record. When Overleaf still descends from `paper/overleaf.json`'s
+  base and has no further collaborator edits, pull imports the published files
+  matching the workspace, so its PR changes only `paper/overleaf.json`. Later
+  collaborator edits are also imported for review. If that history was reset,
+  restore it before pulling or publishing again.
 - The record push skips pre-push hooks (`--no-verify`): branch hooks do not
   apply to this metadata ref. A remote policy that rejects
   `refs/asta/overleaf/*` can still stop the record push after Overleaf has
   accepted the paper; the same pull-and-PR recovery applies.
 - Pull refuses, with nothing copied, if `origin` exists but the record cannot be
-  read, and warns and uses `base` alone when there is no `origin` remote.
+  read or reviewed history cannot be fetched. Falling back to an older base can
+  silently undo a deliberate workspace revert of a previously published edit:
+  when the reverted file equals that base, the published Overleaf bytes appear
+  to be a one-sided change. Refusing avoids copying before the current record
+  can be checked. Retry once origin access or its default branch is restored.
+  With no `origin` remote, pull warns and uses `base` alone; that compatibility
+  path cannot verify publications made from other clones.
 - An invalid record refuses both commands before copying files or pushing to
   Overleaf. The ref must point directly to a commit; trees and tags are invalid,
   even with a valid `sync.json`. Restore the ref from its history or delete it

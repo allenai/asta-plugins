@@ -501,6 +501,8 @@ def write_files(contents: dict[str, bytes], dest: Path) -> None:
         target.write_bytes(data)
 
 
+# Also refuse retained labels from hand-edited diff3 blocks, although our merges
+# use --no-diff3 and never generate a base section.
 MARKER = re.compile(
     rb"^(?:<<<<<<< workspace|\|{7} last sync|>>>>>>> overleaf)\r?$", re.M
 )
@@ -720,10 +722,13 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
                 env=env,
             )
         head = git("rev-parse", "FETCH_HEAD", cwd=repo)
-        if is_ancestor(repo, synced, head) and (
-            head == pushed or tree(repo, head) == tree(repo, pushed)
-        ):
-            return head
+        if is_ancestor(repo, synced, head):
+            if is_ancestor(repo, pushed, head):
+                # A collaborator may have edited after our push. Record only our
+                # published commit so that their later edits still need review.
+                return pushed
+            if tree(repo, head) == tree(repo, pushed):
+                return head
     except click.ClickException:
         pass
     raise click.ClickException(
@@ -830,6 +835,8 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                         and read_plain_files(repo, recorded) != ours
                     ):
                         # Older checkouts import the published edits for review.
+                        # A shallow clone can hide ancestry; matching paper bytes
+                        # above still allow it to use the published sync point.
                         click.echo(
                             "This checkout predates the last publication; "
                             f"merging from {CONFIG} instead.",
@@ -975,7 +982,7 @@ def default_branch(root: Path, *, publishing: bool = False):
             raise OriginAccessError(
                 "Could not fetch the default branch of the workspace's `origin` remote. "
                 "Check its URL, credentials and network access."
-                + (" Nothing pushed." if publishing else "")
+                + (" Nothing pushed." if publishing else " Nothing copied.")
             ) from None
         yield git("rev-parse", gate, cwd=root), ref
     finally:

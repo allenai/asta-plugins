@@ -63,10 +63,14 @@ still race with the push.
 
 How sync knows where it left off:
 
-- The last sync point is the newer of two records in the workspace repo: the Overleaf commit in `paper/overleaf.json`, which pull writes and you merge through a PR, and the record publish pushes to `origin` at `refs/asta/overleaf/<project-id>`. The record counts only when its workspace commit is on `origin`'s default branch and its Overleaf files match that commit's paper; otherwise pull and publish warn and use `paper/overleaf.json`. Neither Overleaf access nor push access without a reviewed merge can move it.
+- The last sync point is the newer of two records in the workspace repo: the Overleaf commit in `paper/overleaf.json`, which pull writes and you merge through a PR, and the record publish pushes to `origin` at `refs/asta/overleaf/<project-id>`. The record counts only when its workspace commit is on `origin`'s default branch and its Overleaf files match that commit's paper; otherwise pull and publish warn and use `paper/overleaf.json`. Overleaf access alone cannot move it. Workspace writers can attest reviewed content, including an older reviewed paper; the check does not require successive records to advance through workspace history.
 - Publish exports the committed `paper/` tree (deleting files absent from it) once the paper matches `origin`'s default branch and Overleaf has no edits since the last sync. It then pushes that record, so no sync-record PR is needed. Dry-run pushes nothing and does not run commit hooks, pre-push hooks or signing.
 - If Overleaf has edits, publish refuses: pull, review the edits in a PR, then publish. If the record push fails after publishing, the error says so; pull and merge that PR before publishing again.
-- Pull reads the record from `origin` and refuses if it can't. A checkout without the published commit merges from `paper/overleaf.json`, so it imports the published edits for review. Without an `origin` remote, pull uses `paper/overleaf.json` alone, and edits published from another clone may need conflict resolution.
+- Pull reads the record and reviewed history from `origin` and refuses if it can't, avoiding an older base that could undo a deliberate workspace revert. Restore origin access and retry. A checkout without the published commit or matching paper merges from `paper/overleaf.json`, so it imports the published edits for review. Without an `origin` remote, pull uses `paper/overleaf.json` alone, and edits published from another clone may need conflict resolution.
+
+Publish refuses an empty paper directory. Dry-run warns when the paper has not
+been merged; real publication refuses. The CLI checks merged content, not PR
+approvals: merging to the default branch is the review gate.
 
 See the [sync design notes](https://github.com/allenai/asta-plugins/blob/main/docs/overleaf-sync.md) for the record format and failure handling.
 
