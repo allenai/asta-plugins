@@ -20,13 +20,14 @@ checkout that neither contains the record's workspace commit nor already has its
 paper: there it merges from `base`, so the published edits arrive for review
 instead of being skipped.
 
-Moving the sync point therefore needs write access to the workspace repository.
-Record writers are trusted to attest that these commits were synced; readers
-validate the record's format and Overleaf ancestry, not the writer's attestation.
-Default-branch protection does not protect this metadata ref. Grant workspace
-write access only to people trusted to move the sync point. Overleaf access alone
-cannot move it, so collaborators with only that access send edits through pull
-and review.
+Readers trust a record only when it matches reviewed history: its workspace
+commit must be an ancestor of `origin`'s default-branch tip, and its Overleaf
+commit's files must equal that commit's `paper/` files, ignoring
+`paper/overleaf.json`. Files are compared by content, because Overleaf and the
+workspace may use different hash functions. Otherwise both commands warn and use
+`base`, so edits since that pull arrive for review. A workspace writer who cannot
+merge to the default branch therefore cannot move the sync point to unreviewed
+content, and Overleaf access alone cannot move it either.
 
 ## Failure handling
 
@@ -39,10 +40,10 @@ and review.
   imports the published files as Overleaf edits matching the workspace, so its
   PR changes only `paper/overleaf.json`. If that history was reset, restore it
   before pulling or publishing again.
-- The record push runs the workspace's pre-push hooks from the workspace root.
-  Hooks must support `refs/asta/overleaf/*`, not just branch pushes. A failing
-  hook or remote policy can stop the record push after Overleaf has accepted the
-  paper; the same pull-and-PR recovery applies. Hooks are not bypassed.
+- The record push skips pre-push hooks (`--no-verify`): branch hooks do not
+  apply to this metadata ref. A remote policy that rejects
+  `refs/asta/overleaf/*` can still stop the record push after Overleaf has
+  accepted the paper; the same pull-and-PR recovery applies.
 - Pull refuses, with nothing copied, if `origin` exists but the record cannot be
   read, and warns and uses `base` alone when there is no `origin` remote.
 - An invalid record refuses both commands. Restore the ref from its history or
