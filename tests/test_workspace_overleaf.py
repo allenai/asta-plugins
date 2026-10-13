@@ -2997,6 +2997,50 @@ def test_publish_records_commit_translated_by_bridge(setup, tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX hook")
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize(
+    ("already_published", "parent"),
+    [(False, "none"), (True, "none"), (True, "base")],
+)
+def test_publish_does_not_record_same_tree_history_reset(
+    setup, tmp_path, already_published, parent
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    config = (project / "paper/overleaf.json").read_bytes()
+    base = json.loads(config)["base"]
+    if already_published:
+        (project / "paper/main.tex").write_text("first publication\n")
+        commit_all(project)
+        assert run(project, "publish").exit_code == 0
+    origin = tmp_path / "workspace.git"
+    before_record = git(origin, "for-each-ref", RECORD_REF)
+    hook = tmp_path / "overleaf.git" / "hooks" / "post-receive"
+    parent_option = f" -p {base}" if parent == "base" else ""
+    hook.write_text(
+        "#!/bin/sh\n"
+        "head=$(git rev-parse refs/heads/master)\n"
+        'tree=$(git rev-parse "$head^{tree}")\n'
+        f'new=$(echo reset | git commit-tree "$tree"{parent_option})\n'
+        'git update-ref refs/heads/master "$new"\n'
+    )
+    hook.chmod(0o755)
+    (project / "paper/main.tex").write_text("second publication\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 1, result.output
+    assert "could not confirm Overleaf's copy" in result.output
+    assert "merge its sync-record PR" in result.output
+    assert git(origin, "for-each-ref", RECORD_REF) == before_record
+    assert (project / "paper/overleaf.json").read_bytes() == config
+    assert not git(project, "status", "--porcelain")
+    # The Overleaf push succeeded; only confirmation and recording are refused.
+    git(seed, "fetch", "origin", "master")
+    assert git(seed, "show", "FETCH_HEAD:main.tex") == "second publication"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX hook")
 def test_record_push_failure_explains_recovery(setup, tmp_path):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0

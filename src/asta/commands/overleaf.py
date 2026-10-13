@@ -669,7 +669,7 @@ def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str)
     return recorded if is_ancestor(repo, base, recorded) else base
 
 
-def confirm_publication(repo: Path, pushed: str) -> str:
+def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
     """Overleaf's commit for this push; the bridge may translate pushed commits."""
     try:
         with credentials() as (env, options):
@@ -684,14 +684,17 @@ def confirm_publication(repo: Path, pushed: str) -> str:
                 env=env,
             )
         head = git("rev-parse", "FETCH_HEAD", cwd=repo)
-        if head == pushed or tree(repo, head) == tree(repo, pushed):
+        if is_ancestor(repo, synced, head) and (
+            head == pushed or tree(repo, head) == tree(repo, pushed)
+        ):
             return head
     except click.ClickException:
         pass
     raise click.ClickException(
         f"Published Overleaf commit {pushed[:7]}, but could not confirm Overleaf's copy "
         "to record the sync point. Before publishing again, run `asta workspace "
-        "overleaf pull` and merge its sync-record PR."
+        "overleaf pull` and merge its sync-record PR. "
+        "If Overleaf history was reset, restore it first."
     )
 
 
@@ -1096,7 +1099,9 @@ def publish(
                     "Content-changing Git filters and conversions are unsupported."
                 )
             push(repo, root, expected_commit=expected_commit, reviewed_ref=reviewed_ref)
-            published = confirm_publication(repo, git("rev-parse", "HEAD", cwd=repo))
+            published = confirm_publication(
+                repo, git("rev-parse", "HEAD", cwd=repo), synced
+            )
             record_publication(
                 root, config["url"], previous, published, reviewed, identity
             )

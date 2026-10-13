@@ -26,12 +26,15 @@ the workspace through pull and review.
 
 ## Failure handling
 
-- After pushing, publish fetches Overleaf's head and records it when it is the
-  pushed commit or has the same tree, so a bridge that translates commits still
-  yields a valid record. Otherwise, or if the record push fails, publish exits 1
-  after the Overleaf push. The next publish refuses; a pull then imports the
-  published files as Overleaf edits matching the workspace, so its PR changes
-  only `paper/overleaf.json`.
+- After pushing, publish fetches Overleaf's head and records it only when it
+  descends from the prior sync point and is the pushed commit or has the same
+  tree. A bridge can translate the pushed commit while retaining that history;
+  an unrelated same-tree replacement is refused. Otherwise, or if the record
+  push fails, publish exits 1 after the Overleaf push without advancing the
+  record. When Overleaf still descends from `paper/overleaf.json`'s base, pull
+  imports the published files as Overleaf edits matching the workspace, so its
+  PR changes only `paper/overleaf.json`. If that history was reset, restore it
+  before pulling or publishing again.
 - Pull refuses, with nothing copied, if `origin` exists but the record cannot be
   read, and warns and uses `base` alone when there is no `origin` remote.
 - An invalid record refuses both commands. Restore the ref from its history or
