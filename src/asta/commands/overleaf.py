@@ -54,6 +54,16 @@ def git_environment() -> dict:
     return env
 
 
+class GitCommandError(click.ClickException):
+    def __init__(self, message: str, returncode: int):
+        super().__init__(message)
+        self.returncode = returncode
+
+
+class OriginAccessError(click.ClickException):
+    """Transport or discovery failed while fetching reviewed workspace history."""
+
+
 def git_bytes(
     *args: str, cwd: Path, env: dict | None = None, input: bytes | None = None
 ) -> bytes:
@@ -125,14 +135,33 @@ def git_bytes(
                 "Check workspace commit hooks and signing settings. "
                 "Hooks run in the exported paper directory, not the full workspace."
             )
-        raise click.ClickException(
-            f"git {operation} failed (exit {result.returncode})."
+        raise GitCommandError(
+            f"git {operation} failed (exit {result.returncode}).", result.returncode
         )
     return result.stdout
 
 
 def git(*args: str, **kwargs) -> str:
     return os.fsdecode(git_bytes(*args, **kwargs)).rstrip("\n")
+
+
+def resolve_commit(repo: Path, revision: str) -> str | None:
+    try:
+        return git("rev-parse", "--verify", "-q", f"{revision}^{{commit}}", cwd=repo)
+    except GitCommandError as exc:
+        if exc.returncode != 1:
+            raise
+        return None
+
+
+def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    try:
+        git("merge-base", "--is-ancestor", ancestor, descendant, cwd=repo)
+        return True
+    except GitCommandError as exc:
+        if exc.returncode != 1:
+            raise
+        return False
 
 
 def hook_settings(root: Path) -> list[str]:
@@ -585,10 +614,12 @@ def last_sync(
         ).splitlines()
     with ExitStack() as stack:
         publications = {}
+        source_ancestry = {}
 
         def publication(commit: str, message: str):
             if commit in publications:
                 return publications[commit]
+            publications[commit] = None
             match = PUBLISH_MESSAGE.match(message)
             if not match:
                 return None
@@ -596,7 +627,6 @@ def last_sync(
                 root, match.group(1), reviewed, dry_run=dry_run, ref=reviewed_ref
             )
             if source is None:
-                publications[commit] = None
                 return None
             published = read_plain_files(root, source, prefix)
             try:
@@ -605,10 +635,10 @@ def last_sync(
                 if (
                     not isinstance(recorded, str)
                     or not SHA.fullmatch(recorded)
-                    or record.get("url") != url
+                    or validate_url(record.get("url")) != url
                 ):
                     return None
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, click.ClickException):
                 return None
             result = (
                 (source, published, recorded)
@@ -621,9 +651,9 @@ def last_sync(
         def continues_publications(commit: str, recorded: str) -> bool:
             # A reviewed pull anchors the chain; ordinary edits and backwards
             # workspace sources must be pulled and reviewed before another publish.
-            try:
-                git("merge-base", "--is-ancestor", recorded, commit, cwd=repo)
-            except click.ClickException:
+            if resolve_commit(repo, recorded) is None or not is_ancestor(
+                repo, recorded, commit
+            ):
                 return False
             chain = git(
                 "log",
@@ -644,29 +674,16 @@ def last_sync(
                     return False
                 source = candidate[0]
                 if previous_source is not None:
-                    try:
-                        git(
-                            "merge-base",
-                            "--is-ancestor",
-                            previous_source,
-                            source,
-                            cwd=root,
-                        )
-                    except click.ClickException:
-                        if not complete_history(
+                    pair = previous_source, source
+                    if pair not in source_ancestry:
+                        follows = is_ancestor(root, *pair)
+                        if not follows and complete_history(
                             root, dry_run=dry_run, ref=reviewed_ref
                         ):
-                            return False
-                        try:
-                            git(
-                                "merge-base",
-                                "--is-ancestor",
-                                previous_source,
-                                source,
-                                cwd=root,
-                            )
-                        except click.ClickException:
-                            return False
+                            follows = is_ancestor(root, *pair)
+                        source_ancestry[pair] = follows
+                    if not source_ancestry[pair]:
+                        return False
                 previous, previous_source = current, source
             return previous == commit
 
@@ -677,7 +694,7 @@ def last_sync(
             if reviewed is None:
                 try:
                     reviewed, reviewed_ref = stack.enter_context(default_branch(root))
-                except click.ClickException:
+                except OriginAccessError:
                     warn_fallback()
                     return base
             try:
@@ -689,19 +706,15 @@ def last_sync(
                     continue
                 if local is not None and local != published:
                     # Pull must not skip published edits absent from this checkout.
-                    try:
-                        git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
-                    except click.ClickException:
+                    if not is_ancestor(root, source, "HEAD"):
                         if not complete_history(
                             root, dry_run=dry_run, ref=reviewed_ref
                         ):
                             continue
-                        try:
-                            git("merge-base", "--is-ancestor", source, "HEAD", cwd=root)
-                        except click.ClickException:
+                        if not is_ancestor(root, source, "HEAD"):
                             continue
                 return commit
-            except click.ClickException:
+            except OriginAccessError:
                 if local is None:
                     raise
                 warn_fallback()
@@ -737,7 +750,7 @@ def complete_history(
             cwd=root,
         )
     except click.ClickException:
-        raise click.ClickException(
+        raise OriginAccessError(
             "Could not fetch complete history from the workspace's `origin` remote. "
             "Check its URL, credentials and network access."
         ) from None
@@ -753,14 +766,12 @@ def publication_source(
     ref: str | None = None,
 ) -> str | None:
     def verify() -> str | None:
-        try:
-            source = git(
-                "rev-parse", "--verify", "-q", f"{marker}^{{commit}}", cwd=root
-            )
-            git("merge-base", "--is-ancestor", source, reviewed, cwd=root)
-            return source
-        except click.ClickException:
-            return None
+        source = resolve_commit(root, marker)
+        return (
+            source
+            if source is not None and is_ancestor(root, source, reviewed)
+            else None
+        )
 
     source = verify()
     if source is None and complete_history(root, dry_run=dry_run, ref=ref):
@@ -840,7 +851,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 if name not in base:
                     # No common ancestor (e.g. an initial import over existing source).
                     raise click.ClickException(
-                        f"Both workspace and Overleaf changed {name}. Reconcile it first; nothing copied."
+                        f"{name} was added independently on both sides. Reconcile it first; nothing copied."
                     )
                 merged, clean = merge_text(name, ours[name], base[name], new[name])
                 if merged is None:
@@ -950,7 +961,7 @@ def default_branch(root: Path, *, publishing: bool = False):
                 cwd=root,
             )
         except click.ClickException:
-            raise click.ClickException(
+            raise OriginAccessError(
                 "Could not fetch the default branch of the workspace's `origin` remote. "
                 "Check its URL, credentials and network access."
                 + (" Nothing pushed." if publishing else "")
@@ -974,6 +985,7 @@ def publish(
     """Push the committed paper directory to Overleaf without rewriting its layout."""
     root, paper, prefix = resolve(project, directory)
     if expected_commit is not None:
+        expected_commit = expected_commit.lower()
         if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", expected_commit):
             raise click.BadParameter(
                 "needs a full commit id", param_hint="--expected-commit"

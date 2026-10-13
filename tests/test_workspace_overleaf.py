@@ -1113,7 +1113,7 @@ def test_pull_refuses_initial_import_over_existing_source(setup):
     commit_all(project)
     result = run(project, "pull", URL)
     assert result.exit_code != 0
-    assert "Both workspace and Overleaf changed main.tex" in result.output
+    assert "main.tex was added independently on both sides" in result.output
     assert (project / "paper/main.tex").read_text() == "existing paper\n"
     assert not (project / "paper/overleaf.json").exists()
 
@@ -3317,3 +3317,191 @@ def test_history_completion_keeps_gate_branch_when_origin_head_changes(
     assert "Fetching complete workspace history" in result.output
     if command == "pull":
         assert (shallow / "paper/main.tex").read_text() == "collaborator edit\n"
+
+
+@pytest.mark.parametrize(
+    "url", [URL + "/", URL + ".git", URL.replace("https://", "https://git@")]
+)
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("url_location", ["caller", "record"])
+def test_pull_recognizes_publications_with_equivalent_url(setup, url, url_location):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published paper\n")
+    if url_location == "record":
+        record = project / "paper/overleaf.json"
+        record.write_text(record.read_text().replace(URL, url))
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    result = run(project, "pull", url if url_location == "caller" else URL)
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/main.tex").read_text() == "collaborator edit\n"
+    assert "recorded sync" not in result.output
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "source-files",
+        "chain-log",
+        "source-resolution",
+        "source-ancestry",
+        "chain-ancestry",
+        "local-ancestry",
+        "gate-resolution",
+    ],
+)
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_pull_propagates_local_publication_verification_failure(
+    setup, monkeypatch, failure
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published paper\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    source = git(project, "rev-parse", "HEAD")
+    if failure == "local-ancestry":
+        (project / "paper/main.tex").write_text("later local edit\n")
+        commit_all(project)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    before_refs = git(project, "show-ref")
+    before_remote = git(seed, "ls-remote", "origin", "master")
+    real = module.subprocess.run
+    observed = []
+
+    def fail_local(args, **kwargs):
+        cwd = kwargs.get("cwd")
+        fail = (
+            (
+                failure == "source-files"
+                and cwd == project
+                and "ls-tree" in args
+                and source in args
+            )
+            or (failure == "chain-log" and "--reverse" in args and "log" in args)
+            or (
+                failure == "source-resolution"
+                and cwd == project
+                and "--verify" in args
+                and f"{source}^{{commit}}" in args
+            )
+            or (
+                failure == "source-ancestry"
+                and cwd == project
+                and "merge-base" in args
+                and "HEAD" not in args
+            )
+            or (
+                failure == "chain-ancestry"
+                and cwd != project
+                and "merge-base" in args
+                and "--is-ancestor" in args
+            )
+            or (
+                failure == "local-ancestry"
+                and cwd == project
+                and "merge-base" in args
+                and "HEAD" in args
+            )
+            or (
+                failure == "gate-resolution"
+                and cwd == project
+                and "rev-parse" in args
+                and any(a.startswith("refs/asta/overleaf-gate/") for a in args)
+            )
+        )
+        # The caller's initial history check should still succeed.
+        if failure == "chain-ancestry" and fail:
+            observed.append(args)
+            fail = len(observed) > 2
+        if fail:
+            observed.append(args)
+            return subprocess.CompletedProcess(
+                args, 128, b"", b"fixture-secret local failure"
+            )
+        return real(args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", fail_local)
+    result = run(project, "pull")
+    assert observed, "failure injection did not run"
+    assert result.exit_code == 1, result.output
+    assert "git " in result.output and "failed" in result.output
+    assert "recorded sync" not in result.output
+    assert "fixture-secret" not in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(project, "show-ref") == before_refs
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_expected_publish_accepts_uppercase_commit_id(setup):
+    seed, project, expected = prepare_expected_publication(setup)
+    result = run(project, "publish", "--expected-commit", expected.upper(), merge=False)
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "--ff-only")
+    assert (
+        git(seed, "log", "-1", "--format=%s") == f"Publish workspace commit {expected}"
+    )
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("invalid_record", [False, True])
+def test_pull_caches_repeated_publication_and_ancestry_checks(
+    setup, monkeypatch, invalid_record
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    stale = project.parent / "stale"
+    git(project.parent, "clone", str(project.parent / "workspace.git"), str(stale))
+    record = (project / "paper/overleaf.json").read_text()
+    sources = []
+    for i in range(3):
+        (project / "paper/main.tex").write_text(f"publication {i}\n")
+        (project / "paper/overleaf.json").write_text(
+            record.replace(URL, "https://git.overleaf.com/different")
+            if invalid_record and i == 0
+            else record
+        )
+        commit_all(project)
+        git(project, "push", "origin", "main")
+        source = git(project, "rev-parse", "HEAD")
+        sources.append(source)
+        overleaf_edit(seed, "main.tex", f"publication {i}\n")
+        git(seed, "commit", "--amend", "-m", f"Publish workspace commit {source}")
+        git(seed, "push", "--force", "origin", "master")
+    (project / "outside.txt").write_text("later reviewed non-paper change\n")
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    reads = []
+    ancestry = []
+    real_read = module.read_plain_files
+    real_run = module.subprocess.run
+
+    def count_read(repo, revision, prefix=""):
+        if repo == stale and revision in sources:
+            reads.append(revision)
+        return real_read(repo, revision, prefix)
+
+    def count_ancestry(args, **kwargs):
+        if (
+            "merge-base" in args
+            and len(args) >= 5
+            and args[-2] in sources
+            and args[-1] in sources
+        ):
+            ancestry.append(tuple(args[-2:]))
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(module, "read_plain_files", count_read)
+    monkeypatch.setattr(module.subprocess, "run", count_ancestry)
+    result = run(stale, "pull")
+    assert result.exit_code == 0, result.output
+    assert (stale / "paper/main.tex").read_text() == "publication 2\n"
+    assert sorted(reads) == sorted(sources)
+    assert len(ancestry) == len(set(ancestry))
+    if not invalid_record:
+        assert set(ancestry) == set(zip(sources, sources[1:]))
