@@ -87,13 +87,9 @@ Structural validation of these entries belongs in deterministic build tooling. W
 
 ### GitHub Pages deploy
 
-1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — via `gh api` if the token has admin on the repo, otherwise ask the user.
-2. Configure Pages to serve from `gh-pages`:
-   ```bash
-   gh api repos/{owner}/{repo}/pages -X POST --input - <<'EOF'
-   {"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}
-   EOF
-   ```
+1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — try it with `gh api`; if GitHub refuses, give the user the command.
+2. Configure Pages to serve from `gh-pages` with the shipped `assets/github-pages.json`: run `gh api repos/{owner}/{repo}/pages -X POST --input <skill-dir>/assets/github-pages.json`; if GitHub refuses, give the user that command, the file and GitHub's error. Read it back with `gh api repos/{owner}/{repo}/pages` and confirm the source matches; if Pages already exists with another source, tell the user.
+3. Optional, for this or any GitHub repo you set up: recommend repo protections (default-branch rulesets, required docs checks). Read `workflows/repo-protections.md` and follow it before proposing or applying any.
 
 On every PR the workflow publishes a full rendered preview under
 `<pages>/pr-preview/pr-<N>/` and a `what-changed.html` beside it. The latter
