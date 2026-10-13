@@ -18,7 +18,7 @@ Then show them this table, with the values for their question. Everything not in
 | 1 | Theorizer | Plans a paper search query, an extraction query and a first extraction schema from the question | `gpt-6-sol` |
 | 2 | Paper Finder | Searches with the plan's query, fetches the top papers' full text, and fills any gap to the target with more searches | 100 papers (`papers fetch --top`) |
 | 3 | Theorizer | Extracts findings from every paper and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
-| | Check-in | Shows you the first theories, then you steer another generation or go on | skipped only if you ask |
+| | Check-in | Shows you the first theories, then you steer another generation or go on | |
 | 4 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
 | 5 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
 
