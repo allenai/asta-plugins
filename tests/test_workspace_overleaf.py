@@ -3151,8 +3151,9 @@ def test_record_not_matching_reviewed_history_falls_back(setup, tmp_path):
     assert "does not match a paper on origin's default branch" in result.output
     assert "Overleaf has changed" in result.output
     pulled = run(project, "pull")
-    assert pulled.exit_code == 0, pulled.output
-    assert (project / "paper/main.tex").read_text() == "unreviewed\n"
+    # Falling back to the last pull brings the unreviewed edit in for review.
+    assert pulled.exit_code == 3, pulled.output
+    assert "unreviewed" in (project / "paper/main.tex").read_text()
 
 
 @pytest.mark.parametrize("command", ["pull", "publish"])
