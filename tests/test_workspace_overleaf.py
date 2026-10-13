@@ -1721,6 +1721,30 @@ def test_shallow_clone_recognizes_older_reviewed_publication(setup, source_prese
     assert git(shallow, "rev-parse", "--is-shallow-repository") == "false"
 
 
+@pytest.mark.parametrize("newest", [True, False])
+def test_empty_overleaf_subjects_are_ordinary_edits(setup, newest):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("reviewed publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    git(seed, "pull", "-q", "origin", "master")
+    (seed / "main.tex").write_text("collaborator edit\n")
+    git(seed, "commit", "-q", "-a", "--allow-empty-message", "-m", "")
+    if not newest:
+        overleaf_edit(seed, "old.tex", "later edit\n")
+    git(seed, "push", "-q", "origin", "HEAD:master")
+    before_remote = git(seed, "ls-remote", "origin", "master")
+
+    result = run(project, "publish")
+
+    assert result.exit_code == 1 and "Overleaf has changed" in result.output
+    assert git(seed, "ls-remote", "origin", "master") == before_remote
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == "collaborator edit\n"
+
+
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("rewrite", ["subject", "extra-commit"])
 def test_unrecognized_bridge_history_requires_pull_and_review(setup, rewrite):

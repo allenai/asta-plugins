@@ -564,7 +564,7 @@ def last_sync(
     ).splitlines()
     with ExitStack() as stack:
         for entry in commits:
-            commit, message = entry.split(" ", 1)
+            commit, _, message = entry.partition(" ")
             match = PUBLISH_MESSAGE.match(message)
             if not match:
                 continue
