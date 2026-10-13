@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/approve-asta-bash.sh"
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/approve-bd-bash.sh"
           }
         ]
       }

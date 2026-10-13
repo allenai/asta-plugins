@@ -2,12 +2,14 @@
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-TOOLS_HOOKS = ROOT / "plugins" / "asta-tools" / "hooks"
-FLOWS_HOOKS = ROOT / "plugins" / "asta-flows" / "hooks"
+PLUGINS = ROOT / "plugins"
+TOOLS_HOOKS = PLUGINS / "asta-tools" / "hooks"
+FLOWS_HOOKS = PLUGINS / "asta-flows" / "hooks"
 
 
 def test_hooks_json_valid():
@@ -36,6 +38,54 @@ def test_hook_scripts_executable():
         assert script.exists(), f"{script.name} not found"
         assert os.access(script, os.X_OK), f"{script.name} is not executable"
         print(f"✓ {script.name} exists and is executable")
+
+
+def test_hooks_json_commands_resolve():
+    """Every script referenced by a hooks.json must exist and be executable.
+
+    Guards against two real regressions: a hooks.json pointing at a script that
+    lives in a different plugin (asta-flows referenced approve-asta-bash.sh),
+    and a hook script left orphaned when its registration was dropped.
+    """
+    hook_configs = sorted(PLUGINS.glob("*/hooks/hooks.json"))
+    assert hook_configs, "no plugin hooks.json files found"
+
+    for config_path in hook_configs:
+        plugin_root = config_path.parent.parent
+        with open(config_path) as f:
+            config = json.load(f)
+
+        registered = set()
+        for event, matchers in config["hooks"].items():
+            for matcher in matchers:
+                for hook in matcher["hooks"]:
+                    command = hook["command"]
+                    # Only validate commands that invoke a plugin-relative
+                    # script; inline shell (e.g. `mkdir -p ...`) has no path.
+                    match = re.search(
+                        r"\$\{CLAUDE_PLUGIN_ROOT\}(\S+)",
+                        command,
+                    )
+                    if not match:
+                        continue
+
+                    script = plugin_root / match.group(1).lstrip("/")
+                    assert script.exists(), (
+                        f"{config_path.relative_to(ROOT)} ({event}) references "
+                        f"missing script: {match.group(1)}"
+                    )
+                    assert os.access(script, os.X_OK), (
+                        f"{script.relative_to(ROOT)} is not executable"
+                    )
+                    registered.add(script.resolve())
+                    print(f"✓ {config_path.parent.parent.name}: {script.name} resolves")
+
+        # No orphans: every script in the hooks dir must be registered.
+        for script in sorted(config_path.parent.glob("*.sh")):
+            assert script.resolve() in registered, (
+                f"{script.relative_to(ROOT)} is not registered in "
+                f"{config_path.relative_to(ROOT)}"
+            )
 
 
 def test_approve_asta_files_allows_asta_path():
@@ -294,6 +344,7 @@ def test_approve_bd_bash_does_not_match_bd_prefix_lookalike():
 if __name__ == "__main__":
     test_hooks_json_valid()
     test_hook_scripts_executable()
+    test_hooks_json_commands_resolve()
     test_approve_asta_files_allows_asta_path()
     test_approve_asta_files_asks_for_other_paths()
     test_approve_asta_files_allows_command_on_asta_path()
