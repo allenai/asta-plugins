@@ -2,6 +2,17 @@
 
 Build theories from the literature on a question. Paper Finder gathers the papers. Theorizer extracts findings from them and generates theories, then asks the papers which variables the first extraction missed and runs one more pass for each new schema. Every pass adds its theories to the same theory store.
 
+## Setup
+
+Before the plan, check that Theorizer is installed and ready:
+
+```bash
+command -v theorize || uv tool install "asta-theorizer>=0.1.3"
+theorize doctor
+```
+
+`theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further.
+
 ## Plan
 
 Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
