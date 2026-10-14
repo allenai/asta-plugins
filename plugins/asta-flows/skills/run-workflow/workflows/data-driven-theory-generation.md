@@ -24,6 +24,8 @@ After the table, write this word for word, filling in only the two examples of a
 >
 > By default, Data Search finds a dataset during the run, and Theorizer gets your question as you wrote it.
 
+If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick data and a focus that suit the research context, and say what you picked.
+
 Their answers set the plan: the data step uses what they named, and a focus goes into AutoDS's `--intent` and Theorizer's question.
 
 AutoDS model names carry their provider (`openai/`), and its model, vision model and belief model are all the AutoDS model. Theorizer's names have none.

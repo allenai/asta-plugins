@@ -36,7 +36,7 @@ Your first reply is the plan, so the person can start the run with one answer. A
 3. **What they can change,** when the workflow's file lists it, word for word as the file gives it.
 4. **One question,** on its own line: "Would you like to run the workflow, or provide an updated query?"
 
-Do not guess at datasets, papers or hypotheses in the plan, and do not fill in what the person left open. The run finds them.
+Do not guess at datasets, papers or hypotheses in the plan, and do not fill in what the person left open, unless they ask you to choose. The run finds them.
 
 Assume the person wants the workflow carried out autonomously unless they say otherwise. Keep the run's files in one directory. Run long commands in the background and check on them. Check each command's output before the next. Whether to hand a step to a subagent, and when, is your call.
 

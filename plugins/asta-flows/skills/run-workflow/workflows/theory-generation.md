@@ -25,6 +25,8 @@ After the table, write this word for word, filling in only the two examples of a
 >
 > By default, Theorizer gets your question as you wrote it, and I'll search the literature for papers.
 
+If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
+
 Shape is worth asking about: Theorizer spots laws far more readily when it is told their shape (a production rule such as acids + alkalis -> salts + water, an IF ... THEN law, a quantitative relation) than when asked for theories about a topic.
 
 ## Steps
