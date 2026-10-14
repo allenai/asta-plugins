@@ -4,11 +4,11 @@ Build theories from the literature on a question. Paper Finder gathers the paper
 
 ## Plan
 
-Show the person this table, with the values for their question (the paper target, for one). The commands under Steps say which models and settings each step uses.
+Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
 
 | Step | Agent | What it does |
 |---|---|---|
-| 1 | Theorizer | Plans the paper search and extraction schema from your question |
+| 1 | Theorizer | Plans the paper search and extraction schema for "<their question>" |
 | 2 | Paper Finder | Finds 100 papers and fetches their full text |
 | 3 | Theorizer | Extracts findings and generates the first theories |
 | | Check-in | Shows you the first theories; you choose 4a or 4b |
@@ -22,8 +22,6 @@ After the table, write this word for word, filling in only the two examples of a
 > - **Focus:** A particular mechanism or population, e.g. <two from their question>?
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** Any required papers, or papers that should form the entire corpus?
->
-> By default, Theorizer gets your question as you wrote it, and I'll search the literature for papers.
 
 If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
 
