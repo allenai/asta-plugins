@@ -686,12 +686,28 @@ def prior_record(root: Path, commit: str) -> tuple[str, str] | None:
 
 
 def first_since(repo: Path, base: str, recorded: str) -> bool:
-    """Whether `recorded` is `base`'s child, or no newer than `base` (then unused)."""
-    if resolve_commit(repo, base) is None:
-        return False
-    if is_ancestor(repo, recorded, base):
-        return True
+    """Whether `recorded` is `base`'s child."""
     return resolve_commit(repo, f"{recorded}^") == resolve_commit(repo, base)
+
+
+def config_change(root: Path, default: str, prefix: str, *, publishing: bool) -> str:
+    """The newest default-branch commit that changed the paper's sync config."""
+    changed = git(
+        "--literal-pathspecs",
+        "log",
+        "-1",
+        "--format=%H",
+        default,
+        "--",
+        prefix + CONFIG,
+        cwd=root,
+    )
+    shallow = root / git("rev-parse", "--git-path", "shallow", cwd=root)
+    boundary = shallow.read_text().split() if shallow.is_file() else []
+    # A shallow boundary commit looks like it added every file it holds.
+    if not changed and boundary or changed in boundary:
+        refuse_incomplete_record_history(root, publishing=publishing)
+    return changed
 
 
 def reviewed_record(
@@ -719,13 +735,22 @@ def reviewed_record(
     if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
         prior = prior_record(root, record) if record else None
         if prior is None:
-            # A record with no parent must be the first publication since `base`,
-            # so a force-pushed fresh record cannot skip Overleaf edits.
-            if base is None or first_since(repo, base, recorded):
-                return recorded
+            # A record with no parent must be the first publication since `base`
+            # and attest a paper reviewed after `base` was committed, so a
+            # force-pushed fresh record cannot skip Overleaf edits.
+            if base is None or (
+                resolve_commit(repo, base) is not None
+                and is_ancestor(repo, recorded, base)
+            ):
+                return recorded  # `base` is at least as new, so this is unused.
+            if first_since(repo, base, recorded):
+                changed = config_change(root, default, prefix, publishing=publishing)
+                if changed and is_ancestor(root, changed, source):
+                    return recorded
             click.echo(
                 "The Overleaf sync record has no previous record and is not the first "
-                f"publication since {CONFIG}'s base; using {CONFIG} instead.",
+                f"publication since {CONFIG}'s base on origin's default branch; "
+                f"using {CONFIG} instead.",
                 err=True,
             )
             return None

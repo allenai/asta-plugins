@@ -3426,6 +3426,51 @@ def test_parentless_record_must_be_first_publication_since_base(setup, tmp_path)
     assert "older" in (project / "paper/main.tex").read_text()
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_parentless_record_must_postdate_last_config_change(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    older = git(project, "rev-parse", "HEAD")
+    original = (project / "paper/main.tex").read_text()
+    overleaf_edit(seed, "main.tex", "collaborator\n")
+    assert run(project, "pull").exit_code == 0
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    base = json.loads((project / "paper/overleaf.json").read_text())["base"]
+    # A collaborator reverts right after `base`; a fresh record attests the
+    # workspace paper from before the last pull.
+    overleaf_edit(seed, "main.tex", original)
+    revert = git(seed, "rev-parse", "HEAD")
+    assert git(seed, "rev-parse", "HEAD^") == base
+    origin = tmp_path / "workspace.git"
+    record = {"url": URL, "overleaf": revert, "workspace": older}
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=origin,
+        input=json.dumps(record),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "mktree"],
+        cwd=origin,
+        input=f"100644 blob {blob}\tsync.json\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    git(origin, "update-ref", RECORD_REF, git(origin, "commit-tree", tree, "-m", "x"))
+    result = run(project, "publish")
+    assert result.exit_code == 1
+    assert "not the first publication since" in result.output
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == revert
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == original
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_unreadable_sync_record_refuses(setup, monkeypatch, command):
     seed, project = setup

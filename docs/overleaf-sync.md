@@ -33,7 +33,8 @@ A record must also continue from the record it was written over: its Overleaf
 commit descends from that record's Overleaf commit and its workspace commit from
 that record's workspace commit. A record with no parent must be the first
 publication since `paper/overleaf.json`'s `base` (its Overleaf commit's parent is
-`base`). Otherwise pull and publish warn and use `base`, so a record attesting an
+`base`), and its workspace commit must descend from the default-branch commit
+that last changed `paper/overleaf.json`. Otherwise pull and publish warn and use `base`, so a record attesting an
 older reviewed paper cannot make an Overleaf revert count as synced.
 
 ## Failure handling
