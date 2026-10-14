@@ -4,15 +4,7 @@ Build theories from the literature on a question. Paper Finder gathers the paper
 
 ## Plan
 
-First ask the person in one short message, then wait for the answer:
-
-- **Angle.** Should the theories focus on one part of the question, a mechanism or a subgroup?
-- **Shape.** Do they know what kind of theory they are looking for: a production rule (acids + alkalis -> salts + water), an IF ... THEN law, a quantitative relation? Theorizer spots laws far more readily when it is told their shape than when asked for theories about a topic.
-- **Their papers.** Do they have papers that must be in the corpus, or that should be the whole corpus?
-
-Offer what you would pick if they have no preference, in one line each. Do not search or fetch before they answer.
-
-Then show them this table, with the values for their question. Everything not in it runs on the command's own default.
+Show the person this table, with the values for their question. Everything not in it runs on the command's own default.
 
 | Step | Agent | What it does | Configuration |
 |---|---|---|---|
@@ -22,6 +14,18 @@ Then show them this table, with the values for their question. Everything not in
 | | Check-in | Shows you the first theories, so you can refine them or move on | |
 | 4 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
 | 5 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
+
+After the table, say what they can change, worded as here. Give two examples of a focus from their question; they are suggestions, so use only what the person picks.
+
+> You can make the theories more specific:
+>
+> - **Focus:** A particular mechanism or population, e.g. <two from their question>?
+> - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
+> - **Papers:** Any required papers, or papers that should form the entire corpus?
+>
+> By default, Theorizer gets your question as you wrote it, and I'll search the literature for papers.
+
+Shape is worth asking about: Theorizer spots laws far more readily when it is told their shape (a production rule such as acids + alkalis -> salts + water, an IF ... THEN law, a quantitative relation) than when asked for theories about a topic.
 
 ## Steps
 
@@ -34,7 +38,7 @@ Then show them this table, with the values for their question. Everything not in
    theorize -p <run>/theory plan "<the question>"
    ```
 
-   If the person named a shape, put it in the question itself ("Find IF ... THEN laws for ..."): the plan's request is the theory query the generator reads. If the person gave an angle, pass it as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
+   Pass their question as they wrote it, leaving out only instructions for the run itself (how many papers, which models). Add only what they gave: a shape goes into the question ("Find IF ... THEN laws for ..."), since the plan's request is the theory query the generator reads, and a focus goes in as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
 2. **Papers.** Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 

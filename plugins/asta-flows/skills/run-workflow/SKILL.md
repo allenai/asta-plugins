@@ -27,17 +27,16 @@ theorize doctor
 
 Keys come from the environment: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` with the associated models to run Theorizer and AutoDS. `S2_API_KEY` (optional) speeds up fetching papers: Semantic Scholar lookups run at 1 request/s without it. Paper Finder search does not need it. `MISTRAL_API_KEY` for better full-text extraction from PDFs.
 
-## Clarification, plan and run
+## Plan and run
 
-Before you propose a workflow, clarify the person's plan with them: what they want out of the run, and anything they already have in mind for it. Ask in one short message, and wait for the answer. The workflow's file says what to ask.
+Your first reply is the plan, so the person can start the run with one answer. Ask nothing before it, unless their message has no question to run a workflow on. Propose it in this order, and nothing more:
 
-Each workflow opens with its plan: a table of its steps, with each step's configuration. Propose it in this order, and nothing more:
+1. "Here's an example workflow:"
+2. **Plan,** as the workflow's table, with the values for their question. Mention the workspace only when the person gave files.
+3. **What they can change,** when the workflow's file lists it, worded as the file words it.
+4. **One question:** "Would you like to run the workflow, or provide an updated query?"
 
-1. **An overview,** in one or two sentences: the workflow, and what it will produce for their question. Mention the workspace only when the person gave files.
-2. **Plan,** as that table, with the values for their question.
-3. **One question:** "Should I run the workflow?"
-
-Do not guess at datasets, papers or hypotheses in the plan. The run finds them.
+Do not guess at datasets, papers or hypotheses in the plan, and do not fill in what the person left open. The run finds them.
 
 Assume the person wants the workflow carried out autonomously unless they say otherwise. Keep the run's files in one directory. Run long commands in the background and check on them. Check each command's output before the next. Whether to hand a step to a subagent, and when, is your call.
 
