@@ -113,9 +113,10 @@ jobs:
       # say so in the PR comment, and fail the check only after deploy.
       # The LaTeX image needs about 6 GB; a large site can leave less than that
       # on the hosted runner. Toolchains this job never uses free the space.
+      # Any tracked .tex counts: discovery accepts papers not named main.tex.
       - name: Free runner disk for the LaTeX image
         run: |
-          git ls-files -- 'main.tex' '*/main.tex' | grep -q . || exit 0
+          git ls-files -- '*.tex' | grep -q . || exit 0
           df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
           df -h /
