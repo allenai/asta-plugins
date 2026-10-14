@@ -29,14 +29,12 @@ workspace may use different hash functions. Otherwise both commands warn and use
 merge to the default branch therefore cannot move the sync point to unreviewed
 content, and Overleaf access alone cannot move it either.
 
-This check attests content already merged into the default branch; it does not
-require successive records' workspace commits to move forward. A workspace
-writer can attest an older reviewed paper paired with matching Overleaf files.
-For example, after publication T, reverting Overleaf to reviewed paper S and
-writing a record for S makes that revert count as synced. Pull will not bring
-it in for another review, and publish may replace it with the current reviewed
-paper. Record parents support fast-forward pushes, not verification of a chain
-of progressively newer papers.
+A record must also continue from the record it was written over: its Overleaf
+commit descends from that record's Overleaf commit and its workspace commit from
+that record's workspace commit. A record with no parent must be the first
+publication since `paper/overleaf.json`'s `base` (its Overleaf commit's parent is
+`base`). Otherwise pull and publish warn and use `base`, so a record attesting an
+older reviewed paper cannot make an Overleaf revert count as synced.
 
 ## Failure handling
 
