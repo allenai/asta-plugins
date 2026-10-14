@@ -6,7 +6,8 @@ Build theories from the literature on a question. Paper Finder gathers the paper
 
 First ask the person in one short message, then wait for the answer:
 
-- **Angle.** Should the theories focus on one part of the question, a mechanism, a subgroup or a kind of explanation?
+- **Angle.** Should the theories focus on one part of the question, a mechanism or a subgroup?
+- **Shape.** Do they know what kind of theory they are looking for: a production rule (acids + alkalis -> salts + water), an IF ... THEN law, a quantitative relation? Theorizer spots laws far more readily when it is told their shape than when asked for theories about a topic.
 - **Their papers.** Do they have papers that must be in the corpus, or that should be the whole corpus?
 
 Offer what you would pick if they have no preference, in one line each. Do not search or fetch before they answer.
@@ -33,7 +34,7 @@ Then show them this table, with the values for their question. Everything not in
    theorize -p <run>/theory plan "<the question>"
    ```
 
-   If the person gave an angle, pass it as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
+   If the person named a shape, put it in the question itself ("Find IF ... THEN laws for ..."): the plan's request is the theory query the generator reads. If the person gave an angle, pass it as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
 2. **Papers.** Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 
@@ -62,7 +63,7 @@ Then show them this table, with the values for their question. Everything not in
    theorize -p <run>/theory show theories
    ```
 
-   `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`.
+   `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`. With 200 papers or more, add `--objective attribution-batched` to every generation in the run: it reads the evidence that does not fit in further batches instead of leaving it out. Say so in the plan.
 
    **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer two ways on:
 
@@ -95,7 +96,7 @@ Then show them this table, with the values for their question. Everything not in
 
 6. **Updates.** After every generation, tell the person what the pass produced. If you have a tool for publishing artifacts, publish the theories with it too.
 
-7. **Comparison.** Theories from different schemas often restate each other. Name the ones that do, and the ones only one schema produced. That tells the person which explanations rest on one slice of the evidence.
+7. **Summary.** End the run by clustering the theories from every pass by the explanation they give. Theories from different schemas often restate each other; a cluster that several schemas reached rests on more of the evidence than one only a single schema produced. For each cluster, say what it is about in plain language and then in a few technical sentences, and why the person should care. Weigh the clusters by similarity, impact and novelty, and point the person to the ones they are likely to find most interesting, so they can find them quickly without reading every theory.
 
 ## Bring Your Own Papers
 
