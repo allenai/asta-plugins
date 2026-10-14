@@ -35,7 +35,7 @@ Each workflow opens with its plan: a table of its steps, with each step's config
 
 1. **An overview,** in one or two sentences: the workflow, and what it will produce for their question. Mention the workspace only when the person gave files.
 2. **Plan,** as that table, with the values for their question.
-3. **One question:** "Run it, or tell me what to change."
+3. **One question:** "Should I run the workflow?"
 
 Do not guess at datasets, papers or hypotheses in the plan. The run finds them.
 
