@@ -3385,6 +3385,47 @@ def test_record_attesting_an_older_paper_does_not_continue(setup, tmp_path):
     assert "older" in (project / "paper/main.tex").read_text()
 
 
+def test_parentless_record_must_be_first_publication_since_base(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("older\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    origin = tmp_path / "workspace.git"
+    _, older = origin_record(tmp_path)
+    (project / "paper/main.tex").write_text("newer\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    _, record = origin_record(tmp_path)
+    # Overleaf reverts; a fresh record with no parent attests the revert.
+    overleaf_edit(seed, "main.tex", "older\n")
+    record.update(overleaf=git(seed, "rev-parse", "HEAD"), workspace=older["workspace"])
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=origin,
+        input=json.dumps(record),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "mktree"],
+        cwd=origin,
+        input=f"100644 blob {blob}\tsync.json\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    forged = git(origin, "commit-tree", tree, "-m", "x")
+    git(origin, "update-ref", RECORD_REF, forged)
+    result = run(project, "publish")
+    assert result.exit_code == 1
+    assert "not the first publication since" in result.output
+    pulled = run(project, "pull")
+    assert pulled.exit_code == CONFLICT_EXIT, pulled.output
+    assert "older" in (project / "paper/main.tex").read_text()
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_unreadable_sync_record_refuses(setup, monkeypatch, command):
     seed, project = setup

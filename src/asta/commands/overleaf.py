@@ -685,6 +685,15 @@ def prior_record(root: Path, commit: str) -> tuple[str, str] | None:
         return None
 
 
+def first_since(repo: Path, base: str, recorded: str) -> bool:
+    """Whether `recorded` is `base`'s child, or no newer than `base` (then unused)."""
+    if resolve_commit(repo, base) is None:
+        return False
+    if is_ancestor(repo, recorded, base):
+        return True
+    return resolve_commit(repo, f"{recorded}^") == resolve_commit(repo, base)
+
+
 def reviewed_record(
     root: Path,
     repo: Path,
@@ -694,6 +703,7 @@ def reviewed_record(
     source: str | None,
     *,
     record: str | None = None,
+    base: str | None = None,
     publishing: bool = False,
 ) -> str | None:
     """The record's Overleaf commit when it matches reviewed workspace history."""
@@ -709,7 +719,16 @@ def reviewed_record(
     if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
         prior = prior_record(root, record) if record else None
         if prior is None:
-            return recorded
+            # A record with no parent must be the first publication since `base`,
+            # so a force-pushed fresh record cannot skip Overleaf edits.
+            if base is None or first_since(repo, base, recorded):
+                return recorded
+            click.echo(
+                "The Overleaf sync record has no previous record and is not the first "
+                f"publication since {CONFIG}'s base; using {CONFIG} instead.",
+                err=True,
+            )
+            return None
         overleaf, workspace = prior
         if resolve_commit(root, workspace) is None:
             refuse_incomplete_record_history(root, publishing=publishing)
@@ -878,6 +897,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                                 recorded,
                                 source,
                                 record=record,
+                                base=config["base"],
                             )
                     if (
                         recorded is not None
@@ -1146,6 +1166,7 @@ def publish(
                 recorded,
                 source,
                 record=previous,
+                base=config["base"],
                 publishing=True,
             )
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
