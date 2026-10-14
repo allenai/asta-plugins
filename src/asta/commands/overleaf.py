@@ -672,6 +672,19 @@ def refuse_incomplete_record_history(root: Path, *, publishing: bool = False) ->
         )
 
 
+def prior_record(root: Path, commit: str) -> tuple[str, str] | None:
+    """The (Overleaf, workspace) commits of the record `commit` was written over."""
+    if resolve_commit(root, f"{commit}^") is None:
+        return None
+    try:
+        record = json.loads(
+            git_bytes("cat-file", "blob", f"{commit}^:{RECORD}", cwd=root)
+        )
+        return str(record["overleaf"]), str(record["workspace"])
+    except (GitCommandError, KeyError, TypeError, ValueError):
+        return None
+
+
 def reviewed_record(
     root: Path,
     repo: Path,
@@ -680,6 +693,7 @@ def reviewed_record(
     recorded: str | None,
     source: str | None,
     *,
+    record: str | None = None,
     publishing: bool = False,
 ) -> str | None:
     """The record's Overleaf commit when it matches reviewed workspace history."""
@@ -693,7 +707,26 @@ def reviewed_record(
         # rather than evidence that the record names unreviewed content.
         refuse_incomplete_record_history(root, publishing=publishing)
     if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
-        return recorded
+        prior = prior_record(root, record) if record else None
+        if prior is None:
+            return recorded
+        overleaf, workspace = prior
+        if resolve_commit(root, workspace) is None:
+            refuse_incomplete_record_history(root, publishing=publishing)
+        # An older reviewed paper must not become the sync point after a newer one.
+        if (
+            resolve_commit(repo, overleaf) is not None
+            and is_ancestor(repo, overleaf, recorded)
+            and resolve_commit(root, workspace) is not None
+            and is_ancestor(root, workspace, source)
+        ):
+            return recorded
+        click.echo(
+            "The Overleaf sync record does not continue from the previous record; "
+            f"using {CONFIG} instead.",
+            err=True,
+        )
+        return None
     click.echo(
         "The Overleaf sync record does not match a paper on origin's default branch; "
         f"using {CONFIG} instead.",
@@ -834,11 +867,17 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         if config:
             recorded = None
             if has_origin(root):
-                with published_record(root, url) as (_, recorded, source):
+                with published_record(root, url) as (record, recorded, source):
                     if recorded is not None:
                         with default_branch(root) as (default, _):
                             recorded = reviewed_record(
-                                root, repo, prefix, default, recorded, source
+                                root,
+                                repo,
+                                prefix,
+                                default,
+                                recorded,
+                                source,
+                                record=record,
                             )
                     if (
                         recorded is not None
@@ -1100,7 +1139,14 @@ def publish(
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
             recorded = reviewed_record(
-                root, repo, prefix, default, recorded, source, publishing=True
+                root,
+                repo,
+                prefix,
+                default,
+                recorded,
+                source,
+                record=previous,
+                publishing=True,
             )
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
             if synced != head:
