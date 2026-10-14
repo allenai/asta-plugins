@@ -4,15 +4,6 @@ Build theories that explain the question, grounded in the literature and in expe
 
 The papers and theories are [Theory generation](theory-generation.md)'s steps. This file says what this workflow adds to them: the data, the experiments, and the mission that carries the experiments to Theorizer.
 
-## Data and angle
-
-Before the plan, ask the person two things in one short message, then wait for the answer:
-
-- **Data.** Do they have a dataset, or one in mind (a cohort, a portal, a paper's deposit)? Or should Data Search find one?
-- **Angle.** Should the run focus on one part of the question, a mechanism, a subgroup or a kind of finding? Say which parts of the question AutoDS can test on data and which rest on the literature, so they can choose where the experiments go.
-
-Offer what you would pick if they have no preference, in one line each. Do not search, download or run anything before they answer. Their answers set the plan: the data step uses what they named, and the angle goes into AutoDS's `--intent` and Theorizer's question.
-
 ## Plan
 
 Show the person this table, with the values for their question. Everything not in it runs on the command's own default.
@@ -23,6 +14,19 @@ Show the person this table, with the values for their question. Everything not i
 | 2 | Data Search | Finds a dataset the question can be tested on | the person's data, or chosen during the run |
 | 3 | AutoDS | Runs experiments on the data | 10 experiments (`--n_experiments`), model `openai/gpt-6-luna` |
 | 4 | Theorizer | Extracts findings from the papers and builds theories that must explain the experiments; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
+
+After the table, write this word for word, filling in only the two examples of a focus from their question. Before it, say in one sentence which parts of the question AutoDS can test on data and which rest on the literature, so they can choose where the experiments go. The examples are suggestions, so use only what the person picks.
+
+> You can make the run more specific:
+>
+> - **Data:** A dataset you have or have in mind, such as a cohort, a portal or a paper's deposit?
+> - **Focus:** A particular mechanism, population or kind of finding, e.g. <two from their question>?
+>
+> By default, Data Search finds a dataset during the run, and Theorizer gets your question as you wrote it.
+
+If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick data and a focus that suit the research context, and say what you picked.
+
+Their answers set the plan: the data step uses what they named, and a focus goes into AutoDS's `--intent` and Theorizer's question.
 
 AutoDS model names carry their provider (`openai/`), and its model, vision model and belief model are all the AutoDS model. Theorizer's names have none.
 

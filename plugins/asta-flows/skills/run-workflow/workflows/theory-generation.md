@@ -2,26 +2,41 @@
 
 Build theories from the literature on a question. Paper Finder gathers the papers. Theorizer extracts findings from them and generates theories, then asks the papers which variables the first extraction missed and runs one more pass for each new schema. Every pass adds its theories to the same theory store.
 
+## Setup
+
+Before the plan, check that Theorizer is installed and ready:
+
+```bash
+command -v theorize || uv tool install "asta-theorizer>=0.1.3"
+theorize doctor
+```
+
+`theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further.
+
 ## Plan
 
-First ask the person in one short message, then wait for the answer:
+Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
 
-- **Angle.** Should the theories focus on one part of the question, a mechanism or a subgroup?
-- **Shape.** Do they know what kind of theory they are looking for: a production rule (acids + alkalis -> salts + water), an IF ... THEN law, a quantitative relation? Theorizer spots laws far more readily when it is told their shape than when asked for theories about a topic.
-- **Their papers.** Do they have papers that must be in the corpus, or that should be the whole corpus?
+| Step | Agent | What it does |
+|---|---|---|
+| 1 | Theorizer | Plans the paper search and extraction schema for "<their question>" |
+| 2 | Paper Finder | Finds 100 papers and fetches their full text |
+| 3 | Theorizer | Extracts findings and generates the first theories |
+| | Check-in | Shows you the first theories; you choose 4a or 4b |
+| 4a | Theorizer | Refines the theories with your direction, from the same findings |
+| 4b | Theorizer | Discovers variables the first pass missed, then generates theories for each new schema |
 
-Offer what you would pick if they have no preference, in one line each. Do not search or fetch before they answer.
+After the table, write this word for word, filling in only the two examples of a focus from their question. The examples are suggestions, so use only what the person picks.
 
-Then show them this table, with the values for their question. Everything not in it runs on the command's own default.
+> You can make the theories more specific:
+>
+> - **Focus:** A particular mechanism or population, e.g. <two from their question>?
+> - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
+> - **Papers:** Any required papers, or papers that should form the entire corpus?
 
-| Step | Agent | What it does | Configuration |
-|---|---|---|---|
-| 1 | Theorizer | Plans a paper search query, an extraction query and a first extraction schema from the question | `gpt-6-sol` |
-| 2 | Paper Finder | Searches with the plan's query, fetches the top papers' full text, and fills any gap to the target with more searches | 100 papers (`papers fetch --top`) |
-| 3 | Theorizer | Extracts findings from every paper and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
-| | Check-in | Shows you the first theories, so you can refine them or move on | |
-| 4 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
-| 5 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
+If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
+
+Shape is worth asking about: Theorizer spots laws far more readily when it is told their shape (a production rule such as acids + alkalis -> salts + water, an IF ... THEN law, a quantitative relation) than when asked for theories about a topic.
 
 ## Steps
 
@@ -34,7 +49,7 @@ Then show them this table, with the values for their question. Everything not in
    theorize -p <run>/theory plan "<the question>"
    ```
 
-   If the person named a shape, put it in the question itself ("Find IF ... THEN laws for ..."): the plan's request is the theory query the generator reads. If the person gave an angle, pass it as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
+   Pass their question as they wrote it, leaving out only instructions for the run itself (how many papers, which models). Add only what they gave: a shape goes into the question ("Find IF ... THEN laws for ..."), since the plan's request is the theory query the generator reads, and a focus goes in as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
 2. **Papers.** Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 
@@ -65,16 +80,16 @@ Then show them this table, with the values for their question. Everything not in
 
    `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`. With 200 papers or more, add `--objective attribution-batched` to every generation in the run: it reads the evidence that does not fit in further batches instead of leaving it out. Say so in the plan.
 
-   **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer two ways on:
+   **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on to 4b only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer the two ways on from the plan:
 
-   - **Refine the theories.** Generate again from the same findings, with the person's direction (a focus, a mechanism, a kind of explanation, theories to set aside) in the mission statement. Nothing is extracted again.
+   - **4a, refine the theories.** Generate again from the same findings, with the person's direction (a focus, a mechanism, a kind of explanation, theories to set aside) in the mission statement. Nothing is extracted again.
 
      ```bash
      theorize -p <run>/theory theories generate --max-data-tokens 750000 --mission-statement "<the question, then their direction>" --save-as theories-refined-<n>
      ```
 
-     Report and publish it as in step 6, then check in again.
-   - **Go on** to steps 4 and 5.
+     Report and publish it as in step 6, then check in again: they can refine again, go on to 4b, or stop.
+   - **4b, discover new variables:** steps 4 and 5.
 
 4. **Missed variables.** Ask each paper which variables are worth extracting beyond the ones the first schema records, then design new schemas from the answers. List the first schema's fields with `theorize -p <run>/theory show plan`, and name them in the context:
 
@@ -96,7 +111,7 @@ Then show them this table, with the values for their question. Everything not in
 
 6. **Updates.** After every generation, tell the person what the pass produced. If you have a tool for publishing artifacts, publish the theories with it too.
 
-7. **Summary.** End the run by clustering the theories from every pass by the explanation they give. Theories from different schemas often restate each other; a cluster that several schemas reached rests on more of the evidence than one only a single schema produced. For each cluster, say what it is about in plain language and then in a few technical sentences, and why the person should care. Weigh the clusters by similarity, impact and novelty, and point the person to the ones they are likely to find most interesting, so they can find them quickly without reading every theory.
+7. **Summary.** End the run by clustering the theories from every pass by the explanation they give. Theories from different schemas often restate each other; a cluster that several schemas reached rests on more of the evidence than one only a single schema produced. For each cluster, say what it is about in plain language and then in a few technical sentences, and why the person should care. Weigh the clusters by similarity, impact and novelty, and point the person to the ones they are likely to find most interesting, so they can find them quickly without reading every theory. Cluster even when the person asked for a theory shape: state each cluster's laws in that shape, in its technical sentences.
 
 ## Bring Your Own Papers
 
