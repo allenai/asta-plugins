@@ -15,7 +15,7 @@ Show the person this table, with the values for their question. Everything not i
 | 4 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
 | 5 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
 
-After the table, say what they can change, worded as here. Give two examples of a focus from their question; they are suggestions, so use only what the person picks.
+After the table, write this word for word, filling in only the two examples of a focus from their question. The examples are suggestions, so use only what the person picks.
 
 > You can make the theories more specific:
 >

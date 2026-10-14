@@ -25,7 +25,7 @@ uv tool install asta-autodiscovery
 theorize doctor
 ```
 
-Keys come from the environment: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` with the associated models to run Theorizer and AutoDS. `S2_API_KEY` (optional) speeds up fetching papers: Semantic Scholar lookups run at 1 request/s without it. Paper Finder search does not need it. `MISTRAL_API_KEY` for better full-text extraction from PDFs.
+Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here. AutoDS has no such check: it reads the key of its model's provider, such as `OPENAI_API_KEY` for `openai/` models.
 
 ## Plan and run
 
@@ -33,8 +33,8 @@ Your first reply is the plan, so the person can start the run with one answer. A
 
 1. "Here's an example workflow:"
 2. **Plan,** as the workflow's table, with the values for their question. Mention the workspace only when the person gave files.
-3. **What they can change,** when the workflow's file lists it, worded as the file words it.
-4. **One question:** "Would you like to run the workflow, or provide an updated query?"
+3. **What they can change,** when the workflow's file lists it, word for word as the file gives it.
+4. **One question,** on its own line: "Would you like to run the workflow, or provide an updated query?"
 
 Do not guess at datasets, papers or hypotheses in the plan, and do not fill in what the person left open. The run finds them.
 

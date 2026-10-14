@@ -15,7 +15,7 @@ Show the person this table, with the values for their question. Everything not i
 | 3 | AutoDS | Runs experiments on the data | 10 experiments (`--n_experiments`), model `openai/gpt-6-luna` |
 | 4 | Theorizer | Extracts findings from the papers and builds theories that must explain the experiments; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
 
-After the table, say what they can change, worded as here. Give two examples of a focus from their question, and say which parts of the question AutoDS can test on data and which rest on the literature, so they can choose where the experiments go. The examples are suggestions, so use only what the person picks.
+After the table, write this word for word, filling in only the two examples of a focus from their question. Before it, say in one sentence which parts of the question AutoDS can test on data and which rest on the literature, so they can choose where the experiments go. The examples are suggestions, so use only what the person picks.
 
 > You can make the run more specific:
 >
