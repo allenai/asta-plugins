@@ -20,7 +20,7 @@ Check the environment before you propose a workflow: install what is missing and
 
 ```bash
 command -v theorize auto-discovery
-uv tool install "asta-theorizer>=0.1.1"
+uv tool install "asta-theorizer>=0.1.3"
 uv tool install asta-autodiscovery
 theorize doctor
 ```
