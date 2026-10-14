@@ -4,16 +4,16 @@ Build theories from the literature on a question. Paper Finder gathers the paper
 
 ## Plan
 
-Show the person this table, with the values for their question. Everything not in it runs on the command's own default.
+Show the person this table, with the values for their question (the paper target, for one). The commands under Steps say which models and settings each step uses.
 
-| Step | Agent | What it does | Configuration |
-|---|---|---|---|
-| 1 | Theorizer | Plans a paper search query, an extraction query and a first extraction schema from the question | `gpt-6-sol` |
-| 2 | Paper Finder | Searches with the plan's query, fetches the top papers' full text, and fills any gap to the target with more searches | 100 papers (`papers fetch --top`) |
-| 3 | Theorizer | Extracts findings from every paper and generates theories | extraction `gpt-6-luna`, generation `gpt-6-sol` |
-| | Check-in | Shows you the first theories, so you can refine them or move on | |
-| 4 | Theorizer | Asks each paper what the first extraction missed, and designs new extraction schemas from the answers | usually 2 to 4 schemas |
-| 5 | Theorizer | For each new schema: extracts findings, then generates theories | one pass per schema |
+| Step | Agent | What it does |
+|---|---|---|
+| 1 | Theorizer | Plans the paper search and extraction schema from your question |
+| 2 | Paper Finder | Finds 100 papers and fetches their full text |
+| 3 | Theorizer | Extracts findings and generates the first theories |
+| | Check-in | Shows you the first theories; you choose 4a or 4b |
+| 4a | Theorizer | Refines the theories with your direction, from the same findings |
+| 4b | Theorizer | Discovers variables the first pass missed, then generates theories for each new schema |
 
 After the table, write this word for word, filling in only the two examples of a focus from their question. The examples are suggestions, so use only what the person picks.
 
@@ -71,16 +71,16 @@ Shape is worth asking about: Theorizer spots laws far more readily when it is to
 
    `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`. With 200 papers or more, add `--objective attribution-batched` to every generation in the run: it reads the evidence that does not fit in further batches instead of leaving it out. Say so in the plan.
 
-   **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer two ways on:
+   **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on to 4b only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer the two ways on from the plan:
 
-   - **Refine the theories.** Generate again from the same findings, with the person's direction (a focus, a mechanism, a kind of explanation, theories to set aside) in the mission statement. Nothing is extracted again.
+   - **4a, refine the theories.** Generate again from the same findings, with the person's direction (a focus, a mechanism, a kind of explanation, theories to set aside) in the mission statement. Nothing is extracted again.
 
      ```bash
      theorize -p <run>/theory theories generate --max-data-tokens 750000 --mission-statement "<the question, then their direction>" --save-as theories-refined-<n>
      ```
 
-     Report and publish it as in step 6, then check in again.
-   - **Go on** to steps 4 and 5.
+     Report and publish it as in step 6, then check in again: they can refine again, go on to 4b, or stop.
+   - **4b, discover new variables:** steps 4 and 5.
 
 4. **Missed variables.** Ask each paper which variables are worth extracting beyond the ones the first schema records, then design new schemas from the answers. List the first schema's fields with `theorize -p <run>/theory show plan`, and name them in the context:
 
