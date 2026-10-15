@@ -34,6 +34,10 @@ For a headless agent (the user only sees results via deployed URL):
 
 Don't merge a PR without explicit user approval.
 
+## Overleaf sync refusals
+
+When `asta workspace overleaf pull` or `publish` refuses, or a sync PR conflicts, follow the section its message links in [`workflows/overleaf-recovery.md`](workflows/overleaf-recovery.md).
+
 ## Scaffold components as needed
 
 Add components only when needed; don't proactively offer.
