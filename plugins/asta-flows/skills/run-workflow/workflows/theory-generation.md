@@ -13,7 +13,7 @@ uv tool install --upgrade asta-theorizer
 theorize doctor
 ```
 
-`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it: pass that on before going further, but never ask for a key in chat, where it would be kept in the transcript.
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it: pass that on verbatim before going further. Do not improvise a fix of your own for a missing key -- in particular, never offer to run an `export` in this session (the next command will not see it) and never ask for the key in chat, where it would be kept in the transcript.
 
 ## Plan
 
