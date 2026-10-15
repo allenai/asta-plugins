@@ -2,20 +2,30 @@
 
 Build theories from the literature on a question. Paper Finder gathers the papers. Theorizer extracts findings from them and generates theories, then asks the papers which variables the first extraction missed and runs one more pass for each new schema. Every pass adds its theories to the same theory store.
 
+Paper Finder is the source unless the person points you at papers of their own -- a folder, files, a glob. When they do, [Bring Your Own Papers](#bring-your-own-papers) replaces the search in step 2 and the rest of the workflow is unchanged.
+
 ## Setup
 
 Before the plan, check that Theorizer is installed and ready:
 
 ```bash
-command -v theorize || uv tool install "asta-theorizer>=0.1.3"
+uv tool install --upgrade asta-theorizer
 theorize doctor
 ```
 
-`theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further.
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it. A missing key is the common one, and this is the fix that needs no restart -- Theorizer reads the file on the next command:
+
+```bash
+mkdir -p ~/.config/asta && echo '{"openai": "..."}' > ~/.config/asta/api_keys.donotcommit.json   # or "anthropic"
+```
+
+That location works from any directory and sits outside any repository; a copy in the working directory, or `--key-dir DIR`, is read first if they want one per project. They can also put `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in their shell profile, which lasts across runs but only reaches a session started after it. Never ask for the key in chat, where it would be kept in the transcript.
 
 ## Plan
 
 Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
+
+With the person's own papers, step 1 plans the extraction schema only and step 2 reads `| 2 | Theorizer | Imports their N papers from <their folder>. No search. |`. Count the files first, so N is real.
 
 | Step | Agent | What it does |
 |---|---|---|
@@ -34,6 +44,8 @@ After the table, write this word for word, filling in only the two examples of a
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** Any required papers, or papers that should form the entire corpus?
 
+Leave out any of the three they have already settled: someone who gave you a folder has answered the papers question.
+
 If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
 
 Shape is worth asking about: Theorizer spots laws far more readily when it is told their shape (a production rule such as acids + alkalis -> salts + water, an IF ... THEN law, a quantitative relation) than when asked for theories about a topic.
@@ -51,7 +63,7 @@ Shape is worth asking about: Theorizer spots laws far more readily when it is to
 
    Pass their question as they wrote it, leaving out only instructions for the run itself (how many papers, which models). Add only what they gave: a shape goes into the question ("Find IF ... THEN laws for ..."), since the plan's request is the theory query the generator reads, and a focus goes in as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
-2. **Papers.** Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
+2. **Papers.** If they pointed you at their own papers, import them, search for nothing, and go on to step 3 -- see [Bring Your Own Papers](#bring-your-own-papers). Otherwise Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 
    ```bash
    theorize -p <run>/theory papers search "<the plan's search query>"
@@ -121,4 +133,6 @@ theorize -p <run>/theory papers import <files or a glob>
 theorize -p <run>/theory show papers
 ```
 
-Markdown is read as it is. PDFs are converted on import; add `--ocr mistral` for scanned PDFs when `MISTRAL_API_KEY` is set.
+Markdown is read as it is. PDFs are converted on import; add `--ocr mistral` for scanned PDFs when `MISTRAL_API_KEY` is set. Figures are not read: a markdown file that refers to them as image tags hands those tags over as text.
+
+Import spends one small LLM call per paper on metadata, and a brought corpus has no paper target to bound it. Say the count when you show the plan, and say that step 4b extracts over every paper again for each schema it produces.
