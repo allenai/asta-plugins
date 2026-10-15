@@ -1324,3 +1324,13 @@ def publish(
                 root, config["url"], previous, published, reviewed, identity
             )
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
+
+
+@overleaf.command(name="sync")
+@dir_option
+@project_option
+def sync(directory: str, project: Path) -> None:
+    """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
+    from .overleaf_sync import sync_workspace
+
+    sync_workspace(project, directory)
