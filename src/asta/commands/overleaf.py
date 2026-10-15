@@ -793,6 +793,49 @@ def reviewed_record(
     base: str | None = None,
     publishing: bool = False,
 ) -> str | None:
+    """Verify every predecessor, so an invalid intermediate cannot hide a rollback."""
+    newest = recorded
+    while True:
+        verified = _reviewed_record_entry(
+            root,
+            repo,
+            prefix,
+            default,
+            recorded,
+            source,
+            record=record,
+            base=base,
+            publishing=publishing,
+        )
+        if verified is None:
+            return None
+        # A committed pull supersedes earlier publications.
+        if (
+            base is not None
+            and resolve_commit(repo, recorded) is not None
+            and resolve_commit(repo, base) is not None
+            and is_ancestor(repo, recorded, base)
+        ):
+            return newest
+        prior = prior_record(root, record) if record else None
+        if prior is None:
+            return newest
+        record = resolve_commit(root, f"{record}^")
+        recorded, source = prior
+
+
+def _reviewed_record_entry(
+    root: Path,
+    repo: Path,
+    prefix: str,
+    default: str,
+    recorded: str | None,
+    source: str | None,
+    *,
+    record: str | None = None,
+    base: str | None = None,
+    publishing: bool = False,
+) -> str | None:
     """The record's Overleaf commit when it matches reviewed workspace history."""
     if recorded is None or resolve_commit(repo, recorded) is None:
         return recorded  # last_sync reports a record missing from Overleaf history.

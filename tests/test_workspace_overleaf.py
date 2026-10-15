@@ -3356,7 +3356,10 @@ def test_record_not_matching_reviewed_history_falls_back(setup, tmp_path):
     assert "unreviewed" in (project / "paper/main.tex").read_text()
 
 
-def test_record_attesting_an_older_paper_does_not_continue(setup, tmp_path):
+@pytest.mark.parametrize("intermediate", [False, True])
+def test_record_attesting_an_older_paper_does_not_continue(
+    setup, tmp_path, intermediate
+):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("older\n")
@@ -3388,6 +3391,9 @@ def test_record_attesting_an_older_paper_does_not_continue(setup, tmp_path):
         check=True,
     ).stdout.strip()
     forged = git(origin, "commit-tree", tree, "-p", previous, "-m", "x")
+    if intermediate:
+        # A matching immediate predecessor cannot launder its own invalid rollback.
+        forged = git(origin, "commit-tree", tree, "-p", forged, "-m", "x")
     git(origin, "update-ref", RECORD_REF, forged)
     result = run(project, "publish")
     assert result.exit_code == 1
