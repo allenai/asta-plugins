@@ -1,6 +1,7 @@
 """Runner-independent, serialized Overleaf synchronization through a GitHub PR."""
 
 import json
+import re
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -13,6 +14,11 @@ from . import overleaf as ov
 
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
+DEFAULT_BODY = (
+    MARKER + "\n\nImport co-author edits before publishing the default branch."
+)
+BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
+CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
 FIELDS = "number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
 
 
@@ -75,12 +81,28 @@ def lock(root: Path, project_id: str):
             yield False
             return
         raise
+    failed = False
     try:
         yield True
+    except BaseException:
+        failed = True
+        raise
     finally:
-        ov.git(
-            "push", f"--force-with-lease={ref}:{owner}", "origin", f":{ref}", cwd=root
-        )
+        try:
+            ov.git(
+                "push",
+                f"--force-with-lease={ref}:{owner}",
+                "origin",
+                f":{ref}",
+                cwd=root,
+            )
+        except ov.SyncError:
+            if not failed:
+                raise
+            click.echo(
+                "Could not release the sync lock; use interrupted-run recovery.",
+                err=True,
+            )
 
 
 def checks_pass(pr: dict) -> bool:
@@ -158,7 +180,47 @@ def conflict_files(root: Path, prefix: str):
         for name, data in ov.paper_files(root, "HEAD", prefix).items()
         if Path(name).suffix.lower() in ov.MERGE_SUFFIXES
         and b"\0" not in data
-        and (ov.MARKER.search(data) or ov.re.search(rb"(?m)^=======\r?$", data))
+        and (
+            CONFLICT_LABEL.search(data)
+            or (
+                Path(name).suffix.lower() not in {".md", ".txt"}
+                and re.search(rb"(?m)^=======\r?$", data)
+            )
+        )
+    )
+
+
+def reset_status(root: Path, repo: str, pr: dict):
+    if pr["body"] != DEFAULT_BODY:
+        gh(
+            root,
+            "api",
+            f"repos/{repo}/pulls/{pr['number']}",
+            "--method",
+            "PATCH",
+            payload={"body": DEFAULT_BODY},
+        )
+        pr["body"] = DEFAULT_BODY
+
+
+def conflict_message(
+    root: Path, tip: str, paths: list[str], pr_url: str = "the sync PR"
+):
+    # Name the latest workspace change to each conflicted file, not an unrelated
+    # default tip or the latest edit anywhere in the paper.
+    commits = sorted(
+        {
+            ov.git("log", "-1", "--format=%H", tip, "--", path, cwd=root)
+            for path in paths
+        }
+        - {""}
+    )
+    return (
+        "Overleaf sync conflicts in "
+        + ", ".join(paths)
+        + "; workspace changes to these files: "
+        + ", ".join(commits)
+        + f"; each change's author must resolve the conflict in {pr_url}."
     )
 
 
@@ -207,6 +269,9 @@ def only_recorded_base_changed(root, prefix, before, after):
 
 def sync_workspace(project: Path, directory: str):
     root, paper, prefix = ov.resolve(project, directory)
+    # resolve() currently guarantees this; keep the write boundary explicit here.
+    if not prefix or not prefix.endswith("/"):
+        raise ov.SyncError("Sync requires a non-empty paper subdirectory.")
     config = ov.load_config(paper)
     if not config:
         raise ov.SyncError(
@@ -231,12 +296,32 @@ def sync_workspace(project: Path, directory: str):
         "Overleaf paper synchronization",
         "--force",
     )
+    identity = {}
+    for key in ("user.name", "user.email"):
+        try:
+            value = ov.git("config", "--get", key, cwd=root)
+        except ov.GitCommandError as exc:
+            if exc.returncode != 1:
+                raise
+            value = ""
+        if not value.strip():
+            message = f"Configure Git {key} before scheduling sync."
+            try:
+                report(root, repo, project_id, message)
+            except ov.SyncError:
+                click.echo(
+                    "Could not report the missing Git identity on GitHub.", err=True
+                )
+            raise ov.SyncError(message)
+        identity[key] = value
     with lock(root, project_id) as acquired:
         if not acquired:
-            click.echo(
-                "Overleaf sync is already running (or its interrupted run needs lock recovery)."
-            )
-            return
+            message = "Overleaf sync lock is held; confirm the owning run is active, or recover its interrupted lock."
+            try:
+                report(root, repo, project_id, message)
+            except ov.SyncError:
+                click.echo("Could not report the held lock on GitHub.", err=True)
+            raise ov.SyncError(message)
         pr = None
         try:
             prs = gh(
@@ -258,10 +343,10 @@ def sync_workspace(project: Path, directory: str):
                 )
             pr = prs[0] if prs else None
             if pr and (
-                MARKER not in pr["body"]
-                or LABEL not in {x["name"] for x in pr["labels"]}
+                MARKER not in (pr.get("body") or "")
                 or pr["baseRefName"] != default_name
             ):
+                pr = None
                 raise ov.SyncError(
                     "The reserved sync branch has an unrelated PR; move it aside before retrying."
                 )
@@ -269,9 +354,8 @@ def sync_workspace(project: Path, directory: str):
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp) / "workspace"
                 ov.git("clone", "--no-checkout", "--", origin, str(work), cwd=root)
-                # Preserve the caller's Git identity without copying credential config.
-                for key in ("user.name", "user.email"):
-                    value = ov.git("config", "--get", key, cwd=root)
+                # Preserve identity without copying credential configuration.
+                for key, value in identity.items():
                     ov.git("config", key, value, cwd=work)
                 tip = ov.git("rev-parse", f"origin/{default_name}", cwd=work)
                 old = ov.git(
@@ -280,6 +364,13 @@ def sync_workspace(project: Path, directory: str):
                 old_head = old[0] if old else ""
                 if pr and old_head != pr["headRefOid"]:
                     raise ov.SyncError("Sync branch changed while reading it; retry.")
+                if pr and LABEL not in {x["name"] for x in pr["labels"]}:
+                    gh(
+                        root,
+                        "api",
+                        f"repos/{repo}/issues/{pr['number']}/labels",
+                        payload={"labels": [LABEL]},
+                    )
                 ov.git("checkout", "--detach", (old_head if pr else tip), cwd=work)
                 # Never merge or commit files outside the linked paper directory.
                 if old_head and pr:
@@ -291,24 +382,40 @@ def sync_workspace(project: Path, directory: str):
                         raise ov.SyncError(
                             "Sync branch changes files outside the paper; resolve it manually."
                         )
-                    merge = subprocess.run(
-                        ["git", "merge", "--no-commit", "--no-ff", tip],
-                        cwd=work,
-                        env=ov.git_environment(),
-                        capture_output=True,
-                    )
-                    if merge.returncode:
-                        raise ov.SyncError(
-                            f"The sync PR conflicts with workspace commit {tip}; its author must resolve it in the sync PR."
-                        )
-                    if (work / ".git/MERGE_HEAD").exists():
-                        ov.git(
-                            "commit",
-                            "-m",
-                            "Merge current workspace paper into Overleaf sync",
+                    # Unrelated default-branch work does not invalidate this head's
+                    # checks. Refresh only changed paper or GitHub's required base.
+                    if ov.tree(work, ancestor, prefix) != ov.tree(
+                        work, tip, prefix
+                    ) or pr["mergeStateStatus"] in {"BEHIND", "DIRTY"}:
+                        merge = subprocess.run(
+                            ["git", "merge", "--no-commit", "--no-ff", tip],
                             cwd=work,
+                            env=ov.git_environment(),
+                            capture_output=True,
                         )
+                        if merge.returncode:
+                            paths = ov.git(
+                                "diff", "--name-only", "--diff-filter=U", cwd=work
+                            ).splitlines()
+                            if paths:
+                                raise ov.SyncError(
+                                    conflict_message(work, tip, paths, pr["url"])
+                                )
+                            raise ov.SyncError(
+                                "Could not merge the workspace base; check Git merge configuration and retry."
+                            )
+                        if (work / ".git/MERGE_HEAD").exists():
+                            ov.git(
+                                "commit",
+                                "-m",
+                                "Merge current workspace paper into Overleaf sync",
+                                cwd=work,
+                            )
                 before = ov.load_config(work / prefix)
+                if not before:
+                    raise ov.SyncError(
+                        "The sync branch removed overleaf.json; restore the linked paper configuration before retrying."
+                    )
                 if before.get("url") != config["url"]:
                     raise ov.SyncError(
                         "The default branch changed the linked Overleaf project; update this checkout and retry."
@@ -316,7 +423,12 @@ def sync_workspace(project: Path, directory: str):
                 marked = conflict_files(work, prefix)
                 if marked:
                     raise ov.SyncError(
-                        "Resolve conflict markers in the sync PR: " + ", ".join(marked)
+                        conflict_message(
+                            work,
+                            tip,
+                            [prefix + name for name in marked],
+                            pr["url"] if pr else "a paper PR",
+                        )
                     )
                 conflicted = pull_into(work, directory)
                 after = ov.load_config(work / prefix)
@@ -335,7 +447,11 @@ def sync_workspace(project: Path, directory: str):
                 differs = ov.tree(work, tip, prefix) != ov.tree(work, head, prefix)
                 if differs or pr:
                     final_paths = ov.git(
-                        "diff", "--name-only", tip, head, cwd=work
+                        "diff",
+                        "--name-only",
+                        ov.git("merge-base", tip, head, cwd=work),
+                        head,
+                        cwd=work,
                     ).splitlines()
                     if any(not name.startswith(prefix) for name in final_paths):
                         raise ov.SyncError(
@@ -356,12 +472,14 @@ def sync_workspace(project: Path, directory: str):
                             f"repos/{repo}/pulls",
                             payload={
                                 "title": "Sync Overleaf paper",
-                                "body": MARKER
-                                + "\n\nImport co-author edits before publishing the default branch.",
+                                "body": DEFAULT_BODY,
                                 "head": branch,
                                 "base": default_name,
                             },
                         )
+                        # Keep the newly created PR available for reporting even if
+                        # labeling fails; the next run repairs its missing label.
+                        pr = created
                         gh(
                             root,
                             "api",
@@ -378,16 +496,17 @@ def sync_workspace(project: Path, directory: str):
                             "--json",
                             FIELDS,
                         )
-                    if conflicted or conflict_files(work, prefix):
-                        culprit = ov.git(
-                            "log", "-1", "--format=%H", tip, "--", prefix, cwd=work
-                        )
+                    marked = conflict_files(work, prefix)
+                    if conflicted or marked:
                         raise ov.SyncError(
-                            f"Overleaf edits conflict with workspace commit {culprit}; that change's author must resolve the markers in {pr['url']}."
+                            conflict_message(
+                                work, tip, [prefix + name for name in marked], pr["url"]
+                            )
                         )
                     # New edits or a refreshed base always need their own checks and
                     # a later quiet run; never merge a just-created/updated head.
                     if changed or head != old_head:
+                        reset_status(root, repo, pr)
                         click.echo(
                             f"Updated {pr['url']}; waiting for checks and a run with no new Overleaf edits."
                         )
@@ -417,6 +536,17 @@ def sync_workspace(project: Path, directory: str):
                         )
                         click.echo(f"Waiting on {pr['url']}.")
                         return
+                    build_configs = [
+                        name
+                        for name in final_paths
+                        if Path(name).name.lower() in BUILD_CONFIGS
+                    ]
+                    if build_configs:
+                        raise ov.SyncError(
+                            "Executable LaTeX build configuration changed: "
+                            + ", ".join(build_configs)
+                            + "; a person must review and merge this sync PR."
+                        )
                     # Preserve every carried author across the squash, including
                     # earlier updates and human resolutions on this same PR.
                     log = ov.git(
@@ -450,6 +580,9 @@ def sync_workspace(project: Path, directory: str):
                             "--body-file",
                             body.name,
                         )
+                    # Publication failures now belong on an open issue, not the
+                    # closed sync PR.
+                    pr = None
                     ov.git("fetch", "origin", default_name, cwd=work)
                     tip = ov.git("rev-parse", "FETCH_HEAD", cwd=work)
                     ov.git("checkout", "--detach", tip, cwd=work)
@@ -481,5 +614,11 @@ def sync_workspace(project: Path, directory: str):
                         )
                 click.echo("Overleaf sync complete.")
         except ov.SyncError as exc:
-            report(root, repo, project_id, exc.format_message(), pr)
+            try:
+                report(root, repo, project_id, exc.format_message(), pr)
+            except ov.SyncError:
+                click.echo(
+                    "Could not report the sync failure on GitHub; the original refusal follows.",
+                    err=True,
+                )
             raise

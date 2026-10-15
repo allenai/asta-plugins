@@ -7,16 +7,26 @@ set -u
 
 # Reject unresolved paper conflicts on every PR, before any rendering.
 python3 - <<'CHECK_PAPER' || exit 1
-import pathlib, re, subprocess, sys
-names = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
-paths = [pathlib.Path(name) for name in names if name]
-roots = {p.parent for p in paths if p.name in {"overleaf.json", "latexmkrc"}}
-marker = re.compile(rb"(?m)^(?:<<<<<<<(?: |$)|=======$|>>>>>>>[ \r]|\|\|\|\|\|\|\| )")
+import os, pathlib, re, subprocess, sys
+# Match overleaf_sync.conflict_files: known text sources, never binary assets.
+suffixes = {".tex", ".ltx", ".bib", ".bst", ".bbx", ".cbx", ".sty", ".cls",
+            ".clo", ".def", ".cfg", ".dtx", ".ins", ".tikz", ".pgf", ".csv",
+            ".tsv", ".dat", ".txt", ".md"}
+result = subprocess.run(["git", "ls-files", "-z"], capture_output=True)
+if result.returncode:
+    print("Cannot inspect paper conflicts; run make check in the workspace Git checkout.")
+    sys.exit(1)
+paths = [pathlib.Path(os.fsdecode(name)) for name in result.stdout.split(b"\0") if name]
+roots = {p.parent for p in paths if p.name in {"overleaf.json", "latexmkrc", ".latexmkrc"}}
+marker = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
+separator = re.compile(rb"(?m)^=======\r?$")
 failed = []
 for path in paths:
-    if any(root == path.parent or root in path.parents for root in roots) and path.is_file():
+    if (path.suffix.lower() in suffixes and path.is_file()
+            and any(root == path.parent or root in path.parents for root in roots)):
         data = path.read_bytes()
-        if b"\0" not in data and marker.search(data):
+        if b"\0" not in data and (marker.search(data) or (
+                path.suffix.lower() not in {".md", ".txt"} and separator.search(data))):
             failed.append(str(path))
 if failed:
     print("Unresolved paper conflict markers: " + ", ".join(failed))

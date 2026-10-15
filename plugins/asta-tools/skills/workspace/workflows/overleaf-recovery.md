@@ -240,3 +240,16 @@ Remove or rename unsafe paths, symlinks, submodules and metadata aliases, or syn
 files by hand. Convert LFS pointers to ordinary files and remove executable bits when
 appropriate. Remove content-changing `.gitattributes`, Git filters or conversions
 before retrying: the exported bytes must equal the committed paper bytes.
+## Scheduled sync needs attention
+
+A held remote lock exits non-zero and records one repository issue. Confirm the
+owning run has stopped before using the explicit lock recovery in
+[Schedule Overleaf sync](overleaf-sync-command.md#interrupted-runs). Never remove
+a live run's lock. A publication failure after the sync PR merged is reported on
+an open issue; use the publication recovery above, then rerun sync.
+
+Sync lists the workspace changes to conflicted files; their authors should resolve
+those conflicts in the existing sync PR. Changes to `latexmkrc` or `.latexmkrc`
+require a person to review and merge that PR. Restore a removed `overleaf.json`
+from the linked paper's history. Configure Git `user.name` and `user.email` in
+the scheduler checkout before retrying a missing-identity refusal.

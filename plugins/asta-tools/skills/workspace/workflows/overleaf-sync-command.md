@@ -23,10 +23,18 @@ A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
 markers, and GitHub reports completed successful checks and permits merging.
 No checks means wait. Failed checks or conflicts leave the PR for a person;
-the PR names the workspace commit whose author should resolve a conflict.
+the PR lists the workspace changes to the conflicted files and asks their
+authors to resolve the conflict.
 Git authors of carried Overleaf edits receive Co-authored-by trailers in the
 squash. Human resolutions on the sync branch are retained. Shared `make check`
-rejects paper conflict markers before rendering, on every PR.
+rejects conflict markers in known text paper sources before rendering, on every
+PR. Standalone `=======` lines in Markdown or plain text are allowed as headings
+or separators; opening and closing conflict labels are still refused.
+
+Unrelated default-branch changes do not restart the sync PR's checks, unless
+GitHub requires updating its base. Changes to `latexmkrc` or `.latexmkrc` remain
+in the sync PR for a person to review and merge, because these files execute
+build commands. The sync command does not automatically merge them.
 
 Publish still sends only the default branch's committed paper. New Overleaf
 edits must reach that branch through the sync PR first. Publication and the two
@@ -37,15 +45,18 @@ in the repository as appropriate. The CLI publishes whatever reaches default;
 it does not inspect how that content was approved.
 
 Refusals update one persistent status on the sync PR, or one labeled issue when
-no sync PR exists. Identical status is not reposted on each run. Restore access
-and retry after transport failures. See [recovery](overleaf-recovery.md).
+no sync PR exists (including publication failures after a sync PR has merged).
+Identical status is not reposted on each run. A successful PR update clears its
+old refusal text. If labeling a new PR fails, the next run repairs the label after verifying the sync marker, base and current branch head.
+Restore access and retry after transport failures. See [recovery](overleaf-recovery.md).
 
 ## Interrupted runs
 
 A killed process deliberately leaves its remote lock in place. This prevents
 a paused process from resuming after another publisher has taken over. Normal
 errors release it automatically. If sync says a run already owns the lock,
-first confirm that the owning scheduler/process has stopped; then inspect and
+the command exits non-zero and records the held lock on the repository. First
+confirm that the owning scheduler/process has stopped; then inspect and
 delete `refs/asta/overleaf-sync-lock/<project-id>` with an explicit
 `git push --force-with-lease=<ref>:<observed-object-id> origin :<ref>`. Do not
 remove a live run's lock. Retry sync; it reconstructs its state from GitHub and
