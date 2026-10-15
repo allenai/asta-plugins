@@ -25,7 +25,9 @@ uv tool install --upgrade asta-autodiscovery
 theorize doctor
 ```
 
-Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here. AutoDS has no such check: it reads the key of its model's provider, such as `OPENAI_API_KEY` for `openai/` models.
+Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here.
+
+If a key is missing, never ask for it in chat: a key pasted into the conversation is kept in the transcript. `export` does not help either, because each command runs in its own shell and the next one will not see it. Ask them to add it to their shell profile (`~/.zshrc`, `~/.bash_profile`) -- every command starts a shell that reads it, so the next one picks it up with no restart. For a key they would rather not leave in a profile, have them keep it in a file and source it in the same command: `set -a; source <their keyfile>; set +a; theorize doctor`. AutoDS has no such check: it reads the key of its model's provider, such as `OPENAI_API_KEY` for `openai/` models.
 
 ## Plan and run
 
