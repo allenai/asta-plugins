@@ -13,7 +13,14 @@ uv tool install --upgrade asta-theorizer
 theorize doctor
 ```
 
-`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it: pass that on verbatim before going further. Do not improvise a fix of your own for a missing key -- in particular, never offer to run an `export` in this session (the next command will not see it) and never ask for the key in chat, where it would be kept in the transcript.
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it. For a missing key, give them one of these:
+
+```bash
+echo 'export OPENAI_API_KEY=...' >> ~/.zshrc           # or ~/.bash_profile; ANTHROPIC_API_KEY works too
+echo '{"openai": "..."}' > api_keys.donotcommit.json   # or wherever --key-dir points
+```
+
+An `export` you run in this session does not count -- the next command starts a new shell and will not see it. Never ask for the key in chat either, where it would be kept in the transcript.
 
 ## Plan
 
