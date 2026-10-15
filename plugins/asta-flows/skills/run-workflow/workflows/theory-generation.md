@@ -16,10 +16,10 @@ theorize doctor
 `--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it. A missing key is the common one, and this is the fix that needs no restart -- Theorizer reads the file on the next command:
 
 ```bash
-echo '{"openai": "..."}' > api_keys.donotcommit.json   # or "anthropic"
+mkdir -p ~/.config/asta && echo '{"openai": "..."}' > ~/.config/asta/api_keys.donotcommit.json   # or "anthropic"
 ```
 
-It is read from the working directory, or from `--key-dir DIR` if they would rather keep it elsewhere. They can also put `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in their shell profile, which lasts across runs but only reaches a session started after it. Never ask for the key in chat, where it would be kept in the transcript.
+That location works from any directory and sits outside any repository; a copy in the working directory, or `--key-dir DIR`, is read first if they want one per project. They can also put `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in their shell profile, which lasts across runs but only reaches a session started after it. Never ask for the key in chat, where it would be kept in the transcript.
 
 ## Plan
 
