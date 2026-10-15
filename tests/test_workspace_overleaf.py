@@ -2340,9 +2340,10 @@ def test_pull_reports_unavailable_base_before_modifying_sources(setup):
     commit_all(project)
     before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
     result = run(project, "pull")
-    assert (
-        result.exit_code != 0 and "Reset remote history is unsupported" in result.output
-    )
+    assert result.exit_code == 1, result.output
+    assert "names missing Overleaf history" in result.output
+    assert "reimport the complete Overleaf paper" in result.output
+    assert module.RECOVERY in result.output
     assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
 
 
@@ -2361,7 +2362,10 @@ def test_publish_reports_unavailable_recorded_base_without_pushing(setup, dry_ru
     before_remote = git(seed, "ls-remote", "origin", "master")
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert result.exit_code == 1, result.output
-    assert "Reset remote history is unsupported; nothing pushed" in result.output
+    assert "names missing Overleaf history" in result.output
+    assert "reimport the complete Overleaf paper" in result.output
+    assert "nothing pushed" in result.output
+    assert module.RECOVERY in result.output
     assert {p.name: p.read_bytes() for p in paper.iterdir()} == before
     assert git(seed, "ls-remote", "origin", "master") == before_remote
     assert not git(project, "status", "--porcelain")
@@ -4112,3 +4116,212 @@ def test_records_written_by_publish_have_a_single_sync_parent(setup, tmp_path):
         result = run(project, *command)
         assert result.exit_code == 0, result.output
         assert module.RECOVERY not in result.output
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", [("pull",), ("publish",), ("publish", "--dry-run")])
+def test_unrelated_base_move_can_be_repaired_without_rewriting_history(setup, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    path = project / "paper/overleaf.json"
+    config = json.loads(path.read_text())
+    original = config["base"]
+    overleaf_edit(seed, "main.tex", "collaborator after repair\n")
+    tip = git(seed, "rev-parse", "HEAD")
+    tree = git(seed, "rev-parse", "HEAD^{tree}")
+    unrelated = git(seed, "commit-tree", tree, "-m", "unrelated legacy history")
+    merged = git(
+        seed, "commit-tree", tree, "-p", tip, "-p", unrelated, "-m", "join histories"
+    )
+    git(seed, "push", "origin", f"{merged}:master")
+    config["base"] = unrelated
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    refused = run(project, *command, merge=False)
+    assert refused.exit_code == 1, refused.output
+    assert "unrelated Overleaf history" in refused.output
+    assert f"restore base to {original} in a new commit" in refused.output
+    assert module.RECOVERY in refused.output
+    config["base"] = original
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == "collaborator after repair\n"
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize(
+    "legacy", ["short-base", "invalid-url", "missing-base", "invalid-json"]
+)
+@pytest.mark.parametrize("command", [("pull",), ("publish", "--dry-run")])
+def test_invalid_historical_config_can_be_restored_in_a_new_commit(
+    setup, legacy, command
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    path = project / "paper/overleaf.json"
+    original = path.read_text()
+    config = json.loads(original)
+    if legacy == "short-base":
+        config["base"] = config["base"][:12]
+    elif legacy == "invalid-url":
+        config["url"] = "https://legacy.example/project"
+    elif legacy == "missing-base":
+        config["base"] = "a" * 40
+    path.write_text("{" if legacy == "invalid-json" else json.dumps(config))
+    commit_all(project)
+    path.write_text(original)
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    result = run(project, *command, merge=False)
+    assert result.exit_code == 0, result.output
+    overleaf_edit(seed, "main.tex", "edit after restoring config\n")
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == "edit after restoring config\n"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("gap", ["unlink", "other-project", "invalid-config"])
+@pytest.mark.parametrize("earlier_omission", [False, True])
+@pytest.mark.parametrize("command", [("pull",), ("publish",), ("publish", "--dry-run")])
+def test_relink_cannot_hide_skipped_overleaf_edits(
+    setup, gap, earlier_omission, command
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    path = project / "paper/overleaf.json"
+    config = json.loads(path.read_text())
+    original = config["base"]
+    overleaf_edit(seed, "main.tex", "must not be skipped\n")
+    advanced = git(seed, "rev-parse", "HEAD")
+    if earlier_omission:
+        config["base"] = advanced
+        path.write_text(json.dumps(config))
+        commit_all(project)
+    if gap == "unlink":
+        path.unlink()
+    elif gap == "other-project":
+        path.write_text(
+            json.dumps({**config, "url": "https://git.overleaf.com/7654321"})
+        )
+    else:
+        path.write_text("{")
+    commit_all(project)
+    config["base"] = advanced
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    before = {p.name: p.read_bytes() for p in path.parent.iterdir()}
+    remote = git(seed, "ls-remote", "origin", "master")
+    result = run(project, *command, merge=False)
+    assert result.exit_code == 1, result.output
+    assert "without bringing it in" in result.output
+    assert "main.tex" in result.output and original in result.output
+    assert module.RECOVERY in result.output
+    assert {p.name: p.read_bytes() for p in path.parent.iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == remote
+    assert not git(project, "for-each-ref", "refs/asta")
+    config["base"] = original
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    repaired = run(project, "pull")
+    assert repaired.exit_code == 0, repaired.output
+    assert (project / "paper/main.tex").read_text() == "must not be skipped\n"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", [("pull",), ("publish",), ("publish", "--dry-run")])
+def test_missing_historical_base_requires_complete_reimport(setup, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    path = project / "paper/overleaf.json"
+    config = json.loads(path.read_text())
+    # Replace Overleaf history so the old base cannot be fetched at all.
+    (seed / "main.tex").write_text("reset history paper\n")
+    git(seed, "add", "main.tex")
+    tree = git(seed, "write-tree")
+    reset = git(seed, "commit-tree", tree, "-m", "new Overleaf history")
+    git(seed, "push", "--force", "origin", f"{reset}:master")
+    git(seed.parent / "overleaf.git", "gc", "--prune=now")
+    config["base"] = reset
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    refused = run(project, *command, merge=False)
+    assert refused.exit_code == 1, refused.output
+    assert "reimport the complete Overleaf paper" in refused.output
+    assert module.RECOVERY in refused.output
+    # The documented recovery is a new commit, not editing committed history.
+    (project / "paper/main.tex").write_text("reset history paper\n")
+    # Make the reimport explicit in config history, even though its base is unchanged.
+    path.write_text(json.dumps(config, indent=2) + "\n")
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    result = run(project, *command, merge=False)
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("gap", ["unlink", "other-project"])
+def test_relink_accepts_conflict_resolved_with_workspace_text(setup, gap):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    path = project / "paper/overleaf.json"
+    config = json.loads(path.read_text())
+    (project / "paper/main.tex").write_text("chosen workspace resolution\n")
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "conflicting collaborator edit\n")
+    if gap == "unlink":
+        path.unlink()
+    else:
+        path.write_text(
+            json.dumps({**config, "url": "https://git.overleaf.com/7654321"})
+        )
+    commit_all(project)
+    config["base"] = git(seed, "rev-parse", "HEAD")
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    for command in (("publish", "--dry-run"), ("pull",)):
+        result = run(project, *command, merge=False)
+        assert result.exit_code == 0, result.output
+    assert (project / "paper/main.tex").read_text() == "chosen workspace resolution\n"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_restoring_an_unrelated_excursion_does_not_erase_an_earlier_omission(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    path = project / "paper/overleaf.json"
+    config = json.loads(path.read_text())
+    original = config["base"]
+    overleaf_edit(seed, "main.tex", "earlier omitted edit\n")
+    advanced = git(seed, "rev-parse", "HEAD")
+    config["base"] = advanced
+    path.write_text(json.dumps(config))
+    commit_all(project)
+    tree = git(seed, "rev-parse", "HEAD^{tree}")
+    unrelated = git(seed, "commit-tree", tree, "-m", "unrelated excursion")
+    joined = git(
+        seed, "commit-tree", tree, "-p", advanced, "-p", unrelated, "-m", "join"
+    )
+    git(seed, "push", "origin", f"{joined}:master")
+    for base in (unrelated, advanced):
+        config["base"] = base
+        path.write_text(json.dumps(config))
+        commit_all(project)
+    result = run(project, "pull")
+    assert result.exit_code == 1, result.output
+    assert "without bringing it in" in result.output
+    assert original in result.output

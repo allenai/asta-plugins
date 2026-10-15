@@ -16,6 +16,27 @@ commit that, and run `pull` again so the edit is merged. Merge that recovery thr
 PR. The rewind cancels advances beyond the restored base; an omission before that
 base still refuses, so follow the named earlier base if another refusal appears.
 
+## Invalid or unrelated historical config
+
+A historical config error is repaired with a new commit, never by rewriting default
+branch history. Restore the last verifiable full `base` named in the refusal and the
+project's valid URL, commit, then run `pull` and review its changes. A temporary
+unrelated base, short ID, malformed config or invalid URL is superseded when the
+config returns to that verifiable lineage. Earlier skipped edits still refuse.
+Deleting and re-adding the config, or changing the URL away and back, does not reset
+verification for the same project.
+
+If Overleaf history was reset and no old base is reachable, restore that history
+when possible. Otherwise preserve workspace-only edits on a separate branch, then
+reimport **all** Overleaf paper files at a reachable full commit ID into a new
+workspace commit. The paper in that commit must exactly match that Overleaf commit,
+except for `overleaf.json`; reconcile workspace-only edits in a later reviewed commit.
+Set `url` and `base` in the reimport commit. If `base` is already correct, change the
+config's JSON formatting too so this explicit reimport appears in config history.
+Review and merge the reimport PR before publishing. A config-only change cannot
+establish this checkpoint. Existing valid base moves are still checked; reimporting
+does not erase a known earlier omission.
+
 ## Conflict markers after `pull` (exit 3)
 
 Resolve the markers in the sync PR. Keeping either side's text is a valid resolution.

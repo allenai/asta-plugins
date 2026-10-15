@@ -774,54 +774,50 @@ def check_base_move(
         prefix + CONFIG,
         cwd=root,
     ).splitlines()
-    moves = []
-    for moved in commits:
+    # Follow this project across missing configs and temporary URL changes. Those
+    # are not new imports: returning to the same project still owes its edits.
+    current = json.loads(read_plain_files(root, revision, prefix)[CONFIG])
+    url = validate_url(current["url"])
+    active = []
+    anchor = None
+    pending = None
+    for moved in reversed(commits):
         parent = resolve_commit(root, f"{moved}^")
-        if parent is None:
-            if git("rev-parse", "--is-shallow-repository", cwd=root) == "true":
-                raise SyncError(
-                    "Could not verify the Overleaf base move against shallow workspace history. "
-                    "Fetch the workspace history from `origin` and retry; " + done
-                )
-            break
-        before = read_plain_files(root, parent, prefix).get(CONFIG)
-        after = read_plain_files(root, moved, prefix).get(CONFIG)
-        if before is None or after is None:
-            break  # The paper's initial import (or an explicit unlink/relink).
-        try:
-            old_config, new_config = json.loads(before), json.loads(after)
-            old, new = old_config["base"], new_config["base"]
-            old_url, new_url = (
-                validate_url(old_config["url"]),
-                validate_url(new_config["url"]),
+        if (
+            parent is None
+            and git("rev-parse", "--is-shallow-repository", cwd=root) == "true"
+        ):
+            raise SyncError(
+                "Could not verify the Overleaf base move against shallow workspace history. "
+                "Fetch the workspace history from `origin` and retry; " + done
             )
-            if (
-                not isinstance(old, str)
-                or not SHA.fullmatch(old)
-                or not isinstance(new, str)
-                or not SHA.fullmatch(new)
-            ):
+        after = read_plain_files(root, moved, prefix).get(CONFIG)
+        if after is None:
+            continue
+        try:
+            config = json.loads(after)
+            if validate_url(config["url"]) != url:
+                continue
+            new = config["base"]
+            if not isinstance(new, str) or not SHA.fullmatch(new):
                 raise ValueError("invalid historical base")
         except (KeyError, TypeError, ValueError, ProjectURLError):
-            raise SyncError(
-                f"Could not verify {prefix}{CONFIG} in commit {moved[:12]}; "
-                "restore its project URL and full base commit ID, then retry; " + done
-            ) from None
-        if old_url != new_url:
-            break  # A different project's import is a separate checkpoint.
-        if old == new:
+            pending = (moved, "has an invalid project URL or base commit ID")
             continue
-        if resolve_commit(repo, old) is None or resolve_commit(repo, new) is None:
-            raise SyncError(
-                f"Could not verify the Overleaf base move in commit {moved[:12]}; "
-                "restore the missing Overleaf history before retrying; " + done
-            )
-        moves.append((moved, parent, old, new))
-
-    active = []
-    for moved, parent, old, new in reversed(moves):
+        if resolve_commit(repo, new) is None:
+            pending = (moved, "names missing Overleaf history")
+            continue
+        if anchor is None:
+            # With no reachable old base, only a complete reimport can establish
+            # a checkpoint. A config-only edit must never discard unknown edits.
+            if pending and paper_files(root, moved, prefix) != paper_files(repo, new):
+                continue
+            anchor, pending = new, None
+            continue
+        old = anchor
         if is_ancestor(repo, old, new):
-            active.append((moved, parent, old, new))
+            if old != new:
+                active.append((moved, parent, old, new))
         elif is_ancestor(repo, new, old):
             # Explicitly rewinding base reopens those edits for a recovery pull.
             # Do not let canceled omissions permanently block that recovery.
@@ -831,10 +827,20 @@ def check_base_move(
                     active.append((*previous[:3], new))
                     break
         else:
-            raise SyncError(
-                f"Commit {moved[:12]} moved {prefix}{CONFIG}'s base across unrelated Overleaf history; "
-                f"restore base to {old} and pull again; {done}"
-            )
+            pending = (moved, "moves base across unrelated Overleaf history")
+            continue
+        # An invalid/unrelated excursion is canceled only by returning to the
+        # last verifiable lineage. Earlier effective moves remain checked below.
+        anchor, pending = new, None
+    if pending:
+        moved, reason = pending
+        action = (
+            f"restore base to {anchor} in a new commit and pull again"
+            if anchor is not None
+            else "reimport the complete Overleaf paper at a reachable full base ID "
+            "in a new commit (see the recovery reference)"
+        )
+        raise SyncError(f"Commit {moved[:12]} {reason}; {action}; {done}")
     for moved, parent, old, new in active:
         before, after = read_plain_files(repo, old), read_plain_files(repo, new)
         kept, merged = (

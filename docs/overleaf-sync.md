@@ -95,6 +95,14 @@ retry. Sufficiently deep shallow clones still work without changing their bounda
   rewind cancels advances beyond the restored base so a recovery pull can import
   those edits; omissions before that base still refuse. Errors name the offending
   commit, file and old `base`; recovery is in `workflows/overleaf-recovery.md`.
+  Temporary deletion, malformed config or a project URL change away and back does
+  not establish a fresh checkpoint for the same project. An invalid or unrelated
+  excursion can be repaired by committing a return to the last verifiable base;
+  verification still checks earlier effective moves. If no historical base is
+  reachable, a new config-changing commit must reimport the complete Overleaf
+  paper at a reachable base, with equal files (ignoring `overleaf.json`), before
+  subsequent merges can proceed. This is an explicit recovery from lost history,
+  not permission to skip known earlier omissions. No history rewrite is needed.
 - Sync does not check how a commit reached the default branch: it publishes the paper
   that is there. A repository that wants every paper change reviewed must require PRs
   on its default branch.
