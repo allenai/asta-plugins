@@ -13,11 +13,7 @@ uv tool install --upgrade asta-theorizer
 theorize doctor
 ```
 
-`--upgrade` matters: an older `theorize` already on PATH is not replaced without it, and the version it reports is the one the run gets. No version is pinned here, because `--upgrade` already installs the current release and a floor written into this file goes stale on the next one. `theorize doctor` is what says whether the installed version can do what the run needs.
-
-`theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. It exits non-zero on anything that would stop a run, including a model whose provider has no key. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further. The default models follow the key: `gpt-6-sol` and `gpt-6-luna` for an OpenAI key, `claude-opus-5-5` and `claude-sonnet-5-5` for an Anthropic key, OpenAI first when both are set.
-
-If a key is missing, pass on what `doctor` says about setting it -- but never ask for the key in chat, where it would be kept in the transcript.
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it: pass that on before going further, but never ask for a key in chat, where it would be kept in the transcript.
 
 ## Plan
 
