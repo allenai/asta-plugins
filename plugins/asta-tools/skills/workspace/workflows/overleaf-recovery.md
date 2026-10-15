@@ -79,7 +79,9 @@ co-author's edit. Overleaf keeps every edit. To bring one back:
 
 ## Conflict markers after `pull` (exit 3)
 
-Resolve the markers in the sync PR. When a record was not used, follow the line-by-line guidance in
+Resolve the markers in the sync PR, or merge the default branch into its branch
+and resolve the conflicts there; sync keeps fixes pushed to that branch. When a
+record was not used, follow the line-by-line guidance in
 [Record not used](#record-not-used); never take one side wholesale.
 `publish` refuses files that still contain markers.
 

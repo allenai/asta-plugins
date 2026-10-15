@@ -60,6 +60,12 @@ def github(monkeypatch):
             state["prs"].clear()
             return None
         if args[0] == "api":
+            if payload is None and "/commits/" in args[1]:
+                sha = args[1].rsplit("/", 1)[1]
+                return {
+                    "html_url": f"https://github.com/allenai/test/commit/{sha}",
+                    "author": {"login": "workspace-author"},
+                }
             if payload is None and "/issues?" in args[1]:
                 return [state["issues"]] if "--slurp" in args else state["issues"]
             state["writes"] += 1
@@ -152,10 +158,34 @@ def test_conflict_is_left_in_pr_and_never_merged(setup, github):
     result = invoke(project)
     assert result.exit_code == 1, result.output
     assert len(github["prs"]) == 1
-    assert "author must resolve" in github["prs"][0]["body"]
+    body = github["prs"][0]["body"]
+    assert body.startswith(sync.DEFAULT_BODY)
+    line = body.removeprefix(sync.DEFAULT_BODY).strip()
+    assert "\n" not in line
+    assert "by @workspace-author" in line
+    assert "Fixes pushed to this branch are kept" in line
+    assert line.endswith(
+        "https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#conflict-markers-after-pull-exit-3"
+    )
+    assert "mergeStateStatus" not in line and "checks" not in line.lower()
+    assert "author must resolve" in result.output
     assert not github["merges"]
     assert not git(
         project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+    )
+    # A fix pushed to the sync branch is kept, and the conflict line goes away.
+    branch = "asta/overleaf-sync/1234567"
+    git(project, "fetch", "origin", branch)
+    git(project, "checkout", "-B", "resolve", f"origin/{branch}")
+    (project / "paper/main.tex").write_text("workspace edit\nOverleaf edit\n")
+    commit_all(project)
+    git(project, "push", "origin", f"HEAD:{branch}")
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert github["prs"][0]["body"] == sync.DEFAULT_BODY
+    git(project, "fetch", "origin", branch)
+    assert git(project, "show", f"origin/{branch}:paper/main.tex") == (
+        "workspace edit\nOverleaf edit"
     )
 
 
@@ -361,7 +391,7 @@ def test_pull_conflict_names_changed_file_commit_not_unrelated_paper_edit(
     assert result.exit_code == 1, result.output
     assert culprit in github["prs"][0]["body"]
     assert unrelated not in github["prs"][0]["body"]
-    assert "paper/main.tex" in github["prs"][0]["body"]
+    assert "paper/main.tex" in result.output
 
 
 def test_base_merge_conflict_names_changed_file_commit_not_default_tip(setup, github):
@@ -721,8 +751,9 @@ def test_waiting_reports_actual_state(setup, github, state, action):
     github["prs"][0]["mergeStateStatus"] = state
     result = invoke(project)
     assert result.exit_code == 0, result.output
-    assert "mergeStateStatus=" + state in github["prs"][0]["body"]
-    assert action in github["prs"][0]["body"]
+    assert github["prs"][0]["body"] == sync.DEFAULT_BODY
+    assert "mergeStateStatus=" + state in result.output
+    assert action in result.output
 
 
 def test_markerless_pull_conflict_names_directory(setup, github, monkeypatch):
@@ -732,7 +763,7 @@ def test_markerless_pull_conflict_names_directory(setup, github, monkeypatch):
     monkeypatch.setattr(sync, "pull_into", lambda *a: True)
     result = invoke(project)
     assert result.exit_code == 1, result.output
-    assert "conflicts in paper;" in github["prs"][0]["body"]
+    assert "conflicts in paper;" in result.output
     assert "conflicts in ;" not in result.output
 
 
@@ -862,7 +893,7 @@ def test_markerless_conflict_uses_git_unmerged_paths(setup, github, monkeypatch)
     monkeypatch.setattr(sync.ov, "git", unmerged)
     result = invoke(project)
     assert result.exit_code == 1, result.output
-    assert "conflicts in paper/image.pdf;" in github["prs"][0]["body"]
+    assert "conflicts in paper/image.pdf;" in result.output
 
 
 @pytest.mark.parametrize("filename", ["latexmkrc", ".latexmkrc"])
@@ -1018,3 +1049,30 @@ def test_closed_record_notice_on_later_page_is_not_reposted(monkeypatch, tmp_pat
 
     monkeypatch.setattr(sync, "gh", gh)
     sync.report_record_once(tmp_path, "allenai/test", "1234567", "reason")
+
+
+def test_record_notice_issue_closes_once_record_counts_again(setup, github):
+    from tests.test_workspace_overleaf import RECORD_REF
+
+    seed, project = prepare(setup)
+    origin = project.parent / "workspace.git"
+    git(origin, "update-ref", RECORD_REF, git(origin, "rev-parse", "main"))
+    overleaf_edit(seed, "references.bib", "@misc{new-coauthor-edit}\n")
+    assert invoke(project).exit_code == 0
+    assert len(github["issues"]) == 1
+    assert sync.RECORD_MARKER in github["issues"][0]["body"]
+    git(origin, "update-ref", "-d", RECORD_REF)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    issue = github["issues"][0]
+    assert issue["state"] == "closed"
+    assert sync.RECORD_MARKER not in issue["body"]
+    assert "counts again" in issue["body"]
+    writes = github["writes"]
+    assert invoke(project).exit_code == 0
+    assert github["writes"] == writes  # a resolved notice is not closed again
+    # A later fallback is a new episode and is reported again.
+    git(origin, "update-ref", RECORD_REF, git(origin, "rev-parse", "main"))
+    assert invoke(project).exit_code == 0
+    assert len(github["issues"]) == 2
+    assert sync.RECORD_MARKER in github["issues"][1]["body"]

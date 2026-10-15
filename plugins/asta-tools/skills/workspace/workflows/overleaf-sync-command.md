@@ -30,9 +30,12 @@ keep TeX shell escape disabled and run paper builds without privileged tokens or
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
 markers, and GitHub reports completed successful checks and permits merging.
-No checks means wait. Failed checks or conflicts leave the PR for a person;
-the PR lists the workspace changes to the conflicted files and asks their
-authors to resolve the conflict.
+No checks means wait. Failed checks or conflicts leave the PR for a person.
+The PR description normally says only that it holds co-author edits and merges
+itself; it does not restate what GitHub's merge box shows. A conflict adds one
+line, removed once resolved, that links each conflicting workspace change and
+@-mentions its GitHub author, says fixes pushed to the sync branch are kept, and
+links the conflict recovery section by full URL.
 Git authors of carried Overleaf edits receive Co-authored-by trailers in the
 squash. Human resolutions on the sync branch are retained. Shared `make check`
 rejects conflict markers in known text paper sources before rendering, on every
@@ -46,8 +49,8 @@ push and are reported on the labeled issue, even if a sync PR exists. A person
 must review and import them manually. These files execute build commands;
 refusing only at merge would allow CI to execute them before review.
 The quiet-run merge guard queries the remote default tip immediately before
-merging. Waiting status includes GitHub’s actual merge state and the required
-action, including required approvals when repository rules block merging.
+merging. While waiting, the command prints GitHub's merge state and the required
+action; the PR description stays unchanged.
 
 Publish still sends only the default branch's committed paper. New Overleaf
 edits must reach that branch through the sync PR first. Publication and the two
@@ -64,7 +67,8 @@ old refusal text. If labeling a new PR fails, the next run repairs the label aft
 When pull starts from the committed `base` because a record cannot be used,
 the PR retains the one-line reason and a full URL to the recovery guidance.
 The same line is posted in one labeled repository issue per project; reruns
-reuse that record even after the issue is closed.
+reuse that record even after the issue is closed. A later run whose record
+counts again closes that issue, so a future fallback posts a new one.
 Restore access and retry after transport failures. See [recovery](overleaf-recovery.md).
 
 ## Interrupted runs

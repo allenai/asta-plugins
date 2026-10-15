@@ -17,9 +17,14 @@ from . import overleaf as ov
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
 DEFAULT_BODY = (
-    MARKER + "\n\nImport co-author edits before publishing the default branch."
+    MARKER + "\n\nCo-author edits from Overleaf, brought in by the Overleaf sync. "
+    "Nothing to do: this PR merges itself once its checks pass and a sync run "
+    "finds no newer Overleaf edits."
 )
 RECORD_MARKER = "<!-- asta-overleaf-record-not-used -->"
+# Replaces RECORD_MARKER once the record counts again, so a later fallback posts anew.
+RECORD_RESOLVED_MARKER = "<!-- asta-overleaf-record-used-again -->"
+CONFLICTS = f"{ov.RECOVERY}#conflict-markers-after-pull-exit-3"
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
 FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
@@ -168,30 +173,56 @@ def with_notice(body: str, notice: str) -> str:
     return body + f"\n\n{RECORD_MARKER}\n{notice}" if notice else body
 
 
-def report_record_once(root: Path, repo: str, project_id: str, notice: str):
-    """Keep the repository notice even after someone closes its issue."""
+def record_issues(root: Path, repo: str, project_id: str) -> list[dict]:
+    """Open and closed record notices for a project, across every page."""
     title = f"Overleaf sync record not used ({project_id})"
-    issues = gh(
+    pages = gh(
         root,
         "api",
         f"repos/{repo}/issues?state=all&labels={LABEL}&per_page=100",
         "--paginate",
         "--slurp",
     )
-    for page in issues:
-        for issue in page:
-            if issue["title"] == title and RECORD_MARKER in (issue.get("body") or ""):
-                return
+    return [
+        issue
+        for page in pages or []
+        for issue in page
+        if issue["title"] == title and RECORD_MARKER in (issue.get("body") or "")
+    ]
+
+
+def report_record_once(root: Path, repo: str, project_id: str, notice: str):
+    """Keep the repository notice even after someone closes its issue."""
+    if record_issues(root, repo, project_id):
+        return
     gh(
         root,
         "api",
         f"repos/{repo}/issues",
         payload={
-            "title": title,
+            "title": f"Overleaf sync record not used ({project_id})",
             "body": f"{RECORD_MARKER}\n{notice}",
             "labels": [LABEL],
         },
     )
+
+
+def retire_record_notice(root: Path, repo: str, project_id: str):
+    """Close the notice once a later run's record counts again."""
+    for issue in record_issues(root, repo, project_id):
+        body = issue["body"].replace(RECORD_MARKER, RECORD_RESOLVED_MARKER)
+        gh(
+            root,
+            "api",
+            f"repos/{repo}/issues/{issue['number']}",
+            "--method",
+            "PATCH",
+            payload={
+                "state": "closed",
+                "state_reason": "completed",
+                "body": body + "\n\nResolved: a later sync run's record counts again.",
+            },
+        )
 
 
 def report(root: Path, repo: str, project_id: str, message: str, pr=None, notice=""):
@@ -283,8 +314,9 @@ def conflict_files(root: Path, prefix: str):
     )
 
 
-def reset_status(root: Path, repo: str, pr: dict, notice=""):
-    body = with_notice(DEFAULT_BODY, notice or record_notice(pr["body"]))
+def reset_status(root: Path, repo: str, pr: dict, notice="", line=""):
+    body = DEFAULT_BODY + (f"\n\n{line}" if line else "")
+    body = with_notice(body, notice or record_notice(pr["body"]))
     if pr["body"] != body:
         gh(
             root,
@@ -297,9 +329,17 @@ def reset_status(root: Path, repo: str, pr: dict, notice=""):
         pr["body"] = body
 
 
+class ConflictError(ov.SyncError):
+    """Shown on the sync PR as one line naming each conflicting change's author."""
+
+    def __init__(self, message: str, commits: list[str]):
+        super().__init__(message, recovery="conflict-markers-after-pull-exit-3")
+        self.commits = commits
+
+
 def conflict_message(
     root: Path, tip: str, paths: list[str], pr_url: str = "the sync PR"
-):
+) -> ConflictError:
     # Name the latest workspace change to each conflicted file, not an unrelated
     # default tip or the latest edit anywhere in the paper.
     commits = sorted(
@@ -309,12 +349,31 @@ def conflict_message(
         }
         - {""}
     )
-    return (
+    return ConflictError(
         "Overleaf sync conflicts in "
         + ", ".join(paths)
         + "; workspace changes to these files: "
         + ", ".join(commits)
-        + f"; each change's author must resolve the conflict in {pr_url}."
+        + f"; each change's author must resolve the conflict in {pr_url}.",
+        commits,
+    )
+
+
+def conflict_line(root: Path, repo: str, commits: list[str]) -> str:
+    changes = []
+    for sha in commits:
+        try:
+            commit = gh(root, "api", f"repos/{repo}/commits/{sha}") or {}
+        except ov.SyncError:
+            commit = {}
+        url = commit.get("html_url") or f"https://github.com/{repo}/commit/{sha}"
+        # GitHub's own commit-author link; never guess a handle from a Git name.
+        login = (commit.get("author") or {}).get("login")
+        changes.append(f"[{sha[:12]}]({url})" + (f" by @{login}" if login else ""))
+    return (
+        "Conflicts with workspace change "
+        + (", ".join(changes) or "on the default branch")
+        + f". Fixes pushed to this branch are kept; how to resolve: {CONFLICTS}"
     )
 
 
@@ -536,9 +595,7 @@ def sync_workspace(project: Path, directory: str):
                                 "diff", "--name-only", "--diff-filter=U", cwd=work
                             ).splitlines()
                             if paths:
-                                raise ov.SyncError(
-                                    conflict_message(work, tip, paths, pr["url"])
-                                )
+                                raise conflict_message(work, tip, paths, pr["url"])
                             raise ov.SyncError(
                                 "Could not merge the workspace base; check Git merge configuration and retry."
                             )
@@ -560,13 +617,11 @@ def sync_workspace(project: Path, directory: str):
                     )
                 marked = conflict_files(work, prefix)
                 if marked:
-                    raise ov.SyncError(
-                        conflict_message(
-                            work,
-                            tip,
-                            [prefix + name for name in marked],
-                            pr["url"] if pr else "a paper PR",
-                        )
+                    raise conflict_message(
+                        work,
+                        tip,
+                        [prefix + name for name in marked],
+                        pr["url"] if pr else "a paper PR",
                     )
                 notices = []
                 ctx = click.get_current_context()
@@ -580,6 +635,8 @@ def sync_workspace(project: Path, directory: str):
                         report_record_once(root, repo, project_id, notice)
                     elif pr:
                         notice = record_notice(pr["body"])
+                if not notices:
+                    retire_record_notice(root, repo, project_id)
                 if notice and pr and record_notice(pr["body"]) != notice:
                     body = with_notice(pr["body"], notice)
                     gh(
@@ -658,17 +715,15 @@ def sync_workspace(project: Path, directory: str):
                         )
                     marked = conflict_files(work, prefix)
                     if conflicted or marked:
-                        raise ov.SyncError(
-                            conflict_message(
-                                work,
-                                tip,
-                                [prefix + name for name in marked]
-                                or ov.git(
-                                    "diff", "--name-only", "--diff-filter=U", cwd=work
-                                ).splitlines()
-                                or [prefix.rstrip("/")],
-                                pr["url"],
-                            )
+                        raise conflict_message(
+                            work,
+                            tip,
+                            [prefix + name for name in marked]
+                            or ov.git(
+                                "diff", "--name-only", "--diff-filter=U", cwd=work
+                            ).splitlines()
+                            or [prefix.rstrip("/")],
+                            pr["url"],
                         )
                     # New edits or a refreshed base always need their own checks and
                     # a later quiet run; never merge a just-created/updated head.
@@ -694,14 +749,11 @@ def sync_workspace(project: Path, directory: str):
                         or pr["mergeStateStatus"] != "CLEAN"
                         or not checks_pass(pr)
                     ):
-                        report(
-                            root,
-                            repo,
-                            project_id,
-                            waiting_message(pr, head),
-                            pr,
+                        # GitHub's merge box already shows why; keep the body quiet.
+                        reset_status(root, repo, pr, notice)
+                        click.echo(
+                            f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
                         )
-                        click.echo(f"Waiting on {pr['url']}.")
                         return
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
@@ -772,7 +824,11 @@ def sync_workspace(project: Path, directory: str):
         except ov.SyncError as exc:
             try:
                 target = None if isinstance(exc, BuildConfigError) else pr
-                report(root, repo, project_id, exc.format_message(), target, notice)
+                if target and isinstance(exc, ConflictError):
+                    line = conflict_line(root, repo, exc.commits)
+                    reset_status(root, repo, target, notice, line)
+                else:
+                    report(root, repo, project_id, exc.format_message(), target, notice)
             except ov.SyncError:
                 click.echo(
                     "Could not report the sync failure on GitHub; the original refusal follows.",
