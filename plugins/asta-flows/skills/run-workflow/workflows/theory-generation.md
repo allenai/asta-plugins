@@ -44,7 +44,7 @@ After the table, write this word for word, filling in only the two examples of a
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** Any required papers, or papers that should form the entire corpus?
 
-Leave out any of the three they have already settled: someone who gave you a folder has answered the papers question.
+Leave out any of the three they have already settled, or cannot act on: someone who gave you a folder has answered the papers question, and someone with no way to reach you a file should not be offered the papers line at all.
 
 If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
 
