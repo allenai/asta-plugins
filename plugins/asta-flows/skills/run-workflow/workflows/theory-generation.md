@@ -129,12 +129,6 @@ theorize -p <run>/theory papers import <files or a glob>
 theorize -p <run>/theory show papers
 ```
 
-Markdown is read as it is. PDFs are converted on import; add `--ocr mistral` for scanned PDFs when `MISTRAL_API_KEY` is set. A directory is searched recursively, so one folder per paper works as well as a flat folder of files; everything that is not a paper file, images among them, is ignored.
+Markdown is read as it is. PDFs are converted on import; add `--ocr mistral` for scanned PDFs when `MISTRAL_API_KEY` is set. Figures are not read: a markdown file that refers to them as image tags hands those tags over as text.
 
-Import reads title, authors, year, abstract and venue from each file with one small LLM call per paper. Figures are not read: a markdown file that refers to its figures as image tags hands those tags over as text.
-
-`show papers` after the import is what confirms the corpus: check the count against the number of files the person gave you, and say both when you report the plan. Theorizer extracts from full text only, so a paper that arrives without it is not extracted from.
-
-Check the size before spending at this scale, because a brought corpus has no 100-paper target to bound it. Measured on 1,103 markdown papers (73 MB) with the OpenAI defaults: the import took about 4 minutes, and the extraction about 95 minutes for all 1,103. Say the paper count, and that step 4b extracts over every paper again for each new schema it produces, when you show the plan.
-
-A brought corpus is also not a clean one. The 1,103 above held FAQs, a draft and a final of one document, a single-line map file and several near-duplicate papers. None of it stopped the run. Say what you notice, and leave the corpus as the person gave it unless they ask otherwise -- they called it their corpus.
+Import spends one small LLM call per paper on metadata, and a brought corpus has no paper target to bound it. Say the count when you show the plan, and say that step 4b extracts over every paper again for each schema it produces.
