@@ -114,8 +114,9 @@ def test_personal_credential_helper_remains_available(setup, monkeypatch):
 
 
 def test_git_failure_with_only_options_has_sanitized_error(tmp_path):
-    with pytest.raises(module.click.ClickException, match="git command failed"):
+    with pytest.raises(module.GitCommandError, match="git command failed") as error:
         module.git_bytes("--invalid-fixture-option", cwd=tmp_path)
+    assert module.RECOVERY not in error.value.format_message()
 
 
 @pytest.mark.parametrize(
@@ -1752,7 +1753,12 @@ def test_unrecognized_bridge_history_requires_pull_and_review(setup, rewrite):
 
     result = run(project, "publish")
 
-    assert result.exit_code == 1 and "Overleaf has changed" in result.output
+    assert result.exit_code == 1, result.output
+    if rewrite == "subject":
+        assert "existing Overleaf sync record is untrusted" in result.output
+        assert "maintainer to restore or delete" in result.output
+    else:
+        assert "Overleaf has changed" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before_remote
     assert (project / "paper/overleaf.json").read_bytes() == before_record
     assert not git(project, "status", "--porcelain")
@@ -3065,6 +3071,30 @@ def test_pull_rejects_metadata_path_collision_before_history_fetch(setup, monkey
 RECORD_REF = "refs/asta/overleaf/1234567"
 
 
+def forge_record(origin, data, parent=None):
+    """Build an arbitrary record object without changing the published ref."""
+    payload = data if isinstance(data, str) else json.dumps(data)
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=origin,
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "mktree"],
+        cwd=origin,
+        input=f"100644 blob {blob}\tsync.json\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    return git(
+        origin, "commit-tree", tree, *(["-p", parent] if parent else []), "-m", "record"
+    )
+
+
 def origin_record(tmp_path):
     origin = tmp_path / "workspace.git"
     commit = git(origin, "rev-parse", "--verify", "-q", RECORD_REF)
@@ -3257,7 +3287,10 @@ def test_publish_does_not_record_same_tree_history_reset(
     result = run(project, "publish")
     assert result.exit_code == 1, result.output
     assert "could not confirm Overleaf's copy" in result.output
-    assert "merge its sync-record PR" in result.output
+    assert (
+        "merge the resulting PR (it may change only paper/overleaf.json)"
+        in result.output
+    )
     assert git(origin, "for-each-ref", RECORD_REF) == before_record
     assert (project / "paper/overleaf.json").read_bytes() == config
     assert not git(project, "status", "--porcelain")
@@ -3279,7 +3312,10 @@ def test_record_push_failure_explains_recovery(setup, tmp_path):
     result = run(project, "publish")
     assert result.exit_code == 1
     assert "Published Overleaf commit" in result.output
-    assert "merge its sync-record PR" in result.output
+    assert (
+        "merge the resulting PR (it may change only paper/overleaf.json)"
+        in result.output
+    )
     hook.unlink()
     assert "Overleaf has changed" in run(project, "publish").output
     pulled = run(project, "pull")
@@ -3328,28 +3364,13 @@ def test_record_not_matching_reviewed_history_falls_back(setup, tmp_path):
     origin = tmp_path / "workspace.git"
     _, record = origin_record(tmp_path)
     record["overleaf"] = git(seed, "rev-parse", "HEAD")
-    blob = subprocess.run(
-        ["git", "hash-object", "-w", "--stdin"],
-        cwd=origin,
-        input=json.dumps(record),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    tree = subprocess.run(
-        ["git", "mktree"],
-        cwd=origin,
-        input=f"100644 blob {blob}\tsync.json\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    git(origin, "update-ref", RECORD_REF, git(origin, "commit-tree", tree, "-m", "x"))
+    forged = forge_record(origin, record)
+    git(origin, "update-ref", RECORD_REF, forged)
     result = run(project, "publish")
     assert result.exit_code == 1
     assert "does not match a paper on origin's default branch" in result.output
     assert module.RECOVERY in result.output
-    assert "Overleaf has changed" in result.output
+    assert "existing Overleaf sync record is untrusted" in result.output
     pulled = run(project, "pull")
     # Falling back to the last pull brings the unreviewed edit in for review.
     assert pulled.exit_code == CONFLICT_EXIT, pulled.output
@@ -3374,32 +3395,16 @@ def test_record_attesting_an_older_paper_does_not_continue(
     # Overleaf reverts to the older reviewed paper; a record attests that revert.
     overleaf_edit(seed, "main.tex", "older\n")
     record.update(overleaf=git(seed, "rev-parse", "HEAD"), workspace=older["workspace"])
-    blob = subprocess.run(
-        ["git", "hash-object", "-w", "--stdin"],
-        cwd=origin,
-        input=json.dumps(record),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    tree = subprocess.run(
-        ["git", "mktree"],
-        cwd=origin,
-        input=f"100644 blob {blob}\tsync.json\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    forged = git(origin, "commit-tree", tree, "-p", previous, "-m", "x")
+    forged = forge_record(origin, record, previous)
     if intermediate:
         # A matching immediate predecessor cannot launder its own invalid rollback.
-        forged = git(origin, "commit-tree", tree, "-p", forged, "-m", "x")
+        forged = forge_record(origin, record, forged)
     git(origin, "update-ref", RECORD_REF, forged)
     result = run(project, "publish")
     assert result.exit_code == 1
     assert "does not continue from the previous record" in result.output
     assert module.RECOVERY in result.output
-    assert "Overleaf has changed" in result.output
+    assert "existing Overleaf sync record is untrusted" in result.output
     pulled = run(project, "pull")
     # The revert comes in for review instead of counting as synced.
     assert pulled.exit_code == CONFLICT_EXIT, pulled.output
@@ -3421,23 +3426,7 @@ def test_parentless_record_must_be_first_publication_since_base(setup, tmp_path)
     # Overleaf reverts; a fresh record with no parent attests the revert.
     overleaf_edit(seed, "main.tex", "older\n")
     record.update(overleaf=git(seed, "rev-parse", "HEAD"), workspace=older["workspace"])
-    blob = subprocess.run(
-        ["git", "hash-object", "-w", "--stdin"],
-        cwd=origin,
-        input=json.dumps(record),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    tree = subprocess.run(
-        ["git", "mktree"],
-        cwd=origin,
-        input=f"100644 blob {blob}\tsync.json\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    forged = git(origin, "commit-tree", tree, "-m", "x")
+    forged = forge_record(origin, record)
     git(origin, "update-ref", RECORD_REF, forged)
     result = run(project, "publish")
     assert result.exit_code == 1
@@ -3467,23 +3456,8 @@ def test_parentless_record_must_postdate_last_config_change(setup, tmp_path):
     assert git(seed, "rev-parse", "HEAD^") == base
     origin = tmp_path / "workspace.git"
     record = {"url": URL, "overleaf": revert, "workspace": older}
-    blob = subprocess.run(
-        ["git", "hash-object", "-w", "--stdin"],
-        cwd=origin,
-        input=json.dumps(record),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    tree = subprocess.run(
-        ["git", "mktree"],
-        cwd=origin,
-        input=f"100644 blob {blob}\tsync.json\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    git(origin, "update-ref", RECORD_REF, git(origin, "commit-tree", tree, "-m", "x"))
+    forged = forge_record(origin, record)
+    git(origin, "update-ref", RECORD_REF, forged)
     result = run(project, "publish")
     assert result.exit_code == 1
     assert module.RECOVERY in result.output
@@ -3595,25 +3569,10 @@ def test_invalid_sync_record_refuses(setup, tmp_path, command):
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
     origin = tmp_path / "workspace.git"
-    blob = subprocess.run(
-        ["git", "hash-object", "-w", "--stdin"],
-        cwd=origin,
-        input=json.dumps(
-            {"url": "https://git.overleaf.com/other", "overleaf": "0" * 40}
-        ),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    tree = subprocess.run(
-        ["git", "mktree"],
-        cwd=origin,
-        input=f"100644 blob {blob}\tsync.json\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    git(origin, "update-ref", RECORD_REF, git(origin, "commit-tree", tree, "-m", "x"))
+    forged = forge_record(
+        origin, {"url": "https://git.overleaf.com/other", "overleaf": "0" * 40}
+    )
+    git(origin, "update-ref", RECORD_REF, forged)
     (project / "paper/main.tex").write_text("edit\n")
     commit_all(project)
     remote = git(seed, "ls-remote", "origin", "master")
@@ -3695,3 +3654,204 @@ def test_sync_refusal_is_one_line_with_recovery_link(message):
         module.SyncError(error.format_message()).format_message()
         == error.format_message()
     )
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", [("pull",), ("publish",), ("publish", "--dry-run")])
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "json",
+        "list",
+        "missing",
+        "overleaf-alias",
+        "overleaf-option",
+        "workspace-alias",
+        "workspace-option",
+        "workspace-number",
+        "url",
+        "project",
+    ],
+)
+def test_malformed_predecessor_refuses_before_changes(
+    setup, tmp_path, command, malformation
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    origin = tmp_path / "workspace.git"
+    _, valid = origin_record(tmp_path)
+    bad = valid.copy()
+    if malformation == "json":
+        bad = "{"
+    elif malformation == "list":
+        bad = []
+    elif malformation == "missing":
+        bad.pop("workspace")
+    elif malformation == "overleaf-alias":
+        bad["overleaf"] = "HEAD"
+    elif malformation == "overleaf-option":
+        bad["overleaf"] = "--fork-point"
+    elif malformation == "workspace-alias":
+        bad["workspace"] = "main~3"
+    elif malformation == "workspace-option":
+        bad["workspace"] = "--fork-point"
+    elif malformation == "workspace-number":
+        bad["workspace"] = 1234
+    elif malformation == "url":
+        bad["url"] = "https://example.invalid/1234567"
+    else:
+        bad["url"] = "https://git.overleaf.com/anotherproject"
+    parent = forge_record(origin, bad)
+    forged = forge_record(origin, valid, parent)
+    git(origin, "update-ref", RECORD_REF, forged)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    head = git(seed, "ls-remote", "origin", "master")
+    fetch_head = project / git(project, "rev-parse", "--git-path", "FETCH_HEAD")
+    fetch_head.write_bytes(b"existing fetch state\n")
+
+    result = run(project, *command)
+
+    assert result.exit_code == 1, result.output
+    assert "Invalid Overleaf sync record" in result.output
+    assert (
+        "Nothing pushed" in result.output
+        if command[0] == "publish"
+        else "Nothing copied" in result.output
+    )
+    assert "Recovery:" in result.output
+    assert "\n" not in result.output.strip()
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(seed, "ls-remote", "origin", "master") == head
+    assert origin_record(tmp_path)[0] == forged
+    assert fetch_head.read_bytes() == b"existing fetch state\n"
+    assert not git(project, "for-each-ref", "refs/asta")
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("repair", ["restore", "delete"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_publish_refuses_rejected_record_after_recovery_pull(
+    setup, tmp_path, repair, dry_run
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("published\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    good, data = origin_record(tmp_path)
+    overleaf_edit(seed, "main.tex", "collaborator\n")
+    data["overleaf"] = git(seed, "rev-parse", "HEAD")
+    origin = tmp_path / "workspace.git"
+    bad = forge_record(origin, data, good)
+    git(origin, "update-ref", RECORD_REF, bad)
+    assert run(project, "pull").exit_code == CONFLICT_EXIT
+    (project / "paper/main.tex").write_text("collaborator\n")
+    commit_all(project)  # The recovery pull is reviewed and merged.
+    (project / "paper/main.tex").write_text("next publication\n")
+    commit_all(project)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    head = git(seed, "ls-remote", "origin", "master")
+
+    result = run(project, "publish", *(["--dry-run"] if dry_run else []))
+
+    assert result.exit_code == 1, result.output
+    assert "existing Overleaf sync record is untrusted" in result.output
+    assert "maintainer to restore or delete" in result.output
+    assert "nothing pushed" in result.output
+    assert module.RECOVERY in result.output
+    assert git(seed, "ls-remote", "origin", "master") == head
+    assert origin_record(tmp_path)[0] == bad
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert not git(project, "for-each-ref", "refs/asta")
+    # A maintainer repairs the record; the existing reviewed pull permits recovery.
+    if repair == "restore":
+        git(origin, "update-ref", RECORD_REF, good)
+    else:
+        git(origin, "update-ref", "-d", RECORD_REF)
+    retried = run(project, "publish")
+    assert retried.exit_code == 0, retried.output
+    new, _ = origin_record(tmp_path)
+    if repair == "restore":
+        assert git(origin, "rev-parse", f"{new}^") == good
+    else:
+        assert not git(origin, "rev-list", "--parents", "-1", new).split()[1:]
+
+
+def test_commit_helpers_treat_option_like_revisions_as_data(setup):
+    _, project = setup
+    assert module.resolve_commit(project, "--all") is None
+    with pytest.raises(module.GitCommandError):
+        module.is_ancestor(project, "--fork-point", "HEAD")
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_parentless_record_anchors_to_first_parent_config_change(
+    setup, tmp_path, command
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "switch", "-c", "pull-side-branch")
+    overleaf_edit(seed, "main.tex", "collaborator\n")
+    assert run(project, "pull").exit_code == 0
+    commit_all(project)
+    side = git(project, "rev-parse", "HEAD")
+    git(project, "switch", "main")
+    git(project, "merge", "--no-ff", "pull-side-branch", "-m", "Merge pull PR")
+    merged = git(project, "rev-parse", "HEAD")
+    git(project, "push", "origin", "main")
+    # The side-branch commit is reviewed but predates the config merge on main.
+    git(seed, "commit", "--allow-empty", "-m", "same paper after base")
+    git(seed, "push", "origin", "master")
+    data = {"url": URL, "overleaf": git(seed, "rev-parse", "HEAD"), "workspace": side}
+    origin = tmp_path / "workspace.git"
+    git(origin, "update-ref", RECORD_REF, forge_record(origin, data))
+    assert module.config_change(project, merged, "paper/", publishing=False) == merged
+
+    result = run(project, command, merge=False)
+
+    assert "not the first publication since" in result.output
+    assert module.RECOVERY in result.output
+    assert result.exit_code == (1 if command == "publish" else 0), result.output
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == data["overleaf"]
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_record_chain_stops_at_committed_base_before_older_sources(setup, tmp_path):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("first\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    first = git(project, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_text("second\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    assert run(project, "pull").exit_code == 0
+    commit_all(project)  # The committed pull accounts for both earlier publications.
+    (project / "paper/main.tex").write_text("third\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    shallow = tmp_path / "shallow"
+    git(
+        tmp_path,
+        "clone",
+        "--depth=3",
+        (tmp_path / "workspace.git").as_uri(),
+        str(shallow),
+    )
+    assert module.resolve_commit(shallow, first) is None
+    boundary = shallow / git(shallow, "rev-parse", "--git-path", "shallow")
+    before = boundary.read_bytes()
+
+    result = run(shallow, "publish", "--dry-run", merge=False)
+
+    assert result.exit_code == 0, result.output
+    assert "already matches" in result.output
+    assert boundary.read_bytes() == before
+    assert not git(shallow, "for-each-ref", "refs/asta")

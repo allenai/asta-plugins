@@ -23,7 +23,10 @@ Resolve the markers in the sync PR. Keeping either side's text is a valid resolu
 ## Workspace history is shallow
 
 Fetch workspace history explicitly (`git fetch --unshallow origin`, or deepen the
-clone enough to include the last `overleaf.json` change and its parent), then retry.
+clone enough to include the last `overleaf.json` change, its parent, and publication
+sources since that base), then retry. Record verification stops at the committed base;
+a reviewed pull advances this checkpoint, so older publication sources need not stay
+in a shallow clone.
 Even when the paper matches the default tip, a depth-one clone cannot prove that a
 hidden base move brought in all Overleaf edits. Sync never deepens your clone itself;
 a refusal leaves the paper, remote heads, branch refs and `FETCH_HEAD` unchanged.
@@ -33,11 +36,13 @@ a refusal leaves the paper, remote heads, branch refs and `FETCH_HEAD` unchanged
 The record's Overleaf and workspace commits must each descend from the previous
 record's corresponding commit. A first record must publish directly after `base`
 and attest a workspace commit descending from the last default-branch config change.
-A record failing these checks is ignored with a warning. Run `pull`, resolve any
-conflicts and merge the resulting paper PR before publishing again. Do not advance
-`base` by hand to suppress the edits. If a record is malformed or names a non-commit
-object, a workspace maintainer must restore the ref from its history, or delete that
-ref to use the committed base; then pull and review before publishing.
+Pull ignores a record failing these checks with a warning. Run `pull`, resolve any
+conflicts and merge the resulting paper PR. Publish refuses to append to that rejected
+chain, even after the pull: ask a workspace maintainer to restore the ref from its
+history or delete it, then pull and review any remaining edits before publishing.
+Do not advance `base` by hand to suppress edits. Malformed JSON, invalid commit IDs,
+a different project URL or a missing predecessor also refuse before copying or pushing;
+a malformed predecessor is never treated as a first record.
 
 ## Origin cannot be read
 

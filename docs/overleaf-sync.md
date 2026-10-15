@@ -24,8 +24,9 @@ Readers trust a record only when it matches reviewed history: its workspace
 commit must be an ancestor of `origin`'s default-branch tip, and its Overleaf
 commit's files must equal that commit's `paper/` files, ignoring
 `paper/overleaf.json`. Files are compared by content, because Overleaf and the
-workspace may use different hash functions. Otherwise both commands warn and use
-`base`, so edits since that pull arrive for review. A workspace writer who cannot
+workspace may use different hash functions. Otherwise pull warns and uses
+`base`, so edits since that pull arrive for review; publish refuses until a
+maintainer restores or deletes the rejected record. A workspace writer who cannot
 merge to the default branch therefore cannot move the sync point to unreviewed
 content, and Overleaf access alone cannot move it either.
 
@@ -34,8 +35,23 @@ commit descends from that record's Overleaf commit and its workspace commit from
 that record's workspace commit. A record with no parent must be the first
 publication since `paper/overleaf.json`'s `base` (its Overleaf commit's parent is
 `base`), and its workspace commit must descend from the default-branch commit
-that last changed `paper/overleaf.json`. Otherwise pull and publish warn and use `base`, so a record attesting an
-older reviewed paper cannot make an Overleaf revert count as synced.
+that last changed `paper/overleaf.json` along the default branch's first-parent
+history (the same history used to check base moves). Otherwise pull warns and uses
+`base`, so a record attesting an older reviewed paper cannot make an Overleaf
+revert count as synced. Publish refuses a rejected record before pushing, even
+after a recovery pull has advanced `base`: it must not append to an invalid chain.
+A maintainer must restore the record ref from its history or delete it, then pull
+and review any remaining Overleaf edits before publishing.
+
+Verification walks predecessors back to the first record whose Overleaf commit
+is already included in the committed `base`. Earlier publication sources do not
+need to be present or reverified: the committed pull accounts for those edits.
+The newest record is always checked. Between pulls, the work grows linearly with
+the number of publications since `base`; shallow clones need those workspace
+sources and their ancestry. A pull committed to the default branch advances the
+checkpoint. Checking only the immediate parent would let a writable intermediate
+record hide an earlier rollback. Rewriting default-branch history may invalidate
+records, requiring the same maintainer repair.
 
 ## Failure handling
 
@@ -45,7 +61,6 @@ Checking a base move also needs the commit that changed the config and its paren
 A depth-one clone refuses even when its paper equals the current tip; explicitly
 fetch workspace history and retry. A shallow clone with enough visible history still
 works without changing its shallow boundary.
-
 
 - Pull and publish also check the newest commit that changed `paper/overleaf.json`:
   every file Overleaf changed between the old and new `base` must hold Overleaf's new
@@ -90,7 +105,10 @@ works without changing its shallow boundary.
   automatically. Shallow checkouts with verifiable ancestry still work normally,
   as does pull when the checkout's paper already matches the trusted record.
 - An invalid record refuses both commands before copying files or pushing to
-  Overleaf. The ref must point directly to a commit; trees and tags are invalid,
+  Overleaf. This includes every predecessor consulted before the base checkpoint:
+  its JSON, full commit IDs and project URL have the same validation as the tip.
+  A missing or malformed predecessor is not treated as a parentless first record.
+  The ref must point directly to a commit; trees and tags are invalid,
   even with a valid `sync.json`. Restore the ref from its history or delete it
   to fall back to `paper/overleaf.json`.
 - A record whose Overleaf commit is missing from Overleaf history produces a

@@ -69,7 +69,7 @@ class SyncError(click.ClickException):
         super().__init__(message)
 
 
-class GitCommandError(SyncError):
+class GitCommandError(click.ClickException):
     def __init__(self, message: str, returncode: int):
         super().__init__(message)
         self.returncode = returncode
@@ -166,7 +166,14 @@ def git(*args: str, **kwargs) -> str:
 
 def resolve_commit(repo: Path, revision: str) -> str | None:
     try:
-        return git("rev-parse", "--verify", "-q", f"{revision}^{{commit}}", cwd=repo)
+        return git(
+            "rev-parse",
+            "--verify",
+            "-q",
+            "--end-of-options",
+            f"{revision}^{{commit}}",
+            cwd=repo,
+        )
     except GitCommandError as exc:
         if exc.returncode != 1:
             raise
@@ -175,7 +182,7 @@ def resolve_commit(repo: Path, revision: str) -> str | None:
 
 def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     try:
-        git("merge-base", "--is-ancestor", ancestor, descendant, cwd=repo)
+        git("merge-base", "--is-ancestor", "--", ancestor, descendant, cwd=repo)
         return True
     except GitCommandError as exc:
         if exc.returncode != 1:
@@ -606,6 +613,40 @@ def has_origin(root: Path) -> bool:
     return result.returncode == 0
 
 
+def read_record(
+    root: Path, revision: str, *, url: str | None = None, publishing: bool = False
+) -> dict:
+    """Validate record data before any field is used as a Git revision."""
+    try:
+        record = json.loads(
+            git_bytes("cat-file", "blob", f"{revision}:{RECORD}", cwd=root)
+        )
+        if (
+            not isinstance(record, dict)
+            or not isinstance(record.get("overleaf"), str)
+            or not SHA.fullmatch(record["overleaf"])
+            or not isinstance(record.get("workspace"), str)
+            or not re.fullmatch(FULL_OID, record["workspace"])
+            or not isinstance(record.get("url"), str)
+        ):
+            raise ValueError("unexpected sync record")
+        record["url"] = validate_url(record["url"])
+        if url is not None and record["url"] != url:
+            raise ValueError("different Overleaf project")
+        return record
+    except (GitCommandError, KeyError, TypeError, ValueError, ProjectURLError):
+        raise invalid_record(url, publishing=publishing) from None
+
+
+def invalid_record(url: str | None, *, publishing: bool = False) -> SyncError:
+    location = f"at origin's {record_ref(url)}" if url else "in workspace history"
+    return SyncError(
+        f"Invalid Overleaf sync record {location}. "
+        "Restore it from its history or delete it to fall back to "
+        f"{CONFIG}." + (" Nothing pushed." if publishing else " Nothing copied.")
+    )
+
+
 @contextmanager
 def published_record(root: Path, url: str, *, publishing: bool = False):
     """Read publish's record on `origin`: (record commit, Overleaf commit, source)."""
@@ -642,24 +683,10 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             if git("cat-file", "-t", gate, cwd=root) != "commit":
                 raise ValueError("sync record ref must point directly to a commit")
             commit = git("rev-parse", gate, cwd=root)
-            record = json.loads(
-                git_bytes("cat-file", "blob", f"{gate}:{RECORD}", cwd=root)
-            )
-            overleaf = record["overleaf"]
-            if (
-                not isinstance(overleaf, str)
-                or not SHA.fullmatch(overleaf)
-                or not isinstance(record["workspace"], str)
-                or not re.fullmatch(FULL_OID, record["workspace"])
-                or validate_url(record.get("url")) != url
-            ):
-                raise ValueError("unexpected sync record")
-        except (GitCommandError, KeyError, TypeError, ValueError, ProjectURLError):
-            raise SyncError(
-                f"Invalid Overleaf sync record at origin's {ref}. "
-                "Restore it from its history or delete it to fall back to "
-                f"{CONFIG}.{suffix}"
-            ) from None
+        except (GitCommandError, ValueError):
+            raise invalid_record(url, publishing=publishing) from None
+        record = read_record(root, gate, url=url, publishing=publishing)
+        overleaf = record["overleaf"]
         # Keep the parent reachable until a subsequent record has been pushed.
         yield commit, overleaf, record["workspace"]
     finally:
@@ -686,17 +713,20 @@ def refuse_incomplete_record_history(root: Path, *, publishing: bool = False) ->
         )
 
 
-def prior_record(root: Path, commit: str) -> tuple[str, str] | None:
-    """The (Overleaf, workspace) commits of the record `commit` was written over."""
-    if resolve_commit(root, f"{commit}^") is None:
+def prior_record(
+    root: Path, commit: str, *, publishing: bool = False
+) -> tuple[str, str] | None:
+    """The validated (Overleaf, workspace) IDs of the preceding record."""
+    # Read actual headers: shallow revision walks can conceal an existing parent.
+    headers = git("cat-file", "-p", commit, cwd=root).split("\n\n", 1)[0]
+    parents = [line[7:] for line in headers.splitlines() if line.startswith("parent ")]
+    if not parents:
         return None
-    try:
-        record = json.loads(
-            git_bytes("cat-file", "blob", f"{commit}^:{RECORD}", cwd=root)
-        )
-        return str(record["overleaf"]), str(record["workspace"])
-    except (GitCommandError, KeyError, TypeError, ValueError):
-        return None
+    current = read_record(root, commit, publishing=publishing)
+    if len(parents) != 1:
+        raise invalid_record(current["url"], publishing=publishing)
+    record = read_record(root, parents[0], url=current["url"], publishing=publishing)
+    return record["overleaf"], record["workspace"]
 
 
 def first_since(repo: Path, base: str, recorded: str) -> bool:
@@ -710,6 +740,7 @@ def config_change(root: Path, default: str, prefix: str, *, publishing: bool) ->
         "--literal-pathspecs",
         "log",
         "-1",
+        "--first-parent",
         "--format=%H",
         default,
         "--",
@@ -719,7 +750,7 @@ def config_change(root: Path, default: str, prefix: str, *, publishing: bool) ->
     shallow = root / git("rev-parse", "--git-path", "shallow", cwd=root)
     boundary = shallow.read_text().split() if shallow.is_file() else []
     # A shallow boundary commit looks like it added every file it holds.
-    if not changed and boundary or changed in boundary:
+    if (not changed and boundary) or changed in boundary:
         refuse_incomplete_record_history(root, publishing=publishing)
     return changed
 
@@ -795,7 +826,19 @@ def reviewed_record(
 ) -> str | None:
     """Verify every predecessor, so an invalid intermediate cannot hide a rollback."""
     newest = recorded
+    initial_record = record
     while True:
+        # The committed pull already accounts for this Overleaf history. Older
+        # record sources need not be present (for example, in a shallow clone).
+        at_base = (
+            recorded is not None
+            and base is not None
+            and resolve_commit(repo, recorded) is not None
+            and resolve_commit(repo, base) is not None
+            and is_ancestor(repo, recorded, base)
+        )
+        if record != initial_record and at_base:
+            return newest
         verified = _reviewed_record_entry(
             root,
             repo,
@@ -809,15 +852,9 @@ def reviewed_record(
         )
         if verified is None:
             return None
-        # A committed pull supersedes earlier publications.
-        if (
-            base is not None
-            and resolve_commit(repo, recorded) is not None
-            and resolve_commit(repo, base) is not None
-            and is_ancestor(repo, recorded, base)
-        ):
+        if at_base:
             return newest
-        prior = prior_record(root, record) if record else None
+        prior = prior_record(root, record, publishing=publishing) if record else None
         if prior is None:
             return newest
         record = resolve_commit(root, f"{record}^")
@@ -847,7 +884,7 @@ def _reviewed_record_entry(
         # rather than evidence that the record names unreviewed content.
         refuse_incomplete_record_history(root, publishing=publishing)
     if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
-        prior = prior_record(root, record) if record else None
+        prior = prior_record(root, record, publishing=publishing) if record else None
         if prior is None:
             # A record with no parent must be the first publication since `base`
             # and attest a paper reviewed after `base` was committed, so a
@@ -944,7 +981,7 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
     raise SyncError(
         f"Published Overleaf commit {pushed[:7]}, but could not confirm Overleaf's copy "
         "to record the sync point. Before publishing again, run `asta workspace "
-        "overleaf pull` and merge its sync-record PR. "
+        "overleaf pull` and merge the resulting PR (it may change only paper/overleaf.json). "
         "If Overleaf history was reset, restore it first."
     )
 
@@ -984,7 +1021,7 @@ def record_publication(
         raise SyncError(
             f"Published Overleaf commit {overleaf[:7]}, but could not record it at "
             f"origin's {ref}. Before publishing again, run `asta workspace overleaf "
-            "pull` and merge its sync-record PR."
+            "pull` and merge the resulting PR (it may change only paper/overleaf.json)."
         ) from None
 
 
@@ -1308,6 +1345,16 @@ def publish(
                 base=config["base"],
                 publishing=True,
             )
+            if previous is not None and (
+                recorded is None
+                or resolve_commit(repo, recorded) is None
+                or not is_ancestor(repo, recorded, head)
+            ):
+                raise SyncError(
+                    "The existing Overleaf sync record is untrusted; nothing pushed. "
+                    f"Ask a workspace maintainer to restore or delete origin's {record_ref(config['url'])}, "
+                    "then pull and review the Overleaf edits before publishing again."
+                )
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
             if synced != head:
                 raise SyncError(
