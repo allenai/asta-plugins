@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -19,7 +20,8 @@ DEFAULT_BODY = (
 )
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
-FIELDS = "number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
+FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
+STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
     "Merge current workspace paper into Overleaf sync",
@@ -107,6 +109,33 @@ def lock(root: Path, project_id: str):
                 "Could not release the sync lock; use interrupted-run recovery.",
                 err=True,
             )
+
+
+def stale_lock(root: Path, project_id: str) -> bool:
+    ref = f"refs/asta/overleaf-sync-lock/{project_id}"
+    ov.git("fetch", "--no-tags", "origin", ref, cwd=root)
+    created = int(ov.git("show", "-s", "--format=%ct", "FETCH_HEAD", cwd=root))
+    return time.time() - created >= STALE_LOCK_SECONDS
+
+
+def waiting_message(pr: dict, head: str) -> str:
+    state = pr.get("mergeStateStatus", "UNKNOWN")
+    mergeable = pr.get("mergeable", "UNKNOWN")
+    action = {
+        "BLOCKED": "A person must supply required approvals or satisfy repository rules; inspect required reviews and checks.",
+        "UNSTABLE": "A person must fix failing checks, then rerun sync.",
+        "UNKNOWN": "GitHub is still computing merge eligibility; retry sync after it settles.",
+        "BEHIND": "Update the sync branch with the default branch and rerun its checks.",
+        "DIRTY": "A person must resolve merge conflicts on the sync PR.",
+        "DRAFT": "A person must mark the sync PR ready when its review is complete.",
+    }.get(state, "Wait for completed successful checks; fix any failing checks.")
+    if pr.get("headRefOid") != head:
+        action = (
+            "The sync head changed; rerun sync and wait for checks on the new head."
+        )
+    elif mergeable == "CONFLICTING":
+        action = "A person must resolve merge conflicts on the sync PR."
+    return f"Sync PR mergeStateStatus={state}, mergeable={mergeable}. {action}"
 
 
 def checks_pass(pr: dict) -> bool:
@@ -241,8 +270,8 @@ def credits(root: Path, config: dict, new_base: str) -> list[str]:
     return sorted(
         {
             x
-            for x in authors.splitlines()
-            if "<" in x and ">" in x and not any(c in x for c in "\r\0")
+            for x in authors.split("\n")
+            if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", x)
         }
     )
 
@@ -286,6 +315,14 @@ def sync_pr(root: Path, repo: str, branch: str, default_name: str):
         "--json",
         FIELDS,
     )
+    # A fork can reuse the branch name and body marker. Never mutate its PR.
+    owner = repo.split("/", 1)[0].lower()
+    prs = [
+        pr
+        for pr in prs
+        if pr.get("isCrossRepository") is False
+        and (pr.get("headRepositoryOwner") or {}).get("login", "").lower() == owner
+    ]
     if len(prs) > 1:
         raise ov.SyncError(
             "Multiple sync PRs exist; close the duplicate before retrying."
@@ -363,6 +400,11 @@ def sync_workspace(project: Path, directory: str):
         identity[key] = value
     with lock(root, project_id) as acquired:
         if not acquired:
+            if not stale_lock(root, project_id):
+                click.echo(
+                    "Overleaf sync lock is held by a recent run; leaving its status unchanged."
+                )
+                return
             message = "Overleaf sync lock is held; confirm the owning run is active, or recover its interrupted lock."
             try:
                 try:
@@ -474,6 +516,28 @@ def sync_workspace(project: Path, directory: str):
                     changed = False
                 if changed:
                     ov.git("add", "--", prefix, cwd=work)
+                    imported = ov.git(
+                        "diff",
+                        "--cached",
+                        "--name-only",
+                        "HEAD",
+                        "--",
+                        prefix,
+                        cwd=work,
+                    ).splitlines()
+                    build_configs = [
+                        name
+                        for name in imported
+                        if Path(name).name.lower() in BUILD_CONFIGS
+                    ]
+                    if build_configs:
+                        # Always route this refusal to an issue, even with an open PR.
+                        pr = None
+                        raise ov.SyncError(
+                            "Executable LaTeX build configuration changed: "
+                            + ", ".join(build_configs)
+                            + "; a person must review and import these changes manually; nothing pushed."
+                        )
                     authors = credits(work, before, after["base"])
                     message = "Sync Overleaf paper\n\n" + "\n".join(
                         f"Co-authored-by: {author}" for author in authors
@@ -492,6 +556,18 @@ def sync_workspace(project: Path, directory: str):
                     if any(not name.startswith(prefix) for name in final_paths):
                         raise ov.SyncError(
                             "A hook or branch changed files outside the paper; nothing pushed."
+                        )
+                    build_configs = [
+                        name
+                        for name in final_paths
+                        if Path(name).name.lower() in BUILD_CONFIGS
+                    ]
+                    if build_configs:
+                        pr = None
+                        raise ov.SyncError(
+                            "Executable LaTeX build configuration changed: "
+                            + ", ".join(build_configs)
+                            + "; a person must review and import these changes manually; nothing pushed."
                         )
                     if head != old_head:
                         ov.git(
@@ -536,7 +612,14 @@ def sync_workspace(project: Path, directory: str):
                     if conflicted or marked:
                         raise ov.SyncError(
                             conflict_message(
-                                work, tip, [prefix + name for name in marked], pr["url"]
+                                work,
+                                tip,
+                                [prefix + name for name in marked]
+                                or ov.git(
+                                    "diff", "--name-only", "--diff-filter=U", cwd=work
+                                ).splitlines()
+                                or [prefix.rstrip("/")],
+                                pr["url"],
                             )
                         )
                     # New edits or a refreshed base always need their own checks and
@@ -567,36 +650,18 @@ def sync_workspace(project: Path, directory: str):
                             root,
                             repo,
                             project_id,
-                            "Sync PR is waiting for successful checks and conflict resolution; a person must resolve failing checks or conflicts.",
+                            waiting_message(pr, head),
                             pr,
                         )
                         click.echo(f"Waiting on {pr['url']}.")
                         return
-                    build_configs = [
-                        name
-                        for name in final_paths
-                        if Path(name).name.lower() in BUILD_CONFIGS
-                    ]
-                    if build_configs:
-                        raise ov.SyncError(
-                            "Executable LaTeX build configuration changed: "
-                            + ", ".join(build_configs)
-                            + "; a person must review and merge this sync PR."
-                        )
-                    # Preserve every carried author across the squash, including
-                    # earlier updates and human resolutions on this same PR.
-                    log = ov.git(
-                        "log", "--format=%aN <%aE>%n%B", f"{tip}..{head}", cwd=work
+                    # Derive squash credits from Overleaf's Git authors across the
+                    # entire imported range, never from workspace commit bodies.
+                    default_config = json.loads(
+                        ov.git("show", f"{tip}:{prefix}{ov.CONFIG}", cwd=work)
                     )
-                    trailers = {
-                        line
-                        for line in log.splitlines()
-                        if line.startswith("Co-authored-by: ")
-                    }
-                    authors = ov.git(
-                        "log", "--format=%aN <%aE>", f"{tip}..{head}", cwd=work
-                    ).splitlines()
-                    trailers.update(f"Co-authored-by: {a}" for a in authors)
+                    authors = credits(work, default_config, after["base"])
+                    trailers = {f"Co-authored-by: {author}" for author in authors}
                     ov.require_expected_tip(work, tip, f"refs/heads/{default_name}")
                     with tempfile.NamedTemporaryFile(mode="w", suffix=".md") as body:
                         body.write("\n".join(sorted(trailers)) + "\n")

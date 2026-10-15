@@ -6,6 +6,10 @@
 set -u
 
 # Reject unresolved paper conflicts on every PR, before any rendering.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "::error::python3 is required to check paper conflicts; install Python 3 and retry."
+  exit 1
+fi
 python3 - <<'CHECK_PAPER' || exit 1
 import os, pathlib, re, stat, subprocess, sys
 # Match overleaf_sync.conflict_files: known text sources, never binary assets.
@@ -25,16 +29,16 @@ base = os.path.realpath(".")
 
 def marked(path, separators):
     # Stream bounded lines so a large tracked file cannot exhaust memory.
-    found, start = False, True
+    start = True
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     with os.fdopen(fd, "rb") as stream:
         while line := stream.readline(65536):
             if b"\0" in line:
                 return False
-            if start and not found:
-                found = bool(marker.match(line) or (separators and separator.match(line)))
+            if start and (marker.match(line) or (separators and separator.match(line))):
+                return True
             start = line.endswith(b"\n")
-    return found
+    return False
 
 
 failed, unsafe = [], []

@@ -20,6 +20,12 @@ serializes runs from different machines. It keeps one PR per project on
 and label as reserved for sync; close an unwanted PR before restarting it.
 Without an open sync PR, the command replaces that branch only when it holds
 sync-created paper commits; otherwise it refuses until you move the branch aside.
+Fork PRs with the same branch name are ignored. Ownership is checked using the
+exact sync commit subjects and the paper-only diff, not cryptographic attestation.
+People with repository push access are trusted, as with pull/publish; they can
+copy these subjects. Invited Overleaf co-authors are trusted to write the paper,
+but not to run build configuration in CI. This is not a sandbox for arbitrary TeX;
+keep TeX shell escape disabled and run paper builds without privileged tokens or secrets.
 
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
@@ -34,9 +40,14 @@ PR. Standalone `=======` lines in Markdown or plain text are allowed as headings
 or separators; opening and closing conflict labels are still refused.
 
 Unrelated default-branch changes do not restart the sync PR's checks, unless
-GitHub requires updating its base. Changes to `latexmkrc` or `.latexmkrc` remain
-in the sync PR for a person to review and merge, because these files execute
-build commands. The sync command does not automatically merge them.
+GitHub requires updating its base. Changes to `latexmkrc` or `.latexmkrc`
+(including nested files, additions and deletions) refuse before any sync-branch
+push and are reported on the labeled issue, even if a sync PR exists. A person
+must review and import them manually. These files execute build commands;
+refusing only at merge would allow CI to execute them before review.
+The quiet-run merge guard queries the remote default tip immediately before
+merging. Waiting status includes GitHub’s actual merge state and the required
+action, including required approvals when repository rules block merging.
 
 Publish still sends only the default branch's committed paper. New Overleaf
 edits must reach that branch through the sync PR first. Publication and the two
@@ -57,8 +68,10 @@ Restore access and retry after transport failures. See [recovery](overleaf-recov
 A killed process deliberately leaves its remote lock in place. This prevents
 a paused process from resuming after another publisher has taken over. Normal
 errors release it automatically. If sync says a run already owns the lock,
-the command exits non-zero and records the held lock on the open sync PR, or
-on a labeled repository issue when no sync PR is open. First
+a lock less than one hour old causes a successful skip without modifying status.
+A lock at least one hour old causes a nonzero refusal recorded on the open sync
+PR, or on a labeled issue if no sync PR exists. This is only a reporting threshold,
+not an expiry or evidence that the owner stopped. First
 confirm that the owning scheduler/process has stopped; then inspect and
 delete `refs/asta/overleaf-sync-lock/<project-id>` with an explicit
 `git push --force-with-lease=<ref>:<observed-object-id> origin :<ref>`. Do not

@@ -1,5 +1,6 @@
 """Scheduler behavior over real workspace and Overleaf Git repositories."""
 
+import ast
 import importlib
 import json
 import os
@@ -66,6 +67,8 @@ def github(monkeypatch):
                 if state.pop("fail_create", False):
                     raise sync.ov.SyncError("fixture PR creation failure")
                 pr = {
+                    "isCrossRepository": False,
+                    "headRepositoryOwner": {"login": "allenai"},
                     "number": 1,
                     "url": "https://github.com/allenai/test/pull/1",
                     "body": payload["body"],
@@ -378,25 +381,34 @@ def test_base_merge_conflict_names_changed_file_commit_not_default_tip(setup, gi
     assert unrelated not in github["prs"][0]["body"]
 
 
-@pytest.mark.parametrize("filename", ["latexmkrc", ".latexmkrc"])
-def test_build_configuration_is_left_for_human_merge(setup, github, filename):
+@pytest.mark.parametrize("filename", ["latexmkrc", ".latexmkrc", "sub/latexmkrc"])
+@pytest.mark.parametrize("open_pr", [False, True])
+def test_build_configuration_refuses_before_push(setup, github, filename, open_pr):
     seed, project = prepare(setup)
+    if open_pr:
+        overleaf_edit(seed, "main.tex", "new edit\n")
+        assert invoke(project).exit_code == 0
+    old = git(project, "ls-remote", "origin", BRANCH)
+    (seed / filename).parent.mkdir(parents=True, exist_ok=True)
     overleaf_edit(seed, filename, "$pdflatex = 'echo changed';\n")
-    assert invoke(project).exit_code == 0
-    github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
     result = invoke(project)
     assert result.exit_code == 1, result.output
-    assert "person must review and merge" in github["prs"][0]["body"]
+    assert "nothing pushed" in result.output
+    assert git(project, "ls-remote", "origin", BRANCH) == old
+    assert len(github["issues"]) == 1
+    assert "person must review" in github["issues"][0]["body"]
     assert not github["merges"]
     writes = github["writes"]
     assert invoke(project).exit_code == 1
     assert github["writes"] == writes
 
 
-def test_held_lock_is_nonzero_and_reported_once(setup, github):
+def test_stale_lock_is_nonzero_and_reported_once(setup, github, monkeypatch):
     _, project = prepare(setup)
     with sync.lock(project, "1234567") as acquired:
         assert acquired
+        created = int(git(project, "show", "-s", "--format=%ct", "HEAD"))
+        monkeypatch.setattr(sync.time, "time", lambda: created + 7200)
         result = invoke(project)
         assert result.exit_code == 1, result.output
         assert "lock is held" in result.output
@@ -579,12 +591,14 @@ SCRIPT = (
 )
 
 
-def test_held_lock_reports_on_open_sync_pr(setup, github):
+def test_stale_lock_reports_on_open_sync_pr(setup, github, monkeypatch):
     seed, project = prepare(setup)
     overleaf_edit(seed, "main.tex", "new edit\n")
     assert invoke(project).exit_code == 0
     with sync.lock(project, "1234567") as acquired:
         assert acquired
+        created = int(git(project, "show", "-s", "--format=%ct", "HEAD"))
+        monkeypatch.setattr(sync.time, "time", lambda: created + 7200)
         result = invoke(project)
     assert result.exit_code == 1, result.output
     assert "lock is held" in github["prs"][0]["body"]
@@ -659,3 +673,193 @@ def test_shared_check_streams_long_lines(tmp_path):
     assert result.returncode == 1
     assert "paper/refs.bib" in result.stdout
     assert "paper/main.tex" not in result.stdout
+
+
+def test_fresh_lock_preserves_conflict_status(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "new edit\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0]["body"] = "existing conflict guidance"
+    writes = github["writes"]
+    with sync.lock(project, "1234567"):
+        result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert github["prs"][0]["body"] == "existing conflict guidance"
+    assert github["writes"] == writes
+
+
+@pytest.mark.parametrize(
+    "cross,owner", [(True, "outsider"), (False, "outsider"), (True, "allenai")]
+)
+def test_foreign_pr_is_ignored(monkeypatch, tmp_path, cross, owner):
+    foreign = {"isCrossRepository": cross, "headRepositoryOwner": {"login": owner}}
+    local = {
+        "isCrossRepository": False,
+        "headRepositoryOwner": {"login": "allenai"},
+        "body": sync.MARKER,
+        "baseRefName": "main",
+    }
+    monkeypatch.setattr(sync, "gh", lambda *a: [foreign, local])
+    assert sync.sync_pr(tmp_path, "allenai/test", "branch", "main") is local
+    monkeypatch.setattr(sync, "gh", lambda *a: [foreign])
+    assert sync.sync_pr(tmp_path, "allenai/test", "branch", "main") is None
+
+
+@pytest.mark.parametrize(
+    "state,action",
+    [
+        ("BLOCKED", "approvals"),
+        ("UNSTABLE", "failing checks"),
+        ("UNKNOWN", "computing"),
+        ("DIRTY", "conflicts"),
+    ],
+)
+def test_waiting_reports_actual_state(setup, github, state, action):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0]["mergeStateStatus"] = state
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert "mergeStateStatus=" + state in github["prs"][0]["body"]
+    assert action in github["prs"][0]["body"]
+
+
+def test_markerless_pull_conflict_names_directory(setup, github, monkeypatch):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    monkeypatch.setattr(sync, "pull_into", lambda *a: True)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "conflicts in paper;" in github["prs"][0]["body"]
+    assert "conflicts in ;" not in result.output
+
+
+def test_remote_default_advance_refuses_merge(setup, github, monkeypatch):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+    original = sync.ov.require_expected_tip
+
+    def advance(root, tip, ref):
+        (project / "notes.txt").write_text("racing default edit\n")
+        commit_all(project)
+        git(project, "push", "origin", "HEAD:main")
+        original(root, tip, ref)
+
+    monkeypatch.setattr(sync.ov, "require_expected_tip", advance)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "default branch changed" in result.output
+    assert not github["merges"]
+
+
+def test_squash_ignores_hand_pushed_credit(setup, github, tmp_path):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    dest = tmp_path / "human"
+    git(project, "clone", str(project.parent / "workspace.git"), str(dest))
+    git(dest, "checkout", "asta/overleaf-sync/1234567")
+    (dest / "paper/notes.tex").write_text("human resolution\n")
+    git(dest, "add", "--", "paper/notes.tex")
+    git(
+        dest,
+        "commit",
+        "-m",
+        "Resolution\n\nCo-authored-by: forged <forged@example.invalid>",
+    )
+    git(dest, "push", "origin", f"HEAD:{BRANCH}")
+    github["allow_merge"] = True
+    github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    git(project, "fetch", "origin", "main")
+    body = git(project, "show", "-s", "--format=%B", "FETCH_HEAD")
+    assert "Co-authored-by: t <t@t>" in body
+    assert "forged" not in body
+
+
+def test_shell_and_python_marker_suffixes_match():
+    source = SCRIPT.read_text().split("CHECK_PAPER", 1)[1].split("\nCHECK_PAPER", 1)[0]
+    tree = ast.parse(source.split("\n", 1)[1])
+    suffixes = next(
+        ast.literal_eval(n.value)
+        for n in tree.body
+        if isinstance(n, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "suffixes" for t in n.targets)
+    )
+    assert suffixes == sync.ov.MERGE_SUFFIXES
+
+
+def test_missing_python_explains_requirement(tmp_path):
+    result = subprocess.run(
+        ["/bin/sh", str(SCRIPT)],
+        cwd=tmp_path,
+        env={"PATH": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "python3 is required" in result.stdout
+
+
+def test_marker_check_returns_before_large_tail(tmp_path):
+    source = (
+        SCRIPT.read_text()
+        .split("python3 - <<'CHECK_PAPER' || exit 1\n", 1)[1]
+        .split("\nCHECK_PAPER", 1)[0]
+    )
+    tree = ast.parse(source)
+    function = next(
+        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "marked"
+    )
+    env = {}
+    exec("import os, re", env)
+    env["marker"] = sync.CONFLICT_LABEL
+    env["separator"] = __import__("re").compile(rb"^=======\r?\n?\Z")
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "marker", "exec"), env)
+    path = tmp_path / "main.tex"
+    path.write_bytes(b"<<<<<<< HEAD\n" + b"\0" * 200000)
+    assert env["marked"](path, True)
+
+
+@pytest.mark.parametrize("filename", ["latexmkrc", ".latexmkrc"])
+@pytest.mark.parametrize("delete", [False, True])
+def test_existing_build_config_change_or_deletion_refuses(
+    setup, github, filename, delete
+):
+    seed, project = setup
+    overleaf_edit(seed, filename, "# reviewed build configuration\n")
+    seed, project = prepare(setup)
+    if delete:
+        git(seed, "rm", "--", filename)
+        git(seed, "commit", "-m", "remove config")
+        git(seed, "push", "origin", "master")
+    else:
+        overleaf_edit(seed, filename, "$pdflatex = 'echo changed';\n")
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "nothing pushed" in result.output
+    assert git(project, "ls-remote", "origin", BRANCH) == ""
+    assert len(github["issues"]) == 1
+
+
+def test_markerless_conflict_uses_git_unmerged_paths(setup, github, monkeypatch):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    monkeypatch.setattr(sync, "pull_into", lambda *a: True)
+    original = sync.ov.git
+
+    def unmerged(*args, **kwargs):
+        if args == ("diff", "--name-only", "--diff-filter=U"):
+            return "paper/image.pdf"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", unmerged)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "conflicts in paper/image.pdf;" in github["prs"][0]["body"]
