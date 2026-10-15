@@ -1,5 +1,8 @@
 # Overleaf sync point
 
+The sync uses Overleaf's Git integration, not its GitHub synchronization; see
+Overleaf's "Git integration and GitHub synchronization" documentation.
+
 `asta workspace overleaf pull` and `publish` need the last Overleaf commit whose
 content the workspace already reviewed. Two records in the workspace repository
 supply it; Overleaf history is never trusted to name one.
@@ -60,7 +63,7 @@ Every remaining refusal names a fix that works.
   the prior sync point. If it also descends from the pushed commit, publish records
   that pushed commit, leaving any later collaborator edits for the next pull.
   Otherwise it records the head only when its tree matches the pushed commit,
-  allowing a bridge to translate that commit. An unrelated
+  allowing Overleaf's Git integration to translate that commit. An unrelated
   same-tree replacement is refused. A translated commit followed by further edits
   cannot be confirmed by either check and still needs recovery. If confirmation
   or the record push fails, publish exits 1 after the Overleaf push without
@@ -105,8 +108,8 @@ garbage collection, then removes it on success or failure.
 
 ## Hosted evidence
 
-The hosted bridge preserved the subjects of two CLI-published commits beneath a
+Overleaf's hosted Git integration preserved the subjects of two CLI-published commits beneath a
 later web edit in a fresh clone
 ([PR comment](https://github.com/allenai/asta-plugins/pull/204#issuecomment-6134939707)).
-That check predates the record ref; the tree comparison above covers a bridge
-that rewrites pushed commit IDs.
+That check predates the record ref; the tree comparison above covers Git
+integration rewriting pushed commit IDs.

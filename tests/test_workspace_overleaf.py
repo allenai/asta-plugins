@@ -1733,7 +1733,7 @@ def test_empty_overleaf_subjects_are_ordinary_edits(setup, newest):
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("rewrite", ["subject", "extra-commit"])
-def test_unrecognized_bridge_history_requires_pull_and_review(setup, rewrite):
+def test_unrecognized_git_integration_history_requires_pull_and_review(setup, rewrite):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed publication\n")
@@ -3177,7 +3177,7 @@ def test_forged_publication_subject_does_not_move_sync_point(setup):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX hook")
-def test_publish_records_commit_translated_by_bridge(setup, tmp_path):
+def test_publish_records_commit_translated_by_git_integration(setup, tmp_path):
     seed, project = setup
     hook = tmp_path / "overleaf.git" / "hooks" / "post-receive"
     hook.write_text(

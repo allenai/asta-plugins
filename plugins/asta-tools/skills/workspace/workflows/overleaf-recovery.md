@@ -190,7 +190,7 @@ checkpoint; do not overwrite a collaborator's edits to make a push succeed.
 
 ## Empty Overleaf project
 
-Add an initial paper file in Overleaf so its Git bridge has a commit, then retry pull.
+Add an initial paper file in Overleaf so its Git integration has a commit, then retry pull.
 If the project already has files, verify that its Git integration exposes a default
 branch and that the supplied URL identifies the intended project.
 

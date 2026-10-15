@@ -1,4 +1,4 @@
-"""Copy a paper between the workspace and Overleaf's Git bridge."""
+"""Copy a paper between the workspace and Overleaf's Git integration."""
 
 import json
 import os
@@ -827,7 +827,7 @@ def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str)
 
 
 def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
-    """Overleaf's commit for this push; the bridge may translate pushed commits."""
+    """Overleaf's commit for this push; Git integration may translate pushed commits."""
     try:
         with credentials() as (env, options):
             git(
