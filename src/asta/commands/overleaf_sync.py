@@ -19,6 +19,7 @@ MARKER = "<!-- asta-overleaf-sync -->"
 DEFAULT_BODY = (
     MARKER + "\n\nImport co-author edits before publishing the default branch."
 )
+RECORD_MARKER = "<!-- asta-overleaf-record-not-used -->"
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
 FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
@@ -156,10 +157,48 @@ def checks_pass(pr: dict) -> bool:
     )
 
 
-def report(root: Path, repo: str, project_id: str, message: str, pr=None):
+def record_notice(body: str) -> str:
+    """Read the retained single-line fallback notice from a managed PR."""
+    match = re.search(re.escape(RECORD_MARKER) + r"\n([^\n]+)", body)
+    return match.group(1) if match else ""
+
+
+def with_notice(body: str, notice: str) -> str:
+    body = re.sub(r"\n\n" + re.escape(RECORD_MARKER) + r"\n[^\n]+", "", body)
+    return body + f"\n\n{RECORD_MARKER}\n{notice}" if notice else body
+
+
+def report_record_once(root: Path, repo: str, project_id: str, notice: str):
+    """Keep the repository notice even after someone closes its issue."""
+    title = f"Overleaf sync record not used ({project_id})"
+    issues = gh(
+        root,
+        "api",
+        f"repos/{repo}/issues?state=all&labels={LABEL}&per_page=100",
+        "--paginate",
+        "--slurp",
+    )
+    for page in issues:
+        for issue in page:
+            if issue["title"] == title and RECORD_MARKER in (issue.get("body") or ""):
+                return
+    gh(
+        root,
+        "api",
+        f"repos/{repo}/issues",
+        payload={
+            "title": title,
+            "body": f"{RECORD_MARKER}\n{notice}",
+            "labels": [LABEL],
+        },
+    )
+
+
+def report(root: Path, repo: str, project_id: str, message: str, pr=None, notice=""):
     """One persistent repo-visible status, edited only when its contents change."""
     body = f"{MARKER}\n\n{message}\n\nRecovery: {ov.RECOVERY}"
     if pr:
+        body = with_notice(body, notice or record_notice(pr["body"]))
         if pr["body"] != body:
             gh(
                 root,
@@ -244,17 +283,18 @@ def conflict_files(root: Path, prefix: str):
     )
 
 
-def reset_status(root: Path, repo: str, pr: dict):
-    if pr["body"] != DEFAULT_BODY:
+def reset_status(root: Path, repo: str, pr: dict, notice=""):
+    body = with_notice(DEFAULT_BODY, notice or record_notice(pr["body"]))
+    if pr["body"] != body:
         gh(
             root,
             "api",
             f"repos/{repo}/pulls/{pr['number']}",
             "--method",
             "PATCH",
-            payload={"body": DEFAULT_BODY},
+            payload={"body": body},
         )
-        pr["body"] = DEFAULT_BODY
+        pr["body"] = body
 
 
 def conflict_message(
@@ -301,7 +341,7 @@ def only_recorded_base_changed(root, prefix, before, after):
     names = ov.git("diff", "--name-only", "HEAD", "--", prefix, cwd=root).splitlines()
     if names != [prefix + ov.CONFIG] or before.get("url") != after.get("url"):
         return False
-    with ov.published_record(root, before["url"]) as (record, recorded, source):
+    with ov.published_record(root, before["url"]) as (_, recorded, source):
         if recorded != after["base"]:
             return False
         with tempfile.TemporaryDirectory() as tmp:
@@ -315,8 +355,6 @@ def only_recorded_base_changed(root, prefix, before, after):
                     default,
                     recorded,
                     source,
-                    record=record,
-                    base=before["base"],
                 )
         return trusted == after["base"]
 
@@ -437,6 +475,7 @@ def sync_workspace(project: Path, directory: str):
                 click.echo("Could not report the held lock on GitHub.", err=True)
             raise ov.SyncError(message)
         pr = None
+        notice = ""
         try:
             pr = sync_pr(root, repo, branch, default_name)
             origin = ov.git("remote", "get-url", "origin", cwd=root)
@@ -529,7 +568,29 @@ def sync_workspace(project: Path, directory: str):
                             pr["url"] if pr else "a paper PR",
                         )
                     )
-                conflicted = pull_into(work, directory)
+                notices = []
+                ctx = click.get_current_context()
+                ctx.meta["overleaf_record_notices"] = notices
+                try:
+                    conflicted = pull_into(work, directory)
+                finally:
+                    del ctx.meta["overleaf_record_notices"]
+                    if notices:
+                        notice = notices[-1]
+                        report_record_once(root, repo, project_id, notice)
+                    elif pr:
+                        notice = record_notice(pr["body"])
+                if notice and pr and record_notice(pr["body"]) != notice:
+                    body = with_notice(pr["body"], notice)
+                    gh(
+                        root,
+                        "api",
+                        f"repos/{repo}/pulls/{pr['number']}",
+                        "--method",
+                        "PATCH",
+                        payload={"body": body},
+                    )
+                    pr["body"] = body
                 after = ov.load_config(work / prefix)
                 changed = bool(ov.git("status", "--porcelain", "--", prefix, cwd=work))
                 if changed and only_recorded_base_changed(work, prefix, before, after):
@@ -571,7 +632,7 @@ def sync_workspace(project: Path, directory: str):
                             f"repos/{repo}/pulls",
                             payload={
                                 "title": "Sync Overleaf paper",
-                                "body": DEFAULT_BODY,
+                                "body": with_notice(DEFAULT_BODY, notice),
                                 "head": branch,
                                 "base": default_name,
                             },
@@ -612,7 +673,7 @@ def sync_workspace(project: Path, directory: str):
                     # New edits or a refreshed base always need their own checks and
                     # a later quiet run; never merge a just-created/updated head.
                     if changed or head != old_head:
-                        reset_status(root, repo, pr)
+                        reset_status(root, repo, pr, notice)
                         click.echo(
                             f"Updated {pr['url']}; waiting for checks and a run with no new Overleaf edits."
                         )
@@ -711,7 +772,7 @@ def sync_workspace(project: Path, directory: str):
         except ov.SyncError as exc:
             try:
                 target = None if isinstance(exc, BuildConfigError) else pr
-                report(root, repo, project_id, exc.format_message(), target)
+                report(root, repo, project_id, exc.format_message(), target, notice)
             except ov.SyncError:
                 click.echo(
                     "Could not report the sync failure on GitHub; the original refusal follows.",

@@ -61,6 +61,10 @@ Refusals update one persistent status on the sync PR, or one labeled issue when
 no sync PR exists (including publication failures after a sync PR has merged).
 Identical status is not reposted on each run. A successful PR update clears its
 old refusal text. If labeling a new PR fails, the next run repairs the label after verifying the sync marker, base and current branch head.
+When pull starts from the committed `base` because a record cannot be used,
+the PR retains the one-line reason and a full URL to the recovery guidance.
+The same line is posted in one labeled repository issue per project; reruns
+reuse that record even after the issue is closed.
 Restore access and retry after transport failures. See [recovery](overleaf-recovery.md).
 
 ## Interrupted runs

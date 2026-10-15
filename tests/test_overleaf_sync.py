@@ -61,7 +61,7 @@ def github(monkeypatch):
             return None
         if args[0] == "api":
             if payload is None and "/issues?" in args[1]:
-                return state["issues"]
+                return [state["issues"]] if "--slurp" in args else state["issues"]
             state["writes"] += 1
             if args[1].endswith("/pulls"):
                 if state.pop("fail_create", False):
@@ -915,3 +915,106 @@ def test_build_config_paths_are_nul_delimited(tmp_path):
     assert paths == ["paper/odd\ndir/latexmkrc"]
     with pytest.raises(sync.BuildConfigError):
         sync.refuse_build_configs(paths)
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("reason", ["damaged", "unreviewed", "missing-overleaf"])
+def test_record_fallback_is_retained_and_reported_once(setup, github, reason):
+    from tests.test_workspace_overleaf import (
+        RECORD_REF,
+        forge_record,
+        origin_record,
+        unreviewed_record,
+    )
+
+    seed, project = prepare(setup)
+    (project / "paper/main.tex").write_text("published workspace edit\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    origin = project.parent / "workspace.git"
+    record = origin_record(project.parent)[1]
+    if reason == "damaged":
+        git(origin, "update-ref", RECORD_REF, git(origin, "rev-parse", "main"))
+        expected = "it is damaged"
+    elif reason == "unreviewed":
+        unreviewed_record(project, origin, record)
+        expected = "it does not match a paper on origin's default branch"
+    else:
+        git(
+            origin,
+            "update-ref",
+            RECORD_REF,
+            forge_record(origin, {**record, "overleaf": "f" * 40}),
+        )
+        expected = "its Overleaf commit is not in Overleaf history"
+    overleaf_edit(seed, "references.bib", "@misc{new-coauthor-edit}\n")
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    notice = sync.record_notice(github["prs"][0]["body"])
+    assert expected in notice
+    assert "Pull started from overleaf.json's base" in notice
+    assert (
+        "https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#record-not-used"
+        in notice
+    )
+    assert len(github["issues"]) == 1
+    assert github["issues"][0]["body"] == f"{sync.RECORD_MARKER}\n{notice}"
+    # Closing the notice must not cause every subsequent run to reopen/repost it.
+    github["issues"][0]["state"] = "closed"
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert sync.record_notice(github["prs"][0]["body"]) == notice
+    assert len(github["issues"]) == 1
+    assert github["issues"][0]["state"] == "closed"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_record_fallback_notice_survives_conflict_status(setup, github):
+    from tests.test_workspace_overleaf import RECORD_REF
+
+    seed, project = prepare(setup)
+    (project / "paper/main.tex").write_text("default branch replacement\n")
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    origin = project.parent / "workspace.git"
+    git(origin, "update-ref", RECORD_REF, git(origin, "rev-parse", "main"))
+    overleaf_edit(seed, "main.tex", "coauthor replacement\n")
+    result = invoke(project)
+    assert result.exit_code != 0
+    body = github["prs"][0]["body"]
+    assert "conflict" in body.lower()
+    notice = sync.record_notice(body)
+    assert "it is damaged" in notice
+    assert "#record-not-used" in notice
+    assert len(github["issues"]) == 1
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert sync.record_notice(github["prs"][0]["body"]) == notice
+    assert len(github["issues"]) == 1
+
+
+def test_updated_record_notice_stays_one_line():
+    body = sync.with_notice(sync.DEFAULT_BODY, "old reason")
+    body = sync.with_notice(body, "new reason")
+    assert sync.record_notice(body) == "new reason"
+    assert body.count(sync.RECORD_MARKER) == 1
+    assert "old reason" not in body
+
+
+def test_closed_record_notice_on_later_page_is_not_reposted(monkeypatch, tmp_path):
+    def gh(root, *args, payload=None):
+        assert payload is None, "must not repost a closed notice"
+        assert "--paginate" in args and "--slurp" in args
+        return [
+            [{"title": "unrelated"}],
+            [
+                {
+                    "title": "Overleaf sync record not used (1234567)",
+                    "body": sync.RECORD_MARKER,
+                    "state": "closed",
+                }
+            ],
+        ]
+
+    monkeypatch.setattr(sync, "gh", gh)
+    sync.report_record_once(tmp_path, "allenai/test", "1234567", "reason")
