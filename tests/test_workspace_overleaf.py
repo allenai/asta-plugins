@@ -1768,8 +1768,9 @@ def test_unrecognized_bridge_history_requires_pull_and_review(setup, rewrite):
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("published", [False, True])
 @pytest.mark.parametrize("command", ["pull", "publish", "dry-run"])
-def test_sync_keeps_shallow_history_when_publication_is_at_tip(
-    setup, published, command
+@pytest.mark.parametrize("depth", [1, 2])
+def test_sync_checks_base_history_even_when_publication_is_at_tip(
+    setup, published, command, depth
 ):
     _, project = setup
     assert run(project, "pull", URL).exit_code == 0
@@ -1782,7 +1783,7 @@ def test_sync_keeps_shallow_history_when_publication_is_at_tip(
     git(
         project.parent,
         "clone",
-        "--depth=1",
+        f"--depth={depth}",
         (project.parent / "workspace.git").as_uri(),
         str(shallow),
     )
@@ -1795,10 +1796,22 @@ def test_sync_keeps_shallow_history_when_publication_is_at_tip(
 
     result = run(shallow, *args, merge=False)
 
-    assert result.exit_code == 0, result.output
+    if depth == 1:
+        # Matching tip content cannot prove a hidden base move imported every edit.
+        assert result.exit_code == 1, result.output
+        assert "base move against shallow workspace history" in result.output
+        assert "Fetch the workspace history" in result.output
+        assert module.RECOVERY in result.output
+        assert git(shallow, "status", "--porcelain") == ""
+    else:
+        assert result.exit_code == 0, result.output
     assert shallow_file.read_bytes() == before_shallow
     assert git(shallow, "show-ref") == before_refs
     assert (fetch_head.read_bytes() if fetch_head.exists() else None) == before_fetch
+    if depth == 1:
+        git(shallow, "fetch", "--unshallow", "origin")
+        result = run(shallow, *args, merge=False)
+        assert result.exit_code == 0, result.output
     assert git(shallow, "diff", "--name-only") == (
         "paper/overleaf.json" if command == "pull" and published else ""
     )
@@ -3335,6 +3348,7 @@ def test_record_not_matching_reviewed_history_falls_back(setup, tmp_path):
     result = run(project, "publish")
     assert result.exit_code == 1
     assert "does not match a paper on origin's default branch" in result.output
+    assert module.RECOVERY in result.output
     assert "Overleaf has changed" in result.output
     pulled = run(project, "pull")
     # Falling back to the last pull brings the unreviewed edit in for review.
@@ -3378,6 +3392,7 @@ def test_record_attesting_an_older_paper_does_not_continue(setup, tmp_path):
     result = run(project, "publish")
     assert result.exit_code == 1
     assert "does not continue from the previous record" in result.output
+    assert module.RECOVERY in result.output
     assert "Overleaf has changed" in result.output
     pulled = run(project, "pull")
     # The revert comes in for review instead of counting as synced.
@@ -3420,6 +3435,7 @@ def test_parentless_record_must_be_first_publication_since_base(setup, tmp_path)
     git(origin, "update-ref", RECORD_REF, forged)
     result = run(project, "publish")
     assert result.exit_code == 1
+    assert module.RECOVERY in result.output
     assert "not the first publication since" in result.output
     pulled = run(project, "pull")
     assert pulled.exit_code == CONFLICT_EXIT, pulled.output
@@ -3464,6 +3480,7 @@ def test_parentless_record_must_postdate_last_config_change(setup, tmp_path):
     git(origin, "update-ref", RECORD_REF, git(origin, "commit-tree", tree, "-m", "x"))
     result = run(project, "publish")
     assert result.exit_code == 1
+    assert module.RECOVERY in result.output
     assert "not the first publication since" in result.output
     assert git(seed, "ls-remote", "origin", "master").split()[0] == revert
     pulled = run(project, "pull")
@@ -3631,6 +3648,7 @@ def test_base_move_that_skips_overleaf_edit_refuses(setup, command):
     before = (project / "paper/main.tex").read_text()
     result = run(project, command)
     assert result.exit_code == 1, result.output
+    assert module.RECOVERY in result.output
     assert "without bringing it in" in result.output
     assert "main.tex" in result.output and old in result.output
     assert "overleaf-recovery.md" in result.output
@@ -3658,3 +3676,16 @@ def test_base_move_keeping_workspace_text_in_a_conflict_is_accepted(setup):
     assert pulled.exit_code == 0, pulled.output
     assert (project / "paper/main.tex").read_text() == "workspace\n"
     assert (project / "paper/references.bib").read_text() == "@misc{later}\n"
+
+
+@pytest.mark.parametrize(
+    "message", ["Invalid record. Restore it.", "History missing.\nFetch it."]
+)
+def test_sync_refusal_is_one_line_with_recovery_link(message):
+    error = module.SyncError(message)
+    assert "\n" not in error.format_message()
+    assert module.RECOVERY in error.format_message()
+    assert (
+        module.SyncError(error.format_message()).format_message()
+        == error.format_message()
+    )

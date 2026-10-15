@@ -39,6 +39,14 @@ older reviewed paper cannot make an Overleaf revert count as synced.
 
 ## Failure handling
 
+Refusals are one line with a concrete action and a link to the workspace skill's
+[recovery reference](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md).
+Checking a base move also needs the commit that changed the config and its parent.
+A depth-one clone refuses even when its paper equals the current tip; explicitly
+fetch workspace history and retry. A shallow clone with enough visible history still
+works without changing its shallow boundary.
+
+
 - Pull and publish also check the newest commit that changed `paper/overleaf.json`:
   every file Overleaf changed between the old and new `base` must hold Overleaf's new
   version, be changed by that commit, or be a conflict resolved by keeping the
