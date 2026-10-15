@@ -21,6 +21,8 @@ DEFAULT_BODY = (
     "Nothing to do: this PR merges itself once its checks pass and a sync run "
     "finds no newer Overleaf edits."
 )
+# A conflict line means a person has something to do.
+CONFLICT_BODY = DEFAULT_BODY.replace("Nothing to do: this PR", "This PR")
 RECORD_MARKER = "<!-- asta-overleaf-record-not-used -->"
 # Replaces RECORD_MARKER once the record counts again, so a later fallback posts anew.
 RECORD_RESOLVED_MARKER = "<!-- asta-overleaf-record-used-again -->"
@@ -315,7 +317,7 @@ def conflict_files(root: Path, prefix: str):
 
 
 def reset_status(root: Path, repo: str, pr: dict, notice="", line=""):
-    body = DEFAULT_BODY + (f"\n\n{line}" if line else "")
+    body = CONFLICT_BODY + f"\n\n{line}" if line else DEFAULT_BODY
     body = with_notice(body, notice or record_notice(pr["body"]))
     if pr["body"] != body:
         gh(
@@ -770,6 +772,8 @@ def sync_workspace(project: Path, directory: str):
                         )
                     )
                     ov.require_expected_tip(work, tip, f"refs/heads/{default_name}")
+                    # A merged sync PR must not still show a resolved conflict.
+                    reset_status(root, repo, pr, notice)
                     with tempfile.NamedTemporaryFile(mode="w", suffix=".md") as body:
                         body.write("\n".join(sorted(trailers)) + "\n")
                         body.flush()

@@ -159,8 +159,9 @@ def test_conflict_is_left_in_pr_and_never_merged(setup, github):
     assert result.exit_code == 1, result.output
     assert len(github["prs"]) == 1
     body = github["prs"][0]["body"]
-    assert body.startswith(sync.DEFAULT_BODY)
-    line = body.removeprefix(sync.DEFAULT_BODY).strip()
+    assert body.startswith(sync.CONFLICT_BODY)
+    assert "Nothing to do" not in body
+    line = body.removeprefix(sync.CONFLICT_BODY).strip()
     assert "\n" not in line
     assert "by @workspace-author" in line
     assert "Fixes pushed to this branch are kept" in line
@@ -187,6 +188,29 @@ def test_conflict_is_left_in_pr_and_never_merged(setup, github):
     assert git(project, "show", f"origin/{branch}:paper/main.tex") == (
         "workspace edit\nOverleaf edit"
     )
+
+
+def test_resolved_conflict_line_is_removed_before_merge(setup, github):
+    seed, project = prepare(setup)
+    (project / "paper/main.tex").write_text("workspace edit\n")
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    overleaf_edit(seed, "main.tex", "Overleaf edit\n")
+    assert invoke(project).exit_code == 1
+    pr = github["prs"][0]
+    assert pr["body"].startswith(sync.CONFLICT_BODY)
+    branch = "asta/overleaf-sync/1234567"
+    git(project, "fetch", "origin", branch)
+    git(project, "checkout", "-B", "resolve", f"origin/{branch}")
+    (project / "paper/main.tex").write_text("workspace edit\nOverleaf edit\n")
+    commit_all(project)
+    git(project, "push", "origin", f"HEAD:{branch}")
+    github["allow_merge"] = True
+    pr["statusCheckRollup"] = [{"state": "SUCCESS"}]
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert len(github["merges"]) == 1
+    assert pr["body"] == sync.DEFAULT_BODY
 
 
 def test_remote_lock_excludes_second_clone_and_releases_after_failure(setup):
