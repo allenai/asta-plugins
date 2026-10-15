@@ -3610,3 +3610,51 @@ def test_pull_without_origin_uses_committed_record(setup):
     assert result.exit_code == 0, result.output
     assert "No `origin` remote" in result.output
     assert (project / "paper/main.tex").read_text() == "collaborator\n"
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("command", ["pull", "publish"])
+def test_base_move_that_skips_overleaf_edit_refuses(setup, command):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    overleaf_edit(seed, "main.tex", "collaborator\n")
+    skipped = git(seed, "rev-parse", "HEAD")
+    # Move base by hand, dropping Overleaf's edit to main.tex.
+    config = json.loads((project / "paper/overleaf.json").read_text())
+    old = config["base"]
+    config["base"] = skipped
+    (project / "paper/overleaf.json").write_text(json.dumps(config))
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    before = (project / "paper/main.tex").read_text()
+    result = run(project, command)
+    assert result.exit_code == 1, result.output
+    assert "without bringing it in" in result.output
+    assert "main.tex" in result.output and old in result.output
+    assert "overleaf-recovery.md" in result.output
+    assert (project / "paper/main.tex").read_text() == before
+    assert git(seed, "ls-remote", "origin", "master").split()[0] == skipped
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_base_move_keeping_workspace_text_in_a_conflict_is_accepted(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    (project / "paper/main.tex").write_text("workspace\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    overleaf_edit(seed, "main.tex", "collaborator\n")
+    assert run(project, "pull").exit_code == module.CONFLICT_EXIT
+    # A person resolves the conflict by keeping the workspace's text.
+    (project / "paper/main.tex").write_text("workspace\n")
+    commit_all(project)
+    git(project, "push", "-q", "origin", "HEAD:main")
+    overleaf_edit(seed, "references.bib", "@misc{later}\n")
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert (project / "paper/main.tex").read_text() == "workspace\n"
+    assert (project / "paper/references.bib").read_text() == "@misc{later}\n"

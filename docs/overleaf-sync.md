@@ -39,6 +39,14 @@ older reviewed paper cannot make an Overleaf revert count as synced.
 
 ## Failure handling
 
+- Pull and publish also check the newest commit that changed `paper/overleaf.json`:
+  every file Overleaf changed between the old and new `base` must hold Overleaf's new
+  version, be changed by that commit, or be a conflict resolved by keeping the
+  workspace's text (both sides had edited it). Otherwise they refuse, naming the file
+  and the old `base`; recovery is in the workspace skill's `workflows/overleaf-recovery.md`.
+- Sync does not check how a commit reached the default branch: it publishes the paper
+  that is there. A repository that wants every paper change reviewed must require PRs
+  on its default branch.
 - After pushing, publish fetches Overleaf's head and requires it to descend from
   the prior sync point. If it also descends from the pushed commit, publish records
   that pushed commit, leaving any later collaborator edits for the next pull.

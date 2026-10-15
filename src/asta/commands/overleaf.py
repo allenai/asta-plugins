@@ -15,6 +15,7 @@ from uuid import uuid4
 import click
 
 CONFIG = "overleaf.json"
+RECOVERY = "see workflows/overleaf-recovery.md in the workspace skill"
 SHA = re.compile(r"[0-9a-f]{40}")
 FULL_OID = r"[0-9a-f]{40}(?:[0-9a-f]{24})?"
 # Git's `rev-parse --local-env-vars` list, plus the namespace override.
@@ -710,6 +711,60 @@ def config_change(root: Path, default: str, prefix: str, *, publishing: bool) ->
     return changed
 
 
+def check_base_move(
+    root: Path, repo: Path, prefix: str, revision: str, *, publishing: bool = False
+) -> None:
+    """Refuse a commit that moved the sync base without bringing in Overleaf's edits."""
+    done = "nothing pushed." if publishing else "nothing copied."
+    moved = git(
+        "--literal-pathspecs",
+        "log",
+        "-1",
+        "--first-parent",
+        "--format=%H",
+        revision,
+        "--",
+        prefix + CONFIG,
+        cwd=root,
+    )
+    if not moved:
+        return
+    parent = resolve_commit(root, f"{moved}^")
+    if parent is None:
+        if git("rev-parse", "--is-shallow-repository", cwd=root) == "true":
+            refuse_incomplete_record_history(root, publishing=publishing)
+        return  # The paper's first import.
+    try:
+        old = json.loads(
+            git_bytes("cat-file", "blob", f"{parent}:{prefix}{CONFIG}", cwd=root)
+        )["base"]
+        new = json.loads(
+            git_bytes("cat-file", "blob", f"{moved}:{prefix}{CONFIG}", cwd=root)
+        )["base"]
+    except (GitCommandError, KeyError, TypeError, ValueError):
+        return  # Linked or relinked here, with no earlier base to compare.
+    if (
+        old == new
+        or resolve_commit(repo, old) is None
+        or resolve_commit(repo, new) is None
+        or not is_ancestor(repo, old, new)
+    ):
+        return  # last_sync reports a base outside Overleaf history.
+    before, after = read_plain_files(repo, old), read_plain_files(repo, new)
+    kept, merged = paper_files(root, parent, prefix), paper_files(root, moved, prefix)
+    for name in sorted(before.keys() | after.keys()):
+        if before.get(name) == after.get(name) or merged.get(name) == after.get(name):
+            continue
+        # Changed by the base move, or kept workspace text over an edit on both sides.
+        if merged.get(name) != kept.get(name) or kept.get(name) != before.get(name):
+            continue
+        raise click.ClickException(
+            f"Commit {moved[:12]} moved {prefix}{CONFIG}'s base past Overleaf's edit "
+            f"to {name} without bringing it in; restore that edit, or set base back to "
+            f"{old} and pull again ({RECOVERY}); {done}"
+        )
+
+
 def reviewed_record(
     root: Path,
     repo: Path,
@@ -909,6 +964,7 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         ours.pop(CONFIG, None)
         base = {}
         if config:
+            check_base_move(root, repo, prefix, "HEAD")
             recorded = None
             if has_origin(root):
                 with published_record(root, url) as (record, recorded, source):
@@ -1183,6 +1239,7 @@ def publish(
         ):
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
+            check_base_move(root, repo, prefix, default, publishing=True)
             recorded = reviewed_record(
                 root,
                 repo,
