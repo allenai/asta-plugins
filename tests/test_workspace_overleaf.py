@@ -4060,3 +4060,55 @@ def test_publication_after_multiple_committed_pulls_keeps_its_original_sync_pare
         result = run(project, "publish")
         assert result.exit_code == 0, result.output
         assert "does not continue" not in result.output
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_records_written_by_publish_have_a_single_sync_parent(setup, tmp_path):
+    seed, project = setup
+    overleaf = tmp_path / "overleaf.git"
+    origin = tmp_path / "workspace.git"
+
+    def parents(commit):
+        return git(overleaf, "rev-list", "--parents", "-n", "1", commit).split()[1:]
+
+    def overleaf_head():
+        return git(seed, "ls-remote", "origin", "master").split()[0]
+
+    def publish(text):
+        (project / "paper/main.tex").write_text(text)
+        commit_all(project)
+        result = run(project, "publish")
+        assert result.exit_code == 0, result.output
+        assert module.RECOVERY not in result.output
+        commit, data = origin_record(tmp_path)
+        assert data["overleaf"] == overleaf_head()
+        return commit, data["overleaf"]
+
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    base = overleaf_head()
+    first_record, first = publish("publication one\n")
+    assert parents(first) == [base]
+    assert not git(origin, "rev-list", "--parents", "-n", "1", first_record).split()[1:]
+    second_record, second = publish("publication two\n")
+    assert parents(second) == [first]
+    assert git(origin, "rev-parse", f"{second_record}^") == first_record
+
+    overleaf_edit(seed, "references.bib", "@misc{collaborator}\n")
+    collaborator = overleaf_head()
+    pulled = run(project, "pull")
+    assert pulled.exit_code == 0, pulled.output
+    assert module.RECOVERY not in pulled.output
+    assert (project / "paper/main.tex").read_text() == "publication two\n"
+    assert (project / "paper/references.bib").read_text() == "@misc{collaborator}\n"
+    commit_all(project)
+    third_record, third = publish("publication three\n")
+    assert parents(third) == [collaborator]
+    assert git(origin, "rev-parse", f"{third_record}^") == second_record
+
+    (project / "paper/main.tex").write_text("unpublished draft\n")
+    commit_all(project)
+    for command in (("publish", "--dry-run"), ("pull",)):
+        result = run(project, *command)
+        assert result.exit_code == 0, result.output
+        assert module.RECOVERY not in result.output

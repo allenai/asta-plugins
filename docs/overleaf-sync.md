@@ -13,6 +13,24 @@ supply it; Overleaf history is never trusted to name one.
   record, so the push is a fast-forward and a concurrent publisher's record is
   never overwritten.
 
+## Threat model
+
+The checks below catch accidents and stale state, so that an Overleaf edit is
+neither skipped nor overwritten: a wrong or hand-edited `base`, a concurrent
+pull or publish, a stale or shallow clone, an interrupted publish, or a record
+that no longer matches reviewed history. They also keep a workspace writer who
+cannot merge to the default branch, or an Overleaf collaborator acting alone,
+from moving the sync point.
+
+They are not a defence against forgery. Someone who can write to both the
+workspace repository (including `refs/asta/overleaf/*`) and the Overleaf project
+can construct matching history and records that make an edit count as synced,
+including a record that attests an older reviewed paper. That stays out of
+scope. Sync also publishes whatever reaches the default branch, so review of
+paper changes rests on the default branch's protection rules, not on the CLI.
+
+## Sync point
+
 The sync point is the record's Overleaf commit when it is in Overleaf history
 and descends from `base`; otherwise it is `base`. Publish proceeds only when
 Overleaf's head equals it. Pull merges against that commit's files, except in a
