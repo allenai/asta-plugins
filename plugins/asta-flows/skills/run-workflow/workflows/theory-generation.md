@@ -19,7 +19,7 @@ theorize doctor
 echo '{"openai": "..."}' > api_keys.donotcommit.json   # or "anthropic"
 ```
 
-Never ask for the key in chat, where it would be kept in the transcript.
+It is read from the working directory, or from `--key-dir DIR` if they would rather keep it elsewhere. They can also put `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in their shell profile, which lasts across runs but only reaches a session started after it. Never ask for the key in chat, where it would be kept in the transcript.
 
 ## Plan
 
