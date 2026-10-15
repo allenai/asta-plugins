@@ -2,6 +2,8 @@
 
 Build theories from the literature on a question. Paper Finder gathers the papers. Theorizer extracts findings from them and generates theories, then asks the papers which variables the first extraction missed and runs one more pass for each new schema. Every pass adds its theories to the same theory store.
 
+Paper Finder is the source unless the person points you at papers of their own -- a folder, files, a glob. When they do, [Bring Your Own Papers](#bring-your-own-papers) replaces the search in step 2 and the rest of the workflow is unchanged.
+
 ## Setup
 
 Before the plan, check that Theorizer is installed and ready:
@@ -19,7 +21,7 @@ theorize doctor
 
 Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
 
-When the person brought their own papers, say so in the table instead of inventing a search: step 1 plans the extraction schema only, and step 2 reads `| 2 | Theorizer | Imports their N papers from <their folder>. No search. |`. Count the files before you show the table, so N is the real number and not an estimate.
+With the person's own papers, step 1 plans the extraction schema only and step 2 reads `| 2 | Theorizer | Imports their N papers from <their folder>. No search. |`. Count the files first, so N is real.
 
 | Step | Agent | What it does |
 |---|---|---|
@@ -38,7 +40,7 @@ After the table, write this word for word, filling in only the two examples of a
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** Any required papers, or papers that should form the entire corpus?
 
-Leave out any of the three they have already settled. A person who gave you a folder has answered the papers question, and asking it again reads as not having looked.
+Leave out any of the three they have already settled: someone who gave you a folder has answered the papers question.
 
 If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
 
@@ -57,7 +59,7 @@ Shape is worth asking about: Theorizer spots laws far more readily when it is to
 
    Pass their question as they wrote it, leaving out only instructions for the run itself (how many papers, which models). Add only what they gave: a shape goes into the question ("Find IF ... THEN laws for ..."), since the plan's request is the theory query the generator reads, and a focus goes in as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
-2. **Papers.** When the person brought their own papers, import them and search for nothing -- see [Bring Your Own Papers](#bring-your-own-papers) -- then go on to step 3. Otherwise Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
+2. **Papers.** If they pointed you at their own papers, import them, search for nothing, and go on to step 3 -- see [Bring Your Own Papers](#bring-your-own-papers). Otherwise Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 
    ```bash
    theorize -p <run>/theory papers search "<the plan's search query>"
