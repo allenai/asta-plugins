@@ -729,11 +729,7 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             raise invalid_record(url, publishing=True)
         # Keep the parent reachable until a subsequent record has been pushed.
         if record is None:
-            click.echo(
-                "Overleaf sync record not used: it is damaged. Pull started from "
-                f"{CONFIG}'s base ({RECOVERY}#record-not-used).",
-                err=True,
-            )
+            record_not_used("it is damaged")
             yield commit, None, None
         else:
             yield commit, record["overleaf"], record["workspace"]
@@ -742,6 +738,18 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             git("update-ref", "-d", gate, cwd=root)
         except click.ClickException:
             click.echo("Could not remove the temporary Overleaf record ref.", err=True)
+
+
+def record_not_used(reason: str) -> None:
+    """Explain fallback and let the sync command retain the same notice."""
+    message = (
+        f"Overleaf sync record not used: {reason}. Pull started from "
+        f"{CONFIG}'s base ({RECOVERY}#record-not-used)."
+    )
+    click.echo(message, err=True)
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and "overleaf_record_notices" in ctx.meta:
+        ctx.meta["overleaf_record_notices"].append(message)
 
 
 def paper_files(repo: Path, revision: str, prefix: str = "") -> dict[str, bytes]:
@@ -784,12 +792,7 @@ def reviewed_record(
         refuse_incomplete_record_history(root, publishing=publishing)
     if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
         return recorded
-    click.echo(
-        "Overleaf sync record not used: it does not match a paper on origin's "
-        f"default branch. Pull started from {CONFIG}'s base "
-        f"({RECOVERY}#record-not-used).",
-        err=True,
-    )
+    record_not_used("it does not match a paper on origin's default branch")
     return None
 
 
@@ -816,12 +819,7 @@ def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str)
     if recorded is None or recorded == base:
         return base
     if not counted:
-        click.echo(
-            "Overleaf sync record not used: its Overleaf commit is not in Overleaf "
-            f"history. Pull started from {CONFIG}'s base "
-            f"({RECOVERY}#record-not-used).",
-            err=True,
-        )
+        record_not_used("its Overleaf commit is not in Overleaf history")
         return base
     return recorded if is_ancestor(repo, base, recorded) else base
 
@@ -1324,3 +1322,13 @@ def publish(
                 root, config["url"], previous, published, reviewed, identity
             )
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
+
+
+@overleaf.command(name="sync")
+@dir_option
+@project_option
+def sync(directory: str, project: Path) -> None:
+    """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
+    from .overleaf_sync import sync_workspace
+
+    sync_workspace(project, directory)

@@ -11,7 +11,13 @@ overleaf.json's base`. A record counts only when its ids are full commit ids, it
 workspace commit is on the default branch, and its Overleaf commit holds that commit's
 paper. A damaged record, one that does not match the default branch's history, or one
 whose Overleaf commit is missing from Overleaf history is ignored. Starting from `base`
-can produce conflicts in the sync PR: resolve them and merge the PR. This assumes
+can produce conflicts in the sync PR. Resolve each conflict by comparing its text
+with the default branch's history. On the Overleaf side, text the default branch
+already had and later changed is old: keep the default branch's version of that
+text. Text the default branch never had is a co-author's edit: keep it. Never take
+one side of a conflict as a whole. Combine the current default-branch text with
+those co-author edits, remove the conflict markers, run the workspace checks,
+and commit the resolution before merging the PR. This assumes
 `base` has not been manually advanced past an unimported edit; if it has, follow
 [Recovering a skipped co-author edit](#recovering-a-skipped-co-author-edit). The next `publish` writes a new record that counts.
 
@@ -73,7 +79,10 @@ co-author's edit. Overleaf keeps every edit. To bring one back:
 
 ## Conflict markers after `pull` (exit 3)
 
-Resolve the markers in the sync PR. Keeping either side's text is a valid resolution.
+Resolve the markers in the sync PR, or merge the default branch into its branch
+and resolve the conflicts there; sync keeps fixes pushed to that branch. When a
+record was not used, follow the line-by-line guidance in
+[Record not used](#record-not-used); never take one side wholesale.
 `publish` refuses files that still contain markers.
 
 ## Workspace history is shallow
@@ -240,3 +249,20 @@ Remove or rename unsafe paths, symlinks, submodules and metadata aliases, or syn
 files by hand. Convert LFS pointers to ordinary files and remove executable bits when
 appropriate. Remove content-changing `.gitattributes`, Git filters or conversions
 before retrying: the exported bytes must equal the committed paper bytes.
+
+## Scheduled sync needs attention
+
+A held remote lock younger than one hour skips without changing PR status.
+At one hour or older it exits non-zero and reports on the open sync PR, or on
+a labeled issue when no sync PR exists. This threshold never expires a lock. Confirm the
+owning run has stopped before using the explicit lock recovery in
+[Schedule Overleaf sync](overleaf-sync-command.md#interrupted-runs). Never remove
+a live run's lock. A publication failure after the sync PR merged is reported on
+an open issue; use the publication recovery above, then rerun sync.
+
+Sync lists the workspace changes to conflicted files; their authors should resolve
+those conflicts in the existing sync PR. Changes to `latexmkrc` or `.latexmkrc`
+are refused before any sync-branch push and reported on the labeled issue;
+a person must review and import them manually. Restore a removed `overleaf.json`
+from the linked paper's history. Configure Git `user.name` and `user.email` in
+the scheduler checkout before retrying a missing-identity refusal.

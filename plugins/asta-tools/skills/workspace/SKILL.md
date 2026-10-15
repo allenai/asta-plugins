@@ -21,6 +21,17 @@ When the user wants to see what changed since an earlier version, offer `asta wo
 
 Choose a trusted ref and keep source files stable while the copy is made. The baseline contains only committed files; do not present current ignored inputs as historical data. Run comparisons one at a time. See [the developer guide](assets/DEVELOPER.md#auto-deploy-githubworkflowsdocsyml) for build prerequisites, copying costs, cleanup and serving limits.
 
+## Before landing paper changes
+
+Before merging a paper PR or pushing paper edits directly to the default branch
+where allowed, check for an open PR labeled `asta:overleaf-sync`. Let it merge
+first so newer co-author edits conflict on your change before it lands. If it
+has not caught up, run `asta workspace overleaf sync` where the Overleaf token
+is available, then update your branch. Resolve a sync conflict on that PR and
+rerun its checks; do not bypass it by advancing `overleaf.json` manually.
+For scheduling, invited-coauthor access, lock recovery and repository status,
+read [Overleaf sync](workflows/overleaf-sync-command.md).
+
 ## Save
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
