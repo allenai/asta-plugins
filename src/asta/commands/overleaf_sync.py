@@ -1,6 +1,7 @@
 """Runner-independent, serialized Overleaf synchronization through a GitHub PR."""
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -205,6 +206,26 @@ def pull_into(root: Path, directory: str) -> bool:
             raise
         return True
     return False
+
+
+def changed_paths(work: Path, *args: str) -> list[str]:
+    # NUL-delimited so Git never quotes paths with newlines or unusual bytes.
+    output = os.fsdecode(ov.git_bytes("diff", "-z", "--name-only", *args, cwd=work))
+    return [name for name in output.split("\0") if name]
+
+
+class BuildConfigError(ov.SyncError):
+    """Always reported on the labeled issue, even when a sync PR is open."""
+
+
+def refuse_build_configs(paths: list[str]) -> None:
+    configs = [name for name in paths if Path(name).name.lower() in BUILD_CONFIGS]
+    if configs:
+        raise BuildConfigError(
+            "Executable LaTeX build configuration changed: "
+            + ", ".join(map(repr, configs))
+            + "; a person must review and import these changes manually; nothing pushed."
+        )
 
 
 def conflict_files(root: Path, prefix: str):
@@ -516,28 +537,9 @@ def sync_workspace(project: Path, directory: str):
                     changed = False
                 if changed:
                     ov.git("add", "--", prefix, cwd=work)
-                    imported = ov.git(
-                        "diff",
-                        "--cached",
-                        "--name-only",
-                        "HEAD",
-                        "--",
-                        prefix,
-                        cwd=work,
-                    ).splitlines()
-                    build_configs = [
-                        name
-                        for name in imported
-                        if Path(name).name.lower() in BUILD_CONFIGS
-                    ]
-                    if build_configs:
-                        # Always route this refusal to an issue, even with an open PR.
-                        pr = None
-                        raise ov.SyncError(
-                            "Executable LaTeX build configuration changed: "
-                            + ", ".join(build_configs)
-                            + "; a person must review and import these changes manually; nothing pushed."
-                        )
+                    refuse_build_configs(
+                        changed_paths(work, "--cached", "HEAD", "--", prefix)
+                    )
                     authors = credits(work, before, after["base"])
                     message = "Sync Overleaf paper\n\n" + "\n".join(
                         f"Co-authored-by: {author}" for author in authors
@@ -546,29 +548,14 @@ def sync_workspace(project: Path, directory: str):
                 head = ov.git("rev-parse", "HEAD", cwd=work)
                 differs = ov.tree(work, tip, prefix) != ov.tree(work, head, prefix)
                 if differs or pr:
-                    final_paths = ov.git(
-                        "diff",
-                        "--name-only",
-                        ov.git("merge-base", tip, head, cwd=work),
-                        head,
-                        cwd=work,
-                    ).splitlines()
+                    final_paths = changed_paths(
+                        work, ov.git("merge-base", tip, head, cwd=work), head
+                    )
                     if any(not name.startswith(prefix) for name in final_paths):
                         raise ov.SyncError(
                             "A hook or branch changed files outside the paper; nothing pushed."
                         )
-                    build_configs = [
-                        name
-                        for name in final_paths
-                        if Path(name).name.lower() in BUILD_CONFIGS
-                    ]
-                    if build_configs:
-                        pr = None
-                        raise ov.SyncError(
-                            "Executable LaTeX build configuration changed: "
-                            + ", ".join(build_configs)
-                            + "; a person must review and import these changes manually; nothing pushed."
-                        )
+                    refuse_build_configs(final_paths)
                     if head != old_head:
                         ov.git(
                             "push",
@@ -662,6 +649,13 @@ def sync_workspace(project: Path, directory: str):
                     )
                     authors = credits(work, default_config, after["base"])
                     trailers = {f"Co-authored-by: {author}" for author in authors}
+                    # Re-check the exact head being merged, independent of the
+                    # earlier branch-update path.
+                    refuse_build_configs(
+                        changed_paths(
+                            work, ov.git("merge-base", tip, head, cwd=work), head
+                        )
+                    )
                     ov.require_expected_tip(work, tip, f"refs/heads/{default_name}")
                     with tempfile.NamedTemporaryFile(mode="w", suffix=".md") as body:
                         body.write("\n".join(sorted(trailers)) + "\n")
@@ -716,7 +710,8 @@ def sync_workspace(project: Path, directory: str):
                 click.echo("Overleaf sync complete.")
         except ov.SyncError as exc:
             try:
-                report(root, repo, project_id, exc.format_message(), pr)
+                target = None if isinstance(exc, BuildConfigError) else pr
+                report(root, repo, project_id, exc.format_message(), target)
             except ov.SyncError:
                 click.echo(
                     "Could not report the sync failure on GitHub; the original refusal follows.",

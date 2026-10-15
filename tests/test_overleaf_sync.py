@@ -863,3 +863,55 @@ def test_markerless_conflict_uses_git_unmerged_paths(setup, github, monkeypatch)
     result = invoke(project)
     assert result.exit_code == 1, result.output
     assert "conflicts in paper/image.pdf;" in github["prs"][0]["body"]
+
+
+@pytest.mark.parametrize("filename", ["latexmkrc", ".latexmkrc"])
+@pytest.mark.parametrize("earlier_guard", [True, False])
+def test_merge_rechecks_build_config_on_existing_pr(
+    setup, github, tmp_path, monkeypatch, filename, earlier_guard
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    dest = tmp_path / "human"
+    git(project, "clone", str(project.parent / "workspace.git"), str(dest))
+    git(dest, "checkout", "asta/overleaf-sync/1234567")
+    (dest / "paper" / filename).write_text("$pdflatex = 'echo changed';\n")
+    git(dest, "add", "--", f"paper/{filename}")
+    git(dest, "commit", "-m", "Sync Overleaf paper")
+    git(dest, "push", "origin", f"HEAD:{BRANCH}")
+    github["allow_merge"] = True
+    github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+    if not earlier_guard:
+        # Only the guard immediately before merging may refuse.
+        real, calls = sync.refuse_build_configs, []
+
+        def merge_guard_only(paths):
+            calls.append(paths)
+            if len(calls) > 1:
+                real(paths)
+
+        monkeypatch.setattr(sync, "refuse_build_configs", merge_guard_only)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "person must review" in result.output
+    assert not github["merges"]
+    assert len(github["issues"]) == 1
+    assert len(github["prs"]) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX newline filenames")
+def test_build_config_paths_are_nul_delimited(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+    nested = repo / "paper" / "odd\ndir"
+    nested.mkdir(parents=True)
+    (nested / "latexmkrc").write_text("$pdflatex = 'echo changed';\n")
+    git(repo, "add", "--", "paper")
+    git(repo, "commit", "-q", "-m", "config")
+    paths = sync.changed_paths(repo, "HEAD~1", "HEAD")
+    assert paths == ["paper/odd\ndir/latexmkrc"]
+    with pytest.raises(sync.BuildConfigError):
+        sync.refuse_build_configs(paths)
