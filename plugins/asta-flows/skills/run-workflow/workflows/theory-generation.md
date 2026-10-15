@@ -17,7 +17,7 @@ theorize doctor
 
 `theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. It exits non-zero on anything that would stop a run, including a model whose provider has no key. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further. The default models follow the key: `gpt-6-sol` and `gpt-6-luna` for an OpenAI key, `claude-opus-5-5` and `claude-sonnet-5-5` for an Anthropic key, OpenAI first when both are set.
 
-If a key is missing, never ask for it in chat: a key pasted into the conversation is kept in the transcript. `export` does not help either, because each command runs in its own shell and the next one will not see it. Ask them to add it to their shell profile (`~/.zshrc`, `~/.bash_profile`) -- every command starts a shell that reads it, so the next one picks it up with no restart. For a key they would rather not leave in a profile, have them keep it in a file and source it in the same command: `set -a; source <their keyfile>; set +a; theorize doctor`.
+If a key is missing, do not ask for it in chat: it would be kept in the transcript. An `export` will not survive to the next command either, but a line in their shell profile will, and takes effect on the next one.
 
 ## Plan
 
