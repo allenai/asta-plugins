@@ -23,9 +23,11 @@ sync-created paper commits; otherwise it refuses until you move the branch aside
 Fork PRs with the same branch name are ignored. Ownership is checked using the
 exact sync commit subjects and the paper-only diff, not cryptographic attestation.
 People with repository push access are trusted, as with pull/publish; they can
-copy these subjects. Invited Overleaf co-authors are trusted to write the paper,
-but not to run build configuration in CI. This is not a sandbox for arbitrary TeX;
-keep TeX shell escape disabled and run paper builds without privileged tokens or secrets.
+copy these subjects. The build-configuration guard covers only `latexmkrc` and
+`.latexmkrc`; it is not a general execution sandbox. Quarto metadata, notebooks
+and filters can also execute code. Trust invited editors with the imported build
+inputs before enabling automatic previews, keep TeX shell escape disabled, and
+run paper builds without privileged tokens or secrets.
 
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
@@ -37,7 +39,10 @@ line, removed once resolved, that links each conflicting workspace change and
 @-mentions its GitHub author, says fixes pushed to the sync branch are kept, and
 links the conflict recovery section by full URL.
 Git authors of carried Overleaf edits receive Co-authored-by trailers in the
-squash. Human resolutions on the sync branch are retained. Shared `make check`
+squash. These include their Overleaf account email addresses in Git history,
+which becomes public if the workspace repository is public or later published.
+Confirm that this is appropriate for the project before enabling sync.
+Human resolutions on the sync branch are retained. Shared `make check`
 rejects conflict markers in known text paper sources before rendering, on every
 PR. Standalone `=======` lines in Markdown or plain text are allowed as headings
 or separators; opening and closing conflict labels are still refused.
@@ -79,7 +84,8 @@ errors release it automatically. If sync says a run already owns the lock,
 a lock less than one hour old causes a successful skip without modifying status.
 A lock at least one hour old causes a nonzero refusal recorded on the open sync
 PR, or on a labeled issue if no sync PR exists. This is only a reporting threshold,
-not an expiry or evidence that the owner stopped. First
+not an expiry or evidence that the owner stopped. Age uses the lock creator's
+clock; clock skew can affect when a notice appears, but never transfers ownership. First
 confirm that the owning scheduler/process has stopped; then inspect and
 delete `refs/asta/overleaf-sync-lock/<project-id>` with an explicit
 `git push --force-with-lease=<ref>:<observed-object-id> origin :<ref>`. Do not
