@@ -6,14 +6,15 @@ The message says whether nothing changed or an Overleaf push already succeeded.
 
 ## A commit moved `base` past Overleaf's edits
 
-`pull` and `publish` check the newest commit that changed `paper/overleaf.json`. Every
-file Overleaf changed between the old and new `base` must either hold Overleaf's new
-version, be changed by that commit, or be a conflict resolved by keeping the workspace's
-text (both sides had edited it). A file that still holds the old Overleaf text was skipped.
+`pull` and `publish` check every base move since this project's initial import, along
+first-parent workspace history. Each file Overleaf changed must hold its new version,
+be changed by that move's commit, or be a conflict resolved by keeping the workspace's
+text (both sides had edited it). A later valid move cannot conceal an earlier omission.
 
-Fix: bring the named file's Overleaf edit in through a PR, or set `base` in
-`paper/overleaf.json` back to the commit the message names, commit that, and run `pull`
-again so the edit is merged.
+Fix: set `base` in `paper/overleaf.json` back to the Overleaf commit the message names,
+commit that, and run `pull` again so the edit is merged. Merge that recovery through a
+PR. The rewind cancels advances beyond the restored base; an omission before that
+base still refuses, so follow the named earlier base if another refusal appears.
 
 ## Conflict markers after `pull` (exit 3)
 
@@ -23,19 +24,22 @@ Resolve the markers in the sync PR. Keeping either side's text is a valid resolu
 ## Workspace history is shallow
 
 Fetch workspace history explicitly (`git fetch --unshallow origin`, or deepen the
-clone enough to include the last `overleaf.json` change, its parent, and publication
-sources since that base), then retry. Record verification stops at the committed base;
-a reviewed pull advances this checkpoint, so older publication sources need not stay
-in a shallow clone.
+clone enough to include first-parent `overleaf.json` history back to this project's
+initial import, each change's parent, and publication sources since the current base),
+then retry. Record verification stops at the committed base; checking earlier base
+moves still needs the config history so a later pull cannot hide a skipped edit.
 Even when the paper matches the default tip, a depth-one clone cannot prove that a
 hidden base move brought in all Overleaf edits. Sync never deepens your clone itself;
 a refusal leaves the paper, remote heads, branch refs and `FETCH_HEAD` unchanged.
 
 ## The sync record does not continue from its predecessor
 
-The record's Overleaf and workspace commits must each descend from the previous
-record's corresponding commit. A first record must publish directly after `base`
-and attest a workspace commit descending from the last default-branch config change.
+The record's workspace commit must descend from the previous record's workspace
+commit. Its Overleaf commit must have exactly one parent equal to the previous sync
+point (the preceding record, or a newer committed pull's base). Merges and gaps in
+that publication chain are rejected. A first record must have exactly one parent,
+`base`, and attest a workspace commit descending from the last default-branch config
+change.
 Pull ignores a record failing these checks with a warning. Run `pull`, resolve any
 conflicts and merge the resulting paper PR. Publish refuses to append to that rejected
 chain, even after the pull: ask a workspace maintainer to restore the ref from its

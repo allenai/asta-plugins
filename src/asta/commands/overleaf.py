@@ -713,13 +713,17 @@ def refuse_incomplete_record_history(root: Path, *, publishing: bool = False) ->
         )
 
 
+def commit_parents(repo: Path, commit: str) -> list[str]:
+    # Read actual headers: shallow revision walks can conceal an existing parent.
+    headers = git("cat-file", "-p", commit, cwd=repo).split("\n\n", 1)[0]
+    return [line[7:] for line in headers.splitlines() if line.startswith("parent ")]
+
+
 def prior_record(
     root: Path, commit: str, *, publishing: bool = False
 ) -> tuple[str, str] | None:
     """The validated (Overleaf, workspace) IDs of the preceding record."""
-    # Read actual headers: shallow revision walks can conceal an existing parent.
-    headers = git("cat-file", "-p", commit, cwd=root).split("\n\n", 1)[0]
-    parents = [line[7:] for line in headers.splitlines() if line.startswith("parent ")]
+    parents = commit_parents(root, commit)
     if not parents:
         return None
     current = read_record(root, commit, publishing=publishing)
@@ -730,8 +734,8 @@ def prior_record(
 
 
 def first_since(repo: Path, base: str, recorded: str) -> bool:
-    """Whether `recorded` is `base`'s child."""
-    return resolve_commit(repo, f"{recorded}^") == resolve_commit(repo, base)
+    """A publication must have exactly one parent, the preceding sync point."""
+    return commit_parents(repo, recorded) == [resolve_commit(repo, base)]
 
 
 def config_change(root: Path, default: str, prefix: str, *, publishing: bool) -> str:
@@ -758,58 +762,98 @@ def config_change(root: Path, default: str, prefix: str, *, publishing: bool) ->
 def check_base_move(
     root: Path, repo: Path, prefix: str, revision: str, *, publishing: bool = False
 ) -> None:
-    """Refuse a commit that moved the sync base without bringing in Overleaf's edits."""
+    """Check every effective base move back to this project's initial import."""
     done = "nothing pushed." if publishing else "nothing copied."
-    moved = git(
+    commits = git(
         "--literal-pathspecs",
         "log",
-        "-1",
         "--first-parent",
         "--format=%H",
         revision,
         "--",
         prefix + CONFIG,
         cwd=root,
-    )
-    if not moved:
-        return
-    parent = resolve_commit(root, f"{moved}^")
-    if parent is None:
-        if git("rev-parse", "--is-shallow-repository", cwd=root) == "true":
-            raise SyncError(
-                "Could not verify the Overleaf base move against shallow workspace history. "
-                "Fetch the workspace history from `origin` and retry; " + done
+    ).splitlines()
+    moves = []
+    for moved in commits:
+        parent = resolve_commit(root, f"{moved}^")
+        if parent is None:
+            if git("rev-parse", "--is-shallow-repository", cwd=root) == "true":
+                raise SyncError(
+                    "Could not verify the Overleaf base move against shallow workspace history. "
+                    "Fetch the workspace history from `origin` and retry; " + done
+                )
+            break
+        before = read_plain_files(root, parent, prefix).get(CONFIG)
+        after = read_plain_files(root, moved, prefix).get(CONFIG)
+        if before is None or after is None:
+            break  # The paper's initial import (or an explicit unlink/relink).
+        try:
+            old_config, new_config = json.loads(before), json.loads(after)
+            old, new = old_config["base"], new_config["base"]
+            old_url, new_url = (
+                validate_url(old_config["url"]),
+                validate_url(new_config["url"]),
             )
-        return  # The paper's first import.
-    try:
-        old = json.loads(
-            git_bytes("cat-file", "blob", f"{parent}:{prefix}{CONFIG}", cwd=root)
-        )["base"]
-        new = json.loads(
-            git_bytes("cat-file", "blob", f"{moved}:{prefix}{CONFIG}", cwd=root)
-        )["base"]
-    except (GitCommandError, KeyError, TypeError, ValueError):
-        return  # Linked or relinked here, with no earlier base to compare.
-    if (
-        old == new
-        or resolve_commit(repo, old) is None
-        or resolve_commit(repo, new) is None
-        or not is_ancestor(repo, old, new)
-    ):
-        return  # last_sync reports a base outside Overleaf history.
-    before, after = read_plain_files(repo, old), read_plain_files(repo, new)
-    kept, merged = paper_files(root, parent, prefix), paper_files(root, moved, prefix)
-    for name in sorted(before.keys() | after.keys()):
-        if before.get(name) == after.get(name) or merged.get(name) == after.get(name):
+            if (
+                not isinstance(old, str)
+                or not SHA.fullmatch(old)
+                or not isinstance(new, str)
+                or not SHA.fullmatch(new)
+            ):
+                raise ValueError("invalid historical base")
+        except (KeyError, TypeError, ValueError, ProjectURLError):
+            raise SyncError(
+                f"Could not verify {prefix}{CONFIG} in commit {moved[:12]}; "
+                "restore its project URL and full base commit ID, then retry; " + done
+            ) from None
+        if old_url != new_url:
+            break  # A different project's import is a separate checkpoint.
+        if old == new:
             continue
-        # Changed by the base move, or kept workspace text over an edit on both sides.
-        if merged.get(name) != kept.get(name) or kept.get(name) != before.get(name):
-            continue
-        raise SyncError(
-            f"Commit {moved[:12]} moved {prefix}{CONFIG}'s base past Overleaf's edit "
-            f"to {name} without bringing it in; restore that edit, or set base back to "
-            f"{old} and pull again ({RECOVERY}); {done}"
+        if resolve_commit(repo, old) is None or resolve_commit(repo, new) is None:
+            raise SyncError(
+                f"Could not verify the Overleaf base move in commit {moved[:12]}; "
+                "restore the missing Overleaf history before retrying; " + done
+            )
+        moves.append((moved, parent, old, new))
+
+    active = []
+    for moved, parent, old, new in reversed(moves):
+        if is_ancestor(repo, old, new):
+            active.append((moved, parent, old, new))
+        elif is_ancestor(repo, new, old):
+            # Explicitly rewinding base reopens those edits for a recovery pull.
+            # Do not let canceled omissions permanently block that recovery.
+            while active and not is_ancestor(repo, active[-1][3], new):
+                previous = active.pop()
+                if previous[2] != new and is_ancestor(repo, previous[2], new):
+                    active.append((*previous[:3], new))
+                    break
+        else:
+            raise SyncError(
+                f"Commit {moved[:12]} moved {prefix}{CONFIG}'s base across unrelated Overleaf history; "
+                f"restore base to {old} and pull again; {done}"
+            )
+    for moved, parent, old, new in active:
+        before, after = read_plain_files(repo, old), read_plain_files(repo, new)
+        kept, merged = (
+            paper_files(root, parent, prefix),
+            paper_files(root, moved, prefix),
         )
+        for name in sorted(before.keys() | after.keys()):
+            if before.get(name) == after.get(name) or merged.get(name) == after.get(
+                name
+            ):
+                continue
+            # Changed by this base move, or a conflict resolved with workspace text.
+            if merged.get(name) != kept.get(name) or kept.get(name) != before.get(name):
+                continue
+            raise SyncError(
+                f"Commit {moved[:12]} moved {prefix}{CONFIG}'s base past Overleaf's edit "
+                f"to {name} without bringing it in; set base back to "
+                f"{old} and pull again ({RECOVERY}); {done}"
+            )
 
 
 def reviewed_record(
@@ -909,10 +953,36 @@ def _reviewed_record_entry(
         overleaf, workspace = prior
         if resolve_commit(root, workspace) is None:
             refuse_incomplete_record_history(root, publishing=publishing)
-        # An older reviewed paper must not become the sync point after a newer one.
+        # Use the committed pull at publication time, not a later pull's base.
+        # The current, verified base must already account for that checkpoint.
+        synced = overleaf
+        try:
+            source_config = json.loads(read_plain_files(root, source, prefix)[CONFIG])
+            checkpoint = source_config["base"]
+            same_project = (
+                validate_url(source_config["url"])
+                == read_record(root, record, publishing=publishing)["url"]
+            )
+        except (KeyError, TypeError, ValueError, ProjectURLError):
+            checkpoint, same_project = None, False
+        if (
+            same_project
+            and isinstance(checkpoint, str)
+            and SHA.fullmatch(checkpoint)
+            and base is not None
+            and resolve_commit(repo, checkpoint) is not None
+            and resolve_commit(repo, base) is not None
+            and resolve_commit(repo, overleaf) is not None
+            and is_ancestor(repo, overleaf, checkpoint)
+            and is_ancestor(repo, checkpoint, base)
+            and is_ancestor(repo, checkpoint, recorded)
+        ):
+            synced = checkpoint
+        # An attested merge or a gap can conceal collaborator edits even when its
+        # tree matches reviewed content. The publication must directly follow sync.
         if (
             resolve_commit(repo, overleaf) is not None
-            and is_ancestor(repo, overleaf, recorded)
+            and first_since(repo, synced, recorded)
             and resolve_commit(root, workspace) is not None
             and is_ancestor(root, workspace, source)
         ):
@@ -974,7 +1044,9 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
                 # A collaborator may have edited after our push. Record only our
                 # published commit so that their later edits still need review.
                 return pushed
-            if tree(repo, head) == tree(repo, pushed):
+            if first_since(repo, synced, head) and tree(repo, head) == tree(
+                repo, pushed
+            ):
                 return head
     except click.ClickException:
         pass

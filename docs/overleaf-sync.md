@@ -30,12 +30,17 @@ maintainer restores or deletes the rejected record. A workspace writer who canno
 merge to the default branch therefore cannot move the sync point to unreviewed
 content, and Overleaf access alone cannot move it either.
 
-A record must also continue from the record it was written over: its Overleaf
-commit descends from that record's Overleaf commit and its workspace commit from
-that record's workspace commit. A record with no parent must be the first
-publication since `paper/overleaf.json`'s `base` (its Overleaf commit's parent is
-`base`), and its workspace commit must descend from the default-branch commit
-that last changed `paper/overleaf.json` along the default branch's first-parent
+A record must also continue from the record it was written over: its workspace
+commit descends from that record's workspace commit, and its Overleaf commit has
+exactly one parent, the previous sync point. That point is the preceding record's
+Overleaf commit, or a newer committed pull's `base` in the published workspace
+commit (already covered by the current verified base). Later pulls do not change
+that publication's parent. An attested merge or a gap containing other Overleaf
+edits is rejected even when its tree matches reviewed content. A record with no
+parent must be the first publication since `paper/overleaf.json`'s `base` (its
+Overleaf commit has exactly one parent, `base`), and its workspace commit must
+descend from the default-branch commit that last changed `paper/overleaf.json`
+along the default branch's first-parent
 history (the same history used to check base moves). Otherwise pull warns and uses
 `base`, so a record attesting an older reviewed paper cannot make an Overleaf
 revert count as synced. Publish refuses a rejected record before pushing, even
@@ -57,24 +62,30 @@ records, requiring the same maintainer repair.
 
 Refusals are one line with a concrete action and a link to the workspace skill's
 [recovery reference](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md).
-Checking a base move also needs the commit that changed the config and its parent.
-A depth-one clone refuses even when its paper equals the current tip; explicitly
-fetch workspace history and retry. A shallow clone with enough visible history still
-works without changing its shallow boundary.
+Checking base moves needs the first-parent config history back to this project's
+initial import, including each config-changing commit's parent. This is independent
+of the publication-record checkpoint above: a later valid base move cannot establish
+that an earlier move imported its edits. A shallow clone lacking this history refuses,
+even when its paper equals the current tip; explicitly fetch workspace history and
+retry. Sufficiently deep shallow clones still work without changing their boundary.
 
-- Pull and publish also check the newest commit that changed `paper/overleaf.json`:
-  every file Overleaf changed between the old and new `base` must hold Overleaf's new
-  version, be changed by that commit, or be a conflict resolved by keeping the
-  workspace's text (both sides had edited it). Otherwise they refuse, naming the file
-  and the old `base`; recovery is in the workspace skill's `workflows/overleaf-recovery.md`.
+- Pull and publish check every effective move of `base` in `paper/overleaf.json`
+  since this project's initial import. Every file Overleaf changed between a move's
+  old and new `base` must hold Overleaf's new version, be changed by that commit, or
+  be a conflict resolved by keeping the workspace's text (both sides had edited it).
+  A later move importing another file cannot hide an earlier omission. An explicit
+  rewind cancels advances beyond the restored base so a recovery pull can import
+  those edits; omissions before that base still refuse. Errors name the offending
+  commit, file and old `base`; recovery is in `workflows/overleaf-recovery.md`.
 - Sync does not check how a commit reached the default branch: it publishes the paper
   that is there. A repository that wants every paper change reviewed must require PRs
   on its default branch.
 - After pushing, publish fetches Overleaf's head and requires it to descend from
   the prior sync point. If it also descends from the pushed commit, publish records
   that pushed commit, leaving any later collaborator edits for the next pull.
-  Otherwise it records the head only when its tree matches the pushed commit,
-  allowing a bridge to translate the commit while retaining history. An unrelated
+  Otherwise it records the head only when it has exactly one parent equal to the
+  prior sync point and its tree matches the pushed commit, allowing a bridge to
+  translate that commit without concealing other edits. An unrelated
   same-tree replacement is refused. A translated commit followed by further edits
   cannot be confirmed by either check and still needs recovery. If confirmation
   or the record push fails, publish exits 1 after the Overleaf push without
