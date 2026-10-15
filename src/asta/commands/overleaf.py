@@ -62,10 +62,10 @@ def git_environment() -> dict:
 class SyncError(click.ClickException):
     """A scheduler can report each refusal as one line with a recovery reference."""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, *, recovery: str = "local-git-failure"):
         message = " ".join(message.splitlines())
         if RECOVERY not in message:
-            message = f"{message} Recovery: {RECOVERY}"
+            message = f"{message} Recovery: {RECOVERY}#{recovery}"
         super().__init__(message)
 
 
@@ -105,7 +105,8 @@ def git_bytes(
         ):
             raise SyncError(
                 "Workspace pre-push hook failed; nothing pushed. "
-                "Check the hook against the exported paper directory and Overleaf remote."
+                "Check the hook against the exported paper directory and Overleaf remote.",
+                recovery="git-hooks-and-signing",
             )
         if operation in ("clone", "push") and (
             re.search(rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)401\b", stderr)
@@ -114,13 +115,15 @@ def git_bytes(
             or b"could not read password" in stderr
         ):
             raise SyncError(
-                "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper."
+                "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper.",
+                recovery="overleaf-authentication",
             )
         if operation in ("clone", "push") and re.search(
             rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)403\b", stderr
         ):
             raise SyncError(
-                "Overleaf access denied. Check your token and access to this project."
+                "Overleaf access denied. Check your token and access to this project.",
+                recovery="overleaf-authentication",
             )
         if operation == "push" and (
             re.search(
@@ -132,11 +135,13 @@ def git_bytes(
             raise SyncError(
                 "Overleaf changed while publishing; nothing pushed. "
                 "Run `asta workspace overleaf pull`, review the changes in a PR, "
-                "then publish again."
+                "then publish again.",
+                recovery="overleaf-edits-need-review",
             )
         if operation == "push" and b"rejected" in stderr:
             raise SyncError(
-                f"git {operation} was rejected. Check access and the remote state."
+                f"git {operation} was rejected. Check access and the remote state.",
+                recovery="overleaf-connection",
             )
         if operation in ("clone", "push"):
             raise SyncError(
@@ -146,13 +151,15 @@ def git_bytes(
                     " Also check workspace pre-push hooks."
                     if operation == "push"
                     else ""
-                )
+                ),
+                recovery="overleaf-connection",
             )
         if operation == "commit":
             raise SyncError(
                 f"git commit failed (exit {result.returncode}). "
                 "Check workspace commit hooks and signing settings. "
-                "Hooks run in the exported paper directory, not the full workspace."
+                "Hooks run in the exported paper directory, not the full workspace.",
+                recovery="git-hooks-and-signing",
             )
         raise GitCommandError(
             f"git {operation} failed (exit {result.returncode}).", result.returncode
@@ -218,7 +225,10 @@ def commit_settings(root: Path) -> list[str]:
             value = os.fsdecode(result.stdout).rstrip("\n")
             settings[key] = value
         elif result.returncode != 1:
-            raise SyncError("Could not read workspace Git commit settings.")
+            raise SyncError(
+                "Could not read workspace Git commit settings. Check Git configuration and repository permissions, then retry.",
+                recovery="local-git-failure",
+            )
     for key, value in settings.items():
         # OpenPGP/X.509 keys are backend identifiers; only SSH file keys need rebasing.
         if (
@@ -237,7 +247,8 @@ def validate_url(url: str | None) -> str:
     )
     if not match:
         raise ProjectURLError(
-            "Give the project's Git URL: https://git.overleaf.com/<project-id>."
+            "Give the project's Git URL: https://git.overleaf.com/<project-id>.",
+            recovery="project-url",
         )
     return f"https://git.overleaf.com/{match[1]}"
 
@@ -281,7 +292,10 @@ def clone(url: str, dest: Path) -> str:
     try:
         return git("rev-parse", "--verify", "HEAD", cwd=dest)
     except click.ClickException:
-        raise SyncError("Overleaf project has no commits to sync.") from None
+        raise SyncError(
+            "Overleaf project has no commits to sync. Add an initial paper file in Overleaf, then retry.",
+            recovery="empty-overleaf-project",
+        ) from None
 
 
 def push(
@@ -328,7 +342,8 @@ def tree(repo: Path, revision: str, prefix: str = "") -> dict[str, tuple[str, st
 def refuse(name: str, reason: str) -> None:
     raise SyncError(
         f"Overleaf sync copies plain files only: {name!r} {reason}. "
-        "Remove it or sync this paper by hand."
+        "Remove it or sync this paper by hand.",
+        recovery="plain-files-only",
     )
 
 
@@ -388,7 +403,8 @@ def check_ignore_files(names) -> None:
         ):
             raise SyncError(
                 f"Overleaf sync refuses {name!r}: ignore rules can hide imported sources. "
-                "Keep ignore rules in the workspace root."
+                "Keep ignore rules in the workspace root.",
+                recovery="ignore-rules",
             )
 
 
@@ -398,10 +414,14 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
         git("rev-parse", "--verify", "-q", "HEAD", cwd=root)
     except click.ClickException:
         raise SyncError(
-            "Commit the workspace's initial files before syncing with Overleaf."
+            "Commit the workspace's initial files before syncing with Overleaf.",
+            recovery="initial-workspace-commit",
         ) from None
     if Path(directory).is_absolute():
-        raise SyncError("--dir must be relative to the workspace.")
+        raise SyncError(
+            "--dir must be relative to the workspace. Use a subdirectory such as --dir paper.",
+            recovery="paper-directory",
+        )
     candidate = root / directory
     for path in (candidate, *candidate.parents):
         if path == root:
@@ -410,7 +430,10 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
             refuse(directory, "uses a symlinked directory")
     paper = candidate.resolve()
     if root not in paper.parents:
-        raise SyncError("--dir must be a subdirectory of the workspace.")
+        raise SyncError(
+            "--dir must be a subdirectory of the workspace. Use --dir paper or another paper subdirectory.",
+            recovery="paper-directory",
+        )
     relative = paper.relative_to(root).as_posix()
     check_paths([relative])
     for option in ("--absolute-git-dir", "--git-common-dir"):
@@ -468,7 +491,10 @@ def require_clean(root: Path, *paths: Path) -> None:
         if entry.startswith(b"?? ") and is_build_output(root / os.fsdecode(entry[3:])):
             continue
         names = ", ".join(p.relative_to(root).as_posix() for p in paths)
-        raise SyncError(f"Commit or discard local changes in {names} first.")
+        raise SyncError(
+            f"Commit or discard local changes in {names} first.",
+            recovery="local-changes",
+        )
 
 
 def require_visible(root: Path, paths) -> None:
@@ -480,12 +506,16 @@ def require_visible(root: Path, paths) -> None:
         capture_output=True,
     )
     if result.returncode not in (0, 1):
-        raise SyncError("Could not check Git ignore rules; nothing copied.")
+        raise SyncError(
+            "Could not check Git ignore rules; nothing copied. Check Git configuration and repository permissions, then retry.",
+            recovery="ignore-rules",
+        )
     if result.stdout:
         name = Path(os.fsdecode(result.stdout.split(b"\0", 1)[0]))
         raise SyncError(
             f"{name.relative_to(root)} is ignored by Git. Adjust the ignore rules "
-            "so imported sources and sync metadata can be committed; nothing copied."
+            "so imported sources and sync metadata can be committed; nothing copied.",
+            recovery="ignore-rules",
         )
 
 
@@ -505,7 +535,8 @@ def load_config(paper: Path) -> dict:
         return config
     except (ValueError, OSError, click.ClickException):
         raise SyncError(
-            f"Invalid sync record: {path}. Restore its project URL and base commit from Git."
+            f"Invalid sync record: {path}. Restore its project URL and base commit from Git.",
+            recovery="paper-configuration",
         ) from None
 
 
@@ -589,7 +620,8 @@ def merge_text(
     # merge-file reports conflict counts from 1 to 127, capped at 127.
     if result.returncode < 0 or result.returncode > 127:
         raise SyncError(
-            f"git merge-file failed (exit {result.returncode}); nothing copied."
+            f"git merge-file failed (exit {result.returncode}); nothing copied. Check the installed Git and file access, then retry.",
+            recovery="local-git-failure",
         )
     return result.stdout, result.returncode == 0
 
@@ -609,7 +641,10 @@ def has_origin(root: Path) -> bool:
         capture_output=True,
     )
     if result.returncode not in (0, 1):
-        raise SyncError("Could not read workspace Git remotes.")
+        raise SyncError(
+            "Could not read workspace Git remotes. Check Git configuration and repository permissions, then retry.",
+            recovery="local-git-failure",
+        )
     return result.returncode == 0
 
 
@@ -643,7 +678,8 @@ def invalid_record(url: str | None, *, publishing: bool = False) -> SyncError:
     return SyncError(
         f"Invalid Overleaf sync record {location}. "
         "Restore it from its history or delete it to fall back to "
-        f"{CONFIG}." + (" Nothing pushed." if publishing else " Nothing copied.")
+        f"{CONFIG}." + (" Nothing pushed." if publishing else " Nothing copied."),
+        recovery="sync-record-ref",
     )
 
 
@@ -659,7 +695,7 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
     try:
         advertised = git("ls-remote", "origin", ref, cwd=root)
     except click.ClickException:
-        raise OriginAccessError(unavailable) from None
+        raise OriginAccessError(unavailable, recovery="origin-cannot-be-read") from None
     if not any(line.endswith(f"\t{ref}") for line in advertised.splitlines()):
         yield None, None, None
         return
@@ -677,18 +713,30 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
                 cwd=root,
             )
         except click.ClickException:
-            raise OriginAccessError(unavailable) from None
+            raise OriginAccessError(
+                unavailable, recovery="origin-cannot-be-read"
+            ) from None
         try:
             # The fetched object becomes commit-tree's parent; peeling a tag is unsafe.
-            if git("cat-file", "-t", gate, cwd=root) != "commit":
-                raise ValueError("sync record ref must point directly to a commit")
-            commit = git("rev-parse", gate, cwd=root)
-        except (GitCommandError, ValueError):
-            raise invalid_record(url, publishing=publishing) from None
-        record = read_record(root, gate, url=url, publishing=publishing)
-        overleaf = record["overleaf"]
+            commit = None
+            if git("cat-file", "-t", gate, cwd=root) == "commit":
+                commit = git("rev-parse", gate, cwd=root)
+            record = read_record(root, gate, url=url) if commit else None
+        except (GitCommandError, SyncError):
+            record = None
+        if commit is None and publishing:
+            # A fast-forward push cannot replace a non-commit; deleting the ref can.
+            raise invalid_record(url, publishing=True)
         # Keep the parent reachable until a subsequent record has been pushed.
-        yield commit, overleaf, record["workspace"]
+        if record is None:
+            click.echo(
+                "Overleaf sync record not used: it is damaged. Pull started from "
+                f"{CONFIG}'s base ({RECOVERY}#record-not-used).",
+                err=True,
+            )
+            yield commit, None, None
+        else:
+            yield commit, record["overleaf"], record["workspace"]
     finally:
         try:
             git("update-ref", "-d", gate, cwd=root)
@@ -709,157 +757,9 @@ def refuse_incomplete_record_history(root: Path, *, publishing: bool = False) ->
         raise SyncError(
             "Could not verify the Overleaf sync record against shallow workspace history. "
             "Fetch the workspace history from `origin` and retry; "
-            + ("nothing pushed." if publishing else "nothing copied.")
+            + ("nothing pushed." if publishing else "nothing copied."),
+            recovery="workspace-history-is-shallow",
         )
-
-
-def commit_parents(repo: Path, commit: str) -> list[str]:
-    # Read actual headers: shallow revision walks can conceal an existing parent.
-    headers = git("cat-file", "-p", commit, cwd=repo).split("\n\n", 1)[0]
-    return [line[7:] for line in headers.splitlines() if line.startswith("parent ")]
-
-
-def prior_record(
-    root: Path, commit: str, *, publishing: bool = False
-) -> tuple[str, str] | None:
-    """The validated (Overleaf, workspace) IDs of the preceding record."""
-    parents = commit_parents(root, commit)
-    if not parents:
-        return None
-    current = read_record(root, commit, publishing=publishing)
-    if len(parents) != 1:
-        raise invalid_record(current["url"], publishing=publishing)
-    record = read_record(root, parents[0], url=current["url"], publishing=publishing)
-    return record["overleaf"], record["workspace"]
-
-
-def first_since(repo: Path, base: str, recorded: str) -> bool:
-    """A publication must have exactly one parent, the preceding sync point."""
-    return commit_parents(repo, recorded) == [resolve_commit(repo, base)]
-
-
-def config_change(root: Path, default: str, prefix: str, *, publishing: bool) -> str:
-    """The newest default-branch commit that changed the paper's sync config."""
-    changed = git(
-        "--literal-pathspecs",
-        "log",
-        "-1",
-        "--first-parent",
-        "--format=%H",
-        default,
-        "--",
-        prefix + CONFIG,
-        cwd=root,
-    )
-    shallow = root / git("rev-parse", "--git-path", "shallow", cwd=root)
-    boundary = shallow.read_text().split() if shallow.is_file() else []
-    # A shallow boundary commit looks like it added every file it holds.
-    if (not changed and boundary) or changed in boundary:
-        refuse_incomplete_record_history(root, publishing=publishing)
-    return changed
-
-
-def check_base_move(
-    root: Path, repo: Path, prefix: str, revision: str, *, publishing: bool = False
-) -> None:
-    """Check every effective base move back to this project's initial import."""
-    done = "nothing pushed." if publishing else "nothing copied."
-    commits = git(
-        "--literal-pathspecs",
-        "log",
-        "--first-parent",
-        "--format=%H",
-        revision,
-        "--",
-        prefix + CONFIG,
-        cwd=root,
-    ).splitlines()
-    # Follow this project across missing configs and temporary URL changes. Those
-    # are not new imports: returning to the same project still owes its edits.
-    current = json.loads(read_plain_files(root, revision, prefix)[CONFIG])
-    url = validate_url(current["url"])
-    active = []
-    anchor = None
-    pending = None
-    for moved in reversed(commits):
-        parent = resolve_commit(root, f"{moved}^")
-        if (
-            parent is None
-            and git("rev-parse", "--is-shallow-repository", cwd=root) == "true"
-        ):
-            raise SyncError(
-                "Could not verify the Overleaf base move against shallow workspace history. "
-                "Fetch the workspace history from `origin` and retry; " + done
-            )
-        after = read_plain_files(root, moved, prefix).get(CONFIG)
-        if after is None:
-            continue
-        try:
-            config = json.loads(after)
-            if validate_url(config["url"]) != url:
-                continue
-            new = config["base"]
-            if not isinstance(new, str) or not SHA.fullmatch(new):
-                raise ValueError("invalid historical base")
-        except (KeyError, TypeError, ValueError, ProjectURLError):
-            pending = (moved, "has an invalid project URL or base commit ID")
-            continue
-        if resolve_commit(repo, new) is None:
-            pending = (moved, "names missing Overleaf history")
-            continue
-        if anchor is None:
-            # With no reachable old base, only a complete reimport can establish
-            # a checkpoint. A config-only edit must never discard unknown edits.
-            if pending and paper_files(root, moved, prefix) != paper_files(repo, new):
-                continue
-            anchor, pending = new, None
-            continue
-        old = anchor
-        if is_ancestor(repo, old, new):
-            if old != new:
-                active.append((moved, parent, old, new))
-        elif is_ancestor(repo, new, old):
-            # Explicitly rewinding base reopens those edits for a recovery pull.
-            # Do not let canceled omissions permanently block that recovery.
-            while active and not is_ancestor(repo, active[-1][3], new):
-                previous = active.pop()
-                if previous[2] != new and is_ancestor(repo, previous[2], new):
-                    active.append((*previous[:3], new))
-                    break
-        else:
-            pending = (moved, "moves base across unrelated Overleaf history")
-            continue
-        # An invalid/unrelated excursion is canceled only by returning to the
-        # last verifiable lineage. Earlier effective moves remain checked below.
-        anchor, pending = new, None
-    if pending:
-        moved, reason = pending
-        action = (
-            f"restore base to {anchor} in a new commit and pull again"
-            if anchor is not None
-            else "reimport the complete Overleaf paper at a reachable full base ID "
-            "in a new commit (see the recovery reference)"
-        )
-        raise SyncError(f"Commit {moved[:12]} {reason}; {action}; {done}")
-    for moved, parent, old, new in active:
-        before, after = read_plain_files(repo, old), read_plain_files(repo, new)
-        kept, merged = (
-            paper_files(root, parent, prefix),
-            paper_files(root, moved, prefix),
-        )
-        for name in sorted(before.keys() | after.keys()):
-            if before.get(name) == after.get(name) or merged.get(name) == after.get(
-                name
-            ):
-                continue
-            # Changed by this base move, or a conflict resolved with workspace text.
-            if merged.get(name) != kept.get(name) or kept.get(name) != before.get(name):
-                continue
-            raise SyncError(
-                f"Commit {moved[:12]} moved {prefix}{CONFIG}'s base past Overleaf's edit "
-                f"to {name} without bringing it in; set base back to "
-                f"{old} and pull again ({RECOVERY}); {done}"
-            )
 
 
 def reviewed_record(
@@ -870,57 +770,6 @@ def reviewed_record(
     recorded: str | None,
     source: str | None,
     *,
-    record: str | None = None,
-    base: str | None = None,
-    publishing: bool = False,
-) -> str | None:
-    """Verify every predecessor, so an invalid intermediate cannot hide a rollback."""
-    newest = recorded
-    initial_record = record
-    while True:
-        # The committed pull already accounts for this Overleaf history. Older
-        # record sources need not be present (for example, in a shallow clone).
-        at_base = (
-            recorded is not None
-            and base is not None
-            and resolve_commit(repo, recorded) is not None
-            and resolve_commit(repo, base) is not None
-            and is_ancestor(repo, recorded, base)
-        )
-        if record != initial_record and at_base:
-            return newest
-        verified = _reviewed_record_entry(
-            root,
-            repo,
-            prefix,
-            default,
-            recorded,
-            source,
-            record=record,
-            base=base,
-            publishing=publishing,
-        )
-        if verified is None:
-            return None
-        if at_base:
-            return newest
-        prior = prior_record(root, record, publishing=publishing) if record else None
-        if prior is None:
-            return newest
-        record = resolve_commit(root, f"{record}^")
-        recorded, source = prior
-
-
-def _reviewed_record_entry(
-    root: Path,
-    repo: Path,
-    prefix: str,
-    default: str,
-    recorded: str | None,
-    source: str | None,
-    *,
-    record: str | None = None,
-    base: str | None = None,
     publishing: bool = False,
 ) -> str | None:
     """The record's Overleaf commit when it matches reviewed workspace history."""
@@ -934,96 +783,43 @@ def _reviewed_record_entry(
         # rather than evidence that the record names unreviewed content.
         refuse_incomplete_record_history(root, publishing=publishing)
     if reviewed and paper_files(repo, recorded) == paper_files(root, source, prefix):
-        prior = prior_record(root, record, publishing=publishing) if record else None
-        if prior is None:
-            # A record with no parent must be the first publication since `base`
-            # and attest a paper reviewed after `base` was committed, so a
-            # force-pushed fresh record cannot skip Overleaf edits.
-            if base is None or (
-                resolve_commit(repo, base) is not None
-                and is_ancestor(repo, recorded, base)
-            ):
-                return recorded  # `base` is at least as new, so this is unused.
-            if first_since(repo, base, recorded):
-                changed = config_change(root, default, prefix, publishing=publishing)
-                if changed and is_ancestor(root, changed, source):
-                    return recorded
-            click.echo(
-                "The Overleaf sync record has no previous record and is not the first "
-                f"publication since {CONFIG}'s base on origin's default branch; "
-                f"using {CONFIG} instead. Pull and review the Overleaf edits before publishing; "
-                f"recovery: {RECOVERY}",
-                err=True,
-            )
-            return None
-        overleaf, workspace = prior
-        if resolve_commit(root, workspace) is None:
-            refuse_incomplete_record_history(root, publishing=publishing)
-        # Use the committed pull at publication time, not a later pull's base.
-        # The current, verified base must already account for that checkpoint.
-        synced = overleaf
-        try:
-            source_config = json.loads(read_plain_files(root, source, prefix)[CONFIG])
-            checkpoint = source_config["base"]
-            same_project = (
-                validate_url(source_config["url"])
-                == read_record(root, record, publishing=publishing)["url"]
-            )
-        except (KeyError, TypeError, ValueError, ProjectURLError):
-            checkpoint, same_project = None, False
-        if (
-            same_project
-            and isinstance(checkpoint, str)
-            and SHA.fullmatch(checkpoint)
-            and base is not None
-            and resolve_commit(repo, checkpoint) is not None
-            and resolve_commit(repo, base) is not None
-            and resolve_commit(repo, overleaf) is not None
-            and is_ancestor(repo, overleaf, checkpoint)
-            and is_ancestor(repo, checkpoint, base)
-            and is_ancestor(repo, checkpoint, recorded)
-        ):
-            synced = checkpoint
-        # An attested merge or a gap can conceal collaborator edits even when its
-        # tree matches reviewed content. The publication must directly follow sync.
-        if (
-            resolve_commit(repo, overleaf) is not None
-            and first_since(repo, synced, recorded)
-            and resolve_commit(root, workspace) is not None
-            and is_ancestor(root, workspace, source)
-        ):
-            return recorded
-        click.echo(
-            "The Overleaf sync record does not continue from the previous record; "
-            f"using {CONFIG} instead. Pull and review the Overleaf edits before publishing; "
-            f"recovery: {RECOVERY}",
-            err=True,
-        )
-        return None
+        return recorded
     click.echo(
-        "The Overleaf sync record does not match a paper on origin's default branch; "
-        f"using {CONFIG} instead. Pull and review the Overleaf edits before publishing; "
-        f"recovery: {RECOVERY}",
+        "Overleaf sync record not used: it does not match a paper on origin's "
+        f"default branch. Pull started from {CONFIG}'s base "
+        f"({RECOVERY}#record-not-used).",
         err=True,
     )
     return None
 
 
 def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str) -> str:
-    """The newer of the committed base and the published record, in Overleaf history."""
+    """The newer of the committed base and a record that counts, in Overleaf history."""
+    counted = (
+        recorded is not None
+        and resolve_commit(repo, recorded) is not None
+        and is_ancestor(repo, recorded, head)
+    )
     if resolve_commit(repo, base) is None or not is_ancestor(repo, base, head):
+        if counted:
+            click.echo(
+                f"{CONFIG}'s base is not in Overleaf history; starting from the "
+                "published sync record instead.",
+                err=True,
+            )
+            return recorded
         raise SyncError(
-            "Overleaf history no longer continues from the recorded commit. "
-            f"Reset remote history is unsupported; {done} "
-            "Import into a separate directory with --dir."
+            f"{CONFIG}'s base is not in Overleaf history and no sync record counts; "
+            f"{done} Set base, in a PR, to an Overleaf commit the default branch "
+            f"already has ({RECOVERY}#base-not-in-overleaf-history)."
         )
     if recorded is None or recorded == base:
         return base
-    if resolve_commit(repo, recorded) is None or not is_ancestor(repo, recorded, head):
+    if not counted:
         click.echo(
-            "The published sync record is not in Overleaf history; "
-            f"using {CONFIG} instead. Pull and review the Overleaf edits before publishing; "
-            f"recovery: {RECOVERY}",
+            "Overleaf sync record not used: its Overleaf commit is not in Overleaf "
+            f"history. Pull started from {CONFIG}'s base "
+            f"({RECOVERY}#record-not-used).",
             err=True,
         )
         return base
@@ -1050,9 +846,7 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
                 # A collaborator may have edited after our push. Record only our
                 # published commit so that their later edits still need review.
                 return pushed
-            if first_since(repo, synced, head) and tree(repo, head) == tree(
-                repo, pushed
-            ):
+            if tree(repo, head) == tree(repo, pushed):
                 return head
     except click.ClickException:
         pass
@@ -1060,7 +854,8 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
         f"Published Overleaf commit {pushed[:7]}, but could not confirm Overleaf's copy "
         "to record the sync point. Before publishing again, run `asta workspace "
         "overleaf pull` and merge the resulting PR (it may change only paper/overleaf.json). "
-        "If Overleaf history was reset, restore it first."
+        "If Overleaf history was reset, repair base using the recovery steps.",
+        recovery="incomplete-publication",
     )
 
 
@@ -1099,7 +894,8 @@ def record_publication(
         raise SyncError(
             f"Published Overleaf commit {overleaf[:7]}, but could not record it at "
             f"origin's {ref}. Before publishing again, run `asta workspace overleaf "
-            "pull` and merge the resulting PR (it may change only paper/overleaf.json)."
+            "pull` and merge the resulting PR (it may change only paper/overleaf.json).",
+            recovery="incomplete-publication",
         ) from None
 
 
@@ -1126,7 +922,8 @@ def pull(url: str | None, directory: str, project: Path) -> None:
     if config and url != config["url"]:
         raise SyncError(
             "This paper is linked to another Overleaf project. "
-            "Import the new project into a separate directory with --dir; nothing copied."
+            "Import the new project into a separate directory with --dir; nothing copied.",
+            recovery="paper-directory",
         )
     require_clean(root, paper)
     with tempfile.TemporaryDirectory() as tmp:
@@ -1142,21 +939,13 @@ def pull(url: str | None, directory: str, project: Path) -> None:
         ours.pop(CONFIG, None)
         base = {}
         if config:
-            check_base_move(root, repo, prefix, "HEAD")
             recorded = None
             if has_origin(root):
-                with published_record(root, url) as (record, recorded, source):
+                with published_record(root, url) as (_, recorded, source):
                     if recorded is not None:
                         with default_branch(root) as (default, _):
                             recorded = reviewed_record(
-                                root,
-                                repo,
-                                prefix,
-                                default,
-                                recorded,
-                                source,
-                                record=record,
-                                base=config["base"],
+                                root, repo, prefix, default, recorded, source
                             )
                     if (
                         recorded is not None
@@ -1200,18 +989,21 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                 if name not in new or name not in ours:
                     raise SyncError(
                         f"Workspace and Overleaf disagree on whether {name} exists. "
-                        "Reconcile it first; nothing copied."
+                        "Reconcile it first; nothing copied.",
+                        recovery="file-existence-conflict",
                     )
                 if name not in base:
                     # No common ancestor (e.g. an initial import over existing source).
                     raise SyncError(
-                        f"{name} was added independently on both sides. Reconcile it first; nothing copied."
+                        f"{name} was added independently on both sides. Reconcile it first; nothing copied.",
+                        recovery="independent-additions",
                     )
                 merged, clean = merge_text(name, ours[name], base[name], new[name])
                 if merged is None:
                     raise SyncError(
                         f"Both workspace and Overleaf changed {name}, which is not text "
-                        "that can be merged line by line. Reconcile it first; nothing copied."
+                        "that can be merged line by line. Reconcile it first; nothing copied.",
+                        recovery="concurrent-asset-edits",
                     )
                 new[name] = merged
                 if not clean:
@@ -1225,19 +1017,22 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             target = paper / name
             if not target.is_file() or target.read_bytes() != committed[name]:
                 raise SyncError(
-                    f"Commit or discard local changes in {target.relative_to(root)} first; nothing copied."
+                    f"Commit or discard local changes in {target.relative_to(root)} first; nothing copied.",
+                    recovery="local-changes",
                 )
         for name in new:
             if (paper / name).is_dir():
                 raise SyncError(
                     f"Overleaf now has a file where {(paper / name).relative_to(root)} "
-                    "is a directory. Move the directory aside before pulling; nothing copied."
+                    "is a directory. Move the directory aside before pulling; nothing copied.",
+                    recovery="path-collision",
                 )
         for name in new.keys() | {CONFIG}:
             if name not in committed and (paper / name).exists():
                 raise SyncError(
                     f"Commit or discard local changes in {(paper / name).relative_to(root)} "
-                    "first; nothing copied."
+                    "first; nothing copied.",
+                    recovery="local-changes",
                 )
         require_visible(root, [paper / name for name in (*new, CONFIG)])
         for name in (*new, CONFIG):
@@ -1248,7 +1043,8 @@ def pull(url: str | None, directory: str, project: Path) -> None:
                     if parent not in {paper / item for item in deleted}:
                         raise SyncError(
                             f"{parent.relative_to(root)} is a file needed as a directory. "
-                            "Move it aside before pulling; nothing copied."
+                            "Move it aside before pulling; nothing copied.",
+                            recovery="path-collision",
                         )
         for name in deleted:
             (paper / name).unlink(missing_ok=True)
@@ -1276,7 +1072,10 @@ def default_branch_ref(root: Path) -> str:
     symref = git("ls-remote", "--symref", "origin", "HEAD", cwd=root)
     match = re.search(r"^ref: refs/heads/(\S+)\tHEAD$", symref, re.M)
     if not match:
-        raise SyncError("Could not determine origin's default branch.")
+        raise SyncError(
+            "Could not determine origin's default branch. Ask a repository maintainer to set an existing default branch, then retry.",
+            recovery="origin-cannot-be-read",
+        )
     return f"refs/heads/{match.group(1)}"
 
 
@@ -1286,14 +1085,16 @@ def require_expected_tip(root: Path, expected: str, ref: str | None) -> None:
     except click.ClickException:
         raise SyncError(
             "Could not verify origin's default branch immediately before publication; "
-            "nothing pushed. Check origin access and retry."
+            "nothing pushed. Check origin access and retry.",
+            recovery="origin-cannot-be-read",
         ) from None
     branch = re.search(r"^ref: (refs/heads/\S+)\tHEAD$", advertised, re.M)
     tip = re.search(rf"^({FULL_OID})\tHEAD$", advertised, re.M)
     if not branch or not tip or branch.group(1) != ref or tip.group(1) != expected:
         raise SyncError(
             "Origin's default branch changed since the expected commit; nothing pushed. "
-            "Retry after checks pass on the new tip."
+            "Retry after checks pass on the new tip.",
+            recovery="default-branch-changed",
         )
 
 
@@ -1318,7 +1119,8 @@ def default_branch(root: Path, *, publishing: bool = False):
             raise OriginAccessError(
                 "Could not fetch the default branch of the workspace's `origin` remote. "
                 "Check its URL, credentials and network access."
-                + (" Nothing pushed." if publishing else " Nothing copied.")
+                + (" Nothing pushed." if publishing else " Nothing copied."),
+                recovery="origin-cannot-be-read",
             ) from None
         yield git("rev-parse", gate, cwd=root), ref
     finally:
@@ -1348,22 +1150,30 @@ def publish(
                 "needs a full commit id", param_hint="--expected-commit"
             )
         if git("rev-parse", "HEAD", cwd=root) != expected_commit:
-            raise SyncError("Check out the expected workspace commit; nothing pushed.")
+            raise SyncError(
+                "Check out the expected workspace commit; nothing pushed.",
+                recovery="default-branch-changed",
+            )
     require_visible(root, [paper / CONFIG])
     config = load_config(paper)
     if not config:
-        raise SyncError(f"No {CONFIG}; run `asta workspace overleaf pull <url>` first.")
+        raise SyncError(
+            f"No {CONFIG}; run `asta workspace overleaf pull <url>` first.",
+            recovery="paper-configuration",
+        )
     require_clean(root, paper)
     ours = read_plain_files(root, "HEAD", prefix)
     if CONFIG not in ours:
         raise SyncError(
             f"Commit {(paper / CONFIG).relative_to(root)} before publishing. "
-            "The sync record must belong to the committed paper revision."
+            "The sync record must belong to the committed paper revision.",
+            recovery="paper-configuration",
         )
     if ours[CONFIG] != (paper / CONFIG).read_bytes():
         raise SyncError(
             f"Commit or restore {(paper / CONFIG).relative_to(root)} before publishing. "
-            "The sync record differs from the committed revision."
+            "The sync record differs from the committed revision.",
+            recovery="paper-configuration",
         )
     # Index flags can hide edits or deletions from git status.
     for name, data in ours.items():
@@ -1375,11 +1185,15 @@ def publish(
         ):
             raise SyncError(
                 f"Commit or discard local changes to {target.relative_to(root)} first; "
-                "nothing pushed."
+                "nothing pushed.",
+                recovery="local-changes",
             )
     ours.pop(CONFIG, None)
     if not ours:
-        raise SyncError("Refusing to publish an empty paper; nothing pushed.")
+        raise SyncError(
+            "Refusing to publish an empty paper; nothing pushed. Commit a paper source or correct --dir, then retry.",
+            recovery="empty-paper",
+        )
     check_ignore_files(ours)
     unmerged = (
         "The paper differs from the latest commit on origin's default branch. Merge "
@@ -1389,7 +1203,8 @@ def publish(
         if expected_commit is not None and default != expected_commit:
             raise SyncError(
                 "Origin's default branch changed since the expected commit; nothing pushed. "
-                "Retry after checks pass on the new tip."
+                "Retry after checks pass on the new tip.",
+                recovery="default-branch-changed",
             )
         # Comparing the tip prevents republishing content a later reviewed edit removed.
         reviewed = (
@@ -1399,7 +1214,10 @@ def publish(
         )
         if not reviewed:
             if not dry_run:
-                raise SyncError(f"{unmerged}; nothing pushed.")
+                raise SyncError(
+                    f"{unmerged}; nothing pushed.",
+                    recovery="paper-not-on-default-branch",
+                )
             click.echo(f"{unmerged}; publish will refuse until then.")
         with (
             published_record(root, config["url"], publishing=True) as (
@@ -1411,7 +1229,6 @@ def publish(
         ):
             repo = Path(tmp) / "overleaf"
             head = clone(config["url"], repo)
-            check_base_move(root, repo, prefix, default, publishing=True)
             recorded = reviewed_record(
                 root,
                 repo,
@@ -1419,26 +1236,15 @@ def publish(
                 default,
                 recorded,
                 source,
-                record=previous,
-                base=config["base"],
                 publishing=True,
             )
-            if previous is not None and (
-                recorded is None
-                or resolve_commit(repo, recorded) is None
-                or not is_ancestor(repo, recorded, head)
-            ):
-                raise SyncError(
-                    "The existing Overleaf sync record is untrusted; nothing pushed. "
-                    f"Ask a workspace maintainer to restore or delete origin's {record_ref(config['url'])}, "
-                    "then pull and review the Overleaf edits before publishing again."
-                )
             synced = last_sync(repo, head, config["base"], recorded, "nothing pushed.")
             if synced != head:
                 raise SyncError(
                     "Overleaf has changed since the last sync. Run "
                     "`asta workspace overleaf pull`, review those edits in a PR, then publish; "
-                    "nothing pushed."
+                    "nothing pushed.",
+                    recovery="overleaf-edits-need-review",
                 )
             marked = sorted(
                 name
@@ -1451,14 +1257,16 @@ def publish(
                 raise SyncError(
                     "Unresolved conflict markers in: "
                     + ", ".join(marked)
-                    + "; nothing pushed."
+                    + "; nothing pushed. Resolve the markers and commit the paper before retrying.",
+                    recovery="conflict-markers-after-pull-exit-3",
                 )
             write_files(ours, repo)
             git("add", "-A", "-f", cwd=repo)
             if read_plain_files(repo, git("write-tree", cwd=repo)) != ours:
                 raise SyncError(
                     "Git conversions changed the exported files; nothing pushed. "
-                    "Content-changing Git filters and conversions are unsupported."
+                    "Remove content-changing Git filters and conversions, or sync the paper by hand.",
+                    recovery="plain-files-only",
                 )
             changes = git("status", "--short", cwd=repo)
             if not changes:
@@ -1473,7 +1281,8 @@ def publish(
             )
             if identity_result.returncode:
                 raise SyncError(
-                    "Configure Git user.name and user.email in the workspace before publishing."
+                    "Configure Git user.name and user.email in the workspace before publishing.",
+                    recovery="git-identity",
                 )
             try:
                 ident = os.fsdecode(identity_result.stdout).rsplit(" ", 2)[0]
@@ -1481,7 +1290,8 @@ def publish(
                 email = email.removesuffix(">")
             except ValueError:
                 raise SyncError(
-                    "Could not read the workspace's Git identity; check user.name and user.email."
+                    "Could not read the workspace's Git identity; check user.name and user.email.",
+                    recovery="git-identity",
                 ) from None
             if dry_run:
                 click.echo(
@@ -1503,7 +1313,8 @@ def publish(
             if read_plain_files(repo, "HEAD") != ours:
                 raise SyncError(
                     "Git configuration or hooks changed the exported files; nothing pushed. "
-                    "Content-changing Git filters and conversions are unsupported."
+                    "Remove content-changing Git filters and conversions, or sync the paper by hand.",
+                    recovery="plain-files-only",
                 )
             push(repo, root, expected_commit=expected_commit, reviewed_ref=reviewed_ref)
             published = confirm_publication(

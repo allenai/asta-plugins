@@ -4,38 +4,56 @@ Read this when a sync PR conflicts or `asta workspace overleaf pull` / `publish`
 Each refusal is one line naming what is wrong and the fix, with a link here.
 The message says whether nothing changed or an Overleaf push already succeeded.
 
-## A commit moved `base` past Overleaf's edits
+## Record not used
 
-`pull` and `publish` check every base move since this project's initial import, along
-first-parent workspace history. Each file Overleaf changed must hold its new version,
-be changed by that move's commit, or be a conflict resolved by keeping the workspace's
-text (both sides had edited it). A later valid move cannot conceal an earlier omission.
+`pull` printed `Overleaf sync record not used: <reason>. Pull started from
+overleaf.json's base`. A record counts only when its ids are full commit ids, its
+workspace commit is on the default branch, and its Overleaf commit holds that commit's
+paper. A damaged record, one that does not match the default branch's history, or one
+whose Overleaf commit is missing from Overleaf history is ignored. Starting from `base`
+can produce conflicts in the sync PR: resolve them and merge the PR. This assumes
+`base` has not been manually advanced past an unimported edit; if it has, follow
+[Recovering a skipped co-author edit](#recovering-a-skipped-co-author-edit). The next `publish` writes a new record that counts.
 
-Fix: set `base` in `paper/overleaf.json` back to the Overleaf commit the message names,
-commit that, and run `pull` again so the edit is merged. Merge that recovery through a
-PR. The rewind cancels advances beyond the restored base; an omission before that
-base still refuses, so follow the named earlier base if another refusal appears.
+`publish` refuses only when the record ref does not name a commit, because a
+fast-forward push cannot replace it. Ask a workspace maintainer to delete the ref
+(`git push origin :refs/asta/overleaf/<project-id>`) or restore it from its history,
+then retry.
 
-## Invalid or unrelated historical config
+## Base not in Overleaf history
 
-A historical config error is repaired with a new commit, never by rewriting default
-branch history. Restore the last verifiable full `base` named in the refusal and the
-project's valid URL, commit, then run `pull` and review its changes. A temporary
-unrelated base, short ID, malformed config or invalid URL is superseded when the
-config returns to that verifiable lineage. Earlier skipped edits still refuse.
-Deleting and re-adding the config, or changing the URL away and back, does not reset
-verification for the same project.
+`base` in `paper/overleaf.json` is unreadable or not in Overleaf's history (for
+example, Overleaf history was reset), and no sync record counts. Find an Overleaf
+commit the default branch already has and set `base` to it in a PR:
 
-If Overleaf history was reset and no old base is reachable, restore that history
-when possible. Otherwise preserve workspace-only edits on a separate branch, then
-reimport **all** Overleaf paper files at a reachable full commit ID into a new
-workspace commit. The paper in that commit must exactly match that Overleaf commit,
-except for `overleaf.json`; reconcile workspace-only edits in a later reviewed commit.
-Set `url` and `base` in the reimport commit. If `base` is already correct, change the
-config's JSON formatting too so this explicit reimport appears in config history.
-Review and merge the reimport PR before publishing. A config-only change cannot
-establish this checkpoint. Existing valid base moves are still checked; reimporting
-does not erase a known earlier omission.
+1. Clone the Overleaf project: `git clone <overleaf url> /tmp/overleaf-paper`.
+2. Take the newest commit `publish` made, which its subject identifies:
+   `git -C /tmp/overleaf-paper log --format='%H %s' | grep -m1 ' Publish workspace commit '`.
+   If there is none, take the project's first commit:
+   `git -C /tmp/overleaf-paper rev-list --max-parents=0 HEAD`.
+3. Set `base` to that full commit id, commit, open a PR and merge it.
+4. Run `pull` and review the sync PR.
+
+An earlier commit is always safe: it costs at most conflicts in the sync PR, never a
+skipped edit.
+
+## Recovering a skipped co-author edit
+
+`base` is trusted as committed on the default branch. A hand edit to `base` that
+moves it past an Overleaf edit, or a hand-written record, can make a pull skip a
+co-author's edit. Overleaf keeps every edit. To bring one back:
+
+1. In a clone of the Overleaf project, find the commit that made it:
+   `git log -p -- <file>` (or Overleaf's History panel).
+2. Set `base` in a PR to that commit's parent, or to any earlier Overleaf commit,
+   and merge it.
+3. If a hand-written sync record would select a later Overleaf commit, ask a
+   workspace maintainer to delete `refs/asta/overleaf/<project-id>` with
+   `git push origin :refs/asta/overleaf/<project-id>`. Otherwise that record can
+   override the earlier base again. Keep the record deleted until the recovery
+   PR has merged.
+4. Run `pull`; the edit comes back in the sync PR, possibly as a conflict. Review
+   and merge it before publishing; publish then writes a fresh record.
 
 ## Conflict markers after `pull` (exit 3)
 
@@ -44,43 +62,11 @@ Resolve the markers in the sync PR. Keeping either side's text is a valid resolu
 
 ## Workspace history is shallow
 
-Fetch workspace history explicitly (`git fetch --unshallow origin`, or deepen the
-clone enough to include first-parent `overleaf.json` history back to this project's
-initial import, each change's parent, and publication sources since the current base),
-then retry. Record verification stops at the committed base; checking earlier base
-moves still needs the config history so a later pull cannot hide a skipped edit.
-Even when the paper matches the default tip, a depth-one clone cannot prove that a
-hidden base move brought in all Overleaf edits. Sync never deepens your clone itself;
-a refusal leaves the paper, remote heads, branch refs and `FETCH_HEAD` unchanged.
-
-## The sync record does not continue from its predecessor
-
-The record's workspace commit must descend from the previous record's workspace
-commit. Its Overleaf commit must have exactly one parent equal to the previous sync
-point (the preceding record, or a newer committed pull's base). Merges and gaps in
-that publication chain are rejected. A first record must have exactly one parent,
-`base`, and attest a workspace commit descending from the last default-branch config
-change.
-Pull ignores a record failing these checks with a warning. Run `pull`, resolve any
-conflicts and merge the resulting paper PR. Publish refuses to append to that rejected
-chain, even after the pull: ask a workspace maintainer to restore the ref from its
-history or delete it, then pull and review any remaining edits before publishing.
-Do not advance `base` by hand to suppress edits. Malformed JSON, invalid commit IDs,
-a different project URL or a missing predecessor also refuse before copying or pushing;
-a malformed predecessor is never treated as a first record.
-
-## Origin cannot be read
-
-Restore origin's URL, credentials, network access and advertised default branch, then
-retry. An unavailable origin is a refusal: an older fallback base can reverse an
-intentional workspace revert of previously published text.
-
-## Publish waits for edits or reports an incomplete publication
-
-When Overleaf changed, pull and merge its edits before retrying publish. If a push
-succeeded but confirmation or writing the record failed, pull and merge the recovery
-PR (possibly only `overleaf.json`) before publishing again. Restore reset Overleaf
-history first; do not overwrite a collaborator's later edit to make confirmation pass.
+A depth-one or shallow clone cannot show whether a record's workspace commit is on
+the default branch. Fetch workspace history explicitly (`git fetch --unshallow origin`,
+or deepen the clone enough to include the record's workspace commit), then retry.
+Sync never deepens your clone itself; a refusal leaves the paper, remote heads, branch
+refs and `FETCH_HEAD` unchanged.
 
 ## Local files, assets, or conflict markers block sync
 
@@ -90,3 +76,151 @@ conflict markers, including choosing the workspace side where appropriate, commi
 resolution and run the workspace checks. Publish only after the paper reaches the
 default branch; sync publishes whatever reaches it, so require PRs there when every
 change must be reviewed.
+
+## Sync record ref
+
+A ref that names a tree or annotated tag cannot be replaced by a fast-forward commit
+push. Ask a workspace maintainer to restore the ref to a commit from its history, or
+run `git push origin :refs/asta/overleaf/<project-id>`, then retry. A damaged commit
+record can be replaced by the next successful publish without deleting it.
+
+## Incomplete publication
+
+The Overleaf push succeeded but confirmation or recording the sync point failed.
+Restore origin access if needed, run `asta workspace overleaf pull`, and merge its PR
+before publishing again. That PR may change only `overleaf.json`. If Overleaf history
+was reset, use [Base not in Overleaf history](#base-not-in-overleaf-history); do not
+force-push over later collaborator edits.
+
+## Project URL
+
+Use the project's Git URL, `https://git.overleaf.com/<project-id>`, from Overleaf's
+Git integration. A browser project URL or a sharing link is not a Git URL.
+
+## Paper directory
+
+Use a relative subdirectory of the workspace, such as `--dir paper`. To import a
+different Overleaf project, choose a separate directory rather than replacing the
+existing project's configuration.
+
+## Local changes
+
+Commit the paper changes to a branch and review them, or save a copy before discarding
+them. Retry from a clean paper directory. Git index flags can hide edits from status;
+compare the named file with its committed version when status looks clean.
+
+## Ignore rules
+
+Keep `.gitignore` in the workspace root, not inside the Overleaf paper. Adjust matching
+rules so paper sources and `overleaf.json` can be committed. If checking the rules
+itself failed, check local Git configuration and repository permissions, then retry.
+
+## Local Git failure
+
+Check the installed Git command, repository permissions and local Git configuration.
+Run the failing Git operation locally for its diagnostic, repair it and retry. Sync
+omits raw Git diagnostics because credential helpers and URLs can contain secrets.
+If merge-file is unavailable, install a Git version that includes it or reconcile the
+paper by hand and commit the result.
+
+## Origin cannot be read
+
+Restore origin's URL, credentials, network access and advertised default branch, then
+retry. To repair the advertised branch, ask a repository maintainer to set the default
+branch to an existing branch. An unavailable origin refuses before copying or pushing.
+
+## Default branch changed
+
+Fetch the default branch, wait for its checks to pass, and check out the new tip.
+Retry with that full commit id when using `--expected-commit`. Repeated concurrent
+changes require retrying after they settle, not bypassing the expected-commit guard.
+
+## Paper configuration
+
+For a new link, run `asta workspace overleaf pull <url>`, review the import and commit
+`paper/overleaf.json`. For a damaged or modified configuration, restore its project URL
+and base from Git, or set a usable base through the
+[base recovery procedure](#base-not-in-overleaf-history). Commit the configuration
+with the paper before publishing.
+
+## Empty paper
+
+Commit at least one paper source in the configured directory, or correct `--dir` to
+point to the paper, then retry. Sync refuses an empty export to avoid deleting a paper.
+
+## Git hooks and signing
+
+Check workspace pre-push or commit hooks and signing settings. Export hooks run in the
+paper-only checkout, so they must not require files outside that directory. Repair the
+hook or signing setup and retry; do not bypass required hooks to publish.
+
+## Overleaf authentication
+
+Check `OVERLEAF_TOKEN` or the Git credential helper. Use a current token for an account
+with Git access to this Overleaf project; ask its owner to restore access if needed.
+Retry after access works. Do not put tokens in URLs, commits or issue comments.
+
+## Overleaf connection
+
+Check project access, credentials, network connectivity and the remote state. For a
+rejected push, pull and review newer edits before retrying. For a hook rejection, use
+[Git hooks and signing](#git-hooks-and-signing).
+
+## Overleaf edits need review
+
+Run `asta workspace overleaf pull`, resolve conflicts, review and merge the resulting
+PR, then publish the new default-branch paper. This also repairs a lost publication
+checkpoint; do not overwrite a collaborator's edits to make a push succeed.
+
+## Empty Overleaf project
+
+Add an initial paper file in Overleaf so its Git bridge has a commit, then retry pull.
+If the project already has files, verify that its Git integration exposes a default
+branch and that the supplied URL identifies the intended project.
+
+## Initial workspace commit
+
+Commit the workspace's initial files on a branch before linking the paper. Sync needs
+a committed workspace revision to compare and preserve local changes.
+
+## Path collision
+
+Move the named obstructing file or directory aside, preserving a copy, then retry.
+Reconcile its contents into the paper PR. Sync will not overwrite a directory with a
+file or traverse a file as though it were a directory.
+
+## Paper not on default branch
+
+Merge the paper changes through a reviewed PR, fetch and check out the resulting
+default-branch revision, then publish. Do not publish an unmerged branch. Repositories
+that require review of every paper change must enforce PRs on their default branch.
+
+## File existence conflict
+
+One side edited a file the other deleted. Preserve both versions, decide whether the
+file should exist, and reconcile that decision in the paper PR. A manual resolution
+must include the corresponding Overleaf edit before advancing `base` to it.
+
+## Independent additions
+
+Both sides added the same path without a shared file version. Compare both additions,
+keep their intended content in the paper PR and reconcile the duplicate before retrying.
+Rename one addition if both should remain separate files.
+
+## Concurrent asset edits
+
+Save both asset versions and reconcile them with an editor that supports that format,
+or choose the intended version with the collaborators. Sync cannot merge these bytes
+line by line. Commit the resolved asset with the corresponding sync base in the PR.
+
+## Git identity
+
+Configure the workspace's Git `user.name` and `user.email` to a valid publishing
+identity, then retry. These settings identify the exported Overleaf commit.
+
+## Plain files only
+
+Remove or rename unsafe paths, symlinks, submodules and metadata aliases, or sync those
+files by hand. Convert LFS pointers to ordinary files and remove executable bits when
+appropriate. Remove content-changing `.gitattributes`, Git filters or conversions
+before retrying: the exported bytes must equal the committed paper bytes.
