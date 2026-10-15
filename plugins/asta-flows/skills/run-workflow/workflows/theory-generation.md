@@ -7,15 +7,19 @@ Build theories from the literature on a question. Paper Finder gathers the paper
 Before the plan, check that Theorizer is installed and ready:
 
 ```bash
-command -v theorize || uv tool install "asta-theorizer>=0.1.3"
+uv tool install --upgrade "asta-theorizer>=0.1.4"
 theorize doctor
 ```
 
-`theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further.
+`--upgrade` matters: an older `theorize` already on PATH is not replaced without it, and the version it reports is the one the run gets.
+
+`theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. It exits non-zero on anything that would stop a run, including a model whose provider has no key. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further. The default models follow the key: `gpt-6-sol` and `gpt-6-luna` for an OpenAI key, `claude-opus-5-5` and `claude-sonnet-5-5` for an Anthropic key, OpenAI first when both are set.
 
 ## Plan
 
 Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
+
+When the person brought their own papers, say so in the table instead of inventing a search: step 1 plans the extraction schema only, and step 2 reads `| 2 | Theorizer | Imports their N papers from <their folder>. No search. |`. Count the files before you show the table, so N is the real number and not an estimate.
 
 | Step | Agent | What it does |
 |---|---|---|
@@ -34,6 +38,8 @@ After the table, write this word for word, filling in only the two examples of a
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** Any required papers, or papers that should form the entire corpus?
 
+Leave out any of the three they have already settled. A person who gave you a folder has answered the papers question, and asking it again reads as not having looked.
+
 If the person asks you to run the workflow autonomously, or to choose for them, use your discretion: pick a focus and a theory shape that suit the research context, and say what you picked.
 
 Shape is worth asking about: Theorizer spots laws far more readily when it is told their shape (a production rule such as acids + alkalis -> salts + water, an IF ... THEN law, a quantitative relation) than when asked for theories about a topic.
@@ -51,7 +57,7 @@ Shape is worth asking about: Theorizer spots laws far more readily when it is to
 
    Pass their question as they wrote it, leaving out only instructions for the run itself (how many papers, which models). Add only what they gave: a shape goes into the question ("Find IF ... THEN laws for ..."), since the plan's request is the theory query the generator reads, and a focus goes in as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
-2. **Papers.** Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
+2. **Papers.** When the person brought their own papers, import them and search for nothing -- see [Bring Your Own Papers](#bring-your-own-papers) -- then go on to step 3. Otherwise Paper Finder searches with the plan's search query, and the top papers are fetched into the project:
 
    ```bash
    theorize -p <run>/theory papers search "<the plan's search query>"
@@ -121,4 +127,12 @@ theorize -p <run>/theory papers import <files or a glob>
 theorize -p <run>/theory show papers
 ```
 
-Markdown is read as it is. PDFs are converted on import; add `--ocr mistral` for scanned PDFs when `MISTRAL_API_KEY` is set.
+Markdown is read as it is. PDFs are converted on import; add `--ocr mistral` for scanned PDFs when `MISTRAL_API_KEY` is set. A directory is searched recursively, so one folder per paper works as well as a flat folder of files; everything that is not a paper file, images among them, is ignored.
+
+Import reads title, authors, year, abstract and venue from each file with one small LLM call per paper. Figures are not read: a markdown file that refers to its figures as image tags hands those tags over as text.
+
+`show papers` after the import is what confirms the corpus: check the count against the number of files the person gave you, and say both when you report the plan. Theorizer extracts from full text only, so a paper that arrives without it is not extracted from.
+
+Check the size before spending at this scale, because a brought corpus has no 100-paper target to bound it. Measured on 1,103 markdown papers (73 MB) with the OpenAI defaults: the import took about 4 minutes, and the extraction about 95 minutes for all 1,103. Say the paper count, and that step 4b extracts over every paper again for each new schema it produces, when you show the plan.
+
+A brought corpus is also not a clean one. The 1,103 above held FAQs, a draft and a final of one document, a single-line map file and several near-duplicate papers. None of it stopped the run. Say what you notice, and leave the corpus as the person gave it unless they ask otherwise -- they called it their corpus.
