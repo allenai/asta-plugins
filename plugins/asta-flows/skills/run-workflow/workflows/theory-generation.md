@@ -7,11 +7,11 @@ Build theories from the literature on a question. Paper Finder gathers the paper
 Before the plan, check that Theorizer is installed and ready:
 
 ```bash
-uv tool install --upgrade "asta-theorizer>=0.1.4"
+uv tool install --upgrade asta-theorizer
 theorize doctor
 ```
 
-`--upgrade` matters: an older `theorize` already on PATH is not replaced without it, and the version it reports is the one the run gets.
+`--upgrade` matters: an older `theorize` already on PATH is not replaced without it, and the version it reports is the one the run gets. No version is pinned here, because `--upgrade` already installs the current release and a floor written into this file goes stale on the next one. `theorize doctor` is what says whether the installed version can do what the run needs.
 
 `theorize doctor` names every key Theorizer reads, whether it is set, what a run loses without it, and how to set it. It exits non-zero on anything that would stop a run, including a model whose provider has no key. If it reports a problem, tell the person what is missing and what the run cannot do without it, before going further. The default models follow the key: `gpt-6-sol` and `gpt-6-luna` for an OpenAI key, `claude-opus-5-5` and `claude-sonnet-5-5` for an Anthropic key, OpenAI first when both are set.
 
