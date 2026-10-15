@@ -13,14 +13,13 @@ uv tool install --upgrade asta-theorizer
 theorize doctor
 ```
 
-`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it. For a missing key, give them one of these:
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it. A missing key is the common one, and this is the fix that needs no restart -- Theorizer reads the file on the next command:
 
 ```bash
-echo '{"openai": "..."}' > api_keys.donotcommit.json   # read on the next command; ANTHROPIC_API_KEY is "anthropic"
-echo 'export OPENAI_API_KEY=...' >> ~/.zshrc           # reaches only a session started after it
+echo '{"openai": "..."}' > api_keys.donotcommit.json   # or "anthropic"
 ```
 
-The key file is the one that works without restarting anything. A profile line does not reach this session, which read the environment when it started, so say they will need a new terminal or session for it; and an `export` you run here reaches nothing at all, because the next command starts a new shell. Never ask for the key in chat either, where it would be kept in the transcript.
+Never ask for the key in chat, where it would be kept in the transcript.
 
 ## Plan
 
