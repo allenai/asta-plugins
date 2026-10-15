@@ -15,7 +15,16 @@ can produce conflicts in the sync PR: resolve them and merge the PR. This assume
 `base` has not been manually advanced past an unimported edit; if it has, follow
 [Recovering a skipped co-author edit](#recovering-a-skipped-co-author-edit). The next `publish` writes a new record that counts.
 
-`publish` refuses only when the record ref does not name a commit, because a
+The same fallback warning currently says `Pull started` during `publish`; it
+means publish is comparing Overleaf with `base`. If Overleaf has moved beyond
+that base, publish still refuses until those edits have been pulled and reviewed.
+
+An unsupported file layout in a record's historical paper can refuse instead of
+falling back. A workspace maintainer can restore a valid record from its history
+or delete `refs/asta/overleaf/<project-id>` to use the committed base. Then pull
+and review the result before publishing; do not change historical paper files.
+
+For a damaged record, `publish` refuses only when the ref does not name a commit, because a
 fast-forward push cannot replace it. Ask a workspace maintainer to delete the ref
 (`git push origin :refs/asta/overleaf/<project-id>`) or restore it from its history,
 then retry.
@@ -24,18 +33,25 @@ then retry.
 
 `base` in `paper/overleaf.json` is unreadable or not in Overleaf's history (for
 example, Overleaf history was reset), and no sync record counts. Find an Overleaf
-commit the default branch already has and set `base` to it in a PR:
+commit and set `base` to it in a PR, then review the imported changes:
 
 1. Clone the Overleaf project: `git clone <overleaf url> /tmp/overleaf-paper`.
-2. Take the newest commit `publish` made, which its subject identifies:
-   `git -C /tmp/overleaf-paper log --format='%H %s' | grep -m1 ' Publish workspace commit '`.
-   If there is none, take the project's first commit:
+2. Use the root commit reachable from its current head as a conservative base:
    `git -C /tmp/overleaf-paper rev-list --max-parents=0 HEAD`.
-3. Set `base` to that full commit id, commit, open a PR and merge it.
-4. Run `pull` and review the sync PR.
+   If it prints multiple roots, inspect that history with the collaborators before
+   choosing one. Do not infer a sync point from a `Publish workspace commit`
+   subject: subjects are informational and do not prove publication or review.
+3. Set `base` to that full commit id, commit, open a PR and merge it. If a counting
+   record would override it, have a maintainer remove that ref as described in
+   [Recovering a skipped co-author edit](#recovering-a-skipped-co-author-edit).
+4. Run `pull` and review the entire sync PR before merging it. A root commit is a
+   recovery starting point, not proof that its contents were reviewed.
 
-An earlier commit is always safe: it costs at most conflicts in the sync PR, never a
-skipped edit.
+An earlier base can replay previously reviewed or reverted edits as well as cause
+conflicts. Preserve intended workspace removals and resolutions during review;
+do not assume a clean automatic merge is the desired paper. After a history reset,
+edits absent from the current Git history must be recovered from Overleaf's History
+panel or another retained clone before accepting the result.
 
 ## Recovering a skipped co-author edit
 
