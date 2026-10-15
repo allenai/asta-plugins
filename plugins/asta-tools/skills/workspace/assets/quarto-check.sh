@@ -7,7 +7,7 @@ set -u
 
 # Reject unresolved paper conflicts on every PR, before any rendering.
 python3 - <<'CHECK_PAPER' || exit 1
-import os, pathlib, re, subprocess, sys
+import os, pathlib, re, stat, subprocess, sys
 # Match overleaf_sync.conflict_files: known text sources, never binary assets.
 suffixes = {".tex", ".ltx", ".bib", ".bst", ".bbx", ".cbx", ".sty", ".cls",
             ".clo", ".def", ".cfg", ".dtx", ".ins", ".tikz", ".pgf", ".csv",
@@ -18,18 +18,43 @@ if result.returncode:
     sys.exit(1)
 paths = [pathlib.Path(os.fsdecode(name)) for name in result.stdout.split(b"\0") if name]
 roots = {p.parent for p in paths if p.name in {"overleaf.json", "latexmkrc", ".latexmkrc"}}
-marker = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
-separator = re.compile(rb"(?m)^=======\r?$")
-failed = []
+marker = re.compile(rb"^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?\n?\Z)")
+separator = re.compile(rb"^=======\r?\n?\Z")
+base = os.path.realpath(".")
+
+
+def marked(path, separators):
+    # Stream bounded lines so a large tracked file cannot exhaust memory.
+    found, start = False, True
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as stream:
+        while line := stream.readline(65536):
+            if b"\0" in line:
+                return False
+            if start and not found:
+                found = bool(marker.match(line) or (separators and separator.match(line)))
+            start = line.endswith(b"\n")
+    return found
+
+
+failed, unsafe = [], []
 for path in paths:
-    if (path.suffix.lower() in suffixes and path.is_file()
+    if (path.suffix.lower() in suffixes
             and any(root == path.parent or root in path.parents for root in roots)):
-        data = path.read_bytes()
-        if b"\0" not in data and (marker.search(data) or (
-                path.suffix.lower() not in {".md", ".txt"} and separator.search(data))):
+        full = os.path.join(base, path)
+        if not os.path.lexists(full):
+            continue
+        # Never follow a tracked symlink or symlinked directory out of the checkout.
+        if (os.path.realpath(full) != os.path.normpath(full)
+                or not stat.S_ISREG(os.lstat(full).st_mode)):
+            unsafe.append(str(path))
+        elif marked(full, path.suffix.lower() not in {".md", ".txt"}):
             failed.append(str(path))
+if unsafe:
+    print("Paper sources must be regular files inside the checkout, not symlinks: " + ", ".join(unsafe))
 if failed:
     print("Unresolved paper conflict markers: " + ", ".join(failed))
+if unsafe or failed:
     sys.exit(1)
 CHECK_PAPER
 

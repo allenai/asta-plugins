@@ -20,6 +20,10 @@ DEFAULT_BODY = (
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
 FIELDS = "number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
+SYNC_SUBJECTS = {
+    "Sync Overleaf paper",
+    "Merge current workspace paper into Overleaf sync",
+}
 
 
 def gh(root: Path, *args: str, payload=None):
@@ -267,6 +271,49 @@ def only_recorded_base_changed(root, prefix, before, after):
         return trusted == after["base"]
 
 
+def sync_pr(root: Path, repo: str, branch: str, default_name: str):
+    """The open sync PR on the reserved branch, refusing duplicates or strangers."""
+    prs = gh(
+        root,
+        "pr",
+        "list",
+        "--repo",
+        repo,
+        "--state",
+        "open",
+        "--head",
+        branch,
+        "--json",
+        FIELDS,
+    )
+    if len(prs) > 1:
+        raise ov.SyncError(
+            "Multiple sync PRs exist; close the duplicate before retrying."
+        )
+    pr = prs[0] if prs else None
+    if pr and (
+        MARKER not in (pr.get("body") or "") or pr["baseRefName"] != default_name
+    ):
+        raise ov.SyncError(
+            "The reserved sync branch has an unrelated PR; move it aside before retrying."
+        )
+    return pr
+
+
+def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
+    """Whether a PR-less reserved branch holds only sync-created paper commits."""
+    try:
+        ov.git("cat-file", "-e", f"{old_head}^{{commit}}", cwd=work)
+    except ov.GitCommandError:
+        raise ov.SyncError("Sync branch changed while reading it; retry.")
+    subjects = ov.git("log", "--format=%s", f"{tip}..{old_head}", cwd=work).splitlines()
+    if any(x not in SYNC_SUBJECTS for x in subjects):
+        return False
+    ancestor = ov.git("merge-base", tip, old_head, cwd=work)
+    changed = ov.git("diff", "--name-only", ancestor, old_head, cwd=work)
+    return all(name.startswith(prefix) for name in changed.splitlines())
+
+
 def sync_workspace(project: Path, directory: str):
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
@@ -318,38 +365,17 @@ def sync_workspace(project: Path, directory: str):
         if not acquired:
             message = "Overleaf sync lock is held; confirm the owning run is active, or recover its interrupted lock."
             try:
-                report(root, repo, project_id, message)
+                try:
+                    pr = sync_pr(root, repo, branch, default_name)
+                except ov.SyncError:
+                    pr = None
+                report(root, repo, project_id, message, pr)
             except ov.SyncError:
                 click.echo("Could not report the held lock on GitHub.", err=True)
             raise ov.SyncError(message)
         pr = None
         try:
-            prs = gh(
-                root,
-                "pr",
-                "list",
-                "--repo",
-                repo,
-                "--state",
-                "open",
-                "--head",
-                branch,
-                "--json",
-                FIELDS,
-            )
-            if len(prs) > 1:
-                raise ov.SyncError(
-                    "Multiple sync PRs exist; close the duplicate before retrying."
-                )
-            pr = prs[0] if prs else None
-            if pr and (
-                MARKER not in (pr.get("body") or "")
-                or pr["baseRefName"] != default_name
-            ):
-                pr = None
-                raise ov.SyncError(
-                    "The reserved sync branch has an unrelated PR; move it aside before retrying."
-                )
+            pr = sync_pr(root, repo, branch, default_name)
             origin = ov.git("remote", "get-url", "origin", cwd=root)
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp) / "workspace"
@@ -364,6 +390,16 @@ def sync_workspace(project: Path, directory: str):
                 old_head = old[0] if old else ""
                 if pr and old_head != pr["headRefOid"]:
                     raise ov.SyncError("Sync branch changed while reading it; retry.")
+                # A branch pushed before PR creation is replaceable; anything else
+                # on the reserved name may be someone's work.
+                if (
+                    old_head
+                    and not pr
+                    and not owned_branch(work, tip, old_head, prefix)
+                ):
+                    raise ov.SyncError(
+                        f"The reserved branch {branch} has commits sync did not create; move it aside before retrying."
+                    )
                 if pr and LABEL not in {x["name"] for x in pr["labels"]}:
                     gh(
                         root,

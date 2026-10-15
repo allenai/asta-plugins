@@ -18,6 +18,8 @@ to its branch, and leaves the caller's working tree alone. A remote lock
 serializes runs from different machines. It keeps one PR per project on
 `asta/overleaf-sync/<project-id>`, labeled `asta:overleaf-sync`. Treat this branch
 and label as reserved for sync; close an unwanted PR before restarting it.
+Without an open sync PR, the command replaces that branch only when it holds
+sync-created paper commits; otherwise it refuses until you move the branch aside.
 
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
@@ -55,7 +57,8 @@ Restore access and retry after transport failures. See [recovery](overleaf-recov
 A killed process deliberately leaves its remote lock in place. This prevents
 a paused process from resuming after another publisher has taken over. Normal
 errors release it automatically. If sync says a run already owns the lock,
-the command exits non-zero and records the held lock on the repository. First
+the command exits non-zero and records the held lock on the open sync PR, or
+on a labeled repository issue when no sync PR is open. First
 confirm that the owning scheduler/process has stopped; then inspect and
 delete `refs/asta/overleaf-sync-lock/<project-id>` with an explicit
 `git push --force-with-lease=<ref>:<observed-object-id> origin :<ref>`. Do not

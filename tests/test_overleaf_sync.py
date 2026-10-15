@@ -63,6 +63,8 @@ def github(monkeypatch):
                 return state["issues"]
             state["writes"] += 1
             if args[1].endswith("/pulls"):
+                if state.pop("fail_create", False):
+                    raise sync.ov.SyncError("fixture PR creation failure")
                 pr = {
                     "number": 1,
                     "url": "https://github.com/allenai/test/pull/1",
@@ -568,3 +570,92 @@ def test_shared_check_handles_non_utf8_paths(tmp_path):
     assert result.returncode == 1
     assert b"conflict markers" in result.stdout
     assert b"Traceback" not in result.stderr
+
+
+BRANCH = "refs/heads/asta/overleaf-sync/1234567"
+SCRIPT = (
+    Path(__file__).parents[1]
+    / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
+)
+
+
+def test_held_lock_reports_on_open_sync_pr(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "new edit\n")
+    assert invoke(project).exit_code == 0
+    with sync.lock(project, "1234567") as acquired:
+        assert acquired
+        result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "lock is held" in github["prs"][0]["body"]
+    assert github["issues"] == []
+
+
+def test_branch_pushed_before_pr_creation_is_recovered(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "new edit\n")
+    github["fail_create"] = True
+    assert invoke(project).exit_code == 1
+    assert git(project, "ls-remote", "origin", BRANCH)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert len(github["prs"]) == 1
+
+
+def test_unowned_reserved_branch_without_pr_is_not_replaced(setup, github):
+    seed, project = prepare(setup)
+    (project / "paper/notes.tex").write_text("someone's work\n")
+    git(project, "add", "--", "paper/notes.tex")
+    git(project, "commit", "-m", "Draft notes")
+    git(project, "push", "origin", f"HEAD:{BRANCH}")
+    theirs = git(project, "rev-parse", "HEAD")
+    overleaf_edit(seed, "main.tex", "new edit\n")
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "sync did not create" in result.output
+    assert git(project, "ls-remote", "origin", BRANCH).split()[0] == theirs
+    assert github["prs"] == [] and len(github["issues"]) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+@pytest.mark.parametrize("linked", ["file", "directory"])
+def test_shared_check_never_follows_symlinks_out_of_checkout(tmp_path, linked):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "main.tex").write_bytes(b"<<<<<<< HEAD\n")
+    repo = tmp_path / "repo"
+    paper = repo / "paper"
+    (paper / "sub").mkdir(parents=True)
+    git(repo, "init", "-b", "main")
+    (paper / "overleaf.json").write_text("{}")
+    if linked == "file":
+        (paper / "main.tex").symlink_to(outside / "main.tex")
+    else:
+        (paper / "sub/main.tex").write_text("clean\n")
+    git(repo, "add", "--", "paper")
+    if linked == "directory":
+        (paper / "sub/main.tex").unlink()
+        (paper / "sub").rmdir()
+        (paper / "sub").symlink_to(outside)
+    result = subprocess.run(
+        ["sh", str(SCRIPT)], cwd=repo, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert "not symlinks" in result.stdout
+    assert "conflict markers" not in result.stdout
+
+
+def test_shared_check_streams_long_lines(tmp_path):
+    git(tmp_path, "init", "-b", "main")
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "overleaf.json").write_text("{}")
+    (paper / "main.tex").write_bytes(b"x" * 200_000 + b"<<<<<<< not a line start\n")
+    (paper / "refs.bib").write_bytes(b"y" * 200_000 + b"\n>>>>>>> theirs\n")
+    git(tmp_path, "add", "--", "paper")
+    result = subprocess.run(
+        ["sh", str(SCRIPT)], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert "paper/refs.bib" in result.stdout
+    assert "paper/main.tex" not in result.stdout
