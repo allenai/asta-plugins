@@ -18,8 +18,9 @@ loudly, so they are not optional and need no per-run check.
   if the project's owner has a premium plan, every member of the project can
   clone, push and pull it; an account with its own plan can do so on every
   project it can open. So the sync account needs its own plan only for
-  projects whose owners have none. That page also lists how many Editors
-  each plan allows, and Overleaf's
+  projects whose owners have none. That page also lists how many
+  collaborators (Editors and Reviewers together) each plan allows, and
+  Overleaf's
   [authentication token](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration/git-integration-authentication-tokens)
   page says when a Git token expires.
 - **A sync identity on the repository** that can push branches and the
@@ -29,10 +30,14 @@ loudly, so they are not optional and need no per-run check.
 Then the project owner invites the sync account as Editor (Share → invite by
 email). Never share a personal Overleaf token.
 
-Check access once the sync account has made its Git token: `git ls-remote` on
-the project's Git URL (`https://git.overleaf.com/<project-id>`, username `git`,
-the token as password) must succeed. If it fails, the owner upgrades to a plan
-with Git integration or the sync account gets one.
+Check access once the sync account has accepted the invitation and made its
+Git token: `git ls-remote` on the project's Git URL
+(`https://git.overleaf.com/<project-id>`, username `git`, the token as
+password) must succeed. If it fails, first check that the invitation was
+accepted and that the project ID and token are right; only then does the owner
+upgrade to a plan with Git integration or the sync account get one. A success
+shows read access only: the sync also pushes, so confirm in the Share menu
+that the sync account is an Editor, not a Viewer or Reviewer.
 
 ## 2. What lets it run unattended
 
