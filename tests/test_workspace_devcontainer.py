@@ -89,6 +89,18 @@ def test_tex_image_copies_upstream_full_instead_of_explicit_debian_tex_packages(
     assert "latexml" not in tex_stage
 
 
+def test_ci_image_builds_pin_the_base_image_by_digest():
+    # Pulling the base by tag in CI hits anonymous registry pull limits.
+    assert re.match(
+        r"FROM public\.ecr\.aws/docker/library/[\w.-]+:[\w.-]+ AS asta\n",
+        DOCKERFILE.read_text(),
+    )
+    workflows = ROOT / ".github" / "workflows"
+    for name in ("ci.yml", "docker.yml", "devcontainer-smoke.yml"):
+        assert "scripts/base-image-context.sh" in (workflows / name).read_text(), name
+    assert "$(DOCKER_BUILD_FLAGS)" in (ROOT / "Makefile").read_text()
+
+
 def test_codespaces_login_persistence_ships_in_the_image() -> None:
     assert "asta-auth" not in json.dumps(_devcontainer())
     for stage in DOCKERFILE.read_text().split("\nFROM ")[:2]:

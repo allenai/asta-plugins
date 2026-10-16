@@ -81,6 +81,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Pin base image to its current digest
+        run: |
+          context=$(scripts/base-image-context.sh)
+          echo "DOCKER_BUILD_FLAGS=--build-context $context" >> "$GITHUB_ENV"
+
       - name: Smoke-test image
         run: make docker-test
 
