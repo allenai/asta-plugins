@@ -87,6 +87,19 @@ def test_upgrade_is_limited_to_dependabot_in_the_default_branch_repo(
             "version-update:semver-minor",
             True,
         ),
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml, "
+            "allenai/asta-plugins/.github/workflows/workspace-dependabot-upgrade.yml",
+            "version-update:semver-minor",
+            True,
+        ),
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml",
+            "version-update:semver-major",
+            False,
+        ),
+        ("allenai/asta-plugins/scripts/x.yml", "version-update:semver-patch", False),
+        ("allenai/asta-plugins-fork", "version-update:semver-patch", False),
         ("allenai/asta-plugins", "version-update:semver-major", False),
         ("allenai/asta-plugins", "", False),
         ("allenai/asta-plugins", "unknown", False),
@@ -312,3 +325,22 @@ def test_invalid_wait_is_rejected_before_any_github_request(tmp_path, wait_minut
     merge, deploy, commands = _run_upgrade(tmp_path, {}, wait_minutes=wait_minutes)
     assert merge.returncode != 0
     assert deploy is None and commands == []
+
+
+def test_upgrade_runs_are_serialized_without_cancellation():
+    concurrency = _job()["concurrency"]
+    assert concurrency["cancel-in-progress"] == "false"
+    assert "github.event.pull_request.number" in concurrency["group"]
+
+
+def test_template_groups_every_asta_plugins_pin_into_one_pr():
+    import fnmatch
+
+    config = yaml.safe_load(
+        Path("plugins/asta-tools/skills/workspace/assets/dependabot.yml").read_text()
+    )
+    (update,) = config["updates"]
+    patterns = update["groups"]["asta-plugins"]["patterns"]
+    for workflow in ("workspace-quarto-site.yml", "workspace-dependabot-upgrade.yml"):
+        name = f"allenai/asta-plugins/.github/workflows/{workflow}"
+        assert any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)

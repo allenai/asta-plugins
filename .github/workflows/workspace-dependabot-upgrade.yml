@@ -41,9 +41,10 @@ jobs:
       contents: write
       pull-requests: write
       statuses: read
+    # Serialized, never cancelled: a run that has merged must reach the dispatch.
     concurrency:
       group: asta-plugins-upgrade-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
       - name: Read what the PR updates
         id: metadata
@@ -61,7 +62,8 @@ jobs:
           IFS=',' read -ra names <<< "$NAMES"
           for name in "${names[@]}"; do
             name="${name// /}"
-            [ "$name" = allenai/asta-plugins ] || eligible=false
+            # Dependabot names a reusable-workflow ref by its path in the repo.
+            [[ "$name" =~ ^allenai/asta-plugins(/\.github/workflows/[A-Za-z0-9._-]+\.ya?ml)?$ ]] || eligible=false
           done
           case "$UPDATE_TYPE" in
             version-update:semver-patch|version-update:semver-minor) ;;

@@ -24,9 +24,9 @@ One directory is *not* this repo's own CI:
 (`workflow_call`-only) for the research projects the `workspace` skill
 scaffolds, as is its sibling `workspace-dependabot-upgrade.yml` (called from
 `assets/asta-plugins-upgrade.yml`) — GitHub mandates the `.github/workflows/` path for reusable
-workflows, so it can't live with the skill. Maintain it together with
+workflows, so they can't live with the skill. Maintain them together with
 `plugins/asta-tools/skills/workspace/` (its `assets/docs.yml` stub and
-`assets/Makefile` `check` target form one contract with it).
+`assets/Makefile` `check` target form one contract with them).
 
 PRs from forks and Dependabot-triggered PR runs get read-only tokens, so they
 still build and check the site but skip the preview deploy and its cleanup. A
