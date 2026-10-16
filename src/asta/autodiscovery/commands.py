@@ -278,6 +278,46 @@ def experiment(runid, experiment_id, output_format):
         click.echo(f"  Children: {', '.join(exp['child_ids'])}")
 
 
+@autodiscovery.command()
+@click.argument("runid")
+@click.option(
+    "--output",
+    "-o",
+    "output",
+    type=click.Path(dir_okay=False),
+    help="Write the results JSON to this file (default: stdout)",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(file_okay=False),
+    help="Keep finished experiments here, so a rerun fetches only what is new",
+)
+def results(runid, output, cache_dir):
+    """Get a run's full results: the run, and every experiment with its detail.
+
+    Writes {"run": {runid, name, status, details, metadata, stats},
+    "experiments": [...]}. Finished experiments carry their code, output and
+    rich outputs. Safe to rerun while the run executes.
+    """
+    try:
+        data = AutoDiscoveryClient().get_results(runid, cache_dir)
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+    if not output:
+        click.echo(json.dumps(data, indent=2))
+        return
+    tmp = f"{output}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, output)
+    done = sum(1 for e in data["experiments"] if e.get("status") == "SUCCEEDED")
+    click.echo(
+        f"{output}: run {data['run']['status']}, "
+        f"{done}/{len(data['experiments'])} experiments succeeded"
+    )
+
+
 # -- Run creation commands -----------------------------------------------------
 
 
