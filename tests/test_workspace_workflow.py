@@ -1114,6 +1114,8 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
         "github.event.action": action,
         "github.event.pull_request.head.repo.full_name": head_repo,
         "github.actor": actor,
+        "github.ref": "refs/heads/main",
+        "github.event.repository.default_branch": "main",
     }
     for job, enabled in zip(
         ("build", "deploy", "cleanup-preview", "preview-unavailable"), expected
@@ -1125,7 +1127,8 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
 
 
 def _condition_enabled(expression, context):
-    # These workflow guards use only comparisons, boolean operators, ! and always().
+    # These workflow guards use only comparisons, boolean operators, !, always()
+    # and format() with positional {N} placeholders.
     # Fixtures use canonical casing; unlike Python, GitHub ignores string case.
     expression = re.sub(
         r"\b(?:github|needs)\.[\w.]+",
@@ -1135,7 +1138,26 @@ def _condition_enabled(expression, context):
     expression = expression.replace("&&", " and ").replace("||", " or ")
     expression = re.sub(r"!(?!=)", " not ", expression)
     expression = expression.replace("always()", "True")
-    return eval(expression, {"__builtins__": {}})
+    return eval(
+        expression,
+        {"__builtins__": {}, "format": lambda template, *args: template.format(*args)},
+    )
+
+
+@pytest.mark.parametrize(
+    "ref,deploys", [("refs/heads/main", True), ("refs/heads/topic", False)]
+)
+def test_workflow_dispatch_publishes_only_the_default_branch(ref, deploys) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    context = {
+        "github.repository": "owner/site",
+        "github.event_name": "workflow_dispatch",
+        "github.actor": "contributor",
+        "github.ref": ref,
+        "github.event.repository.default_branch": "main",
+    }
+    assert _condition_enabled(workflow["jobs"]["build"].get("if", "True"), context)
+    assert _condition_enabled(workflow["jobs"]["deploy"]["if"], context) == deploys
 
 
 @pytest.mark.parametrize(
