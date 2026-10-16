@@ -79,13 +79,27 @@ def search_author(name: str, limit: int, output_format: str):
     help="Maximum number of papers (max 1000)",
 )
 @click.option(
+    "--fields-of-study",
+    default=None,
+    help=(
+        "Comma-separated fields of study to restrict results to "
+        '(e.g., "Computer Science,Medicine")'
+    ),
+)
+@click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="json",
     help="Output format",
 )
-def author_papers(author_id: str, fields: str, limit: int, output_format: str):
+def author_papers(
+    author_id: str,
+    fields: str,
+    limit: int,
+    fields_of_study: str | None,
+    output_format: str,
+):
     """Get papers by an author.
 
     Use AUTHOR_ID from 'asta papers author search' command.
@@ -95,6 +109,8 @@ def author_papers(author_id: str, fields: str, limit: int, output_format: str):
         asta papers author papers 1741101
 
         asta papers author papers 1741101 --limit 10 --fields title,year
+
+        asta papers author papers 1741101 --fields-of-study "Computer Science"
     """
     try:
         # Create client (loads config and auth token automatically)
@@ -105,6 +121,7 @@ def author_papers(author_id: str, fields: str, limit: int, output_format: str):
             fields=fields,
             limit=limit,
             publication_date_or_year=publication_date_range,
+            fields_of_study=fields_of_study,
         )
 
         if output_format == "json":
