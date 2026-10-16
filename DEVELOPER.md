@@ -36,6 +36,12 @@ in the repository and open a PR from that branch. A `workflow_dispatch` on
 the default branch publishes main like a push; on another branch it only
 builds. All other events deploy as before.
 
+The separate upgrade stub uses `pull_request_target`, so its privileged job
+runs the default branch’s already-adopted release rather than the PR’s proposed
+upgrade workflow. It reads verified Dependabot metadata and check results
+through the API; never add PR checkout or PR code execution to this job. The
+separate `pull_request` docs build tests the proposed release before merging.
+
 ## Development Setup
 
 Prerequisites: Python 3.11+, `uv`, `make`, and Node.js 20+ / `npx`

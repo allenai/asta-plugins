@@ -1,6 +1,8 @@
 # Reusable workflow: merge a passing Dependabot upgrade of asta-plugins, then
 # redeploy the site. Scaffolded projects call this from a thin
-# `asta-plugins-upgrade.yml` stub on `pull_request` (see the workspace skill).
+# `asta-plugins-upgrade.yml` stub on `pull_request_target` (see the workspace skill).
+# The default branch's stub selects the trusted release that gates this upgrade;
+# never execute the PR's proposed workflow with the merge token.
 #
 # Only Dependabot-authored commits in the project's own non-fork repo qualify.
 # Require a successful required docs build, respect every other required check,
@@ -28,7 +30,7 @@ on:
 jobs:
   merge-and-deploy:
     if: >-
-      github.event_name == 'pull_request'
+      github.event_name == 'pull_request_target'
       && github.event.pull_request.user.login == 'dependabot[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.base.ref == github.event.repository.default_branch
@@ -103,6 +105,8 @@ jobs:
             # A missing ruleset/check or an API error never authorizes a merge.
             # --required can list skipped jobs (e.g. paper-gate), but the docs
             # build itself must be present, required, and actually successful.
+            # JSON mode returns the exporter's status, not the failed/pending
+            # check exit codes; inspect the buckets on a successful API read.
             if checks=$(gh pr checks "$PR_URL" --required --json name,bucket); then
               if jq -e 'any(.[]; .bucket == "fail" or .bucket == "cancel" or
                 (.name == env.DOCS_CHECK and .bucket == "skipping"))' <<< "$checks" >/dev/null; then

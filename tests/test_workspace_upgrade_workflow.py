@@ -40,6 +40,9 @@ def test_upgrade_stub_grants_the_called_workflows_check_read_permissions():
     assert stub["permissions"] == _job()["permissions"]
     assert stub["permissions"]["checks"] == "read"
     assert stub["permissions"]["statuses"] == "read"
+    # GitHub loads this caller and its release pin from the default branch,
+    # so a PR changing the pin cannot change the privileged gate for itself.
+    assert stub["on"] == "pull_request_target"
 
 
 @pytest.mark.parametrize(
@@ -47,6 +50,7 @@ def test_upgrade_stub_grants_the_called_workflows_check_read_permissions():
     [
         ({}, True),
         ({"github.event_name": "push"}, False),
+        ({"github.event_name": "pull_request"}, False),
         ({"github.event.pull_request.user.login": "contributor"}, False),
         ({"github.event.pull_request.head.repo.full_name": "fork/site"}, False),
         ({"github.event.pull_request.base.ref": "topic"}, False),
@@ -57,7 +61,7 @@ def test_upgrade_is_limited_to_dependabot_in_the_default_branch_repo(
     overrides, enabled
 ):
     context = {
-        "github.event_name": "pull_request",
+        "github.event_name": "pull_request_target",
         "github.repository": "owner/site",
         "github.event.pull_request.user.login": "dependabot[bot]",
         "github.event.pull_request.head.repo.full_name": "owner/site",
@@ -266,6 +270,23 @@ def test_missing_or_unsuccessful_required_checks_never_merge_or_queue(
     assert deploy is None
     assert all(command[:1] != ["api"] for command in commands)
     assert all(command[:2] != ["pr", "merge"] for command in commands)
+
+
+def test_failed_required_check_json_stops_immediately(tmp_path):
+    # gh's JSON exporter returns 0 even when a bucket is fail. Exercise the
+    # actual shell's failure branch and ensure it does not poll to timeout.
+    merge, deploy, commands = _run_upgrade(
+        tmp_path,
+        {"checks": [PASS + [{"name": "other", "bucket": "fail"}]]},
+    )
+    assert merge.returncode == 1
+    assert "A required check failed" in merge.stdout
+    assert "did not pass within" not in merge.stdout
+    assert deploy is None
+    assert [command[:2] for command in commands] == [
+        ["pr", "view"],
+        ["pr", "checks"],
+    ]
 
 
 @pytest.mark.parametrize(
