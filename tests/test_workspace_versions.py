@@ -29,6 +29,33 @@ def test_release_accepts_only_final_releases(text, expected) -> None:
     assert workspace_versions.release(text) == expected
 
 
+@pytest.mark.parametrize(
+    ("older", "newer"),
+    [
+        ("0.106.0.dev0", "0.106.0a1"),
+        ("0.106.0a1", "0.106.0rc1"),
+        ("0.106.0rc1", "0.106.0"),
+        ("0.106.0", "0.106.0.post1.dev0"),
+        ("0.106.0.post1.dev0", "0.106.0.post1"),
+        ("0.105.9.post3", "0.106.0.dev0"),
+    ],
+)
+def test_cli_order_follows_pep_440(older, newer) -> None:
+    assert workspace_versions.cli_order(older) < workspace_versions.cli_order(newer)
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        (b"ASTA_WORKSPACE_MIN_CLI := 0.120.0 # required", (0, 120, 0)),
+        (b"ASTA_WORKSPACE_MIN_CLI ?= v0.120.0", (0, 120, 0)),
+        (b"ASTA_WORKSPACE_MIN_CLI=0.120.0#note", (0, 120, 0)),
+    ],
+)
+def test_min_cli_declaration_allows_make_syntax(line, expected) -> None:
+    assert workspace_versions.rules_min_cli(line + b"\nrule\n") == expected
+
+
 def _sync(project: Path, monkeypatch, cli_version, rules=b"rule\n", *extra):
     calls = []
 
@@ -47,11 +74,39 @@ def test_rules_needing_newer_cli_fail_with_update_command(
 ) -> None:
     project = project_with_ref(tmp_path, "v0.120.0")
     rules = b"ASTA_WORKSPACE_MIN_CLI := 0.120.0\nrule\n"
-    result, _ = _sync(project, monkeypatch, (0, 110, 0), rules)
+    result, _ = _sync(project, monkeypatch, "0.110.0", rules)
     assert result.exit_code != 0
     assert "needs asta 0.120.0 or newer; this is asta 0.110.0" in result.output
     assert "uv tool install --force" in result.output
     assert "asta-plugins.git@v0.120.0" in result.output
+    assert not (project / ".asta/cache/workspace.mk").exists()
+
+
+@pytest.mark.parametrize("cli_version", ["0.105.0.dev0", "0.120.0rc1", "0.120.0.dev3"])
+def test_prerelease_cli_below_minimum_fails(
+    tmp_path: Path, monkeypatch, cli_version
+) -> None:
+    project = project_with_ref(tmp_path, "v0.120.0")
+    rules = b"ASTA_WORKSPACE_MIN_CLI := 0.120.0 # required\nrule\n"
+    result, _ = _sync(project, monkeypatch, cli_version, rules)
+    assert result.exit_code != 0
+    assert f"needs asta 0.120.0 or newer; this is asta {cli_version}" in result.output
+
+
+def test_post_release_cli_meets_minimum(tmp_path: Path, monkeypatch) -> None:
+    project = project_with_ref(tmp_path, "v0.120.0")
+    rules = b"ASTA_WORKSPACE_MIN_CLI := 0.120.0\nrule\n"
+    result, _ = _sync(project, monkeypatch, "0.120.0.post1", rules)
+    assert result.exit_code == 0, result.output
+    assert "is newer than" not in result.output
+
+
+def test_unreadable_min_cli_declaration_fails(tmp_path: Path, monkeypatch) -> None:
+    project = project_with_ref(tmp_path, "v0.120.0")
+    rules = b"ASTA_WORKSPACE_MIN_CLI := next\nrule\n"
+    result, _ = _sync(project, monkeypatch, "0.120.0", rules)
+    assert result.exit_code != 0
+    assert "unreadable ASTA_WORKSPACE_MIN_CLI := next" in result.output
     assert not (project / ".asta/cache/workspace.mk").exists()
 
 
@@ -60,9 +115,9 @@ def test_cached_rules_are_checked_against_the_running_cli(
 ) -> None:
     project = project_with_ref(tmp_path, "v0.120.0")
     rules = b"ASTA_WORKSPACE_MIN_CLI := 0.120.0\nrule\n"
-    result, _ = _sync(project, monkeypatch, (0, 120, 0), rules)
+    result, _ = _sync(project, monkeypatch, "0.120.0", rules)
     assert result.exit_code == 0, result.output
-    result, calls = _sync(project, monkeypatch, (0, 119, 0), rules)
+    result, calls = _sync(project, monkeypatch, "0.119.0", rules)
     assert calls == []
     assert result.exit_code != 0
     assert "needs asta 0.120.0 or newer" in result.output
@@ -72,7 +127,7 @@ def test_rules_without_minimum_and_unknown_cli_are_accepted(
     tmp_path: Path, monkeypatch
 ) -> None:
     project = project_with_ref(tmp_path, "main")
-    result, _ = _sync(project, monkeypatch, (0, 105, 0))
+    result, _ = _sync(project, monkeypatch, "0.105.0")
     assert result.exit_code == 0, result.output
     rules = b"ASTA_WORKSPACE_MIN_CLI := 0.120.0\nrule\n"
     result, _ = _sync(project, monkeypatch, None, rules, "--refresh")
@@ -83,7 +138,7 @@ def test_pin_older_than_supported_rules_says_to_move_it(
     tmp_path: Path, monkeypatch
 ) -> None:
     project = project_with_ref(tmp_path, "v0.104.0")
-    result, calls = _sync(project, monkeypatch, (0, 113, 0))
+    result, calls = _sync(project, monkeypatch, "0.113.0")
     assert result.exit_code != 0
     assert calls == []
     assert "this asta supports v0.105.0 or newer" in result.output
@@ -96,7 +151,7 @@ def test_newer_cli_than_pin_explains_how_to_move_it_without_changing_files(
     project = project_with_ref(tmp_path, "v0.110.0")
     docs = project / ".github/workflows/docs.yml"
     before = docs.read_text()
-    result, calls = _sync(project, monkeypatch, (0, 113, 0))
+    result, calls = _sync(project, monkeypatch, "0.113.0")
     assert result.exit_code == 0, result.output
     assert calls == ["v0.110.0"]
     assert "asta 0.113.0 is newer than the asta-plugins@v0.110.0" in result.output
@@ -106,7 +161,7 @@ def test_newer_cli_than_pin_explains_how_to_move_it_without_changing_files(
 
 @pytest.mark.parametrize(
     ("ref", "cli_version"),
-    [("v0.113.0", (0, 113, 0)), ("main", (0, 113, 0)), ("v0.110.0", None)],
+    [("v0.113.0", "0.113.0"), ("main", "0.113.0"), ("v0.110.0", None)],
 )
 def test_no_pin_notice_without_a_newer_final_release(
     tmp_path: Path, monkeypatch, ref, cli_version
