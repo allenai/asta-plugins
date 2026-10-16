@@ -27,6 +27,10 @@ Allow squash merges and let the sync identity merge: the sync squash-merges its
 PR to credit co-authors. An owner who would rather merge each sync PR can
 decline; the sync then posts its notice and waits for them.
 
+Give the workspace its checks: the sync merges its PR only after at least one
+check passes. In a repository with no checks, each sync PR waits for a person
+to merge it, and `main` lags Overleaf until they do.
+
 ## 3. Defaults, applied with one yes
 
 Tell the owner, in one plain message before applying anything:
@@ -45,7 +49,7 @@ On one yes, apply all of them:
 | No force-push on `main` (`default-branch.json`) | A force-push makes the next sync start over from its last known point, so published text can come back as conflicts, though no edit is lost. |
 | Link sharing off in Overleaf | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
 | Changes reach `main` only through PRs whose paper builds (`docs-checks.json`) | Text whose paper does not build can reach `main` and be published to Overleaf. |
-| The workspace's checks and Pages previews, branches deleted after merge, and a private repo for an unpublished paper | Breakage shows up only after merge, stale sync branches pile up, and a public repo exposes the draft. |
+| Pages previews, branches deleted after merge, and a private repo for an unpublished paper | Changes can't be previewed before merge, stale sync branches pile up, and a public repo exposes the draft. |
 
 Apply the two rulesets as [repo protections](repo-protections.md) describes,
 with its stop conditions and read-back, but both together under this one yes
