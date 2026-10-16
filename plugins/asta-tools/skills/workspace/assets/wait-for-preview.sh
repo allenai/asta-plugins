@@ -82,23 +82,54 @@ wait)
   branch=$(git branch --show-current)
   sha=$(git rev-parse HEAD)
 
+  check_pr=0 pr_number=
+  if [ -n "$branch" ]; then
+    default_branch=$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name) || {
+      echo "Could not determine the default branch for $REPO" >&2
+      exit 1
+    }
+    if [ "$branch" != "$default_branch" ]; then
+      check_pr=1
+    fi
+  fi
+
   set --
   [ -z "$branch" ] || set -- --branch "$branch"
   elapsed=0 run_id=
   while [ "$elapsed" -lt "$WORKFLOW_TIMEOUT" ]; do
-    if ! run_id=$(gh run list --repo "$REPO" "$@" \
-      --workflow "$WORKFLOW" --limit 100 \
-      --json databaseId,headSha --jq \
-      "[.[] | select(.headSha==\"$sha\" and .databaseId>$before_run)][0].databaseId // empty" \
-      2>/dev/null); then
-      run_id=
+    if [ "$check_pr" -eq 1 ] && [ -z "$pr_number" ]; then
+      pr_numbers=$(gh pr list --repo "$REPO" --head "$branch" --state open \
+        --limit 100 --json number,headRefOid --jq \
+        "[.[] | select(.headRefOid==\"$sha\") | .number] | join(\" \")") || {
+        echo "Could not look up an open PR for $branch on $REPO" >&2
+        exit 1
+      }
+      case "$pr_numbers" in
+        *' '*) echo "Multiple open PRs for $branch at $sha; use a distinct branch or commit" >&2; exit 1 ;;
+        *) pr_number=$pr_numbers ;;
+      esac
     fi
-    [ -n "$run_id" ] && break
+    if [ -z "$run_id" ]; then
+      if ! run_id=$(gh run list --repo "$REPO" "$@" \
+        --workflow "$WORKFLOW" --limit 100 \
+        --json databaseId,headSha --jq \
+        "[.[] | select(.headSha==\"$sha\" and .databaseId>$before_run)][0].databaseId // empty" \
+        2>/dev/null); then
+        run_id=
+      fi
+    fi
+    if [ -n "$run_id" ] && { [ "$check_pr" -eq 0 ] || [ -n "$pr_number" ]; }; then
+      break
+    fi
     sleep "$POLL"
     elapsed=$((elapsed + POLL))
   done
+  if [ "$check_pr" -eq 1 ] && [ -z "$pr_number" ]; then
+    echo "No open PR for $branch at $sha within ${WORKFLOW_TIMEOUT}s; open a PR or push the current commit" >&2
+    exit 1
+  fi
   [ -n "$run_id" ] || {
-    echo "No newer docs workflow run for $sha — was preview-baseline run after pushing?" >&2
+    echo "No newer docs workflow run for $sha — check that preview-baseline ran before pushing" >&2
     exit 1
   }
 
@@ -124,8 +155,10 @@ wait)
     exit 1
   }
 
-  after=$(pages_tip)
-  [ -n "$after" ] || { echo "Could not read $PAGES_BRANCH on $REPO" >&2; exit 1; }
+  after=$(pages_tip) && [ -n "$after" ] || {
+    echo "Could not read $PAGES_BRANCH on $REPO" >&2
+    exit 1
+  }
   if [ "$after" = "$before" ]; then
     echo "Docs workflow $run_id published no run-ID marker; update its workspace workflow" >&2
     exit 1
@@ -172,12 +205,36 @@ wait)
 
   elapsed=0
   while [ "$elapsed" -lt "$PAGES_TIMEOUT" ]; do
-    if ! built=$(gh api "repos/$REPO/pages/builds?per_page=10" --jq \
-      "[.[] | select(.commit==\"$published\" and .status==\"built\")] | length"); then
+    # GitHub caps a page at 100 builds; the timeout still bounds a busy repo.
+    if ! built_commits=$(gh api "repos/$REPO/pages/builds?per_page=100" --jq \
+      '[.[] | select(.status=="built") | .commit] | .[]'); then
       echo "Could not read Pages builds for $REPO; verify Pages API access" >&2
       exit 1
     fi
-    if [ "$built" -gt 0 ]; then
+    built=0
+    for candidate in $built_commits; do
+      if [ "$candidate" = "$published" ]; then
+        built=1
+        break
+      fi
+      if ! relation=$(gh api "repos/$REPO/compare/$published...$candidate" --jq .status); then
+        echo "Could not compare Pages build $candidate with published marker $published" >&2
+        exit 1
+      fi
+      case "$relation" in ahead|identical) built=1; break ;; esac
+    done
+    if [ "$built" -eq 1 ]; then
+      if [ "$check_pr" -eq 1 ]; then
+        pr_head=$(gh pr view "$pr_number" --repo "$REPO" \
+          --json state,headRefOid --jq '[.state, .headRefOid] | join(" ")') || {
+          echo "Could not confirm PR $pr_number is still open at $sha" >&2
+          exit 1
+        }
+        if [ "$pr_head" != "OPEN $sha" ]; then
+          echo "PR $pr_number is no longer open at $sha (now: state=${pr_head%% *}, head=${pr_head#* })" >&2
+          exit 1
+        fi
+      fi
       rm -f "$state"
       echo "Pages published $published"
       exit 0
