@@ -1048,14 +1048,17 @@ def pull(url: str | None, directory: str, project: Path) -> None:
             (paper / name).unlink(missing_ok=True)
         write_files(new, paper)
         save_config(paper, url, head)
-    click.echo(
-        f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
-        + (
-            "Resolve conflicts, review with `git diff`, then commit and open a PR."
-            if conflicted
-            else "Review with `git diff`, then commit and open a PR."
+    ctx = click.get_current_context(silent=True)
+    # The sync command reports its own outcome and opens the PR itself.
+    if ctx is None or not ctx.meta.get("overleaf_sync"):
+        click.echo(
+            f"Copied Overleaf commit {head[:7]} into {paper.relative_to(root)}/. "
+            + (
+                "Resolve conflicts, review with `git diff`, then commit and open a PR."
+                if conflicted
+                else "Review with `git diff`, then commit and open a PR."
+            )
         )
-    )
     if conflicted:
         click.echo(
             "Both sides changed the same lines in: "

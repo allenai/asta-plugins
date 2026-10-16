@@ -6,6 +6,7 @@ on:
       - Dockerfile
       - docker/**
       - image/skills-cli/**
+      - scripts/base-image-context.sh
       - src/asta/**
       - plugins/asta-tools/skills/workspace/assets/devcontainer.json
       - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
@@ -51,7 +52,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build image
         if: inputs.published-images != true
-        run: docker build --target ${{ matrix.target }} -t asta-smoke .
+        run: |
+          context=$(scripts/base-image-context.sh)
+          docker build --build-context "$context" --target ${{ matrix.target }} -t asta-smoke .
       - uses: actions/download-artifact@v4
         if: inputs.published-images == true
         with:

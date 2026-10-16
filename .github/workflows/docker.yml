@@ -33,9 +33,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pin base image to its current digest
+        id: base
+        run: |
+          context=$(scripts/base-image-context.sh)
+          echo "context=$context" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         id: build
         with:
+          build-contexts: ${{ steps.base.outputs.context }}
           push: true
           target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
@@ -170,6 +176,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.newest.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -183,6 +191,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Point latest at the highest published final release
+        id: newest
         run: |
           set -euo pipefail
           image=ghcr.io/allenai/asta
@@ -201,6 +210,40 @@ jobs:
             docker buildx imagetools create -t "$image:latest$suffix" "$image@$digest"
             test "$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
           done
+          echo "version=$newest" >> "$GITHUB_OUTPUT"
+
+  # `@latest` workflow callers read this branch, so it tracks the same release as the image.
+  # Its own job keeps `contents: write` away from the third-party actions above.
+  latest-branch:
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
+    needs: latest
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-release-latest-branch
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward the latest branch to that release
+        env:
+          NEWEST: ${{ needs.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          target=$(git rev-parse "refs/tags/$NEWEST^{commit}")
+          git fetch origin +refs/heads/latest:refs/remotes/origin/latest
+          current=$(git rev-parse refs/remotes/origin/latest)
+          if git merge-base --is-ancestor "$target" "$current"; then
+            echo "latest already includes $NEWEST"
+            exit 0
+          fi
+          git merge-base --is-ancestor "$current" "$target" || {
+            echo "latest ($current) is not an ancestor of $NEWEST; not moving it" >&2
+            exit 1
+          }
+          git push origin "$target:refs/heads/latest"
 
   example-workspace:
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')

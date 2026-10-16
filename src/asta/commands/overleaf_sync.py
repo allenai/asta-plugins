@@ -130,14 +130,23 @@ def stale_lock(root: Path, project_id: str) -> bool:
 def waiting_message(pr: dict, head: str) -> str:
     state = pr.get("mergeStateStatus", "UNKNOWN")
     mergeable = pr.get("mergeable", "UNKNOWN")
-    action = {
+    actions = {
         "BLOCKED": "A person must supply required approvals or satisfy repository rules; inspect required reviews and checks.",
         "UNSTABLE": "A person must fix failing checks, then rerun sync.",
         "UNKNOWN": "GitHub is still computing merge eligibility; retry sync after it settles.",
         "BEHIND": "Update the sync branch with the default branch and rerun its checks.",
         "DIRTY": "A person must resolve merge conflicts on the sync PR.",
         "DRAFT": "A person must mark the sync PR ready when its review is complete.",
-    }.get(state, "Wait for completed successful checks; fix any failing checks.")
+    }
+    if state in actions:
+        action = actions[state]
+    elif not pr.get("statusCheckRollup"):
+        action = (
+            "No checks are configured for the sync PR, and sync merges only after "
+            "a check passes, so a person must merge it."
+        )
+    else:
+        action = "Wait for completed successful checks; fix any failing checks."
     if pr.get("headRefOid") != head:
         action = (
             "The sync head changed; rerun sync and wait for checks on the new head."
@@ -269,14 +278,16 @@ def report(root: Path, repo: str, project_id: str, message: str, pr=None, notice
 
 
 def pull_into(root: Path, directory: str) -> bool:
+    ctx = click.get_current_context()
+    ctx.meta["overleaf_sync"] = True
     try:
-        click.get_current_context().invoke(
-            ov.pull, url=None, directory=directory, project=root
-        )
+        ctx.invoke(ov.pull, url=None, directory=directory, project=root)
     except SystemExit as exc:
         if exc.code != ov.CONFLICT_EXIT:
             raise
         return True
+    finally:
+        del ctx.meta["overleaf_sync"]
     return False
 
 
@@ -684,6 +695,7 @@ def sync_workspace(project: Path, directory: str):
                             f"{head}:refs/heads/{branch}",
                             cwd=work,
                         )
+                    opened = not pr
                     if not pr:
                         created = gh(
                             root,
@@ -732,7 +744,8 @@ def sync_workspace(project: Path, directory: str):
                     if changed or head != old_head:
                         reset_status(root, repo, pr, notice)
                         click.echo(
-                            f"Updated {pr['url']}; waiting for checks and a run with no new Overleaf edits."
+                            f"{'Opened' if opened else 'Updated'} {pr['url']}; "
+                            "waiting for checks and a run with no new Overleaf edits."
                         )
                         return
                     pr = gh(
@@ -838,4 +851,10 @@ def sync_workspace(project: Path, directory: str):
                     "Could not report the sync failure on GitHub; the original refusal follows.",
                     err=True,
                 )
+                raise exc
+            # A reported conflict waits on its authors, not an operator: exit 0 so
+            # a scheduler's failure alert fires only when an operator must act.
+            if isinstance(exc, ConflictError):
+                click.echo(exc.format_message())
+                return
             raise

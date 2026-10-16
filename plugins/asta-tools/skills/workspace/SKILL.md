@@ -74,6 +74,7 @@ Before writing any file in the steps below, check whether the target path alread
 7. Add the thin `assets/docs.yml` workflow stub even for local-only projects: it selects the managed version. For local-only use, remove its `on.push` and `on.pull_request` events and use `on.workflow_dispatch` so publishing requires manual activation. Keep the `jobs.docs.uses` line; sync reads it. Preserve an existing version policy (`@main` canary, `@latest` release channel, or a fixed release/commit). Do not upgrade or repin it as part of unrelated setup.
 8. Copy `assets/README.md`; fill `{{TITLE}}`, `{{DESCRIPTION}}` and `{{ASTA_PLUGINS_REF}}`. Use the ref in `.github/workflows/docs.yml` for the guide link. The upstream `latest` branch tracks the released guide; verify the link for a custom ref.
 9. Run `asta workspace sync --require-scripts`, then `make check`. Keep customized copies. Before removing old unmodified helpers, require a successful refresh and validate the project from an empty cache.
+10. To keep the paper in step with an Overleaf project, follow [`workflows/overleaf-sync.md`](workflows/overleaf-sync.md).
 
 ### Separate LaTeX paper (optional)
 

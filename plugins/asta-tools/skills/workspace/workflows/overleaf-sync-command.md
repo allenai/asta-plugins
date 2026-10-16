@@ -32,7 +32,14 @@ run paper builds without privileged tokens or secrets.
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
 markers, and GitHub reports completed successful checks and permits merging.
-No checks means wait. Failed checks or conflicts leave the PR for a person.
+With no checks configured, the PR waits for a person to merge it, and the run
+says so. Failed checks or conflicts leave the PR for a person.
+
+Sync exits 0 when the run ends waiting on people: a conflict recorded on the
+sync PR, or a PR waiting for checks or a reviewer. It exits nonzero only when
+an operator must act, such as an authentication or permission failure, a
+refusal, or a conflict it could not record on GitHub, so a scheduler's failure
+alert means someone has to step in.
 The PR description normally says only that it holds co-author edits and merges
 itself; it does not restate what GitHub's merge box shows. A conflict adds one
 line, removed once resolved, that links each conflicting workspace change and
