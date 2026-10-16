@@ -1420,59 +1420,112 @@ def test_runner_disk_is_freed_for_any_discoverable_paper(
     assert bool(json.loads(discovery.stdout)["papers"]) == frees
 
 
-def _version_note_script() -> str:
-    lines = WORKFLOW.read_text().splitlines()
-    start = next(
-        i for i, line in enumerate(lines) if "Flag a change to the caller" in line
+def _preview_comment_script() -> str:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item
+        for item in workflow["jobs"]["deploy"]["steps"]
+        if item.get("name") == "Publish to gh-pages"
     )
-    end = next(i for i in range(start, len(lines)) if lines[i].strip() == "fi")
-    return "\n".join(lines[start : end + 1]).replace(
-        "${{ github.repository }}", "owner/site"
+    script = step["run"].split("# For a PR, ensure", 1)[1]
+    return (
+        ("# For a PR, ensure" + script)
+        .replace("${{ github.event_name }}", "pull_request")
+        .replace("${{ github.repository }}", "owner/site")
     )
 
 
 @pytest.mark.parametrize(
-    "old,new,expected",
+    "old,new,base_status,expected",
     [
         (
-            "v0.113.0",
-            "v0.114.0",
+            "allenai/asta-plugins@v0.113.0",
+            "allenai/asta-plugins@v0.114.0",
+            0,
             "⬆️ asta-plugins version: v0.113.0 → v0.114.0 "
             "(https://github.com/allenai/asta-plugins/releases/tag/v0.114.0)",
         ),
-        ("v0.113.0", "v0.113.0", None),
+        ("allenai/asta-plugins@v0.113.0", "allenai/asta-plugins@v0.113.0", 0, None),
         (
-            "v0.113.0",
-            "main",
+            "allenai/asta-plugins@v0.113.0",
+            "allenai/asta-plugins@main",
+            0,
             "⬆️ asta-plugins version: v0.113.0 → main "
             "(https://github.com/allenai/asta-plugins/tree/main)",
         ),
+        (
+            "allenai/asta-plugins@v0.113.0",
+            "other/asta-plugins@v0.113.0",
+            0,
+            "⬆️ asta-plugins version: allenai/asta-plugins@v0.113.0 → "
+            "other/asta-plugins@v0.113.0 "
+            "(https://github.com/other/asta-plugins/releases/tag/v0.113.0)",
+        ),
+        (
+            "other/asta-plugins@main",
+            "allenai/asta-plugins@latest",
+            0,
+            "⬆️ asta-plugins version: other/asta-plugins@main → "
+            "allenai/asta-plugins@latest "
+            "(https://github.com/allenai/asta-plugins/tree/latest)",
+        ),
+        # Missing base files and failed API responses must still post the preview.
+        (None, "allenai/asta-plugins@v0.114.0", 1, None),
+        ("allenai/asta-plugins@v0.113.0", "allenai/asta-plugins@v0.114.0", 1, None),
+        (None, "allenai/asta-plugins@v0.114.0", 0, None),
+        ("allenai/asta-plugins@v0.113.0", None, 0, None),
     ],
 )
+@pytest.mark.parametrize("existing_comment", ["", "123"])
 def test_preview_comment_reports_asta_plugins_version_change(
-    tmp_path, old, new, expected
+    tmp_path, old, new, base_status, expected, existing_comment
 ) -> None:
-    def stub(ref):
+    def stub(pin):
+        if pin is None:
+            return '{"message":"Not Found"}\n'
+        repo, ref = pin.split("@", 1)
         return (
             "jobs:\n  docs:\n"
-            f"    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@{ref}\n"
+            f"    uses: {repo}/.github/workflows/workspace-quarto-site.yml@{ref}\n"
         )
 
-    (tmp_path / ".github/workflows").mkdir(parents=True)
-    (tmp_path / ".github/workflows/docs.yml").write_text(stub(new))
+    workspace = tmp_path / "checkout"
+    (workspace / ".github/workflows").mkdir(parents=True)
+    if new is not None:
+        (workspace / ".github/workflows/docs.yml").write_text(stub(new))
     (tmp_path / "base.yml").write_text(stub(old))
+    # Publish changes cwd to the gh-pages worktree before generating the comment.
+    pages = tmp_path / "gh-pages"
+    pages.mkdir()
+    comment_body = tmp_path / "comment.txt"
+    api_log = tmp_path / "api.log"
     script = (
-        'gh() { case "$*" in *"contents/.github/workflows/docs.yml?ref=base123"*)'
-        " cat base.yml ;; *) return 1 ;; esac; }\n"
-        "body='📄 Preview: https://example/'\n"
-        + _version_note_script()
-        + '\nprintf "%s" "$body"'
+        'tmp="$PREVIEW_WORKTREE"\n'
+        'gh() { printf "%s\\n" "$*" >> "$API_LOG"; case "$*" in\n'
+        '  *"repos/owner/site/pages"*) printf "https://example/" ;;\n'
+        '  *"contents/.github/workflows/docs.yml?ref=base123"*)\n'
+        '    cat "$BASE_WORKFLOW"; return "$BASE_STATUS" ;;\n'
+        '  *--jq*) printf "%s" "$EXISTING_COMMENT" ;;\n'
+        '  *) for arg; do case "$arg" in\n'
+        '    body=*) printf "%s" "${arg#body=}" > "$COMMENT_BODY" ;;\n'
+        "  esac; done ;;\n"
+        "esac; }\n"
+        + _preview_comment_script()
+        + '\nprintf "comment block completed\\n"'
     )
     result = subprocess.run(
-        ["bash", "-c", script],
-        cwd=tmp_path,
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        cwd=pages,
         env={
             **os.environ,
+            "GITHUB_WORKSPACE": str(workspace),
+            "PREVIEW_WORKTREE": str(pages),
+            "BASE_WORKFLOW": str(tmp_path / "base.yml"),
+            "BASE_STATUS": str(base_status),
+            "COMMENT_BODY": str(comment_body),
+            "EXISTING_COMMENT": existing_comment,
+            "API_LOG": str(api_log),
+            "PR_NUMBER": "7",
             "CALLER_WORKFLOW_REF": "owner/site/.github/workflows/docs.yml@refs/pull/7/merge",
             "BASE_SHA": "base123",
         },
@@ -1480,6 +1533,12 @@ def test_preview_comment_reports_asta_plugins_version_change(
         text=True,
         check=True,
     )
-    lines = result.stdout.splitlines()
-    assert lines[0] == "📄 Preview: https://example/"
+    assert "comment block completed" in result.stdout
+    lines = comment_body.read_text().splitlines()
+    assert lines[0] == "📄 Preview: https://example/pr-preview/pr-7/"
     assert lines[1:] == ([expected] if expected else [])
+    commands = api_log.read_text().splitlines()
+    if existing_comment:
+        assert any("issues/comments/123 -X PATCH" in command for command in commands)
+    else:
+        assert any("issues/7/comments -f body=" in command for command in commands)
