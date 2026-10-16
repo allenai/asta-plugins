@@ -40,8 +40,48 @@ def test_release_accepts_only_final_releases(text, expected) -> None:
         ("0.105.9.post3", "0.106.0.dev0"),
     ],
 )
-def test_cli_order_follows_pep_440(older, newer) -> None:
-    assert workspace_versions.cli_order(older) < workspace_versions.cli_order(newer)
+def test_cli_version_follows_pep_440(older, newer) -> None:
+    assert workspace_versions.cli_version(older) < workspace_versions.cli_version(newer)
+
+
+@pytest.mark.parametrize("text", ["0.106.0-rc1", "0.106.0.rc1", "0.106.0c1"])
+def test_non_normalized_pre_releases_fail_the_minimum(text) -> None:
+    rules = b"ASTA_WORKSPACE_MIN_CLI := 0.106.0\n"
+    message = workspace_versions.cli_too_old(rules, "v0.106.0", text)
+    assert message is not None and "needs asta 0.106.0 or newer" in message
+
+
+def test_unreadable_cli_version_does_not_pass() -> None:
+    rules = b"ASTA_WORKSPACE_MIN_CLI := 0.106.0\n"
+    message = workspace_versions.cli_too_old(rules, "v0.106.0", "not-a-version")
+    assert message is not None and "cannot read this asta's version" in message
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("v0.120.0", "@v0.120.0"),
+        ("v0.100.0", "@v0.106.0"),
+        ("main", "@main"),
+        ("latest", "@latest"),
+    ],
+)
+def test_update_command_suggests_the_pinned_release(ref, expected) -> None:
+    rules = b"ASTA_WORKSPACE_MIN_CLI := 0.106.0\n"
+    message = workspace_versions.cli_too_old(rules, ref, "0.105.0")
+    assert message.endswith(f"asta-plugins.git{expected}")
+
+
+def test_messages_name_the_source_only_when_given() -> None:
+    rules = b"ASTA_WORKSPACE_MIN_CLI := 0.106.0\n"
+    for message in (
+        workspace_versions.cli_too_old(rules, "v0.106.0", "0.105.0"),
+        workspace_versions.pin_too_old("v0.104.0"),
+        workspace_versions.pin_behind("v0.106.0", "0.110.0"),
+    ):
+        assert message is not None and "docs.yml" not in message
+    named = workspace_versions.pin_too_old("v0.104.0", "Makefile")
+    assert "pin in Makefile" in named
 
 
 @pytest.mark.parametrize(
@@ -50,6 +90,13 @@ def test_cli_order_follows_pep_440(older, newer) -> None:
         (b"ASTA_WORKSPACE_MIN_CLI := 0.120.0 # required", (0, 120, 0)),
         (b"ASTA_WORKSPACE_MIN_CLI ?= v0.120.0", (0, 120, 0)),
         (b"ASTA_WORKSPACE_MIN_CLI=0.120.0#note", (0, 120, 0)),
+        (b"override ASTA_WORKSPACE_MIN_CLI := 0.120.0", (0, 120, 0)),
+        (b"export ASTA_WORKSPACE_MIN_CLI := 0.120.0", (0, 120, 0)),
+        (b"export override ASTA_WORKSPACE_MIN_CLI = 0.120.0", (0, 120, 0)),
+        (
+            b"ASTA_WORKSPACE_MIN_CLI := 0.106.0\nASTA_WORKSPACE_MIN_CLI := 0.120.0",
+            (0, 120, 0),
+        ),
     ],
 )
 def test_min_cli_declaration_allows_make_syntax(line, expected) -> None:
@@ -123,7 +170,7 @@ def test_cached_rules_are_checked_against_the_running_cli(
     assert "needs asta 0.120.0 or newer" in result.output
 
 
-def test_rules_without_minimum_and_unknown_cli_are_accepted(
+def test_rules_without_minimum_accepted_but_unknown_cli_is_not(
     tmp_path: Path, monkeypatch
 ) -> None:
     project = project_with_ref(tmp_path, "main")
@@ -131,7 +178,8 @@ def test_rules_without_minimum_and_unknown_cli_are_accepted(
     assert result.exit_code == 0, result.output
     rules = b"ASTA_WORKSPACE_MIN_CLI := 0.120.0\nrule\n"
     result, _ = _sync(project, monkeypatch, None, rules, "--refresh")
-    assert result.exit_code == 0, result.output
+    assert result.exit_code != 0
+    assert "cannot read this asta's version." in result.output
 
 
 def test_pin_older_than_supported_rules_says_to_move_it(
@@ -142,7 +190,7 @@ def test_pin_older_than_supported_rules_says_to_move_it(
     assert result.exit_code != 0
     assert calls == []
     assert "this asta supports v0.105.0 or newer" in result.output
-    assert "Move the pin in .github/workflows/docs.yml" in result.output
+    assert "Move the asta-plugins pin in .github/workflows/docs.yml" in result.output
 
 
 def test_newer_cli_than_pin_explains_how_to_move_it_without_changing_files(
@@ -154,8 +202,12 @@ def test_newer_cli_than_pin_explains_how_to_move_it_without_changing_files(
     result, calls = _sync(project, monkeypatch, "0.113.0")
     assert result.exit_code == 0, result.output
     assert calls == ["v0.110.0"]
-    assert "asta 0.113.0 is newer than the asta-plugins@v0.110.0" in result.output
-    assert "change @v0.110.0 to @v0.113.0" in result.output
+    assert (
+        "asta 0.113.0 is newer than the pinned asta-plugins@v0.110.0" in result.output
+    )
+    assert (
+        "change @v0.110.0 to @v0.113.0 in .github/workflows/docs.yml" in result.output
+    )
     assert docs.read_text() == before
 
 
@@ -176,4 +228,6 @@ def test_published_rules_load_with_this_release() -> None:
     needed = workspace_versions.rules_min_cli(RULES.read_bytes())
     assert needed is not None
     assert needed >= workspace_versions.OLDEST_RULES_REF
-    assert needed <= workspace_versions.release(__version__)
+    assert workspace_versions.cli_version(__version__) >= workspace_versions.Version(
+        workspace_versions.format_release(needed)
+    )

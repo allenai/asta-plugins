@@ -50,8 +50,11 @@ MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_ASSET_BYTES = 1024 * 1024
 
 
+WORKFLOW_FILE = ".github/workflows/docs.yml"
+
+
 def selected_source(project: Path) -> tuple[str, str]:
-    workflow = project / ".github/workflows/docs.yml"
+    workflow = project / WORKFLOW_FILE
     try:
         lines = workflow.read_text().splitlines()
     except FileNotFoundError as exc:
@@ -219,8 +222,8 @@ def _require_scripts(rules: bytes, scripts: Mapping[str, object], ref: str) -> N
         )
 
 
-def _require_cli(rules: bytes, ref: str, cli) -> None:
-    if message := workspace_versions.cli_too_old(rules, ref, cli):
+def _require_cli(rules: bytes, ref: str, cli: str | None) -> None:
+    if message := workspace_versions.cli_too_old(rules, ref, cli, WORKFLOW_FILE):
         raise click.ClickException(message)
 
 
@@ -287,10 +290,10 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
-    if message := workspace_versions.pin_too_old(ref):
+    if message := workspace_versions.pin_too_old(ref, WORKFLOW_FILE):
         raise click.ClickException(message)
     cli = workspace_versions.installed()
-    if message := workspace_versions.pin_behind(ref, cli):
+    if message := workspace_versions.pin_behind(ref, cli, WORKFLOW_FILE):
         click.echo(message, err=True)
     source_ref = os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA") or ref
     resolved_repository = os.environ.get("ASTA_WORKSPACE_RESOLVED_REPOSITORY")
