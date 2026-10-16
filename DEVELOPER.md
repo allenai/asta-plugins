@@ -31,8 +31,9 @@ PRs from forks and Dependabot-triggered PR runs get read-only tokens, so they
 still build and check the site but skip the preview deploy and its cleanup. A
 `No preview (fork PR)` or `No preview (Dependabot)` check explains why in a
 warning and job summary, and how to get a preview: push the changes to a branch
-in the repository and open a PR from that branch. All other events deploy as
-before.
+in the repository and open a PR from that branch. A `workflow_dispatch` on
+the default branch publishes main like a push; on another branch it only
+builds. All other events deploy as before.
 
 ## Development Setup
 
