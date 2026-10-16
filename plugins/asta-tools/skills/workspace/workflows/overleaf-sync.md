@@ -13,13 +13,26 @@ loudly, so they are not optional and need no per-run check.
 - **Git integration for the syncing Overleaf account.** Overleaf's
   [Git integration](https://www.overleaf.com/learn/how-to/Git_integration_and_GitHub_synchronization)
   must be available to that account. The sync uses Git integration, not
-  Overleaf's GitHub synchronization.
+  Overleaf's GitHub synchronization. Git integration is a
+  [premium feature](https://docs.overleaf.com/getting-started/free-and-premium-plans/premium-features):
+  if the project's owner has a premium plan, every member of the project can
+  clone, push and pull it; an account with its own plan can do so on every
+  project it can open. So the sync account needs its own plan only for
+  projects whose owners have none. That page also lists how many Editors
+  each plan allows, and Overleaf's
+  [authentication token](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration/git-integration-authentication-tokens)
+  page says when a Git token expires.
 - **A sync identity on the repository** that can push branches and the
   `refs/asta/` refs that hold its sync record and lock, open PRs, and write
   issues for its notices.
 
 Then the project owner invites the sync account as Editor (Share → invite by
 email). Never share a personal Overleaf token.
+
+Check access once the sync account has made its Git token: `git ls-remote` on
+the project's Git URL (`https://git.overleaf.com/<project-id>`, username `git`,
+the token as password) must succeed. If it fails, the owner upgrades to a plan
+with Git integration or the sync account gets one.
 
 ## 2. What lets it run unattended
 
