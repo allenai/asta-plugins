@@ -131,6 +131,9 @@ def test_new_edits_create_one_pr_and_quiet_rerun_waits_for_checks(setup, github)
     overleaf_edit(seed, "main.tex", "coauthor edit\n")
     result = invoke(project)
     assert result.exit_code == 0, result.output
+    assert "Opened https://github.com/allenai/test/pull/1;" in result.output
+    assert "Copied Overleaf commit" not in result.output
+    assert "open a PR" not in result.output
     assert len(github["prs"]) == 1
     assert not github["merges"]
     assert git(project, "rev-parse", "HEAD") == original
@@ -156,7 +159,7 @@ def test_conflict_is_left_in_pr_and_never_merged(setup, github):
     git(project, "push", "origin", "HEAD:main")
     overleaf_edit(seed, "main.tex", "Overleaf edit\n")
     result = invoke(project)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
     assert len(github["prs"]) == 1
     body = github["prs"][0]["body"]
     assert body.startswith(sync.CONFLICT_BODY)
@@ -196,7 +199,7 @@ def test_resolved_conflict_line_is_removed_before_merge(setup, github):
     commit_all(project)
     git(project, "push", "origin", "HEAD:main")
     overleaf_edit(seed, "main.tex", "Overleaf edit\n")
-    assert invoke(project).exit_code == 1
+    assert invoke(project).exit_code == 0
     pr = github["prs"][0]
     assert pr["body"].startswith(sync.CONFLICT_BODY)
     branch = "asta/overleaf-sync/1234567"
@@ -412,7 +415,7 @@ def test_pull_conflict_names_changed_file_commit_not_unrelated_paper_edit(
     git(project, "push", "origin", "HEAD:main")
     overleaf_edit(seed, "main.tex", "Overleaf conflict\n")
     result = invoke(project)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
     assert culprit in github["prs"][0]["body"]
     assert unrelated not in github["prs"][0]["body"]
     assert "paper/main.tex" in result.output
@@ -430,9 +433,22 @@ def test_base_merge_conflict_names_changed_file_commit_not_default_tip(setup, gi
     unrelated = git(project, "rev-parse", "HEAD")
     git(project, "push", "origin", "HEAD:main")
     result = invoke(project)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
     assert culprit in github["prs"][0]["body"]
     assert unrelated not in github["prs"][0]["body"]
+
+
+def test_unreported_conflict_still_fails(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "Overleaf conflict\n")
+    assert invoke(project).exit_code == 0
+    (project / "paper/main.tex").write_text("workspace conflict\n")
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    github["fail_report"] = True
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "author must resolve" in result.output
 
 
 @pytest.mark.parametrize("filename", ["latexmkrc", ".latexmkrc", "sub/latexmkrc"])
@@ -780,13 +796,27 @@ def test_waiting_reports_actual_state(setup, github, state, action):
     assert action in result.output
 
 
+def test_waiting_without_checks_says_none_are_configured(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0]["mergeStateStatus"] = "CLEAN"
+    github["prs"][0]["statusCheckRollup"] = []
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert "No checks are configured" in result.output
+    assert "Wait for completed successful checks" not in result.output
+    assert "Copied Overleaf commit" not in result.output
+    assert not github["merges"]
+
+
 def test_markerless_pull_conflict_names_directory(setup, github, monkeypatch):
     seed, project = prepare(setup)
     overleaf_edit(seed, "main.tex", "ready\n")
     assert invoke(project).exit_code == 0
     monkeypatch.setattr(sync, "pull_into", lambda *a: True)
     result = invoke(project)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
     assert "conflicts in paper;" in result.output
     assert "conflicts in ;" not in result.output
 
@@ -916,7 +946,7 @@ def test_markerless_conflict_uses_git_unmerged_paths(setup, github, monkeypatch)
 
     monkeypatch.setattr(sync.ov, "git", unmerged)
     result = invoke(project)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
     assert "conflicts in paper/image.pdf;" in result.output
 
 
@@ -1035,7 +1065,7 @@ def test_record_fallback_notice_survives_conflict_status(setup, github):
     git(origin, "update-ref", RECORD_REF, git(origin, "rev-parse", "main"))
     overleaf_edit(seed, "main.tex", "coauthor replacement\n")
     result = invoke(project)
-    assert result.exit_code != 0
+    assert result.exit_code == 0, result.output
     body = github["prs"][0]["body"]
     assert "conflict" in body.lower()
     notice = sync.record_notice(body)
@@ -1043,7 +1073,7 @@ def test_record_fallback_notice_survives_conflict_status(setup, github):
     assert "#record-not-used" in notice
     assert len(github["issues"]) == 1
     result = invoke(project)
-    assert result.exit_code != 0
+    assert result.exit_code == 0, result.output
     assert sync.record_notice(github["prs"][0]["body"]) == notice
     assert len(github["issues"]) == 1
 
