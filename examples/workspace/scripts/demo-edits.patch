@@ -1,0 +1,64 @@
+diff --git a/evidence.yml b/evidence.yml
+index d565e6e0538dd91561e8bf263fe4acf51ef29d35..ac686f32ae4d647a20d684f6d428af1495df4a90 100644
+--- a/evidence.yml
++++ b/evidence.yml
+@@ -3,3 +3,7 @@ evidence:
+     quote: "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms"
+     cite: vaswani2017attention
+     locator: "abstract"
++  bert-encoder:
++    quote: "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers."
++    cite: devlin2019bert
++    locator: "abstract"
+diff --git a/lit-review/index.qmd b/lit-review/index.qmd
+index 76fd79a16ae0302f3ff90c6e0d08ed680c549cc0..5479fc0c5f3818415c8605c83bdb686618711bfa 100644
+--- a/lit-review/index.qmd
++++ b/lit-review/index.qmd
+@@ -5,7 +5,7 @@ documentclass: article
+ 
+ This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)). The separate `paper/main.tex` is edited directly. Both cite the project-root `references.bib`.
+ 
+-## Example claim
++## Example claims
+ 
+-[Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. The highlighted claim exposes its source quote on hover or keyboard focus.
++[Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. [BERT later applied the Transformer encoder to bidirectional language representation]{.ev key="bert-encoder"} [@devlin2019bert]. Each highlighted claim shows its source quote on hover or keyboard focus.
+ 
+diff --git a/paper/main.tex b/paper/main.tex
+index 448d278ab69c5e2d6ecda4028d50a6593c310489..94e33fe23383bf6cfe21e7e104d57ac19f92c7f8 100644
+--- a/paper/main.tex
++++ b/paper/main.tex
+@@ -13,14 +13,14 @@
+ \maketitle
+ 
+ \section{One bibliography}
+-This example paper and the companion Quarto page both cite the same project bibliography. Vaswani and colleagues proposed the Transformer architecture based on attention mechanisms~\cite{vaswani2017attention}. The citation resolves from the project-root \texttt{references.bib}; no bibliography copy or Overleaf project is required.
++This example paper and the companion Quarto page both cite the same project bibliography. Vaswani and colleagues proposed the Transformer, an architecture based solely on attention~\cite{vaswani2017attention}. Its core operation is scaled dot-product attention, $\mathrm{softmax}(QK^\top/\sqrt{d_k})V$. BERT later pre-trained a bidirectional Transformer encoder~\cite{devlin2019bert}. The citation resolves from the project-root \texttt{references.bib}; no bibliography copy or Overleaf project is required.
+ 
+ \section{A compact figure}
+ Figure~\ref{fig:workspace} shows the two document formats sharing one bibliography.
+ \begin{figure}[htbp]
+   \centering
+   \fcolorbox{astateal}{astagreen!15}{\parbox{0.66\linewidth}{\centering\vspace{0.7em}\textbf{references.bib}\\[0.5em]Quarto page \quad $\longleftarrow$ \quad bibliography \quad $\longrightarrow$ \quad LaTeX paper\vspace{0.7em}}}
+-  \caption{A single source of citations for both writing formats.}
++  \caption{One shared bibliography feeds both writing formats.}
+   \label{fig:workspace}
+ \end{figure}
+ 
+diff --git a/references.bib b/references.bib
+index 0f02951b978bcbba488acdd0113cf4138b691263..977c2bfd48a60c58f91cf1f7d9894a00b52b204b 100644
+--- a/references.bib
++++ b/references.bib
+@@ -6,3 +6,12 @@
+   archivePrefix = {arXiv},
+   url = {https://arxiv.org/abs/1706.03762}
+ }
++
++@misc{devlin2019bert,
++  title = {{BERT}: Pre-training of Deep Bidirectional Transformers for Language Understanding},
++  author = {Devlin, Jacob and Chang, Ming-Wei and Lee, Kenton and Toutanova, Kristina},
++  year = {2019},
++  eprint = {1810.04805},
++  archivePrefix = {arXiv},
++  url = {https://arxiv.org/abs/1810.04805}
++}

@@ -188,8 +188,9 @@ for line in deps.read_text(errors="replace").splitlines():
 if not seen_target or not expect_target:
     raise SystemExit("LaTeX wrote an incomplete paper dependency list")
 
+# --relative matches the project-relative inputs when the project is below the git root.
 changed = subprocess.check_output(
-    ["git", "diff", "--name-only", "-z", sys.argv[1], "HEAD"]
+    ["git", "diff", "--relative", "--name-only", "-z", sys.argv[1], "HEAD"]
 )
 changed = [os.fsdecode(path) for path in changed.split(b"\0") if path]
 relevant = [
@@ -239,7 +240,9 @@ if ! git worktree add --detach "$old" "$base" >/dev/null; then
 fi
 
 # The base may name its main document differently, e.g. a main.tex shim.
-if ! latexdiff --flatten "$old/$dir/$old_main" "$dir/$main" > "$diff_tex"; then
+# The base worktree is the repo root; projects may live in a subdirectory.
+prefix=$(git rev-parse --show-prefix)
+if ! latexdiff --flatten "$old/$prefix$dir/$old_main" "$dir/$main" > "$diff_tex"; then
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'
   exit 0
 fi

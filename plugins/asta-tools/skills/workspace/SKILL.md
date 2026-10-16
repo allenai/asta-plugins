@@ -21,6 +21,17 @@ When the user wants to see what changed since an earlier version, offer `asta wo
 
 Choose a trusted ref and keep source files stable while the copy is made. The baseline contains only committed files; do not present current ignored inputs as historical data. Run comparisons one at a time. See [the developer guide](assets/DEVELOPER.md#auto-deploy-githubworkflowsdocsyml) for build prerequisites, copying costs, cleanup and serving limits.
 
+## Before landing paper changes
+
+Before merging a paper PR or pushing paper edits directly to the default branch
+where allowed, check for an open PR labeled `asta:overleaf-sync`. Let it merge
+first so newer co-author edits conflict on your change before it lands. If it
+has not caught up, run `asta workspace overleaf sync` where the Overleaf token
+is available, then update your branch. Resolve a sync conflict on that PR and
+rerun its checks; do not bypass it by advancing `overleaf.json` manually.
+For scheduling, invited-coauthor access, lock recovery and repository status,
+read [Overleaf sync](workflows/overleaf-sync-command.md).
+
 ## Save
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
@@ -33,6 +44,10 @@ For a headless agent (the user only sees results via deployed URL):
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
 Don't merge a PR without explicit user approval.
+
+## Overleaf sync refusals
+
+When `asta workspace overleaf pull` or `publish` refuses, or a sync PR conflicts, follow the section its message links in [`workflows/overleaf-recovery.md`](workflows/overleaf-recovery.md).
 
 ## Scaffold components as needed
 
@@ -59,6 +74,7 @@ Before writing any file in the steps below, check whether the target path alread
 7. Add the thin `assets/docs.yml` workflow stub even for local-only projects: it selects the managed version. For local-only use, remove its `on.push` and `on.pull_request` events and use `on.workflow_dispatch` so publishing requires manual activation. Keep the `jobs.docs.uses` line; sync reads it. Preserve an existing version policy (`@main` canary, `@latest` release channel, or a fixed release/commit). Do not upgrade or repin it as part of unrelated setup.
 8. Copy `assets/README.md`; fill `{{TITLE}}`, `{{DESCRIPTION}}` and `{{ASTA_PLUGINS_REF}}`. Use the ref in `.github/workflows/docs.yml` for the guide link. The upstream `latest` branch tracks the released guide; verify the link for a custom ref.
 9. Run `asta workspace sync --require-scripts`, then `make check`. Keep customized copies. Before removing old unmodified helpers, require a successful refresh and validate the project from an empty cache.
+10. To keep the paper in step with an Overleaf project, follow [`workflows/overleaf-sync.md`](workflows/overleaf-sync.md).
 
 ### Separate LaTeX paper (optional)
 
@@ -87,13 +103,9 @@ Structural validation of these entries belongs in deterministic build tooling. W
 
 ### GitHub Pages deploy
 
-1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — via `gh api` if the token has admin on the repo, otherwise ask the user.
-2. Configure Pages to serve from `gh-pages`:
-   ```bash
-   gh api repos/{owner}/{repo}/pages -X POST --input - <<'EOF'
-   {"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}
-   EOF
-   ```
+1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — try it with `gh api`; if GitHub refuses, give the user the command.
+2. Configure Pages to serve from `gh-pages` with the shipped `assets/github-pages.json`: run `gh api repos/{owner}/{repo}/pages -X POST --input <skill-dir>/assets/github-pages.json`; if GitHub refuses, give the user that command, the file and GitHub's error. Read it back with `gh api repos/{owner}/{repo}/pages` and confirm the source matches; if Pages already exists with another source, tell the user.
+3. Optional, for this or any GitHub repo you set up: recommend repo protections (default-branch rulesets, required docs checks). Read `workflows/repo-protections.md` and follow it before proposing or applying any.
 
 On every PR the workflow publishes a full rendered preview under
 `<pages>/pr-preview/pr-<N>/` and a `what-changed.html` beside it. The latter

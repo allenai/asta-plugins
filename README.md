@@ -24,7 +24,7 @@ A core set of skills for individual research tasks. Core capabilities include:
   - Example request: _Send the Asta team feedback about how this project went_
 
 ### asta-flows
-A library of multi-step workflows. The agent will select an appropriate workflow and execute a series of actions using the `asta-tools` skills and other tools in the environment 
+Research workflows the agent plans with you and carries out using local tools: `theorize`, `auto-discovery` and `s2`. Start one with `/run-workflow`.
 
 ### asta-assistant
 A long-range autonomous research assistant. Point the agent to a mission document containing background and directions to explore.

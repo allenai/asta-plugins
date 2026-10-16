@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -1332,3 +1333,66 @@ def test_paper_preview_builds_inside_the_released_tex_image(ref, image):
     )
     assert result.stdout.splitlines()[-1] == f"image={image}"
     assert ("::warning::" in result.stdout) == (image.endswith("latest-tex"))
+
+
+def test_runner_disk_is_freed_before_the_paper_image_pull() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["build"]["steps"]
+    names = [step.get("name") for step in steps]
+    free = names.index("Free runner disk for the LaTeX image")
+    assert free + 1 == names.index("Build paper preview")
+    run = steps[free]["run"]
+    removed = re.search(r"sudo rm -rf (.+)", run).group(1).split()
+    assert removed == [
+        "/usr/local/lib/android",
+        "/usr/share/dotnet",
+        "/opt/ghc",
+        "/usr/local/.ghcup",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tracked", "frees"),
+    [
+        ("paper/iclr2027_conference.tex", True),
+        ("paper/main.tex", True),
+        ("README.md", False),
+    ],
+)
+def test_runner_disk_is_freed_for_any_discoverable_paper(
+    tmp_path: Path, tracked: str, frees: bool
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item
+        for item in workflow["jobs"]["build"]["steps"]
+        if item.get("name") == "Free runner disk for the LaTeX image"
+    )
+    project = tmp_path / "project"
+    (project / tracked).parent.mkdir(parents=True, exist_ok=True)
+    (project / tracked).write_text("\\documentclass{article}\n")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "add", tracked], cwd=project, check=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("sudo", "df"):
+        (bin_dir / name).write_text(f'#!/bin/sh\necho {name} "$@" >> "$LOG"\n')
+        (bin_dir / name).chmod(0o755)
+    log = tmp_path / "commands.log"
+    subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        cwd=project,
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}", "LOG": str(log)},
+        check=True,
+    )
+    commands = log.read_text().splitlines() if log.exists() else []
+    assert any(line.startswith("sudo rm -rf") for line in commands) == frees
+
+    discovery = subprocess.run(
+        ["python3", str((WORKSPACE_ASSETS / "paper-discovery.py").resolve())],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert bool(json.loads(discovery.stdout)["papers"]) == frees

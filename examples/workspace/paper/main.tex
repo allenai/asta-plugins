@@ -1,0 +1,29 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\definecolor{astateal}{HTML}{0A3235}
+\definecolor{astagreen}{HTML}{0FCB8C}
+\hypersetup{colorlinks=true,linkcolor=astateal,urlcolor=astateal,citecolor=astateal}
+\title{A small paper in an Asta workspace}
+\author{Workspace example}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{One bibliography}
+This example paper and the companion Quarto page both cite the same project bibliography. Vaswani and colleagues proposed the Transformer architecture based on attention mechanisms~\cite{vaswani2017attention}. The citation resolves from the project-root \texttt{references.bib}; no bibliography copy or Overleaf project is required.
+
+\section{A compact figure}
+Figure~\ref{fig:workspace} shows the two document formats sharing one bibliography.
+\begin{figure}[htbp]
+  \centering
+  \fcolorbox{astateal}{astagreen!15}{\parbox{0.66\linewidth}{\centering\vspace{0.7em}\textbf{references.bib}\\[0.5em]Quarto page \quad $\longleftarrow$ \quad bibliography \quad $\longrightarrow$ \quad LaTeX paper\vspace{0.7em}}}
+  \caption{A single source of citations for both writing formats.}
+  \label{fig:workspace}
+\end{figure}
+
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}

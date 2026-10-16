@@ -7,7 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 TOOLS_HOOKS = ROOT / "plugins" / "asta-tools" / "hooks"
-FLOWS_HOOKS = ROOT / "plugins" / "asta-flows" / "hooks"
 
 
 def test_hooks_json_valid():
@@ -29,7 +28,6 @@ def test_hook_scripts_executable():
     scripts = [
         TOOLS_HOOKS / "approve-asta-files.sh",
         TOOLS_HOOKS / "approve-asta-bash.sh",
-        FLOWS_HOOKS / "approve-bd-bash.sh",
     ]
 
     for script in scripts:
@@ -246,51 +244,6 @@ def test_approve_asta_bash_asks_for_other_commands():
     print("✓ approve-asta-bash.sh returns empty for other commands")
 
 
-def test_approve_bd_bash_allows_bd():
-    """Test approve-bd-bash.sh approves bd (beads) CLI commands."""
-    script = FLOWS_HOOKS / "approve-bd-bash.sh"
-
-    for cmd in [
-        "bd list",
-        "bd show abc-123 --json",
-        "bd create --type=task --title='x'",
-        "bd dep add a b",
-    ]:
-        input_json = json.dumps({"tool_input": {"command": cmd}})
-        result = subprocess.run(
-            ["bash", str(script)],
-            input=input_json,
-            capture_output=True,
-            text=True,
-        )
-
-        assert result.returncode == 0
-        output = json.loads(result.stdout)
-        assert "hookSpecificOutput" in output, f"no decision for: {cmd}"
-        assert output["hookSpecificOutput"]["decision"]["behavior"] == "allow", (
-            f"not allowed: {cmd}"
-        )
-    print("✓ approve-bd-bash.sh approves bd commands")
-
-
-def test_approve_bd_bash_does_not_match_bd_prefix_lookalike():
-    """`bdiff` and similar should not be auto-approved by the bd hook."""
-    script = FLOWS_HOOKS / "approve-bd-bash.sh"
-
-    input_json = json.dumps({"tool_input": {"command": "bdiff a b"}})
-    result = subprocess.run(
-        ["bash", str(script)],
-        input=input_json,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    output = json.loads(result.stdout)
-    assert output == {}, "Expected empty JSON for bd-prefix lookalike"
-    print("✓ approve-bd-bash.sh does not match bd-prefix lookalikes")
-
-
 if __name__ == "__main__":
     test_hooks_json_valid()
     test_hook_scripts_executable()
@@ -303,6 +256,4 @@ if __name__ == "__main__":
     test_approve_asta_files_does_not_match_asta_suffix_lookalike()
     test_approve_asta_bash_allows_asta_cli()
     test_approve_asta_bash_asks_for_other_commands()
-    test_approve_bd_bash_allows_bd()
-    test_approve_bd_bash_does_not_match_bd_prefix_lookalike()
     print("\n✓ All hook tests passed!")

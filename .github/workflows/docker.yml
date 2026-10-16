@@ -207,3 +207,15 @@ jobs:
             docker buildx imagetools create -t "$image:latest$suffix" "$image@$digest"
             test "$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
           done
+
+  example-workspace:
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
+    needs: latest
+    uses: ./.github/workflows/example-workspace.yml
+    with:
+      ref-name: ${{ github.ref_name }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      issues: write

@@ -1,0 +1,132 @@
+name: Example workspace
+
+# Builds examples/workspace in the published -tex image. Releases call this after
+# `latest` moves and deploy only a passing build; PRs also check shared assets.
+# The check is not required.
+on:
+  workflow_call:
+    inputs:
+      ref-name:
+        description: Final release tag whose -tex image and assets build the demo
+        type: string
+        required: true
+  pull_request:
+    paths:
+      - examples/workspace/**
+      - .github/workflows/example-workspace.yml
+      - plugins/asta-tools/skills/workspace/assets/**
+      - tests/test_example_workspace_workflow.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: example-workspace-${{ github.event.pull_request.number || inputs.ref-name || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
+    defaults:
+      run:
+        working-directory: examples/workspace
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and validate the example and its edited demo
+        shell: bash
+        env:
+          ASTA_EXAMPLE_REF: ${{ inputs.ref-name || github.sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          make check
+          make preview-artifact-check
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - if: inputs.ref-name != ''
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: examples/workspace/_site
+
+  deploy:
+    needs: build
+    if: inputs.ref-name != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Check after acquiring the Pages lock: an older build may finish last.
+      - name: Check that this is still the newest final release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref-name }}
+        run: |
+          set -euo pipefail
+          tags=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/tags?per_page=100")
+          newest=$(jq -er '[.[][] | .name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+            | sort_by(ltrimstr("v") | split(".") | map(tonumber)) | last // empty' <<< "$tags")
+          if [ "$REF" = "$newest" ]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping $REF: newest final release is $newest"
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+          fi
+      - id: deployment
+        if: steps.release.outputs.current == 'true'
+        uses: actions/deploy-pages@v4
+
+  report:
+    # Example failures occur after image promotion and never hold the release.
+    needs: [build, deploy]
+    if: failure() && inputs.ref-name != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref-name }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          set -euo pipefail
+          # Keep the existing per-tag title so reruns reuse older build issues.
+          title="Example workspace failed to build for $REF"
+          if [ "$BUILD_RESULT" = failure ]; then
+            body="The post-release example build failed; deployment was not attempted. Any previously published demo is unchanged. Run: $RUN"
+          elif [ "$DEPLOY_RESULT" = failure ]; then
+            body="The post-release example deployment failed after a successful build. The live site's state is unconfirmed; inspect the deployment before retrying. Run: $RUN"
+          else
+            echo 'No example build or deployment failure to report'
+            exit 0
+          fi
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+            --search "\"$title\" in:title" --limit 100 --json number,title,state \
+            | jq -r --arg title "$title" \
+              '[.[] | select(.title == $title)] | first // empty | [.number, .state] | @tsv')
+          if [ -n "$issue" ]; then
+            read -r number state <<< "$issue"
+            if [ "$state" = CLOSED ]; then
+              gh issue reopen "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
