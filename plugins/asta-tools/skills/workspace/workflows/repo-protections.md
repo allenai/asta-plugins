@@ -1,6 +1,6 @@
 # Workflow: recommended repo protections
 
-None of these is required for the workspace to work. The defaults ship as GitHub ruleset files in the skill's `assets/rulesets/` directory, released with each version. Apply them exactly as shipped.
+These protections are optional for rendering and publishing a workspace. Hands-off Dependabot upgrades require the docs build to be a required check; verify existing protection or get approval to apply `docs-checks.json` before enabling that feature. The defaults ship as GitHub ruleset files in the skill's `assets/rulesets/` directory, released with each version. Apply them exactly as shipped.
 
 | Ruleset | Recommend when |
 |---|---|

@@ -8,8 +8,10 @@ on: pull_request
 
 permissions:
   actions: write
+  checks: read
   contents: write
   pull-requests: write
+  statuses: read
 
 jobs:
   upgrade:

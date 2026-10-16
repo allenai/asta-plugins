@@ -1,14 +1,12 @@
 # Reusable workflow: merge a passing Dependabot upgrade of asta-plugins, then
 # redeploy the site. Scaffolded projects call this from a thin
-# `asta-plugins-upgrade.yml` stub on `pull_request` (see the asta-tools
-# `workspace` skill).
+# `asta-plugins-upgrade.yml` stub on `pull_request` (see the workspace skill).
 #
-# Only a PR that Dependabot authored and committed alone, in the project's own
-# (non-fork) repo, that moves nothing but asta-plugins to a newer non-major
-# release qualifies; anything else waits for review. GitHub merges it once the
-# project's required checks pass (auto-merge). A merge made with GITHUB_TOKEN
-# starts no workflow, so this job waits for it and then dispatches the docs
-# workflow on the default branch, which publishes main.
+# Only Dependabot-authored commits in the project's own non-fork repo qualify.
+# Require a successful required docs build, respect every other required check,
+# and merge the tested head synchronously. No queued auto-merge is left behind
+# if this job times out; the repository's Allow auto-merge setting is not needed.
+# GITHUB_TOKEN merges start no push workflow, so explicitly dispatch docs next.
 name: asta-plugins upgrade
 
 on:
@@ -18,8 +16,12 @@ on:
         description: File name of the project's docs workflow stub to run after the merge
         type: string
         default: docs.yml
+      docs-check:
+        description: Required build check name (change this if the caller renames its docs job)
+        type: string
+        default: docs / build
       wait-minutes:
-        description: How long to wait for the required checks and the merge
+        description: How long to wait for required checks (integer from 1 to 45)
         type: number
         default: 45
 
@@ -29,12 +31,16 @@ jobs:
       github.event_name == 'pull_request'
       && github.event.pull_request.user.login == 'dependabot[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.base.ref == github.event.repository.default_branch
       && !github.event.repository.fork
     runs-on: ubuntu-latest
+    timeout-minutes: 55
     permissions:
       actions: write
+      checks: read
       contents: write
       pull-requests: write
+      statuses: read
     concurrency:
       group: asta-plugins-upgrade-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -57,44 +63,64 @@ jobs:
             name="${name// /}"
             [ "$name" = allenai/asta-plugins ] || eligible=false
           done
-          [ "$UPDATE_TYPE" != version-update:semver-major ] || eligible=false
+          case "$UPDATE_TYPE" in
+            version-update:semver-patch|version-update:semver-minor) ;;
+            *) eligible=false ;;
+          esac
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
           [ "$eligible" = true ] || echo "::notice::Not an eligible asta-plugins upgrade ($NAMES, $UPDATE_TYPE); leaving it for review"
 
-      - name: Merge once required checks pass
-        if: steps.eligible.outputs.eligible == 'true'
-        run: gh pr merge --auto --squash "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ github.token }}
-
-      # Stop early on a failed required check rather than idling to the limit;
-      # the failing PR stays open for the project's agent.
-      - name: Wait for the merge
+      - name: Wait for required checks and merge the tested head
         id: merged
         if: steps.eligible.outputs.eligible == 'true'
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DOCS_CHECK: ${{ inputs.docs-check }}
           GH_TOKEN: ${{ github.token }}
           WAIT_MINUTES: ${{ inputs.wait-minutes }}
         run: |
+          if ! [[ "$WAIT_MINUTES" =~ ^[1-9][0-9]*$ ]] || [ "$WAIT_MINUTES" -gt 45 ]; then
+            echo "::error::wait-minutes must be an integer from 1 to 45"
+            exit 1
+          fi
           deadline=$(( $(date +%s) + WAIT_MINUTES * 60 ))
           while [ "$(date +%s)" -lt "$deadline" ]; do
-            state=$(gh pr view "$PR_URL" --json state --jq .state)
-            case "$state" in
+            pr=$(gh pr view "$PR_URL" --json state,headRefOid,baseRefName)
+            if [ "$(jq -r .headRefOid <<< "$pr")" != "$EXPECTED_HEAD" ] \
+              || [ "$(jq -r .baseRefName <<< "$pr")" != "$DEFAULT_BRANCH" ]; then
+              echo "::notice::PR head or base changed; leaving it to a fresh run"
+              exit 0
+            fi
+            case "$(jq -r .state <<< "$pr")" in
               MERGED) echo "merged=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
               CLOSED) echo "::notice::PR closed without merging"; exit 0 ;;
             esac
-            # Exits nonzero while checks are pending or before any register.
-            failed=$(gh pr checks "$PR_URL" --required --json bucket \
-              --jq '[.[] | select(.bucket == "fail" or .bucket == "cancel")] | length' 2>/dev/null) || true
-            if [ "${failed:-0}" -gt 0 ] 2>/dev/null; then
-              echo "::error::A required check failed; the upgrade stays open for review"
-              exit 1
+            # A missing ruleset/check or an API error never authorizes a merge.
+            # --required can list skipped jobs (e.g. paper-gate), but the docs
+            # build itself must be present, required, and actually successful.
+            if checks=$(gh pr checks "$PR_URL" --required --json name,bucket); then
+              if jq -e 'any(.[]; .bucket == "fail" or .bucket == "cancel" or
+                (.name == env.DOCS_CHECK and .bucket == "skipping"))' <<< "$checks" >/dev/null; then
+                echo "::error::A required check failed or the docs build was skipped; leaving the upgrade open"
+                exit 1
+              fi
+              if jq -e 'any(.[]; .name == env.DOCS_CHECK and .bucket == "pass") and
+                all(.[]; .bucket == "pass" or .bucket == "skipping")' <<< "$checks" >/dev/null; then
+                # REST merges now or refuses. Unlike gh pr merge --auto (or
+                # a merge-queue enqueue), it cannot merge after this job ends.
+                merged=$(gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/merge" \
+                  -f sha="$EXPECTED_HEAD" -f merge_method=squash --jq .merged)
+                [ "$merged" = true ] || { echo "::error::GitHub refused the merge"; exit 1; }
+                echo "merged=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
             fi
             sleep 30
           done
-          echo "::error::Not merged within $WAIT_MINUTES minutes; auto-merge stays enabled, but the site will not redeploy until the next push to the default branch"
+          echo "::error::Required checks did not pass within $WAIT_MINUTES minutes. Require '$DOCS_CHECK' on the default branch and ensure it runs on every PR. No auto-merge was enabled; the upgrade stays open for review or a rerun."
           exit 1
 
       - name: Redeploy the site from the default branch
@@ -103,4 +129,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DOCS_WORKFLOW: ${{ inputs.docs-workflow }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: gh workflow run "$DOCS_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run "$DOCS_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Upgrade merged but deployment could not start. Rerun this job or dispatch $DOCS_WORKFLOW on $DEFAULT_BRANCH."
+          exit 1
