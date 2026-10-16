@@ -1,5 +1,7 @@
 # A committed scripts/<name> wins; otherwise use the copy `asta workspace sync` caches.
 ASTA_WORKSPACE_MANAGED_SCRIPTS := 1
+# Oldest asta CLI these rules work with; `asta workspace sync` checks it.
+ASTA_WORKSPACE_MIN_CLI := 0.106.0
 ASTA_WORKSPACE_SCRIPTS ?= .asta/cache/scripts
 PYTHON ?= python3
 ASTA_WORKSPACE_VIEWERS ?= 1

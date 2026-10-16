@@ -26,6 +26,7 @@ from urllib.request import urlopen
 
 import click
 
+from asta.commands import workspace_versions
 from asta.commands.overleaf import overleaf
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
@@ -49,8 +50,11 @@ MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_ASSET_BYTES = 1024 * 1024
 
 
+WORKFLOW_FILE = ".github/workflows/docs.yml"
+
+
 def selected_source(project: Path) -> tuple[str, str]:
-    workflow = project / ".github/workflows/docs.yml"
+    workflow = project / WORKFLOW_FILE
     try:
         lines = workflow.read_text().splitlines()
     except FileNotFoundError as exc:
@@ -218,6 +222,11 @@ def _require_scripts(rules: bytes, scripts: Mapping[str, object], ref: str) -> N
         )
 
 
+def _require_cli(rules: bytes, ref: str, cli: str | None) -> None:
+    if message := workspace_versions.cli_too_old(rules, ref, cli, WORKFLOW_FILE):
+        raise click.ClickException(message)
+
+
 def _scripts_state(directory: Path, names: dict[str, str]) -> dict[str, str] | None:
     state = {}
     for name in names:
@@ -281,6 +290,11 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
+    if message := workspace_versions.pin_too_old(ref, WORKFLOW_FILE):
+        raise click.ClickException(message)
+    cli = workspace_versions.installed()
+    if message := workspace_versions.pin_behind(ref, cli, WORKFLOW_FILE):
+        click.echo(message, err=True)
     source_ref = os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA") or ref
     resolved_repository = os.environ.get("ASTA_WORKSPACE_RESOLVED_REPOSITORY")
     if resolved_repository and resolved_repository.casefold() != repository.casefold():
@@ -407,6 +421,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
             state["scripts"] = _script_hashes(scripts)
             _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
+        _require_cli(target.read_bytes(), ref, cli)
         if require_scripts:
             _require_scripts(target.read_bytes(), state["scripts"], ref)
         target.touch()
@@ -422,6 +437,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
         scripts = load_scripts(archive)
     except click.ClickException:
         if cache_valid:
+            _require_cli(target.read_bytes(), ref, cli)
             if require_scripts:
                 _require_scripts(target.read_bytes(), state["scripts"], ref)
             target.touch()
@@ -430,6 +446,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
             )
             return
         raise
+    _require_cli(asset, ref, cli)
     if require_scripts:
         _require_scripts(asset, scripts, ref)
     archive_sha = hashlib.sha256(archive).hexdigest()
