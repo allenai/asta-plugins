@@ -174,8 +174,10 @@ jobs:
       group: docker-release-latest
       cancel-in-progress: false
     permissions:
-      contents: write
+      contents: read
       packages: write
+    outputs:
+      version: ${{ steps.newest.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -209,10 +211,25 @@ jobs:
             test "$(docker buildx imagetools inspect "$image:latest$suffix" --format '{{json .Manifest}}' | jq -er .digest)" = "$digest"
           done
           echo "version=$newest" >> "$GITHUB_OUTPUT"
-      # `@latest` workflow callers read this branch, so it tracks the same release as the image.
+
+  # `@latest` workflow callers read this branch, so it tracks the same release as the image.
+  # Its own job keeps `contents: write` away from the third-party actions above.
+  latest-branch:
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
+    needs: latest
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-release-latest-branch
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Fast-forward the latest branch to that release
         env:
-          NEWEST: ${{ steps.newest.outputs.version }}
+          NEWEST: ${{ needs.latest.outputs.version }}
         run: |
           set -euo pipefail
           target=$(git rev-parse "refs/tags/$NEWEST^{commit}")

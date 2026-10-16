@@ -9,9 +9,10 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/docker.yml").read_text())
+JOB = WORKFLOW["jobs"]["latest-branch"]
 STEP = next(
     step
-    for step in WORKFLOW["jobs"]["latest"]["steps"]
+    for step in JOB["steps"]
     if step.get("name") == "Fast-forward the latest branch to that release"
 )
 GIT_ENV = {
@@ -92,3 +93,21 @@ def test_refuses_a_diverged_branch(release):
     result = run_step(work, "v2.0.0")
     assert result.returncode == 1
     assert latest(origin) == side
+
+
+def test_write_access_is_confined_to_the_branch_job():
+    jobs = WORKFLOW["jobs"]
+    writers = [
+        name
+        for name, job in jobs.items()
+        if job["permissions"].get("contents") == "write"
+    ]
+    assert writers == ["latest-branch"]
+    assert JOB["permissions"] == {"contents": "write"}
+    assert [step.get("uses", "").split("@")[0] for step in JOB["steps"]] == [
+        "actions/checkout",
+        "",
+    ]
+    assert JOB["needs"] == "latest"
+    assert STEP["env"]["NEWEST"] == "${{ needs.latest.outputs.version }}"
+    assert jobs["latest"]["outputs"]["version"] == "${{ steps.newest.outputs.version }}"
