@@ -161,7 +161,9 @@ Sync retains old script and archive generations because running builds may still
 
 ## Auto-deploy (`.github/workflows/docs.yml`)
 
-Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment.
+Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment. To rebuild the live site on demand, run the workflow manually on `main` (`gh workflow run docs.yml --ref main`).
+
+With `.github/dependabot.yml` and `.github/workflows/asta-plugins-upgrade.yml`, a weekly Dependabot PR moves the pinned asta-plugins release; once the required checks pass it merges itself and redeploys `main`. Major versions and anything else Dependabot proposes wait for review, and a failing upgrade stays open.
 
 `docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/main/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying (pin its ref to a tag if you prefer explicit upgrades).
 

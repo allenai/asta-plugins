@@ -1,0 +1,8 @@
+# Weekly PRs that move the workflows' pinned asta-plugins ref to its newest
+# release; `asta-plugins-upgrade.yml` merges a passing non-major one.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

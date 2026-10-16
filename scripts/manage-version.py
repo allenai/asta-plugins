@@ -37,6 +37,9 @@ WORKSPACE_DOCS_WORKFLOW_FILE = (
     / "assets"
     / "docs.yml"
 )
+WORKSPACE_UPGRADE_WORKFLOW_FILE = (
+    WORKSPACE_DOCS_WORKFLOW_FILE.parent / "asta-plugins-upgrade.yml"
+)
 
 # Matches the asta package's version line in uv.lock. The asta package is the
 # editable root, so `name = "asta"` is unique within the lockfile.
@@ -103,6 +106,21 @@ def get_workspace_workflow_version() -> str:
     return match.group(1)
 
 
+def get_workspace_upgrade_workflow_version() -> str:
+    """Read the asta-plugins tag from the scaffolded upgrade workflow."""
+    content = WORKSPACE_UPGRADE_WORKFLOW_FILE.read_text()
+    match = re.search(
+        r"uses: allenai/asta-plugins/\.github/workflows/"
+        r"workspace-dependabot-upgrade\.yml@v([0-9.]+)",
+        content,
+    )
+    if not match:
+        raise ValueError(
+            "Could not find versioned upgrade workflow ref in asta-plugins-upgrade.yml"
+        )
+    return match.group(1)
+
+
 def check_version_consistency() -> bool:
     """Check if all version locations have the same version.
 
@@ -116,6 +134,7 @@ def check_version_consistency() -> bool:
     hook_version = get_hook_version()
     asta_cli_skill_versions = get_asta_cli_skill_versions()
     workspace_workflow_version = get_workspace_workflow_version()
+    workspace_upgrade_version = get_workspace_upgrade_workflow_version()
 
     mismatch = False
 
@@ -144,6 +163,8 @@ def check_version_consistency() -> bool:
     # with the release-managed CLI and render-time assets.
     if workspace_workflow_version != init_version:
         mismatch = True
+    if workspace_upgrade_version != init_version:
+        mismatch = True
 
     if mismatch:
         print(f"{RED}Error: Version mismatch detected:{NC}")
@@ -158,6 +179,9 @@ def check_version_consistency() -> bool:
             f"  skills/asta-cli/SKILL.md:        {', '.join(asta_cli_skill_versions)}"
         )
         print(f"  workspace/assets/docs.yml:       {workspace_workflow_version}")
+        print(
+            f"  workspace/assets/asta-plugins-upgrade.yml: {workspace_upgrade_version}"
+        )
         print()
         print("Run 'make set-version VERSION=x.y.z' to sync versions")
         return False
@@ -261,6 +285,22 @@ def set_version(new_version: str) -> bool:
         )
         return False
     WORKSPACE_DOCS_WORKFLOW_FILE.write_text(content)
+
+    print("Updating workspace upgrade workflow...")
+    content = WORKSPACE_UPGRADE_WORKFLOW_FILE.read_text()
+    content, replacements = re.subn(
+        r"(uses: allenai/asta-plugins/\.github/workflows/"
+        r"workspace-dependabot-upgrade\.yml@v)\d+\.\d+\.\d+",
+        rf"\g<1>{new_version}",
+        content,
+    )
+    if replacements != 1:
+        print(
+            f"{RED}Error: expected one versioned upgrade workflow ref, "
+            f"found {replacements}{NC}"
+        )
+        return False
+    WORKSPACE_UPGRADE_WORKFLOW_FILE.write_text(content)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()

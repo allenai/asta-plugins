@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  # Rebuilds and republishes main on demand; the upgrade workflow also uses it
+  # to redeploy after merging an asta-plugins upgrade.
+  workflow_dispatch:
 
 # All build/deploy/preview machinery lives in the shared reusable workflow
 # maintained alongside the workspace skill that scaffolded this repo — this

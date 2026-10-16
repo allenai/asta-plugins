@@ -1,0 +1,106 @@
+# Reusable workflow: merge a passing Dependabot upgrade of asta-plugins, then
+# redeploy the site. Scaffolded projects call this from a thin
+# `asta-plugins-upgrade.yml` stub on `pull_request` (see the asta-tools
+# `workspace` skill).
+#
+# Only a PR that Dependabot authored and committed alone, in the project's own
+# (non-fork) repo, that moves nothing but asta-plugins to a newer non-major
+# release qualifies; anything else waits for review. GitHub merges it once the
+# project's required checks pass (auto-merge). A merge made with GITHUB_TOKEN
+# starts no workflow, so this job waits for it and then dispatches the docs
+# workflow on the default branch, which publishes main.
+name: asta-plugins upgrade
+
+on:
+  workflow_call:
+    inputs:
+      docs-workflow:
+        description: File name of the project's docs workflow stub to run after the merge
+        type: string
+        default: docs.yml
+      wait-minutes:
+        description: How long to wait for the required checks and the merge
+        type: number
+        default: 45
+
+jobs:
+  merge-and-deploy:
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && !github.event.repository.fork
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: asta-plugins-upgrade-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Read what the PR updates
+        id: metadata
+        # v3.1.0; outputs are empty unless every commit is Dependabot's.
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98
+
+      - name: Check it only moves asta-plugins within a major version
+        id: eligible
+        env:
+          NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          eligible=true
+          [ -n "$NAMES" ] || eligible=false
+          IFS=',' read -ra names <<< "$NAMES"
+          for name in "${names[@]}"; do
+            name="${name// /}"
+            [ "$name" = allenai/asta-plugins ] || eligible=false
+          done
+          [ "$UPDATE_TYPE" != version-update:semver-major ] || eligible=false
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          [ "$eligible" = true ] || echo "::notice::Not an eligible asta-plugins upgrade ($NAMES, $UPDATE_TYPE); leaving it for review"
+
+      - name: Merge once required checks pass
+        if: steps.eligible.outputs.eligible == 'true'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
+
+      # Stop early on a failed required check rather than idling to the limit;
+      # the failing PR stays open for the project's agent.
+      - name: Wait for the merge
+        id: merged
+        if: steps.eligible.outputs.eligible == 'true'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
+          WAIT_MINUTES: ${{ inputs.wait-minutes }}
+        run: |
+          deadline=$(( $(date +%s) + WAIT_MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            state=$(gh pr view "$PR_URL" --json state --jq .state)
+            case "$state" in
+              MERGED) echo "merged=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              CLOSED) echo "::notice::PR closed without merging"; exit 0 ;;
+            esac
+            # Exits nonzero while checks are pending or before any register.
+            failed=$(gh pr checks "$PR_URL" --required --json bucket \
+              --jq '[.[] | select(.bucket == "fail" or .bucket == "cancel")] | length' 2>/dev/null) || true
+            if [ "${failed:-0}" -gt 0 ] 2>/dev/null; then
+              echo "::error::A required check failed; the upgrade stays open for review"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::Not merged within $WAIT_MINUTES minutes; auto-merge stays enabled, but the site will not redeploy until the next push to the default branch"
+          exit 1
+
+      - name: Redeploy the site from the default branch
+        if: steps.merged.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCS_WORKFLOW: ${{ inputs.docs-workflow }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run "$DOCS_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"

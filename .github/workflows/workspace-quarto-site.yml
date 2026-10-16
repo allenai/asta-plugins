@@ -311,11 +311,15 @@ jobs:
   # PR-close cleanup that fires at merge). Concurrent writes from different
   # groups reconcile via rebase-and-retry on push, not a global queue.
   # Fork and Dependabot-triggered PR runs get a read-only token, so they skip
-  # the preview; `preview-unavailable` says so. Other events are unchanged.
+  # the preview; `preview-unavailable` says so. A `workflow_dispatch` on the
+  # default branch publishes main like a push (on-demand rebuilds, post-upgrade
+  # redeploys); on any other branch it only builds. Other events are unchanged.
   deploy:
     needs: build
     if: >-
       (github.event_name == 'push' || github.event.action != 'closed')
+      && !(github.event_name == 'workflow_dispatch'
+      && github.ref != format('refs/heads/{0}', github.event.repository.default_branch))
       && !(github.event_name == 'pull_request'
       && (github.event.pull_request.head.repo.full_name != github.repository
       || github.actor == 'dependabot[bot]'))
@@ -341,6 +345,7 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_MAIN: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -352,7 +357,7 @@ jobs:
           tmp=$(mktemp -d)
           git worktree add "$tmp" gh-pages
 
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$PUBLISH_MAIN" = "true" ]; then
             # Main deploy: replace the site root, keep pr-preview/.
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
