@@ -1418,3 +1418,68 @@ def test_runner_disk_is_freed_for_any_discoverable_paper(
         check=True,
     )
     assert bool(json.loads(discovery.stdout)["papers"]) == frees
+
+
+def _version_note_script() -> str:
+    lines = WORKFLOW.read_text().splitlines()
+    start = next(
+        i for i, line in enumerate(lines) if "Flag a change to the caller" in line
+    )
+    end = next(i for i in range(start, len(lines)) if lines[i].strip() == "fi")
+    return "\n".join(lines[start : end + 1]).replace(
+        "${{ github.repository }}", "owner/site"
+    )
+
+
+@pytest.mark.parametrize(
+    "old,new,expected",
+    [
+        (
+            "v0.113.0",
+            "v0.114.0",
+            "⬆️ asta-plugins version: v0.113.0 → v0.114.0 "
+            "(https://github.com/allenai/asta-plugins/releases/tag/v0.114.0)",
+        ),
+        ("v0.113.0", "v0.113.0", None),
+        (
+            "v0.113.0",
+            "main",
+            "⬆️ asta-plugins version: v0.113.0 → main "
+            "(https://github.com/allenai/asta-plugins/tree/main)",
+        ),
+    ],
+)
+def test_preview_comment_reports_asta_plugins_version_change(
+    tmp_path, old, new, expected
+) -> None:
+    def stub(ref):
+        return (
+            "jobs:\n  docs:\n"
+            f"    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@{ref}\n"
+        )
+
+    (tmp_path / ".github/workflows").mkdir(parents=True)
+    (tmp_path / ".github/workflows/docs.yml").write_text(stub(new))
+    (tmp_path / "base.yml").write_text(stub(old))
+    script = (
+        'gh() { case "$*" in *"contents/.github/workflows/docs.yml?ref=base123"*)'
+        " cat base.yml ;; *) return 1 ;; esac; }\n"
+        "body='📄 Preview: https://example/'\n"
+        + _version_note_script()
+        + '\nprintf "%s" "$body"'
+    )
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "CALLER_WORKFLOW_REF": "owner/site/.github/workflows/docs.yml@refs/pull/7/merge",
+            "BASE_SHA": "base123",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    lines = result.stdout.splitlines()
+    assert lines[0] == "📄 Preview: https://example/"
+    assert lines[1:] == ([expected] if expected else [])

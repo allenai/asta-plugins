@@ -312,8 +312,8 @@ jobs:
   # groups reconcile via rebase-and-retry on push, not a global queue.
   # Fork and Dependabot-triggered PR runs get a read-only token, so they skip
   # the preview; `preview-unavailable` says so. A `workflow_dispatch` on the
-  # default branch publishes main like a push (on-demand rebuilds, post-upgrade
-  # redeploys); on any other branch it only builds. Other events are unchanged.
+  # default branch publishes main like a push (on-demand rebuilds); on any other
+  # branch it only builds. Other events are unchanged.
   deploy:
     needs: build
     if: >-
@@ -346,6 +346,8 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
           PUBLISH_MAIN: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -448,6 +450,20 @@ jobs:
               fi
               find "$pr_dir/paper-previews" -name preview.json ! -path "$pr_dir/paper-previews/paper/preview.json" -print0 2>/dev/null | sort -z
             )
+            # Flag a change to the caller's asta-plugins pin, whoever made it.
+            wf_path=$(printf '%s' "$CALLER_WORKFLOW_REF" | sed -E 's#^[^/]+/[^/]+/##; s#@.*$##')
+            pin() { sed -nE 's#^[[:space:]]*uses:[[:space:]]*([^/[:space:]]+/[^/[:space:]]+)/\.github/workflows/workspace-quarto-site\.yml@([^[:space:]#]+).*#\1 \2#p' | head -n1; }
+            new_pin=$(pin < "$wf_path" 2>/dev/null)
+            old_pin=$(gh api -H 'Accept: application/vnd.github.raw' \
+              "repos/${{ github.repository }}/contents/$wf_path?ref=$BASE_SHA" 2>/dev/null | pin)
+            if [ -n "$new_pin" ] && [ -n "$old_pin" ] && [ "${new_pin#* }" != "${old_pin#* }" ]; then
+              pin_repo=${new_pin% *}; new_ref=${new_pin#* }; old_ref=${old_pin#* }
+              case "$new_ref" in
+                v[0-9]*) link="https://github.com/$pin_repo/releases/tag/$new_ref" ;;
+                *) link="https://github.com/$pin_repo/tree/$new_ref" ;;
+              esac
+              body=$(printf '%s\n⬆️ asta-plugins version: %s → %s (%s)' "$body" "$old_ref" "$new_ref" "$link")
+            fi
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.

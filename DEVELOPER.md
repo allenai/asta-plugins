@@ -22,11 +22,10 @@ Design rules worth knowing before you change code:
 One directory is *not* this repo's own CI:
 `.github/workflows/workspace-quarto-site.yml` is a published reusable workflow
 (`workflow_call`-only) for the research projects the `workspace` skill
-scaffolds, as is its sibling `workspace-dependabot-upgrade.yml` (called from
-`assets/asta-plugins-upgrade.yml`) — GitHub mandates the `.github/workflows/` path for reusable
-workflows, so they can't live with the skill. Maintain them together with
+scaffolds — GitHub mandates the `.github/workflows/` path for reusable
+workflows, so it can't live with the skill. Maintain it together with
 `plugins/asta-tools/skills/workspace/` (its `assets/docs.yml` stub and
-`assets/Makefile` `check` target form one contract with them).
+`assets/Makefile` `check` target form one contract with it).
 
 PRs from forks and Dependabot-triggered PR runs get read-only tokens, so they
 still build and check the site but skip the preview deploy and its cleanup. A
@@ -35,12 +34,6 @@ warning and job summary, and how to get a preview: push the changes to a branch
 in the repository and open a PR from that branch. A `workflow_dispatch` on
 the default branch publishes main like a push; on another branch it only
 builds. All other events deploy as before.
-
-The separate upgrade stub uses `pull_request_target`, so its privileged job
-runs the default branch’s already-adopted release rather than the PR’s proposed
-upgrade workflow. It reads verified Dependabot metadata and check results
-through the API; never add PR checkout or PR code execution to this job. The
-separate `pull_request` docs build tests the proposed release before merging.
 
 ## Development Setup
 

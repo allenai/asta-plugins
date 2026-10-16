@@ -161,11 +161,17 @@ Sync retains old script and archive generations because running builds may still
 
 ## Auto-deploy (`.github/workflows/docs.yml`)
 
-Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment. To rebuild the live site on demand, run the workflow manually on `main` (`gh workflow run docs.yml --ref main`).
+Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<owner>.github.io/<repo>/`. PRs get a preview URL via bot comment; when a PR changes the asta-plugins ref in `docs.yml`, that comment also shows the old and new versions and links the new release. To rebuild the live site on demand, run the workflow manually on `main` (`gh workflow run docs.yml --ref main`).
 
-With `.github/dependabot.yml` and `.github/workflows/asta-plugins-upgrade.yml`, a weekly Dependabot PR moves the pinned asta-plugins release; once the required checks pass it merges itself and redeploys `main`. The docs build (`docs / build`, or the configured `docs-check` name) must be required on the default branch and successful; other required checks must also pass. Major versions, unknown update types and anything else Dependabot proposes wait for review. Missing, failing or timed-out checks leave the upgrade open with no pending auto-merge. Rerun the upgrade job after resolving them. The workflow merges synchronously, so the repository’s **Allow auto-merge** setting is not needed. Its `pull_request_target` trigger loads the upgrade stub and release pin from the default branch: the already-adopted release gates the proposed one, while both workflow pins still update in one PR. Keep this trigger and never check out or execute PR code in the privileged upgrade workflow. The separate `pull_request` docs build tests the proposed release.
+### Upgrading asta-plugins
 
-`docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/main/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying (pin its ref to a tag if you prefer explicit upgrades).
+`docs.yml` pins the shared workflow to an asta-plugins release (`make set-version` keeps it in step with the plugin), so every commit records the tooling that built it. Pick one upgrade policy:
+
+- **Pinned, moved forward by whoever edits the ref** (default). A person or agent bumps the ref in a PR; the preview comment shows the change, and merging it redeploys the site.
+- **Pinned plus a Dependabot config**, for projects only people work on. Add a `.github/dependabot.yml` with a weekly `github-actions` update; Dependabot then opens a PR per release. A person must merge it: GitHub never lets the workflow token merge or auto-merge a PR that edits a workflow file, and every bump edits `docs.yml`.
+- **`@latest`**, for throwaway projects. No upkeep, but rebuilding an old commit uses today's tooling, and the live site picks up a new release only at the next push or a manual redeploy.
+
+`docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/main/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying; see **Upgrading asta-plugins** above for how the pinned ref moves.
 
 The PR's “What changed” page uses the version of `what-changed.py` shipped with the reusable workflow. To customize it, commit `scripts/what-changed.py` in your project; that copy takes precedence and runs in the read-only build job. The write-enabled deploy job only publishes its rendered output. A PR that changes the project script runs its changed copy for its own preview, so treat that page as a review aid rather than a trusted check.
 
