@@ -488,6 +488,42 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
 
 
+@workspace.command("bump-pin")
+@click.option(
+    "--project",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=Path("."),
+)
+def bump_pin(project: Path) -> None:
+    """Commit a move of a release pin behind this asta's release to it."""
+    project = project.resolve()
+    _, ref = selected_source(project)
+    target = workspace_versions.pin_target(ref, workspace_versions.installed())
+    if target is None:
+        click.echo(f"Pin asta-plugins@{ref} is current; nothing to do")
+        return
+    workflow = project / WORKFLOW_FILE
+    if _git(project, "status", "--porcelain", "--", WORKFLOW_FILE).stdout.strip():
+        raise click.ClickException(
+            f"{WORKFLOW_FILE} has uncommitted changes; commit them first"
+        )
+    lines = workflow.read_text().splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if WORKFLOW in line and not line.lstrip().startswith("#"):
+            lines[index] = line.replace(WORKFLOW + ref, WORKFLOW + target, 1)
+    workflow.write_text("".join(lines))
+    if selected_source(project)[1] != target:
+        raise click.ClickException(f"Could not move the pin in {workflow}")
+    message = f"Move workspace pin to asta-plugins@{target}"
+    committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
+    if committed.returncode != 0:
+        _git(project, "checkout", "--", WORKFLOW_FILE)
+        raise click.ClickException(
+            f"Could not commit the pin move: {committed.stderr.strip()}"
+        )
+    click.echo(f"{message} (was @{ref})")
+
+
 def _git(project: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", "-C", str(project), *args], capture_output=True, text=True, check=False

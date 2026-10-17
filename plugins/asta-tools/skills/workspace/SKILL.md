@@ -39,7 +39,8 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 For a headless agent (the user only sees results via deployed URL):
 
 - **Bootstrap `main` if the repo is empty.** On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
-- First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- First save: run `asta workspace bump-pin` (below), then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- **Keep the pin current.** Before opening a PR, run `asta workspace bump-pin`. When `.github/workflows/docs.yml` pins a release older than this asta's final release, it commits the move to that release as its own commit; `main`, `latest`, commits and newer pins are left alone. Then run `make check`. If the bump breaks a build that passed without it, drop that commit (`git revert --no-edit <bump-commit>`, or `git reset --keep HEAD~1` before pushing) and continue; never let the bump block the work. A PR that shouldn't carry a bump drops that commit the same way.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
