@@ -6,7 +6,7 @@ import re
 import subprocess
 import tempfile
 import time
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -70,7 +70,7 @@ def gh(root: Path, *args: str, payload=None):
 
 
 @contextmanager
-def lock(root: Path, project_id: str, *, cleanup_context=nullcontext):
+def lock(root: Path, project_id: str):
     """A remote compare-and-swap serializes different machines, not just processes.
 
     No expiring lease: a paused process cannot resume after a successor acquired
@@ -87,47 +87,31 @@ def lock(root: Path, project_id: str, *, cleanup_context=nullcontext):
         cwd=root,
         input=f"Overleaf sync lock {uuid4().hex}\n".encode(),
     )
-    acquired = False
+    try:
+        ov.git(
+            "push", f"--force-with-lease={ref}:", "origin", f"{owner}:{ref}", cwd=root
+        )
+    except ov.SyncError:
+        if ov.git("ls-remote", "--refs", "origin", ref, cwd=root):
+            yield False
+            return
+        raise
     failed = False
     try:
-        try:
-            ov.git(
-                "push",
-                f"--force-with-lease={ref}:",
-                "origin",
-                f"{owner}:{ref}",
-                cwd=root,
-            )
-        except ov.SyncError:
-            held = ov.git("ls-remote", "--refs", "origin", ref, cwd=root).split()
-            if held and held[0] != owner:
-                yield False
-                return
-            raise
-        acquired = True
         yield True
     except BaseException:
         failed = True
         raise
     finally:
         try:
-            with cleanup_context():
-                # Cancellation or a transport error may arrive after the remote
-                # accepted the acquisition push but before it returned locally.
-                held = (
-                    [owner]
-                    if acquired
-                    else ov.git("ls-remote", "--refs", "origin", ref, cwd=root).split()
-                )
-                if held and held[0] == owner:
-                    ov.git(
-                        "push",
-                        f"--force-with-lease={ref}:{owner}",
-                        "origin",
-                        f":{ref}",
-                        cwd=root,
-                    )
-        except BaseException:
+            ov.git(
+                "push",
+                f"--force-with-lease={ref}:{owner}",
+                "origin",
+                f":{ref}",
+                cwd=root,
+            )
+        except ov.SyncError:
             if not failed:
                 raise
             click.echo(
@@ -522,20 +506,6 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(name.startswith(prefix) for name in changed.splitlines())
 
 
-def require_no_release_check(root: Path, project_id: str):
-    ctx = click.get_current_context(silent=True)
-    if not (ctx and ctx.meta.get("overleaf_check")) and ov.git(
-        "ls-remote",
-        "--refs",
-        "origin",
-        f"refs/asta/overleaf-sync-lock/check-{project_id}",
-        cwd=root,
-    ):
-        raise ov.SyncError(
-            "A live release check owns this scratch pair; retry when it finishes."
-        )
-
-
 def sync_workspace(project: Path, directory: str):
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
@@ -547,7 +517,6 @@ def sync_workspace(project: Path, directory: str):
             "Import and commit the paper with overleaf pull before scheduling sync."
         )
     project_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
-    require_no_release_check(root, project_id)
     info = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
@@ -601,9 +570,6 @@ def sync_workspace(project: Path, directory: str):
             except ov.SyncError:
                 click.echo("Could not report the held lock on GitHub.", err=True)
             raise ov.SyncError(message)
-        # Recheck under the normal sync lock: a check may have claimed its
-        # outer lock between the first read above and this acquisition.
-        require_no_release_check(root, project_id)
         pr = None
         notice = ""
         try:

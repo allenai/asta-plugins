@@ -1359,7 +1359,7 @@ def publish(
     type=click.IntRange(min=1),
     default=600,
     show_default=True,
-    help="Seconds for an uncached release check; restoration has a separate 195-second limit.",
+    help="Seconds for an uncached release check.",
 )
 def sync(
     directory: str,
@@ -1385,10 +1385,10 @@ def sync(
     type=click.IntRange(min=1),
     default=600,
     show_default=True,
-    help="Seconds for the round trip; restoration has a separate 195-second limit.",
+    help="Seconds for the round trip.",
 )
 def check(directory: str, project: Path, timeout: int) -> None:
-    """Exercise sync/publish/conflicts on a disposable scratch pair, then restore it."""
+    """Exercise sync/publish/conflicts on a scratch pair reserved for checks."""
     from .overleaf_check import check_workspace
 
     try:

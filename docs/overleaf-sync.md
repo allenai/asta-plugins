@@ -5,89 +5,64 @@ Overleaf's "Git integration and GitHub synchronization" documentation.
 
 ## Check a release on a scratch pair
 
-Before adopting a new CLI release, reserve a **disposable scratch Overleaf
-project and its paired scratch repository**, then run:
+Before adopting a new CLI release, reserve a **scratch Overleaf project and its
+paired scratch repository** for release checks, then run:
 
 ```sh
 asta workspace overleaf check --project /path/to/scratch-checkout
 ```
 
-This command writes to both sides. Reserve the scratch pair exclusively, with
-no collaborators, scheduled syncs or other default-branch writers during the
-check. Start with matching nonempty paper contents
-and the current default branch's committed `paper/overleaf.json`. Close any open
-sync PR first. A leftover sync-created `asta/overleaf-sync/<project-id>` branch
-is saved and restored; unrelated work on that reserved branch is refused.
-The Git identity and existing Overleaf/GitHub authentication are the same as for
-`sync`. The scratch repository must allow the check to push test and restoration
-commits to its default branch, open/close PRs, and merge through the normal sync
-path after checks pass. It must have at least one successful check and no
-unsatisfied review requirements. The command does not disable repository rules
-or supply approvals. A protected paper repository is not a scratch target.
+The check assumes this model; findings that assume more are out of scope:
 
-One call creates a uniquely named paper source on Overleaf, brings it through
-the sync PR and merges it, publishes a workspace edit, creates a conflict on
-that file, resolves it on the sync branch, waits for that head's checks, and
-merges/publishes the resolution. It calls the released `sync` and `publish`
-implementation, including their normal check and merge decisions. It polls
-GitHub while checks run and reruns sync once they pass; it never leaves an
-unfinished check for the next schedule as part of normal operation.
+1. The pair is reserved for checks and nothing else writes to it, so its
+   contents between checks don't matter. The check only moves the pair forward
+   and restores nothing. A passing check leaves no open sync PR, no lock and no
+   conflict markers on the default branch; commit/PR history accumulates.
+2. A check that finds a recent check in progress (its
+   `refs/asta/overleaf-sync-lock/check-<project-id>` lock) stops without
+   changing anything and reports the pair as busy, not as a release failure.
+   A check lock older than sync's stale-lock threshold (one hour) is from a
+   check that died: the next check clears it, then, holding its own lock,
+   closes any open sync PR and removes the sync branch and sync lock it left.
+3. A failed check leaves its state for inspection; the next check clears it.
 
-After acquiring the check lock, the command refuses any default-branch commit
-that appeared during preflight, including changes outside the paper and commits
-that leave the files unchanged. It starts no exercise or restoration writes in
-that case. Every stage verifies both paper contents and the workspace's other
-tracked files against their starting state. It also checks the committed
-Overleaf base; after each publication it verifies that the publication record
-names the current Overleaf commit and published default-branch commit, before
-cleanup can repair either record. On success or failure it attempts to close its
-open PR, restore the Overleaf files and original tracked workspace tree with
-forward commits, update the sync metadata to the restored paper,
-and remove its check branch and locks (or restore the prior sync-created branch).
-Commit/PR history is retained. The caller's
-checkout is unchanged; fetch the restored default branch before checking again.
-Restoration is attempted on both sides even if closing the PR fails. A cleanup
-failure always exits nonzero and requires inspecting/recovering the scratch
-pair before retrying. Loss of credentials/network, an uncatchable process kill,
-or a runner deadline can prevent restoration; do not reuse the pair until
-its contents, open PR and locks have been checked in that case.
+Do not schedule normal sync against the pair, edit it by hand, or give it
+collaborators. The scratch default branch's committed `paper/overleaf.json` must
+match the checkout. The Git identity and existing Overleaf/GitHub authentication
+are the same as for `sync`. The scratch repository must allow the check to push
+to its default branch, open/close PRs, and merge through the normal sync path
+after checks pass. It must have at least one successful check and no
+unsatisfied review requirements. A protected paper repository is not a scratch
+target.
+
+One call writes a per-run line to `asta-release-check.tex` on Overleaf, brings
+it through the sync PR and merges it, publishes a workspace edit, creates a
+conflict on that file, resolves it on the sync branch, waits for that head's
+checks, and merges/publishes the resolution. It calls the released `sync` and
+`publish` implementation, including their normal check and merge decisions, and
+polls GitHub while checks run. Each stage verifies that both sides hold the same
+paper with that stage's edit and the expected Overleaf base; after each
+publication it verifies the publication record.
 
 The round trip defaults to 600 seconds (`--timeout <seconds>`), including waiting
-for GitHub checks. Restoration reserves independent deadlines totaling at most
-195 seconds: 30 for PR closure, 60 for each side's content restoration (including
-the workspace sync record), 15 for branch restoration, 15 for removal of an
-interrupted internal sync lock, and 15 for verification (including lock absence).
-An error or timeout in one cleanup step does not skip the remaining attempts;
-any such failure still exits nonzero. Lock release has at most 30 more seconds.
-Lock acquisition uses the remaining
-round-trip deadline. Run on a POSIX runner's main thread with enough time for
-all phases; the command refuses `CI` or
-`GITHUB_ACTIONS` environments. Unit tests replace Overleaf/GitHub with local Git
-and fixture check results; the live command runs only where the existing token
-or credential helper is already available. A remote check lock excludes another
-check and makes `sync` refuse this pair until the check releases it. A killed
-check's `refs/asta/overleaf-sync-lock/check-<project-id>` lock requires the same
-explicit interrupted-run recovery as a killed sync; it never expires itself.
-Catchable acquisition timeouts attempt bounded rollback of only their own lock
-commit. Failed rollback reports recovery guidance and never permits paper sync.
+for GitHub checks. Run on a POSIX runner's main thread; the command refuses `CI`
+or `GITHUB_ACTIONS` environments. Unit tests replace Overleaf/GitHub with local
+Git and fixture check results.
 
-Exit 0 plus `Overleaf live check PASS` means every stage and restoration passed.
-Any failure exits nonzero. Output labels `pair access/setup` failures (token,
-access, missing project, or an unprepared pair) separately from `release step`
-failures during the exercised sync/merge/publish/conflict/restoration path.
-Missing PR checks (after a 30-second discovery grace period), required reviews,
-and repository rules blocking unattended merge are pair setup failures. A
-completed unsuccessful check, a conflicting/outdated/unstable PR, or requested
-changes fail immediately with the observed state instead of waiting for the
-round-trip timeout. Pending checks and unknown merge eligibility keep polling.
-If restoration also fails, the original check failure is printed alongside the
-restoration failure.
+Exit 0 plus `Overleaf live check PASS` means every stage passed. Any failure
+exits nonzero. Output labels `pair busy`, `pair access/setup` failures (token,
+access, missing project, or an unprepared pair) and `release step` failures
+separately. Missing PR checks (after a 30-second discovery grace period),
+required reviews, and repository rules blocking unattended merge are pair setup
+failures. A completed unsuccessful check, a conflicting/outdated/unstable PR, or
+requested changes fail immediately with the observed state. Pending checks and
+unknown merge eligibility keep polling.
 
 Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
 Before syncing the requested paper, the CLI looks for a pass for its own asta
 version on that reserved repository. It clones the scratch repository to
 validate pair isolation on every invocation. On a miss it runs the complete
-check synchronously, and records a pass only after restoration succeeds. Check
+check synchronously, and records a pass only after the check passes. A busy pair, check
 failure or inability to read/write the pass record refuses paper sync. A subsequent invocation or rollback to an already passed version reuses
 its pass. Use `sync --check-timeout <seconds>` to change the 600-second round-trip
 limit on an uncached check. The scratch pair uses the standard `paper/` directory.

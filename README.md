@@ -81,8 +81,8 @@ work on the local filesystem using your own LLM provider keys. Other commands ca
 For these, the CLI will prompt you to authenticate on first use.
 
 `asta workspace overleaf check --project /path/to/scratch-checkout` exercises
-co-author import/merge, publication and conflict resolution against a disposable
-Overleaf/repository pair, then restores its paper contents. Run it outside CI
+co-author import/merge, publication and conflict resolution against an
+Overleaf/repository pair reserved for release checks. Run it outside CI
 with the pair's existing credentials before adopting a release; see
 [scratch release checks](docs/overleaf-sync.md#check-a-release-on-a-scratch-pair).
 

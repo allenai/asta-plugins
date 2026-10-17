@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Add `asta workspace overleaf check` for an opt-in live round trip on a
-  disposable scratch pair: merge co-author edits after GitHub checks, publish a
-  workspace edit, resolve and merge a conflict, then restore paper contents and
-  sync metadata. The command waits within one invocation and refuses CI.
-- Keep regular sync runs out of a scratch pair while its release check owns it.
+  scratch pair reserved for checks: merge co-author edits after GitHub checks,
+  publish a workspace edit, then resolve and merge a conflict, moving the pair
+  forward. A recent check in progress makes the pair busy; a stale one's
+  leftovers are cleared. The command waits within one invocation and refuses CI.

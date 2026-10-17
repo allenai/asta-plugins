@@ -96,8 +96,8 @@ def require_release_check(
             raise ov.SyncError(
                 f"Overleaf check failed (pair access/setup): {exc}; syncing nothing."
             ) from exc
-        # The check owns its entire round trip, waits for PR checks, restores both
-        # sides, and raises on any cleanup failure. Its internal syncs opt out.
+        # The check owns its entire round trip and waits for PR checks; a busy
+        # pair raises PairBusy, which also syncs nothing.
         check_workspace(work, "paper", timeout)
         try:
             ov.git("push", "-q", "origin", f"{commit}:{ref}", cwd=work)
