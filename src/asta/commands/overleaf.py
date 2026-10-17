@@ -621,7 +621,10 @@ def save_config(paper: Path, url: str, base: str) -> None:
         and current.get("format", FORMAT) == FORMAT
     ):
         return
-    text = json.dumps({**format_stamp(), "url": url, "base": base}, indent=2) + "\n"
+    # Compatible releases may add fields this reader does not know about.
+    updated = dict(current) if isinstance(current, dict) else {}
+    updated.update(format_stamp(), url=url, base=base)
+    text = json.dumps(updated, indent=2) + "\n"
     paper.mkdir(parents=True, exist_ok=True)
     (paper / CONFIG).write_text(text, encoding="utf-8")
 

@@ -22,6 +22,8 @@ supply it; Overleaf history is never trusted to name one.
 record, lock commit and managed sync PR header together. Unversioned state is
 format 1. Bump the format only when an older reader would misinterpret the state;
 additive changes that old readers can safely ignore do not need a bump.
+Config updates preserve unknown fields added by compatible releases, including
+when the URL or base changes; unchanged configs retain their original bytes.
 `FORMAT_RELEASE` names the first asta release that understands that format.
 An absent JSON `format` field is legacy state; an explicit `null` is malformed.
 Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
@@ -29,6 +31,11 @@ PR/lock format numbers must contain one to nine ASCII decimal digits and be posi
 longer values are malformed regardless of Python's integer-conversion settings.
 Malformed format stamps stop the sync, including publication records that would
 otherwise use the damaged-record fallback. Restore the stamp from history first.
+The PR format stamp follows its single managed header, allowing blank lines and
+horizontal whitespace. Multiple sync header markers are ambiguous and refuse,
+including literal header examples in notices; remove those examples or restore
+the header from history before retrying. A stamp example without another sync
+header does not change the PR's format.
 
 Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
 release shipping its reader. The initial format-aware release is planned as

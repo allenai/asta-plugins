@@ -17,7 +17,9 @@ from . import overleaf as ov
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
 FORMAT_MARKER = re.compile(
-    r"\A" + re.escape(MARKER) + r"\r?\n<!-- asta-overleaf-sync-format:([^\r\n]*)"
+    r"\A"
+    + re.escape(MARKER)
+    + r"[ \t]*\r?\n(?:[ \t]*\r?\n)*[ \t]*<!-- asta-overleaf-sync-format:([^\r\n]*)"
 )
 FORMAT_LINE = f"<!-- asta-overleaf-sync-format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE} -->"
 LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format:([^\r\n]*)")
@@ -518,9 +520,14 @@ def sync_pr(
         and (pr.get("headRepositoryOwner") or {}).get("login", "").lower() == owner
     ]
     for candidate in prs:
-        # Only the first managed header defines the format. Preserve detection
-        # if a person prepends prose, without parsing examples in later notices.
-        _, marker, tail = (candidate.get("body") or "").partition(MARKER)
+        body = candidate.get("body") or ""
+        # Multiple headers are ambiguous, even in prose or notice examples:
+        # choosing the first could hide a newer header behind an earlier marker.
+        if body.count(MARKER) > 1:
+            raise ov.malformed_format(f"Sync PR {candidate['url']}")
+        # Preserve detection if a person prepends prose or adds blank lines.
+        # Stamp-like examples outside this header do not define its format.
+        _, marker, tail = body.partition(MARKER)
         stamp = FORMAT_MARKER.match(marker + tail)
         if stamp:
             check_stamp(stamp[1], f"Sync PR {candidate['url']}", comment=True)

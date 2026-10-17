@@ -1312,7 +1312,7 @@ def test_notice_text_is_not_a_sync_pr_format_stamp(setup, github):
     pr = github["prs"][0]
     pr["body"] = sync.with_notice(
         pr["body"],
-        f"Example:\n{sync.MARKER}\n<!-- asta-overleaf-sync-format: 99 requires-asta: 9.9.9 -->",
+        "Example:\n<!-- asta-overleaf-sync-format: 99 requires-asta: 9.9.9 -->",
     )
     result = invoke(project)
     assert result.exit_code == 0, result.output
@@ -1367,10 +1367,77 @@ def test_later_notice_stamp_does_not_version_legacy_pr(tmp_path, monkeypatch):
         "isCrossRepository": False,
         "headRepositoryOwner": {"login": "allenai"},
         "body": f"{sync.MARKER}\nLegacy description.\n\nExample:\n"
-        f"{sync.MARKER}\n<!-- asta-overleaf-sync-format: 99 -->",
+        "<!-- asta-overleaf-sync-format: 99 -->",
     }
     monkeypatch.setattr(sync, "gh", lambda *args: [pr])
     sync.sync_pr(tmp_path, "allenai/test", "sync", "main", format_only=True)
+
+
+@pytest.mark.parametrize(
+    "header,message",
+    [
+        (f"{sync.MARKER}\n\n{{stamp}}", "Upgrade to asta 9.9.9"),
+        (f"{sync.MARKER}\r\n \t\r\n{{stamp}}", "Upgrade to asta 9.9.9"),
+        (f"{sync.MARKER} \t\n\t\n {{stamp}}", "Upgrade to asta 9.9.9"),
+        (
+            f"An example is {sync.MARKER}.\n\n{sync.MARKER}\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+        (
+            f"{sync.MARKER}\nIntroduction.\n\n{sync.MARKER}\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+        (
+            f"{sync.MARKER}\nLegacy description.\n\n{sync.RECORD_MARKER}\n"
+            f"Example:\n{sync.MARKER}\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+    ],
+)
+def test_relocated_or_ambiguous_pr_header_refuses_before_writes(
+    setup, github, monkeypatch, header, message
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    assert invoke(project).exit_code == 0
+    pr = github["prs"][0]
+    body = header.format(
+        stamp=f"<!-- asta-overleaf-sync-format: {sync.ov.FORMAT + 1} requires-asta: 9.9.9 -->"
+    )
+    pr["body"] = body
+    refs = git(project, "ls-remote", "origin")
+    calls = len(github["calls"])
+    writes = github["writes"]
+    original = sync.ov.git
+
+    def no_push(*args, **kwargs):
+        assert args[0] != "push", "check ambiguous headers before acquiring a lock"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", no_push)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert message in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert pr["body"] == body
+    assert github["writes"] == writes
+    assert not github["issues"]
+    assert all(args[0] != "label" for args, _ in github["calls"][calls:])
+    assert git(project, "ls-remote", "origin") == refs
+
+
+@pytest.mark.parametrize("stamped", [False, True])
+def test_compatible_pr_header_tolerates_blank_lines(tmp_path, monkeypatch, stamped):
+    pr = {
+        "isCrossRepository": False,
+        "headRepositoryOwner": {"login": "allenai"},
+        "url": "https://github.com/allenai/test/pull/1",
+        "baseRefName": "main",
+        "body": f"Introduction.\n\n{sync.MARKER}\n\n"
+        + (sync.FORMAT_LINE if stamped else "Legacy description."),
+    }
+    monkeypatch.setattr(sync, "gh", lambda *args: [pr])
+    assert sync.sync_pr(tmp_path, "allenai/test", "sync", "main") is pr
 
 
 def test_preflight_pr_transport_failure_stops_before_shared_writes(

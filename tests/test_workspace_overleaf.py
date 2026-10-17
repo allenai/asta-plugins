@@ -3824,6 +3824,46 @@ def test_unchanged_config_preserves_extra_fields_and_formatting(tmp_path, stampe
     assert path.stat().st_mtime_ns == before
 
 
+@pytest.mark.parametrize("stamped", [False, True])
+@pytest.mark.parametrize("change", ["base", "url", "both"])
+def test_changed_config_preserves_unknown_fields(tmp_path, stamped, change):
+    path = tmp_path / module.CONFIG
+    data = {
+        "url": URL,
+        "base": "a" * 40,
+        "future": {"enabled": True, "options": [1, None, "value"]},
+        "optional": None,
+    }
+    if stamped:
+        data.update(module.format_stamp())
+    path.write_text(json.dumps(data))
+    url = "https://git.overleaf.com/7654321" if change in {"url", "both"} else URL
+    base = "b" * 40 if change in {"base", "both"} else data["base"]
+    module.save_config(tmp_path, url, base)
+    assert json.loads(path.read_text()) == {
+        **data,
+        **module.format_stamp(),
+        "url": url,
+        "base": base,
+    }
+
+
+def test_pull_preserves_unknown_config_fields_when_base_changes(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    path = project / "paper" / module.CONFIG
+    data = json.loads(path.read_text())
+    data["future"] = {"retained": [True, None]}
+    path.write_text(json.dumps(data))
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    saved = json.loads(path.read_text())
+    assert saved["base"] != data["base"]
+    assert saved["future"] == data["future"]
+
+
 @pytest.mark.parametrize("version", [0, None])
 @pytest.mark.parametrize("change_base", [False, True])
 def test_save_config_refuses_invalid_format_without_overwriting(

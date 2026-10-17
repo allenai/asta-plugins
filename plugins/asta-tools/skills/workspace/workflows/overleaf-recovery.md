@@ -130,8 +130,11 @@ first format-aware release before introducing a newer format.
 The config, publication record, sync PR header or lock commit has an invalid
 format stamp. Restore the stamp from its history and retry; do not guess a
 format number. An absent JSON `format` field is legacy state, but `null` is
-invalid. A publication record with an invalid format stops the sync instead of
-falling back to `overleaf.json`. If a lock was damaged by an interrupted run,
+invalid. A sync PR with multiple header markers is ambiguous, including literal
+header examples in notices. Remove the example markers or restore the single
+managed header and its format stamp from history before retrying. A publication
+record with an invalid format stops the sync instead of falling back to
+`overleaf.json`. If a lock was damaged by an interrupted run,
 confirm its owner has stopped before following the
 [interrupted-run recovery](overleaf-sync-command.md#interrupted-runs).
 
