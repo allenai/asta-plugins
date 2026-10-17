@@ -1151,27 +1151,58 @@ def test_sync_pr_and_lock_carry_the_format(setup, github):
         assert sync.LOCK_FORMAT.search(message)
 
 
-def test_older_cli_stops_on_newer_sync_pr(setup, github):
+@pytest.mark.parametrize(
+    "hint,upgrade",
+    [
+        (" requires-asta: 9.9.9", "asta 9.9.9 or later"),
+        (" requires-asta: 0.117.0rc1", "a newer asta release"),
+        (" requires-asta: $(untrusted)", "a newer asta release"),
+        (" requires-asta: ", "a newer asta release"),
+        ("", "a newer asta release"),
+    ],
+)
+def test_older_cli_stops_on_newer_sync_pr(setup, github, monkeypatch, hint, upgrade):
     _, project = prepare(setup)
     overleaf_edit(setup[0], "main.tex", "collaborator edit\n")
     assert invoke(project).exit_code == 0
     pr = github["prs"][0]
     pr["body"] = pr["body"].replace(
         sync.FORMAT_LINE,
-        f"<!-- asta-overleaf-sync-format: {sync.ov.FORMAT + 1} requires-asta: 9.9.9 -->",
+        f"<!-- asta-overleaf-sync-format: {sync.ov.FORMAT + 1}{hint} -->",
     )
     writes = github["writes"]
+    body = pr["body"]
+    refs = git(project, "ls-remote", "origin")
+    calls = len(github["calls"])
+    real_git = sync.ov.git
+
+    def no_push(*args, **kwargs):
+        assert args[0] != "push", "newer PR must be checked before acquiring a lock"
+        return real_git(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", no_push)
     overleaf_edit(setup[0], "main.tex", "another edit\n")
     result = invoke(project)
     assert result.exit_code != 0, result.output
-    assert "Upgrade to asta 9.9.9 or later" in result.output
-    # The only write is the repo-visible notice; the newer PR is left untouched.
-    assert github["writes"] == writes + 1
-    assert not [c for c in github["calls"][-5:] if "/pulls/" in " ".join(c[0])]
-    assert "9.9.9" in github["calls"][-1][1]["body"]
+    assert f"Upgrade to {upgrade}" in result.output
+    assert github["writes"] == writes
+    assert pr["body"] == body
+    assert not github["issues"]
+    assert git(project, "ls-remote", "origin") == refs
+    assert all(args[0] != "label" for args, _ in github["calls"][calls:])
 
 
-def test_older_cli_stops_on_newer_lock(setup):
+@pytest.mark.parametrize(
+    "hint,upgrade",
+    [
+        (" requires-asta: 9.9.9", "asta 9.9.9 or later"),
+        (" requires-asta: 0.117.0rc1", "a newer asta release"),
+        (" requires-asta: $(untrusted)", "a newer asta release"),
+        (" requires-asta: ", "a newer asta release"),
+        ("", "a newer asta release"),
+    ],
+)
+def test_older_cli_stops_on_newer_lock(setup, github, hint, upgrade):
     _, project = prepare(setup)
     ref = "refs/asta/overleaf-sync-lock/1234567"
     empty = git(project, "mktree")
@@ -1183,7 +1214,7 @@ def test_older_cli_stops_on_newer_lock(setup):
             "-m",
             "lock",
             "-m",
-            f"Asta-Sync-Format: {sync.ov.FORMAT + 1} requires-asta: 9.9.9",
+            f"Asta-Sync-Format: {sync.ov.FORMAT + 1}{hint}",
         ],
         cwd=project,
         check=True,
@@ -1191,5 +1222,27 @@ def test_older_cli_stops_on_newer_lock(setup):
         text=True,
     ).stdout.strip()
     git(project, "push", "-q", "origin", f"{owner}:{ref}")
-    with pytest.raises(sync.ov.NewerFormatError, match="asta 9.9.9 or later"):
+    with pytest.raises(sync.ov.NewerFormatError, match=upgrade):
         sync.stale_lock(project, "1234567")
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert f"Upgrade to {upgrade}" in result.output
+    assert not github["writes"]
+    assert all(args[0] != "label" for args, _ in github["calls"])
+    assert git(project, "ls-remote", "origin", ref).split()[0] == owner
+
+
+def test_newer_format_discovered_during_pull_is_not_reported(
+    setup, github, monkeypatch
+):
+    _, project = prepare(setup)
+
+    def newer_record(*args):
+        sync.ov.check_format(sync.ov.FORMAT + 1, "9.9.9", "Sync record")
+
+    monkeypatch.setattr(sync, "pull_into", newer_record)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "Upgrade to asta 9.9.9 or later" in result.output
+    assert not github["writes"]
+    assert not github["issues"]

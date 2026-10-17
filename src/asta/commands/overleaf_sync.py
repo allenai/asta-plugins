@@ -16,11 +16,10 @@ from . import overleaf as ov
 
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
-FORMAT_MARKER = re.compile(
-    r"<!-- asta-overleaf-sync-format: (\d+) requires-asta: ([0-9.]+) -->"
-)
+FORMAT_MARKER = re.compile(r"<!-- asta-overleaf-sync-format: (\d+)\b([^\r\n]*?)-->")
 FORMAT_LINE = f"<!-- asta-overleaf-sync-format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE} -->"
-LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format: (\d+) requires-asta: ([0-9.]+)$")
+LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format: (\d+)\b([^\r\n]*)")
+REQUIRES_ASTA = re.compile(r"requires-asta: (\S+)")
 DEFAULT_BODY = (
     MARKER
     + "\n"
@@ -131,6 +130,13 @@ def lock(root: Path, project_id: str):
             )
 
 
+def check_stamp(stamp: re.Match, where: str) -> None:
+    # The version guards the state even if its optional release hint is absent
+    # or unrecognized. check_format validates the hint before displaying it.
+    release = REQUIRES_ASTA.search(stamp[2])
+    ov.check_format(int(stamp[1]), release[1] if release else None, where)
+
+
 def stale_lock(root: Path, project_id: str) -> bool:
     ref = f"refs/asta/overleaf-sync-lock/{project_id}"
     ov.git("fetch", "--no-tags", "origin", ref, cwd=root)
@@ -138,7 +144,7 @@ def stale_lock(root: Path, project_id: str) -> bool:
         ov.git("show", "-s", "--format=%B", "FETCH_HEAD", cwd=root)
     )
     if stamp:
-        ov.check_format(int(stamp[1]), stamp[2], f"The sync lock {ref}")
+        check_stamp(stamp, f"The sync lock {ref}")
     created = int(ov.git("show", "-s", "--format=%ct", "FETCH_HEAD", cwd=root))
     return time.time() - created >= STALE_LOCK_SECONDS
 
@@ -448,7 +454,9 @@ def only_recorded_base_changed(root, prefix, before, after):
         return trusted == after["base"]
 
 
-def sync_pr(root: Path, repo: str, branch: str, default_name: str):
+def sync_pr(
+    root: Path, repo: str, branch: str, default_name: str, *, format_only: bool = False
+):
     """The open sync PR on the reserved branch, refusing duplicates or strangers."""
     prs = gh(
         root,
@@ -471,6 +479,11 @@ def sync_pr(root: Path, repo: str, branch: str, default_name: str):
         if pr.get("isCrossRepository") is False
         and (pr.get("headRepositoryOwner") or {}).get("login", "").lower() == owner
     ]
+    for candidate in prs:
+        for stamp in FORMAT_MARKER.finditer(candidate.get("body") or ""):
+            check_stamp(stamp, f"Sync PR {candidate['url']}")
+    if format_only:
+        return None
     if len(prs) > 1:
         raise ov.SyncError(
             "Multiple sync PRs exist; close the duplicate before retrying."
@@ -482,9 +495,6 @@ def sync_pr(root: Path, repo: str, branch: str, default_name: str):
         raise ov.SyncError(
             "The reserved sync branch has an unrelated PR; move it aside before retrying."
         )
-    stamp = pr and FORMAT_MARKER.search(pr.get("body") or "")
-    if stamp:
-        ov.check_format(int(stamp[1]), stamp[2], f"Sync PR {pr['url']}")
     return pr
 
 
@@ -517,6 +527,12 @@ def sync_workspace(project: Path, directory: str):
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
     branch = f"asta/overleaf-sync/{project_id}"
+    # Compatibility checks precede label updates and lock acquisition. Repeat
+    # the reads under the lock below to catch state that changes during preflight.
+    sync_pr(root, repo, branch, default_name, format_only=True)
+    lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
+    if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
+        stale_lock(root, project_id)
     # Label creation is idempotent; no repository settings or protections change.
     gh(
         root,
@@ -560,9 +576,13 @@ def sync_workspace(project: Path, directory: str):
             try:
                 try:
                     pr = sync_pr(root, repo, branch, default_name)
+                except ov.NewerFormatError:
+                    raise
                 except ov.SyncError:
                     pr = None
                 report(root, repo, project_id, message, pr)
+            except ov.NewerFormatError:
+                raise
             except ov.SyncError:
                 click.echo("Could not report the held lock on GitHub.", err=True)
             raise ov.SyncError(message)
@@ -858,11 +878,12 @@ def sync_workspace(project: Path, directory: str):
                             payload={"state": "closed"},
                         )
                 click.echo("Overleaf sync complete.")
+        except ov.NewerFormatError:
+            # An older runner must not publish status using its own state format.
+            raise
         except ov.SyncError as exc:
             try:
-                # Rewriting a newer runner's PR body would drop its format marker.
-                newer = isinstance(exc, ov.NewerFormatError)
-                target = None if newer or isinstance(exc, BuildConfigError) else pr
+                target = None if isinstance(exc, BuildConfigError) else pr
                 if target and isinstance(exc, ConflictError):
                     line = conflict_line(root, repo, exc.commits)
                     reset_status(root, repo, target, notice, line)
