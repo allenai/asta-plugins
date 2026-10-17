@@ -73,9 +73,9 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
       - name: Repeat the test
         run: |
-          for i in $(seq 1 25); do
+          for i in $(seq 1 6); do
             uv run --python ${{ matrix.python-version }} --extra test pytest -x -q \
-              tests/test_workspace_overleaf.py -k equivalent_url || exit 1
+              tests/test_workspace_overleaf.py || exit 1
           done
 
   dom-test:
