@@ -334,20 +334,35 @@ def test_unmergeable_pr_fails_immediately(
     assert_failed_state(scratch, github)
 
 
-def test_exhausted_budget_never_starts_exercise(scratch, monkeypatch):
+@pytest.mark.parametrize("phase", ["preparation", "exercise"])
+def test_exhausted_budget_reports_its_stage(scratch, monkeypatch, phase):
     project, _, _, _ = scratch
     refs = git(project, "ls-remote", "origin")
-    ticks = iter([0, 600])
+    ticks = iter([0, 600] if phase == "preparation" else [0, 599, 600])
     monkeypatch.setattr(check.time, "monotonic", lambda: next(ticks))
 
-    def unexpected_exercise(trial):
-        pytest.fail("expired exercise started")
+    if phase == "preparation":
 
-    monkeypatch.setattr(check.RoundTrip, "exercise", unexpected_exercise)
+        def unexpected_exercise(trial):
+            pytest.fail("expired exercise started")
+
+        monkeypatch.setattr(check.RoundTrip, "exercise", unexpected_exercise)
+
     result = invoke(project)
     assert result.exit_code != 0
-    assert "timed out before starting its next phase" in result.output
-    assert_unchanged(scratch, refs)
+    assert "Overleaf live check PASS" not in result.output
+    if phase == "preparation":
+        assert (
+            "Overleaf check failed (pair access/setup): "
+            "Live check timed out before starting its next phase."
+        ) in result.output
+        assert_unchanged(scratch, refs)
+    else:
+        assert (
+            "Overleaf check failed (release step): Live check timed out."
+            in result.output
+        )
+        assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/*")
 
 
 @pytest.mark.parametrize("remaining", [0, -0.1])
