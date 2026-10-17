@@ -3741,7 +3741,7 @@ def test_newer_format_without_release_still_stops(setup):
     assert "Upgrade to a newer asta release" in result.output
 
 
-def test_unversioned_config_reads_as_current_format_without_rewrite(setup):
+def test_unversioned_config_reads_as_format_one_without_rewrite(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     config = project / "paper/overleaf.json"
@@ -3787,6 +3787,41 @@ def test_save_config_refuses_newer_format_without_loading(tmp_path, change_base)
     with pytest.raises(module.NewerFormatError, match="Upgrade to asta 9.9.9"):
         module.save_config(tmp_path, URL, "b" * 40 if change_base else data["base"])
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("change_base", [False, True])
+@pytest.mark.parametrize("dangling", [False, True])
+def test_save_config_refuses_symlink_without_reading_or_writing(
+    tmp_path, change_base, dangling
+):
+    target = tmp_path / "outside.json"
+    data = {"url": URL, "base": "a" * 40}
+    original = json.dumps(data)
+    if not dangling:
+        target.write_text(original)
+    path = tmp_path / module.CONFIG
+    path.symlink_to(target)
+    with pytest.raises(module.SyncError, match="is a symlink"):
+        module.save_config(tmp_path, URL, "b" * 40 if change_base else data["base"])
+    assert path.is_symlink()
+    if dangling:
+        assert not target.exists()
+    else:
+        assert target.read_text() == original
+
+
+@pytest.mark.parametrize("stamped", [False, True])
+def test_unchanged_config_preserves_extra_fields_and_formatting(tmp_path, stamped):
+    path = tmp_path / module.CONFIG
+    data = {"url": URL, "base": "a" * 40, "extra": {"retained": True}}
+    if stamped:
+        data.update(module.format_stamp())
+    original = json.dumps(data, indent=4) + "\n\n"
+    path.write_text(original)
+    before = path.stat().st_mtime_ns
+    module.save_config(tmp_path, URL, data["base"])
+    assert path.read_text() == original
+    assert path.stat().st_mtime_ns == before
 
 
 @pytest.mark.parametrize("version", [0, None])

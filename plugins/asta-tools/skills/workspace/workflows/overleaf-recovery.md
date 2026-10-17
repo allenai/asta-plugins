@@ -115,7 +115,9 @@ The paper's sync state (`paper/overleaf.json`, the `refs/asta/` record or lock, 
 the sync PR) was written by a newer asta release whose format this CLI would
 misread, so it stopped without changing anything. Upgrade to the release the
 message names (`/asta-tools:asta-cli`, or the version pinned by a scheduled job),
-then retry. Do not edit or delete the state to get past it; an older runner has
+then retry. If it says only "a newer asta release", update to the latest release;
+if that still refuses, ask the workspace maintainer which release wrote the state.
+Do not edit or delete the state to get past it; an older runner has
 to be upgraded, not the state downgraded.
 
 This refusal exits non-zero without writing a GitHub status or issue. Scheduled

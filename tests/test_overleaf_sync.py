@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -1036,6 +1037,7 @@ def test_record_fallback_is_retained_and_reported_once(setup, github, reason):
     result = invoke(project)
     assert result.exit_code == 0, result.output
     notice = sync.record_notice(github["prs"][0]["body"])
+    assert result.output.count("Overleaf sync record not used:") == 1
     assert expected in notice
     assert "Pull started from overleaf.json's base" in notice
     assert (
@@ -1281,10 +1283,27 @@ def test_notice_text_is_not_a_sync_pr_format_stamp(setup, github):
     pr = github["prs"][0]
     pr["body"] = sync.with_notice(
         pr["body"],
-        "Example: <!-- asta-overleaf-sync-format: 99 requires-asta: 9.9.9 -->",
+        f"Example:\n{sync.MARKER}\n<!-- asta-overleaf-sync-format: 99 requires-asta: 9.9.9 -->",
     )
     result = invoke(project)
     assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("int_limit", [0, 640])
+@pytest.mark.parametrize("version", ["9" * 10, "9" * 5000])
+def test_oversized_stamp_refuses_independently_of_python_int_limit(int_limit, version):
+    previous = sys.get_int_max_str_digits()
+    try:
+        sys.set_int_max_str_digits(int_limit)
+        with pytest.raises(sync.ov.FormatError, match="malformed sync format stamp"):
+            sync.check_stamp(version, "Shared sync state")
+    finally:
+        sys.set_int_max_str_digits(previous)
+
+
+def test_nine_digit_stamp_still_produces_upgrade_notice():
+    with pytest.raises(sync.ov.NewerFormatError, match="sync format 999999999"):
+        sync.check_stamp("999999999 requires-asta: 9.9.9", "Shared sync state")
 
 
 def test_unterminated_pr_format_stamp_refuses(tmp_path, monkeypatch):
@@ -1297,6 +1316,32 @@ def test_unterminated_pr_format_stamp_refuses(tmp_path, monkeypatch):
     monkeypatch.setattr(sync, "gh", lambda *args: [pr])
     with pytest.raises(sync.ov.SyncError, match="malformed sync format stamp"):
         sync.sync_pr(tmp_path, "allenai/test", "sync", "main", format_only=True)
+
+
+@pytest.mark.parametrize("preamble", ["", "A person's introduction.\n\n"])
+def test_first_pr_header_format_is_checked_after_preamble(
+    tmp_path, monkeypatch, preamble
+):
+    pr = {
+        "isCrossRepository": False,
+        "headRepositoryOwner": {"login": "allenai"},
+        "url": "https://github.com/allenai/test/pull/1",
+        "body": f"{preamble}{sync.MARKER}\n<!-- asta-overleaf-sync-format: 99 -->",
+    }
+    monkeypatch.setattr(sync, "gh", lambda *args: [pr])
+    with pytest.raises(sync.ov.NewerFormatError, match="sync format 99"):
+        sync.sync_pr(tmp_path, "allenai/test", "sync", "main", format_only=True)
+
+
+def test_later_notice_stamp_does_not_version_legacy_pr(tmp_path, monkeypatch):
+    pr = {
+        "isCrossRepository": False,
+        "headRepositoryOwner": {"login": "allenai"},
+        "body": f"{sync.MARKER}\nLegacy description.\n\nExample:\n"
+        f"{sync.MARKER}\n<!-- asta-overleaf-sync-format: 99 -->",
+    }
+    monkeypatch.setattr(sync, "gh", lambda *args: [pr])
+    sync.sync_pr(tmp_path, "allenai/test", "sync", "main", format_only=True)
 
 
 def test_preflight_pr_transport_failure_stops_before_shared_writes(
@@ -1372,6 +1417,32 @@ def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypat
         assert not github["writes"]
         assert all(args[0] != "label" for args, _ in github["calls"])
         assert git(project, "ls-remote", "origin", ref) == before
+
+
+def test_preflight_does_not_ignore_unreadable_record(setup, github, monkeypatch):
+    from tests.test_workspace_overleaf import RECORD_REF
+
+    _, project = prepare(setup)
+    origin = project.parent / "workspace.git"
+    # Advertise a record but make its fetch fail: its format remains unknown.
+    git(origin, "update-ref", RECORD_REF, git(origin, "rev-parse", "main"))
+    before = git(project, "ls-remote", "origin")
+    original = sync.ov.git
+
+    def unreadable_record(*args, **kwargs):
+        if args[0] == "fetch" and args[-1].startswith(RECORD_REF + ":"):
+            raise sync.ov.GitCommandError("fixture record transport failure", 128)
+        assert args[0] != "push", "do not acquire a lock before checking the format"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", unreadable_record)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "Could not read the Overleaf sync record" in result.output
+    assert not github["writes"]
+    assert not github["issues"]
+    assert all(args[0] != "label" for args, _ in github["calls"])
+    assert git(project, "ls-remote", "origin") == before
 
 
 @pytest.mark.parametrize("location", ["pr", "lock"])

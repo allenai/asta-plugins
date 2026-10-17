@@ -592,12 +592,15 @@ def load_config(paper: Path) -> dict:
 
 def save_config(paper: Path, url: str, base: str) -> None:
     path = paper / CONFIG
+    if path.is_symlink():
+        refuse(CONFIG, "is a symlink")
     try:
         current = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         current = None
     if isinstance(current, dict):
         check_format(current.get("format", 1), current.get("requires_asta"), str(path))
+    # Preserve bytes, including extra keys and formatting, when nothing changed.
     # Stamping alone must not turn an unchanged unversioned config into a diff.
     if (
         isinstance(current, dict)
@@ -751,7 +754,9 @@ def invalid_record(url: str | None, *, publishing: bool = False) -> SyncError:
 
 
 @contextmanager
-def published_record(root: Path, url: str, *, publishing: bool = False):
+def published_record(
+    root: Path, url: str, *, publishing: bool = False, warn: bool = True
+):
     """Read publish's record on `origin`: (record commit, Overleaf commit, source)."""
     ref = record_ref(url)
     suffix = " Nothing pushed." if publishing else " Nothing copied."
@@ -798,7 +803,8 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             raise invalid_record(url, publishing=True)
         # Keep the parent reachable until a subsequent record has been pushed.
         if record is None:
-            record_not_used("it is damaged")
+            if warn:
+                record_not_used("it is damaged")
             yield commit, None, None
         else:
             yield commit, record["overleaf"], record["workspace"]

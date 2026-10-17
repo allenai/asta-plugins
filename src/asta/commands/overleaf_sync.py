@@ -17,7 +17,7 @@ from . import overleaf as ov
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
 FORMAT_MARKER = re.compile(
-    r"(?m)^" + re.escape(MARKER) + r"\r?\n<!-- asta-overleaf-sync-format:([^\r\n]*)"
+    r"\A" + re.escape(MARKER) + r"\r?\n<!-- asta-overleaf-sync-format:([^\r\n]*)"
 )
 FORMAT_LINE = f"<!-- asta-overleaf-sync-format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE} -->"
 LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format:([^\r\n]*)")
@@ -142,7 +142,8 @@ def check_stamp(value: str, where: str, *, comment: bool = False) -> None:
                 raise ValueError("unterminated sync format stamp")
             value = value[:-3]
         fields = value.split(maxsplit=1)
-        if not fields or not re.fullmatch(r"[0-9]+", fields[0]):
+        # Bound conversion independently of the interpreter's int-string limit.
+        if not fields or not re.fullmatch(r"[0-9]{1,9}", fields[0]):
             raise ValueError("invalid sync format")
         release = REQUIRES_ASTA.search(fields[1]) if len(fields) > 1 else None
         ov.check_format(int(fields[0]), release[1] if release else None, where)
@@ -493,7 +494,11 @@ def sync_pr(
         and (pr.get("headRepositoryOwner") or {}).get("login", "").lower() == owner
     ]
     for candidate in prs:
-        for stamp in FORMAT_MARKER.finditer(candidate.get("body") or ""):
+        # Only the first managed header defines the format. Preserve detection
+        # if a person prepends prose, without parsing examples in later notices.
+        _, marker, tail = (candidate.get("body") or "").partition(MARKER)
+        stamp = FORMAT_MARKER.match(marker + tail)
+        if stamp:
             check_stamp(stamp[1], f"Sync PR {candidate['url']}", comment=True)
     if format_only:
         return None
@@ -552,7 +557,7 @@ def sync_workspace(project: Path, directory: str):
         # Continue only when it is gone; an unreadable live lock could be newer.
         if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
             raise
-    with ov.published_record(root, config["url"]):
+    with ov.published_record(root, config["url"], warn=False):
         pass
     # Label creation is idempotent; no repository settings or protections change.
     gh(

@@ -25,6 +25,8 @@ additive changes that old readers can safely ignore do not need a bump.
 `FORMAT_RELEASE` names the first asta release that understands that format.
 An absent JSON `format` field is legacy state; an explicit `null` is malformed.
 Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
+PR/lock format numbers must contain one to nine ASCII decimal digits and be positive;
+longer values are malformed regardless of Python's integer-conversion settings.
 Malformed format stamps stop the sync, including publication records that would
 otherwise use the damaged-record fallback. Restore the stamp from history first.
 
@@ -75,6 +77,13 @@ has. Publish proceeds only when Overleaf's head equals the sync point.
 Refusals are one line with a concrete action and a link to the workspace skill's
 [recovery reference](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md).
 Every remaining refusal names a fix that works.
+
+Compatibility preflight reads the PR, live lock and publication record before
+any label updates or lock acquisition. If transport or Git errors prevent
+checking their formats, sync refuses without reporting on GitHub: the unreadable
+state could require a newer reader. Monitor scheduled job failures and logs,
+restore access and retry. Damaged records that can be read retain the documented
+fallback, whose warning is emitted only when the operation uses it.
 
 - Sync does not check how a commit reached the default branch: it publishes the paper
   that is there. A repository that wants every paper change reviewed must require PRs
