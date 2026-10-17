@@ -355,6 +355,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                 str(work),
                 cwd=root,
             )
+            ov.foreground_maintenance(work)
             for key in ("user.name", "user.email"):
                 ov.git(
                     "config", key, ov.git("config", "--get", key, cwd=root), cwd=work

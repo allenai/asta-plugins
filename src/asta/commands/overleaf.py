@@ -276,6 +276,12 @@ def credentials():
         yield env, ["-c", "credential.helper="]
 
 
+def foreground_maintenance(repo: Path) -> None:
+    # Detached auto-maintenance can still write into .git while a temporary clone is removed.
+    for key in ("gc.autoDetach", "maintenance.autoDetach"):
+        git("config", key, "false", cwd=repo)
+
+
 def clone(url: str, dest: Path) -> str:
     with credentials() as (env, options):
         git(
@@ -289,6 +295,7 @@ def clone(url: str, dest: Path) -> str:
             cwd=dest.parent,
             env=env,
         )
+    foreground_maintenance(dest)
     try:
         return git("rev-parse", "--verify", "HEAD", cwd=dest)
     except click.ClickException:
