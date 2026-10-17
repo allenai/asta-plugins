@@ -397,16 +397,21 @@ def credits(root: Path, config: dict, new_base: str) -> list[str]:
         remote = Path(tmp) / "overleaf"
         ov.clone(config["url"], remote)
         # Read actual Git authors, never infer identities from names or handles.
-        authors = ov.git(
-            "log", "--format=%aN <%aE>", f"{config['base']}..{new_base}", cwd=remote
+        log = ov.git(
+            "log",
+            "--format=%x1e%aN <%aE>%x00%B",
+            f"{config['base']}..{new_base}",
+            cwd=remote,
         )
-    return sorted(
-        {
-            x
-            for x in authors.split("\n")
-            if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", x)
-        }
-    )
+    authors = set()
+    for entry in log.split("\x1e")[1:]:
+        author, _, message = entry.partition("\0")
+        # Publishing commits back the workspace's own content; only Overleaf edits earn credit.
+        if ov.is_publish_message(message):
+            continue
+        if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", author):
+            authors.add(author)
+    return sorted(authors)
 
 
 def only_recorded_base_changed(root, prefix, before, after):

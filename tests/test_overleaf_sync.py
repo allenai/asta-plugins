@@ -1130,3 +1130,28 @@ def test_record_notice_issue_closes_once_record_counts_again(setup, github):
     assert invoke(project).exit_code == 0
     assert len(github["issues"]) == 2
     assert sync.RECORD_MARKER in github["issues"][1]["body"]
+
+
+def test_credits_leave_out_publish_commits_from_any_runner(setup):
+    seed, project = setup
+    base = git(seed, "rev-parse", "HEAD")
+    reviewed = git(project, "rev-parse", "HEAD")
+    for name, message in [
+        (
+            "Some runner <runner@example.invalid>",
+            f"Publish workspace commit {reviewed}",
+        ),
+        ("Coauthor <coauthor@example.invalid>", "edit"),
+        (
+            "Other runner <other@example.invalid>",
+            "Publish workspace commit " + "a" * 64,
+        ),
+    ]:
+        (seed / "main.tex").write_text(f"{message}\n")
+        git(seed, "add", "main.tex")
+        git(seed, "commit", "-q", "--author", name, "-m", message)
+    git(seed, "push", "-q", "origin", "master")
+    new = git(seed, "rev-parse", "HEAD")
+    assert sync.credits(project, {"url": URL, "base": base}, new) == [
+        "Coauthor <coauthor@example.invalid>"
+    ]

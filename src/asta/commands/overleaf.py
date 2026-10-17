@@ -171,6 +171,19 @@ def git(*args: str, **kwargs) -> str:
     return os.fsdecode(git_bytes(*args, **kwargs)).rstrip("\n")
 
 
+def publish_message(reviewed: str) -> str:
+    return f"Publish workspace commit {reviewed}"
+
+
+def is_publish_message(message: str) -> bool:
+    """Whether a commit message is one ``publish`` writes, whoever ran it."""
+    return bool(
+        re.fullmatch(
+            r"Publish workspace commit (?:[0-9a-f]{40}|[0-9a-f]{64})", message.strip()
+        )
+    )
+
+
 def resolve_commit(repo: Path, revision: str) -> str | None:
     try:
         return git(
@@ -1301,7 +1314,7 @@ def publish(
                 return
             identity = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
             # Informational; later syncs read the sync point from the workspace record.
-            message = f"Publish workspace commit {reviewed}"
+            message = publish_message(reviewed)
             git(
                 *identity,
                 *commit_settings(root),
