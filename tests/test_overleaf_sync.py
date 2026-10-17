@@ -1232,18 +1232,23 @@ def test_older_cli_stops_on_newer_lock(setup, github, hint, upgrade):
     assert git(project, "ls-remote", "origin", ref).split()[0] == owner
 
 
-def test_newer_format_discovered_during_pull_is_not_reported(
-    setup, github, monkeypatch
+@pytest.mark.parametrize("version", [sync.ov.FORMAT + 1, None])
+def test_unreadable_format_discovered_during_pull_is_not_reported(
+    setup, github, monkeypatch, version
 ):
     _, project = prepare(setup)
 
     def newer_record(*args):
-        sync.ov.check_format(sync.ov.FORMAT + 1, "9.9.9", "Sync record")
+        sync.ov.check_format(version, "9.9.9", "Sync record")
 
     monkeypatch.setattr(sync, "pull_into", newer_record)
     result = invoke(project)
     assert result.exit_code == 1, result.output
-    assert "Upgrade to asta 9.9.9 or later" in result.output
+    assert (
+        "Upgrade to asta 9.9.9 or later"
+        if version is not None
+        else "malformed sync format stamp"
+    ) in result.output
     assert not github["writes"]
     assert not github["issues"]
 
@@ -1396,4 +1401,50 @@ def test_malformed_stamp_refuses_cleanly_before_shared_writes(
     assert isinstance(result.exception, SystemExit)
     assert github["writes"] == writes
     assert all(args[0] != "label" for args, _ in github["calls"][calls:])
+    assert git(project, "ls-remote", "origin") == refs
+
+
+@pytest.mark.parametrize(
+    "stamp,message",
+    [
+        ({"format": None}, "malformed sync format stamp"),
+        (
+            {"format": sync.ov.FORMAT + 1, "requires_asta": "9.9.9"},
+            "Upgrade to asta 9.9.9 or later",
+        ),
+    ],
+)
+def test_unreadable_record_format_refuses_before_shared_writes(
+    setup, github, monkeypatch, stamp, message
+):
+    from tests.test_workspace_overleaf import RECORD_REF, forge_record
+
+    _, project = prepare(setup)
+    config = sync.ov.load_config(project / "paper")
+    origin = project.parent / "workspace.git"
+    record = forge_record(
+        origin,
+        {
+            "url": URL,
+            "overleaf": config["base"],
+            "workspace": git(project, "rev-parse", "HEAD"),
+            **stamp,
+        },
+    )
+    git(origin, "update-ref", RECORD_REF, record)
+    refs = git(project, "ls-remote", "origin")
+    real_git = sync.ov.git
+
+    def no_push(*args, **kwargs):
+        assert args[0] != "push", "check the record format before acquiring a lock"
+        return real_git(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", no_push)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert message in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert not github["writes"]
+    assert not github["issues"]
+    assert all(args[0] != "label" for args, _ in github["calls"])
     assert git(project, "ls-remote", "origin") == refs

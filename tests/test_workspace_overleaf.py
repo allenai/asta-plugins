@@ -3797,7 +3797,7 @@ def test_save_config_refuses_invalid_format_without_overwriting(
     path = tmp_path / module.CONFIG
     path.write_text(json.dumps({"format": version, "url": URL, "base": "a" * 40}))
     before = path.read_bytes()
-    with pytest.raises(module.SyncError, match="Invalid sync record"):
+    with pytest.raises(module.FormatError, match="malformed sync format stamp"):
         module.save_config(tmp_path, URL, ("b" if change_base else "a") * 40)
     assert path.read_bytes() == before
 
@@ -3815,7 +3815,7 @@ def test_null_config_format_refuses_before_copying_or_publishing(setup):
     for command in ("pull", "publish"):
         result = run(project, command, merge=False)
         assert result.exit_code == 1, result.output
-        assert "Invalid sync record" in result.output
+        assert "malformed sync format stamp" in result.output
         assert isinstance(result.exception, SystemExit)
     assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
     assert git(project, "ls-remote", "origin") == origin_refs
@@ -3829,5 +3829,35 @@ def test_record_format_distinguishes_missing_from_null(setup, tmp_path):
     commit = forge_record(origin, legacy)
     assert module.read_record(origin, commit, url=URL) == legacy
     commit = forge_record(origin, {**legacy, "format": None})
-    with pytest.raises(module.SyncError, match="Invalid Overleaf sync record"):
+    with pytest.raises(module.FormatError, match="malformed sync format stamp"):
         module.read_record(origin, commit, url=URL)
+
+
+@pytest.mark.parametrize("version", [None, 0])
+def test_invalid_record_format_refuses_instead_of_falling_back(
+    setup, tmp_path, version
+):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    (project / "paper/main.tex").write_text("first publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    commit, data = origin_record(tmp_path)
+    origin = tmp_path / "workspace.git"
+    invalid = forge_record(origin, {**data, "format": version}, commit)
+    git(origin, "update-ref", RECORD_REF, invalid)
+    (project / "paper/main.tex").write_text("second publication\n")
+    commit_all(project)
+    git(project, "push", "origin", "HEAD:main")
+    origin_refs = git(project, "ls-remote", "origin")
+    overleaf_refs = git(seed, "ls-remote", "origin")
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    for command in ("pull", "publish"):
+        result = run(project, command, merge=False)
+        assert result.exit_code == 1, result.output
+        assert "malformed sync format stamp" in result.output
+        assert "record not used" not in result.output
+        assert isinstance(result.exception, SystemExit)
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(project, "ls-remote", "origin") == origin_refs
+    assert git(seed, "ls-remote", "origin") == overleaf_refs

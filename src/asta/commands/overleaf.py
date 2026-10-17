@@ -526,8 +526,19 @@ def require_visible(root: Path, paths) -> None:
         )
 
 
-class NewerFormatError(SyncError):
+class FormatError(SyncError):
+    """Shared state whose format cannot safely be interpreted or overwritten."""
+
+
+class NewerFormatError(FormatError):
     """Shared sync state written by a newer asta than this one."""
+
+
+def malformed_format(where: str) -> FormatError:
+    return FormatError(
+        f"{where} has a malformed sync format stamp; restore it from its history and retry.",
+        recovery="malformed-sync-format",
+    )
 
 
 def format_stamp() -> dict:
@@ -538,7 +549,7 @@ def check_format(version, release, where: str) -> None:
     """Stop before reading state in a format this CLI does not understand."""
     # Callers default only an absent field to legacy format 1; null is invalid.
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-        raise ValueError("invalid sync format")
+        raise malformed_format(where)
     if version > FORMAT:
         needed = (
             f"asta {release} or later"
@@ -570,7 +581,7 @@ def load_config(paper: Path) -> dict:
             raise ValueError("expected a base commit and project URL")
         config["url"] = validate_url(config["url"])
         return config
-    except NewerFormatError:
+    except FormatError:
         raise
     except (ValueError, OSError, click.ClickException):
         raise SyncError(
@@ -586,15 +597,7 @@ def save_config(paper: Path, url: str, base: str) -> None:
     except (OSError, ValueError):
         current = None
     if isinstance(current, dict):
-        try:
-            check_format(
-                current.get("format", 1), current.get("requires_asta"), str(path)
-            )
-        except ValueError:
-            raise SyncError(
-                f"Invalid sync record: {path}. Restore its project URL and base commit from Git.",
-                recovery="paper-configuration",
-            ) from None
+        check_format(current.get("format", 1), current.get("requires_asta"), str(path))
     # Stamping alone must not turn an unchanged unversioned config into a diff.
     if (
         isinstance(current, dict)
@@ -786,7 +789,7 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             if git("cat-file", "-t", gate, cwd=root) == "commit":
                 commit = git("rev-parse", gate, cwd=root)
             record = read_record(root, gate, url=url) if commit else None
-        except NewerFormatError:
+        except FormatError:
             raise
         except (GitCommandError, SyncError):
             record = None

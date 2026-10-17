@@ -25,6 +25,8 @@ additive changes that old readers can safely ignore do not need a bump.
 `FORMAT_RELEASE` names the first asta release that understands that format.
 An absent JSON `format` field is legacy state; an explicit `null` is malformed.
 Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
+Malformed format stamps stop the sync, including publication records that would
+otherwise use the damaged-record fallback. Restore the stamp from history first.
 
 Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
 release shipping its reader. The initial format-aware release is planned as

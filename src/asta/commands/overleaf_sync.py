@@ -147,10 +147,7 @@ def check_stamp(value: str, where: str, *, comment: bool = False) -> None:
         release = REQUIRES_ASTA.search(fields[1]) if len(fields) > 1 else None
         ov.check_format(int(fields[0]), release[1] if release else None, where)
     except ValueError:
-        raise ov.SyncError(
-            f"{where} has a malformed sync format stamp; restore it from its history and retry.",
-            recovery="malformed-sync-format",
-        ) from None
+        raise ov.malformed_format(where) from None
 
 
 def stale_lock(root: Path, project_id: str) -> bool:
@@ -555,6 +552,8 @@ def sync_workspace(project: Path, directory: str):
         # Continue only when it is gone; an unreadable live lock could be newer.
         if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
             raise
+    with ov.published_record(root, config["url"]):
+        pass
     # Label creation is idempotent; no repository settings or protections change.
     gh(
         root,
@@ -598,12 +597,12 @@ def sync_workspace(project: Path, directory: str):
             try:
                 try:
                     pr = sync_pr(root, repo, branch, default_name)
-                except ov.NewerFormatError:
+                except ov.FormatError:
                     raise
                 except ov.SyncError:
                     pr = None
                 report(root, repo, project_id, message, pr)
-            except ov.NewerFormatError:
+            except ov.FormatError:
                 raise
             except ov.SyncError:
                 click.echo("Could not report the held lock on GitHub.", err=True)
@@ -900,8 +899,8 @@ def sync_workspace(project: Path, directory: str):
                             payload={"state": "closed"},
                         )
                 click.echo("Overleaf sync complete.")
-        except ov.NewerFormatError:
-            # An older runner must not publish status using its own state format.
+        except ov.FormatError:
+            # An unreadable format must not be replaced by this runner's status.
             raise
         except ov.SyncError as exc:
             try:
