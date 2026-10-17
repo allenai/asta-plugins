@@ -274,3 +274,27 @@ def test_project_id_case_variants_are_conservatively_isolated(
     assert result.exit_code != 0
     assert "paper's Overleaf project" in result.output
     assert events == before
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_unpaired_paper_refused_before_any_scratch_access(runner, monkeypatch, cached):
+    run, events, project = runner
+    if cached:
+        assert run().exit_code == 0
+    before = list(events)
+    refs = git(project, "ls-remote", "origin")
+    original = gate.ov.load_config
+
+    def unpaired(path):
+        return None if path == project / "paper" else original(path)
+
+    def no_github(*args, **kwargs):
+        pytest.fail("an unpaired paper must be refused before GitHub access")
+
+    monkeypatch.setattr(gate.ov, "load_config", unpaired)
+    monkeypatch.setattr(gate.sync, "gh", no_github)
+    result = run()
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output and "overleaf pull" in result.output
+    assert events == before
+    assert git(project, "ls-remote", "origin") == refs

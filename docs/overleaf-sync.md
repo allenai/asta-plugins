@@ -54,8 +54,9 @@ its contents, open PR and locks have been checked in that case.
 
 The round trip defaults to 600 seconds (`--timeout <seconds>`), including waiting
 for GitHub checks. Restoration reserves independent deadlines totaling at most
-180 seconds: 30 for PR closure, 60 for each side's content restoration (including
-the workspace sync record), 15 for branch restoration, and 15 for verification.
+195 seconds: 30 for PR closure, 60 for each side's content restoration (including
+the workspace sync record), 15 for branch restoration, 15 for removal of an
+interrupted internal sync lock, and 15 for verification (including lock absence).
 An error or timeout in one cleanup step does not skip the remaining attempts;
 any such failure still exits nonzero. Lock release has at most 30 more seconds.
 Lock acquisition uses the remaining
@@ -67,6 +68,8 @@ or credential helper is already available. A remote check lock excludes another
 check and makes `sync` refuse this pair until the check releases it. A killed
 check's `refs/asta/overleaf-sync-lock/check-<project-id>` lock requires the same
 explicit interrupted-run recovery as a killed sync; it never expires itself.
+Catchable acquisition timeouts attempt bounded rollback of only their own lock
+commit. Failed rollback reports recovery guidance and never permits paper sync.
 
 Exit 0 plus `Overleaf live check PASS` means every stage and restoration passed.
 Any failure exits nonzero. Output labels `pair access/setup` failures (token,
@@ -74,8 +77,11 @@ access, missing project, or an unprepared pair) separately from `release step`
 failures during the exercised sync/merge/publish/conflict/restoration path.
 Missing PR checks (after a 30-second discovery grace period), required reviews,
 and repository rules blocking unattended merge are pair setup failures. A
-completed unsuccessful check fails immediately. If restoration also fails, the
-original check failure is printed alongside the restoration failure.
+completed unsuccessful check, a conflicting/outdated/unstable PR, or requested
+changes fail immediately with the observed state instead of waiting for the
+round-trip timeout. Pending checks and unknown merge eligibility keep polling.
+If restoration also fails, the original check failure is printed alongside the
+restoration failure.
 
 Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
 Before syncing the requested paper, the CLI looks for a pass for its own asta

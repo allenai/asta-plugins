@@ -1130,3 +1130,15 @@ def test_record_notice_issue_closes_once_record_counts_again(setup, github):
     assert invoke(project).exit_code == 0
     assert len(github["issues"]) == 2
     assert sync.RECORD_MARKER in github["issues"][1]["body"]
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_release_check_guard_works_without_a_click_context(setup, held):
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    if held:
+        git(project, "push", "origin", f"HEAD:{ref}")
+        with pytest.raises(sync.ov.SyncError, match="live release check owns"):
+            sync.require_no_release_check(project, "1234567")
+    else:
+        sync.require_no_release_check(project, "1234567")

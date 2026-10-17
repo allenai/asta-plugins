@@ -6,7 +6,7 @@ import re
 import subprocess
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from uuid import uuid4
 
@@ -70,7 +70,7 @@ def gh(root: Path, *args: str, payload=None):
 
 
 @contextmanager
-def lock(root: Path, project_id: str):
+def lock(root: Path, project_id: str, *, cleanup_context=nullcontext):
     """A remote compare-and-swap serializes different machines, not just processes.
 
     No expiring lease: a paused process cannot resume after a successor acquired
@@ -87,31 +87,47 @@ def lock(root: Path, project_id: str):
         cwd=root,
         input=f"Overleaf sync lock {uuid4().hex}\n".encode(),
     )
-    try:
-        ov.git(
-            "push", f"--force-with-lease={ref}:", "origin", f"{owner}:{ref}", cwd=root
-        )
-    except ov.SyncError:
-        if ov.git("ls-remote", "--refs", "origin", ref, cwd=root):
-            yield False
-            return
-        raise
+    acquired = False
     failed = False
     try:
+        try:
+            ov.git(
+                "push",
+                f"--force-with-lease={ref}:",
+                "origin",
+                f"{owner}:{ref}",
+                cwd=root,
+            )
+        except ov.SyncError:
+            held = ov.git("ls-remote", "--refs", "origin", ref, cwd=root).split()
+            if held and held[0] != owner:
+                yield False
+                return
+            raise
+        acquired = True
         yield True
     except BaseException:
         failed = True
         raise
     finally:
         try:
-            ov.git(
-                "push",
-                f"--force-with-lease={ref}:{owner}",
-                "origin",
-                f":{ref}",
-                cwd=root,
-            )
-        except ov.SyncError:
+            with cleanup_context():
+                # Cancellation or a transport error may arrive after the remote
+                # accepted the acquisition push but before it returned locally.
+                held = (
+                    [owner]
+                    if acquired
+                    else ov.git("ls-remote", "--refs", "origin", ref, cwd=root).split()
+                )
+                if held and held[0] == owner:
+                    ov.git(
+                        "push",
+                        f"--force-with-lease={ref}:{owner}",
+                        "origin",
+                        f":{ref}",
+                        cwd=root,
+                    )
+        except BaseException:
             if not failed:
                 raise
             click.echo(
@@ -483,7 +499,8 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
 
 
 def require_no_release_check(root: Path, project_id: str):
-    if not click.get_current_context().meta.get("overleaf_check") and ov.git(
+    ctx = click.get_current_context(silent=True)
+    if not (ctx and ctx.meta.get("overleaf_check")) and ov.git(
         "ls-remote",
         "--refs",
         "origin",

@@ -75,16 +75,16 @@ For GitHub/Slack integration, see [here](https://github.com/allenai/asta-plugins
   
 ## Asta CLI
 
+The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
+The CLI can be used directly from the command line or invoked by agents via Bash commands. Some commands
+work on the local filesystem using your own LLM provider keys. Other commands call external APIs hosted by Ai2
+For these, the CLI will prompt you to authenticate on first use.
+
 `asta workspace overleaf check --project /path/to/scratch-checkout` exercises
 co-author import/merge, publication and conflict resolution against a disposable
 Overleaf/repository pair, then restores its paper contents. Run it outside CI
 with the pair's existing credentials before adopting a release; see
 [scratch release checks](docs/overleaf-sync.md#check-a-release-on-a-scratch-pair).
-
-The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
-The CLI can be used directly from the command line or invoked by agents via Bash commands. Some commands 
-work on the local filesystem using your own LLM provider keys. Other commands call external APIs hosted by Ai2
-For these, the CLI will prompt you to authenticate on first use.
 
 ## Research project documentation
 

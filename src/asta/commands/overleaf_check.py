@@ -34,6 +34,8 @@ def deadline(seconds):
         raise ov.SyncError("The live check must run on the main thread.")
     if not hasattr(signal, "SIGALRM"):
         raise ov.SyncError("The live check requires a POSIX runner with SIGALRM.")
+    if seconds <= 0:
+        raise CheckTimeout("Live check timed out before starting its next phase.")
 
     def expired(signum, frame):
         raise CheckTimeout(
@@ -41,25 +43,45 @@ def deadline(seconds):
         )
 
     previous = signal.signal(signal.SIGALRM, expired)
-    signal.alarm(seconds)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
         yield
     finally:
-        signal.alarm(0)
+        signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
 
 
 @contextmanager
 def check_lock(work, project_id, seconds):
     """Bound lock acquisition and release separately from exercise/restoration."""
-    manager = sync.lock(work, f"check-{project_id}")
+    manager = sync.lock(
+        work, f"check-{project_id}", cleanup_context=lambda: deadline(30)
+    )
     with deadline(seconds):
         acquired = manager.__enter__()
     try:
         yield acquired
     finally:
-        with deadline(30):
-            manager.__exit__(*sys.exc_info())
+        failure = sys.exc_info()
+        try:
+            with deadline(30):
+                manager.__exit__(*failure)
+        except BaseException:
+            if failure[1] is not None:
+                click.echo(
+                    f"Original check failure before lock release: {failure_detail(failure[1])}",
+                    err=True,
+                )
+            raise
+
+
+def failure_detail(exc):
+    # Arbitrary exception messages can include credential-bearing commands.
+    return (
+        str(exc)
+        if isinstance(exc, (click.ClickException, CheckTimeout, OSError))
+        else f"Unexpected {type(exc).__name__}; inspect the scratch pair before retrying."
+    )
 
 
 def remote_ref(root, ref):
@@ -144,9 +166,22 @@ class RoundTrip:
         """Poll GitHub while checks run; sync only a completed, mergeable PR."""
         missing_since = None
         while pr := self.pr():
-            if pr.get("reviewDecision") == "REVIEW_REQUIRED":
+            if pr.get("reviewDecision") in {"REVIEW_REQUIRED", "CHANGES_REQUESTED"}:
                 raise PairSetupError(
-                    "The scratch PR requires a human review; configure a pair that can merge unattended."
+                    "The scratch PR requires a human review or has requested changes; configure a pair that can merge unattended."
+                )
+            state = pr.get("mergeStateStatus")
+            if pr.get("mergeable") == "CONFLICTING" or state in {
+                "DIRTY",
+                "BEHIND",
+                "UNSTABLE",
+            }:
+                raise ov.SyncError(
+                    f"The scratch PR cannot merge (mergeStateStatus={state}, mergeable={pr.get('mergeable')}); inspect its conflicts, base branch and checks."
+                )
+            if state == "DRAFT":
+                raise PairSetupError(
+                    "The scratch sync PR is a draft; it cannot merge unattended."
                 )
             results = pr.get("statusCheckRollup") or []
             if not results:
@@ -185,7 +220,7 @@ class RoundTrip:
                 raise PairSetupError(
                     "The scratch PR has no successful check; sync requires at least one SUCCESS."
                 )
-            if pr.get("mergeStateStatus") == "BLOCKED":
+            if state in {"BLOCKED", "HAS_HOOKS"}:
                 raise PairSetupError(
                     "Repository rules block the scratch PR; configure a pair that can merge unattended."
                 )
@@ -194,8 +229,9 @@ class RoundTrip:
                 and pr.get("mergeStateStatus") == "CLEAN"
             ):
                 self.run_sync()
-            if self.pr():
-                time.sleep(5)
+                if not self.pr():
+                    break
+            time.sleep(5)
         self.refresh()
 
     def expect(self, actual, expected, step):
@@ -368,7 +404,26 @@ class RoundTrip:
                 cwd=self.work,
             )
 
+    def restore_sync_lock(self):
+        # Preflight confirmed its absence and the outer check lock still owns
+        # the pair. An interrupted internal sync may have left this ref behind.
+        ref = f"refs/asta/overleaf-sync-lock/{self.project_id}"
+        owner = remote_ref(self.work, ref)
+        if owner:
+            ov.git(
+                "push",
+                f"--force-with-lease={ref}:{owner}",
+                "origin",
+                f":{ref}",
+                cwd=self.work,
+            )
+
     def verify_restoration(self):
+        self.expect(
+            remote_ref(self.work, f"refs/asta/overleaf-sync-lock/{self.project_id}"),
+            "",
+            "sync lock restoration",
+        )
         _, files = self.overleaf_state()
         self.expect(files, self.baseline, "Overleaf restoration")
         self.refresh()
@@ -406,7 +461,7 @@ class RoundTrip:
                 failures.append(label)
                 click.echo(f"Scratch restoration could not complete {label}.", err=True)
 
-        # Independent budgets total 180 seconds. A stuck GitHub request must not
+        # Independent budgets total 195 seconds. A stuck GitHub request must not
         # consume the time reserved for restoring either repository's contents.
         attempt("closing the check PR", 30, self.close_pr)
         head = attempt("Overleaf contents", 60, self.restore_overleaf)
@@ -416,6 +471,7 @@ class RoundTrip:
             lambda: self.restore_workspace(head),
         )
         attempt("restoring the reserved branch", 15, self.restore_branch)
+        attempt("releasing the internal sync lock", 15, self.restore_sync_lock)
         attempt("content verification", 15, self.verify_restoration)
         if failures:
             raise ov.SyncError(
@@ -490,7 +546,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                 )
         # One check owns the scratch pair across all of its synchronous sync calls.
         with check_lock(
-            work, trial.project_id, max(1, int(timeout - (time.monotonic() - started)))
+            work, trial.project_id, timeout - (time.monotonic() - started)
         ) as acquired:
             if not acquired:
                 raise ov.SyncError(
@@ -501,7 +557,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
             try:
                 failure = None
                 try:
-                    with deadline(max(1, int(timeout - (time.monotonic() - started)))):
+                    with deadline(timeout - (time.monotonic() - started)):
                         # A normal sync may have started while preflight was
                         # reading the pair. Recheck after claiming the outer lock.
                         if remote_ref(
@@ -543,15 +599,8 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                         trial.restore()
                     except (CheckTimeout, Exception):
                         if failure is not None:
-                            detail = (
-                                str(failure)
-                                if isinstance(
-                                    failure, (click.ClickException, CheckTimeout)
-                                )
-                                else type(failure).__name__
-                            )
                             click.echo(
-                                f"Original check failure before restoration: {detail}",
+                                f"Original check failure before restoration: {failure_detail(failure)}",
                                 err=True,
                             )
                         raise
@@ -574,11 +623,8 @@ def check_workspace(project: Path, directory: str, timeout: int):
             if isinstance(exc, PairSetupError)
             else ctx.meta["overleaf_check_phase"]
         )
-        detail = (
-            str(exc)
-            if isinstance(exc, (click.ClickException, CheckTimeout, OSError))
-            else f"Unexpected {type(exc).__name__}; inspect the scratch pair before retrying."
-        )
-        raise ov.SyncError(f"Overleaf check failed ({phase}): {detail}") from exc
+        raise ov.SyncError(
+            f"Overleaf check failed ({phase}): {failure_detail(exc)}"
+        ) from exc
     finally:
         ctx.meta.pop("overleaf_check_phase", None)

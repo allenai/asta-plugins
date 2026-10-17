@@ -79,15 +79,18 @@ def test_complete_round_trip_merges_twice_publishes_and_restores(scratch, github
     assert invoke(project).exit_code == 0
 
 
-def test_waits_for_checks_inside_the_call(scratch, github, monkeypatch):
+@pytest.mark.parametrize("waiting_state", ["CLEAN", "BLOCKED", "UNKNOWN"])
+def test_waits_for_checks_inside_the_call(scratch, github, monkeypatch, waiting_state):
     project, _, _, waits = scratch
     original = check.sync.gh
     pending = [True]
 
     def delayed(root, *args, payload=None):
         result = original(root, *args, payload=payload)
-        if pending[0]:
-            for pr in github["prs"]:
+        for pr in github["prs"]:
+            pr["mergeStateStatus"] = waiting_state if pending[0] else "CLEAN"
+            pr["mergeable"] = "UNKNOWN" if pending[0] else "MERGEABLE"
+            if pending[0]:
                 pr["statusCheckRollup"] = [
                     {"status": "IN_PROGRESS", "conclusion": None}
                 ]
@@ -211,8 +214,6 @@ def test_check_detects_clobbered_paper_or_workspace_and_restores(
 def test_refuses_differing_pair_without_changing_it(scratch, github, monkeypatch):
     project, _, _, _ = scratch
     seed = project.parent / "seed"
-    from tests.test_workspace_overleaf import overleaf_edit
-
     overleaf_edit(seed, "main.tex", "an edit already waiting\n")
     # A differing pair is rejected before any write to either remote or GitHub.
     workspace_refs = git(project, "ls-remote", "origin")
@@ -242,8 +243,6 @@ def test_refuses_differing_pair_without_changing_it(scratch, github, monkeypatch
 def test_refuses_reserved_overleaf_source_without_deleting_it(scratch):
     project, _, _, _ = scratch
     seed = project.parent / "seed"
-    from tests.test_workspace_overleaf import overleaf_edit
-
     overleaf_edit(seed, "overleaf.json", "an original Overleaf source\n")
     result = invoke(project)
     assert result.exit_code != 0
@@ -339,8 +338,8 @@ def test_sync_rechecks_check_lock_after_acquiring_normal_lock(scratch, monkeypat
     original = check.sync.lock
 
     @contextmanager
-    def lock(root, project_id):
-        with original(root, project_id) as acquired:
+    def lock(root, project_id, **kwargs):
+        with original(root, project_id, **kwargs) as acquired:
             git(project, "push", "origin", f"HEAD:{ref}")
             yield acquired
 
@@ -360,8 +359,8 @@ def test_check_rechecks_normal_sync_lock_after_preflight(scratch, monkeypatch):
     original = check.sync.lock
 
     @contextmanager
-    def lock(root, project_id):
-        with original(root, project_id) as acquired:
+    def lock(root, project_id, **kwargs):
+        with original(root, project_id, **kwargs) as acquired:
             git(project, "push", "origin", f"HEAD:{ref}")
             yield acquired
 
@@ -385,8 +384,8 @@ def test_default_commit_during_preflight_is_preserved_without_starting_check(
     concurrent_head = []
 
     @contextmanager
-    def lock(root, project_id):
-        with original(root, project_id) as acquired:
+    def lock(root, project_id, **kwargs):
+        with original(root, project_id, **kwargs) as acquired:
             if not project_id.startswith("check-"):
                 yield acquired
                 return
@@ -454,7 +453,7 @@ def test_pr_close_timeout_still_restores_both_contents(scratch, github, monkeypa
     assert "Original exercise failure" in result.output
     assert "Scratch restoration failed" in result.output
     assert "live check PASS" not in result.output
-    assert restoration_limits[:5] == [30, 60, 60, 15, 15]
+    assert restoration_limits[:6] == [30, 60, 60, 15, 15, 15]
     # The unclosed PR remains visible for recovery; both contents and refs recover.
     assert github["prs"]
     assert_restored(scratch)
@@ -776,7 +775,7 @@ def test_check_lock_acquisition_is_bounded(scratch, monkeypatch):
     project, _, _, _ = scratch
 
     @contextmanager
-    def blocked(root, project_id):
+    def blocked(root, project_id, **kwargs):
         check.signal.pause()
         yield True
 
@@ -792,8 +791,8 @@ def test_check_lock_release_has_a_deadline(scratch, monkeypatch):
     original = check.sync.lock
 
     @contextmanager
-    def lock(root, project_id):
-        with original(root, project_id) as acquired:
+    def lock(root, project_id, **kwargs):
+        with original(root, project_id, **kwargs) as acquired:
             yield acquired
             if project_id.startswith("check-"):
                 # Exercise the real installed signal handler during lock release.
@@ -804,4 +803,244 @@ def test_check_lock_release_has_a_deadline(scratch, monkeypatch):
     assert result.exit_code != 0
     assert "timed out" in result.output
     assert "live check PASS" not in result.output
+    assert_restored(scratch)
+
+
+def test_check_lock_receives_the_active_exception(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    failures = []
+
+    @contextmanager
+    def observed(root, project_id, **kwargs):
+        try:
+            yield True
+        except BaseException as exc:
+            failures.append(exc)
+            raise
+
+    monkeypatch.setattr(check.sync, "lock", observed)
+    original = RuntimeError("exercise failure")
+    with pytest.raises(RuntimeError) as result:
+        with check.check_lock(project, "1234567", 30):
+            raise original
+    assert result.value is original
+    assert failures == [original]
+
+
+@pytest.mark.parametrize("replaced", [False, True])
+def test_timed_out_check_lock_acquisition_rolls_back_only_its_commit(
+    scratch, monkeypatch, replaced
+):
+    project, _, head, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    original = check.ov.git
+
+    def interrupted(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == "push" and any(
+            str(arg).endswith(":" + ref) and not str(arg).startswith(":")
+            for arg in args
+        ):
+            if replaced:
+                owner = git(project, "ls-remote", "origin", ref).split()[0]
+                git(
+                    project,
+                    "push",
+                    f"--force-with-lease={ref}:{owner}",
+                    "origin",
+                    f"HEAD:{ref}",
+                )
+            check.signal.raise_signal(check.signal.SIGALRM)
+        return result
+
+    monkeypatch.setattr(check.ov, "git", interrupted)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output and "timed out" in result.output
+    assert "live check PASS" not in result.output
+    if replaced:
+        assert git(project, "ls-remote", "origin", ref).split()[0] == head
+        git(project, "push", "origin", f":{ref}")
+    assert_restored(scratch)
+
+
+def test_acquisition_rollback_has_its_own_deadline(scratch, monkeypatch, capsys):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    original_git = check.ov.git
+    original_deadline = check.deadline
+
+    def interrupted(*args, **kwargs):
+        if args[0] == "push" and f":{ref}" in args:
+            check.signal.pause()
+        result = original_git(*args, **kwargs)
+        if args[0] == "push":
+            raise check.CheckTimeout("acquisition interrupted after push")
+        return result
+
+    @contextmanager
+    def fast_cleanup(seconds):
+        with original_deadline(0.01 if seconds == 30 else seconds):
+            yield
+
+    monkeypatch.setattr(check.ov, "git", interrupted)
+    monkeypatch.setattr(check, "deadline", fast_cleanup)
+    with pytest.raises(check.CheckTimeout, match="acquisition interrupted after push"):
+        with check.check_lock(project, "1234567", 600):
+            pytest.fail("interrupted acquisition must not start the exercise")
+    assert "Could not release the sync lock" in capsys.readouterr().err
+    assert git(project, "ls-remote", "origin", ref)
+    git(project, "push", "origin", f":{ref}")
+
+
+def test_lock_release_timeout_preserves_original_failure(scratch, monkeypatch, capsys):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    original = check.ov.git
+
+    def failed_release(*args, **kwargs):
+        if args[0] == "push" and f":{ref}" in args:
+            check.signal.raise_signal(check.signal.SIGALRM)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(check.ov, "git", failed_release)
+    with pytest.raises(check.ov.SyncError, match="original exercise failure"):
+        with check.check_lock(project, "1234567", 600):
+            raise check.ov.SyncError("original exercise failure")
+    assert "Could not release the sync lock" in capsys.readouterr().err
+    assert git(project, "ls-remote", "origin", ref)
+    git(project, "push", "origin", f":{ref}")
+
+
+def test_interrupted_internal_sync_lock_is_removed_by_restoration(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    original = check.ov.git
+    releases = []
+
+    def interrupted(*args, **kwargs):
+        if args[0] == "push" and f":{ref}" in args:
+            releases.append(args)
+            if len(releases) == 1:
+                raise check.ov.SyncError("interrupted sync lock rollback failed")
+        result = original(*args, **kwargs)
+        if args[0] == "push" and any(
+            str(arg).endswith(":" + ref) and not str(arg).startswith(":")
+            for arg in args
+        ):
+            check.signal.raise_signal(check.signal.SIGALRM)
+        return result
+
+    monkeypatch.setattr(check.ov, "git", interrupted)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "release step" in result.output and "timed out" in result.output
+    assert "Could not release the sync lock" in result.output
+    assert "live check PASS" not in result.output
+    assert len(releases) == 2
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize("failed_deletion", [False, True])
+def test_restoration_refuses_a_leftover_internal_sync_lock(
+    scratch, monkeypatch, failed_deletion
+):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    original = check.RoundTrip.exercise
+
+    def leave_lock(trial):
+        original(trial)
+        git(trial.work, "push", "origin", f"HEAD:{ref}")
+
+    def cleanup(trial):
+        if failed_deletion:
+            raise check.ov.SyncError("cannot remove internal sync lock")
+
+    monkeypatch.setattr(check.RoundTrip, "exercise", leave_lock)
+    monkeypatch.setattr(check.RoundTrip, "restore_sync_lock", cleanup)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "Scratch restoration failed" in result.output
+    assert "content verification" in result.output
+    assert "live check PASS" not in result.output
+    if failed_deletion:
+        assert "releasing the internal sync lock" in result.output
+    assert git(project, "ls-remote", "origin", ref)
+    git(project, "push", "origin", f":{ref}")
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize(
+    "field,state,phase",
+    [
+        ("mergeable", "CONFLICTING", "release step"),
+        ("mergeStateStatus", "DIRTY", "release step"),
+        ("mergeStateStatus", "BEHIND", "release step"),
+        ("mergeStateStatus", "UNSTABLE", "release step"),
+        ("mergeStateStatus", "DRAFT", "pair access/setup"),
+        ("mergeStateStatus", "HAS_HOOKS", "pair access/setup"),
+        ("reviewDecision", "CHANGES_REQUESTED", "pair access/setup"),
+    ],
+)
+def test_unmergeable_pr_fails_immediately_and_restores(
+    scratch, github, monkeypatch, field, state, phase
+):
+    project, _, _, waits = scratch
+    original = check.sync.gh
+
+    def blocked(root, *args, payload=None):
+        result = original(root, *args, payload=payload)
+        for pr in github["prs"]:
+            pr[field] = state
+        return result
+
+    monkeypatch.setattr(check.sync, "gh", blocked)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert phase in result.output
+    assert "timed out" not in result.output
+    assert not waits and not github["merges"] and not github["prs"]
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize("phase", ["acquisition", "exercise"])
+def test_exhausted_budget_never_starts_the_next_phase(scratch, monkeypatch, phase):
+    project, _, _, _ = scratch
+    ticks = iter([0, 600] if phase == "acquisition" else [0, 599, 600])
+    monkeypatch.setattr(check.time, "monotonic", lambda: next(ticks))
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "timed out before starting its next phase" in result.output
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize("remaining", [0, -0.1])
+def test_exhausted_deadline_does_not_enter_its_body(remaining):
+    with pytest.raises(check.CheckTimeout, match="timed out"):
+        with check.deadline(remaining):
+            pytest.fail("expired phase started")
+
+
+def test_fractional_deadline_is_not_rounded_up():
+    with pytest.raises(check.CheckTimeout, match="timed out"):
+        with check.deadline(0.01):
+            check.signal.pause()
+
+
+def test_unexpected_error_never_echoes_credential_bearing_commands(
+    scratch, monkeypatch
+):
+    project, _, _, _ = scratch
+
+    def fail(trial):
+        raise subprocess.CalledProcessError(
+            1, ["fixture-command", "credential-sentinel"]
+        )
+
+    monkeypatch.setattr(check.RoundTrip, "exercise", fail)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "Unexpected CalledProcessError" in result.output
+    assert "credential-sentinel" not in result.output
     assert_restored(scratch)

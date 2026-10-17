@@ -23,6 +23,17 @@ def require_release_check(
         raise ov.SyncError("The check repository must be owner/name; syncing nothing.")
     root, paper, _ = ov.resolve(project, directory)
     try:
+        target_config = ov.load_config(paper)
+        if not target_config:
+            raise ov.SyncError(
+                "Import and commit the paper with overleaf pull before scheduling sync."
+            )
+        target_id = ov.validate_url(target_config["url"]).rsplit("/", 1)[1]
+    except click.ClickException as exc:
+        raise ov.SyncError(
+            f"Overleaf check failed (pair access/setup): {exc}; syncing nothing."
+        ) from exc
+    try:
         target = sync.gh(root, "repo", "view", "--json", "nameWithOwner,url")
         host_url = target["url"].rsplit("/", 2)[0]
         scratch = sync.gh(
@@ -66,14 +77,8 @@ def require_release_check(
                 raise ov.SyncError(
                     "The scratch repository has no paired Overleaf project."
                 )
-            target_config = ov.load_config(paper)
             scratch_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
-            target_id = (
-                ov.validate_url(target_config["url"]).rsplit("/", 1)[1]
-                if target_config
-                else None
-            )
-            if target_id is not None and scratch_id.casefold() == target_id.casefold():
+            if scratch_id.casefold() == target_id.casefold():
                 raise ov.SyncError(
                     "The scratch project is the paper's Overleaf project."
                 )

@@ -1346,7 +1346,7 @@ def publish(
     type=click.IntRange(min=1),
     default=600,
     show_default=True,
-    help="Seconds for an uncached release check; restoration has a separate 180-second limit.",
+    help="Seconds for an uncached release check; restoration has a separate 195-second limit.",
 )
 def sync(
     directory: str,
@@ -1372,7 +1372,7 @@ def sync(
     type=click.IntRange(min=1),
     default=600,
     show_default=True,
-    help="Seconds for the round trip; restoration has a separate 180-second limit.",
+    help="Seconds for the round trip; restoration has a separate 195-second limit.",
 )
 def check(directory: str, project: Path, timeout: int) -> None:
     """Exercise sync/publish/conflicts on a disposable scratch pair, then restore it."""
