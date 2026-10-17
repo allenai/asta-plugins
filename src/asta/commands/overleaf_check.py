@@ -55,6 +55,12 @@ class RoundTrip:
         self.project_id = self.config["url"].rsplit("/", 1)[1]
         self.branch = f"asta/overleaf-sync/{self.project_id}"
         self.initial_branch = remote_ref(work, f"refs/heads/{self.branch}")
+        self.workspace_base = ov.git("rev-parse", "HEAD", cwd=work)
+        self.outside_paper = {
+            name: value
+            for name, value in ov.tree(work, "HEAD").items()
+            if not name.startswith(self.prefix)
+        }
         self.baseline = baseline
         self.name = f"asta-release-check-{uuid4().hex}.tex"
         self.started = False
@@ -136,6 +142,12 @@ class RoundTrip:
     def expect_pair(self, content, step):
         expected = self.baseline | {self.name: content}
         self.refresh()
+        outside = {
+            name: value
+            for name, value in ov.tree(self.work, "HEAD").items()
+            if not name.startswith(self.prefix)
+        }
+        self.expect(outside, self.outside_paper, step + " outside the paper")
         self.expect(
             ov.paper_files(self.work, "HEAD", self.prefix),
             expected,
@@ -221,14 +233,18 @@ class RoundTrip:
         return head
 
     def restore_workspace(self, head):
-        self.refresh()
-        files = ov.read_plain_files(self.work, "HEAD", self.prefix)
-        for name in files.keys() - self.baseline.keys() - {ov.CONFIG}:
-            ov.git("rm", "--", self.prefix + name, cwd=self.work)
-        ov.write_files(self.baseline, self.paper)
+        # Only this command's disposable clone is reset; a failed commit may
+        # have left edits that must not prevent restoration of the remote.
+        ov.git("fetch", "-q", "origin", self.default, cwd=self.work)
+        ov.git("checkout", "--force", "--detach", "FETCH_HEAD", cwd=self.work)
+        # Restore the original tracked tree, including non-paper files a broken
+        # release changed. HEAD stays current, keeping the cleanup fast-forward.
+        ov.git("read-tree", "--reset", "-u", self.workspace_base, cwd=self.work)
         ov.save_config(self.paper, self.config["url"], head or self.config["base"])
         self.commit(
-            self.work, "Asta live check: restore scratch workspace", [self.directory]
+            self.work,
+            "Asta live check: restore scratch workspace",
+            [self.prefix + ov.CONFIG],
         )
         ov.git("push", "-q", "origin", f"HEAD:refs/heads/{self.default}", cwd=self.work)
         if head:
@@ -274,6 +290,14 @@ class RoundTrip:
             self.baseline,
             "workspace restoration",
         )
+        outside = {
+            name: value
+            for name, value in ov.tree(self.work, "HEAD").items()
+            if not name.startswith(self.prefix)
+        }
+        self.expect(
+            outside, self.outside_paper, "workspace restoration outside the paper"
+        )
 
     def restore(self):
         """Try both remotes even when one independent cleanup operation fails."""
@@ -310,6 +334,7 @@ def check_workspace(project: Path, directory: str, timeout: int):
         )
     started = time.monotonic()
     root, paper, prefix = ov.resolve(project, directory)
+    directory = prefix.rstrip("/")
     ov.require_clean(root, paper)
     config = ov.load_config(paper)
     if not config:

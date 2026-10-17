@@ -12,8 +12,9 @@ project and its paired scratch repository**, then run:
 asta workspace overleaf check --project /path/to/scratch-checkout
 ```
 
-This command writes to both sides. Use a scratch pair with no collaborators
-editing during the check, no scheduled sync, matching nonempty paper contents,
+This command writes to both sides. Reserve the scratch pair exclusively, with
+no collaborators, scheduled syncs or other default-branch writers during the
+check. Start with matching nonempty paper contents
 and the current default branch's committed `paper/overleaf.json`. Close any open
 sync PR first. A leftover sync-created `asta/overleaf-sync/<project-id>` branch
 is saved and restored; unrelated work on that reserved branch is refused.
@@ -32,8 +33,10 @@ implementation, including their normal check and merge decisions. It waits and
 reruns sync itself; it never leaves an unfinished check for the next schedule
 as part of normal operation.
 
-On success or failure it attempts to close its open PR, restore both paper
-contents with forward commits, update the sync metadata to the restored paper,
+Every stage verifies both paper contents and the workspace's other tracked files
+against their starting state. On success or failure it attempts to close its
+open PR, restore the Overleaf files and original tracked workspace tree with
+forward commits, update the sync metadata to the restored paper,
 and remove its check branch and locks (or restore the prior sync-created branch).
 Commit/PR history is retained. The caller's
 checkout is unchanged; fetch the restored default branch before checking again.

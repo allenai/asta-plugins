@@ -54,6 +54,8 @@ def assert_restored(scratch):
     assert git(project, "status", "--porcelain") == ""
     git(project, "fetch", "origin", "main")
     assert check.ov.paper_files(project, "FETCH_HEAD", "paper/") == baseline
+    changed = git(project, "diff", "--name-only", head, "FETCH_HEAD").splitlines()
+    assert all(name == "paper/overleaf.json" for name in changed)
     seed = project.parent / "seed"
     git(seed, "fetch", "origin", "master")
     assert check.ov.paper_files(seed, "FETCH_HEAD") == baseline
@@ -168,16 +170,17 @@ def test_failed_pr_checks_fail_and_restore_without_merging(
     assert_restored(scratch)
 
 
-def test_check_detects_matching_but_clobbered_papers_and_restores(scratch, monkeypatch):
+@pytest.mark.parametrize("path", ["paper/main.tex", "references.bib"])
+def test_check_detects_clobbered_paper_or_workspace_and_restores(
+    scratch, monkeypatch, path
+):
     project, _, _, _ = scratch
     original = check.RoundTrip.merge_and_wait
 
     def clobber(trial):
         original(trial)
-        (trial.paper / "main.tex").write_bytes(b"clobbered by a broken release\n")
-        trial.commit(
-            trial.work, "Broken release clobbered a paper", [trial.prefix + "main.tex"]
-        )
+        (trial.work / path).write_bytes(b"clobbered by a broken release\n")
+        trial.commit(trial.work, "Broken release clobbered a paper", [path])
         git(trial.work, "push", "origin", f"HEAD:refs/heads/{trial.default}")
         click.get_current_context().invoke(
             check.ov.publish,
@@ -190,7 +193,7 @@ def test_check_detects_matching_but_clobbered_papers_and_restores(scratch, monke
     monkeypatch.setattr(check.RoundTrip, "merge_and_wait", clobber)
     result = invoke(project)
     assert result.exit_code != 0
-    assert "co-author merge workspace" in result.output
+    assert "co-author merge" in result.output
     assert "Overleaf live check FAIL" in result.output
     assert_restored(scratch)
 
@@ -248,6 +251,13 @@ def test_preserves_a_leftover_sync_created_branch(scratch):
     assert result.exit_code == 0, result.output
     assert git(project, "ls-remote", "origin", ref).split()[0] == old_branch
     git(project, "push", "origin", f":{ref}")
+    assert_restored(scratch)
+
+
+def test_normalizes_a_relative_paper_directory(scratch):
+    project, _, _, _ = scratch
+    result = invoke(project, "--dir", "./paper")
+    assert result.exit_code == 0, result.output
     assert_restored(scratch)
 
 
