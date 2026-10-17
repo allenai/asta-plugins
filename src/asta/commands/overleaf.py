@@ -1,5 +1,6 @@
 """Copy a paper between the workspace and Overleaf's Git integration."""
 
+import errno
 import json
 import os
 import re
@@ -571,7 +572,7 @@ def check_format(version, release, where: str) -> None:
         )
         raise NewerFormatError(
             f"{where} uses Overleaf sync format {version}, but this asta reads up "
-            f"to format {FORMAT}. Upgrade to {needed} and retry; nothing changed.",
+            f"to format {FORMAT}. Upgrade to {needed} and retry.",
             recovery="newer-sync-format",
         )
 
@@ -607,26 +608,42 @@ def save_config(paper: Path, url: str, base: str) -> None:
     path = paper / CONFIG
     if path.is_symlink():
         refuse(CONFIG, "is a symlink")
-    try:
-        current = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        current = None
-    if isinstance(current, dict):
-        check_format(current.get("format", 1), current.get("requires_asta"), str(path))
-    # Preserve bytes, including extra keys and formatting, when nothing changed.
-    # Stamping alone must not turn an unchanged unversioned config into a diff.
-    if (
-        isinstance(current, dict)
-        and (current.get("url"), current.get("base")) == (url, base)
-        and current.get("format", FORMAT) == FORMAT
-    ):
-        return
-    # Compatible releases may add fields this reader does not know about.
-    updated = dict(current) if isinstance(current, dict) else {}
-    updated.update(format_stamp(), url=url, base=base)
-    text = json.dumps(updated, indent=2) + "\n"
     paper.mkdir(parents=True, exist_ok=True)
-    (paper / CONFIG).write_text(text, encoding="utf-8")
+    # Read, validate and write the same file descriptor without truncating first.
+    # O_NOFOLLOW also refuses a symlink substituted after the check above; using
+    # the descriptor prevents a later substitution from redirecting the write.
+    try:
+        descriptor = os.open(
+            path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o666
+        )
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            refuse(CONFIG, "is a symlink")
+        raise
+    with os.fdopen(descriptor, "r+", encoding="utf-8") as record:
+        try:
+            current = json.load(record)
+        except ValueError:
+            current = None
+        if isinstance(current, dict):
+            check_format(
+                current.get("format", 1), current.get("requires_asta"), str(path)
+            )
+        # Preserve bytes, including extra keys and formatting, when nothing changed.
+        # Stamping alone must not turn an unchanged unversioned config into a diff.
+        if (
+            isinstance(current, dict)
+            and (current.get("url"), current.get("base")) == (url, base)
+            and current.get("format", FORMAT) == FORMAT
+        ):
+            return
+        # Compatible releases may add fields this reader does not know about.
+        updated = dict(current) if isinstance(current, dict) else {}
+        updated.update(format_stamp(), url=url, base=base)
+        text = json.dumps(updated, indent=2) + "\n"
+        record.seek(0)
+        record.write(text)
+        record.truncate()
 
 
 def write_files(contents: dict[str, bytes], dest: Path) -> None:

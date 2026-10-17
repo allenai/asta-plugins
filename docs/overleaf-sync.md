@@ -24,6 +24,10 @@ format 1. Bump the format only when an older reader would misinterpret the state
 additive changes that old readers can safely ignore do not need a bump.
 Config updates preserve unknown fields added by compatible releases, including
 when the URL or base changes; unchanged configs retain their original bytes.
+An additive field must remain valid when an older runner changes either the URL
+or base without updating that field. If correctness requires older runners to
+recompute or invalidate it (for example, a cached tree derived from `base`),
+introducing the field requires a format bump.
 `FORMAT_RELEASE` names the first asta release that understands that format.
 An absent JSON `format` field is legacy state; an explicit `null` is malformed.
 Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
@@ -32,10 +36,13 @@ longer values are malformed regardless of Python's integer-conversion settings.
 Malformed format stamps stop the sync, including publication records that would
 otherwise use the damaged-record fallback. Restore the stamp from history first.
 The PR format stamp follows its single managed header, allowing blank lines and
-horizontal whitespace. Multiple sync header markers are ambiguous and refuse,
-including literal header examples in notices; remove those examples or restore
-the header from history before retrying. A stamp example without another sync
-header does not change the PR's format.
+horizontal whitespace. Prose before the stamp or multiple stamps before the
+record-notice section are malformed and refuse. Multiple sync header markers
+are ambiguous and refuse, including literal header examples in notices;
+remove those examples or restore
+the header from history before retrying. Stamp examples belong only in the
+record-notice section, after `<!-- asta-overleaf-record-not-used -->`, where
+they do not change the PR's format.
 
 Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
 release shipping its reader. The initial format-aware release is planned as

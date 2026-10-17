@@ -155,14 +155,24 @@ def check_stamp(value: str, where: str, *, comment: bool = False) -> None:
 
 def stale_lock(root: Path, project_id: str) -> bool:
     ref = f"refs/asta/overleaf-sync-lock/{project_id}"
-    ov.git("fetch", "--no-tags", "origin", ref, cwd=root)
-    stamp = LOCK_FORMAT.search(
-        ov.git("show", "-s", "--format=%B", "FETCH_HEAD", cwd=root)
-    )
-    if stamp:
-        check_stamp(stamp[1], f"The sync lock {ref}")
-    created = int(ov.git("show", "-s", "--format=%ct", "FETCH_HEAD", cwd=root))
-    return time.time() - created >= STALE_LOCK_SECONDS
+    gate = f"refs/asta/overleaf-lock-gate/{uuid4().hex}"
+    try:
+        ov.git(
+            "fetch",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "origin",
+            f"{ref}:{gate}",
+            cwd=root,
+        )
+        stamp = LOCK_FORMAT.search(ov.git("show", "-s", "--format=%B", gate, cwd=root))
+        if stamp:
+            check_stamp(stamp[1], f"The sync lock {ref}")
+        created = int(ov.git("show", "-s", "--format=%ct", gate, cwd=root))
+        return time.time() - created >= STALE_LOCK_SECONDS
+    finally:
+        ov.git("update-ref", "-d", gate, cwd=root)
 
 
 def waiting_message(pr: dict, head: str) -> str:
@@ -521,16 +531,21 @@ def sync_pr(
     ]
     for candidate in prs:
         body = candidate.get("body") or ""
+        where = f"Sync PR {candidate.get('url') or branch}"
         # Multiple headers are ambiguous, even in prose or notice examples:
         # choosing the first could hide a newer header behind an earlier marker.
         if body.count(MARKER) > 1:
-            raise ov.malformed_format(f"Sync PR {candidate['url']}")
+            raise ov.malformed_format(where)
         # Preserve detection if a person prepends prose or adds blank lines.
-        # Stamp-like examples outside this header do not define its format.
+        # Only the explicit record-notice section may contain stamp examples.
+        # A displaced or duplicate stamp before it is damaged state, not legacy.
         _, marker, tail = body.partition(MARKER)
-        stamp = FORMAT_MARKER.match(marker + tail)
+        header = marker + tail.partition(RECORD_MARKER)[0]
+        stamp = FORMAT_MARKER.match(header)
+        if header.count("<!-- asta-overleaf-sync-format:") != (1 if stamp else 0):
+            raise ov.malformed_format(where)
         if stamp:
-            check_stamp(stamp[1], f"Sync PR {candidate['url']}", comment=True)
+            check_stamp(stamp[1], where, comment=True)
     if format_only:
         return None
     if len(prs) > 1:

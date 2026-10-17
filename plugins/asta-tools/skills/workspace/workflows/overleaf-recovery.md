@@ -113,7 +113,9 @@ record can be replaced by the next successful publish without deleting it.
 
 The paper's sync state (`paper/overleaf.json`, the `refs/asta/` record or lock, or
 the sync PR) was written by a newer asta release whose format this CLI would
-misread, so it stopped without changing anything. Upgrade to the release the
+misread, so it stopped. If the state changed after preflight, the run may already
+have created the sync label and acquired and released its lock; it does not
+publish a format refusal on GitHub. Upgrade to the release the
 message names (`/asta-tools:asta-cli`, or the version pinned by a scheduled job),
 then retry. If it says only "a newer asta release", update to the latest release;
 if that still refuses, ask the workspace maintainer which release wrote the state.
@@ -132,7 +134,10 @@ format stamp. Restore the stamp from its history and retry; do not guess a
 format number. An absent JSON `format` field is legacy state, but `null` is
 invalid. A sync PR with multiple header markers is ambiguous, including literal
 header examples in notices. Remove the example markers or restore the single
-managed header and its format stamp from history before retrying. A publication
+managed header and its format stamp from history before retrying. Prose between
+the header and stamp or multiple stamps before the record-notice section also
+refuse; restore the original stamp placement and keep examples in the notice
+section after `<!-- asta-overleaf-record-not-used -->`. A publication
 record with an invalid format stops the sync instead of falling back to
 `overleaf.json`. If a lock was damaged by an interrupted run,
 confirm its owner has stopped before following the

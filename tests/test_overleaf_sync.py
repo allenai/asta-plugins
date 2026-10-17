@@ -1253,14 +1253,17 @@ def test_older_cli_stops_on_newer_lock(setup, github, hint, upgrade):
         text=True,
     ).stdout.strip()
     git(project, "push", "-q", "origin", f"{owner}:{ref}")
+    local_refs = git(project, "show-ref")
     with pytest.raises(sync.ov.NewerFormatError, match=upgrade):
         sync.stale_lock(project, "1234567")
+    assert git(project, "show-ref") == local_refs
     result = invoke(project)
     assert result.exit_code == 1, result.output
     assert f"Upgrade to {upgrade}" in result.output
     assert not github["writes"]
     assert all(args[0] != "label" for args, _ in github["calls"])
     assert git(project, "ls-remote", "origin", ref).split()[0] == owner
+    assert git(project, "show-ref") == local_refs
 
 
 @pytest.mark.parametrize("version", [sync.ov.FORMAT + 1, None])
@@ -1282,6 +1285,13 @@ def test_unreadable_format_discovered_during_pull_is_not_reported(
     ) in result.output
     assert not github["writes"]
     assert not github["issues"]
+
+    # Discovery can happen after preflight, when the label and lock were written.
+    assert "nothing changed" not in result.output
+    assert any(args[0] == "label" for args, _ in github["calls"])
+    assert not git(
+        project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1366,7 +1376,7 @@ def test_later_notice_stamp_does_not_version_legacy_pr(tmp_path, monkeypatch):
     pr = {
         "isCrossRepository": False,
         "headRepositoryOwner": {"login": "allenai"},
-        "body": f"{sync.MARKER}\nLegacy description.\n\nExample:\n"
+        "body": f"{sync.MARKER}\nLegacy description.\n\n{sync.RECORD_MARKER}\nExample:\n"
         "<!-- asta-overleaf-sync-format: 99 -->",
     }
     monkeypatch.setattr(sync, "gh", lambda *args: [pr])
@@ -1379,6 +1389,26 @@ def test_later_notice_stamp_does_not_version_legacy_pr(tmp_path, monkeypatch):
         (f"{sync.MARKER}\n\n{{stamp}}", "Upgrade to asta 9.9.9"),
         (f"{sync.MARKER}\r\n \t\r\n{{stamp}}", "Upgrade to asta 9.9.9"),
         (f"{sync.MARKER} \t\n\t\n {{stamp}}", "Upgrade to asta 9.9.9"),
+        (
+            f"{sync.MARKER}\nInserted prose.\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+        (
+            f"{sync.MARKER}\r\nInserted prose.\r\n\r\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+        (
+            f"{sync.MARKER}\nLegacy description.\n\nExample:\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+        (
+            f"{sync.MARKER}\n{sync.FORMAT_LINE}\nInserted prose.\n{{stamp}}",
+            "malformed sync format stamp",
+        ),
+        (
+            f"{sync.MARKER}\nInserted prose.\n{{stamp}}\n\n{sync.RECORD_MARKER}\nNotice.",
+            "malformed sync format stamp",
+        ),
         (
             f"An example is {sync.MARKER}.\n\n{sync.MARKER}\n{{stamp}}",
             "malformed sync format stamp",
@@ -1480,7 +1510,7 @@ def test_preflight_tolerates_concurrent_unlock(setup, github, monkeypatch):
 
     def unlock_before_fetch(*args, **kwargs):
         nonlocal released
-        if args[:4] == ("fetch", "--no-tags", "origin", ref) and not released:
+        if args[0] == "fetch" and args[-1].startswith(ref + ":") and not released:
             released = True
             original("push", "origin", f":{ref}", cwd=project)
         return original(*args, **kwargs)
@@ -1499,7 +1529,7 @@ def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypat
     original = sync.ov.git
 
     def unreadable_lock(*args, **kwargs):
-        if args[:4] == ("fetch", "--no-tags", "origin", ref):
+        if args[0] == "fetch" and args[-1].startswith(ref + ":"):
             raise sync.ov.GitCommandError("fixture lock transport failure", 128)
         return original(*args, **kwargs)
 
@@ -1513,6 +1543,23 @@ def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypat
         assert not github["writes"]
         assert all(args[0] != "label" for args, _ in github["calls"])
         assert git(project, "ls-remote", "origin", ref) == before
+
+
+def test_live_lock_preflight_preserves_fetch_head_and_local_refs(setup, github):
+    _, project = prepare(setup)
+    git(project, "fetch", "origin", "main")
+    fetch_head = project / git(project, "rev-parse", "--git-path", "FETCH_HEAD")
+    before = fetch_head.read_bytes()
+    refs = git(project, "show-ref")
+    with sync.lock(project, "1234567") as acquired:
+        assert acquired
+        assert not sync.stale_lock(project, "1234567")
+        assert fetch_head.read_bytes() == before
+        assert git(project, "show-ref") == refs
+        result = invoke(project)
+        assert result.exit_code == 0, result.output
+        assert fetch_head.read_bytes() == before
+        assert git(project, "show-ref") == refs
 
 
 def test_preflight_does_not_ignore_unreadable_record(setup, github, monkeypatch):

@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -3808,6 +3809,44 @@ def test_save_config_refuses_symlink_without_reading_or_writing(
         assert not target.exists()
     else:
         assert target.read_text() == original
+
+
+@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="requires no-follow opens")
+@pytest.mark.parametrize("swap", ["before_open", "after_open"])
+def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap):
+    path = tmp_path / module.CONFIG
+    path.write_text(json.dumps({"url": URL, "base": "a" * 40}))
+    target = tmp_path / "outside.json"
+    original = json.dumps({**newer_format(), "url": URL, "base": "c" * 40})
+    target.write_text(original)
+    real_open = module.os.open
+    swapped = False
+
+    def replace_with_link():
+        nonlocal swapped
+        path.unlink()
+        path.symlink_to(target)
+        swapped = True
+
+    def racing_open(name, flags, *args, **kwargs):
+        if Path(name) != path:
+            return real_open(name, flags, *args, **kwargs)
+        if swap == "before_open":
+            replace_with_link()
+            return real_open(name, flags, *args, **kwargs)
+        descriptor = real_open(name, flags, *args, **kwargs)
+        replace_with_link()
+        return descriptor
+
+    monkeypatch.setattr(module.os, "open", racing_open)
+    if swap == "before_open":
+        with pytest.raises(module.SyncError, match="is a symlink"):
+            module.save_config(tmp_path, URL, "b" * 40)
+    else:
+        module.save_config(tmp_path, URL, "b" * 40)
+    assert swapped
+    assert path.is_symlink()
+    assert target.read_text() == original
 
 
 @pytest.mark.parametrize("stamped", [False, True])
