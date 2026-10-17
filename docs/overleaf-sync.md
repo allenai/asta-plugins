@@ -67,13 +67,13 @@ exits nonzero. Output labels `pair busy`, `pair access/setup` failures (token,
 access, missing project, or an unprepared pair) and `release step` failures
 separately. Missing PR checks (after a 30-second discovery grace period),
 required reviews, and repository rules blocking unattended merge are pair setup
-failures. A completed unsuccessful check, a conflicting/outdated/unstable PR, or
-requested changes fail immediately with the observed state. Pending checks and
-unknown merge eligibility keep polling.
+failures. A completed unsuccessful check, a conflicting/outdated PR, or
+requested changes fail immediately with the observed state. Pending checks,
+unknown merge eligibility and `UNSTABLE` keep polling: GitHub reports `UNSTABLE`
+while non-required checks are still running, and the pair requires none.
 
-GitHub merge-state snapshots can fail conservatively: `UNSTABLE` is refused even
-if a non-required check is still pending, and `BLOCKED` or `HAS_HOOKS` is refused
-as soon as the rollup completes. Retry after GitHub's merge state settles. These
+GitHub merge-state snapshots can fail conservatively: `BLOCKED` or `HAS_HOOKS`
+is refused as soon as the rollup completes. Retry after GitHub's merge state settles. These
 refusals record no pass and sync no paper; failed-check leftovers are cleared by
 the next check. The standalone check also prints a generic `FAIL` line for a
 busy pair; the accompanying `pair busy` diagnosis distinguishes it from a

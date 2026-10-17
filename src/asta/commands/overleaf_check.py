@@ -218,11 +218,9 @@ class RoundTrip:
                     "The scratch PR requires a human review or has requested changes; configure a pair that can merge unattended."
                 )
             state = pr.get("mergeStateStatus")
-            if pr.get("mergeable") == "CONFLICTING" or state in {
-                "DIRTY",
-                "BEHIND",
-                "UNSTABLE",
-            }:
+            # UNSTABLE also covers non-required checks still running; the
+            # rollup below fails on a completed unsuccessful check instead.
+            if pr.get("mergeable") == "CONFLICTING" or state in {"DIRTY", "BEHIND"}:
                 raise ov.SyncError(
                     f"The scratch PR cannot merge (mergeStateStatus={state}, mergeable={pr.get('mergeable')}); inspect its conflicts, base branch and checks."
                 )

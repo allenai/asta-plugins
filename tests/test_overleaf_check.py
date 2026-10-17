@@ -112,7 +112,7 @@ def test_complete_round_trip_merges_twice_publishes(scratch, github):
     assert invoke(project).exit_code == 0
 
 
-@pytest.mark.parametrize("waiting_state", ["CLEAN", "BLOCKED", "UNKNOWN"])
+@pytest.mark.parametrize("waiting_state", ["CLEAN", "BLOCKED", "UNKNOWN", "UNSTABLE"])
 def test_waits_for_checks_inside_the_call(scratch, github, monkeypatch, waiting_state):
     project, _, _, waits = scratch
     original = check.sync.gh
@@ -320,7 +320,6 @@ def test_main_thread_requirement_is_a_clear_error():
         ("mergeable", "CONFLICTING", "release step"),
         ("mergeStateStatus", "DIRTY", "release step"),
         ("mergeStateStatus", "BEHIND", "release step"),
-        ("mergeStateStatus", "UNSTABLE", "release step"),
         ("mergeStateStatus", "DRAFT", "pair access/setup"),
         ("mergeStateStatus", "HAS_HOOKS", "pair access/setup"),
         ("reviewDecision", "CHANGES_REQUESTED", "pair access/setup"),
