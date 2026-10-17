@@ -42,10 +42,12 @@ def project(tmp_path: Path):
     return make
 
 
-def _run(root: Path, version: str, monkeypatch):
+def _run(root: Path, version: str, monkeypatch, *, catch_exceptions=False):
     monkeypatch.setattr(workspace_versions, "installed", lambda: version)
     return CliRunner().invoke(
-        cli, ["workspace", "bump-pin", "--project", str(root)], catch_exceptions=False
+        cli,
+        ["workspace", "bump-pin", "--project", str(root)],
+        catch_exceptions=catch_exceptions,
     )
 
 
@@ -104,13 +106,14 @@ def test_uncommitted_workflow_edit_refuses(project, monkeypatch) -> None:
     workflow = root / ".github/workflows/docs.yml"
     workflow.write_text(workflow.read_text() + "# local edit\n")
     head = _git(root, "rev-parse", "HEAD")
-    result = CliRunner().invoke(cli, ["workspace", "bump-pin", "--project", str(root)])
+    result = _run(root, "0.116.0", monkeypatch)
     assert result.exit_code != 0
     assert "uncommitted changes" in result.output
     assert _git(root, "rev-parse", "HEAD") == head
 
 
 def test_non_git_project_is_unchanged(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     workflow = tmp_path / ".github/workflows/docs.yml"
     workflow.parent.mkdir(parents=True)
     original = STUB.format(ref="v0.115.0").encode()
@@ -140,13 +143,13 @@ def test_failed_git_status_leaves_workflow_unchanged(project, monkeypatch) -> No
     "relative", [".github", ".github/workflows", workspace.WORKFLOW_FILE]
 )
 def test_symlink_in_workflow_path_is_rejected(
-    project, tmp_path, monkeypatch, relative
+    project, tmp_path_factory, monkeypatch, relative
 ) -> None:
     root = project("v0.115.0")
     workflow = root / workspace.WORKFLOW_FILE
     original = workflow.read_bytes()
     linked = root / relative
-    external = tmp_path.parent / (tmp_path.name + "-external")
+    external = tmp_path_factory.mktemp("external") / "target"
     linked.rename(external)
     linked.symlink_to(external, target_is_directory=external.is_dir())
     _git(root, "add", "--", relative)
@@ -220,7 +223,89 @@ def test_partial_write_failure_restores_workflow(project, monkeypatch) -> None:
         return write_bytes(path, data)
 
     monkeypatch.setattr(Path, "write_bytes", write)
-    result = CliRunner().invoke(cli, ["workspace", "bump-pin", "--project", str(root)])
+    result = _run(root, "0.116.0", monkeypatch, catch_exceptions=True)
     assert result.exit_code != 0
     assert workflow.read_bytes() == original
     assert not _git(root, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+def test_all_matching_workflow_refs_move_without_changing_other_text(
+    project, monkeypatch, quote
+) -> None:
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    source = f"allenai/asta-plugins{workspace.WORKFLOW}v0.115.0"
+    original = (
+        f"jobs:\r\n  first:\r\n    uses: {quote}{source}{quote} # first\r\n"
+        f"  second:\r\n    uses: {quote}{source}{quote} # second\r\n"
+        f"# uses: {source}0\r\n"
+    ).encode()
+    workflow.write_bytes(original)
+    _git(root, "add", workspace.WORKFLOW_FILE)
+    _git(root, "commit", "-q", "-m", "Repeat workflow source")
+    result = _run(root, "0.116.0", monkeypatch)
+    assert result.exit_code == 0, result.output
+    assert workflow.read_bytes() == original.replace(b"v0.115.0", b"v0.116.0", 2)
+    assert not _git(root, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("other_ref", ["v0.1.10", "v0.2.0"])
+def test_mixed_refs_are_rejected_before_writing(project, monkeypatch, other_ref):
+    root = project("v0.1.1")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = (
+        workflow.read_bytes()
+        + (
+            f"  other:\n    uses: allenai/asta-plugins{workspace.WORKFLOW}{other_ref}\n"
+        ).encode()
+    )
+    workflow.write_bytes(original)
+    _git(root, "add", workspace.WORKFLOW_FILE)
+    _git(root, "commit", "-q", "-m", "Use different refs")
+    head = _git(root, "rev-parse", "HEAD")
+    result = _run(root, "0.116.0", monkeypatch)
+    assert result.exit_code != 0
+    assert "Expected one asta-plugins workspace source" in result.output
+    assert workflow.read_bytes() == original
+    assert _git(root, "rev-parse", "HEAD") == head
+    assert not _git(root, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_interrupted_commit_only_restores_when_head_did_not_advance(
+    project, monkeypatch, committed
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = workflow.read_bytes()
+    head = _git(root, "rev-parse", "HEAD")
+    run_git = workspace._git
+
+    def interrupt(project, *args):
+        if args[0] == "commit":
+            if committed:
+                assert run_git(project, *args).returncode == 0
+            raise KeyboardInterrupt
+        return run_git(project, *args)
+
+    monkeypatch.setattr(workspace, "_git", interrupt)
+    result = _run(root, "0.116.0", monkeypatch)
+    assert result.exit_code != 0
+    expected = original.replace(b"@v0.115.0", b"@v0.116.0") if committed else original
+    assert workflow.read_bytes() == expected
+    assert (_git(root, "rev-parse", "HEAD") != head) is committed
+    assert not _git(root, "status", "--porcelain")
+
+
+def test_invalid_workflow_encoding_has_clear_error(project, monkeypatch):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = workflow.read_bytes() + b"# invalid: \xff\n"
+    workflow.write_bytes(original)
+    head = _git(root, "rev-parse", "HEAD")
+    result = _run(root, "0.116.0", monkeypatch)
+    assert result.exit_code != 0
+    assert "Workflow must be UTF-8" in result.output
+    assert workflow.read_bytes() == original
+    assert _git(root, "rev-parse", "HEAD") == head
