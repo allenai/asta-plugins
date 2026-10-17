@@ -22,9 +22,19 @@ The check assumes this model; findings that assume more are out of scope:
    `refs/asta/overleaf-sync-lock/check-<project-id>` lock) stops without
    changing anything and reports the pair as busy, not as a release failure.
    A check lock older than sync's stale-lock threshold (one hour) is from a
-   check that died: the next check clears it, then, holding its own lock,
-   closes any open sync PR and removes the sync branch and sync lock it left.
+   check that died: the next check clears only that observed lock commit. If
+   another check has replaced it, the pair is busy and nothing is changed.
+   After claiming its own lock, the check closes any open sync PR and removes
+   the sync branch and sync lock it left.
 3. A failed check leaves its state for inspection; the next check clears it.
+
+Current limitations: releasing the check lock is best effort. A release warning
+can accompany PASS after all exercise stages passed, leaving a check lock for
+the next check to reclaim once stale. This is an exception to the no-lock
+postcondition, but does not skip any exercise stage. Lock acquisition is outside
+the exercise deadline and can require cancellation if transport stalls. A failed
+lock-creation push reports the pair busy even for access or network errors;
+it still exits nonzero without recording a pass or syncing the paper.
 
 Do not schedule normal sync against the pair, edit it by hand, or give it
 collaborators. The scratch default branch's committed `paper/overleaf.json` must

@@ -96,10 +96,23 @@ class RoundTrip:
     @contextmanager
     def lock(self):
         """Hold the pair; a lock older than the sync's stale rule is a dead check."""
-        if remote_ref(self.work, self.lock_ref):
+        if tip := remote_ref(self.work, self.lock_ref):
             if not sync.stale_lock(self.work, f"check-{self.project_id}"):
                 raise PairBusy("A recent live check holds the scratch pair.")
-            delete_ref(self.work, self.lock_ref)
+            try:
+                ov.git(
+                    "push",
+                    f"--force-with-lease={self.lock_ref}:{tip}",
+                    "origin",
+                    f":{self.lock_ref}",
+                    cwd=self.work,
+                )
+            except ov.SyncError as exc:
+                if remote_ref(self.work, self.lock_ref) != tip:
+                    raise PairBusy(
+                        "Another live check changed the scratch pair lock."
+                    ) from exc
+                raise
         owner = ov.git(
             "commit-tree",
             ov.git("mktree", cwd=self.work, input=b""),

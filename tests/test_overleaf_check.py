@@ -85,6 +85,19 @@ def assert_unchanged(scratch, refs):
     assert check.ov.paper_files(project, "HEAD", "paper/") == baseline
 
 
+def stale_check_lock(project):
+    tree = check.ov.git("mktree", cwd=project, input=b"")
+    owner = check.ov.git(
+        "commit-tree",
+        tree,
+        cwd=project,
+        env={**os.environ, "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z"},
+        input=b"Dead check\n",
+    )
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    git(project, "push", "origin", f"{owner}:{ref}")
+
+
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 def test_complete_round_trip_merges_twice_publishes(scratch, github):
     project, _, _, _ = scratch
@@ -410,6 +423,64 @@ def test_recent_check_makes_the_pair_busy_without_changes(scratch):
     assert git(project, "ls-remote", "origin") == before
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_stale_observer_cannot_delete_a_new_checks_lock(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    stale_check_lock(project)
+    stale = check.sync.stale_lock
+    replacement = {}
+
+    def another_check_claims(root, project_id):
+        # Both checks observed the same dead owner. The other one wins before
+        # this check deletes it, and now owns the pair with a fresh commit.
+        assert stale(root, project_id)
+        old = check.remote_ref(root, ref)
+        tree = check.ov.git("mktree", cwd=root, input=b"")
+        owner = check.ov.git(
+            "commit-tree", tree, cwd=root, input=b"Another live check\n"
+        )
+        check.ov.git(
+            "push",
+            f"--force-with-lease={ref}:{old}",
+            "origin",
+            f"{owner}:{ref}",
+            cwd=root,
+        )
+        replacement["owner"] = owner
+        replacement["refs"] = git(project, "ls-remote", "origin")
+        return True
+
+    monkeypatch.setattr(check.sync, "stale_lock", another_check_claims)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "pair busy" in result.output
+    assert "release step" not in result.output
+    assert check.remote_ref(project, ref) == replacement["owner"]
+    assert_unchanged(scratch, replacement["refs"])
+
+
+def test_failed_stale_lock_deletion_leaves_the_pair_unchanged(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    stale_check_lock(project)
+    before = git(project, "ls-remote", "origin")
+    original = check.ov.git
+
+    def refused(*args, **kwargs):
+        if "push" in args and f":{ref}" in args:
+            raise check.ov.SyncError("Cannot delete the stale lock")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(check.ov, "git", refused)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output
+    assert "Cannot delete the stale lock" in result.output
+    assert "pair busy" not in result.output
+    assert_unchanged(scratch, before)
+
+
 def test_stale_check_leftovers_are_cleared_then_checked(scratch, github, monkeypatch):
     project, _, _, _ = scratch
     real_sync = check.RoundTrip.run_sync
@@ -422,29 +493,7 @@ def test_stale_check_leftovers_are_cleared_then_checked(scratch, github, monkeyp
     assert invoke(project).exit_code != 0
     assert github["prs"]
     # Simulate a check that died while holding its lock an hour ago.
-    old = {"GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z"}
-    tree = subprocess.run(
-        ["git", "mktree"], cwd=project, input="", capture_output=True, text=True
-    ).stdout.strip()
-    lock = subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit-tree",
-            tree,
-            "-m",
-            "dead check",
-        ],
-        cwd=project,
-        env={**os.environ, **old},
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    git(project, "push", "origin", f"{lock}:refs/asta/overleaf-sync-lock/check-1234567")
+    stale_check_lock(project)
     monkeypatch.setattr(check.RoundTrip, "run_sync", real_sync)
     result = invoke(project)
     assert result.exit_code == 0, result.output
