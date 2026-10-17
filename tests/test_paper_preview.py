@@ -229,7 +229,9 @@ def test_named_overleaf_main_keeps_diff_when_main_tex_shim_is_removed(
 ):
     repo, _, env, bin_dir = paper_repo(tmp_path)
     paper = repo / "paper"
-    (paper / "overleaf.json").write_text("{}")
+    record = paper.parent / ".asta/overleaf" / f"{paper.name}.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}")
     (paper / "article.tex").write_text(declaration + "\nold\n")
     (paper / "escaped.tex").write_text(r"\\documentclass{not_a_declaration}")
     (paper / "main.tex").write_text(r"\input{article.tex}")
@@ -949,17 +951,18 @@ def test_unrelated_non_utf8_path_does_not_hide_existing_paper(tmp_path):
 @pytest.mark.parametrize("change", ["add", "delete"])
 def test_overleaf_marker_change_is_a_build_input(tmp_path, change):
     repo, _, env, _ = paper_repo(tmp_path)
-    marker = repo / "paper/overleaf.json"
+    marker = repo / ".asta/overleaf/paper.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
     if change == "delete":
         marker.write_text("{}")
-        run("git", "add", "paper/overleaf.json", cwd=repo)
+        run("git", "add", ".asta", cwd=repo)
         run("git", "commit", "-qm", "synced paper", cwd=repo)
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
     if change == "delete":
         marker.unlink()
     else:
         marker.write_text("{}")
-    run("git", "add", "paper", cwd=repo)
+    run("git", "add", "-A", "paper", ".asta", cwd=repo)
     run("git", "commit", "-qm", "change isolation", cwd=repo)
     run("bash", str(SCRIPT), base, cwd=repo, env=env)
     assert json.loads(

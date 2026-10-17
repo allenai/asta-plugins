@@ -193,7 +193,10 @@ def test_overleaf_bibliography_rc_stays_inside_paper(tmp_path):
     paper = tmp_path / "papers/imported"
     paper.mkdir(parents=True)
     (tmp_path / "references.bib").write_text("Root bibliography")
-    (paper / "overleaf.json").write_text("{}")
+    (tmp_path / ".git").mkdir()
+    record = tmp_path / ".asta/overleaf/papers/imported.json"
+    record.parent.mkdir(parents=True)
+    record.write_text("{}")
     shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
     result = subprocess.check_output(
         [
@@ -283,7 +286,9 @@ def test_overleaf_named_main_requires_its_own_bibliography(
 ):
     paper = tmp_path / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text("{}")
+    record = paper.parent / ".asta/overleaf" / f"{paper.name}.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}")
     shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
     (paper / "conference.tex").write_text(
         r"\documentclass{article}\begin{document}"

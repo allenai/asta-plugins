@@ -93,7 +93,7 @@ printf '{"changed":false}\n' > "$site_dir/preview.json"
 # as Ubuntu's LuaLaTeX setting. User and project rc files still apply.
 export LATEXMKRCSYS="${LATEXMKRCSYS:-/dev/null}"
 # Overleaf can't see the repo root, so a synced paper must build without it.
-if [ -f "$dir/overleaf.json" ]; then
+if [ -f ".asta/overleaf/$dir.json" ]; then
   export BIBINPUTS="$PWD/$dir:${BIBINPUTS:-}"
   export TEXINPUTS="$PWD/$dir:${TEXINPUTS:-}"
 else
@@ -195,7 +195,7 @@ changed = subprocess.check_output(
 changed = [os.fsdecode(path) for path in changed.split(b"\0") if path]
 relevant = [
     path for path in changed
-    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc", f"{sys.argv[2]}/overleaf.json"}
+    if path in inputs or path in {"latexmkrc", ".latexmkrc", f"{sys.argv[2]}/latexmkrc", f"{sys.argv[2]}/.latexmkrc", f".asta/overleaf/{sys.argv[2]}.json"}
 ]
 print(int(sys.argv[4] != sys.argv[5] or any(path.startswith(sys.argv[2] + "/") and path.endswith(".tex") for path in relevant)),
       int(any(not (path.startswith(sys.argv[2] + "/") and path.endswith(".tex")) for path in relevant)))
