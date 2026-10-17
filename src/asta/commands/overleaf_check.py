@@ -115,6 +115,9 @@ class RoundTrip:
             (repo / self.name).write_bytes(content)
             self.commit(repo, "Asta live check: co-author edit", [self.name])
             ov.push(repo, self.work)
+        # Read Overleaf's actual commit: its Git integration can translate a push.
+        head, _ = self.overleaf_state()
+        return head
 
     def identity(self, repo):
         for key in ("user.name", "user.email"):
@@ -122,11 +125,11 @@ class RoundTrip:
                 "config", key, ov.git("config", "--get", key, cwd=self.work), cwd=repo
             )
 
-    def read_overleaf(self):
+    def overleaf_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "overleaf"
             head = ov.clone(self.config["url"], repo)
-            return ov.paper_files(repo, head)
+            return head, ov.read_plain_files(repo, head)
 
     def pr(self):
         return sync.sync_pr(self.work, self.repo, self.branch, self.default)
@@ -201,7 +204,7 @@ class RoundTrip:
                 f"Live check failed during {step}; scratch restoration follows."
             )
 
-    def expect_pair(self, content, step):
+    def expect_pair(self, content, step, base, *, published=False):
         expected = self.baseline | {self.name: content}
         self.refresh()
         outside = {
@@ -215,27 +218,48 @@ class RoundTrip:
             expected,
             step + " workspace",
         )
-        self.expect(self.read_overleaf(), expected, step + " Overleaf")
+        head, files = self.overleaf_state()
+        self.expect(files, expected, step + " Overleaf")
+        config = ov.load_config(self.paper)
+        self.expect(
+            (config["url"], config["base"]),
+            (self.config["url"], base),
+            step + " sync metadata",
+        )
+        if published:
+            with ov.published_record(self.work, self.config["url"]) as (
+                _,
+                recorded,
+                source,
+            ):
+                self.expect(
+                    (recorded, source),
+                    (head, ov.git("rev-parse", "HEAD", cwd=self.work)),
+                    step + " publication record",
+                )
 
     def exercise(self):
         self.started = True  # A failed push may have reached its remote.
-        self.coauthor_edit(b"% Asta check: co-author\n")
+        base = self.coauthor_edit(b"% Asta check: co-author\n")
         self.run_sync()
         if not self.pr():
             raise ov.SyncError("Live check did not open a PR for the co-author edit.")
         self.merge_and_wait()
-        self.expect_pair(b"% Asta check: co-author\n", "co-author merge")
+        self.expect_pair(b"% Asta check: co-author\n", "co-author merge", base)
 
         self.workspace_edit(b"% Asta check: published workspace\n")
         self.run_sync()
         if self.pr():
             raise ov.SyncError("Live check unexpectedly opened a PR while publishing.")
         self.expect_pair(
-            b"% Asta check: published workspace\n", "workspace publication"
+            b"% Asta check: published workspace\n",
+            "workspace publication",
+            base,
+            published=True,
         )
 
         self.workspace_edit(b"% Asta check: workspace conflict\n")
-        self.coauthor_edit(b"% Asta check: co-author conflict\n")
+        base = self.coauthor_edit(b"% Asta check: co-author conflict\n")
         self.run_sync()
         pr = self.pr()
         if not pr:
@@ -258,7 +282,7 @@ class RoundTrip:
         )
         ov.git("push", "-q", "origin", f"HEAD:refs/heads/{self.branch}", cwd=self.work)
         self.merge_and_wait()
-        self.expect_pair(resolved, "resolved publication")
+        self.expect_pair(resolved, "resolved publication", base, published=True)
 
     def close_pr(self):
         pr = self.pr()
@@ -345,7 +369,8 @@ class RoundTrip:
             )
 
     def verify_restoration(self):
-        self.expect(self.read_overleaf(), self.baseline, "Overleaf restoration")
+        _, files = self.overleaf_state()
+        self.expect(files, self.baseline, "Overleaf restoration")
         self.refresh()
         self.expect(
             ov.paper_files(self.work, "HEAD", self.prefix),
@@ -367,22 +392,31 @@ class RoundTrip:
             return
         failures = []
 
-        def attempt(label, action):
+        def attempt(label, seconds, action):
             try:
-                return action()
+                with deadline(seconds):
+                    return action()
             except CheckTimeout:
-                raise
+                failures.append(label)
+                click.echo(
+                    f"Scratch restoration could not complete {label} (timed out).",
+                    err=True,
+                )
             except Exception:
                 failures.append(label)
                 click.echo(f"Scratch restoration could not complete {label}.", err=True)
 
-        attempt("closing the check PR", self.close_pr)
-        head = attempt("Overleaf contents", self.restore_overleaf)
+        # Independent budgets total 180 seconds. A stuck GitHub request must not
+        # consume the time reserved for restoring either repository's contents.
+        attempt("closing the check PR", 30, self.close_pr)
+        head = attempt("Overleaf contents", 60, self.restore_overleaf)
         attempt(
-            "workspace contents and sync record", lambda: self.restore_workspace(head)
+            "workspace contents and sync record",
+            60,
+            lambda: self.restore_workspace(head),
         )
-        attempt("restoring the reserved branch", self.restore_branch)
-        attempt("content verification", self.verify_restoration)
+        attempt("restoring the reserved branch", 15, self.restore_branch)
+        attempt("content verification", 15, self.verify_restoration)
         if failures:
             raise ov.SyncError(
                 "Scratch restoration failed; inspect both sides and the check PR before retrying."
@@ -478,6 +512,13 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                             )
                         trial.refresh()
                         if (
+                            ov.git("rev-parse", "HEAD", cwd=work)
+                            != trial.workspace_base
+                        ):
+                            raise ov.SyncError(
+                                "The scratch default branch changed during preflight; inspect it before retrying."
+                            )
+                        if (
                             trial.pr()
                             or remote_ref(work, f"refs/heads/{trial.branch}")
                             != trial.initial_branch
@@ -486,7 +527,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                                 "The scratch sync branch changed during preflight; inspect it before retrying."
                             )
                         if (
-                            trial.read_overleaf() != baseline
+                            trial.overleaf_state()[1] != baseline
                             or ov.paper_files(work, "HEAD", prefix) != baseline
                         ):
                             raise ov.SyncError(
@@ -499,8 +540,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                     raise
                 finally:
                     try:
-                        with deadline(180):
-                            trial.restore()
+                        trial.restore()
                     except (CheckTimeout, Exception):
                         if failure is not None:
                             detail = (

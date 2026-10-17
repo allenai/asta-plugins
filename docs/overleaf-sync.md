@@ -33,8 +33,14 @@ implementation, including their normal check and merge decisions. It polls
 GitHub while checks run and reruns sync once they pass; it never leaves an
 unfinished check for the next schedule as part of normal operation.
 
-Every stage verifies both paper contents and the workspace's other tracked files
-against their starting state. On success or failure it attempts to close its
+After acquiring the check lock, the command refuses any default-branch commit
+that appeared during preflight, including changes outside the paper and commits
+that leave the files unchanged. It starts no exercise or restoration writes in
+that case. Every stage verifies both paper contents and the workspace's other
+tracked files against their starting state. It also checks the committed
+Overleaf base; after each publication it verifies that the publication record
+names the current Overleaf commit and published default-branch commit, before
+cleanup can repair either record. On success or failure it attempts to close its
 open PR, restore the Overleaf files and original tracked workspace tree with
 forward commits, update the sync metadata to the restored paper,
 and remove its check branch and locks (or restore the prior sync-created branch).
@@ -47,8 +53,12 @@ or a runner deadline can prevent restoration; do not reuse the pair until
 its contents, open PR and locks have been checked in that case.
 
 The round trip defaults to 600 seconds (`--timeout <seconds>`), including waiting
-for GitHub checks. Restoration has a separate 180-second deadline, followed by
-at most 30 seconds for lock release. Lock acquisition uses the remaining
+for GitHub checks. Restoration reserves independent deadlines totaling at most
+180 seconds: 30 for PR closure, 60 for each side's content restoration (including
+the workspace sync record), 15 for branch restoration, and 15 for verification.
+An error or timeout in one cleanup step does not skip the remaining attempts;
+any such failure still exits nonzero. Lock release has at most 30 more seconds.
+Lock acquisition uses the remaining
 round-trip deadline. Run on a POSIX runner's main thread with enough time for
 all phases; the command refuses `CI` or
 `GITHUB_ACTIONS` environments. Unit tests replace Overleaf/GitHub with local Git

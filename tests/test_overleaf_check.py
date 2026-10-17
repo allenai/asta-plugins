@@ -12,7 +12,7 @@ from click.testing import CliRunner
 from asta.cli import cli
 from tests.test_overleaf_sync import github as github  # noqa: F401
 from tests.test_overleaf_sync import prepare
-from tests.test_workspace_overleaf import git
+from tests.test_workspace_overleaf import git, overleaf_edit
 from tests.test_workspace_overleaf import setup as setup  # noqa: F401
 
 check = importlib.import_module("asta.commands.overleaf_check")
@@ -371,6 +371,207 @@ def test_check_rechecks_normal_sync_lock_after_preflight(scratch, monkeypatch):
     assert "acquired its lock during preflight" in result.output
     assert git(project, "ls-remote", "origin", ref)
     git(project, "push", "origin", f":{ref}")
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize("empty_commit", [False, True])
+def test_default_commit_during_preflight_is_preserved_without_starting_check(
+    scratch, github, monkeypatch, empty_commit
+):
+    project, baseline, caller_head, _ = scratch
+    seed = project.parent / "seed"
+    overleaf_refs = git(seed, "ls-remote", "origin")
+    original = check.sync.lock
+    concurrent_head = []
+
+    @contextmanager
+    def lock(root, project_id):
+        with original(root, project_id) as acquired:
+            if not project_id.startswith("check-"):
+                yield acquired
+                return
+            if not empty_commit:
+                (project / "references.bib").write_text("concurrent workspace edit\n")
+                git(project, "add", "references.bib")
+            git(project, "commit", "--allow-empty", "-m", "Concurrent default commit")
+            concurrent_head.append(git(project, "rev-parse", "HEAD"))
+            git(project, "push", "origin", "HEAD:main")
+            git(project, "reset", "--hard", caller_head)
+            yield acquired
+
+    monkeypatch.setattr(check.sync, "lock", lock)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output
+    assert "default branch changed during preflight" in result.output
+    assert "live check PASS" not in result.output
+    assert (
+        git(project, "ls-remote", "origin", "refs/heads/main").split()[0]
+        == concurrent_head[0]
+    )
+    git(project, "fetch", "origin", "main")
+    assert check.ov.paper_files(project, "FETCH_HEAD", "paper/") == baseline
+    if not empty_commit:
+        assert (
+            git(project, "show", "FETCH_HEAD:references.bib")
+            == "concurrent workspace edit"
+        )
+    assert git(project, "rev-parse", "HEAD") == caller_head
+    assert git(project, "status", "--porcelain") == ""
+    assert git(seed, "ls-remote", "origin") == overleaf_refs
+    assert not github["prs"] and not github["merges"]
+    assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/*")
+    assert not git(project, "ls-remote", "origin", "refs/heads/asta/overleaf-sync/*")
+
+
+def test_pr_close_timeout_still_restores_both_contents(scratch, github, monkeypatch):
+    project, _, _, _ = scratch
+    original_sync = check.RoundTrip.run_sync
+    original_deadline = check.deadline
+    restoration_limits = []
+
+    def fail_sync(trial):
+        original_sync(trial)
+        raise check.ov.SyncError("Original exercise failure")
+
+    @contextmanager
+    def fast_restoration(seconds):
+        # Exercise a real timer expiry in PR closure without waiting 30 seconds.
+        if seconds in {30, 60, 15}:
+            restoration_limits.append(seconds)
+        with original_deadline(1 if seconds == 30 else seconds):
+            yield
+
+    def blocked_close(trial):
+        check.signal.pause()
+
+    monkeypatch.setattr(check.RoundTrip, "run_sync", fail_sync)
+    monkeypatch.setattr(check.RoundTrip, "close_pr", blocked_close)
+    monkeypatch.setattr(check, "deadline", fast_restoration)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "closing the check PR (timed out)" in result.output
+    assert "Original exercise failure" in result.output
+    assert "Scratch restoration failed" in result.output
+    assert "live check PASS" not in result.output
+    assert restoration_limits[:5] == [30, 60, 60, 15, 15]
+    # The unclosed PR remains visible for recovery; both contents and refs recover.
+    assert github["prs"]
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize("blocked", ["restore_overleaf", "restore_workspace"])
+def test_content_restoration_timeout_does_not_skip_later_actions(
+    scratch, monkeypatch, blocked
+):
+    project, _, _, _ = scratch
+    attempts = []
+    for name in (
+        "restore_overleaf",
+        "restore_workspace",
+        "restore_branch",
+        "verify_restoration",
+    ):
+        original = getattr(check.RoundTrip, name)
+
+        def restore(trial, *args, operation=name, action=original):
+            attempts.append(operation)
+            result = action(trial, *args)
+            if operation == blocked:
+                check.signal.raise_signal(check.signal.SIGALRM)
+            return result
+
+        monkeypatch.setattr(check.RoundTrip, name, restore)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "timed out" in result.output
+    assert "Scratch restoration failed" in result.output
+    assert "live check PASS" not in result.output
+    assert attempts == [
+        "restore_overleaf",
+        "restore_workspace",
+        "restore_branch",
+        "verify_restoration",
+    ]
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize(
+    ("stage", "content"),
+    [
+        ("workspace publication", b"% Asta check: published workspace\n"),
+        (
+            "resolved publication",
+            b"% Asta check: workspace conflict\n% Asta check: co-author conflict\n",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "metadata", ["base", "overleaf", "workspace", "missing", "exported config"]
+)
+def test_stale_metadata_fails_before_restoration_can_hide_it(
+    scratch, monkeypatch, stage, content, metadata
+):
+    project, _, _, _ = scratch
+    original = check.RoundTrip.run_sync
+    injected = []
+
+    def broken_sync(trial):
+        original(trial)
+        git(trial.work, "fetch", "origin", trial.default)
+        if (
+            check.ov.paper_files(trial.work, "FETCH_HEAD", trial.prefix).get(trial.name)
+            != content
+            or trial.pr()
+        ):
+            return
+        injected.append(metadata)
+        trial.refresh()
+        if metadata == "base":
+            check.ov.save_config(trial.paper, trial.config["url"], trial.config["base"])
+            trial.commit(
+                trial.work,
+                "Broken release retained stale base",
+                [trial.prefix + check.ov.CONFIG],
+            )
+            git(trial.work, "push", "origin", f"HEAD:refs/heads/{trial.default}")
+        elif metadata == "missing":
+            git(
+                trial.work,
+                "push",
+                "origin",
+                f":{check.ov.record_ref(trial.config['url'])}",
+            )
+        elif metadata == "exported config":
+            seed = project.parent / "seed"
+            git(seed, "pull", "--ff-only", "origin", "master")
+            overleaf_edit(seed, check.ov.CONFIG, "metadata leaked into Overleaf\n")
+        else:
+            with check.ov.published_record(trial.work, trial.config["url"]) as (
+                previous,
+                overleaf,
+                workspace,
+            ):
+                check.ov.record_publication(
+                    trial.work,
+                    trial.config["url"],
+                    previous,
+                    trial.config["base"] if metadata == "overleaf" else overleaf,
+                    trial.workspace_base if metadata == "workspace" else workspace,
+                    [],
+                )
+
+    monkeypatch.setattr(check.RoundTrip, "run_sync", broken_sync)
+    result = invoke(project)
+    assert injected == [metadata]
+    assert result.exit_code != 0
+    expected = {
+        "base": "sync metadata",
+        "exported config": "Overleaf",
+    }.get(metadata, "publication record")
+    assert f"{stage} {expected}" in result.output
+    assert "release step" in result.output
+    assert "live check PASS" not in result.output
     assert_restored(scratch)
 
 
