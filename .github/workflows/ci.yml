@@ -57,51 +57,6 @@ jobs:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
         run: make test
 
-  # Temporary: repeat the whole suite as `make test` runs it, until the
-  # intermittent Overleaf clone test fails and prints git's stderr.
-  overleaf-clone-flake:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Claude Code CLI
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_TEST_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-      - name: Repeat the suite until the clone test fails
-        env:
-          ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
-        run: |
-          deadline=$((SECONDS + 100 * 60))
-          i=0
-          while [ $SECONDS -lt $deadline ]; do
-            i=$((i + 1))
-            echo "::group::suite run $i"
-            if make test > suite.log 2>&1; then
-              echo "::endgroup::"
-              echo "run $i passed"
-              continue
-            fi
-            echo "::endgroup::"
-            if grep -q "FAILED.*test_pull_recognizes_publications_with_equivalent_url" suite.log; then
-              echo "run $i: equivalent-URL test failed"
-              sed -n '/= FAILURES =/,$p' suite.log
-              exit 1
-            fi
-            echo "run $i failed elsewhere; continuing"
-            grep FAILED suite.log || tail -50 suite.log
-          done
-          echo "no equivalent-URL failure in $i suite runs"
-
   dom-test:
     runs-on: ubuntu-latest
     steps:
