@@ -419,7 +419,12 @@ def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
     ).read_bytes()
     assert (project / "references.bib").read_text() == "@misc{root}\n"
     config = json.loads((paper / "overleaf.json").read_text())
-    assert config == {"url": URL, "base": git(seed, "rev-parse", "HEAD")}
+    assert config == {
+        "format": module.FORMAT,
+        "requires_asta": module.FORMAT_RELEASE,
+        "url": URL,
+        "base": git(seed, "rev-parse", "HEAD"),
+    }
 
 
 def test_pull_parent_file_collision_leaves_all_sources_unchanged(setup):
@@ -3116,6 +3121,8 @@ def test_publish_records_sync_point_on_workspace_origin(setup, tmp_path):
         assert not git(project, "status", "--porcelain")
         commit, data = origin_record(tmp_path)
         assert data == {
+            "format": module.FORMAT,
+            "requires_asta": module.FORMAT_RELEASE,
             "url": URL,
             "overleaf": git(seed, "ls-remote", "origin", "master").split()[0],
             "workspace": git(project, "rev-parse", "HEAD"),
@@ -3693,3 +3700,73 @@ def test_pull_uses_counting_record_when_committed_base_is_unusable(setup, missin
     assert "starting from the published sync record instead" in result.output
     assert (project / "paper/main.tex").read_text() == "publication\n"
     assert (project / "paper/references.bib").read_text() == "@misc{collaborator}\n"
+
+
+def newer_format():
+    return {"format": module.FORMAT + 1, "requires_asta": "9.9.9"}
+
+
+def test_older_cli_stops_on_newer_config_format(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    config = project / "paper/overleaf.json"
+    data = json.loads(config.read_text())
+    config.write_text(json.dumps({**data, **newer_format(), "base": None}))
+    commit_all(project)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    for command in (("pull",), ("publish",)):
+        result = run(project, *command, merge=False)
+        assert result.exit_code == 1, result.output
+        assert f"sync format {module.FORMAT + 1}" in result.output
+        assert "Upgrade to asta 9.9.9 or later" in result.output
+        assert "Invalid sync record" not in result.output
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+
+
+def test_newer_format_without_release_still_stops(setup):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    config = project / "paper/overleaf.json"
+    data = json.loads(config.read_text())
+    config.write_text(json.dumps({**data, "format": 99, "requires_asta": "$(x)"}))
+    result = run(project, "pull")
+    assert result.exit_code == 1, result.output
+    assert "Upgrade to a newer asta release" in result.output
+
+
+def test_unversioned_config_reads_as_current_format_without_rewrite(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    config = project / "paper/overleaf.json"
+    data = json.loads(config.read_text())
+    legacy = json.dumps({"url": data["url"], "base": data["base"]}, indent=2) + "\n"
+    config.write_text(legacy)
+    commit_all(project)
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert config.read_text() == legacy
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert json.loads(config.read_text())["format"] == module.FORMAT
+
+
+def test_older_cli_never_replaces_a_newer_format_record(setup, tmp_path):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    commit_all(project)
+    (project / "paper/main.tex").write_text("first publication\n")
+    commit_all(project)
+    assert run(project, "publish").exit_code == 0
+    commit, data = origin_record(tmp_path)
+    origin = tmp_path / "workspace.git"
+    newer = forge_record(origin, {**data, **newer_format()}, commit)
+    git(origin, "update-ref", RECORD_REF, newer)
+    (project / "paper/main.tex").write_text("second publication\n")
+    commit_all(project)
+    for command in ("publish", "pull"):
+        result = run(project, command)
+        assert result.exit_code == 1, result.output
+        assert "Upgrade to asta 9.9.9 or later" in result.output
+        assert git(origin, "rev-parse", RECORD_REF) == newer

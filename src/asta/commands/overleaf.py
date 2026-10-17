@@ -20,6 +20,13 @@ RECOVERY = (
     "plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md"
 )
 SHA = re.compile(r"[0-9a-f]{40}")
+# Format of the sync state runners share: overleaf.json, the record and lock refs,
+# and the sync PR. Bump FORMAT only when an older CLI would misread the state, and
+# set FORMAT_RELEASE to the first asta release that reads it. Unversioned state is
+# format 1.
+FORMAT = 1
+FORMAT_RELEASE = "0.116.0"
+RELEASE = re.compile(r"[0-9]+(?:\.[0-9]+){1,3}")
 FULL_OID = r"[0-9a-f]{40}(?:[0-9a-f]{24})?"
 # Git's `rev-parse --local-env-vars` list, plus the namespace override.
 LOCAL_GIT_ENV = {
@@ -519,6 +526,33 @@ def require_visible(root: Path, paths) -> None:
         )
 
 
+class NewerFormatError(SyncError):
+    """Shared sync state written by a newer asta than this one."""
+
+
+def format_stamp() -> dict:
+    return {"format": FORMAT, "requires_asta": FORMAT_RELEASE}
+
+
+def check_format(version, release, where: str) -> None:
+    """Stop before reading state in a format this CLI does not understand."""
+    if version is None:
+        return
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise ValueError("invalid sync format")
+    if version > FORMAT:
+        needed = (
+            f"asta {release} or later"
+            if isinstance(release, str) and RELEASE.fullmatch(release)
+            else "a newer asta release"
+        )
+        raise NewerFormatError(
+            f"{where} uses Overleaf sync format {version}, but this asta reads up "
+            f"to format {FORMAT}. Upgrade to {needed} and retry; nothing changed.",
+            recovery="newer-sync-format",
+        )
+
+
 def load_config(paper: Path) -> dict:
     path = paper / CONFIG
     if path.is_symlink():
@@ -527,12 +561,16 @@ def load_config(paper: Path) -> dict:
         return {}
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(config, dict):
+            check_format(config.get("format"), config.get("requires_asta"), str(path))
         if not isinstance(config, dict) or not isinstance(config.get("base"), str):
             raise ValueError("expected an object with a base commit")
         if not SHA.fullmatch(config["base"]) or not isinstance(config.get("url"), str):
             raise ValueError("expected a base commit and project URL")
         config["url"] = validate_url(config["url"])
         return config
+    except NewerFormatError:
+        raise
     except (ValueError, OSError, click.ClickException):
         raise SyncError(
             f"Invalid sync record: {path}. Restore its project URL and base commit from Git.",
@@ -541,7 +579,19 @@ def load_config(paper: Path) -> dict:
 
 
 def save_config(paper: Path, url: str, base: str) -> None:
-    text = json.dumps({"url": url, "base": base}, indent=2) + "\n"
+    path = paper / CONFIG
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        current = None
+    # Stamping alone must not turn an unchanged unversioned config into a diff.
+    if (
+        isinstance(current, dict)
+        and (current.get("url"), current.get("base")) == (url, base)
+        and current.get("format", FORMAT) == FORMAT
+    ):
+        return
+    text = json.dumps({**format_stamp(), "url": url, "base": base}, indent=2) + "\n"
     paper.mkdir(parents=True, exist_ok=True)
     (paper / CONFIG).write_text(text, encoding="utf-8")
 
@@ -656,6 +706,9 @@ def read_record(
         record = json.loads(
             git_bytes("cat-file", "blob", f"{revision}:{RECORD}", cwd=root)
         )
+        if isinstance(record, dict):
+            where = f"Origin's {record_ref(url)}" if url else "The sync record"
+            check_format(record.get("format"), record.get("requires_asta"), where)
         if (
             not isinstance(record, dict)
             or not isinstance(record.get("overleaf"), str)
@@ -722,6 +775,8 @@ def published_record(root: Path, url: str, *, publishing: bool = False):
             if git("cat-file", "-t", gate, cwd=root) == "commit":
                 commit = git("rev-parse", gate, cwd=root)
             record = read_record(root, gate, url=url) if commit else None
+        except NewerFormatError:
+            raise
         except (GitCommandError, SyncError):
             record = None
         if commit is None and publishing:
@@ -867,7 +922,8 @@ def record_publication(
 ) -> None:
     ref = record_ref(url)
     data = json.dumps(
-        {"url": url, "overleaf": overleaf, "workspace": workspace}, indent=2
+        {**format_stamp(), "url": url, "overleaf": overleaf, "workspace": workspace},
+        indent=2,
     )
     try:
         blob = git(

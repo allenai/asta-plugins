@@ -109,6 +109,15 @@ push. Ask a workspace maintainer to restore the ref to a commit from its history
 run `git push origin :refs/asta/overleaf/<project-id>`, then retry. A damaged commit
 record can be replaced by the next successful publish without deleting it.
 
+## Newer sync format
+
+The paper's sync state (`paper/overleaf.json`, the `refs/asta/` record or lock, or
+the sync PR) was written by a newer asta release whose format this CLI would
+misread, so it stopped without changing anything. Upgrade to the release the
+message names (`/asta-tools:asta-cli`, or the version pinned by a scheduled job),
+then retry. Do not edit or delete the state to get past it; an older runner has
+to be upgraded, not the state downgraded.
+
 ## Incomplete publication
 
 The Overleaf push succeeded but confirmation or recording the sync point failed.

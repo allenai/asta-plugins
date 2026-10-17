@@ -16,8 +16,16 @@ from . import overleaf as ov
 
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
+FORMAT_MARKER = re.compile(
+    r"<!-- asta-overleaf-sync-format: (\d+) requires-asta: ([0-9.]+) -->"
+)
+FORMAT_LINE = f"<!-- asta-overleaf-sync-format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE} -->"
+LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format: (\d+) requires-asta: ([0-9.]+)$")
 DEFAULT_BODY = (
-    MARKER + "\n\nCo-author edits from Overleaf, brought in by the Overleaf sync. "
+    MARKER
+    + "\n"
+    + FORMAT_LINE
+    + "\n\nCo-author edits from Overleaf, brought in by the Overleaf sync. "
     "Nothing to do: this PR merges itself once its checks pass and a sync run "
     "finds no newer Overleaf edits."
 )
@@ -85,7 +93,10 @@ def lock(root: Path, project_id: str):
         "commit-tree",
         empty,
         cwd=root,
-        input=f"Overleaf sync lock {uuid4().hex}\n".encode(),
+        input=(
+            f"Overleaf sync lock {uuid4().hex}\n\n"
+            f"Asta-Sync-Format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE}\n"
+        ).encode(),
     )
     try:
         ov.git(
@@ -123,6 +134,11 @@ def lock(root: Path, project_id: str):
 def stale_lock(root: Path, project_id: str) -> bool:
     ref = f"refs/asta/overleaf-sync-lock/{project_id}"
     ov.git("fetch", "--no-tags", "origin", ref, cwd=root)
+    stamp = LOCK_FORMAT.search(
+        ov.git("show", "-s", "--format=%B", "FETCH_HEAD", cwd=root)
+    )
+    if stamp:
+        ov.check_format(int(stamp[1]), stamp[2], f"The sync lock {ref}")
     created = int(ov.git("show", "-s", "--format=%ct", "FETCH_HEAD", cwd=root))
     return time.time() - created >= STALE_LOCK_SECONDS
 
@@ -240,6 +256,7 @@ def report(root: Path, repo: str, project_id: str, message: str, pr=None, notice
     """One persistent repo-visible status, edited only when its contents change."""
     body = f"{MARKER}\n\n{message}\n\nRecovery: {ov.RECOVERY}"
     if pr:
+        body = body.replace(MARKER, MARKER + "\n" + FORMAT_LINE, 1)
         body = with_notice(body, notice or record_notice(pr["body"]))
         if pr["body"] != body:
             gh(
@@ -465,6 +482,9 @@ def sync_pr(root: Path, repo: str, branch: str, default_name: str):
         raise ov.SyncError(
             "The reserved sync branch has an unrelated PR; move it aside before retrying."
         )
+    stamp = pr and FORMAT_MARKER.search(pr.get("body") or "")
+    if stamp:
+        ov.check_format(int(stamp[1]), stamp[2], f"Sync PR {pr['url']}")
     return pr
 
 
@@ -840,7 +860,9 @@ def sync_workspace(project: Path, directory: str):
                 click.echo("Overleaf sync complete.")
         except ov.SyncError as exc:
             try:
-                target = None if isinstance(exc, BuildConfigError) else pr
+                # Rewriting a newer runner's PR body would drop its format marker.
+                newer = isinstance(exc, ov.NewerFormatError)
+                target = None if newer or isinstance(exc, BuildConfigError) else pr
                 if target and isinstance(exc, ConflictError):
                     line = conflict_line(root, repo, exc.commits)
                     reset_status(root, repo, target, notice, line)

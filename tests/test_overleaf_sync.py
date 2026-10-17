@@ -1130,3 +1130,66 @@ def test_record_notice_issue_closes_once_record_counts_again(setup, github):
     assert invoke(project).exit_code == 0
     assert len(github["issues"]) == 2
     assert sync.RECORD_MARKER in github["issues"][1]["body"]
+
+
+def test_sync_pr_and_lock_carry_the_format(setup, github):
+    _, project = prepare(setup)
+    overleaf_edit(setup[0], "main.tex", "collaborator edit\n")
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert sync.FORMAT_LINE in github["prs"][0]["body"]
+    with sync.lock(project, "1234567") as acquired:
+        assert acquired
+        ref = "refs/asta/overleaf-sync-lock/1234567"
+        message = git(
+            project,
+            "log",
+            "-1",
+            "--format=%B",
+            git(project, "ls-remote", "origin", ref).split()[0],
+        )
+        assert sync.LOCK_FORMAT.search(message)
+
+
+def test_older_cli_stops_on_newer_sync_pr(setup, github):
+    _, project = prepare(setup)
+    overleaf_edit(setup[0], "main.tex", "collaborator edit\n")
+    assert invoke(project).exit_code == 0
+    pr = github["prs"][0]
+    pr["body"] = pr["body"].replace(
+        sync.FORMAT_LINE,
+        f"<!-- asta-overleaf-sync-format: {sync.ov.FORMAT + 1} requires-asta: 9.9.9 -->",
+    )
+    writes = github["writes"]
+    overleaf_edit(setup[0], "main.tex", "another edit\n")
+    result = invoke(project)
+    assert result.exit_code != 0, result.output
+    assert "Upgrade to asta 9.9.9 or later" in result.output
+    # The only write is the repo-visible notice; the newer PR is left untouched.
+    assert github["writes"] == writes + 1
+    assert not [c for c in github["calls"][-5:] if "/pulls/" in " ".join(c[0])]
+    assert "9.9.9" in github["calls"][-1][1]["body"]
+
+
+def test_older_cli_stops_on_newer_lock(setup):
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    empty = git(project, "mktree")
+    owner = subprocess.run(
+        [
+            "git",
+            "commit-tree",
+            empty,
+            "-m",
+            "lock",
+            "-m",
+            f"Asta-Sync-Format: {sync.ov.FORMAT + 1} requires-asta: 9.9.9",
+        ],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    git(project, "push", "-q", "origin", f"{owner}:{ref}")
+    with pytest.raises(sync.ov.NewerFormatError, match="asta 9.9.9 or later"):
+        sync.stale_lock(project, "1234567")
