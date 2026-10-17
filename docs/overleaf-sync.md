@@ -79,7 +79,10 @@ the next check. The standalone check also prints a generic `FAIL` line for a
 busy pair; the accompanying `pair busy` diagnosis distinguishes it from a
 release failure.
 
-Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
+Opt in with `asta workspace overleaf sync --check-repo owner/check` on a runner
+outside GitHub Actions. The check refuses `CI` and `GITHUB_ACTIONS` environments,
+so a scheduled workflow with the gate on refuses sync whenever its asta version
+has no recorded pass.
 An explicitly empty or malformed `--check-repo` refuses sync; omitting the option
 keeps the gate disabled.
 Before syncing the requested paper, the CLI looks for a pass for its own asta
