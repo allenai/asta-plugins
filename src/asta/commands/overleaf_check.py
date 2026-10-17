@@ -73,9 +73,7 @@ def remote_ref(root, ref):
 
 def delete_ref(root, ref):
     if tip := remote_ref(root, ref):
-        ov.git(
-            "push", f"--force-with-lease={ref}:{tip}", "origin", f":{ref}", cwd=root
-        )
+        ov.git("push", f"--force-with-lease={ref}:{tip}", "origin", f":{ref}", cwd=root)
 
 
 class RoundTrip:

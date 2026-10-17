@@ -1162,15 +1162,17 @@ def test_record_notice_issue_closes_once_record_counts_again(setup, github):
 
 
 @pytest.mark.parametrize("held", [False, True])
-def test_release_check_guard_works_without_a_click_context(setup, held):
+def test_sync_ignores_reserved_pair_check_lock(setup, github, held):
+    """The outer check lock serializes checks; internal sync must still run."""
     _, project = prepare(setup)
     ref = "refs/asta/overleaf-sync-lock/check-1234567"
     if held:
         git(project, "push", "origin", f"HEAD:{ref}")
-        with pytest.raises(sync.ov.SyncError, match="live release check owns"):
-            sync.require_no_release_check(project, "1234567")
-    else:
-        sync.require_no_release_check(project, "1234567")
+    before = git(project, "ls-remote", "origin", ref)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert "Overleaf sync complete" in result.output
+    assert git(project, "ls-remote", "origin", ref) == before
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)

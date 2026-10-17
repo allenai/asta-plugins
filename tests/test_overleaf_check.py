@@ -4,16 +4,14 @@ import importlib
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 
-import click
 import pytest
 from click.testing import CliRunner
 
 from asta.cli import cli
 from tests.test_overleaf_sync import github as github  # noqa: F401
 from tests.test_overleaf_sync import prepare
-from tests.test_workspace_overleaf import git, overleaf_edit
+from tests.test_workspace_overleaf import git
 from tests.test_workspace_overleaf import setup as setup  # noqa: F401
 
 check = importlib.import_module("asta.commands.overleaf_check")
@@ -63,10 +61,28 @@ def assert_clean(scratch):
     assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/*")
 
 
-def assert_left_for_next_check(scratch):
-    """A failed check releases only its own lock; anything else waits for the next check."""
-    project, _, _, _ = scratch
-    assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/check-*")
+def assert_failed_state(scratch, github):
+    """Failures retain the co-author edit and PR for inspection, without merging."""
+    project, baseline, _, _ = scratch
+    git(project, "fetch", "origin", "main")
+    assert check.ov.paper_files(project, "FETCH_HEAD", "paper/") == baseline
+    seed = project.parent / "seed"
+    git(seed, "fetch", "origin", "master")
+    files = check.ov.paper_files(seed, "FETCH_HEAD")
+    assert files.keys() == baseline.keys() | {check.CHECK_FILE}
+    assert b"co-author" in files[check.CHECK_FILE]
+    assert not github["merges"]
+    assert len(github["prs"]) == 1
+    assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/*")
+
+
+def assert_unchanged(scratch, refs):
+    project, baseline, _, _ = scratch
+    assert git(project, "ls-remote", "origin") == refs
+    seed = project.parent / "seed"
+    git(seed, "fetch", "origin", "master")
+    assert check.ov.paper_files(seed, "FETCH_HEAD") == baseline
+    assert check.ov.paper_files(project, "HEAD", "paper/") == baseline
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
@@ -78,7 +94,7 @@ def test_complete_round_trip_merges_twice_publishes(scratch, github):
     assert len(github["merges"]) == 2
     assert not github["prs"]
     assert_clean(scratch)
-    # Restoration leaves a valid paired state for the next release check.
+    # A successful check leaves a valid paired state for the next check.
     git(project, "reset", "--hard", "FETCH_HEAD")
     assert invoke(project).exit_code == 0
 
@@ -122,9 +138,7 @@ def test_waits_for_checks_inside_the_call(scratch, github, monkeypatch, waiting_
     assert_clean(scratch)
 
 
-def test_failed_pr_checks_fail_without_merging(
-    scratch, github, monkeypatch
-):
+def test_failed_pr_checks_fail_without_merging(scratch, github, monkeypatch):
     project, _, _, _ = scratch
     original = check.sync.gh
 
@@ -139,8 +153,7 @@ def test_failed_pr_checks_fail_without_merging(
     assert result.exit_code != 0
     assert "scratch PR check failed" in result.output
     assert "Overleaf live check FAIL" in result.output
-    assert not github["merges"] and github["prs"]
-    assert_left_for_next_check(scratch)
+    assert_failed_state(scratch, github)
 
 
 def test_normalizes_a_relative_paper_directory(scratch):
@@ -153,11 +166,12 @@ def test_normalizes_a_relative_paper_directory(scratch):
 @pytest.mark.parametrize("name", ["CI", "GITHUB_ACTIONS"])
 def test_never_runs_live_check_in_ci(scratch, monkeypatch, name):
     project, _, _, _ = scratch
+    refs = git(project, "ls-remote", "origin")
     monkeypatch.setenv(name, "true")
     result = invoke(project)
     assert result.exit_code != 0
     assert "outside CI" in result.output
-    assert_left_for_next_check(scratch)
+    assert_unchanged(scratch, refs)
 
 
 def test_alarm_is_a_real_deadline():
@@ -216,8 +230,8 @@ def test_every_unsuccessful_terminal_check_fails_without_waiting(
     assert (
         "release step" in result.output and "scratch PR check failed" in result.output
     )
-    assert not waits and not github["merges"]
-    assert_left_for_next_check(scratch)
+    assert not waits
+    assert_failed_state(scratch, github)
 
 
 @pytest.mark.parametrize("reason", ["no checks", "review", "rules", "skipped only"])
@@ -253,8 +267,7 @@ def test_unattended_merge_setup_failure_is_actionable(
     result = invoke(project)
     assert result.exit_code != 0
     assert "pair access/setup" in result.output
-    assert not github["merges"]
-    assert_left_for_next_check(scratch)
+    assert_failed_state(scratch, github)
     if reason == "no checks":
         assert sum(waits) == check.CHECK_DISCOVERY_SECONDS
 
@@ -317,19 +330,24 @@ def test_unmergeable_pr_fails_immediately(
     assert result.exit_code != 0
     assert phase in result.output
     assert "timed out" not in result.output
-    assert not waits and not github["merges"] and github["prs"]
-    assert_left_for_next_check(scratch)
+    assert not waits
+    assert_failed_state(scratch, github)
 
 
-@pytest.mark.parametrize("phase", ["acquisition", "exercise"])
-def test_exhausted_budget_never_starts_the_next_phase(scratch, monkeypatch, phase):
+def test_exhausted_budget_never_starts_exercise(scratch, monkeypatch):
     project, _, _, _ = scratch
-    ticks = iter([0, 600] if phase == "acquisition" else [0, 599, 600])
+    refs = git(project, "ls-remote", "origin")
+    ticks = iter([0, 600])
     monkeypatch.setattr(check.time, "monotonic", lambda: next(ticks))
+
+    def unexpected_exercise(trial):
+        pytest.fail("expired exercise started")
+
+    monkeypatch.setattr(check.RoundTrip, "exercise", unexpected_exercise)
     result = invoke(project)
     assert result.exit_code != 0
     assert "timed out before starting its next phase" in result.output
-    assert_left_for_next_check(scratch)
+    assert_unchanged(scratch, refs)
 
 
 @pytest.mark.parametrize("remaining", [0, -0.1])
@@ -350,6 +368,8 @@ def test_unexpected_error_never_echoes_credential_bearing_commands(
 ):
     project, _, _, _ = scratch
 
+    refs = git(project, "ls-remote", "origin")
+
     def fail(trial):
         raise subprocess.CalledProcessError(
             1, ["fixture-command", "credential-sentinel"]
@@ -360,7 +380,7 @@ def test_unexpected_error_never_echoes_credential_bearing_commands(
     assert result.exit_code != 0
     assert "Unexpected CalledProcessError" in result.output
     assert "credential-sentinel" not in result.output
-    assert_left_for_next_check(scratch)
+    assert_unchanged(scratch, refs)
 
 
 def test_recent_check_makes_the_pair_busy_without_changes(scratch):
@@ -392,7 +412,17 @@ def test_stale_check_leftovers_are_cleared_then_checked(scratch, github, monkeyp
         ["git", "mktree"], cwd=project, input="", capture_output=True, text=True
     ).stdout.strip()
     lock = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", tree, "-m", "dead check"],
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit-tree",
+            tree,
+            "-m",
+            "dead check",
+        ],
         cwd=project,
         env={**os.environ, **old},
         capture_output=True,
