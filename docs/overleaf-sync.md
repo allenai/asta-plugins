@@ -131,6 +131,29 @@ supply it; Overleaf history is never trusted to name one.
   record, so the push is a fast-forward and a concurrent publisher's record is
   never overwritten.
 
+## Moving an existing pairing
+
+Each paper's pairing record lives at `.asta/overleaf/<paper dir>.json`, outside
+the paper source. For example, `paper/` uses `.asta/overleaf/paper.json` and
+`examples/paper/` uses `.asta/overleaf/examples/paper.json`.
+
+The former `<paper dir>/overleaf.json` location is no longer read; there is no
+automatic migration or compatibility lookup. Before running this release,
+move and commit each existing pairing without changing its contents:
+
+```sh
+paper_dir=paper  # repeat for each paired paper, including nested directories
+record=".asta/overleaf/${paper_dir}.json"
+mkdir -p "$(dirname "$record")"
+git mv "$paper_dir/overleaf.json" "$record"
+git commit -m "Move Overleaf pairing record out of the paper directory"
+```
+
+Merge the move before the next scheduled sync uses the new release. Until then,
+the workspace is treated as unpaired. Without `--dir`, `sync` processes every
+paired paper in turn; `pull` and `publish` require `--dir` when several records
+are tracked.
+
 ## Shared format and releases
 
 `FORMAT` in `src/asta/commands/overleaf.py` versions the config, publication

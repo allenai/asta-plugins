@@ -671,6 +671,29 @@ def test_shared_check_outside_git_has_no_traceback(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+@pytest.mark.parametrize(
+    "directory", ["paper", "examples/paper", "research.v2/paper.draft"]
+)
+def test_shared_check_finds_conflicts_from_pairing_record_without_latexmkrc(
+    tmp_path, directory
+):
+    git(tmp_path, "init", "-b", "main")
+    paper = tmp_path / directory
+    paper.mkdir(parents=True)
+    record = tmp_path / ".asta/overleaf" / f"{directory}.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}")
+    (paper / "main.tex").write_text("<<<<<<< workspace\n")
+    git(tmp_path, "add", "--", directory, ".asta")
+    result = subprocess.run(
+        ["sh", str(SCRIPT)], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert "Unresolved paper conflict markers" in result.stdout
+    assert f"{directory}/main.tex" in result.stdout
+    assert "quarto" not in result.stderr
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX byte filenames")
 def test_shared_check_handles_non_utf8_paths(tmp_path):
     git(tmp_path, "init", "-b", "main")

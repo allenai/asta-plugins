@@ -3865,6 +3865,39 @@ def record_file(root):
     return path
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+@pytest.mark.parametrize(
+    "parent", [".asta", ".asta/overleaf", ".asta/overleaf/examples"]
+)
+@pytest.mark.parametrize("dangling", [False, True])
+@pytest.mark.parametrize("operation", ["load", "save"])
+def test_config_refuses_symlinked_parent(tmp_path, parent, dangling, operation):
+    root = tmp_path / "workspace"
+    record_file(root)
+    paper = root / "examples/paper"
+    paper.mkdir(parents=True)
+    link = root / parent
+    if link.exists():
+        shutil.rmtree(link)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside"
+    if not dangling:
+        outside.mkdir()
+        (outside / "sentinel").write_text("unchanged\n")
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(module.SyncError, match="symlink"):
+        if operation == "load":
+            module.load_config(paper)
+        else:
+            module.save_config(paper, URL, "a" * 40)
+    assert link.is_symlink()
+    if dangling:
+        assert not outside.exists()
+    else:
+        assert list(outside.iterdir()) == [outside / "sentinel"]
+        assert (outside / "sentinel").read_text() == "unchanged\n"
+
+
 @pytest.mark.parametrize("change_base", [False, True])
 def test_save_config_refuses_newer_format_without_loading(tmp_path, change_base):
     path = record_file(tmp_path)
@@ -3919,7 +3952,9 @@ def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap)
         swapped = True
 
     def racing_open(name, flags, *args, **kwargs):
-        if Path(name) != path:
+        if Path(name) != path and not (
+            Path(name) == Path(path.name) and kwargs.get("dir_fd") is not None
+        ):
             return real_open(name, flags, *args, **kwargs)
         if swap == "before_open":
             replace_with_link()
@@ -3936,6 +3971,41 @@ def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap)
         module.save_config(tmp_path / "paper", URL, "b" * 40)
     assert swapped
     assert path.is_symlink()
+    assert target.read_text() == original
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires directory-relative opens")
+@pytest.mark.parametrize("swap", ["before_directory_open", "before_file_open"])
+def test_save_config_never_follows_a_racing_parent_symlink(tmp_path, monkeypatch, swap):
+    root = tmp_path / "workspace"
+    path = record_file(root)
+    path.write_text(json.dumps({"url": URL, "base": "a" * 40}))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / path.name
+    original = json.dumps({"url": URL, "base": "c" * 40})
+    target.write_text(original)
+    real_open = module.os.open
+    swapped = False
+
+    def racing_open(name, flags, *args, **kwargs):
+        nonlocal swapped
+        trigger = "overleaf" if swap == "before_directory_open" else path.name
+        if not swapped and name == trigger and kwargs.get("dir_fd") is not None:
+            path.parent.rename(path.parent.with_name("original"))
+            path.parent.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return real_open(name, flags, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "open", racing_open)
+    if swap == "before_directory_open":
+        with pytest.raises(module.SyncError, match="symlink"):
+            module.save_config(root / "paper", URL, "b" * 40)
+    else:
+        module.save_config(root / "paper", URL, "b" * 40)
+        saved = json.loads((path.parent.with_name("original") / path.name).read_text())
+        assert saved["base"] == "b" * 40
+    assert swapped
     assert target.read_text() == original
 
 

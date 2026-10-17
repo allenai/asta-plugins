@@ -23,8 +23,9 @@ if result.returncode:
 paths = [pathlib.Path(os.fsdecode(name)) for name in result.stdout.split(b"\0") if name]
 roots = {p.parent for p in paths if p.name in {"latexmkrc", ".latexmkrc"}}
 # A paired paper's record lives at .asta/overleaf/<paper dir>.json.
-roots |= {pathlib.Path(p.stem) for p in paths
-          if p.parent == pathlib.Path(".asta/overleaf") and p.suffix == ".json"}
+records = pathlib.Path(".asta/overleaf")
+roots |= {p.relative_to(records).with_suffix("") for p in paths
+          if records in p.parents and p.suffix == ".json"}
 marker = re.compile(rb"^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?\n?\Z)")
 separator = re.compile(rb"^=======\r?\n?\Z")
 base = os.path.realpath(".")

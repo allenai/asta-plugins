@@ -620,7 +620,36 @@ def record_name(root: Path, paper: Path) -> str:
 
 def record_path(paper: Path) -> Path:
     root = workspace_root(paper)
-    return root / record_name(root, paper)
+    path = root / record_name(root, paper)
+    for parent in path.parents:
+        if parent == root:
+            break
+        if parent.is_symlink():
+            refuse(str(parent.relative_to(root)), "is a symlink")
+    return path
+
+
+def open_record_for_update(path: Path, root: Path) -> int:
+    """Create/open a record without following a substituted parent directory."""
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    if os.name == "nt":
+        # record_path has checked the parents; directory-relative opens are POSIX.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return os.open(path, flags, 0o666)
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    parent = os.open(root, directory_flags)
+    try:
+        for part in path.parent.relative_to(root).parts:
+            try:
+                os.mkdir(part, dir_fd=parent)
+            except FileExistsError:
+                pass
+            child = os.open(part, directory_flags, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        return os.open(path.name, flags, 0o666, dir_fd=parent)
+    finally:
+        os.close(parent)
 
 
 def load_config(paper: Path) -> dict:
@@ -655,17 +684,14 @@ def save_config(paper: Path, url: str, base: str) -> None:
     path = record_path(paper)
     if path.is_symlink():
         refuse(CONFIG, "is a symlink")
-    path.parent.mkdir(parents=True, exist_ok=True)
     # Read, validate and write the same file descriptor without truncating first.
-    # O_NOFOLLOW also refuses a symlink substituted after the check above; using
-    # the descriptor prevents a later substitution from redirecting the write.
+    # Every directory is opened without following symlinks as well, so replacing
+    # a parent after record_path checked it cannot redirect the write.
     try:
-        descriptor = os.open(
-            path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o666
-        )
+        descriptor = open_record_for_update(path, workspace_root(paper))
     except OSError as exc:
-        if exc.errno == errno.ELOOP:
-            refuse(CONFIG, "is a symlink")
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            refuse(CONFIG, "is a symlink or has an unsafe parent directory")
         raise
     with os.fdopen(descriptor, "r+", encoding="utf-8") as record:
         try:
