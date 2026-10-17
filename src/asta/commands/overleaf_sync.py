@@ -29,7 +29,7 @@ RECORD_RESOLVED_MARKER = "<!-- asta-overleaf-record-used-again -->"
 CONFLICTS = f"{ov.RECOVERY}#conflict-markers-after-pull-exit-3"
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
-FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
+FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
 STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
@@ -482,6 +482,19 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(name.startswith(prefix) for name in changed.splitlines())
 
 
+def require_no_release_check(root: Path, project_id: str):
+    if not click.get_current_context().meta.get("overleaf_check") and ov.git(
+        "ls-remote",
+        "--refs",
+        "origin",
+        f"refs/asta/overleaf-sync-lock/check-{project_id}",
+        cwd=root,
+    ):
+        raise ov.SyncError(
+            "A live release check owns this scratch pair; retry when it finishes."
+        )
+
+
 def sync_workspace(project: Path, directory: str):
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
@@ -493,16 +506,7 @@ def sync_workspace(project: Path, directory: str):
             "Import and commit the paper with overleaf pull before scheduling sync."
         )
     project_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
-    if not click.get_current_context().meta.get("overleaf_check") and ov.git(
-        "ls-remote",
-        "--refs",
-        "origin",
-        f"refs/asta/overleaf-sync-lock/check-{project_id}",
-        cwd=root,
-    ):
-        raise ov.SyncError(
-            "A live release check owns this scratch pair; retry when it finishes."
-        )
+    require_no_release_check(root, project_id)
     info = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
@@ -558,16 +562,7 @@ def sync_workspace(project: Path, directory: str):
             raise ov.SyncError(message)
         # Recheck under the normal sync lock: a check may have claimed its
         # outer lock between the first read above and this acquisition.
-        if not click.get_current_context().meta.get("overleaf_check") and ov.git(
-            "ls-remote",
-            "--refs",
-            "origin",
-            f"refs/asta/overleaf-sync-lock/check-{project_id}",
-            cwd=root,
-        ):
-            raise ov.SyncError(
-                "A live release check owns this scratch pair; retry when it finishes."
-            )
+        require_no_release_check(root, project_id)
         pr = None
         notice = ""
         try:

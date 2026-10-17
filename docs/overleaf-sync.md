@@ -29,9 +29,9 @@ One call creates a uniquely named paper source on Overleaf, brings it through
 the sync PR and merges it, publishes a workspace edit, creates a conflict on
 that file, resolves it on the sync branch, waits for that head's checks, and
 merges/publishes the resolution. It calls the released `sync` and `publish`
-implementation, including their normal check and merge decisions. It waits and
-reruns sync itself; it never leaves an unfinished check for the next schedule
-as part of normal operation.
+implementation, including their normal check and merge decisions. It polls
+GitHub while checks run and reruns sync once they pass; it never leaves an
+unfinished check for the next schedule as part of normal operation.
 
 Every stage verifies both paper contents and the workspace's other tracked files
 against their starting state. On success or failure it attempts to close its
@@ -47,8 +47,10 @@ or a runner deadline can prevent restoration; do not reuse the pair until
 its contents, open PR and locks have been checked in that case.
 
 The round trip defaults to 600 seconds (`--timeout <seconds>`), including waiting
-for GitHub checks. Restoration has a separate 180-second deadline. Run on a
-POSIX runner with enough time for both; the command refuses `CI` or
+for GitHub checks. Restoration has a separate 180-second deadline, followed by
+at most 30 seconds for lock release. Lock acquisition uses the remaining
+round-trip deadline. Run on a POSIX runner's main thread with enough time for
+all phases; the command refuses `CI` or
 `GITHUB_ACTIONS` environments. Unit tests replace Overleaf/GitHub with local Git
 and fixture check results; the live command runs only where the existing token
 or credential helper is already available. A remote check lock excludes another
@@ -60,20 +62,27 @@ Exit 0 plus `Overleaf live check PASS` means every stage and restoration passed.
 Any failure exits nonzero. Output labels `pair access/setup` failures (token,
 access, missing project, or an unprepared pair) separately from `release step`
 failures during the exercised sync/merge/publish/conflict/restoration path.
+Missing PR checks (after a 30-second discovery grace period), required reviews,
+and repository rules blocking unattended merge are pair setup failures. A
+completed unsuccessful check fails immediately. If restoration also fails, the
+original check failure is printed alongside the restoration failure.
 
 Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
 Before syncing the requested paper, the CLI looks for a pass for its own asta
-version on that reserved repository. On a miss it clones the scratch repository,
-runs the complete check synchronously, and records a pass only after restoration
-succeeds. Check failure or inability to read/write the pass record refuses paper
-sync. A subsequent invocation or rollback to an already passed version reuses
-its pass. The scratch pair uses the standard `paper/` directory.
+version on that reserved repository. It clones the scratch repository to
+validate pair isolation on every invocation. On a miss it runs the complete
+check synchronously, and records a pass only after restoration succeeds. Check
+failure or inability to read/write the pass record refuses paper sync. A subsequent invocation or rollback to an already passed version reuses
+its pass. Use `sync --check-timeout <seconds>` to change the 600-second round-trip
+limit on an uncached check. The scratch pair uses the standard `paper/` directory.
 
 The CLI rejects the paper repository itself, including case variants and rename
-redirects, as its check repository. On first use it also rejects a scratch pair
-pointing at the same Overleaf project. Keep the pair exclusively reserved; do not
-edit it by hand or schedule normal sync against it. Its successful PR checks and
-writable default branch must already be configured. No credentials are added to
+redirects, as its check repository. It also rejects a scratch pair pointing at
+the same Overleaf project, including supported URL suffix variants and project
+ID case differences, on both cached and uncached passes. Scratch clones use the paper repository's GitHub
+host and retain SSH transport when the paper's origin uses SSH. Keep the pair
+exclusively reserved; do not edit it by hand or schedule normal sync against
+it. Its successful PR checks and writable default branch must already be configured. No credentials are added to
 CI, and an uncached live check refuses CI environments.
 
 Pass tags use `asta-overleaf-check/<SHA-256 of asta version>` on the scratch

@@ -1341,14 +1341,26 @@ def publish(
     "--check-repo",
     help="Reserved scratch owner/name; require a passing live check per asta version before syncing.",
 )
-def sync(directory: str, project: Path, check_repo: str | None = None) -> None:
+@click.option(
+    "--check-timeout",
+    type=click.IntRange(min=1),
+    default=600,
+    show_default=True,
+    help="Seconds for an uncached release check; restoration has a separate 180-second limit.",
+)
+def sync(
+    directory: str,
+    project: Path,
+    check_repo: str | None = None,
+    check_timeout: int = 600,
+) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_sync import sync_workspace
 
     if check_repo:
         from .overleaf_gate import require_release_check
 
-        require_release_check(project, directory, check_repo)
+        require_release_check(project, directory, check_repo, check_timeout)
     sync_workspace(project, directory)
 
 

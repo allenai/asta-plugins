@@ -1,6 +1,8 @@
 """The live-check orchestration runs offline over real Git and fake GitHub checks."""
 
 import importlib
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
 import click
@@ -91,10 +93,20 @@ def test_waits_for_checks_inside_the_call(scratch, github, monkeypatch):
                 ]
         return result
 
+    sync_calls = []
+    original_sync = check.RoundTrip.run_sync
+
+    def run_sync(trial):
+        sync_calls.append(pending[0])
+        original_sync(trial)
+
     def sleep(seconds):
+        # The opening sync was the only sync while checks remained pending.
+        assert sync_calls == [True]
         waits.append(seconds)
         pending[0] = False
 
+    monkeypatch.setattr(check.RoundTrip, "run_sync", run_sync)
     monkeypatch.setattr(check.sync, "gh", delayed)
     monkeypatch.setattr(check.time, "sleep", sleep)
     result = invoke(project)
@@ -131,16 +143,14 @@ def test_wait_timeout_restores_instead_of_leaving_a_pending_check(
     def pending(root, *args, payload=None):
         result = original(root, *args, payload=payload)
         for pr in github["prs"]:
-            pr["statusCheckRollup"] = []
+            pr["statusCheckRollup"] = [{"status": "IN_PROGRESS", "conclusion": None}]
         return result
 
     monkeypatch.setattr(check.sync, "gh", pending)
     monkeypatch.setattr(
         check.time,
         "sleep",
-        lambda seconds: (_ for _ in ()).throw(
-            check.ov.SyncError("Live check timed out")
-        ),
+        lambda seconds: check.signal.raise_signal(check.signal.SIGALRM),
     )
     result = invoke(project, "--timeout", "30")
     assert result.exit_code != 0
@@ -198,18 +208,35 @@ def test_check_detects_clobbered_paper_or_workspace_and_restores(
     assert_restored(scratch)
 
 
-def test_refuses_differing_pair_without_changing_it(scratch, github):
+def test_refuses_differing_pair_without_changing_it(scratch, github, monkeypatch):
     project, _, _, _ = scratch
     seed = project.parent / "seed"
     from tests.test_workspace_overleaf import overleaf_edit
 
     overleaf_edit(seed, "main.tex", "an edit already waiting\n")
-    # A differing pair is rejected before trying to claim or alter its PR.
+    # A differing pair is rejected before any write to either remote or GitHub.
+    workspace_refs = git(project, "ls-remote", "origin")
+    overleaf_refs = git(seed, "ls-remote", "origin")
+    pushes = []
+    original = check.ov.git
+
+    def observed_git(*args, **kwargs):
+        if "push" in args:
+            pushes.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(check.ov, "git", observed_git)
     result = invoke(project)
     assert result.exit_code != 0
     assert "identical" in result.output
     assert git(seed, "show", "HEAD:main.tex") == "an edit already waiting"
-    assert not github["calls"] or not github["merges"]
+    assert not github["prs"] and not github["merges"]
+    assert not pushes
+    assert git(project, "ls-remote", "origin") == workspace_refs
+    assert git(seed, "ls-remote", "origin") == overleaf_refs
+    assert all(
+        args[:2] in {("repo", "view"), ("pr", "list")} for args, _ in github["calls"]
+    )
 
 
 def test_refuses_reserved_overleaf_source_without_deleting_it(scratch):
@@ -380,6 +407,7 @@ def test_pr_close_failure_still_restores_both_contents(scratch, github, monkeypa
     assert result.exit_code != 0
     assert "closing the check PR" in result.output
     assert "Scratch restoration failed" in result.output
+    assert "Injected check failure" in result.output
     assert "live check PASS" not in result.output
     assert_restored(scratch)
 
@@ -388,3 +416,191 @@ def test_alarm_is_a_real_deadline():
     with pytest.raises(check.CheckTimeout, match="timed out"):
         with check.deadline(1):
             check.signal.pause()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://git.overleaf.com/1234567/", "https://git@git.overleaf.com/1234567.git/"],
+)
+def test_url_variants_use_the_sync_lock_and_branch(scratch, monkeypatch, url):
+    project, _, _, _ = scratch
+    # load_config already normalizes supported URL variants; retain that contract.
+    import json
+
+    for repo in (project,):
+        path = repo / "paper/overleaf.json"
+        config = json.loads(path.read_text())
+        path.write_text(json.dumps(dict(config, url=url)) + "\n")
+        git(repo, "add", "paper/overleaf.json")
+        git(repo, "commit", "-m", "Pair URL spelling")
+        git(repo, "push", "origin", "HEAD:main")
+    held = "refs/asta/overleaf-sync-lock/check-1234567"
+    git(project, "push", "origin", f"HEAD:{held}")
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "Another live check" in result.output
+    assert git(project, "ls-remote", "origin", held)
+    git(project, "push", "origin", f":{held}")
+    assert not git(project, "ls-remote", "origin", "refs/heads/asta/overleaf-sync/*")
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        KeyError("number"),
+        subprocess.CalledProcessError(1, ["fixture"]),
+        RuntimeError("unexpected"),
+    ],
+)
+def test_unexpected_cleanup_error_does_not_skip_restoring_remotes(
+    scratch, github, monkeypatch, failure
+):
+    project, _, _, _ = scratch
+    original = check.RoundTrip.run_sync
+
+    def fail_sync(trial):
+        original(trial)
+        raise check.ov.SyncError("Original exercise failure")
+
+    def fail_close(trial):
+        raise failure
+
+    monkeypatch.setattr(check.RoundTrip, "run_sync", fail_sync)
+    monkeypatch.setattr(check.RoundTrip, "close_pr", fail_close)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "Original exercise failure" in result.output
+    assert "Scratch restoration failed" in result.output
+    assert "live check PASS" not in result.output
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    ["STALE", "STARTUP_FAILURE", "TIMED_OUT", "CANCELLED", "UNKNOWN", None],
+)
+def test_every_unsuccessful_terminal_check_fails_without_waiting(
+    scratch, github, monkeypatch, conclusion
+):
+    project, _, _, waits = scratch
+    original = check.sync.gh
+
+    def failed(root, *args, payload=None):
+        result = original(root, *args, payload=payload)
+        for pr in github["prs"]:
+            pr["statusCheckRollup"] = [
+                {"status": "COMPLETED", "conclusion": conclusion}
+            ]
+        return result
+
+    monkeypatch.setattr(check.sync, "gh", failed)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert (
+        "release step" in result.output and "scratch PR check failed" in result.output
+    )
+    assert not waits and not github["merges"]
+    assert_restored(scratch)
+
+
+@pytest.mark.parametrize("reason", ["no checks", "review", "rules", "skipped only"])
+def test_unattended_merge_setup_failure_is_actionable(
+    scratch, github, monkeypatch, reason
+):
+    project, _, _, waits = scratch
+    original = check.sync.gh
+    clock = [0]
+    monkeypatch.setattr(check.time, "monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        waits.append(seconds)
+        clock[0] += seconds
+
+    def blocked(root, *args, payload=None):
+        result = original(root, *args, payload=payload)
+        for pr in github["prs"]:
+            if reason == "no checks":
+                pr["statusCheckRollup"] = []
+            elif reason == "review":
+                pr["reviewDecision"] = "REVIEW_REQUIRED"
+            elif reason == "rules":
+                pr["mergeStateStatus"] = "BLOCKED"
+            else:
+                pr["statusCheckRollup"] = [
+                    {"status": "COMPLETED", "conclusion": "SKIPPED"}
+                ]
+        return result
+
+    monkeypatch.setattr(check.sync, "gh", blocked)
+    monkeypatch.setattr(check.time, "sleep", sleep)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output
+    assert not github["merges"]
+    assert_restored(scratch)
+    if reason == "no checks":
+        assert sum(waits) == check.CHECK_DISCOVERY_SECONDS
+
+
+def test_initial_empty_rollup_can_discover_checks(scratch, github, monkeypatch):
+    project, _, _, waits = scratch
+    original = check.sync.gh
+
+    def delayed(root, *args, payload=None):
+        result = original(root, *args, payload=payload)
+        if not waits:
+            for pr in github["prs"]:
+                pr["statusCheckRollup"] = []
+        return result
+
+    monkeypatch.setattr(check.sync, "gh", delayed)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert waits == [5]
+    assert len(github["merges"]) == 2
+    assert_restored(scratch)
+
+
+def test_main_thread_requirement_is_a_clear_error():
+    def run():
+        with check.deadline(1):
+            pytest.fail("worker thread must be refused before starting")
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with pytest.raises(check.ov.SyncError, match="main thread"):
+            pool.submit(run).result()
+
+
+def test_check_lock_acquisition_is_bounded(scratch, monkeypatch):
+    project, _, _, _ = scratch
+
+    @contextmanager
+    def blocked(root, project_id):
+        check.signal.pause()
+        yield True
+
+    monkeypatch.setattr(check.sync, "lock", blocked)
+    result = invoke(project, "--timeout", "1")
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output and "timed out" in result.output
+    assert_restored(scratch)
+
+
+def test_check_lock_release_has_a_deadline(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    original = check.sync.lock
+
+    @contextmanager
+    def lock(root, project_id):
+        with original(root, project_id) as acquired:
+            yield acquired
+            if project_id.startswith("check-"):
+                # Exercise the real installed signal handler during lock release.
+                check.signal.raise_signal(check.signal.SIGALRM)
+
+    monkeypatch.setattr(check.sync, "lock", lock)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "timed out" in result.output
+    assert "live check PASS" not in result.output
+    assert_restored(scratch)

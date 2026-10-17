@@ -2,7 +2,9 @@
 
 import os
 import signal
+import sys
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,13 +16,22 @@ from . import overleaf as ov
 from . import overleaf_sync as sync
 
 
-class CheckTimeout(ov.SyncError):
-    """Do not swallow a restoration deadline while attempting other cleanup."""
+class CheckTimeout(BaseException):
+    """Interrupt nested retry/error handlers, like cancellation, until restoration."""
+
+
+class PairSetupError(ov.SyncError):
+    """A scratch repository rule or missing check requires setup, not a release fix."""
+
+
+CHECK_DISCOVERY_SECONDS = 30
 
 
 @contextmanager
 def deadline(seconds):
     """Bound network commands as well as the checks wait, including on failure."""
+    if threading.current_thread() is not threading.main_thread():
+        raise ov.SyncError("The live check must run on the main thread.")
     if not hasattr(signal, "SIGALRM"):
         raise ov.SyncError("The live check requires a POSIX runner with SIGALRM.")
 
@@ -38,6 +49,19 @@ def deadline(seconds):
         signal.signal(signal.SIGALRM, previous)
 
 
+@contextmanager
+def check_lock(work, project_id, seconds):
+    """Bound lock acquisition and release separately from exercise/restoration."""
+    manager = sync.lock(work, f"check-{project_id}")
+    with deadline(seconds):
+        acquired = manager.__enter__()
+    try:
+        yield acquired
+    finally:
+        with deadline(30):
+            manager.__exit__(*sys.exc_info())
+
+
 def remote_ref(root, ref):
     result = ov.git("ls-remote", "--refs", "origin", ref, cwd=root).split()
     return result[0] if result else ""
@@ -52,7 +76,7 @@ class RoundTrip:
         self.repo = info["nameWithOwner"]
         self.default = info["defaultBranchRef"]["name"]
         self.config = ov.load_config(self.paper)
-        self.project_id = self.config["url"].rsplit("/", 1)[1]
+        self.project_id = ov.validate_url(self.config["url"]).rsplit("/", 1)[1]
         self.branch = f"asta/overleaf-sync/{self.project_id}"
         self.initial_branch = remote_ref(work, f"refs/heads/{self.branch}")
         self.workspace_base = ov.git("rev-parse", "HEAD", cwd=work)
@@ -114,21 +138,59 @@ class RoundTrip:
         self.pr()
 
     def merge_and_wait(self):
-        """A scheduler normally returns here; this check owns the quiet reruns."""
+        """Poll GitHub while checks run; sync only a completed, mergeable PR."""
+        missing_since = None
         while pr := self.pr():
-            for result in pr.get("statusCheckRollup") or []:
-                outcome = result.get("conclusion", result.get("state"))
-                if outcome in {
-                    "FAILURE",
-                    "ERROR",
-                    "CANCELLED",
-                    "TIMED_OUT",
-                    "ACTION_REQUIRED",
-                }:
+            if pr.get("reviewDecision") == "REVIEW_REQUIRED":
+                raise PairSetupError(
+                    "The scratch PR requires a human review; configure a pair that can merge unattended."
+                )
+            results = pr.get("statusCheckRollup") or []
+            if not results:
+                # Newly opened PRs can briefly have no rollup while Actions starts.
+                if missing_since is None:
+                    missing_since = time.monotonic()
+                if time.monotonic() - missing_since >= CHECK_DISCOVERY_SECONDS:
+                    raise PairSetupError(
+                        "No scratch PR checks appeared; configure a successful PR check on the pair."
+                    )
+                time.sleep(5)
+                continue
+            missing_since = None
+            pending = False
+            successful = False
+            for result in results:
+                if "status" in result:
+                    if result["status"] != "COMPLETED":
+                        pending = True
+                        continue
+                    outcome = result.get("conclusion")
+                else:
+                    outcome = result.get("state")
+                    if outcome in {"PENDING", "EXPECTED"}:
+                        pending = True
+                        continue
+                if outcome not in {"SUCCESS", "NEUTRAL", "SKIPPED"}:
                     raise ov.SyncError(
                         "A scratch PR check failed; the live release check cannot pass."
                     )
-            self.run_sync()
+                successful |= outcome == "SUCCESS"
+            if pending:
+                time.sleep(5)
+                continue
+            if not successful:
+                raise PairSetupError(
+                    "The scratch PR has no successful check; sync requires at least one SUCCESS."
+                )
+            if pr.get("mergeStateStatus") == "BLOCKED":
+                raise PairSetupError(
+                    "Repository rules block the scratch PR; configure a pair that can merge unattended."
+                )
+            if (
+                pr.get("mergeable") == "MERGEABLE"
+                and pr.get("mergeStateStatus") == "CLEAN"
+            ):
+                self.run_sync()
             if self.pr():
                 time.sleep(5)
         self.refresh()
@@ -310,7 +372,7 @@ class RoundTrip:
                 return action()
             except CheckTimeout:
                 raise
-            except (click.ClickException, OSError):
+            except Exception:
                 failures.append(label)
                 click.echo(f"Scratch restoration could not complete {label}.", err=True)
 
@@ -393,7 +455,9 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                     "A scratch sync run owns the lock; finish or recover it before check."
                 )
         # One check owns the scratch pair across all of its synchronous sync calls.
-        with sync.lock(work, f"check-{trial.project_id}") as acquired:
+        with check_lock(
+            work, trial.project_id, max(1, int(timeout - (time.monotonic() - started)))
+        ) as acquired:
             if not acquired:
                 raise ov.SyncError(
                     "Another live check owns the scratch pair; wait for it to finish."
@@ -401,6 +465,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
             ctx = click.get_current_context()
             ctx.meta["overleaf_check"] = True
             try:
+                failure = None
                 try:
                     with deadline(max(1, int(timeout - (time.monotonic() - started)))):
                         # A normal sync may have started while preflight was
@@ -429,9 +494,27 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                             )
                         ctx.meta["overleaf_check_phase"] = "release step"
                         trial.exercise()
+                except BaseException as exc:
+                    failure = exc
+                    raise
                 finally:
-                    with deadline(180):
-                        trial.restore()
+                    try:
+                        with deadline(180):
+                            trial.restore()
+                    except (CheckTimeout, Exception):
+                        if failure is not None:
+                            detail = (
+                                str(failure)
+                                if isinstance(
+                                    failure, (click.ClickException, CheckTimeout)
+                                )
+                                else type(failure).__name__
+                            )
+                            click.echo(
+                                f"Original check failure before restoration: {detail}",
+                                err=True,
+                            )
+                        raise
             finally:
                 ctx.meta.pop("overleaf_check", None)
     click.echo(
@@ -445,8 +528,17 @@ def check_workspace(project: Path, directory: str, timeout: int):
     ctx.meta["overleaf_check_phase"] = "pair access/setup"
     try:
         _check_workspace(project, directory, timeout)
-    except (click.ClickException, OSError) as exc:
-        phase = ctx.meta["overleaf_check_phase"]
-        raise ov.SyncError(f"Overleaf check failed ({phase}): {exc}") from exc
+    except (CheckTimeout, Exception) as exc:
+        phase = (
+            "pair access/setup"
+            if isinstance(exc, PairSetupError)
+            else ctx.meta["overleaf_check_phase"]
+        )
+        detail = (
+            str(exc)
+            if isinstance(exc, (click.ClickException, CheckTimeout, OSError))
+            else f"Unexpected {type(exc).__name__}; inspect the scratch pair before retrying."
+        )
+        raise ov.SyncError(f"Overleaf check failed ({phase}): {detail}") from exc
     finally:
         ctx.meta.pop("overleaf_check_phase", None)

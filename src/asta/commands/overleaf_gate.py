@@ -14,15 +14,25 @@ from . import overleaf_sync as sync
 from .overleaf_check import check_workspace
 
 
-def require_release_check(project: Path, directory: str, check_repo: str):
+def require_release_check(
+    project: Path, directory: str, check_repo: str, timeout: int = 600
+):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", check_repo) or any(
         not part.strip(".") for part in check_repo.split("/")
     ):
         raise ov.SyncError("The check repository must be owner/name; syncing nothing.")
     root, paper, _ = ov.resolve(project, directory)
     try:
-        target = sync.gh(root, "repo", "view", "--json", "nameWithOwner")
-        scratch = sync.gh(root, "repo", "view", check_repo, "--json", "nameWithOwner")
+        target = sync.gh(root, "repo", "view", "--json", "nameWithOwner,url")
+        host_url = target["url"].rsplit("/", 2)[0]
+        scratch = sync.gh(
+            root,
+            "repo",
+            "view",
+            f"{host_url}/{check_repo}",
+            "--json",
+            "nameWithOwner,url,sshUrl",
+        )
     except click.ClickException as exc:
         raise ov.SyncError(
             f"Overleaf check failed (pair access/setup): cannot reach GitHub pair: {exc}; syncing nothing."
@@ -33,7 +43,12 @@ def require_release_check(project: Path, directory: str, check_repo: str):
         )
 
     # Canonical identities also catch renamed repositories and redirects.
-    url = f"https://github.com/{scratch['nameWithOwner']}.git"
+    origin = ov.git("remote", "get-url", "origin", cwd=root)
+    url = (
+        scratch["sshUrl"]
+        if origin.startswith(("git@", "ssh://"))
+        else scratch["url"] + ".git"
+    )
     version_key = hashlib.sha256(__version__.encode()).hexdigest()
     ref = f"refs/tags/asta-overleaf-check/{version_key}"
     try:
@@ -42,27 +57,34 @@ def require_release_check(project: Path, directory: str, check_repo: str):
         raise ov.SyncError(
             f"Overleaf check failed (pair access/setup): cannot read pass record: {exc}; syncing nothing."
         ) from exc
-    if cached:
-        click.echo(f"Overleaf check already passed for asta {__version__}.")
-        return
-
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp) / "check"
         try:
             ov.git("clone", "-q", "--", url, str(work), cwd=root)
-            for key in ("user.name", "user.email"):
-                ov.git(
-                    "config", key, ov.git("config", "--get", key, cwd=root), cwd=work
-                )
             config = ov.load_config(work / "paper")
             if not config:
                 raise ov.SyncError(
                     "The scratch repository has no paired Overleaf project."
                 )
             target_config = ov.load_config(paper)
-            if target_config and config["url"] == target_config["url"]:
+            scratch_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
+            target_id = (
+                ov.validate_url(target_config["url"]).rsplit("/", 1)[1]
+                if target_config
+                else None
+            )
+            if target_id is not None and scratch_id.casefold() == target_id.casefold():
                 raise ov.SyncError(
                     "The scratch project is the paper's Overleaf project."
+                )
+            # Pair isolation is checked even when this version already passed:
+            # a repository can be re-paired after the pass was recorded.
+            if cached:
+                click.echo(f"Overleaf check already passed for asta {__version__}.")
+                return
+            for key in ("user.name", "user.email"):
+                ov.git(
+                    "config", key, ov.git("config", "--get", key, cwd=root), cwd=work
                 )
             commit = ov.git("rev-parse", "HEAD", cwd=work)
         except click.ClickException as exc:
@@ -71,7 +93,7 @@ def require_release_check(project: Path, directory: str, check_repo: str):
             ) from exc
         # The check owns its entire round trip, waits for PR checks, restores both
         # sides, and raises on any cleanup failure. Its internal syncs opt out.
-        check_workspace(work, "paper", 600)
+        check_workspace(work, "paper", timeout)
         try:
             ov.git("push", "-q", "origin", f"{commit}:{ref}", cwd=work)
         except click.ClickException as exc:
