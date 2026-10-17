@@ -6,4 +6,6 @@
   scratch pair reserved for checks: merge co-author edits after GitHub checks,
   publish a workspace edit, then resolve and merge a conflict, moving the pair
   forward. A recent check in progress makes the pair busy; a stale one's
-  leftovers are cleared. The command waits within one invocation and refuses CI.
+  leftovers are cleared. Release preserves a replacement owner's lock, and the
+  timeout (including acquisition) stays below the stale-lock threshold. The
+  command waits within one invocation and refuses CI.

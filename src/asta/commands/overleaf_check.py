@@ -94,47 +94,54 @@ class RoundTrip:
         return f"% Asta check {self.nonce}: {label}\n".encode()
 
     @contextmanager
-    def lock(self):
+    def lock(self, timeout):
         """Hold the pair; a lock older than the sync's stale rule is a dead check."""
-        if tip := remote_ref(self.work, self.lock_ref):
-            if not sync.stale_lock(self.work, f"check-{self.project_id}"):
-                raise PairBusy("A recent live check holds the scratch pair.")
+        with deadline(timeout):
+            if tip := remote_ref(self.work, self.lock_ref):
+                if not sync.stale_lock(self.work, f"check-{self.project_id}"):
+                    raise PairBusy("A recent live check holds the scratch pair.")
+                try:
+                    ov.git(
+                        "push",
+                        f"--force-with-lease={self.lock_ref}:{tip}",
+                        "origin",
+                        f":{self.lock_ref}",
+                        cwd=self.work,
+                    )
+                except ov.SyncError as exc:
+                    if remote_ref(self.work, self.lock_ref) != tip:
+                        raise PairBusy(
+                            "Another live check changed the scratch pair lock."
+                        ) from exc
+                    raise
+            owner = ov.git(
+                "commit-tree",
+                ov.git("mktree", cwd=self.work, input=b""),
+                cwd=self.work,
+                input=f"Overleaf release check lock {self.nonce}\n".encode(),
+            )
             try:
                 ov.git(
                     "push",
-                    f"--force-with-lease={self.lock_ref}:{tip}",
+                    f"--force-with-lease={self.lock_ref}:",
                     "origin",
-                    f":{self.lock_ref}",
+                    f"{owner}:{self.lock_ref}",
                     cwd=self.work,
                 )
             except ov.SyncError as exc:
-                if remote_ref(self.work, self.lock_ref) != tip:
-                    raise PairBusy(
-                        "Another live check changed the scratch pair lock."
-                    ) from exc
-                raise
-        owner = ov.git(
-            "commit-tree",
-            ov.git("mktree", cwd=self.work, input=b""),
-            cwd=self.work,
-            input=f"Overleaf release check lock {self.nonce}\n".encode(),
-        )
-        try:
-            ov.git(
-                "push",
-                f"--force-with-lease={self.lock_ref}:",
-                "origin",
-                f"{owner}:{self.lock_ref}",
-                cwd=self.work,
-            )
-        except ov.SyncError as exc:
-            raise PairBusy("Another live check claimed the scratch pair.") from exc
+                raise PairBusy("Another live check claimed the scratch pair.") from exc
         try:
             yield
         finally:
             try:
                 with deadline(30):
-                    delete_ref(self.work, self.lock_ref)
+                    ov.git(
+                        "push",
+                        f"--force-with-lease={self.lock_ref}:{owner}",
+                        "origin",
+                        f":{self.lock_ref}",
+                        cwd=self.work,
+                    )
             except (CheckTimeout, Exception):
                 # A leftover lock turns stale, and the next check clears it.
                 click.echo("Could not release the release-check lock.", err=True)
@@ -353,6 +360,7 @@ class RoundTrip:
 
 
 def _check_workspace(project: Path, directory: str, timeout: int):
+    timeout = ov.release_check_timeout(None, None, timeout)
     if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
         raise ov.SyncError(
             "The live check must run on a scratch pair outside CI, where Overleaf credentials already exist."
@@ -389,7 +397,7 @@ def _check_workspace(project: Path, directory: str, timeout: int):
                     "Use the scratch default branch's current Overleaf configuration."
                 )
             trial = RoundTrip(work, directory, info)
-        with trial.lock():
+        with trial.lock(timeout - (time.monotonic() - started)):
             with deadline(timeout - (time.monotonic() - started)):
                 trial.clear_leftovers()
                 trial.refresh()

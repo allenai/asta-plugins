@@ -25,16 +25,16 @@ The check assumes this model; findings that assume more are out of scope:
    check that died: the next check clears only that observed lock commit. If
    another check has replaced it, the pair is busy and nothing is changed.
    After claiming its own lock, the check closes any open sync PR and removes
-   the sync branch and sync lock it left.
+   the sync branch and sync lock it left. On exit it releases only its own
+   check-lock commit; a replacement owner's lock is preserved.
 3. A failed check leaves its state for inspection; the next check clears it.
 
 Current limitations: releasing the check lock is best effort. A release warning
 can accompany PASS after all exercise stages passed, leaving a check lock for
 the next check to reclaim once stale. This is an exception to the no-lock
-postcondition, but does not skip any exercise stage. Lock acquisition is outside
-the exercise deadline and can require cancellation if transport stalls. A failed
-lock-creation push reports the pair busy even for access or network errors;
-it still exits nonzero without recording a pass or syncing the paper.
+postcondition, but does not skip any exercise stage. A failed lock-creation push
+reports the pair busy even for access or network errors; it still exits nonzero
+without recording a pass or syncing the paper.
 
 Do not schedule normal sync against the pair, edit it by hand, or give it
 collaborators. The scratch default branch's committed `paper/overleaf.json` must
@@ -54,9 +54,12 @@ polls GitHub while checks run. Each stage verifies that both sides hold the same
 paper with that stage's edit and the expected Overleaf base; after each
 publication it verifies the publication record.
 
-The round trip defaults to 600 seconds (`--timeout <seconds>`), including waiting
-for GitHub checks. Run on a POSIX runner's main thread; the command refuses `CI`
-or `GITHUB_ACTIONS` environments. Unit tests replace Overleaf/GitHub with local
+The round trip defaults to 600 seconds (`--timeout <seconds>`), including lock
+acquisition and waiting for GitHub checks. Both `--timeout` and sync's
+`--check-timeout` accept 1–3540 seconds, keeping a running check and its bounded
+lock release below the one-hour stale-lock threshold. Run on a POSIX runner's
+main thread; the command refuses `CI` or `GITHUB_ACTIONS` environments. Unit tests
+replace Overleaf/GitHub with local
 Git and fixture check results.
 
 Exit 0 plus `Overleaf live check PASS` means every stage passed. Any failure
@@ -68,6 +71,14 @@ failures. A completed unsuccessful check, a conflicting/outdated/unstable PR, or
 requested changes fail immediately with the observed state. Pending checks and
 unknown merge eligibility keep polling.
 
+GitHub merge-state snapshots can fail conservatively: `UNSTABLE` is refused even
+if a non-required check is still pending, and `BLOCKED` or `HAS_HOOKS` is refused
+as soon as the rollup completes. Retry after GitHub's merge state settles. These
+refusals record no pass and sync no paper; failed-check leftovers are cleared by
+the next check. The standalone check also prints a generic `FAIL` line for a
+busy pair; the accompanying `pair busy` diagnosis distinguishes it from a
+release failure.
+
 Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
 Before syncing the requested paper, the CLI looks for a pass for its own asta
 version on that reserved repository. It clones the scratch repository to
@@ -76,6 +87,8 @@ check synchronously, and records a pass only after the check passes. A busy pair
 failure or inability to read/write the pass record refuses paper sync. A subsequent invocation or rollback to an already passed version reuses
 its pass. Use `sync --check-timeout <seconds>` to change the 600-second round-trip
 limit on an uncached check. The scratch pair uses the standard `paper/` directory.
+If another runner records the same version's pass first, this invocation can
+refuse the competing tag push; retry to reuse the recorded pass.
 
 The CLI rejects the paper repository itself, including case variants and rename
 redirects, as its check repository. It also rejects a scratch pair pointing at
@@ -85,6 +98,14 @@ host and retain SSH transport when the paper's origin uses SSH. Keep the pair
 exclusively reserved; do not edit it by hand or schedule normal sync against
 it. Its successful PR checks and writable default branch must already be configured. No credentials are added to
 CI, and an uncached live check refuses CI environments.
+
+SSH transport detection recognizes `git@` and `ssh://` origins. Other scp-style
+SSH usernames select HTTPS for the scratch clone and may require HTTPS
+authentication; use a recognized origin form if SSH is required. Check locks
+use the project-ID spelling in the committed scratch configuration, which must
+remain fixed while checks are running. Supporting concurrent configuration
+changes or several repositories paired to one scratch project is outside the
+reserved-pair model.
 
 Pass tags use `asta-overleaf-check/<SHA-256 of asta version>` on the scratch
 repository. Anyone who can create or change these tags is a trusted gate

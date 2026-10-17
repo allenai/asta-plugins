@@ -1443,6 +1443,13 @@ def publish(
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
 
 
+def release_check_timeout(ctx, param, value):
+    from .overleaf_sync import STALE_LOCK_SECONDS
+
+    # Leave time to release the lock before another check can reclaim it.
+    return click.IntRange(1, STALE_LOCK_SECONDS - 60).convert(value, param, ctx)
+
+
 @overleaf.command(name="sync")
 @dir_option
 @project_option
@@ -1453,6 +1460,7 @@ def publish(
 @click.option(
     "--check-timeout",
     type=click.IntRange(min=1),
+    callback=release_check_timeout,
     default=600,
     show_default=True,
     help="Seconds for an uncached release check.",
@@ -1479,6 +1487,7 @@ def sync(
 @click.option(
     "--timeout",
     type=click.IntRange(min=1),
+    callback=release_check_timeout,
     default=600,
     show_default=True,
     help="Seconds for the round trip.",

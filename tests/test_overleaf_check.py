@@ -351,7 +351,7 @@ def test_unmergeable_pr_fails_immediately(
 def test_exhausted_budget_reports_its_stage(scratch, monkeypatch, phase):
     project, _, _, _ = scratch
     refs = git(project, "ls-remote", "origin")
-    ticks = iter([0, 600] if phase == "preparation" else [0, 599, 600])
+    ticks = iter([0, 600] if phase == "preparation" else [0, 0, 599, 600])
     monkeypatch.setattr(check.time, "monotonic", lambda: next(ticks))
 
     if phase == "preparation":
@@ -421,6 +421,82 @@ def test_recent_check_makes_the_pair_busy_without_changes(scratch):
     assert "pair busy" in result.output
     assert "release step" not in result.output
     assert git(project, "ls-remote", "origin") == before
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_finishing_check_preserves_a_replacement_owners_lock(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    replacement = {}
+
+    def taken_over(trial):
+        # A suspended owner resumes after the stale-lock rule let another check
+        # claim the pair. Its finally block must not release that new lock.
+        old = check.remote_ref(trial.work, ref)
+        tree = check.ov.git("mktree", cwd=trial.work, input=b"")
+        owner = check.ov.git(
+            "commit-tree", tree, cwd=trial.work, input=b"Replacement check\n"
+        )
+        check.ov.git(
+            "push",
+            f"--force-with-lease={ref}:{old}",
+            "origin",
+            f"{owner}:{ref}",
+            cwd=trial.work,
+        )
+        replacement["owner"] = owner
+        raise check.ov.SyncError("Original check interrupted")
+
+    monkeypatch.setattr(check.RoundTrip, "exercise", taken_over)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "Original check interrupted" in result.output
+    assert check.remote_ref(project, ref) == replacement["owner"]
+    assert "Could not release the release-check lock" in result.output
+
+
+@pytest.mark.parametrize(
+    "command,option", [("check", "--timeout"), ("sync", "--check-timeout")]
+)
+def test_timeout_cannot_outlive_check_lock(scratch, command, option):
+    project, _, _, _ = scratch
+    before = git(project, "ls-remote", "origin")
+    result = CliRunner().invoke(
+        cli,
+        [
+            "workspace",
+            "overleaf",
+            command,
+            "--project",
+            str(project),
+            option,
+            str(check.sync.STALE_LOCK_SECONDS),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "3540" in result.output
+    assert_unchanged(scratch, before)
+
+
+def test_stalled_lock_acquisition_is_bounded_and_cannot_exercise(scratch, monkeypatch):
+    project, _, _, _ = scratch
+    before = git(project, "ls-remote", "origin")
+    original = check.remote_ref
+
+    def stalled(root, ref):
+        if ref.startswith("refs/asta/overleaf-sync-lock/check-"):
+            assert check.signal.getitimer(check.signal.ITIMER_REAL)[0] > 0
+            check.signal.raise_signal(check.signal.SIGALRM)
+            pytest.fail("lock acquisition was not bounded")
+        return original(root, ref)
+
+    monkeypatch.setattr(check, "remote_ref", stalled)
+    result = invoke(project)
+    assert result.exit_code != 0
+    assert "pair access/setup" in result.output
+    assert "timed out" in result.output
+    assert "live check PASS" not in result.output
+    assert_unchanged(scratch, before)
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
