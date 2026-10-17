@@ -483,8 +483,10 @@ def credits(root: Path, config: dict, new_base: str, prefix: str) -> list[str]:
 
 
 def only_recorded_base_changed(root, prefix, before, after):
-    names = ov.git("diff", "--name-only", "HEAD", "--", prefix, cwd=root).splitlines()
-    if names != [prefix + ov.CONFIG] or before.get("url") != after.get("url"):
+    names = ov.git(
+        "diff", "--name-only", "HEAD", "--", prefix, ov.record_of(prefix), cwd=root
+    ).splitlines()
+    if names != [ov.record_of(prefix)] or before.get("url") != after.get("url"):
         return False
     with ov.published_record(root, before["url"]) as (_, recorded, source):
         if recorded != after["base"]:
@@ -573,7 +575,7 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
         return False
     ancestor = ov.git("merge-base", tip, old_head, cwd=work)
     changed = ov.git("diff", "--name-only", ancestor, old_head, cwd=work)
-    return all(name.startswith(prefix) for name in changed.splitlines())
+    return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
 def sync_workspace(project: Path, directory: str):
@@ -700,7 +702,7 @@ def sync_workspace(project: Path, directory: str):
                     outside = ov.git(
                         "diff", "--name-only", ancestor, old_head, cwd=work
                     ).splitlines()
-                    if any(not name.startswith(prefix) for name in outside):
+                    if any(not ov.in_pair(name, prefix) for name in outside):
                         raise ov.SyncError(
                             "Sync branch changes files outside the paper; resolve it manually."
                         )
@@ -734,7 +736,7 @@ def sync_workspace(project: Path, directory: str):
                 before = ov.load_config(work / prefix)
                 if not before:
                     raise ov.SyncError(
-                        "The sync branch removed overleaf.json; restore the linked paper configuration before retrying."
+                        "The sync branch removed the paper's .asta/overleaf record; restore the linked paper configuration before retrying."
                     )
                 if before.get("url") != config["url"]:
                     raise ov.SyncError(
@@ -774,12 +776,15 @@ def sync_workspace(project: Path, directory: str):
                     )
                     pr["body"] = body
                 after = ov.load_config(work / prefix)
-                changed = bool(ov.git("status", "--porcelain", "--", prefix, cwd=work))
+                record = ov.record_of(prefix)
+                changed = bool(
+                    ov.git("status", "--porcelain", "--", prefix, record, cwd=work)
+                )
                 if changed and only_recorded_base_changed(work, prefix, before, after):
-                    ov.git("restore", "--", prefix + ov.CONFIG, cwd=work)
+                    ov.git("restore", "--", record, cwd=work)
                     changed = False
                 if changed:
-                    ov.git("add", "--", prefix, cwd=work)
+                    ov.git("add", "--", prefix, record, cwd=work)
                     refuse_build_configs(
                         changed_paths(work, "--cached", "HEAD", "--", prefix)
                     )
@@ -789,12 +794,15 @@ def sync_workspace(project: Path, directory: str):
                     )
                     ov.git("commit", "-m", message, cwd=work)
                 head = ov.git("rev-parse", "HEAD", cwd=work)
-                differs = ov.tree(work, tip, prefix) != ov.tree(work, head, prefix)
+                differs = any(
+                    ov.tree(work, tip, path) != ov.tree(work, head, path)
+                    for path in (prefix, ov.record_of(prefix))
+                )
                 if differs or pr:
                     final_paths = changed_paths(
                         work, ov.git("merge-base", tip, head, cwd=work), head
                     )
-                    if any(not name.startswith(prefix) for name in final_paths):
+                    if any(not ov.in_pair(name, prefix) for name in final_paths):
                         raise ov.SyncError(
                             "A hook or branch changed files outside the paper; nothing pushed."
                         )
@@ -885,7 +893,7 @@ def sync_workspace(project: Path, directory: str):
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
                     default_config = json.loads(
-                        ov.git("show", f"{tip}:{prefix}{ov.CONFIG}", cwd=work)
+                        ov.git("show", f"{tip}:{ov.record_of(prefix)}", cwd=work)
                     )
                     authors = credits(work, default_config, after["base"], prefix)
                     trailers = {f"Co-authored-by: {author}" for author in authors}

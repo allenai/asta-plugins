@@ -16,6 +16,9 @@ from uuid import uuid4
 import click
 
 CONFIG = "overleaf.json"
+# Pairing records live outside the paper so packaging the paper never ships one:
+# <workspace>/.asta/overleaf/<paper dir>.json, one per paired paper.
+RECORDS = ".asta/overleaf"
 RECOVERY = (
     "https://github.com/allenai/asta-plugins/blob/main/"
     "plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md"
@@ -584,8 +587,44 @@ def check_format(version, release, where: str) -> None:
         )
 
 
+def workspace_root(paper: Path) -> Path:
+    for path in (paper, *paper.parents):
+        if path.is_dir():
+            return Path(git("rev-parse", "--show-toplevel", cwd=path)).resolve()
+    raise SyncError(f"{paper} is not in a Git workspace.", recovery="paper-directory")
+
+
+def record_of(prefix: str) -> str:
+    """Workspace-relative record path for a paper prefix such as `paper/`."""
+    return f"{RECORDS}/{prefix.rstrip('/')}.json"
+
+
+def in_pair(name: str, prefix: str) -> bool:
+    """Whether a workspace path belongs to the paper or its pairing record."""
+    return name.startswith(prefix) or name == record_of(prefix)
+
+
+def tracked_record(root: Path, prefix: str, revision: str = "HEAD") -> bytes | None:
+    """The record's committed bytes, or None when the revision does not track it."""
+    entry = tree(root, revision, record_of(prefix)).get("")
+    if entry is None:
+        return None
+    if entry[0] != "100644":
+        refuse(record_of(prefix), "is executable, a symlink or a submodule")
+    return git_bytes("cat-file", "blob", entry[1], cwd=root)
+
+
+def record_name(root: Path, paper: Path) -> str:
+    return record_of(paper.resolve().relative_to(root).as_posix())
+
+
+def record_path(paper: Path) -> Path:
+    root = workspace_root(paper)
+    return root / record_name(root, paper)
+
+
 def load_config(paper: Path) -> dict:
-    path = paper / CONFIG
+    path = record_path(paper)
     if path.is_symlink():
         refuse(CONFIG, "is a symlink")
     if not path.exists():
@@ -612,10 +651,11 @@ def load_config(paper: Path) -> dict:
 
 
 def save_config(paper: Path, url: str, base: str) -> None:
-    path = paper / CONFIG
+    paper.mkdir(parents=True, exist_ok=True)
+    path = record_path(paper)
     if path.is_symlink():
         refuse(CONFIG, "is a symlink")
-    paper.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     # Read, validate and write the same file descriptor without truncating first.
     # O_NOFOLLOW also refuses a symlink substituted after the check above; using
     # the descriptor prevents a later substitution from redirecting the write.
@@ -966,7 +1006,7 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
     raise SyncError(
         f"Published Overleaf commit {pushed[:7]}, but could not confirm Overleaf's copy "
         "to record the sync point. Before publishing again, run `asta workspace "
-        "overleaf pull` and merge the resulting PR (it may change only paper/overleaf.json). "
+        "overleaf pull` and merge the resulting PR (it may change only the paper's .asta/overleaf record). "
         "If Overleaf history was reset, repair base using the recovery steps.",
         recovery="incomplete-publication",
     )
@@ -1008,7 +1048,7 @@ def record_publication(
         raise SyncError(
             f"Published Overleaf commit {overleaf[:7]}, but could not record it at "
             f"origin's {ref}. Before publishing again, run `asta workspace overleaf "
-            "pull` and merge the resulting PR (it may change only paper/overleaf.json).",
+            "pull` and merge the resulting PR (it may change only the paper's .asta/overleaf record).",
             recovery="incomplete-publication",
         ) from None
 
@@ -1020,20 +1060,26 @@ DEFAULT_DIR = "paper"
 dir_option = click.option(
     "--dir",
     "directory",
-    help="Paper directory. Default: the one paired by a tracked overleaf.json, else paper.",
+    help="Paper directory. Default: the one paired by a tracked .asta/overleaf record, else paper.",
 )
 
 
+def paired_directories(project: Path) -> list[str]:
+    """Paper directories paired by the workspace's tracked records, sorted."""
+    root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
+    names = git("ls-files", "-z", "--", f"{RECORDS}/", cwd=root).split("\0")
+    return sorted(
+        n[len(RECORDS) + 1 : -len(".json")]
+        for n in names
+        if n.startswith(f"{RECORDS}/") and n.endswith(".json")
+    )
+
+
 def paired_directory(project: Path, directory: str | None) -> str:
-    """Return --dir, else the directory paired by the workspace's tracked overleaf.json."""
+    """Return --dir, else the one paper the workspace's tracked records pair."""
     if directory is not None:
         return directory
-    root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
-    names = git("ls-files", "-z", "--", f"*{CONFIG}", cwd=root).split("\0")
-    found = sorted(
-        {Path(n).parent.as_posix() for n in names if n and Path(n).name == CONFIG}
-        - {"."}
-    )
+    found = paired_directories(project)
     if len(found) > 1:
         raise SyncError(
             "This workspace pairs more than one paper with Overleaf: "
@@ -1152,7 +1198,21 @@ def pull(url: str | None, directory: str | None, project: Path) -> None:
             if target.resolve() != target:
                 refuse(name, "passes through a symlink")
         # Git's index flags can hide edits from status; verify bytes we will replace.
-        for name in (new.keys() | deleted | {CONFIG}) & committed.keys():
+        record = root / record_of(prefix)
+        tracked = tracked_record(root, prefix)
+        if tracked is not None and (
+            not record.is_file() or record.read_bytes() != tracked
+        ):
+            raise SyncError(
+                f"Commit or discard local changes in {record_of(prefix)} first; nothing copied.",
+                recovery="local-changes",
+            )
+        if tracked is None and record.exists():
+            raise SyncError(
+                f"Commit or discard local changes in {record_of(prefix)} first; nothing copied.",
+                recovery="local-changes",
+            )
+        for name in (new.keys() | deleted) & committed.keys():
             target = paper / name
             if not target.is_file() or target.read_bytes() != committed[name]:
                 raise SyncError(
@@ -1166,15 +1226,15 @@ def pull(url: str | None, directory: str | None, project: Path) -> None:
                     "is a directory. Move the directory aside before pulling; nothing copied.",
                     recovery="path-collision",
                 )
-        for name in new.keys() | {CONFIG}:
+        for name in new:
             if name not in committed and (paper / name).exists():
                 raise SyncError(
                     f"Commit or discard local changes in {(paper / name).relative_to(root)} "
                     "first; nothing copied.",
                     recovery="local-changes",
                 )
-        require_visible(root, [paper / name for name in (*new, CONFIG)])
-        for name in (*new, CONFIG):
+        require_visible(root, [*(paper / name for name in new), record])
+        for name in new:
             for parent in (paper / name).parents:
                 if parent == root:
                     break
@@ -1296,24 +1356,27 @@ def publish(
                 "Check out the expected workspace commit; nothing pushed.",
                 recovery="default-branch-changed",
             )
-    require_visible(root, [paper / CONFIG])
+    record = root / record_of(prefix)
+    require_visible(root, [record])
     config = load_config(paper)
     if not config:
         raise SyncError(
-            f"No {CONFIG}; run `asta workspace overleaf pull <url>` first.",
+            f"No {record_of(prefix)}; run `asta workspace overleaf pull <url>` first.",
             recovery="paper-configuration",
         )
     require_clean(root, paper)
+    require_clean(root, record)
+    tracked = tracked_record(root, prefix)
     ours = read_plain_files(root, "HEAD", prefix)
-    if CONFIG not in ours:
+    if tracked is None:
         raise SyncError(
-            f"Commit {(paper / CONFIG).relative_to(root)} before publishing. "
+            f"Commit {record_of(prefix)} before publishing. "
             "The sync record must belong to the committed paper revision.",
             recovery="paper-configuration",
         )
-    if ours[CONFIG] != (paper / CONFIG).read_bytes():
+    if tracked != record.read_bytes():
         raise SyncError(
-            f"Commit or restore {(paper / CONFIG).relative_to(root)} before publishing. "
+            f"Commit or restore {record_of(prefix)} before publishing. "
             "The sync record differs from the committed revision.",
             recovery="paper-configuration",
         )
@@ -1499,12 +1562,18 @@ def sync(
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_sync import sync_workspace
 
-    directory = paired_directory(project, directory)
-    if check_repo is not None:
-        from .overleaf_gate import require_release_check
+    # Without --dir, sync every paired paper in turn so runners need no settings.
+    directories = (
+        [directory]
+        if directory is not None
+        else paired_directories(project) or [DEFAULT_DIR]
+    )
+    for directory in directories:
+        if check_repo is not None:
+            from .overleaf_gate import require_release_check
 
-        require_release_check(project, directory, check_repo, check_timeout)
-    sync_workspace(project, directory)
+            require_release_check(project, directory, check_repo, check_timeout)
+        sync_workspace(project, directory)
 
 
 @overleaf.command(name="check")
