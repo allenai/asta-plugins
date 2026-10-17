@@ -263,6 +263,10 @@ def setup(tmp_path, monkeypatch, request):
         ),
     )
     git(tmp_path, "init", "--bare", "-b", "master", str(remote))
+    # A push otherwise starts background auto-maintenance in the remote, whose
+    # repack can delete pack files while a local clone of it is copying them.
+    git(remote, "config", "receive.autogc", "false")
+    git(remote, "config", "maintenance.auto", "false")
     seed = tmp_path / "seed"
     git(tmp_path, "clone", str(remote), str(seed))
     (seed / "main.tex").write_text("hello\n")
