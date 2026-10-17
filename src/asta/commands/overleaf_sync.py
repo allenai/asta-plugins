@@ -394,11 +394,13 @@ def is_publication(
     root: Path, remote: Path, commit: str, message: str, prefix: str
 ) -> bool:
     source = ov.publish_source(message)
-    if source is None or ov.resolve_commit(root, source) is None:
+    if source is None:
         return False
     try:
+        if ov.resolve_commit(root, source) is None:
+            return False
         return ov.paper_files(remote, commit) == ov.paper_files(root, source, prefix)
-    except ov.SyncError:
+    except (ov.SyncError, ov.GitCommandError):
         # Unverifiable content is not evidence for dropping someone's credit.
         return False
 
@@ -413,6 +415,7 @@ def credits(root: Path, config: dict, new_base: str, prefix: str) -> list[str]:
         authors = set()
         for commit in commits.splitlines():
             # One response per commit: control characters in bodies cannot forge entries.
+            # Read actual Git authors, never infer identities from names or handles.
             entry = ov.git("show", "-s", "--format=%aN <%aE>%x00%B", commit, cwd=remote)
             author, _, message = entry.partition("\0")
             if is_publication(root, remote, commit, message, prefix):
