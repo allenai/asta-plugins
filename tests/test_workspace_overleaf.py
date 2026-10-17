@@ -20,6 +20,13 @@ CONFLICT_EXIT = module.CONFLICT_EXIT
 URL = "https://git.overleaf.com/1234567"
 
 
+def _record(paper):
+    """The pairing record for a paper directory directly under the workspace."""
+    path = paper.parent / ".asta/overleaf" / f"{paper.name}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def git(cwd, *args):
     return subprocess.run(
         ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
@@ -423,7 +430,7 @@ def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
         seed / "references.bib"
     ).read_bytes()
     assert (project / "references.bib").read_text() == "@misc{root}\n"
-    config = json.loads((paper / "overleaf.json").read_text())
+    config = json.loads(_record(paper).read_text())
     assert config == {
         "format": module.FORMAT,
         "requires_asta": module.FORMAT_RELEASE,
@@ -604,7 +611,7 @@ def test_pull_rename_preserves_files_or_refuses_existing_alias(
         assert not (paper / old).exists()
         assert (paper / new).read_bytes() == (seed / new).read_bytes()
         assert (paper / "main.tex").read_bytes() == (seed / "main.tex").read_bytes()
-        assert json.loads((paper / "overleaf.json").read_text())["base"] == git(
+        assert json.loads(_record(paper).read_text())["base"] == git(
             seed, "rev-parse", "HEAD"
         )
 
@@ -846,7 +853,7 @@ def test_publish_honors_workspace_pre_push_failure(setup, dry_run):
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
-    before = (project / "paper/overleaf.json").read_bytes()
+    before = (project / ".asta/overleaf/paper.json").read_bytes()
     remote_before = git(seed, "rev-parse", "origin/master")
     hooks = project / "hooks"
     hooks.mkdir()
@@ -858,7 +865,7 @@ def test_publish_honors_workspace_pre_push_failure(setup, dry_run):
     assert (result.exit_code == 0) == dry_run, result.output
     if not dry_run:
         assert "Also check workspace pre-push hooks" in result.output
-    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before
     assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
 
 
@@ -903,7 +910,7 @@ def test_publish_honors_workspace_hook_failure(setup, dry_run):
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
-    before = (project / "paper/overleaf.json").read_bytes()
+    before = (project / ".asta/overleaf/paper.json").read_bytes()
     remote_before = git(seed, "rev-parse", "origin/master")
     hook = project / ".git/hooks/pre-commit"
     hook.write_text("#!/bin/sh\nexit 1\n")
@@ -913,7 +920,7 @@ def test_publish_honors_workspace_hook_failure(setup, dry_run):
     if not dry_run:
         assert "commit hooks and signing settings" in result.output
         assert "not the full workspace" in result.output
-    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before
     assert git(seed, "ls-remote", "origin", "master").split()[0] == remote_before
 
 
@@ -1122,13 +1129,13 @@ def test_pull_handles_committed_workspace_modify_delete_and_text_conflicts(
     commit_all(project)
     (project / "paper/main.tex").write_text("reviewed workspace edit\n")
     commit_all(project)
-    before = (project / "paper/overleaf.json").read_bytes()
+    before = (project / ".asta/overleaf/paper.json").read_bytes()
     overleaf_edit(seed, "main.tex", remote_text)
     result = run(project, "pull")
     if remote_text is None:
         assert result.exit_code != 0 and "disagree on whether main.tex" in result.output
         assert (project / "paper/main.tex").read_text() == "reviewed workspace edit\n"
-        assert (project / "paper/overleaf.json").read_bytes() == before
+        assert (project / ".asta/overleaf/paper.json").read_bytes() == before
         assert not git(project, "status", "--porcelain")
         return
     assert result.exit_code == CONFLICT_EXIT, result.output
@@ -1161,7 +1168,7 @@ def test_pull_refuses_initial_import_over_existing_source(setup):
     assert result.exit_code != 0
     assert "main.tex was added independently on both sides" in result.output
     assert (project / "paper/main.tex").read_text() == "existing paper\n"
-    assert not (project / "paper/overleaf.json").exists()
+    assert not (project / ".asta/overleaf/paper.json").exists()
 
 
 def test_pull_refuses_directory_case_collision(setup):
@@ -1288,12 +1295,12 @@ def test_pull_refuses_ignored_symlink_destination(setup):
 def test_pull_refuses_ignored_symlink_config(setup):
     _, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    config = project / "paper/overleaf.json"
+    config = project / ".asta/overleaf/paper.json"
     outside = project.parent / "outside.json"
     outside.write_bytes(config.read_bytes())
     config.unlink()
     os.symlink(outside, config)
-    git(project, "rm", "--cached", "--ignore-unmatch", "paper/overleaf.json")
+    git(project, "rm", "--cached", "--ignore-unmatch", ".asta/overleaf/paper.json")
     (project / ".gitignore").write_text("/paper/overleaf.json\n")
     commit_all(project)
     before = outside.read_bytes()
@@ -1358,7 +1365,7 @@ def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting, dry_
         git(project, "config", "--file", str(config), "core.hooksPath", str(hooks))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     before = git(seed, "ls-remote", "origin", "master")
-    metadata = (project / "paper/overleaf.json").read_bytes()
+    metadata = (project / ".asta/overleaf/paper.json").read_bytes()
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     if setting == "hook" and dry_run:
         assert (
@@ -1369,7 +1376,7 @@ def test_publish_refuses_git_content_rewriting(setup, monkeypatch, setting, dry_
         return
     assert result.exit_code != 0 and "nothing pushed" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
-    assert (project / "paper/overleaf.json").read_bytes() == metadata
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == metadata
     assert source.read_bytes() == b"reviewed\r\n"
 
 
@@ -1391,7 +1398,7 @@ def test_pull_refuses_ignored_imports_before_deleting_or_updating(setup, ignore_
         excludes = project.parent / "excludes"
         excludes.write_text(pattern)
         git(project, "config", "core.excludesFile", str(excludes))
-    before = (project / "paper/overleaf.json").read_bytes()
+    before = (project / ".asta/overleaf/paper.json").read_bytes()
     overleaf_edit(seed, "old.tex", None)
     overleaf_edit(seed, "figure.png", "remote figure\n")
     result = run(project, "pull")
@@ -1399,11 +1406,11 @@ def test_pull_refuses_ignored_imports_before_deleting_or_updating(setup, ignore_
     assert "Adjust the ignore rules" in result.output
     assert not (project / "paper/figure.png").exists()
     assert (project / "paper/old.tex").read_text() == "old\n"
-    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before
     assert not git(project, "status", "--porcelain")
 
 
-@pytest.mark.parametrize("pattern", ["/paper/", "/paper/overleaf.json"])
+@pytest.mark.parametrize("pattern", ["/paper/", "/.asta/overleaf/paper.json"])
 def test_pull_refuses_ignored_first_import_and_metadata(setup, pattern):
     _, project = setup
     (project / ".gitignore").write_text(pattern + "\n")
@@ -1610,12 +1617,12 @@ def test_pull_after_publish_starts_from_published_commit(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    record = (project / "paper/overleaf.json").read_bytes()
+    record = (project / ".asta/overleaf/paper.json").read_bytes()
     (project / "paper/main.tex").write_text("reviewed edit\n")
     commit_all(project)
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
-    assert (project / "paper/overleaf.json").read_bytes() == record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == record
     assert not git(project, "status", "--porcelain")
     published_source = git(project, "rev-parse", "HEAD")
     git(seed, "pull", "-q", "origin", "master")
@@ -1699,7 +1706,7 @@ def test_pull_into_older_checkout_imports_published_edits(setup, followup, local
         else (project / "paper/references.bib").read_bytes()
     )
     assert (
-        json.loads((stale / "paper/overleaf.json").read_text())["base"] == remote_head
+        json.loads((stale / ".asta/overleaf/paper.json").read_text())["base"] == remote_head
     )
     assert git(stale, "diff", "--", "paper/main.tex")
     assert git(stale, "show-ref") == before_refs
@@ -1794,7 +1801,7 @@ def test_unrecognized_git_integration_history_requires_pull_and_review(setup, re
         git(seed, "reset", "--hard", version)
     git(seed, "push", "-q", "--force", "origin", "HEAD:master")
     before_remote = git(seed, "ls-remote", "origin", "master")
-    before_record = (project / "paper/overleaf.json").read_bytes()
+    before_record = (project / ".asta/overleaf/paper.json").read_bytes()
 
     result = run(project, "publish")
 
@@ -1803,13 +1810,13 @@ def test_unrecognized_git_integration_history_requires_pull_and_review(setup, re
         assert "Overleaf sync record not used" in result.output
     assert "Overleaf has changed" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before_remote
-    assert (project / "paper/overleaf.json").read_bytes() == before_record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before_record
     assert not git(project, "status", "--porcelain")
     pulled = run(project, "pull")
     assert pulled.exit_code == 0, pulled.output
     assert (project / "paper/main.tex").read_text() == "reviewed publication\n"
-    assert git(project, "diff", "--name-only") == "paper/overleaf.json"
-    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
+    assert git(project, "diff", "--name-only") == ".asta/overleaf/paper.json"
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == git(
         seed, "rev-parse", "HEAD"
     )
 
@@ -1852,7 +1859,7 @@ def test_shallow_sync_accepts_record_source_at_default_tip(
     assert git(shallow, "show-ref") == before_refs
     assert (fetch_head.read_bytes() if fetch_head.exists() else None) == before_fetch
     assert git(shallow, "diff", "--name-only") == (
-        "paper/overleaf.json" if command == "pull" and published else ""
+        ".asta/overleaf/paper.json" if command == "pull" and published else ""
     )
     assert git(shallow, "status", "--porcelain") == (
         "M paper/overleaf.json" if command == "pull" and published else ""
@@ -1868,7 +1875,7 @@ def test_sync_refuses_incomplete_shallow_record_verification(
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     original = (project / "paper/main.tex").read_bytes()
-    config = (project / "paper/overleaf.json").read_bytes()
+    config = (project / ".asta/overleaf/paper.json").read_bytes()
     (project / "paper/main.tex").write_text("reviewed publication\n")
     commit_all(project)
     assert run(project, "publish").exit_code == 0
@@ -1926,9 +1933,9 @@ def test_sync_refuses_incomplete_shallow_record_verification(
     assert retried.exit_code == 0, retried.output
     assert (shallow / "paper/main.tex").read_bytes() == original
     if command == "pull":
-        assert git(shallow, "diff", "--name-only") == "paper/overleaf.json"
+        assert git(shallow, "diff", "--name-only") == ".asta/overleaf/paper.json"
     else:
-        assert (shallow / "paper/overleaf.json").read_bytes() == config
+        assert (shallow / ".asta/overleaf/paper.json").read_bytes() == config
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
@@ -1990,7 +1997,7 @@ def test_pull_refuses_hidden_checkout_ancestry_even_when_record_is_reviewed(
     retried = run(shallow, "pull", merge=False)
     assert retried.exit_code == 0, retried.output
     assert (shallow / "paper/main.tex").read_bytes() == original
-    assert git(shallow, "diff", "--name-only") == "paper/overleaf.json"
+    assert git(shallow, "diff", "--name-only") == ".asta/overleaf/paper.json"
 
 
 @pytest.mark.parametrize("style", ["merge", "diff3", "zdiff3"])
@@ -2115,13 +2122,13 @@ def test_bibliography_refuses_edit_deleted_on_overleaf(setup):
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/references.bib").write_text("@misc{workspace_edit}\n")
     commit_all(project)
-    before = (project / "paper/overleaf.json").read_bytes()
+    before = (project / ".asta/overleaf/paper.json").read_bytes()
     overleaf_edit(seed, "references.bib", None)
     result = run(project, "pull")
     assert result.exit_code != 0
     assert "disagree on whether references.bib exists" in result.output
     assert (project / "paper/references.bib").read_text() == "@misc{workspace_edit}\n"
-    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before
 
 
 def test_pull_imports_collaborator_bibliography_updates(setup):
@@ -2182,11 +2189,11 @@ def test_publish_refuses_paper_ignore_rules_before_pushing(setup, name):
     path.write_text("*.aux\n")
     commit_all(project)
     before = git(seed, "ls-remote", "origin", "master")
-    record = (project / "paper/overleaf.json").read_bytes()
+    record = (project / ".asta/overleaf/paper.json").read_bytes()
     result = run(project, "publish")
     assert result.exit_code != 0 and ".gitignore" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
-    assert (project / "paper/overleaf.json").read_bytes() == record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == record
 
 
 def test_publish_then_pull_with_workspace_ignore_rules(setup):
@@ -2210,7 +2217,7 @@ def test_pull_refuses_overleaf_file_replacing_workspace_directory(setup):
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
     paper = project / "paper"
-    record = (paper / "overleaf.json").read_bytes()
+    record = _record(paper).read_bytes()
     git(seed, "rm", "-r", "-q", "nested")
     (seed / "nested").write_text("now a file\n")
     commit_all(seed)
@@ -2218,7 +2225,7 @@ def test_pull_refuses_overleaf_file_replacing_workspace_directory(setup):
     result = run(project, "pull")
     assert result.exit_code != 0 and "Move the directory aside" in result.output
     assert (paper / "nested/figure.tex").read_text() == "figure\n"
-    assert (paper / "overleaf.json").read_bytes() == record
+    assert _record(paper).read_bytes() == record
 
 
 def test_pull_empty_remote_commit(setup):
@@ -2228,7 +2235,7 @@ def test_pull_empty_remote_commit(setup):
     git(seed, "push", "-q", "origin", "master")
     result = run(project, "pull", URL)
     assert result.exit_code == 0, result.output
-    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == git(
         seed, "rev-parse", "HEAD"
     )
 
@@ -2242,14 +2249,14 @@ def test_sync_reports_invalid_metadata(setup, text, command, monkeypatch):
     _, project = setup
     paper = project / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text(text)
+    _record(paper).write_text(text)
     commit_all(project)
     monkeypatch.setattr(module, "clone", lambda *a: pytest.fail("must not clone"))
     result = run(project, command)
     assert result.exit_code == 1
     assert (
         "Invalid sync record" in result.output
-        and "paper/overleaf.json" in result.output
+        and ".asta/overleaf/paper.json" in result.output
     )
     assert not git(project, "status", "--porcelain")
 
@@ -2274,11 +2281,11 @@ def test_publish_refuses_ignored_untracked_sync_record(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    git(project, "rm", "--cached", "paper/overleaf.json")
+    git(project, "rm", "--cached", ".asta/overleaf/paper.json")
     (project / ".gitignore").write_text("paper/overleaf.json\n")
     commit_all(project)
     overleaf_edit(seed, "main.tex", "newer Overleaf content\n")
-    path = project / "paper/overleaf.json"
+    path = project / ".asta/overleaf/paper.json"
     record = json.loads(path.read_text())
     record["base"] = git(seed, "rev-parse", "HEAD")
     path.write_text(json.dumps(record))
@@ -2354,20 +2361,20 @@ def test_publish_requires_configured_identity(setup, monkeypatch, dry_run):
         for field in ("NAME", "EMAIL"):
             monkeypatch.delenv(f"GIT_{role}_{field}")
     before = git(seed, "ls-remote", "origin", "master")
-    record = (project / "paper/overleaf.json").read_bytes()
+    record = (project / ".asta/overleaf/paper.json").read_bytes()
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert (
         result.exit_code != 0
         and "Configure Git user.name and user.email" in result.output
     )
     assert git(seed, "ls-remote", "origin", "master") == before
-    assert (project / "paper/overleaf.json").read_bytes() == record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == record
 
 
 def test_pull_reports_unavailable_base_before_modifying_sources(setup):
     _, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    path = project / "paper/overleaf.json"
+    path = project / ".asta/overleaf/paper.json"
     config = json.loads(path.read_text())
     config["base"] = "0" * 40
     path.write_text(json.dumps(config))
@@ -2454,8 +2461,8 @@ def test_publish_refuses_record_hidden_by_index_flags(setup):
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
     overleaf_edit(seed, "main.tex", "new remote revision\n")
-    git(project, "update-index", "--assume-unchanged", "paper/overleaf.json")
-    record = project / "paper/overleaf.json"
+    git(project, "update-index", "--assume-unchanged", ".asta/overleaf/paper.json")
+    record = project / ".asta/overleaf/paper.json"
     config = json.loads(record.read_text())
     config["base"] = git(seed, "rev-parse", "HEAD")
     record.write_text(json.dumps(config))
@@ -2483,7 +2490,7 @@ def test_publish_refuses_source_changes_hidden_by_index_flags(
     else:
         source.write_text(local_edit)
     assert git(project, "status", "--porcelain") == ""
-    record = (project / "paper/overleaf.json").read_bytes()
+    record = (project / ".asta/overleaf/paper.json").read_bytes()
     before = git(seed, "ls-remote", "origin", "master")
     monkeypatch.setattr(
         module, "clone", lambda *args: pytest.fail("must refuse before transport")
@@ -2492,7 +2499,7 @@ def test_publish_refuses_source_changes_hidden_by_index_flags(
     assert result.exit_code != 0 and "local changes" in result.output
     assert "paper/main.tex" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
-    assert (project / "paper/overleaf.json").read_bytes() == record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == record
     if local_edit is None:
         assert not source.exists()
     else:
@@ -2543,12 +2550,12 @@ def test_pull_preserves_local_edits_hidden_by_index_flags(setup, flag, remote_ed
     git(project, "update-index", flag, "paper/main.tex")
     source.write_text("uncommitted local edits\n")
     assert git(project, "status", "--porcelain") == ""
-    record = (project / "paper/overleaf.json").read_bytes()
+    record = (project / ".asta/overleaf/paper.json").read_bytes()
     overleaf_edit(seed, "main.tex", remote_edit)
     result = run(project, "pull")
     assert result.exit_code != 0 and "local changes" in result.output
     assert source.read_text() == "uncommitted local edits\n"
-    assert (project / "paper/overleaf.json").read_bytes() == record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == record
     assert (project / "paper/old.tex").read_text() == "old\n"
 
 
@@ -2556,8 +2563,8 @@ def test_pull_preserves_sync_record_hidden_by_index_flags(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    git(project, "update-index", "--assume-unchanged", "paper/overleaf.json")
-    record = project / "paper/overleaf.json"
+    git(project, "update-index", "--assume-unchanged", ".asta/overleaf/paper.json")
+    record = project / ".asta/overleaf/paper.json"
     record.write_bytes(record.read_bytes() + b" \n")
     before = record.read_bytes()
     overleaf_edit(seed, "main.tex", "remote update\n")
@@ -2579,7 +2586,7 @@ def test_pull_allows_unrelated_update_after_workspace_deletes_and_ignores_file(s
     assert result.exit_code == 0, result.output
     assert not (project / "paper/old.tex").exists()
     assert (project / "paper/main.tex").read_text() == "unrelated Overleaf update\n"
-    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == git(
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == git(
         seed, "rev-parse", "HEAD"
     )
 
@@ -2606,11 +2613,11 @@ def test_publish_refuses_empty_export_without_changing_remote(setup, dry_run):
     for name in ("main.tex", "old.tex", "references.bib"):
         git(project, "rm", f"paper/{name}")
     commit_all(project)
-    before = (project / "paper/overleaf.json").read_bytes()
+    before = (project / ".asta/overleaf/paper.json").read_bytes()
     remote_before = git(seed, "ls-remote", "origin", "master")
     result = run(project, "publish", *(["--dry-run"] if dry_run else []))
     assert result.exit_code != 0 and "empty paper" in result.output
-    assert (project / "paper/overleaf.json").read_bytes() == before
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before
     assert git(seed, "ls-remote", "origin", "master") == remote_before
 
 
@@ -2698,7 +2705,7 @@ def test_local_latex_build_does_not_block_pull_or_publish(setup):
     result = run(project, "pull")
     assert result.exit_code == 0, result.output
     assert (paper / "main.tex").read_text() == "collaborator\n"
-    git(project, "add", "--", "paper/main.tex", "paper/overleaf.json")
+    git(project, "add", "--", "paper/main.tex", ".asta/overleaf/paper.json")
     git(project, "commit", "-q", "-m", "sync")
     (paper / "main.tex").write_text("reviewed\n")
     git(project, "add", "--", "paper/main.tex")
@@ -2750,21 +2757,21 @@ def test_publish_pdf_asset_requires_commit_even_with_matching_tex(setup):
     git(seed, "pull", "-q", "origin", "master")
     assert not (seed / "figure.pdf").exists()
     assert asset.read_bytes() == b"paper figure asset\n"
-    git(project, "add", "--", "paper/figure.pdf", "paper/overleaf.json")
+    git(project, "add", "--", "paper/figure.pdf", ".asta/overleaf/paper.json")
     git(project, "commit", "-q", "-m", "include reviewed figure")
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
     git(seed, "pull", "-q", "origin", "master")
     assert (seed / "figure.pdf").read_bytes() == asset.read_bytes()
     assert not git(project, "status", "--porcelain")
-    before_record = (paper / "overleaf.json").read_bytes()
+    before_record = _record(paper).read_bytes()
     before_remote = git(seed, "rev-parse", "HEAD")
     asset.write_bytes(b"unreviewed figure change\n")
     result = run(project, "publish")
     assert result.exit_code != 0
     assert "local changes" in result.output
     assert git(seed, "ls-remote", "origin", "master").split()[0] == before_remote
-    assert (paper / "overleaf.json").read_bytes() == before_record
+    assert _record(paper).read_bytes() == before_record
     assert (seed / "figure.pdf").read_bytes() == b"paper figure asset\n"
 
 
@@ -2879,7 +2886,7 @@ def test_untracked_build_suffix_assets_require_commit_for_export(setup, name):
     assert result.exit_code == 0, result.output
     assert asset.read_bytes() == b"paper asset\n"
     assert not (seed / name).exists()
-    git(project, "add", "--", "paper/overleaf.json", f"paper/{name}")
+    git(project, "add", "--", ".asta/overleaf/paper.json", f"paper/{name}")
     git(project, "commit", "-q", "-m", "review asset")
     result = run(project, "publish")
     assert result.exit_code == 0, result.output
@@ -2895,7 +2902,7 @@ def test_workspace_only_hook_config_failure_explains_export_layout(setup):
     commit_all(project)
     (project / ".pre-commit-config.yaml").write_text("repos: []\n")
     commit_all(project)
-    before_record = (project / "paper/overleaf.json").read_bytes()
+    before_record = (project / ".asta/overleaf/paper.json").read_bytes()
     before_remote = git(seed, "ls-remote", "origin", "master")
     hook = project / ".git/hooks/pre-commit"
     hook.write_text("#!/bin/sh\ntest -f .pre-commit-config.yaml\n")
@@ -2904,7 +2911,7 @@ def test_workspace_only_hook_config_failure_explains_export_layout(setup):
     assert result.exit_code != 0
     assert "commit hooks and signing settings" in result.output
     assert "exported paper directory, not the full workspace" in result.output
-    assert (project / "paper/overleaf.json").read_bytes() == before_record
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before_record
     assert git(seed, "ls-remote", "origin", "master") == before_remote
 
 
@@ -3018,7 +3025,7 @@ def test_pull_recognizes_publications_with_equivalent_url(setup, url, url_locati
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("published paper\n")
     if url_location == "record":
-        record = project / "paper/overleaf.json"
+        record = project / ".asta/overleaf/paper.json"
         record.write_text(record.read_text().replace(URL, url))
     commit_all(project)
     assert run(project, "publish").exit_code == 0
@@ -3151,13 +3158,13 @@ def test_publish_records_sync_point_on_workspace_origin(setup, tmp_path):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    record = (project / "paper/overleaf.json").read_bytes()
+    record = (project / ".asta/overleaf/paper.json").read_bytes()
     for text in ("first publication\n", "second publication\n"):
         (project / "paper/main.tex").write_text(text)
         commit_all(project)
         result = run(project, "publish")
         assert result.exit_code == 0, result.output
-        assert (project / "paper/overleaf.json").read_bytes() == record
+        assert (project / ".asta/overleaf/paper.json").read_bytes() == record
         assert not git(project, "status", "--porcelain")
         commit, data = origin_record(tmp_path)
         assert data == {
@@ -3259,7 +3266,7 @@ def test_publish_records_its_commit_before_a_concurrent_overleaf_edit(
         (project / "paper/main.tex").write_text("first publication\n")
         commit_all(project)
         assert run(project, "publish").exit_code == 0
-    before_config = (project / "paper/overleaf.json").read_bytes()
+    before_config = (project / ".asta/overleaf/paper.json").read_bytes()
     (project / "paper/main.tex").write_text("published paper\n")
     commit_all(project)
     expected = git(project, "rev-parse", "HEAD")
@@ -3287,7 +3294,7 @@ def test_publish_records_its_commit_before_a_concurrent_overleaf_edit(
     }
     assert remote_head != pushed
     assert git(seed, "rev-parse", f"{remote_head}^") == pushed
-    assert (project / "paper/overleaf.json").read_bytes() == before_config
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == before_config
     assert not git(project, "status", "--porcelain")
     assert not git(project, "for-each-ref", "refs/asta")
 
@@ -3300,7 +3307,7 @@ def test_publish_records_its_commit_before_a_concurrent_overleaf_edit(
     assert (project / "paper/main.tex").read_text() == (
         "collaborator edit after publication\n"
     )
-    assert json.loads((project / "paper/overleaf.json").read_text())["base"] == (
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == (
         remote_head
     )
 
@@ -3317,7 +3324,7 @@ def test_publish_does_not_record_same_tree_history_reset(
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    config = (project / "paper/overleaf.json").read_bytes()
+    config = (project / ".asta/overleaf/paper.json").read_bytes()
     base = json.loads(config)["base"]
     if already_published:
         (project / "paper/main.tex").write_text("first publication\n")
@@ -3345,7 +3352,7 @@ def test_publish_does_not_record_same_tree_history_reset(
         in result.output
     )
     assert git(origin, "for-each-ref", RECORD_REF) == before_record
-    assert (project / "paper/overleaf.json").read_bytes() == config
+    assert (project / ".asta/overleaf/paper.json").read_bytes() == config
     assert not git(project, "status", "--porcelain")
     # The Overleaf push succeeded; only confirmation and recording are refused.
     git(seed, "fetch", "origin", "master")
@@ -3373,7 +3380,7 @@ def test_record_push_failure_explains_recovery(setup, tmp_path):
     assert "Overleaf has changed" in run(project, "publish").output
     pulled = run(project, "pull")
     assert pulled.exit_code == 0, pulled.output
-    assert git(project, "diff", "--name-only") == "paper/overleaf.json"
+    assert git(project, "diff", "--name-only") == ".asta/overleaf/paper.json"
     commit_all(project)
     (project / "paper/main.tex").write_text("next\n")
     commit_all(project)
@@ -3665,7 +3672,7 @@ def test_invalid_historical_config_can_be_restored_in_a_new_commit(
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    path = project / "paper/overleaf.json"
+    path = project / ".asta/overleaf/paper.json"
     original = path.read_text()
     config = json.loads(original)
     if legacy == "short-base":
@@ -3693,7 +3700,7 @@ def test_relink_accepts_conflict_resolved_with_workspace_text(setup, gap):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
-    path = project / "paper/overleaf.json"
+    path = project / ".asta/overleaf/paper.json"
     config = json.loads(path.read_text())
     (project / "paper/main.tex").write_text("chosen workspace resolution\n")
     commit_all(project)
@@ -3735,7 +3742,7 @@ def test_pull_uses_counting_record_when_committed_base_is_unusable(setup, missin
         git(seed, "push", "origin", "unrelated")
         git(seed, "switch", "master")
         git(seed, "pull", "--ff-only", "origin", "master")
-    path = project / "paper/overleaf.json"
+    path = project / ".asta/overleaf/paper.json"
     config = json.loads(path.read_text())
     path.write_text(json.dumps({**config, "base": base}))
     commit_all(project)
@@ -3755,7 +3762,7 @@ def newer_format():
 def test_older_cli_stops_on_newer_config_format(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    config = project / "paper/overleaf.json"
+    config = project / ".asta/overleaf/paper.json"
     data = json.loads(config.read_text())
     config.write_text(json.dumps({**data, **newer_format(), "base": None}))
     commit_all(project)
@@ -3773,7 +3780,7 @@ def test_older_cli_stops_on_newer_config_format(setup):
 def test_newer_format_without_release_still_stops(setup):
     _, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    config = project / "paper/overleaf.json"
+    config = project / ".asta/overleaf/paper.json"
     data = json.loads(config.read_text())
     config.write_text(json.dumps({**data, "format": 99, "requires_asta": "$(x)"}))
     result = run(project, "pull")
@@ -3784,7 +3791,7 @@ def test_newer_format_without_release_still_stops(setup):
 def test_unversioned_config_reads_as_format_one_without_rewrite(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    config = project / "paper/overleaf.json"
+    config = project / ".asta/overleaf/paper.json"
     data = json.loads(config.read_text())
     legacy = json.dumps({"url": data["url"], "base": data["base"]}, indent=2) + "\n"
     config.write_text(legacy)
@@ -3958,7 +3965,7 @@ def test_save_config_refuses_invalid_format_without_overwriting(
 def test_null_config_format_refuses_before_copying_or_publishing(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    config = project / "paper/overleaf.json"
+    config = project / ".asta/overleaf/paper.json"
     data = json.loads(config.read_text())
     config.write_text(json.dumps({**data, "format": None}))
     commit_all(project)

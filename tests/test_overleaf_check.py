@@ -203,10 +203,10 @@ def test_url_variants_use_the_sync_lock_and_branch(scratch, monkeypatch, url):
     import json
 
     for repo in (project,):
-        path = repo / "paper/overleaf.json"
+        path = repo / ".asta/overleaf/paper.json"
         config = json.loads(path.read_text())
         path.write_text(json.dumps(dict(config, url=url)) + "\n")
-        git(repo, "add", "paper/overleaf.json")
+        git(repo, "add", ".asta/overleaf/paper.json")
         git(repo, "commit", "-m", "Pair URL spelling")
         git(repo, "push", "origin", "HEAD:main")
     held = "refs/asta/overleaf-sync-lock/check-1234567"

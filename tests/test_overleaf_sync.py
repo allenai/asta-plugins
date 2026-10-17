@@ -18,6 +18,13 @@ from tests.test_workspace_overleaf import setup as setup  # noqa: F401
 sync = importlib.import_module("asta.commands.overleaf_sync")
 
 
+def _record(paper):
+    """The pairing record for a paper directory directly under the workspace."""
+    path = paper.parent / ".asta/overleaf" / f"{paper.name}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 @pytest.fixture
 def github(monkeypatch):
     state = {"prs": [], "issues": [], "merges": [], "writes": 0, "calls": []}
@@ -263,9 +270,9 @@ def test_shared_check_refuses_paper_markers_before_render(tmp_path, marker):
     git(tmp_path, "init", "-b", "main")
     paper = tmp_path / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text(json.dumps({"url": URL, "base": "0" * 40}))
+    _record(paper).write_text(json.dumps({"url": URL, "base": "0" * 40}))
     (paper / "main.tex").write_text(marker + "\n")
-    git(tmp_path, "add", "paper/overleaf.json", "paper/main.tex")
+    git(tmp_path, "add", ".asta/overleaf/paper.json", "paper/main.tex")
     script = (
         Path(__file__).parents[1]
         / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
@@ -568,7 +575,7 @@ def test_missing_branch_configuration_reports_refusal(setup, github, tmp_path):
     dest = tmp_path / "human"
     git(project, "clone", str(project.parent / "workspace.git"), str(dest))
     git(dest, "checkout", "asta/overleaf-sync/1234567")
-    git(dest, "rm", "paper/overleaf.json")
+    git(dest, "rm", ".asta/overleaf/paper.json")
     git(dest, "commit", "-m", "remove config")
     git(dest, "push", "origin", "HEAD:asta/overleaf-sync/1234567")
     result = invoke(project)
@@ -636,9 +643,9 @@ def test_marker_checks_agree_for_crlf_markdown_and_assets(
     git(tmp_path, "init", "-b", "main")
     paper = tmp_path / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text(json.dumps({"url": URL, "base": "0" * 40}))
+    _record(paper).write_text(json.dumps({"url": URL, "base": "0" * 40}))
     (paper / filename).write_bytes(data)
-    git(tmp_path, "add", "paper/overleaf.json", "paper/" + filename)
+    git(tmp_path, "add", ".asta/overleaf/paper.json", "paper/" + filename)
     git(tmp_path, "commit", "-m", "fixture")
     assert bool(sync.conflict_files(tmp_path, "paper/")) == blocked
     script = (
@@ -669,7 +676,7 @@ def test_shared_check_handles_non_utf8_paths(tmp_path):
     git(tmp_path, "init", "-b", "main")
     paper = tmp_path / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text("{}")
+    _record(paper).write_text("{}")
     name = os.fsencode(paper) + b"/odd-\xff.tex"
     with open(name, "wb") as stream:
         stream.write(b"=======\r\n")
@@ -741,7 +748,7 @@ def test_shared_check_never_follows_symlinks_out_of_checkout(tmp_path, linked):
     paper = repo / "paper"
     (paper / "sub").mkdir(parents=True)
     git(repo, "init", "-b", "main")
-    (paper / "overleaf.json").write_text("{}")
+    _record(paper).write_text("{}")
     if linked == "file":
         (paper / "main.tex").symlink_to(outside / "main.tex")
     else:
@@ -763,7 +770,7 @@ def test_shared_check_streams_long_lines(tmp_path):
     git(tmp_path, "init", "-b", "main")
     paper = tmp_path / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text("{}")
+    _record(paper).write_text("{}")
     (paper / "main.tex").write_bytes(b"x" * 200_000 + b"<<<<<<< not a line start\n")
     (paper / "refs.bib").write_bytes(b"y" * 200_000 + b"\n>>>>>>> theirs\n")
     git(tmp_path, "add", "--", "paper")
