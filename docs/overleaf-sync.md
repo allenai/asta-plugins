@@ -138,21 +138,34 @@ the paper source. For example, `paper/` uses `.asta/overleaf/paper.json` and
 `examples/paper/` uses `.asta/overleaf/examples/paper.json`.
 
 The former `<paper dir>/overleaf.json` location is no longer read; there is no
-automatic migration or compatibility lookup. Before running this release,
-move and commit each existing pairing without changing its contents:
+automatic migration or compatibility lookup. Pause scheduled sync on **every
+runner** for the workspace and upgrade them all to the release supporting the
+new location before merging the move. An older CLI cannot discover the moved
+record, even if its contents carry a format stamp, and must not run against a
+migrated workspace.
+
+Move each existing pairing without changing its contents. Repeat these commands
+for each paired paper, including nested directories:
 
 ```sh
-paper_dir=paper  # repeat for each paired paper, including nested directories
+paper_dir=paper
 record=".asta/overleaf/${paper_dir}.json"
 mkdir -p "$(dirname "$record")"
 git mv "$paper_dir/overleaf.json" "$record"
+```
+
+Then commit all the moves together:
+
+```sh
 git commit -m "Move Overleaf pairing record out of the paper directory"
 ```
 
-Merge the move before the next scheduled sync uses the new release. Until then,
+Merge the move, then resume sync using only the upgraded runners. Until then,
 the workspace is treated as unpaired. Without `--dir`, `sync` processes every
-paired paper in turn; `pull` and `publish` require `--dir` when several records
-are tracked.
+paired paper in turn, continuing after a paper fails and exiting nonzero after
+reporting all failures. `pull` and `publish` require `--dir` when several records
+are tracked. A paper file named `overleaf.json` is ordinary source content;
+it is not filtered from pull or publish.
 
 ## Shared format and releases
 

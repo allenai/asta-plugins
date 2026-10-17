@@ -144,6 +144,22 @@ def test_discovery_finds_single_documentclass_file_without_main_tex(tmp_path):
     )
 
 
+def test_discovery_does_not_treat_symlinked_record_as_pairing(tmp_path):
+    paper = tmp_path / "synced"
+    paper.mkdir()
+    (paper / "main.tex").write_text(r"\documentclass{article}")
+    record = tmp_path / ".asta/overleaf/synced.json"
+    record.parent.mkdir(parents=True)
+    source = tmp_path / "unrelated.json"
+    source.write_text("{}")
+    record.symlink_to(source)
+
+    assert discover(tmp_path)["papers"] == []
+    record.unlink()
+    record.write_text("{}")
+    assert discover(tmp_path)["papers"] == ["synced"]
+
+
 def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):
     git(tmp_path, "init", "-q")
     git(tmp_path, "config", "user.email", "test@example.invalid")

@@ -1098,7 +1098,7 @@ def test_record_fallback_is_retained_and_reported_once(setup, github, reason):
     notice = sync.record_notice(github["prs"][0]["body"])
     assert result.output.count("Overleaf sync record not used:") == 1
     assert expected in notice
-    assert "Pull started from overleaf.json's base" in notice
+    assert "Pull started from the pairing record's base" in notice
     assert (
         "https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#record-not-used"
         in notice

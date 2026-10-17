@@ -15,7 +15,6 @@ from uuid import uuid4
 
 import click
 
-CONFIG = "overleaf.json"
 # Pairing records live outside the paper so packaging the paper never ships one:
 # <workspace>/.asta/overleaf/<paper dir>.json, one per paired paper.
 RECORDS = ".asta/overleaf"
@@ -24,7 +23,7 @@ RECOVERY = (
     "plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md"
 )
 SHA = re.compile(r"[0-9a-f]{40}")
-# Format of the sync state runners share: overleaf.json, the record and lock refs,
+# Format of the sync state runners share: pairing records, the record and lock refs,
 # and the sync PR. Bump FORMAT only when an older CLI would misread the state, and
 # set FORMAT_RELEASE to the first asta release that reads it. Unversioned state is
 # format 1.
@@ -439,6 +438,16 @@ def check_ignore_files(names) -> None:
             )
 
 
+def check_paper_directory(directory: str) -> None:
+    check_paths([directory])
+    if any(part.startswith("-") for part in directory.split("/")):
+        raise SyncError(
+            f"Invalid paper directory: {directory!r}. "
+            "Directory components must not start with '-'.",
+            recovery="paper-directory",
+        )
+
+
 def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
     root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
     try:
@@ -466,7 +475,7 @@ def resolve(project: Path, directory: str) -> tuple[Path, Path, str]:
             recovery="paper-directory",
         )
     relative = paper.relative_to(root).as_posix()
-    check_paths([relative])
+    check_paper_directory(relative)
     for option in ("--absolute-git-dir", "--git-common-dir"):
         metadata = (root / git("rev-parse", option, cwd=root)).resolve()
         if paper == metadata or metadata in paper.parents or paper in metadata.parents:
@@ -588,6 +597,12 @@ def check_format(version, release, where: str) -> None:
 
 
 def workspace_root(paper: Path) -> Path:
+    # Refuse the lexical paper path before Git can follow it into another repo.
+    for path in (paper, *paper.parents):
+        if path.is_symlink():
+            refuse(str(path), "uses a symlinked directory")
+        if (path / ".git").exists():
+            break
     for path in (paper, *paper.parents):
         if path.is_dir():
             return Path(git("rev-parse", "--show-toplevel", cwd=path)).resolve()
@@ -615,7 +630,15 @@ def tracked_record(root: Path, prefix: str, revision: str = "HEAD") -> bytes | N
 
 
 def record_name(root: Path, paper: Path) -> str:
-    return record_of(paper.resolve().relative_to(root).as_posix())
+    try:
+        relative = paper.absolute().relative_to(root).as_posix()
+    except ValueError:
+        raise SyncError(
+            "The paper must be a subdirectory of the workspace.",
+            recovery="paper-directory",
+        ) from None
+    check_paper_directory(relative)
+    return record_of(relative)
 
 
 def record_path(paper: Path) -> Path:
@@ -629,21 +652,25 @@ def record_path(paper: Path) -> Path:
     return path
 
 
-def open_record_for_update(path: Path, root: Path) -> int:
-    """Create/open a record without following a substituted parent directory."""
-    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+def open_record(path: Path, root: Path, *, create: bool = False) -> int:
+    """Open a record without following a substituted file or parent directory."""
+    flags = (os.O_RDWR | os.O_CREAT if create else os.O_RDONLY) | getattr(
+        os, "O_NOFOLLOW", 0
+    )
     if os.name == "nt":
         # record_path has checked the parents; directory-relative opens are POSIX.
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if create:
+            path.parent.mkdir(parents=True, exist_ok=True)
         return os.open(path, flags, 0o666)
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     parent = os.open(root, directory_flags)
     try:
         for part in path.parent.relative_to(root).parts:
-            try:
-                os.mkdir(part, dir_fd=parent)
-            except FileExistsError:
-                pass
+            if create:
+                try:
+                    os.mkdir(part, dir_fd=parent)
+                except FileExistsError:
+                    pass
             child = os.open(part, directory_flags, dir_fd=parent)
             os.close(parent)
             parent = child
@@ -655,11 +682,21 @@ def open_record_for_update(path: Path, root: Path) -> int:
 def load_config(paper: Path) -> dict:
     path = record_path(paper)
     if path.is_symlink():
-        refuse(CONFIG, "is a symlink")
-    if not path.exists():
-        return {}
+        refuse(str(path), "is a symlink")
     try:
-        config = json.loads(path.read_text(encoding="utf-8"))
+        descriptor = open_record(path, workspace_root(paper))
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            refuse(str(path), "is a symlink or has an unsafe parent directory")
+        raise SyncError(
+            f"Cannot read sync record: {path}. Check its permissions.",
+            recovery="paper-configuration",
+        ) from None
+    try:
+        with os.fdopen(descriptor, encoding="utf-8") as record:
+            config = json.load(record)
         if isinstance(config, dict):
             check_format(
                 config.get("format", 1), config.get("requires_asta"), str(path)
@@ -680,18 +717,18 @@ def load_config(paper: Path) -> dict:
 
 
 def save_config(paper: Path, url: str, base: str) -> None:
-    paper.mkdir(parents=True, exist_ok=True)
     path = record_path(paper)
     if path.is_symlink():
-        refuse(CONFIG, "is a symlink")
+        refuse(str(path), "is a symlink")
+    paper.mkdir(parents=True, exist_ok=True)
     # Read, validate and write the same file descriptor without truncating first.
     # Every directory is opened without following symlinks as well, so replacing
     # a parent after record_path checked it cannot redirect the write.
     try:
-        descriptor = open_record_for_update(path, workspace_root(paper))
+        descriptor = open_record(path, workspace_root(paper), create=True)
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.ENOTDIR):
-            refuse(CONFIG, "is a symlink or has an unsafe parent directory")
+            refuse(str(path), "is a symlink or has an unsafe parent directory")
         raise
     with os.fdopen(descriptor, "r+", encoding="utf-8") as record:
         try:
@@ -854,7 +891,8 @@ def invalid_record(url: str | None, *, publishing: bool = False) -> SyncError:
     return SyncError(
         f"Invalid Overleaf sync record {location}. "
         "Restore it from its history or delete it to fall back to "
-        f"{CONFIG}." + (" Nothing pushed." if publishing else " Nothing copied."),
+        "the paper's .asta/overleaf pairing record."
+        + (" Nothing pushed." if publishing else " Nothing copied."),
         recovery="sync-record-ref",
     )
 
@@ -925,7 +963,7 @@ def record_not_used(reason: str) -> None:
     """Explain fallback and let the sync command retain the same notice."""
     message = (
         f"Overleaf sync record not used: {reason}. Pull started from "
-        f"{CONFIG}'s base ({RECOVERY}#record-not-used)."
+        f"the pairing record's base ({RECOVERY}#record-not-used)."
     )
     click.echo(message, err=True)
     ctx = click.get_current_context(silent=True)
@@ -935,9 +973,7 @@ def record_not_used(reason: str) -> None:
 
 def paper_files(repo: Path, revision: str, prefix: str = "") -> dict[str, bytes]:
     # Bytes, not blob IDs: Overleaf and the workspace may use different hash functions.
-    files = read_plain_files(repo, revision, prefix)
-    files.pop(CONFIG, None)
-    return files
+    return read_plain_files(repo, revision, prefix)
 
 
 def refuse_incomplete_record_history(root: Path, *, publishing: bool = False) -> None:
@@ -987,13 +1023,13 @@ def last_sync(repo: Path, head: str, base: str, recorded: str | None, done: str)
     if resolve_commit(repo, base) is None or not is_ancestor(repo, base, head):
         if counted:
             click.echo(
-                f"{CONFIG}'s base is not in Overleaf history; starting from the "
+                "The pairing record's base is not in Overleaf history; starting from the "
                 "published sync record instead.",
                 err=True,
             )
             return recorded
         raise SyncError(
-            f"{CONFIG}'s base is not in Overleaf history and no sync record counts; "
+            "The pairing record's base is not in Overleaf history and no sync record counts; "
             f"{done} Set base, in a PR, to an Overleaf commit the default branch "
             f"already has ({RECOVERY}#base-not-in-overleaf-history)."
         )
@@ -1094,11 +1130,21 @@ def paired_directories(project: Path) -> list[str]:
     """Paper directories paired by the workspace's tracked records, sorted."""
     root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
     names = git("ls-files", "-z", "--", f"{RECORDS}/", cwd=root).split("\0")
-    return sorted(
+    directories = sorted(
         n[len(RECORDS) + 1 : -len(".json")]
         for n in names
         if n.startswith(f"{RECORDS}/") and n.endswith(".json")
     )
+    for directory in directories:
+        try:
+            check_paper_directory(directory)
+        except SyncError:
+            raise SyncError(
+                f"Invalid paper directory in pairing record: {record_of(directory)!r}; "
+                "use nonempty safe path components without leading hyphens.",
+                recovery="paper-directory",
+            ) from None
+    return directories
 
 
 def paired_directory(project: Path, directory: str | None) -> str:
@@ -1141,13 +1187,9 @@ def pull(url: str | None, directory: str | None, project: Path) -> None:
         repo = Path(tmp) / "overleaf"
         head = clone(url, repo)
         new = read_plain_files(repo, head)
-        if CONFIG in new:
-            refuse(CONFIG, "is reserved for workspace sync metadata")
-        check_paths([CONFIG, *new])
         check_ignore_files(new)
         committed = read_plain_files(root, "HEAD", prefix)
         ours = committed.copy()
-        ours.pop(CONFIG, None)
         base = {}
         if config:
             recorded = None
@@ -1175,22 +1217,21 @@ def pull(url: str | None, directory: str | None, project: Path) -> None:
                         # above still allow it to use the published sync point.
                         click.echo(
                             "This checkout predates the last publication; "
-                            f"merging from {CONFIG} instead.",
+                            f"merging from {record_of(prefix)} instead.",
                             err=True,
                         )
                         recorded = None
             else:
                 click.echo(
-                    f"No `origin` remote; using {CONFIG} as the last sync. "
+                    f"No `origin` remote; using {record_of(prefix)} as the last sync. "
                     "Edits published from another clone may need conflict resolution.",
                     err=True,
                 )
             base = read_plain_files(
                 repo, last_sync(repo, head, config["base"], recorded, "nothing copied.")
             )
-        base.pop(CONFIG, None)
         deleted = (base.keys() - new.keys()) & ours.keys()
-        check_paths([CONFIG, *new, *(ours.keys() - new.keys() - deleted)])
+        check_paths([*new, *(ours.keys() - new.keys() - deleted)])
         conflicted = []
         for name in base.keys() | new.keys():
             if new.get(name) == base.get(name):
@@ -1419,7 +1460,6 @@ def publish(
                 "nothing pushed.",
                 recovery="local-changes",
             )
-    ours.pop(CONFIG, None)
     if not ours:
         raise SyncError(
             "Refusing to publish an empty paper; nothing pushed. Commit a paper source or correct --dir, then retry.",
@@ -1586,6 +1626,7 @@ def sync(
     check_timeout: int = 600,
 ) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
+    from .overleaf_gate import require_release_check
     from .overleaf_sync import sync_workspace
 
     # Without --dir, sync every paired paper in turn so runners need no settings.
@@ -1594,12 +1635,25 @@ def sync(
         if directory is not None
         else paired_directories(project) or [DEFAULT_DIR]
     )
-    for directory in directories:
-        if check_repo is not None:
-            from .overleaf_gate import require_release_check
-
-            require_release_check(project, directory, check_repo, check_timeout)
-        sync_workspace(project, directory)
+    failed = []
+    for paper_directory in directories:
+        try:
+            if check_repo is not None:
+                require_release_check(
+                    project, paper_directory, check_repo, check_timeout
+                )
+            sync_workspace(project, paper_directory)
+        except click.ClickException as exc:
+            if len(directories) == 1:
+                raise
+            click.echo(f"{paper_directory}: {exc.format_message()}", err=True)
+            failed.append(paper_directory)
+    if failed:
+        raise SyncError(
+            "Sync failed for: "
+            + ", ".join(failed)
+            + ". All paired papers were attempted."
+        )
 
 
 @overleaf.command(name="check")

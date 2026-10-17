@@ -85,10 +85,11 @@ def current_papers(root: Path, warnings: list[str]) -> dict[str, str]:
             for file in files
             if not (entry / file).is_symlink() and (entry / file).is_file()
         ]
+        record = root / RECORDS / f"{name}.json"
         if (
             name != "paper"
             and not any(marker in files for marker in ("latexmkrc", ".latexmkrc"))
-            and not (root / RECORDS / f"{name}.json").is_file()
+            and not (not record.is_symlink() and record.is_file())
         ):
             continue
         if not all(valid_name(part) for part in entry.relative_to(root).parts):

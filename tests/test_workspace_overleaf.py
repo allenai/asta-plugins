@@ -695,6 +695,82 @@ def test_sync_without_dir_handles_every_paired_paper(setup, monkeypatch):
     assert synced == ["paper"]
 
 
+@pytest.mark.parametrize("failure", ["sync", "check"])
+@pytest.mark.parametrize("error_kind", ["sync", "git", "format"])
+def test_sync_attempts_remaining_papers_after_each_failure(
+    setup, monkeypatch, failure, error_kind
+):
+    _, project = setup
+    for directory in ("a", "b", "c"):
+        assert run(project, "pull", URL, "--dir", directory).exit_code == 0
+    commit_all(project)
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    gate_module = importlib.import_module("asta.commands.overleaf_gate")
+    attempted = []
+    synced = []
+
+    def fail_some(_, directory, *args):
+        attempted.append(directory)
+        if directory in {"a", "c"}:
+            message = f"fixture failure in {directory}"
+            if error_kind == "git":
+                raise module.GitCommandError(message, 128)
+            if error_kind == "format":
+                raise module.NewerFormatError(message)
+            raise module.SyncError(message)
+        if failure == "sync":
+            synced.append(directory)
+
+    monkeypatch.setattr(
+        sync_module,
+        "sync_workspace",
+        fail_some
+        if failure == "sync"
+        else lambda _, directory: synced.append(directory),
+    )
+    monkeypatch.setattr(gate_module, "require_release_check", fail_some)
+    options = ["--check-repo", "owner/check"] if failure == "check" else []
+    result = run(project, "sync", *options)
+    assert result.exit_code == 1, result.output
+    assert attempted == ["a", "b", "c"]
+    assert synced == ["b"]
+    for directory in ("a", "c"):
+        assert f"{directory}: fixture failure in {directory}" in result.output
+    assert "Sync failed for: a, c. All paired papers were attempted." in result.output
+
+
+@pytest.mark.parametrize(
+    "name", [".json", "-paper.json", "nested/-paper.json", "bad\nname.json"]
+)
+def test_discovery_refuses_invalid_pairing_record_names(setup, name):
+    _, project = setup
+    record = project / ".asta/overleaf" / name
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(json.dumps({"url": URL, "base": "a" * 40}))
+    commit_all(project)
+    result = run(project, "sync")
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "unsafe path" in result.output or "Invalid paper directory" in result.output
+
+
+@pytest.mark.parametrize("directory", ["-paper", "nested/-paper"])
+def test_pull_refuses_undiscoverable_paper_names_before_copying(
+    setup, monkeypatch, directory
+):
+    _, project = setup
+
+    def refuse_clone(*args):
+        pytest.fail("invalid paper names must be rejected before cloning Overleaf")
+
+    monkeypatch.setattr(module, "clone", refuse_clone)
+    result = run(project, "pull", URL, f"--dir={directory}")
+    assert result.exit_code == 1, result.output
+    assert "Directory components must not start with '-'" in result.output
+    assert not (project / directory).exists()
+    assert not (project / ".asta/overleaf").exists()
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_commands_refuse_ambiguous_pairings_without_dir(setup, command):
     _, project = setup
@@ -1462,8 +1538,8 @@ def test_pull_updates_tracked_files_even_when_ignore_pattern_matches(setup):
     assert (project / "paper/main.tex").read_text() == "remote edit\n"
 
 
-@pytest.mark.parametrize("name", ["overleaf.json", ".gitignore", "nested/.gitignore"])
-def test_pull_refuses_remote_metadata_and_ignore_rules_before_writing(setup, name):
+@pytest.mark.parametrize("name", [".gitignore", "nested/.gitignore"])
+def test_pull_refuses_remote_ignore_rules_before_writing(setup, name):
     seed, project = setup
     if "/" in name:
         (seed / "nested").mkdir()
@@ -1477,36 +1553,36 @@ def test_pull_refuses_remote_metadata_and_ignore_rules_before_writing(setup, nam
 
 
 @pytest.mark.parametrize(
-    "name", ["Overleaf.json", "overleaf.jſon", "Overleaf.json/content.tex"]
+    "name",
+    ["overleaf.json", "Overleaf.json", "overleaf.jſon", "Overleaf.json/content.tex"],
 )
 @pytest.mark.parametrize("existing_paper", [False, True])
-def test_pull_refuses_sync_record_aliases_before_writing(setup, name, existing_paper):
+def test_paper_files_named_overleaf_json_round_trip(setup, name, existing_paper):
     seed, project = setup
-    paper = project / "paper"
     if existing_paper:
         assert run(project, "pull", URL).exit_code == 0
         commit_all(project)
-    before = {
-        str(path.relative_to(paper)): path.read_bytes()
-        for path in paper.rglob("*")
-        if path.is_file()
-    }
     (seed / name).parent.mkdir(parents=True, exist_ok=True)
-    overleaf_edit(seed, name, "valuable remote content\n")
-    remote_head = git(seed, "ls-remote", "origin", "master")
+    overleaf_edit(seed, name, "ordinary paper content\n")
 
     result = run(project, "pull", URL)
+    assert result.exit_code == 0, result.output
+    source = project / "paper" / name
+    assert source.read_text() == "ordinary paper content\n"
+    assert module.load_config(project / "paper")["url"] == URL
+    source.write_text("reviewed paper content\n")
+    commit_all(project)
+    assert module.paper_files(project, "HEAD", "paper/")[name] == source.read_bytes()
 
-    assert result.exit_code != 0
-    assert "only in letter case or Unicode normalization" in result.output
-    assert "overleaf.json" in result.output
-    assert {
-        str(path.relative_to(paper)): path.read_bytes()
-        for path in paper.rglob("*")
-        if path.is_file()
-    } == before
-    assert paper.exists() == existing_paper
-    assert git(seed, "ls-remote", "origin", "master") == remote_head
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "--ff-only")
+    assert (seed / name).read_bytes() == source.read_bytes()
+    assert module.paper_files(seed, "HEAD")[name] == source.read_bytes()
+    # A later pull must count this publication with the JSON source included.
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert "record not used" not in result.output
 
 
 @pytest.mark.parametrize(
@@ -3130,7 +3206,7 @@ def test_reset_history_publish_uses_one_nothing_pushed_suffix(setup, dry_run):
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
-def test_pull_rejects_metadata_path_collision_before_history_fetch(setup, monkeypatch):
+def test_pull_allows_directory_named_overleaf_json_after_publication(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     (project / "paper/main.tex").write_text("published\n")
@@ -3138,17 +3214,11 @@ def test_pull_rejects_metadata_path_collision_before_history_fetch(setup, monkey
     assert run(project, "publish").exit_code == 0
     git(seed, "pull", "--ff-only")
     (seed / "overleaf.json").mkdir()
-    overleaf_edit(seed, "overleaf.json/child.tex", "blocked\n")
-    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    overleaf_edit(seed, "overleaf.json/child.tex", "paper source\n")
 
-    def refuse_fetch(*args, **kwargs):
-        pytest.fail("path validation must precede publication verification")
-
-    monkeypatch.setattr(module, "last_sync", refuse_fetch)
     result = run(project, "pull")
-    assert result.exit_code == 1, result.output
-    assert "uses file overleaf.json as a directory" in result.output
-    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert result.exit_code == 0, result.output
+    assert (project / "paper/overleaf.json/child.tex").read_text() == "paper source\n"
 
 
 RECORD_REF = "refs/asta/overleaf/1234567"
@@ -3936,7 +4006,8 @@ def test_save_config_refuses_symlink_without_reading_or_writing(
 
 @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="requires no-follow opens")
 @pytest.mark.parametrize("swap", ["before_open", "after_open"])
-def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap):
+@pytest.mark.parametrize("operation", ["load", "save"])
+def test_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap, operation):
     path = record_file(tmp_path)
     path.write_text(json.dumps({"url": URL, "base": "a" * 40}))
     target = tmp_path / "outside.json"
@@ -3964,11 +4035,18 @@ def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap)
         return descriptor
 
     monkeypatch.setattr(module.os, "open", racing_open)
+
+    def access():
+        if operation == "save":
+            module.save_config(tmp_path / "paper", URL, "b" * 40)
+        else:
+            assert module.load_config(tmp_path / "paper")["base"] == "a" * 40
+
     if swap == "before_open":
         with pytest.raises(module.SyncError, match="is a symlink"):
-            module.save_config(tmp_path / "paper", URL, "b" * 40)
+            access()
     else:
-        module.save_config(tmp_path / "paper", URL, "b" * 40)
+        access()
     assert swapped
     assert path.is_symlink()
     assert target.read_text() == original
@@ -3976,7 +4054,10 @@ def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap)
 
 @pytest.mark.skipif(os.name == "nt", reason="requires directory-relative opens")
 @pytest.mark.parametrize("swap", ["before_directory_open", "before_file_open"])
-def test_save_config_never_follows_a_racing_parent_symlink(tmp_path, monkeypatch, swap):
+@pytest.mark.parametrize("operation", ["load", "save"])
+def test_config_never_follows_a_racing_parent_symlink(
+    tmp_path, monkeypatch, swap, operation
+):
     root = tmp_path / "workspace"
     path = record_file(root)
     path.write_text(json.dumps({"url": URL, "base": "a" * 40}))
@@ -3998,15 +4079,59 @@ def test_save_config_never_follows_a_racing_parent_symlink(tmp_path, monkeypatch
         return real_open(name, flags, *args, **kwargs)
 
     monkeypatch.setattr(module.os, "open", racing_open)
+
+    def access():
+        if operation == "save":
+            module.save_config(root / "paper", URL, "b" * 40)
+        else:
+            assert module.load_config(root / "paper")["base"] == "a" * 40
+
     if swap == "before_directory_open":
         with pytest.raises(module.SyncError, match="symlink"):
-            module.save_config(root / "paper", URL, "b" * 40)
+            access()
     else:
-        module.save_config(root / "paper", URL, "b" * 40)
+        access()
         saved = json.loads((path.parent.with_name("original") / path.name).read_text())
-        assert saved["base"] == "b" * 40
+        assert saved["base"] == ("b" if operation == "save" else "a") * 40
     assert swapped
     assert target.read_text() == original
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+@pytest.mark.parametrize("operation", ["load", "save"])
+@pytest.mark.parametrize("target", ["outside", "inside", "missing"])
+def test_config_refuses_symlinked_paper_path(tmp_path, operation, target):
+    root = tmp_path / "workspace"
+    record_file(root)
+    destination = root / "inside" if target == "inside" else tmp_path / target
+    if target != "missing":
+        destination.mkdir()
+    paper = root / "examples/paper"
+    paper.parent.mkdir()
+    paper.symlink_to(destination, target_is_directory=True)
+    with pytest.raises(module.SyncError, match="symlinked directory"):
+        if operation == "save":
+            module.save_config(paper, URL, "a" * 40)
+        else:
+            module.load_config(paper)
+    assert not list((root / ".asta/overleaf").rglob("*.json"))
+    if target == "missing":
+        assert not destination.exists()
+    else:
+        assert not list(destination.iterdir())
+
+
+def test_save_validates_record_parents_before_creating_paper(tmp_path):
+    record_file(tmp_path)
+    shutil.rmtree(tmp_path / ".asta/overleaf")
+    (tmp_path / ".asta/overleaf").symlink_to(
+        tmp_path / "missing", target_is_directory=True
+    )
+    paper = tmp_path / "new/paper"
+    with pytest.raises(module.SyncError, match="symlink"):
+        module.save_config(paper, URL, "a" * 40)
+    assert not paper.parent.exists()
+    assert not (tmp_path / "missing").exists()
 
 
 @pytest.mark.parametrize("stamped", [False, True])
