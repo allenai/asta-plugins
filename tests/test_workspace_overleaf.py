@@ -635,6 +635,41 @@ def test_publish_pushes_committed_paper_without_injecting_workspace_bibliography
     assert again.exit_code == 0 and "already matches" in again.output
 
 
+def test_commands_find_the_paired_paper_without_dir(setup):
+    seed, project = setup
+    paper = project / "examples/workspace/paper"
+    result = run(project, "pull", URL, "--dir", "examples/workspace/paper")
+    assert result.exit_code == 0, result.output
+    commit_all(project)
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    result = run(project, "pull")
+    assert result.exit_code == 0, result.output
+    assert (paper / "main.tex").read_text() == "collaborator edit\n"
+    assert not (project / "paper").exists()
+    (paper / "main.tex").write_text("reviewed\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "-q", "origin", "master")
+    assert (seed / "main.tex").read_text() == "reviewed\n"
+
+
+@pytest.mark.parametrize("command", ["pull", "publish", "sync"])
+def test_commands_refuse_ambiguous_pairings_without_dir(setup, command):
+    _, project = setup
+    for directory in ("paper", "examples/workspace/paper"):
+        assert run(project, "pull", URL, "--dir", directory).exit_code == 0
+    commit_all(project)
+    head = git(project, "rev-parse", "HEAD")
+    result = run(project, command, merge=False)
+    assert result.exit_code != 0
+    assert "more than one paper" in result.output
+    assert "examples/workspace/paper, paper" in result.output
+    assert "--dir" in result.output
+    assert git(project, "rev-parse", "HEAD") == head
+    assert not git(project, "status", "--porcelain")
+
+
 def test_publish_refuses_when_overleaf_moved(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0

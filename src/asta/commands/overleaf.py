@@ -1016,7 +1016,32 @@ def record_publication(
 project_option = click.option(
     "--project", type=click.Path(path_type=Path, file_okay=False), default=Path(".")
 )
-dir_option = click.option("--dir", "directory", default="paper", show_default=True)
+DEFAULT_DIR = "paper"
+dir_option = click.option(
+    "--dir",
+    "directory",
+    help="Paper directory. Default: the one paired by a tracked overleaf.json, else paper.",
+)
+
+
+def paired_directory(project: Path, directory: str | None) -> str:
+    """Return --dir, else the directory paired by the workspace's tracked overleaf.json."""
+    if directory is not None:
+        return directory
+    root = Path(git("rev-parse", "--show-toplevel", cwd=project)).resolve()
+    names = git("ls-files", "-z", "--", f"*{CONFIG}", cwd=root).split("\0")
+    found = sorted(
+        {Path(n).parent.as_posix() for n in names if n and Path(n).name == CONFIG}
+        - {"."}
+    )
+    if len(found) > 1:
+        raise SyncError(
+            "This workspace pairs more than one paper with Overleaf: "
+            + ", ".join(found)
+            + ". Choose one with --dir.",
+            recovery="paper-directory",
+        )
+    return found[0] if found else DEFAULT_DIR
 
 
 @click.group()
@@ -1028,9 +1053,9 @@ def overleaf() -> None:
 @click.argument("url", required=False)
 @dir_option
 @project_option
-def pull(url: str | None, directory: str, project: Path) -> None:
+def pull(url: str | None, directory: str | None, project: Path) -> None:
     """Copy the Overleaf project into the paper directory and record its commit."""
-    root, paper, prefix = resolve(project, directory)
+    root, paper, prefix = resolve(project, paired_directory(project, directory))
     config = load_config(paper)
     url = validate_url(url or config.get("url"))
     if config and url != config["url"]:
@@ -1256,10 +1281,10 @@ def default_branch(root: Path, *, publishing: bool = False):
     help="Require this full workspace commit to remain the default-branch tip.",
 )
 def publish(
-    directory: str, project: Path, dry_run: bool, expected_commit: str | None
+    directory: str | None, project: Path, dry_run: bool, expected_commit: str | None
 ) -> None:
     """Push the committed paper directory to Overleaf without rewriting its layout."""
-    root, paper, prefix = resolve(project, directory)
+    root, paper, prefix = resolve(project, paired_directory(project, directory))
     if expected_commit is not None:
         expected_commit = expected_commit.lower()
         if not re.fullmatch(FULL_OID, expected_commit):
@@ -1466,7 +1491,7 @@ def release_check_timeout(ctx, param, value):
     help="Seconds for an uncached release check.",
 )
 def sync(
-    directory: str,
+    directory: str | None,
     project: Path,
     check_repo: str | None = None,
     check_timeout: int = 600,
@@ -1474,6 +1499,7 @@ def sync(
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_sync import sync_workspace
 
+    directory = paired_directory(project, directory)
     if check_repo is not None:
         from .overleaf_gate import require_release_check
 
@@ -1492,12 +1518,12 @@ def sync(
     show_default=True,
     help="Seconds for the round trip.",
 )
-def check(directory: str, project: Path, timeout: int) -> None:
+def check(directory: str | None, project: Path, timeout: int) -> None:
     """Exercise sync/publish/conflicts on a scratch pair reserved for checks."""
     from .overleaf_check import check_workspace
 
     try:
-        check_workspace(project, directory, timeout)
+        check_workspace(project, paired_directory(project, directory), timeout)
     except Exception:
         click.echo("Overleaf live check FAIL", err=True)
         raise
