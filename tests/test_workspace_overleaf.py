@@ -665,6 +665,36 @@ def test_commands_find_the_paired_paper_without_dir(setup):
     assert (seed / "main.tex").read_text() == "reviewed\n"
 
 
+def test_pairing_records_live_outside_each_paper_directory(setup):
+    _, project = setup
+    for directory in ("paper", "examples/workspace/paper"):
+        assert run(project, "pull", URL, "--dir", directory).exit_code == 0
+        assert not (project / directory / "overleaf.json").exists()
+    records = project / ".asta/overleaf"
+    assert json.loads((records / "paper.json").read_text())["url"] == URL
+    nested = records / "examples/workspace/paper.json"
+    assert json.loads(nested.read_text())["url"] == URL
+
+
+def test_sync_without_dir_handles_every_paired_paper(setup, monkeypatch):
+    _, project = setup
+    for directory in ("paper", "examples/workspace/paper"):
+        assert run(project, "pull", URL, "--dir", directory).exit_code == 0
+    commit_all(project)
+    synced = []
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    monkeypatch.setattr(
+        sync_module, "sync_workspace", lambda _, directory: synced.append(directory)
+    )
+    result = run(project, "sync")
+    assert result.exit_code == 0, result.output
+    assert synced == ["examples/workspace/paper", "paper"]
+    synced.clear()
+    result = run(project, "sync", "--dir", "paper")
+    assert result.exit_code == 0, result.output
+    assert synced == ["paper"]
+
+
 @pytest.mark.parametrize("command", ["pull", "publish"])
 def test_commands_refuse_ambiguous_pairings_without_dir(setup, command):
     _, project = setup
