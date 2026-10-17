@@ -63,6 +63,12 @@ def assert_clean(scratch):
     assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/*")
 
 
+def assert_left_for_next_check(scratch):
+    """A failed check releases only its own lock; anything else waits for the next check."""
+    project, _, _, _ = scratch
+    assert not git(project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/check-*")
+
+
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 def test_complete_round_trip_merges_twice_publishes(scratch, github):
     project, _, _, _ = scratch
@@ -133,8 +139,8 @@ def test_failed_pr_checks_fail_without_merging(
     assert result.exit_code != 0
     assert "scratch PR check failed" in result.output
     assert "Overleaf live check FAIL" in result.output
-    assert not github["merges"] and not github["prs"]
-    assert_clean(scratch)
+    assert not github["merges"] and github["prs"]
+    assert_left_for_next_check(scratch)
 
 
 def test_normalizes_a_relative_paper_directory(scratch):
@@ -151,7 +157,7 @@ def test_never_runs_live_check_in_ci(scratch, monkeypatch, name):
     result = invoke(project)
     assert result.exit_code != 0
     assert "outside CI" in result.output
-    assert_clean(scratch)
+    assert_left_for_next_check(scratch)
 
 
 def test_alarm_is_a_real_deadline():
@@ -160,6 +166,10 @@ def test_alarm_is_a_real_deadline():
             check.signal.pause()
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["https://git.overleaf.com/1234567/", "https://git@git.overleaf.com/1234567.git/"],
+)
 def test_url_variants_use_the_sync_lock_and_branch(scratch, monkeypatch, url):
     project, _, _, _ = scratch
     # load_config already normalizes supported URL variants; retain that contract.
@@ -176,12 +186,16 @@ def test_url_variants_use_the_sync_lock_and_branch(scratch, monkeypatch, url):
     git(project, "push", "origin", f"HEAD:{held}")
     result = invoke(project)
     assert result.exit_code != 0
-    assert "Another live check" in result.output
+    assert "pair busy" in result.output
     assert git(project, "ls-remote", "origin", held)
     git(project, "push", "origin", f":{held}")
     assert not git(project, "ls-remote", "origin", "refs/heads/asta/overleaf-sync/*")
 
 
+@pytest.mark.parametrize(
+    "conclusion",
+    ["STALE", "STARTUP_FAILURE", "TIMED_OUT", "CANCELLED", "UNKNOWN", None],
+)
 def test_every_unsuccessful_terminal_check_fails_without_waiting(
     scratch, github, monkeypatch, conclusion
 ):
@@ -203,7 +217,7 @@ def test_every_unsuccessful_terminal_check_fails_without_waiting(
         "release step" in result.output and "scratch PR check failed" in result.output
     )
     assert not waits and not github["merges"]
-    assert_clean(scratch)
+    assert_left_for_next_check(scratch)
 
 
 @pytest.mark.parametrize("reason", ["no checks", "review", "rules", "skipped only"])
@@ -240,7 +254,7 @@ def test_unattended_merge_setup_failure_is_actionable(
     assert result.exit_code != 0
     assert "pair access/setup" in result.output
     assert not github["merges"]
-    assert_clean(scratch)
+    assert_left_for_next_check(scratch)
     if reason == "no checks":
         assert sum(waits) == check.CHECK_DISCOVERY_SECONDS
 
@@ -274,6 +288,18 @@ def test_main_thread_requirement_is_a_clear_error():
             pool.submit(run).result()
 
 
+@pytest.mark.parametrize(
+    "field,state,phase",
+    [
+        ("mergeable", "CONFLICTING", "release step"),
+        ("mergeStateStatus", "DIRTY", "release step"),
+        ("mergeStateStatus", "BEHIND", "release step"),
+        ("mergeStateStatus", "UNSTABLE", "release step"),
+        ("mergeStateStatus", "DRAFT", "pair access/setup"),
+        ("mergeStateStatus", "HAS_HOOKS", "pair access/setup"),
+        ("reviewDecision", "CHANGES_REQUESTED", "pair access/setup"),
+    ],
+)
 def test_unmergeable_pr_fails_immediately(
     scratch, github, monkeypatch, field, state, phase
 ):
@@ -291,8 +317,8 @@ def test_unmergeable_pr_fails_immediately(
     assert result.exit_code != 0
     assert phase in result.output
     assert "timed out" not in result.output
-    assert not waits and not github["merges"] and not github["prs"]
-    assert_clean(scratch)
+    assert not waits and not github["merges"] and github["prs"]
+    assert_left_for_next_check(scratch)
 
 
 @pytest.mark.parametrize("phase", ["acquisition", "exercise"])
@@ -303,7 +329,7 @@ def test_exhausted_budget_never_starts_the_next_phase(scratch, monkeypatch, phas
     result = invoke(project)
     assert result.exit_code != 0
     assert "timed out before starting its next phase" in result.output
-    assert_clean(scratch)
+    assert_left_for_next_check(scratch)
 
 
 @pytest.mark.parametrize("remaining", [0, -0.1])
@@ -334,7 +360,7 @@ def test_unexpected_error_never_echoes_credential_bearing_commands(
     assert result.exit_code != 0
     assert "Unexpected CalledProcessError" in result.output
     assert "credential-sentinel" not in result.output
-    assert_clean(scratch)
+    assert_left_for_next_check(scratch)
 
 
 def test_recent_check_makes_the_pair_busy_without_changes(scratch):
