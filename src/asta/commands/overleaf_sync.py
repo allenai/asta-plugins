@@ -493,6 +493,16 @@ def sync_workspace(project: Path, directory: str):
             "Import and commit the paper with overleaf pull before scheduling sync."
         )
     project_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
+    if not click.get_current_context().meta.get("overleaf_check") and ov.git(
+        "ls-remote",
+        "--refs",
+        "origin",
+        f"refs/asta/overleaf-sync-lock/check-{project_id}",
+        cwd=root,
+    ):
+        raise ov.SyncError(
+            "A live release check owns this scratch pair; retry when it finishes."
+        )
     info = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
@@ -546,6 +556,18 @@ def sync_workspace(project: Path, directory: str):
             except ov.SyncError:
                 click.echo("Could not report the held lock on GitHub.", err=True)
             raise ov.SyncError(message)
+        # Recheck under the normal sync lock: a check may have claimed its
+        # outer lock between the first read above and this acquisition.
+        if not click.get_current_context().meta.get("overleaf_check") and ov.git(
+            "ls-remote",
+            "--refs",
+            "origin",
+            f"refs/asta/overleaf-sync-lock/check-{project_id}",
+            cwd=root,
+        ):
+            raise ov.SyncError(
+                "A live release check owns this scratch pair; retry when it finishes."
+            )
         pr = None
         notice = ""
         try:

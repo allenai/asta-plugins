@@ -1335,3 +1335,24 @@ def sync(directory: str, project: Path) -> None:
     from .overleaf_sync import sync_workspace
 
     sync_workspace(project, directory)
+
+
+@overleaf.command(name="check")
+@dir_option
+@project_option
+@click.option(
+    "--timeout",
+    type=click.IntRange(min=1),
+    default=600,
+    show_default=True,
+    help="Seconds for the round trip; restoration has a separate 180-second limit.",
+)
+def check(directory: str, project: Path, timeout: int) -> None:
+    """Exercise sync/publish/conflicts on a disposable scratch pair, then restore it."""
+    from .overleaf_check import check_workspace
+
+    try:
+        check_workspace(project, directory, timeout)
+    except Exception:
+        click.echo("Overleaf live check FAIL", err=True)
+        raise
