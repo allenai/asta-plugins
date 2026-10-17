@@ -248,6 +248,17 @@ def setup(tmp_path, monkeypatch, request):
     monkeypatch.setenv("GIT_COMMITTER_NAME", "t")
     monkeypatch.setenv("GIT_COMMITTER_EMAIL", "t@t")
     remote = tmp_path / "overleaf.git"
+    failures = []
+    real_run = module.subprocess.run
+
+    def recording_run(args, **kwargs):
+        result = real_run(args, **kwargs)
+        if result.returncode and "clone" in args:
+            failures.append((args, result.returncode, result.stderr))
+        return result
+
+    monkeypatch.setattr(module.subprocess, "run", recording_run)
+    request.node.clone_failures = failures
     real = module.git_bytes
     monkeypatch.setattr(
         module,
@@ -2974,18 +2985,22 @@ def test_push_hook_text_is_not_classified_as_overleaf_race(
 )
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("url_location", ["caller", "record"])
-def test_pull_recognizes_publications_with_equivalent_url(setup, url, url_location):
+def test_pull_recognizes_publications_with_equivalent_url(
+    setup, url, url_location, request
+):
     seed, project = setup
-    assert run(project, "pull", URL).exit_code == 0
+    first = run(project, "pull", URL)
+    assert first.exit_code == 0, (first.output, request.node.clone_failures)
     (project / "paper/main.tex").write_text("published paper\n")
     if url_location == "record":
         record = project / "paper/overleaf.json"
         record.write_text(record.read_text().replace(URL, url))
     commit_all(project)
-    assert run(project, "publish").exit_code == 0
+    published = run(project, "publish")
+    assert published.exit_code == 0, (published.output, request.node.clone_failures)
     overleaf_edit(seed, "main.tex", "collaborator edit\n")
     result = run(project, "pull", url if url_location == "caller" else URL)
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 0, (result.output, request.node.clone_failures)
     assert (project / "paper/main.tex").read_text() == "collaborator edit\n"
     assert "recorded sync" not in result.output
 
