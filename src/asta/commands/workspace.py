@@ -545,11 +545,15 @@ def bump_pin(project: Path) -> None:
         # Never restore the old bytes over an already-advanced HEAD.
         if commit_started:
             current = _git(project, "rev-parse", "HEAD")
-            if current.returncode != 0 or current.stdout != head.stdout:
+            if current.returncode != 0:
+                raise
+            if current.stdout != head.stdout:
+                click.echo(f"Committed {current.stdout.strip()}: {message}", err=True)
                 raise
         workflow.write_bytes(original)
         raise
-    click.echo(f"{message} (was @{ref})")
+    sha = _git(project, "rev-parse", "HEAD").stdout.strip()
+    click.echo(f"Committed {sha}: {message} (was @{ref})")
 
 
 def _git(project: Path, *args: str) -> subprocess.CompletedProcess:

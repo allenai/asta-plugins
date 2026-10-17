@@ -89,6 +89,7 @@ def test_behind_pin_moves_in_its_own_commit(project, monkeypatch) -> None:
         ".github/workflows/docs.yml",
     ]
     assert "notes.md" in _git(root, "status", "--porcelain")
+    assert f"Committed {_git(root, 'rev-parse', 'HEAD').strip()}:" in result.output
 
 
 @pytest.mark.parametrize("ref", ["v0.116.0", "main"])
@@ -295,6 +296,7 @@ def test_interrupted_commit_only_restores_when_head_did_not_advance(
     expected = original.replace(b"@v0.115.0", b"@v0.116.0") if committed else original
     assert workflow.read_bytes() == expected
     assert (_git(root, "rev-parse", "HEAD") != head) is committed
+    assert ("Committed " in result.output) is committed
     assert not _git(root, "status", "--porcelain")
 
 

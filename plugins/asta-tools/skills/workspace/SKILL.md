@@ -36,17 +36,16 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
 
-Before opening any workspace PR, for both local and headless agents:
+Before opening any workspace PR, for both local and headless agents, keep the pin current:
 
-- **Keep the pin current.** Before opening a PR, run `make check` and record its exit status as the pre-bump baseline. When `.github/workflows/docs.yml` pins a release older than this asta's final release, `asta workspace bump-pin` commits the move as its own commit; `main`, `latest`, commits and newer pins are left alone.
-- **Record the actual bump.** Record `git rev-parse HEAD` immediately before running `asta workspace bump-pin` and again immediately afterward, in a separate step that runs even if the command fails or is interrupted. Do not gate the second read on its exit status or output, and make no other commits between the reads. If HEAD changed, verify that the new HEAD has the saved HEAD as its sole parent (`git rev-list --parents -n 1 HEAD`), has a `Move workspace pin to asta-plugins@...` subject, and changes only the workflow's release ref in `.github/workflows/docs.yml` (`git show --format=fuller HEAD`). Record that verified SHA as the bump commit and check it below even if the command failed before printing success. If either HEAD read fails or the new commit does not match, inspect and resolve the state before opening the PR; never guess which commit to undo. If HEAD is unchanged, there is no bump commit to drop. Preserve the work and report any command failure.
-- **Check the bump.** When a bump commit was created, run `make check` again. If the baseline passed and this check fails, undo only the recorded bump as described below, then rerun `make check` to verify recovery and continue the PR without the upgrade. If the baseline already failed, undo the bump the same way and resolve the original build failure independently.
-- **Undo only the bump.** Run `git revert --no-commit <bump-commit-sha>`; only after it succeeds, run `git commit --only -m "Revert workspace pin bump <bump-commit-sha>" -- .github/workflows/docs.yml`. This commits only the rollback and preserves unrelated staged work. Never infer a bump from `HEAD`, drop `HEAD~1`, or undo anything when no bump was created. If reverting fails or conflicts, preserve the work and resolve only the bump's workflow edit before committing that path. A PR that shouldn't carry a bump undoes that recorded commit the same way; never let the bump block the work.
+1. Commit your work, run `make check`, and note whether it passed.
+2. Run `asta workspace bump-pin`. If it moves the pin, it prints `Committed <sha>`; otherwise nothing was committed.
+3. If it printed a SHA, run `make check` again. If the build passed before and fails now, run `git revert --no-edit <sha>` and carry on without the bump.
 
 For a headless agent (the user only sees results via deployed URL):
 
 - **Bootstrap `main` if the repo is empty.** On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
-- First save: complete the pin checks above, then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- First save: keep the pin current (above), then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
