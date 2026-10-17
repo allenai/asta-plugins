@@ -1,7 +1,7 @@
 # Schedule Overleaf sync
 
 Import the project with `asta workspace overleaf pull <url>`, review the paper
-and `overleaf.json` together, and merge them. Before enabling the schedule, the
+and its `.asta/overleaf` record together, and merge them. Before enabling the schedule, the
 project owner must **turn off Overleaf link sharing** and invite each co-author
 (and the sync account) explicitly as an editor. Anyone who can edit this project
 can contribute paper content to the default branch through the sync PR.

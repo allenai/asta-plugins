@@ -104,7 +104,7 @@ with a link to Settings → Rules, and what a refused push looks like
 
 On a branch with a clean, committed paper, run
 `asta workspace overleaf pull https://git.overleaf.com/<project-id>` with your
-own Overleaf credential. Commit the imported paper and the `overleaf.json` it
+own Overleaf credential. Commit the imported paper and the `.asta/overleaf` record it
 writes together, open a PR and merge it. One Overleaf project pairs with one
 repository. Then schedule the sync as
 [Overleaf sync](overleaf-sync-command.md) describes. A scheduled GitHub workflow

@@ -37,7 +37,7 @@ reports the pair busy even for access or network errors; it still exits nonzero
 without recording a pass or syncing the paper.
 
 Do not schedule normal sync against the pair, edit it by hand, or give it
-collaborators. The scratch default branch's committed `paper/overleaf.json` must
+collaborators. The scratch default branch's committed `.asta/overleaf/paper.json` must
 match the checkout. The Git identity and existing Overleaf/GitHub authentication
 are the same as for `sync`. The scratch repository must allow the check to push
 to its default branch, open/close PRs, and merge through the normal sync path
@@ -122,7 +122,7 @@ Do not forge pass tags or remove the gate to recover from a failure.
 content the workspace already reviewed. Two records in the workspace repository
 supply it; Overleaf history is never trusted to name one.
 
-- `paper/overleaf.json` holds `url` and `base`, the Overleaf commit of the last
+- `.asta/overleaf/paper.json` holds `url` and `base`, the Overleaf commit of the last
   pull. It lands through the pull's reviewed PR.
 - `refs/asta/overleaf/<project-id>` on `origin` is written by publish after a
   successful Overleaf push. Each record is a commit whose tree holds `sync.json`
@@ -188,13 +188,13 @@ default branch's protection rules, not on the CLI.
 
 A record counts when its ids are full commit ids, its workspace commit is an
 ancestor of `origin`'s default-branch tip, and its Overleaf commit's files equal
-that commit's `paper/` files, ignoring `paper/overleaf.json`. Files are compared by
+that commit's `paper/` files, ignoring `.asta/overleaf/paper.json`. Files are compared by
 content, because Overleaf and the workspace may use different hash functions.
 
 The sync point is a counting record's Overleaf commit when it is in Overleaf
 history and descends from `base`; otherwise it is `base`. When a record exists but
 does not count, pull prints `Overleaf sync record not used: <reason>. Pull started
-from overleaf.json's base`, so `sync` can pass the reason on. Starting from `base`
+from the pairing record's base`, so `sync` can pass the reason on. Starting from `base`
 can produce conflicts; preserving edits depends on the trusted base being correct.
 If `base` itself is unreadable or not
 in Overleaf history, pull starts from a counting record; with none, it refuses and
@@ -225,9 +225,9 @@ fallback, whose warning is emitted only when the operation uses it.
   same-tree replacement is refused. A translated commit followed by further edits
   cannot be confirmed by either check and still needs recovery. If confirmation
   or the record push fails, publish exits 1 after the Overleaf push without
-  advancing the record. When Overleaf still descends from `paper/overleaf.json`'s
+  advancing the record. When Overleaf still descends from `.asta/overleaf/paper.json`'s
   base and has no further collaborator edits, pull imports the published files
-  matching the workspace, so its PR changes only `paper/overleaf.json`. Later
+  matching the workspace, so its PR changes only `.asta/overleaf/paper.json`. Later
   collaborator edits are also imported for review. If that history was reset,
   use the [base recovery steps](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#base-not-in-overleaf-history)
   before pulling or publishing again.
