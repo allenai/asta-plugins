@@ -11,15 +11,44 @@ Apply these before inviting the sync account. Without them the sync fails
 loudly, so they are not optional and need no per-run check.
 
 - **Git integration for the syncing Overleaf account.** Overleaf's
-  [Git integration](https://www.overleaf.com/learn/how-to/Git_integration_and_GitHub_synchronization)
+  [Git integration](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration)
   must be available to that account. The sync uses Git integration, not
-  Overleaf's GitHub synchronization.
+  Overleaf's GitHub synchronization. Git integration is a
+  [premium feature](https://docs.overleaf.com/getting-started/free-and-premium-plans/premium-features):
+  if the project's owner has a premium plan, Git integration is available to
+  every member; an account with its own plan has it on every project it can
+  open. Project roles still apply: cloning and pulling require read access,
+  and pushing requires Editor access. So the sync account needs its own plan
+  only for projects whose owners have none. Inviting it as Editor uses one of
+  the owner's collaborator slots, even if the sync account has its own plan.
+  Check that the owner has a spare slot under that page's collaborator limit
+  (Editors and Reviewers together). Overleaf's
+  [authentication token](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration/git-integration-authentication-tokens)
+  page says when a Git token expires.
 - **A sync identity on the repository** that can push branches and the
   `refs/asta/` refs that hold its sync record and lock, open PRs, and write
   issues for its notices.
 
 Then the project owner invites the sync account as Editor (Share → invite by
 email). Never share a personal Overleaf token.
+
+Check access once the sync account has accepted the invitation and made its
+Git token. Copy the project's Git URL from Overleaf's Git integration dialog,
+or use `https://git.overleaf.com/<project-id>` with the ID from the project's
+Overleaf URL. Run `git ls-remote "https://git.overleaf.com/<project-id>"`
+using the sync account's credential helper, or enter username `git` and the
+token at Git's password prompt in a terminal. Never put the token in the URL
+or shell command. The check must succeed before scheduling the sync.
+
+If the check fails, first check that the invitation was accepted and that the
+project ID and token are right. If a helper has cached an old credential, clear
+that entry or, in a terminal, rerun
+`git -c credential.helper= ls-remote "https://git.overleaf.com/<project-id>"`
+to enter the current token without using or saving a cached one.
+Confirm that the project owner or sync account has a plan with Git integration;
+if neither does, one of them needs such a plan. A success shows read access
+only: the sync also pushes, so confirm in the Share menu that the sync account
+is an Editor, not a Viewer or Reviewer.
 
 ## 2. What lets it run unattended
 
