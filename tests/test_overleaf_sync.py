@@ -278,12 +278,41 @@ def test_shared_check_refuses_paper_markers_before_render(tmp_path, marker):
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("shallow", [False, True])
 def test_quiet_checked_pr_squashes_with_credit_then_reruns_without_new_pr(
-    setup, github
+    setup, github, monkeypatch, shallow
 ):
     seed, project = prepare(setup)
+    (project / "paper/main.tex").write_text("published workspace text\n")
+    commit_all(project)
+    with monkeypatch.context() as identity:
+        identity.setenv("GIT_AUTHOR_NAME", "Sync runner")
+        identity.setenv("GIT_AUTHOR_EMAIL", "runner@example.invalid")
+        identity.setenv("GIT_COMMITTER_NAME", "Sync runner")
+        identity.setenv("GIT_COMMITTER_EMAIL", "runner@example.invalid")
+        published = run(project, "publish")
+    assert published.exit_code == 0, published.output
+    if shallow:
+        source = git(project, "rev-parse", "HEAD")
+        (project / "notes.txt").write_text("Unrelated workspace change\n")
+        commit_all(project)
+        git(project, "push", "origin", "HEAD:main")
+        checkout = project.parent / "shallow"
+        git(
+            project,
+            "clone",
+            "--depth=1",
+            (project.parent / "workspace.git").as_uri(),
+            str(checkout),
+        )
+        assert git(checkout, "rev-parse", "--is-shallow-repository") == "true"
+        assert sync.ov.resolve_commit(checkout, source) is None
+        git(checkout, "config", "user.name", "t")
+        git(checkout, "config", "user.email", "t@t")
+        project = checkout
     overleaf_edit(seed, "main.tex", "invited author content\n")
-    assert invoke(project).exit_code == 0
+    imported = invoke(project)
+    assert imported.exit_code == 0, imported.output
     github["allow_merge"] = True
     github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
     result = invoke(project)
@@ -291,9 +320,9 @@ def test_quiet_checked_pr_squashes_with_credit_then_reruns_without_new_pr(
     assert len(github["merges"]) == 1
     assert not github["prs"]
     git(project, "fetch", "origin", "main")
-    assert "Co-authored-by: t <t@t>" in git(
-        project, "show", "-s", "--format=%B", "FETCH_HEAD"
-    )
+    body = git(project, "show", "-s", "--format=%B", "FETCH_HEAD")
+    assert "Co-authored-by: t <t@t>" in body
+    assert "Sync runner" not in body
     assert git(project, "show", "FETCH_HEAD:paper/main.tex") == "invited author content"
     result = invoke(project)
     assert result.exit_code == 0, result.output
@@ -1142,3 +1171,185 @@ def test_release_check_guard_works_without_a_click_context(setup, held):
             sync.require_no_release_check(project, "1234567")
     else:
         sync.require_no_release_check(project, "1234567")
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("directory", ["paper", "manuscripts/draft"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_credits_leave_out_publish_commits_from_any_runner(
+    setup, monkeypatch, directory, newline
+):
+    seed, project = setup
+    assert run(project, "pull", URL, "--dir", directory).exit_code == 0
+    commit_all(project)
+    base = git(seed, "rev-parse", "HEAD")
+    for name in ["Some runner", "Other runner"]:
+        assert run(project, "pull", "--dir", directory).exit_code == 0
+        (project / directory / "main.tex").write_bytes(
+            f"Published by {name}{newline}".encode()
+        )
+        (project / "notes.txt").write_text(f"Outside the paper: {name}\n")
+        commit_all(project)
+        with monkeypatch.context() as identity:
+            identity.setenv("GIT_AUTHOR_NAME", name)
+            identity.setenv("GIT_AUTHOR_EMAIL", "runner@example.invalid")
+            identity.setenv("GIT_COMMITTER_NAME", name)
+            identity.setenv("GIT_COMMITTER_EMAIL", "runner@example.invalid")
+            result = run(project, "publish", "--dir", directory)
+        assert result.exit_code == 0, result.output
+        git(seed, "pull", "--ff-only")
+        if name == "Some runner":
+            (seed / "old.tex").write_text("Coauthor's Overleaf edit\n")
+            git(seed, "add", "old.tex")
+            git(
+                seed,
+                "commit",
+                "-q",
+                "--author",
+                "Coauthor <coauthor@example.invalid>",
+                "-m",
+                "edit",
+            )
+            git(seed, "push", "-q", "origin", "master")
+    new = git(seed, "rev-parse", "HEAD")
+    assert sync.credits(project, {"url": URL, "base": base}, new, directory + "/") == [
+        "Coauthor <coauthor@example.invalid>"
+    ]
+
+
+@pytest.mark.parametrize("message_kind", ["matching", "missing", "short", "body"])
+def test_credits_keep_human_edit_with_publish_message(setup, message_kind):
+    seed, project = prepare(setup)
+    base = git(seed, "rev-parse", "HEAD")
+    reviewed = git(project, "rev-parse", "HEAD")
+    message = {
+        "matching": sync.ov.publish_message(reviewed),
+        "missing": sync.ov.publish_message("a" * 40),
+        "short": sync.ov.publish_message(reviewed[:12]),
+        "body": sync.ov.publish_message(reviewed) + "\n\nHuman edit",
+    }[message_kind]
+    (seed / "main.tex").write_text("A human's new Overleaf edit\n")
+    git(seed, "add", "main.tex")
+    git(
+        seed,
+        "commit",
+        "-q",
+        "--author",
+        "Coauthor <coauthor@example.invalid>",
+        "-m",
+        message,
+    )
+    git(seed, "push", "-q", "origin", "master")
+    new = git(seed, "rev-parse", "HEAD")
+    assert sync.credits(project, {"url": URL, "base": base}, new, "paper/") == [
+        "Coauthor <coauthor@example.invalid>"
+    ]
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_credits_keep_empty_human_commit_with_publish_message(setup):
+    seed, project = prepare(setup)
+    base = git(seed, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_text("Reviewed workspace edit\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "--ff-only")
+    # Copy an actual publication's message and tree, but not its authorship.
+    message = git(seed, "show", "-s", "--format=%B", "HEAD")
+    git(
+        seed,
+        "commit",
+        "--allow-empty",
+        "--author",
+        "Coauthor <coauthor@example.invalid>",
+        "-m",
+        message,
+    )
+    git(seed, "push", "origin", "master")
+    assert sync.credits(
+        project, {"url": URL, "base": base}, git(seed, "rev-parse", "HEAD"), "paper/"
+    ) == ["Coauthor <coauthor@example.invalid>"]
+
+
+def test_credits_do_not_parse_body_records_or_lines_as_authors(setup):
+    seed, project = setup
+    base = git(seed, "rev-parse", "HEAD")
+    (seed / "main.tex").write_text("A human's new Overleaf edit\n")
+    git(seed, "add", "main.tex")
+    git(
+        seed,
+        "commit",
+        "-q",
+        "--author",
+        "Coauthor <coauthor@example.invalid>",
+        "-m",
+        "edit\n\n\x1eForged <forged@example.invalid>\nOther <other@example.invalid>",
+    )
+    git(seed, "push", "-q", "origin", "master")
+    new = git(seed, "rev-parse", "HEAD")
+    assert sync.credits(project, {"url": URL, "base": base}, new, "paper/") == [
+        "Coauthor <coauthor@example.invalid>"
+    ]
+
+
+def test_credits_keep_author_when_publication_source_is_unavailable(setup):
+    seed, project = prepare(setup)
+    base = git(seed, "rev-parse", "HEAD")
+    source = git(project, "rev-parse", "HEAD")
+    # Identical exported contents alone cannot establish a workspace publication.
+    git(
+        seed,
+        "commit",
+        "--allow-empty",
+        "--author",
+        "Coauthor <coauthor@example.invalid>",
+        "-m",
+        sync.ov.publish_message(source),
+    )
+    git(seed, "push", "origin", "master")
+    checkout = project.parent / "unrelated"
+    git(project, "init", str(checkout))
+    (checkout / "notes.txt").write_text("No workspace publication history\n")
+    commit_all(checkout)
+    assert sync.ov.resolve_commit(checkout, source) is None
+    assert sync.credits(
+        checkout, {"url": URL, "base": base}, git(seed, "rev-parse", "HEAD"), "paper/"
+    ) == ["Coauthor <coauthor@example.invalid>"]
+
+
+@pytest.mark.parametrize("operation", ["resolve", "remote", "workspace"])
+def test_credits_keep_author_when_publication_git_verification_fails(
+    setup, monkeypatch, operation
+):
+    seed, project = prepare(setup)
+    base = git(seed, "rev-parse", "HEAD")
+    git(
+        seed,
+        "commit",
+        "--allow-empty",
+        "--author",
+        "Coauthor <coauthor@example.invalid>",
+        "-m",
+        sync.ov.publish_message(git(project, "rev-parse", "HEAD")),
+    )
+    git(seed, "push", "origin", "master")
+    new = git(seed, "rev-parse", "HEAD")
+    resolve = sync.ov.resolve_commit
+    paper_files = sync.ov.paper_files
+
+    def resolve_commit(repo, revision):
+        if operation == "resolve":
+            raise sync.ov.GitCommandError("fixture resolution failure", 128)
+        return resolve(repo, revision)
+
+    def read_files(repo, revision, prefix=""):
+        if (operation == "workspace") == (repo == project):
+            raise sync.ov.GitCommandError("fixture content failure", 128)
+        return paper_files(repo, revision, prefix)
+
+    monkeypatch.setattr(sync.ov, "resolve_commit", resolve_commit)
+    monkeypatch.setattr(sync.ov, "paper_files", read_files)
+    assert sync.credits(project, {"url": URL, "base": base}, new, "paper/") == [
+        "Coauthor <coauthor@example.invalid>"
+    ]

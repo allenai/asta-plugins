@@ -406,23 +406,47 @@ def conflict_line(root: Path, repo: str, commits: list[str]) -> str:
     )
 
 
-def credits(root: Path, config: dict, new_base: str) -> list[str]:
+def is_publication(
+    root: Path, remote: Path, commit: str, message: str, prefix: str
+) -> bool:
+    source = ov.publish_source(message)
+    if source is None:
+        return False
+    try:
+        if ov.resolve_commit(root, source) is None:
+            return False
+        if ov.paper_files(remote, commit) != ov.paper_files(root, source, prefix):
+            return False
+        # Publish returns without committing when the exported tree is unchanged.
+        # A human's empty commit can copy its message and contents, but is not a publish.
+        return bool(
+            ov.git(
+                "diff-tree", "--no-commit-id", "--name-only", "-r", commit, cwd=remote
+            )
+        )
+    except (ov.SyncError, ov.GitCommandError):
+        # Unverifiable content is not evidence for dropping someone's credit.
+        return False
+
+
+def credits(root: Path, config: dict, new_base: str, prefix: str) -> list[str]:
     if new_base == config["base"]:
         return []
     with tempfile.TemporaryDirectory() as tmp:
         remote = Path(tmp) / "overleaf"
         ov.clone(config["url"], remote)
-        # Read actual Git authors, never infer identities from names or handles.
-        authors = ov.git(
-            "log", "--format=%aN <%aE>", f"{config['base']}..{new_base}", cwd=remote
-        )
-    return sorted(
-        {
-            x
-            for x in authors.split("\n")
-            if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", x)
-        }
-    )
+        commits = ov.git("rev-list", f"{config['base']}..{new_base}", cwd=remote)
+        authors = set()
+        for commit in commits.splitlines():
+            # One response per commit: control characters in bodies cannot forge entries.
+            # Read actual Git authors, never infer identities from names or handles.
+            entry = ov.git("show", "-s", "--format=%aN <%aE>%x00%B", commit, cwd=remote)
+            author, _, message = entry.partition("\0")
+            if is_publication(root, remote, commit, message, prefix):
+                continue
+            if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", author):
+                authors.add(author)
+    return sorted(authors)
 
 
 def only_recorded_base_changed(root, prefix, before, after):
@@ -705,7 +729,7 @@ def sync_workspace(project: Path, directory: str):
                     refuse_build_configs(
                         changed_paths(work, "--cached", "HEAD", "--", prefix)
                     )
-                    authors = credits(work, before, after["base"])
+                    authors = credits(work, before, after["base"], prefix)
                     message = "Sync Overleaf paper\n\n" + "\n".join(
                         f"Co-authored-by: {author}" for author in authors
                     )
@@ -809,7 +833,7 @@ def sync_workspace(project: Path, directory: str):
                     default_config = json.loads(
                         ov.git("show", f"{tip}:{prefix}{ov.CONFIG}", cwd=work)
                     )
-                    authors = credits(work, default_config, after["base"])
+                    authors = credits(work, default_config, after["base"], prefix)
                     trailers = {f"Co-authored-by: {author}" for author in authors}
                     # Re-check the exact head being merged, independent of the
                     # earlier branch-update path.
