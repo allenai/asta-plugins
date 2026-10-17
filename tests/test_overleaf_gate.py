@@ -93,6 +93,37 @@ def test_pass_once_per_version_before_paper(runner, monkeypatch):
     assert events[-2:] == ["check", "paper"]
 
 
+@pytest.mark.parametrize("repo", ["", " ", "org/"])
+@pytest.mark.parametrize("cached", [False, True])
+def test_invalid_check_repo_never_syncs_or_changes_refs(
+    runner, monkeypatch, repo, cached
+):
+    run, events, project = runner
+    if cached:
+        assert run().exit_code == 0
+    before = list(events)
+    refs = git(project, "ls-remote", "origin")
+
+    def no_github(*args, **kwargs):
+        pytest.fail("an invalid check repository must be refused before GitHub access")
+
+    monkeypatch.setattr(gate.sync, "gh", no_github)
+    result = run(repo)
+    assert result.exit_code != 0
+    assert "check repository must be owner/name" in result.output
+    assert events == before
+    assert git(project, "ls-remote", "origin") == refs
+
+
+def test_omitted_check_repo_keeps_sync_opt_in(runner):
+    _, events, project = runner
+    result = CliRunner().invoke(
+        cli, ["workspace", "overleaf", "sync", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert events == ["paper"]
+
+
 def test_failure_never_syncs_or_caches(runner, monkeypatch):
     run, events, project = runner
 

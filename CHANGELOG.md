@@ -8,4 +8,5 @@
   forward. A recent check in progress makes the pair busy; a stale one's
   leftovers are cleared. Release preserves a replacement owner's lock, and the
   timeout (including acquisition) stays below the stale-lock threshold. The
-  command waits within one invocation and refuses CI.
+  command waits within one invocation and refuses CI. An explicitly empty
+  `sync --check-repo` value refuses sync instead of disabling the release gate.

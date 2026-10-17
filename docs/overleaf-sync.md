@@ -80,6 +80,8 @@ busy pair; the accompanying `pair busy` diagnosis distinguishes it from a
 release failure.
 
 Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
+An explicitly empty or malformed `--check-repo` refuses sync; omitting the option
+keeps the gate disabled.
 Before syncing the requested paper, the CLI looks for a pass for its own asta
 version on that reserved repository. It clones the scratch repository to
 validate pair isolation on every invocation. On a miss it runs the complete

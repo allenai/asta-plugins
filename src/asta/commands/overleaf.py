@@ -1474,7 +1474,7 @@ def sync(
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_sync import sync_workspace
 
-    if check_repo:
+    if check_repo is not None:
         from .overleaf_gate import require_release_check
 
         require_release_check(project, directory, check_repo, check_timeout)
