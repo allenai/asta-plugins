@@ -497,30 +497,44 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
 def bump_pin(project: Path) -> None:
     """Commit a move of a release pin behind this asta's release to it."""
     project = project.resolve()
+    workflow = project / WORKFLOW_FILE
+    for relative in (".github", ".github/workflows", WORKFLOW_FILE):
+        if (project / relative).is_symlink():
+            raise click.ClickException(
+                f"Workspace workflow path must not contain symlinks: {relative}"
+            )
     _, ref = selected_source(project)
     target = workspace_versions.pin_target(ref, workspace_versions.installed())
     if target is None:
         click.echo(f"Pin asta-plugins@{ref} is current; nothing to do")
         return
-    workflow = project / WORKFLOW_FILE
-    if _git(project, "status", "--porcelain", "--", WORKFLOW_FILE).stdout.strip():
+    status = _git(project, "status", "--porcelain", "--", WORKFLOW_FILE)
+    if status.returncode != 0:
+        raise click.ClickException(
+            f"Could not check the workflow's Git status: {status.stderr.strip()}"
+        )
+    if status.stdout.strip():
         raise click.ClickException(
             f"{WORKFLOW_FILE} has uncommitted changes; commit them first"
         )
-    lines = workflow.read_text().splitlines(keepends=True)
+    original = workflow.read_bytes()
+    lines = original.decode().splitlines(keepends=True)
     for index, line in enumerate(lines):
         if WORKFLOW in line and not line.lstrip().startswith("#"):
             lines[index] = line.replace(WORKFLOW + ref, WORKFLOW + target, 1)
-    workflow.write_text("".join(lines))
-    if selected_source(project)[1] != target:
-        raise click.ClickException(f"Could not move the pin in {workflow}")
     message = f"Move workspace pin to asta-plugins@{target}"
-    committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
-    if committed.returncode != 0:
-        _git(project, "checkout", "--", WORKFLOW_FILE)
-        raise click.ClickException(
-            f"Could not commit the pin move: {committed.stderr.strip()}"
-        )
+    try:
+        workflow.write_bytes("".join(lines).encode())
+        if selected_source(project)[1] != target:
+            raise click.ClickException(f"Could not move the pin in {workflow}")
+        committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
+        if committed.returncode != 0:
+            raise click.ClickException(
+                f"Could not commit the pin move: {committed.stderr.strip()}"
+            )
+    except BaseException:
+        workflow.write_bytes(original)
+        raise
     click.echo(f"{message} (was @{ref})")
 
 
