@@ -327,7 +327,7 @@ class RoundTrip:
             )
 
 
-def check_workspace(project: Path, directory: str, timeout: int):
+def _check_workspace(project: Path, directory: str, timeout: int):
     if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
         raise ov.SyncError(
             "The live check must run on a scratch pair outside CI, where Overleaf credentials already exist."
@@ -426,6 +426,7 @@ def check_workspace(project: Path, directory: str, timeout: int):
                             raise ov.SyncError(
                                 "The scratch pair changed during preflight; inspect it before retrying."
                             )
+                        ctx.meta["overleaf_check_phase"] = "release step"
                         trial.exercise()
                 finally:
                     with deadline(180):
@@ -435,3 +436,16 @@ def check_workspace(project: Path, directory: str, timeout: int):
     click.echo(
         "Overleaf live check PASS: co-author merge, publication, conflict resolution and restoration."
     )
+
+
+def check_workspace(project: Path, directory: str, timeout: int):
+    """Distinguish pair setup/access failures from failures exercising the release."""
+    ctx = click.get_current_context()
+    ctx.meta["overleaf_check_phase"] = "pair access/setup"
+    try:
+        _check_workspace(project, directory, timeout)
+    except (click.ClickException, OSError) as exc:
+        phase = ctx.meta["overleaf_check_phase"]
+        raise ov.SyncError(f"Overleaf check failed ({phase}): {exc}") from exc
+    finally:
+        ctx.meta.pop("overleaf_check_phase", None)

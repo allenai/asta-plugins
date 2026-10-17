@@ -57,8 +57,30 @@ check's `refs/asta/overleaf-sync-lock/check-<project-id>` lock requires the same
 explicit interrupted-run recovery as a killed sync; it never expires itself.
 
 Exit 0 plus `Overleaf live check PASS` means every stage and restoration passed.
-Any failure exits nonzero. Runners may cache a pass by immutable release/image
-identity and must stop before syncing papers when the check fails.
+Any failure exits nonzero. Output labels `pair access/setup` failures (token,
+access, missing project, or an unprepared pair) separately from `release step`
+failures during the exercised sync/merge/publish/conflict/restoration path.
+
+Opt in on any runner with `asta workspace overleaf sync --check-repo owner/check`.
+Before syncing the requested paper, the CLI looks for a pass for its own asta
+version on that reserved repository. On a miss it clones the scratch repository,
+runs the complete check synchronously, and records a pass only after restoration
+succeeds. Check failure or inability to read/write the pass record refuses paper
+sync. A subsequent invocation or rollback to an already passed version reuses
+its pass. The scratch pair uses the standard `paper/` directory.
+
+The CLI rejects the paper repository itself, including case variants and rename
+redirects, as its check repository. On first use it also rejects a scratch pair
+pointing at the same Overleaf project. Keep the pair exclusively reserved; do not
+edit it by hand or schedule normal sync against it. Its successful PR checks and
+writable default branch must already be configured. No credentials are added to
+CI, and an uncached live check refuses CI environments.
+
+Pass tags use `asta-overleaf-check/<SHA-256 of asta version>` on the scratch
+repository. Anyone who can create or change these tags is a trusted gate
+operator. A pass attests to one released version; development builds sharing a
+version share that record, so use distinct versions when validating candidates.
+Do not forge pass tags or remove the gate to recover from a failure.
 
 `asta workspace overleaf pull` and `publish` need the last Overleaf commit whose
 content the workspace already reviewed. Two records in the workspace repository

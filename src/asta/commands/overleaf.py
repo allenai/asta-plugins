@@ -1330,10 +1330,18 @@ def publish(
 @overleaf.command(name="sync")
 @dir_option
 @project_option
-def sync(directory: str, project: Path) -> None:
+@click.option(
+    "--check-repo",
+    help="Reserved scratch owner/name; require a passing live check per asta version before syncing.",
+)
+def sync(directory: str, project: Path, check_repo: str | None = None) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_sync import sync_workspace
 
+    if check_repo:
+        from .overleaf_gate import require_release_check
+
+        require_release_check(project, directory, check_repo)
     sync_workspace(project, directory)
 
 
