@@ -175,13 +175,13 @@ def publish_message(reviewed: str) -> str:
     return f"Publish workspace commit {reviewed}"
 
 
-def is_publish_message(message: str) -> bool:
-    """Whether a commit message is one ``publish`` writes, whoever ran it."""
-    return bool(
-        re.fullmatch(
-            r"Publish workspace commit (?:[0-9a-f]{40}|[0-9a-f]{64})", message.strip()
-        )
-    )
+def publish_source(message: str) -> str | None:
+    """The workspace commit named by a ``publish`` message, if any."""
+    message = message.strip()
+    source = message.rsplit(" ", 1)[-1]
+    if re.fullmatch(FULL_OID, source) and message == publish_message(source):
+        return source
+    return None
 
 
 def resolve_commit(repo: Path, revision: str) -> str | None:

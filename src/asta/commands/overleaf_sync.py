@@ -390,27 +390,35 @@ def conflict_line(root: Path, repo: str, commits: list[str]) -> str:
     )
 
 
-def credits(root: Path, config: dict, new_base: str) -> list[str]:
+def is_publication(
+    root: Path, remote: Path, commit: str, message: str, prefix: str
+) -> bool:
+    source = ov.publish_source(message)
+    if source is None or ov.resolve_commit(root, source) is None:
+        return False
+    try:
+        return ov.paper_files(remote, commit) == ov.paper_files(root, source, prefix)
+    except ov.SyncError:
+        # Unverifiable content is not evidence for dropping someone's credit.
+        return False
+
+
+def credits(root: Path, config: dict, new_base: str, prefix: str) -> list[str]:
     if new_base == config["base"]:
         return []
     with tempfile.TemporaryDirectory() as tmp:
         remote = Path(tmp) / "overleaf"
         ov.clone(config["url"], remote)
-        # Read actual Git authors, never infer identities from names or handles.
-        log = ov.git(
-            "log",
-            "--format=%x1e%aN <%aE>%x00%B",
-            f"{config['base']}..{new_base}",
-            cwd=remote,
-        )
-    authors = set()
-    for entry in log.split("\x1e")[1:]:
-        author, _, message = entry.partition("\0")
-        # Publishing commits back the workspace's own content; only Overleaf edits earn credit.
-        if ov.is_publish_message(message):
-            continue
-        if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", author):
-            authors.add(author)
+        commits = ov.git("rev-list", f"{config['base']}..{new_base}", cwd=remote)
+        authors = set()
+        for commit in commits.splitlines():
+            # One response per commit: control characters in bodies cannot forge entries.
+            entry = ov.git("show", "-s", "--format=%aN <%aE>%x00%B", commit, cwd=remote)
+            author, _, message = entry.partition("\0")
+            if is_publication(root, remote, commit, message, prefix):
+                continue
+            if re.fullmatch(r"[^<>\r\n\0]+ <[^<>\r\n\0]+>", author):
+                authors.add(author)
     return sorted(authors)
 
 
@@ -676,7 +684,7 @@ def sync_workspace(project: Path, directory: str):
                     refuse_build_configs(
                         changed_paths(work, "--cached", "HEAD", "--", prefix)
                     )
-                    authors = credits(work, before, after["base"])
+                    authors = credits(work, before, after["base"], prefix)
                     message = "Sync Overleaf paper\n\n" + "\n".join(
                         f"Co-authored-by: {author}" for author in authors
                     )
@@ -780,7 +788,7 @@ def sync_workspace(project: Path, directory: str):
                     default_config = json.loads(
                         ov.git("show", f"{tip}:{prefix}{ov.CONFIG}", cwd=work)
                     )
-                    authors = credits(work, default_config, after["base"])
+                    authors = credits(work, default_config, after["base"], prefix)
                     trailers = {f"Co-authored-by: {author}" for author in authors}
                     # Re-check the exact head being merged, independent of the
                     # earlier branch-update path.
