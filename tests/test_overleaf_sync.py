@@ -680,7 +680,7 @@ def test_shared_check_handles_non_utf8_paths(tmp_path):
     name = os.fsencode(paper) + b"/odd-\xff.tex"
     with open(name, "wb") as stream:
         stream.write(b"=======\r\n")
-    git(tmp_path, "add", "--", "paper")
+    git(tmp_path, "add", "--", "paper", ".asta")
     script = (
         Path(__file__).parents[1]
         / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
@@ -753,7 +753,7 @@ def test_shared_check_never_follows_symlinks_out_of_checkout(tmp_path, linked):
         (paper / "main.tex").symlink_to(outside / "main.tex")
     else:
         (paper / "sub/main.tex").write_text("clean\n")
-    git(repo, "add", "--", "paper")
+    git(repo, "add", "--", "paper", ".asta")
     if linked == "directory":
         (paper / "sub/main.tex").unlink()
         (paper / "sub").rmdir()
@@ -773,7 +773,7 @@ def test_shared_check_streams_long_lines(tmp_path):
     _record(paper).write_text("{}")
     (paper / "main.tex").write_bytes(b"x" * 200_000 + b"<<<<<<< not a line start\n")
     (paper / "refs.bib").write_bytes(b"y" * 200_000 + b"\n>>>>>>> theirs\n")
-    git(tmp_path, "add", "--", "paper")
+    git(tmp_path, "add", "--", "paper", ".asta")
     result = subprocess.run(
         ["sh", str(SCRIPT)], cwd=tmp_path, capture_output=True, text=True
     )

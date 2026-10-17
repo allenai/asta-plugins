@@ -21,7 +21,10 @@ if result.returncode:
     print("Cannot inspect paper conflicts; run make check in the workspace Git checkout.")
     sys.exit(1)
 paths = [pathlib.Path(os.fsdecode(name)) for name in result.stdout.split(b"\0") if name]
-roots = {p.parent for p in paths if p.name in {"overleaf.json", "latexmkrc", ".latexmkrc"}}
+roots = {p.parent for p in paths if p.name in {"latexmkrc", ".latexmkrc"}}
+# A paired paper's record lives at .asta/overleaf/<paper dir>.json.
+roots |= {pathlib.Path(p.stem) for p in paths
+          if p.parent == pathlib.Path(".asta/overleaf") and p.suffix == ".json"}
 marker = re.compile(rb"^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?\n?\Z)")
 separator = re.compile(rb"^=======\r?\n?\Z")
 base = os.path.realpath(".")

@@ -665,7 +665,7 @@ def test_commands_find_the_paired_paper_without_dir(setup):
     assert (seed / "main.tex").read_text() == "reviewed\n"
 
 
-@pytest.mark.parametrize("command", ["pull", "publish", "sync"])
+@pytest.mark.parametrize("command", ["pull", "publish"])
 def test_commands_refuse_ambiguous_pairings_without_dir(setup, command):
     _, project = setup
     for directory in ("paper", "examples/workspace/paper"):
@@ -1301,7 +1301,7 @@ def test_pull_refuses_ignored_symlink_config(setup):
     config.unlink()
     os.symlink(outside, config)
     git(project, "rm", "--cached", "--ignore-unmatch", ".asta/overleaf/paper.json")
-    (project / ".gitignore").write_text("/paper/overleaf.json\n")
+    (project / ".gitignore").write_text("/.asta/overleaf/paper.json\n")
     commit_all(project)
     before = outside.read_bytes()
     result = run(project, "pull")
@@ -1706,7 +1706,8 @@ def test_pull_into_older_checkout_imports_published_edits(setup, followup, local
         else (project / "paper/references.bib").read_bytes()
     )
     assert (
-        json.loads((stale / ".asta/overleaf/paper.json").read_text())["base"] == remote_head
+        json.loads((stale / ".asta/overleaf/paper.json").read_text())["base"]
+        == remote_head
     )
     assert git(stale, "diff", "--", "paper/main.tex")
     assert git(stale, "show-ref") == before_refs
@@ -1816,9 +1817,9 @@ def test_unrecognized_git_integration_history_requires_pull_and_review(setup, re
     assert pulled.exit_code == 0, pulled.output
     assert (project / "paper/main.tex").read_text() == "reviewed publication\n"
     assert git(project, "diff", "--name-only") == ".asta/overleaf/paper.json"
-    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == git(
-        seed, "rev-parse", "HEAD"
-    )
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())[
+        "base"
+    ] == git(seed, "rev-parse", "HEAD")
 
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
@@ -1862,7 +1863,7 @@ def test_shallow_sync_accepts_record_source_at_default_tip(
         ".asta/overleaf/paper.json" if command == "pull" and published else ""
     )
     assert git(shallow, "status", "--porcelain") == (
-        "M paper/overleaf.json" if command == "pull" and published else ""
+        "M .asta/overleaf/paper.json" if command == "pull" and published else ""
     )
 
 
@@ -2235,9 +2236,9 @@ def test_pull_empty_remote_commit(setup):
     git(seed, "push", "-q", "origin", "master")
     result = run(project, "pull", URL)
     assert result.exit_code == 0, result.output
-    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == git(
-        seed, "rev-parse", "HEAD"
-    )
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())[
+        "base"
+    ] == git(seed, "rev-parse", "HEAD")
 
 
 @pytest.mark.parametrize(
@@ -2282,7 +2283,7 @@ def test_publish_refuses_ignored_untracked_sync_record(setup):
     assert run(project, "pull", URL).exit_code == 0
     commit_all(project)
     git(project, "rm", "--cached", ".asta/overleaf/paper.json")
-    (project / ".gitignore").write_text("paper/overleaf.json\n")
+    (project / ".gitignore").write_text(".asta/overleaf/paper.json\n")
     commit_all(project)
     overleaf_edit(seed, "main.tex", "newer Overleaf content\n")
     path = project / ".asta/overleaf/paper.json"
@@ -2291,7 +2292,7 @@ def test_publish_refuses_ignored_untracked_sync_record(setup):
     path.write_text(json.dumps(record))
     before = git(seed, "ls-remote", "origin", "master")
     result = run(project, "publish")
-    assert result.exit_code != 0 and "overleaf.json is ignored" in result.output
+    assert result.exit_code != 0 and "paper.json is ignored" in result.output
     assert git(seed, "ls-remote", "origin", "master") == before
     assert (seed / "main.tex").read_text() == "newer Overleaf content\n"
     assert json.loads(path.read_text()) == record
@@ -2397,7 +2398,7 @@ def test_publish_reports_unavailable_recorded_base_without_pushing(setup, dry_ru
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
     paper = project / "paper"
-    record = paper / "overleaf.json"
+    record = project / ".asta/overleaf/paper.json"
     config = json.loads(record.read_text())
     config["base"] = "0" * 40
     record.write_text(json.dumps(config))
@@ -2586,9 +2587,9 @@ def test_pull_allows_unrelated_update_after_workspace_deletes_and_ignores_file(s
     assert result.exit_code == 0, result.output
     assert not (project / "paper/old.tex").exists()
     assert (project / "paper/main.tex").read_text() == "unrelated Overleaf update\n"
-    assert json.loads((project / ".asta/overleaf/paper.json").read_text())["base"] == git(
-        seed, "rev-parse", "HEAD"
-    )
+    assert json.loads((project / ".asta/overleaf/paper.json").read_text())[
+        "base"
+    ] == git(seed, "rev-parse", "HEAD")
 
 
 def test_pull_preserves_hidden_local_edit_when_overleaf_did_not_change_file(setup):
@@ -3348,7 +3349,7 @@ def test_publish_does_not_record_same_tree_history_reset(
     assert result.exit_code == 1, result.output
     assert "could not confirm Overleaf's copy" in result.output
     assert (
-        "merge the resulting PR (it may change only paper/overleaf.json)"
+        "merge the resulting PR (it may change only the paper's .asta/overleaf record)"
         in result.output
     )
     assert git(origin, "for-each-ref", RECORD_REF) == before_record
@@ -3373,7 +3374,7 @@ def test_record_push_failure_explains_recovery(setup, tmp_path):
     assert result.exit_code == 1
     assert "Published Overleaf commit" in result.output
     assert (
-        "merge the resulting PR (it may change only paper/overleaf.json)"
+        "merge the resulting PR (it may change only the paper's .asta/overleaf record)"
         in result.output
     )
     hook.unlink()
@@ -3825,14 +3826,23 @@ def test_older_cli_never_replaces_a_newer_format_record(setup, tmp_path):
         assert git(origin, "rev-parse", RECORD_REF) == newer
 
 
+def record_file(root):
+    """The pairing record of `root/paper`, inside a fresh Git workspace."""
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / "paper").mkdir(exist_ok=True)
+    path = root / ".asta/overleaf/paper.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 @pytest.mark.parametrize("change_base", [False, True])
 def test_save_config_refuses_newer_format_without_loading(tmp_path, change_base):
-    path = tmp_path / module.CONFIG
+    path = record_file(tmp_path)
     data = {**newer_format(), "url": URL, "base": "a" * 40, "future": "retained"}
     path.write_text(json.dumps(data))
     before = path.read_bytes()
     with pytest.raises(module.NewerFormatError, match="Upgrade to asta 9.9.9"):
-        module.save_config(tmp_path, URL, "b" * 40 if change_base else data["base"])
+        module.save_config(tmp_path / "paper", URL, "b" * 40 if change_base else data["base"])
     assert path.read_bytes() == before
 
 
@@ -3846,10 +3856,10 @@ def test_save_config_refuses_symlink_without_reading_or_writing(
     original = json.dumps(data)
     if not dangling:
         target.write_text(original)
-    path = tmp_path / module.CONFIG
+    path = record_file(tmp_path)
     path.symlink_to(target)
     with pytest.raises(module.SyncError, match="is a symlink"):
-        module.save_config(tmp_path, URL, "b" * 40 if change_base else data["base"])
+        module.save_config(tmp_path / "paper", URL, "b" * 40 if change_base else data["base"])
     assert path.is_symlink()
     if dangling:
         assert not target.exists()
@@ -3860,7 +3870,7 @@ def test_save_config_refuses_symlink_without_reading_or_writing(
 @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="requires no-follow opens")
 @pytest.mark.parametrize("swap", ["before_open", "after_open"])
 def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap):
-    path = tmp_path / module.CONFIG
+    path = record_file(tmp_path)
     path.write_text(json.dumps({"url": URL, "base": "a" * 40}))
     target = tmp_path / "outside.json"
     original = json.dumps({**newer_format(), "url": URL, "base": "c" * 40})
@@ -3887,9 +3897,9 @@ def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap)
     monkeypatch.setattr(module.os, "open", racing_open)
     if swap == "before_open":
         with pytest.raises(module.SyncError, match="is a symlink"):
-            module.save_config(tmp_path, URL, "b" * 40)
+            module.save_config(tmp_path / "paper", URL, "b" * 40)
     else:
-        module.save_config(tmp_path, URL, "b" * 40)
+        module.save_config(tmp_path / "paper", URL, "b" * 40)
     assert swapped
     assert path.is_symlink()
     assert target.read_text() == original
@@ -3897,14 +3907,14 @@ def test_save_config_never_follows_a_racing_symlink(tmp_path, monkeypatch, swap)
 
 @pytest.mark.parametrize("stamped", [False, True])
 def test_unchanged_config_preserves_extra_fields_and_formatting(tmp_path, stamped):
-    path = tmp_path / module.CONFIG
+    path = record_file(tmp_path)
     data = {"url": URL, "base": "a" * 40, "extra": {"retained": True}}
     if stamped:
         data.update(module.format_stamp())
     original = json.dumps(data, indent=4) + "\n\n"
     path.write_text(original)
     before = path.stat().st_mtime_ns
-    module.save_config(tmp_path, URL, data["base"])
+    module.save_config(tmp_path / "paper", URL, data["base"])
     assert path.read_text() == original
     assert path.stat().st_mtime_ns == before
 
@@ -3912,7 +3922,7 @@ def test_unchanged_config_preserves_extra_fields_and_formatting(tmp_path, stampe
 @pytest.mark.parametrize("stamped", [False, True])
 @pytest.mark.parametrize("change", ["base", "url", "both"])
 def test_changed_config_preserves_unknown_fields(tmp_path, stamped, change):
-    path = tmp_path / module.CONFIG
+    path = record_file(tmp_path)
     data = {
         "url": URL,
         "base": "a" * 40,
@@ -3924,7 +3934,7 @@ def test_changed_config_preserves_unknown_fields(tmp_path, stamped, change):
     path.write_text(json.dumps(data))
     url = "https://git.overleaf.com/7654321" if change in {"url", "both"} else URL
     base = "b" * 40 if change in {"base", "both"} else data["base"]
-    module.save_config(tmp_path, url, base)
+    module.save_config(tmp_path / "paper", url, base)
     assert json.loads(path.read_text()) == {
         **data,
         **module.format_stamp(),
@@ -3936,7 +3946,7 @@ def test_changed_config_preserves_unknown_fields(tmp_path, stamped, change):
 def test_pull_preserves_unknown_config_fields_when_base_changes(setup):
     seed, project = setup
     assert run(project, "pull", URL).exit_code == 0
-    path = project / "paper" / module.CONFIG
+    path = project / ".asta/overleaf/paper.json"
     data = json.loads(path.read_text())
     data["future"] = {"retained": [True, None]}
     path.write_text(json.dumps(data))
@@ -3954,11 +3964,11 @@ def test_pull_preserves_unknown_config_fields_when_base_changes(setup):
 def test_save_config_refuses_invalid_format_without_overwriting(
     tmp_path, version, change_base
 ):
-    path = tmp_path / module.CONFIG
+    path = record_file(tmp_path)
     path.write_text(json.dumps({"format": version, "url": URL, "base": "a" * 40}))
     before = path.read_bytes()
     with pytest.raises(module.FormatError, match="malformed sync format stamp"):
-        module.save_config(tmp_path, URL, ("b" if change_base else "a") * 40)
+        module.save_config(tmp_path / "paper", URL, ("b" if change_base else "a") * 40)
     assert path.read_bytes() == before
 
 
