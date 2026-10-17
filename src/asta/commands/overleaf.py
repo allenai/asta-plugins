@@ -602,7 +602,10 @@ def workspace_root(paper: Path) -> Path:
         if path.is_symlink():
             refuse(str(path), "uses a symlinked directory")
         if (path / ".git").exists():
-            break
+            root = Path(git("rev-parse", "--show-toplevel", cwd=path)).resolve()
+            # Match the paper's lexical path when only an ancestor above the
+            # checkout is aliased (e.g. macOS /var -> /private/var).
+            return path.absolute() if path.resolve() == root else root
     for path in (paper, *paper.parents):
         if path.is_dir():
             return Path(git("rev-parse", "--show-toplevel", cwd=path)).resolve()

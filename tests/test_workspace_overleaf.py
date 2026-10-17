@@ -3936,6 +3936,32 @@ def record_file(root):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+@pytest.mark.parametrize("directory", ["paper", "nested/paper"])
+@pytest.mark.parametrize("git_file", [False, True])
+def test_config_uses_same_record_through_symlinked_workspace_ancestor(
+    tmp_path, directory, git_file
+):
+    physical = tmp_path / "physical"
+    root = physical / "workspace"
+    root.mkdir(parents=True)
+    options = ["--separate-git-dir", str(physical / "git-metadata")] if git_file else []
+    git(root, "init", "-q", *options)
+    alias = tmp_path / "alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    paper = alias / "workspace" / directory
+    record = root / f".asta/overleaf/{directory}.json"
+
+    assert module.load_config(paper) == {}
+    module.save_config(paper, URL, "a" * 40)
+    assert record.is_file()
+    assert not (paper / "overleaf.json").exists()
+    assert module.load_config(paper) == module.load_config(root / directory)
+    assert module.load_config(paper)["base"] == "a" * 40
+    module.save_config(root / directory, URL, "b" * 40)
+    assert module.load_config(paper)["base"] == "b" * 40
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
 @pytest.mark.parametrize(
     "parent", [".asta", ".asta/overleaf", ".asta/overleaf/examples"]
 )

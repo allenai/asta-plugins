@@ -160,6 +160,37 @@ def test_new_edits_create_one_pr_and_quiet_rerun_waits_for_checks(setup, github)
     assert github["writes"] == writes  # unchanged waiting status does not repeat
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+def test_sync_works_with_symlinked_temporary_ancestor(setup, github, monkeypatch):
+    seed, project = prepare(setup)
+    original = git(project, "rev-parse", "HEAD")
+    overleaf_edit(seed, "main.tex", "coauthor edit\n")
+    physical = project.parent / "physical-tmp"
+    physical.mkdir()
+    alias = project.parent / "tmp-alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    temporary_directory = sync.tempfile.TemporaryDirectory
+    monkeypatch.setattr(
+        sync.tempfile,
+        "TemporaryDirectory",
+        lambda *args, **kwargs: temporary_directory(*args, dir=alias, **kwargs),
+    )
+
+    for _ in range(2):
+        result = invoke(project)
+        assert result.exit_code == 0, result.output
+        assert len(github["prs"]) == 1
+        assert not github["merges"]
+        assert not git(
+            project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+        )
+    assert git(project, "rev-parse", "HEAD") == original
+    assert git(project, "status", "--porcelain") == ""
+    head = github["prs"][0]["headRefOid"]
+    git(project, "fetch", "origin", head)
+    assert git(project, "show", f"{head}:paper/main.tex") == "coauthor edit"
+
+
 def test_conflict_is_left_in_pr_and_never_merged(setup, github):
     seed, project = prepare(setup)
     (project / "paper/main.tex").write_text("workspace edit\n")
