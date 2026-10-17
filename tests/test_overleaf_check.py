@@ -240,9 +240,20 @@ def test_refuses_unrelated_reserved_branch_without_writes(scratch):
     assert_restored(scratch)
 
 
-def test_preserves_a_leftover_sync_created_branch(scratch):
+@pytest.mark.parametrize("auto_delete", [False, True])
+def test_preserves_a_leftover_sync_created_branch(scratch, monkeypatch, auto_delete):
     project, _, head, _ = scratch
     ref = "refs/heads/asta/overleaf-sync/1234567"
+    if auto_delete:
+        original = check.sync.gh
+
+        def deleting_github(root, *args, payload=None):
+            result = original(root, *args, payload=payload)
+            if args[:2] == ("pr", "merge"):
+                git(project, "push", "origin", f":{ref}")
+            return result
+
+        monkeypatch.setattr(check.sync, "gh", deleting_github)
     git(project, "commit", "--allow-empty", "-m", "Sync Overleaf paper")
     old_branch = git(project, "rev-parse", "HEAD")
     git(project, "push", "origin", f"HEAD:{ref}")

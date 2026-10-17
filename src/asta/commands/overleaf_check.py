@@ -273,7 +273,7 @@ class RoundTrip:
 
     def restore_branch(self):
         branch_tip = remote_ref(self.work, f"refs/heads/{self.branch}")
-        if branch_tip:
+        if branch_tip or self.initial_branch:
             ov.git(
                 "push",
                 f"--force-with-lease=refs/heads/{self.branch}:{branch_tip}",
