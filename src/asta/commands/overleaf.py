@@ -297,6 +297,12 @@ def credentials():
         yield env, ["-c", "credential.helper="]
 
 
+def foreground_maintenance(repo: Path) -> None:
+    # Detached auto-maintenance can still write into .git while a temporary clone is removed.
+    for key in ("gc.autoDetach", "maintenance.autoDetach"):
+        git("config", key, "false", cwd=repo)
+
+
 def clone(url: str, dest: Path) -> str:
     with credentials() as (env, options):
         git(
@@ -310,6 +316,7 @@ def clone(url: str, dest: Path) -> str:
             cwd=dest.parent,
             env=env,
         )
+    foreground_maintenance(dest)
     try:
         return git("rev-parse", "--verify", "HEAD", cwd=dest)
     except click.ClickException:
@@ -1436,11 +1443,61 @@ def publish(
     click.echo(f"Published Overleaf commit {published[:7]}; nothing to commit.")
 
 
+def release_check_timeout(ctx, param, value):
+    from .overleaf_sync import STALE_LOCK_SECONDS
+
+    # Leave time to release the lock before another check can reclaim it.
+    return click.IntRange(1, STALE_LOCK_SECONDS - 60).convert(value, param, ctx)
+
+
 @overleaf.command(name="sync")
 @dir_option
 @project_option
-def sync(directory: str, project: Path) -> None:
+@click.option(
+    "--check-repo",
+    help="Reserved scratch owner/name; require a passing live check per asta version before syncing.",
+)
+@click.option(
+    "--check-timeout",
+    type=click.IntRange(min=1),
+    callback=release_check_timeout,
+    default=600,
+    show_default=True,
+    help="Seconds for an uncached release check.",
+)
+def sync(
+    directory: str,
+    project: Path,
+    check_repo: str | None = None,
+    check_timeout: int = 600,
+) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_sync import sync_workspace
 
+    if check_repo is not None:
+        from .overleaf_gate import require_release_check
+
+        require_release_check(project, directory, check_repo, check_timeout)
     sync_workspace(project, directory)
+
+
+@overleaf.command(name="check")
+@dir_option
+@project_option
+@click.option(
+    "--timeout",
+    type=click.IntRange(min=1),
+    callback=release_check_timeout,
+    default=600,
+    show_default=True,
+    help="Seconds for the round trip.",
+)
+def check(directory: str, project: Path, timeout: int) -> None:
+    """Exercise sync/publish/conflicts on a scratch pair reserved for checks."""
+    from .overleaf_check import check_workspace
+
+    try:
+        check_workspace(project, directory, timeout)
+    except Exception:
+        click.echo("Overleaf live check FAIL", err=True)
+        raise

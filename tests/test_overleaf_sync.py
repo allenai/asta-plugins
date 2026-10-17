@@ -1163,6 +1163,20 @@ def test_record_notice_issue_closes_once_record_counts_again(setup, github):
     assert sync.RECORD_MARKER in github["issues"][1]["body"]
 
 
+@pytest.mark.parametrize("held", [False, True])
+def test_sync_ignores_reserved_pair_check_lock(setup, github, held):
+    """The outer check lock serializes checks; internal sync must still run."""
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/check-1234567"
+    if held:
+        git(project, "push", "origin", f"HEAD:{ref}")
+    before = git(project, "ls-remote", "origin", ref)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert "Overleaf sync complete" in result.output
+    assert git(project, "ls-remote", "origin", ref) == before
+
+
 def test_sync_pr_and_lock_carry_the_format(setup, github):
     _, project = prepare(setup)
     overleaf_edit(setup[0], "main.tex", "collaborator edit\n")

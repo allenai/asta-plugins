@@ -40,7 +40,7 @@ RECORD_RESOLVED_MARKER = "<!-- asta-overleaf-record-used-again -->"
 CONFLICTS = f"{ov.RECOVERY}#conflict-markers-after-pull-exit-3"
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
-FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup"
+FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
 STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
