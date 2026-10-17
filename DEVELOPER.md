@@ -100,6 +100,12 @@ The version lives in three places:
 
 1. `make set-version VERSION=x.y.z`
 2. `git diff` — sanity-check the version bump.
+   When introducing an Overleaf sync format, verify `FORMAT_RELEASE` in
+   `src/asta/commands/overleaf.py` names the first release shipping its reader.
+   The initial format-aware release is planned as 0.116.0; if that changes,
+   update the constant, `docs/overleaf-sync.md`, and the workspace developer and
+   recovery guides together. Keep this hint unchanged in later compatible
+   releases. See [the compatibility contract](docs/overleaf-sync.md#shared-format-and-releases).
 3. `make ci` — must be green.
 4. Commit and push the version bump:
    ```bash

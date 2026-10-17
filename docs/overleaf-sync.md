@@ -105,6 +105,42 @@ supply it; Overleaf history is never trusted to name one.
   record, so the push is a fast-forward and a concurrent publisher's record is
   never overwritten.
 
+## Shared format and releases
+
+`FORMAT` in `src/asta/commands/overleaf.py` versions the config, publication
+record, lock commit and managed sync PR header together. Unversioned state is
+format 1. Bump the format only when an older reader would misinterpret the state;
+additive changes that old readers can safely ignore do not need a bump.
+Config updates preserve unknown fields added by compatible releases, including
+when the URL or base changes; unchanged configs retain their original bytes.
+An additive field must remain valid when an older runner changes either the URL
+or base without updating that field. If correctness requires older runners to
+recompute or invalidate it (for example, a cached tree derived from `base`),
+introducing the field requires a format bump.
+`FORMAT_RELEASE` names the first asta release that understands that format.
+An absent JSON `format` field is legacy state; an explicit `null` is malformed.
+Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
+PR/lock format numbers must contain one to nine ASCII decimal digits and be positive;
+longer values are malformed regardless of Python's integer-conversion settings.
+Malformed format stamps stop the sync, including publication records that would
+otherwise use the damaged-record fallback. Restore the stamp from history first.
+The PR format stamp follows its single managed header, allowing blank lines and
+horizontal whitespace. Prose before the stamp or multiple stamps before the
+record-notice section are malformed and refuse. Multiple sync header markers
+are ambiguous and refuse, including literal header examples in notices;
+remove those examples or restore
+the header from history before retrying. Stamp examples belong only in the
+record-notice section, after `<!-- asta-overleaf-record-not-used -->`, where
+they do not change the PR's format.
+
+Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
+release shipping its reader. The initial format-aware release is planned as
+0.116.0; if that changes, update the constant and the workspace developer and
+recovery guides in the release PR. Older releases ignore stamps entirely, so
+every runner must adopt the first format-aware release before the format can
+increase. Keep the release hint for an existing format unchanged in later
+compatible releases.
+
 ## Threat model
 
 The checks catch stale or damaged records and stale clones: a concurrent pull or
@@ -144,6 +180,13 @@ has. Publish proceeds only when Overleaf's head equals the sync point.
 Refusals are one line with a concrete action and a link to the workspace skill's
 [recovery reference](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md).
 Every remaining refusal names a fix that works.
+
+Compatibility preflight reads the PR, live lock and publication record before
+any label updates or lock acquisition. If transport or Git errors prevent
+checking their formats, sync refuses without reporting on GitHub: the unreadable
+state could require a newer reader. Monitor scheduled job failures and logs,
+restore access and retry. Damaged records that can be read retain the documented
+fallback, whose warning is emitted only when the operation uses it.
 
 - Sync does not check how a commit reached the default branch: it publishes the paper
   that is there. A repository that wants every paper change reviewed must require PRs
