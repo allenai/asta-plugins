@@ -536,8 +536,7 @@ def format_stamp() -> dict:
 
 def check_format(version, release, where: str) -> None:
     """Stop before reading state in a format this CLI does not understand."""
-    if version is None:
-        return
+    # Callers default only an absent field to legacy format 1; null is invalid.
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
         raise ValueError("invalid sync format")
     if version > FORMAT:
@@ -562,7 +561,9 @@ def load_config(paper: Path) -> dict:
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(config, dict):
-            check_format(config.get("format"), config.get("requires_asta"), str(path))
+            check_format(
+                config.get("format", 1), config.get("requires_asta"), str(path)
+            )
         if not isinstance(config, dict) or not isinstance(config.get("base"), str):
             raise ValueError("expected an object with a base commit")
         if not SHA.fullmatch(config["base"]) or not isinstance(config.get("url"), str):
@@ -586,7 +587,9 @@ def save_config(paper: Path, url: str, base: str) -> None:
         current = None
     if isinstance(current, dict):
         try:
-            check_format(current.get("format"), current.get("requires_asta"), str(path))
+            check_format(
+                current.get("format", 1), current.get("requires_asta"), str(path)
+            )
         except ValueError:
             raise SyncError(
                 f"Invalid sync record: {path}. Restore its project URL and base commit from Git.",
@@ -716,7 +719,7 @@ def read_record(
         )
         if isinstance(record, dict):
             where = f"Origin's {record_ref(url)}" if url else "The sync record"
-            check_format(record.get("format"), record.get("requires_asta"), where)
+            check_format(record.get("format", 1), record.get("requires_asta"), where)
         if (
             not isinstance(record, dict)
             or not isinstance(record.get("overleaf"), str)

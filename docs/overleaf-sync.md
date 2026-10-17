@@ -23,6 +23,8 @@ record, lock commit and managed sync PR header together. Unversioned state is
 format 1. Bump the format only when an older reader would misinterpret the state;
 additive changes that old readers can safely ignore do not need a bump.
 `FORMAT_RELEASE` names the first asta release that understands that format.
+An absent JSON `format` field is legacy state; an explicit `null` is malformed.
+Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
 
 Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
 release shipping its reader. The initial format-aware release is planned as

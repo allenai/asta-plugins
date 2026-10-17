@@ -17,12 +17,10 @@ from . import overleaf as ov
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
 FORMAT_MARKER = re.compile(
-    r"(?m)^"
-    + re.escape(MARKER)
-    + r"\r?\n<!-- asta-overleaf-sync-format: ([^ \t\r\n]+)([^\r\n]*?)-->"
+    r"(?m)^" + re.escape(MARKER) + r"\r?\n<!-- asta-overleaf-sync-format:([^\r\n]*)"
 )
 FORMAT_LINE = f"<!-- asta-overleaf-sync-format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE} -->"
-LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format: ([^ \t\r\n]+)([^\r\n]*)")
+LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format:([^\r\n]*)")
 REQUIRES_ASTA = re.compile(r"requires-asta: (\S+)")
 DEFAULT_BODY = (
     MARKER
@@ -134,14 +132,20 @@ def lock(root: Path, project_id: str):
             )
 
 
-def check_stamp(stamp: re.Match, where: str) -> None:
+def check_stamp(value: str, where: str, *, comment: bool = False) -> None:
     # The version guards the state even if its optional release hint is absent
     # or unrecognized. check_format validates the hint before displaying it.
-    release = REQUIRES_ASTA.search(stamp[2])
     try:
-        if not re.fullmatch(r"[0-9]+", stamp[1]):
+        value = value.strip()
+        if comment:
+            if not value.endswith("-->"):
+                raise ValueError("unterminated sync format stamp")
+            value = value[:-3]
+        fields = value.split(maxsplit=1)
+        if not fields or not re.fullmatch(r"[0-9]+", fields[0]):
             raise ValueError("invalid sync format")
-        ov.check_format(int(stamp[1]), release[1] if release else None, where)
+        release = REQUIRES_ASTA.search(fields[1]) if len(fields) > 1 else None
+        ov.check_format(int(fields[0]), release[1] if release else None, where)
     except ValueError:
         raise ov.SyncError(
             f"{where} has a malformed sync format stamp; restore it from its history and retry.",
@@ -156,7 +160,7 @@ def stale_lock(root: Path, project_id: str) -> bool:
         ov.git("show", "-s", "--format=%B", "FETCH_HEAD", cwd=root)
     )
     if stamp:
-        check_stamp(stamp, f"The sync lock {ref}")
+        check_stamp(stamp[1], f"The sync lock {ref}")
     created = int(ov.git("show", "-s", "--format=%ct", "FETCH_HEAD", cwd=root))
     return time.time() - created >= STALE_LOCK_SECONDS
 
@@ -493,7 +497,7 @@ def sync_pr(
     ]
     for candidate in prs:
         for stamp in FORMAT_MARKER.finditer(candidate.get("body") or ""):
-            check_stamp(stamp, f"Sync PR {candidate['url']}")
+            check_stamp(stamp[1], f"Sync PR {candidate['url']}", comment=True)
     if format_only:
         return None
     if len(prs) > 1:

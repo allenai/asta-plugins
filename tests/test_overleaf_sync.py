@@ -1248,7 +1248,10 @@ def test_newer_format_discovered_during_pull_is_not_reported(
     assert not github["issues"]
 
 
-@pytest.mark.parametrize("version", ["0", "-1", "two", "２", "2foo", "9" * 5000])
+@pytest.mark.parametrize(
+    "version",
+    ["", " ", "\t", "requires-asta: 9.9.9", "0", "-1", "two", "２", "2foo", "9" * 5000],
+)
 @pytest.mark.parametrize("location", ["pr", "lock"])
 def test_malformed_format_stamp_has_recovery_guidance(version, location):
     body, pattern = (
@@ -1262,7 +1265,7 @@ def test_malformed_format_stamp_has_recovery_guidance(version, location):
     stamp = pattern.search(body)
     assert stamp is not None
     with pytest.raises(sync.ov.SyncError, match="malformed sync format stamp") as exc:
-        sync.check_stamp(stamp, "Shared sync state")
+        sync.check_stamp(stamp[1], "Shared sync state", comment=location == "pr")
     assert "#malformed-sync-format" in exc.value.format_message()
 
 
@@ -1277,6 +1280,18 @@ def test_notice_text_is_not_a_sync_pr_format_stamp(setup, github):
     )
     result = invoke(project)
     assert result.exit_code == 0, result.output
+
+
+def test_unterminated_pr_format_stamp_refuses(tmp_path, monkeypatch):
+    pr = {
+        "isCrossRepository": False,
+        "headRepositoryOwner": {"login": "allenai"},
+        "url": "https://github.com/allenai/test/pull/1",
+        "body": f"{sync.MARKER}\n<!-- asta-overleaf-sync-format: 1",
+    }
+    monkeypatch.setattr(sync, "gh", lambda *args: [pr])
+    with pytest.raises(sync.ov.SyncError, match="malformed sync format stamp"):
+        sync.sync_pr(tmp_path, "allenai/test", "sync", "main", format_only=True)
 
 
 def test_preflight_pr_transport_failure_stops_before_shared_writes(
@@ -1355,18 +1370,21 @@ def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypat
 
 
 @pytest.mark.parametrize("location", ["pr", "lock"])
-def test_malformed_stamp_refuses_cleanly_before_shared_writes(setup, github, location):
+@pytest.mark.parametrize("version", ["0", "", "   ", "requires-asta: 9.9.9"])
+def test_malformed_stamp_refuses_cleanly_before_shared_writes(
+    setup, github, location, version
+):
     seed, project = prepare(setup)
     if location == "pr":
         overleaf_edit(seed, "main.tex", "collaborator edit\n")
         assert invoke(project).exit_code == 0
         github["prs"][0]["body"] = sync.DEFAULT_BODY.replace(
-            sync.FORMAT_LINE, "<!-- asta-overleaf-sync-format: 0 -->"
+            sync.FORMAT_LINE, f"<!-- asta-overleaf-sync-format: {version} -->"
         )
     else:
         ref = "refs/asta/overleaf-sync-lock/1234567"
         empty = git(project, "mktree")
-        owner = git(project, "commit-tree", empty, "-m", "Asta-Sync-Format: 0")
+        owner = git(project, "commit-tree", empty, "-m", f"Asta-Sync-Format: {version}")
         git(project, "push", "origin", f"{owner}:{ref}")
     refs = git(project, "ls-remote", "origin")
     calls = len(github["calls"])

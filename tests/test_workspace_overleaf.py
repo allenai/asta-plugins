@@ -3789,10 +3789,45 @@ def test_save_config_refuses_newer_format_without_loading(tmp_path, change_base)
     assert path.read_bytes() == before
 
 
-def test_save_config_refuses_invalid_format_without_overwriting(tmp_path):
+@pytest.mark.parametrize("version", [0, None])
+@pytest.mark.parametrize("change_base", [False, True])
+def test_save_config_refuses_invalid_format_without_overwriting(
+    tmp_path, version, change_base
+):
     path = tmp_path / module.CONFIG
-    path.write_text(json.dumps({"format": 0, "url": URL, "base": "a" * 40}))
+    path.write_text(json.dumps({"format": version, "url": URL, "base": "a" * 40}))
     before = path.read_bytes()
     with pytest.raises(module.SyncError, match="Invalid sync record"):
-        module.save_config(tmp_path, URL, "b" * 40)
+        module.save_config(tmp_path, URL, ("b" if change_base else "a") * 40)
     assert path.read_bytes() == before
+
+
+def test_null_config_format_refuses_before_copying_or_publishing(setup):
+    seed, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    config = project / "paper/overleaf.json"
+    data = json.loads(config.read_text())
+    config.write_text(json.dumps({**data, "format": None}))
+    commit_all(project)
+    before = {p.name: p.read_bytes() for p in (project / "paper").iterdir()}
+    origin_refs = git(project, "ls-remote", "origin")
+    overleaf_refs = git(seed, "ls-remote", "origin")
+    for command in ("pull", "publish"):
+        result = run(project, command, merge=False)
+        assert result.exit_code == 1, result.output
+        assert "Invalid sync record" in result.output
+        assert isinstance(result.exception, SystemExit)
+    assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
+    assert git(project, "ls-remote", "origin") == origin_refs
+    assert git(seed, "ls-remote", "origin") == overleaf_refs
+
+
+def test_record_format_distinguishes_missing_from_null(setup, tmp_path):
+    _, project = setup
+    origin = tmp_path / "workspace.git"
+    legacy = {"url": URL, "overleaf": "a" * 40, "workspace": "b" * 40}
+    commit = forge_record(origin, legacy)
+    assert module.read_record(origin, commit, url=URL) == legacy
+    commit = forge_record(origin, {**legacy, "format": None})
+    with pytest.raises(module.SyncError, match="Invalid Overleaf sync record"):
+        module.read_record(origin, commit, url=URL)
