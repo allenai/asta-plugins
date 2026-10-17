@@ -1234,6 +1234,32 @@ def test_credits_keep_human_edit_with_publish_message(setup, message_kind):
     ]
 
 
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_credits_keep_empty_human_commit_with_publish_message(setup):
+    seed, project = prepare(setup)
+    base = git(seed, "rev-parse", "HEAD")
+    (project / "paper/main.tex").write_text("Reviewed workspace edit\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    git(seed, "pull", "--ff-only")
+    # Copy an actual publication's message and tree, but not its authorship.
+    message = git(seed, "show", "-s", "--format=%B", "HEAD")
+    git(
+        seed,
+        "commit",
+        "--allow-empty",
+        "--author",
+        "Coauthor <coauthor@example.invalid>",
+        "-m",
+        message,
+    )
+    git(seed, "push", "origin", "master")
+    assert sync.credits(
+        project, {"url": URL, "base": base}, git(seed, "rev-parse", "HEAD"), "paper/"
+    ) == ["Coauthor <coauthor@example.invalid>"]
+
+
 def test_credits_do_not_parse_body_records_or_lines_as_authors(setup):
     seed, project = setup
     base = git(seed, "rev-parse", "HEAD")

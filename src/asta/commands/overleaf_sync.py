@@ -399,7 +399,15 @@ def is_publication(
     try:
         if ov.resolve_commit(root, source) is None:
             return False
-        return ov.paper_files(remote, commit) == ov.paper_files(root, source, prefix)
+        if ov.paper_files(remote, commit) != ov.paper_files(root, source, prefix):
+            return False
+        # Publish returns without committing when the exported tree is unchanged.
+        # A human's empty commit can copy its message and contents, but is not a publish.
+        return bool(
+            ov.git(
+                "diff-tree", "--no-commit-id", "--name-only", "-r", commit, cwd=remote
+            )
+        )
     except (ov.SyncError, ov.GitCommandError):
         # Unverifiable content is not evidence for dropping someone's credit.
         return False
