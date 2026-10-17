@@ -3238,7 +3238,13 @@ def test_publish_records_its_commit_before_a_concurrent_overleaf_edit(
     assert result.exit_code == 0, result.output
     _, record = origin_record(tmp_path)
     remote_head = git(seed, "rev-parse", "HEAD")
-    assert record == {"url": URL, "overleaf": pushed, "workspace": expected}
+    assert record == {
+        "format": module.FORMAT,
+        "requires_asta": module.FORMAT_RELEASE,
+        "url": URL,
+        "overleaf": pushed,
+        "workspace": expected,
+    }
     assert remote_head != pushed
     assert git(seed, "rev-parse", f"{remote_head}^") == pushed
     assert (project / "paper/overleaf.json").read_bytes() == before_config
