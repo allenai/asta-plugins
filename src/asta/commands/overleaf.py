@@ -584,6 +584,14 @@ def save_config(paper: Path, url: str, base: str) -> None:
         current = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         current = None
+    if isinstance(current, dict):
+        try:
+            check_format(current.get("format"), current.get("requires_asta"), str(path))
+        except ValueError:
+            raise SyncError(
+                f"Invalid sync record: {path}. Restore its project URL and base commit from Git.",
+                recovery="paper-configuration",
+            ) from None
     # Stamping alone must not turn an unchanged unversioned config into a diff.
     if (
         isinstance(current, dict)

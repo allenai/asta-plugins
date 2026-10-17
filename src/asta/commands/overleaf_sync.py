@@ -16,9 +16,13 @@ from . import overleaf as ov
 
 LABEL = "asta:overleaf-sync"
 MARKER = "<!-- asta-overleaf-sync -->"
-FORMAT_MARKER = re.compile(r"<!-- asta-overleaf-sync-format: (\d+)\b([^\r\n]*?)-->")
+FORMAT_MARKER = re.compile(
+    r"(?m)^"
+    + re.escape(MARKER)
+    + r"\r?\n<!-- asta-overleaf-sync-format: ([^ \t\r\n]+)([^\r\n]*?)-->"
+)
 FORMAT_LINE = f"<!-- asta-overleaf-sync-format: {ov.FORMAT} requires-asta: {ov.FORMAT_RELEASE} -->"
-LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format: (\d+)\b([^\r\n]*)")
+LOCK_FORMAT = re.compile(r"(?m)^Asta-Sync-Format: ([^ \t\r\n]+)([^\r\n]*)")
 REQUIRES_ASTA = re.compile(r"requires-asta: (\S+)")
 DEFAULT_BODY = (
     MARKER
@@ -134,7 +138,15 @@ def check_stamp(stamp: re.Match, where: str) -> None:
     # The version guards the state even if its optional release hint is absent
     # or unrecognized. check_format validates the hint before displaying it.
     release = REQUIRES_ASTA.search(stamp[2])
-    ov.check_format(int(stamp[1]), release[1] if release else None, where)
+    try:
+        if not re.fullmatch(r"[0-9]+", stamp[1]):
+            raise ValueError("invalid sync format")
+        ov.check_format(int(stamp[1]), release[1] if release else None, where)
+    except ValueError:
+        raise ov.SyncError(
+            f"{where} has a malformed sync format stamp; restore it from its history and retry.",
+            recovery="malformed-sync-format",
+        ) from None
 
 
 def stale_lock(root: Path, project_id: str) -> bool:
@@ -531,8 +543,14 @@ def sync_workspace(project: Path, directory: str):
     # the reads under the lock below to catch state that changes during preflight.
     sync_pr(root, repo, branch, default_name, format_only=True)
     lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
-    if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
-        stale_lock(root, project_id)
+    try:
+        if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
+            stale_lock(root, project_id)
+    except ov.GitCommandError:
+        # A concurrent owner can release its lock between ls-remote and fetch.
+        # Continue only when it is gone; an unreadable live lock could be newer.
+        if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
+            raise
     # Label creation is idempotent; no repository settings or protections change.
     gh(
         root,

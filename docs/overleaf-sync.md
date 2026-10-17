@@ -16,6 +16,22 @@ supply it; Overleaf history is never trusted to name one.
   record, so the push is a fast-forward and a concurrent publisher's record is
   never overwritten.
 
+## Shared format and releases
+
+`FORMAT` in `src/asta/commands/overleaf.py` versions the config, publication
+record, lock commit and managed sync PR header together. Unversioned state is
+format 1. Bump the format only when an older reader would misinterpret the state;
+additive changes that old readers can safely ignore do not need a bump.
+`FORMAT_RELEASE` names the first asta release that understands that format.
+
+Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
+release shipping its reader. The initial format-aware release is planned as
+0.116.0; if that changes, update the constant and the workspace developer and
+recovery guides in the release PR. Older releases ignore stamps entirely, so
+every runner must adopt the first format-aware release before the format can
+increase. Keep the release hint for an existing format unchanged in later
+compatible releases.
+
 ## Threat model
 
 The checks catch stale or damaged records and stale clones: a concurrent pull or

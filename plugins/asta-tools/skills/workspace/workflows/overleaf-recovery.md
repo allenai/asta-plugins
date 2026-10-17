@@ -118,6 +118,18 @@ message names (`/asta-tools:asta-cli`, or the version pinned by a scheduled job)
 then retry. Do not edit or delete the state to get past it; an older runner has
 to be upgraded, not the state downgraded.
 
+This refusal exits non-zero without writing a GitHub status or issue. Scheduled
+job operators must monitor failures and logs for the upgrade notice. Releases
+before asta 0.116.0 ignore format stamps; upgrade every runner to at least the
+first format-aware release before introducing a newer format.
+
+## Malformed sync format
+
+The sync PR header or lock commit has an invalid format stamp. Restore the
+stamp from its history and retry; do not guess a format number. If a lock was
+damaged by an interrupted run, confirm its owner has stopped before following
+the [interrupted-run recovery](overleaf-sync-command.md#interrupted-runs).
+
 ## Incomplete publication
 
 The Overleaf push succeeded but confirmation or recording the sync point failed.

@@ -3776,3 +3776,23 @@ def test_older_cli_never_replaces_a_newer_format_record(setup, tmp_path):
         assert result.exit_code == 1, result.output
         assert "Upgrade to asta 9.9.9 or later" in result.output
         assert git(origin, "rev-parse", RECORD_REF) == newer
+
+
+@pytest.mark.parametrize("change_base", [False, True])
+def test_save_config_refuses_newer_format_without_loading(tmp_path, change_base):
+    path = tmp_path / module.CONFIG
+    data = {**newer_format(), "url": URL, "base": "a" * 40, "future": "retained"}
+    path.write_text(json.dumps(data))
+    before = path.read_bytes()
+    with pytest.raises(module.NewerFormatError, match="Upgrade to asta 9.9.9"):
+        module.save_config(tmp_path, URL, "b" * 40 if change_base else data["base"])
+    assert path.read_bytes() == before
+
+
+def test_save_config_refuses_invalid_format_without_overwriting(tmp_path):
+    path = tmp_path / module.CONFIG
+    path.write_text(json.dumps({"format": 0, "url": URL, "base": "a" * 40}))
+    before = path.read_bytes()
+    with pytest.raises(module.SyncError, match="Invalid sync record"):
+        module.save_config(tmp_path, URL, "b" * 40)
+    assert path.read_bytes() == before

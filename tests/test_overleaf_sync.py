@@ -1246,3 +1246,136 @@ def test_newer_format_discovered_during_pull_is_not_reported(
     assert "Upgrade to asta 9.9.9 or later" in result.output
     assert not github["writes"]
     assert not github["issues"]
+
+
+@pytest.mark.parametrize("version", ["0", "-1", "two", "２", "2foo", "9" * 5000])
+@pytest.mark.parametrize("location", ["pr", "lock"])
+def test_malformed_format_stamp_has_recovery_guidance(version, location):
+    body, pattern = (
+        (
+            f"{sync.MARKER}\n<!-- asta-overleaf-sync-format: {version} -->",
+            sync.FORMAT_MARKER,
+        )
+        if location == "pr"
+        else (f"Asta-Sync-Format: {version}", sync.LOCK_FORMAT)
+    )
+    stamp = pattern.search(body)
+    assert stamp is not None
+    with pytest.raises(sync.ov.SyncError, match="malformed sync format stamp") as exc:
+        sync.check_stamp(stamp, "Shared sync state")
+    assert "#malformed-sync-format" in exc.value.format_message()
+
+
+def test_notice_text_is_not_a_sync_pr_format_stamp(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "collaborator edit\n")
+    assert invoke(project).exit_code == 0
+    pr = github["prs"][0]
+    pr["body"] = sync.with_notice(
+        pr["body"],
+        "Example: <!-- asta-overleaf-sync-format: 99 requires-asta: 9.9.9 -->",
+    )
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+
+
+def test_preflight_pr_transport_failure_stops_before_shared_writes(
+    setup, github, monkeypatch
+):
+    _, project = prepare(setup)
+    original = sync.gh
+    reads = 0
+
+    def unavailable_pr(root, *args, **kwargs):
+        nonlocal reads
+        if args[:2] == ("pr", "list"):
+            reads += 1
+            raise sync.ov.SyncError("fixture PR transport failure")
+        return original(root, *args, **kwargs)
+
+    monkeypatch.setattr(sync, "gh", unavailable_pr)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "fixture PR transport failure" in result.output
+    assert reads == 1
+    assert not github["writes"]
+    assert not github["issues"]
+    assert all(args[0] != "label" for args, _ in github["calls"])
+    assert not git(
+        project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+    )
+
+
+def test_preflight_tolerates_concurrent_unlock(setup, github, monkeypatch):
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    # A real lock commit and ref, released after advertisement but before fetch.
+    with sync.lock(project, "1234567") as acquired:
+        assert acquired
+        owner = git(project, "ls-remote", "origin", ref).split()[0]
+    git(project, "push", "origin", f"{owner}:{ref}")
+    original = sync.ov.git
+    released = False
+
+    def unlock_before_fetch(*args, **kwargs):
+        nonlocal released
+        if args[:4] == ("fetch", "--no-tags", "origin", ref) and not released:
+            released = True
+            original("push", "origin", f":{ref}", cwd=project)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", unlock_before_fetch)
+    result = invoke(project)
+    assert released
+    assert result.exit_code == 0, result.output
+    assert not github["issues"]
+    assert not git(project, "ls-remote", "origin", ref)
+
+
+def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypatch):
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    original = sync.ov.git
+
+    def unreadable_lock(*args, **kwargs):
+        if args[:4] == ("fetch", "--no-tags", "origin", ref):
+            raise sync.ov.GitCommandError("fixture lock transport failure", 128)
+        return original(*args, **kwargs)
+
+    with sync.lock(project, "1234567") as acquired:
+        assert acquired
+        before = git(project, "ls-remote", "origin", ref)
+        monkeypatch.setattr(sync.ov, "git", unreadable_lock)
+        result = invoke(project)
+        assert result.exit_code == 1, result.output
+        assert "fixture lock transport failure" in result.output
+        assert not github["writes"]
+        assert all(args[0] != "label" for args, _ in github["calls"])
+        assert git(project, "ls-remote", "origin", ref) == before
+
+
+@pytest.mark.parametrize("location", ["pr", "lock"])
+def test_malformed_stamp_refuses_cleanly_before_shared_writes(setup, github, location):
+    seed, project = prepare(setup)
+    if location == "pr":
+        overleaf_edit(seed, "main.tex", "collaborator edit\n")
+        assert invoke(project).exit_code == 0
+        github["prs"][0]["body"] = sync.DEFAULT_BODY.replace(
+            sync.FORMAT_LINE, "<!-- asta-overleaf-sync-format: 0 -->"
+        )
+    else:
+        ref = "refs/asta/overleaf-sync-lock/1234567"
+        empty = git(project, "mktree")
+        owner = git(project, "commit-tree", empty, "-m", "Asta-Sync-Format: 0")
+        git(project, "push", "origin", f"{owner}:{ref}")
+    refs = git(project, "ls-remote", "origin")
+    calls = len(github["calls"])
+    writes = github["writes"]
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "malformed sync format stamp" in result.output
+    assert "#malformed-sync-format" in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert github["writes"] == writes
+    assert all(args[0] != "label" for args, _ in github["calls"][calls:])
+    assert git(project, "ls-remote", "origin") == refs
