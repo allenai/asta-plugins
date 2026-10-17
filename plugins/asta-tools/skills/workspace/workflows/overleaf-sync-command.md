@@ -1,27 +1,33 @@
 # Schedule Overleaf sync
 
 Import the project with `asta workspace overleaf pull <url>`, review the paper
-and `overleaf.json` together, and merge them. Before enabling the schedule, the
+and its `.asta/overleaf` record together, and merge them. Before enabling the schedule, the
 project owner must **turn off Overleaf link sharing** and invite each co-author
 (and the sync account) explicitly as an editor. Anyone who can edit this project
 can contribute paper content to the default branch through the sync PR.
 
 Run `asta workspace overleaf sync --project /path/to/checkout` from cron or any
-scheduler. Use `--dir` for a non-default paper directory. Supply the Overleaf
+scheduler. Without `--dir`, it visits every paper paired by a tracked
+`.asta/overleaf/<paper dir>.json` record, including nested paper directories.
+Use `--dir` to sync only one pairing. A failure on one paper does not stop the
+remaining papers; the command reports each failure and exits nonzero after
+attempting them all. `pull` and `publish` require `--dir` when several papers
+are paired. Supply the Overleaf
 Git token through `OVERLEAF_TOKEN` or the Git credential helper, configure Git's
 user.name/user.email, and authenticate `gh` for the workspace repository with
 contents, pull-request and issue write access. Install the GitHub CLI alongside
 Asta. No runner, service account or scheduler is prescribed here.
 
 The command uses a temporary full clone, writes only the linked paper's files
-to its branch, and leaves the caller's working tree alone. A remote lock
+and its own pairing record to its branch, and leaves the caller's working tree alone. A remote lock
 serializes runs from different machines. It keeps one PR per project on
 `asta/overleaf-sync/<project-id>`, labeled `asta:overleaf-sync`. Treat this branch
 and label as reserved for sync; close an unwanted PR before restarting it.
 Without an open sync PR, the command replaces that branch only when it holds
 sync-created paper commits; otherwise it refuses until you move the branch aside.
 Fork PRs with the same branch name are ignored. Ownership is checked using the
-exact sync commit subjects and the paper-only diff, not cryptographic attestation.
+exact sync commit subjects and the diff limited to the paper and its pairing
+record, not cryptographic attestation.
 People with repository push access are trusted, as with pull/publish; they can
 copy these subjects. The build-configuration guard covers only `latexmkrc` and
 `.latexmkrc`; it is not a general execution sandbox. Quarto metadata, notebooks

@@ -189,11 +189,21 @@ def test_bibliography_rc_supports_string_evaluation(tmp_path, paper_dir):
 
 
 @pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
-def test_overleaf_bibliography_rc_stays_inside_paper(tmp_path):
-    paper = tmp_path / "papers/imported"
+@pytest.mark.parametrize(
+    "paper_dir", ["paper", "papers/imported", "papers/custom name"]
+)
+@pytest.mark.parametrize("git_marker", ["directory", "file", "absent"])
+def test_overleaf_bibliography_rc_stays_inside_paper(tmp_path, paper_dir, git_marker):
+    paper = tmp_path / paper_dir
     paper.mkdir(parents=True)
     (tmp_path / "references.bib").write_text("Root bibliography")
-    (paper / "overleaf.json").write_text("{}")
+    if git_marker == "directory":
+        (tmp_path / ".git").mkdir()
+    elif git_marker == "file":
+        (tmp_path / ".git").write_text("gitdir: elsewhere\n")
+    record = tmp_path / ".asta/overleaf" / f"{paper_dir}.json"
+    record.parent.mkdir(parents=True)
+    record.write_text("{}")
     shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
     result = subprocess.check_output(
         [
@@ -208,6 +218,36 @@ def test_overleaf_bibliography_rc_stays_inside_paper(tmp_path):
     )
 
     assert result == f"{paper}:existing:"
+
+
+@pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
+@pytest.mark.parametrize("git_marker", ["directory", "file"])
+def test_bibliography_rc_ignores_pairing_outside_checkout(tmp_path, git_marker):
+    workspace = tmp_path / "workspace"
+    paper = workspace / "paper"
+    paper.mkdir(parents=True)
+    (workspace / "references.bib").write_text("Workspace bibliography")
+    if git_marker == "directory":
+        (workspace / ".git").mkdir()
+    else:
+        (workspace / ".git").write_text("gitdir: elsewhere\n")
+    record = tmp_path / ".asta/overleaf/workspace/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text("{}")
+    shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
+    result = subprocess.check_output(
+        [
+            "perl",
+            "-e",
+            "$search_path_separator = ':'; do './latexmkrc' or die $@; "
+            "print $ENV{'BIBINPUTS'};",
+        ],
+        cwd=paper,
+        env={**os.environ, "BIBINPUTS": "existing"},
+        text=True,
+    )
+
+    assert result == f"{workspace}:existing:"
 
 
 @pytest.mark.parametrize("paper_dir", ["paper", "papers/a", "papers/custom name"])
@@ -283,7 +323,9 @@ def test_overleaf_named_main_requires_its_own_bibliography(
 ):
     paper = tmp_path / "paper"
     paper.mkdir()
-    (paper / "overleaf.json").write_text("{}")
+    record = paper.parent / ".asta/overleaf" / f"{paper.name}.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}")
     shutil.copy(ASSETS / "paper/latexmkrc", paper / "latexmkrc")
     (paper / "conference.tex").write_text(
         r"\documentclass{article}\begin{document}"

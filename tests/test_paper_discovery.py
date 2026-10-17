@@ -124,7 +124,9 @@ def test_discovery_finds_single_documentclass_file_without_main_tex(tmp_path):
     )
     (repo / "paper/sections.tex").write_text("no class here\n")
     (repo / "synced").mkdir()
-    (repo / "synced/overleaf.json").write_text("{}")
+    record = repo / ".asta/overleaf/synced.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}")
     (repo / "synced/article.tex").write_text("\\documentclass{article}\n")
     (repo / "ambiguous").mkdir()
     (repo / "ambiguous/latexmkrc").write_text("$pdf_mode = 1;\n")
@@ -142,6 +144,22 @@ def test_discovery_finds_single_documentclass_file_without_main_tex(tmp_path):
     )
 
 
+def test_discovery_does_not_treat_symlinked_record_as_pairing(tmp_path):
+    paper = tmp_path / "synced"
+    paper.mkdir()
+    (paper / "main.tex").write_text(r"\documentclass{article}")
+    record = tmp_path / ".asta/overleaf/synced.json"
+    record.parent.mkdir(parents=True)
+    source = tmp_path / "unrelated.json"
+    source.write_text("{}")
+    record.symlink_to(source)
+
+    assert discover(tmp_path)["papers"] == []
+    record.unlink()
+    record.write_text("{}")
+    assert discover(tmp_path)["papers"] == ["synced"]
+
+
 def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):
     git(tmp_path, "init", "-q")
     git(tmp_path, "config", "user.email", "test@example.invalid")
@@ -150,13 +168,17 @@ def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):
         ("paper", None),
         ("custom", "latexmkrc"),
         ("nested/paper", ".latexmkrc"),
-        ("synced", "overleaf.json"),
+        ("synced", "record"),
         ("ambiguous", "latexmkrc"),
-        ("sections-only", "overleaf.json"),
+        ("sections-only", "record"),
     ]:
         directory = tmp_path / name
         directory.mkdir(parents=True)
-        if marker:
+        if marker == "record":
+            record = tmp_path / ".asta/overleaf" / f"{name}.json"
+            record.parent.mkdir(parents=True, exist_ok=True)
+            record.write_text("")
+        elif marker:
             (directory / marker).write_text("")
         (directory / "article.tex").write_text(
             "Section text" if name == "sections-only" else r"\documentclass{article}"
@@ -173,6 +195,7 @@ def test_removed_papers_use_the_same_main_document_rules_as_current(tmp_path):
         "synced",
         "ambiguous",
         "sections-only",
+        ".asta",
     )
     git(tmp_path, "commit", "-qm", "base papers")
     base = git(tmp_path, "rev-parse", "HEAD")
@@ -266,7 +289,9 @@ def test_ambiguous_base_warning_is_not_repeated(tmp_path):
 def test_invalid_directory_is_reported_before_ambiguous_sources(tmp_path):
     paper = tmp_path / "bad\nname"
     paper.mkdir()
-    (paper / "overleaf.json").write_text("{}")
+    record = paper.parent / ".asta/overleaf" / f"{paper.name}.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("{}")
     for name in ("a.tex", "b.tex"):
         (paper / name).write_text(r"\documentclass{article}")
 

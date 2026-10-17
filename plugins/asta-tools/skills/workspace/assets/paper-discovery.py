@@ -57,6 +57,15 @@ def main_file(
     return found[0] if len(found) == 1 else None
 
 
+# Overleaf pairing records, one per paper: .asta/overleaf/<paper dir>.json.
+RECORDS = ".asta/overleaf"
+
+
+def paired(directories: dict[str, list[str]], name: str) -> bool:
+    parent, _, leaf = f"{RECORDS}/{name}".rpartition("/")
+    return f"{leaf}.json" in directories.get(parent, [])
+
+
 def current_papers(root: Path, warnings: list[str]) -> dict[str, str]:
     papers = {}
     for directory, children, files in os.walk(root, followlinks=False):
@@ -76,8 +85,11 @@ def current_papers(root: Path, warnings: list[str]) -> dict[str, str]:
             for file in files
             if not (entry / file).is_symlink() and (entry / file).is_file()
         ]
-        if name != "paper" and not any(
-            marker in files for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
+        record = root / RECORDS / f"{name}.json"
+        if (
+            name != "paper"
+            and not any(marker in files for marker in ("latexmkrc", ".latexmkrc"))
+            and not (not record.is_symlink() and record.is_file())
         ):
             continue
         if not all(valid_name(part) for part in entry.relative_to(root).parts):
@@ -117,8 +129,10 @@ def base_papers(base: str, warnings: list[str]) -> set[str]:
             directories.setdefault(parent, []).append(filename)
     names = set()
     for name, files in sorted(directories.items()):
-        if name != "paper" and not any(
-            marker in files for marker in ("latexmkrc", ".latexmkrc", "overleaf.json")
+        if (
+            name != "paper"
+            and not any(marker in files for marker in ("latexmkrc", ".latexmkrc"))
+            and not paired(directories, name)
         ):
             continue
         if not all(valid_name(part) for part in name.split("/")):

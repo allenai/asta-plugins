@@ -7,7 +7,7 @@ The message says whether nothing changed or an Overleaf push already succeeded.
 ## Record not used
 
 `pull` printed `Overleaf sync record not used: <reason>. Pull started from
-overleaf.json's base`. A record counts only when its ids are full commit ids, its
+the pairing record's base`. A record counts only when its ids are full commit ids, its
 workspace commit is on the default branch, and its Overleaf commit holds that commit's
 paper. A damaged record, one that does not match the default branch's history, or one
 whose Overleaf commit is missing from Overleaf history is ignored. Starting from `base`
@@ -37,7 +37,7 @@ then retry.
 
 ## Base not in Overleaf history
 
-`base` in `paper/overleaf.json` is unreadable or not in Overleaf's history (for
+`base` in `.asta/overleaf/paper.json` is unreadable or not in Overleaf's history (for
 example, Overleaf history was reset), and no sync record counts. Find an Overleaf
 commit and set `base` to it in a PR, then review the imported changes:
 
@@ -111,7 +111,7 @@ record can be replaced by the next successful publish without deleting it.
 
 ## Newer sync format
 
-The paper's sync state (`paper/overleaf.json`, the `refs/asta/` record or lock, or
+The paper's sync state (`.asta/overleaf/paper.json`, the `refs/asta/` record or lock, or
 the sync PR) was written by a newer asta release whose format this CLI would
 misread, so it stopped. If the state changed after preflight, the run may already
 have created the sync label and acquired and released its lock; it does not
@@ -139,7 +139,7 @@ the header and stamp or multiple stamps before the record-notice section also
 refuse; restore the original stamp placement and keep examples in the notice
 section after `<!-- asta-overleaf-record-not-used -->`. A publication
 record with an invalid format stops the sync instead of falling back to
-`overleaf.json`. If a lock was damaged by an interrupted run,
+the `.asta/overleaf` record. If a lock was damaged by an interrupted run,
 confirm its owner has stopped before following the
 [interrupted-run recovery](overleaf-sync-command.md#interrupted-runs).
 
@@ -147,7 +147,7 @@ confirm its owner has stopped before following the
 
 The Overleaf push succeeded but confirmation or recording the sync point failed.
 Restore origin access if needed, run `asta workspace overleaf pull`, and merge its PR
-before publishing again. That PR may change only `overleaf.json`. If Overleaf history
+before publishing again. That PR may change only the paper's `.asta/overleaf` record. If Overleaf history
 was reset, use [Base not in Overleaf history](#base-not-in-overleaf-history); do not
 force-push over later collaborator edits.
 
@@ -171,7 +171,7 @@ compare the named file with its committed version when status looks clean.
 ## Ignore rules
 
 Keep `.gitignore` in the workspace root, not inside the Overleaf paper. Adjust matching
-rules so paper sources and `overleaf.json` can be committed. If checking the rules
+rules so paper sources and the `.asta/overleaf` record can be committed. If checking the rules
 itself failed, check local Git configuration and repository permissions, then retry.
 
 ## Local Git failure
@@ -197,7 +197,7 @@ changes require retrying after they settle, not bypassing the expected-commit gu
 ## Paper configuration
 
 For a new link, run `asta workspace overleaf pull <url>`, review the import and commit
-`paper/overleaf.json`. For a damaged or modified configuration, restore its project URL
+`.asta/overleaf/paper.json`. For a damaged or modified configuration, restore its project URL
 and base from Git, or set a usable base through the
 [base recovery procedure](#base-not-in-overleaf-history). Commit the configuration
 with the paper before publishing.
@@ -297,6 +297,6 @@ an open issue; use the publication recovery above, then rerun sync.
 Sync lists the workspace changes to conflicted files; their authors should resolve
 those conflicts in the existing sync PR. Changes to `latexmkrc` or `.latexmkrc`
 are refused before any sync-branch push and reported on the labeled issue;
-a person must review and import them manually. Restore a removed `overleaf.json`
+a person must review and import them manually. Restore a removed `.asta/overleaf` record
 from the linked paper's history. Configure Git `user.name` and `user.email` in
 the scheduler checkout before retrying a missing-identity refusal.
