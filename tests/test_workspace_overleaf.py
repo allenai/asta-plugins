@@ -3842,7 +3842,9 @@ def test_save_config_refuses_newer_format_without_loading(tmp_path, change_base)
     path.write_text(json.dumps(data))
     before = path.read_bytes()
     with pytest.raises(module.NewerFormatError, match="Upgrade to asta 9.9.9"):
-        module.save_config(tmp_path / "paper", URL, "b" * 40 if change_base else data["base"])
+        module.save_config(
+            tmp_path / "paper", URL, "b" * 40 if change_base else data["base"]
+        )
     assert path.read_bytes() == before
 
 
@@ -3859,7 +3861,9 @@ def test_save_config_refuses_symlink_without_reading_or_writing(
     path = record_file(tmp_path)
     path.symlink_to(target)
     with pytest.raises(module.SyncError, match="is a symlink"):
-        module.save_config(tmp_path / "paper", URL, "b" * 40 if change_base else data["base"])
+        module.save_config(
+            tmp_path / "paper", URL, "b" * 40 if change_base else data["base"]
+        )
     assert path.is_symlink()
     if dangling:
         assert not target.exists()
