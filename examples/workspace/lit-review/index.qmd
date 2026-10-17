@@ -3,7 +3,7 @@ title: "A small literature review"
 documentclass: article
 ---
 
-This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)). The separate `paper/main.tex` is edited directly. Both cite the project-root `references.bib`.
+This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)). This review cites the project-root `references.bib`. The separate `paper/main.tex` is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.
 
 ## Example claim
 
