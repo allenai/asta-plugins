@@ -18,12 +18,13 @@ so the merged change reaches Overleaf. Use one call that finishes:
 asta workspace overleaf sync --wait 1800
 ```
 
-`--wait SECONDS` reruns sync, polling every 30 seconds, until it completes or
-someone must act. No further attempt starts at or after the shared deadline;
-an attempt already running finishes normally so it can release its lock.
-`--wait 0` makes one attempt without polling. It waits out the sync PR's
+`--wait SECONDS` visits each pending paper once per round, polling every 30
+seconds between rounds, until it completes or someone must act. For a positive
+wait, no further attempt starts at or after the shared deadline; an attempt
+already running finishes normally so it can release its lock. `--wait 0` makes
+one pass over all paired papers without polling. It waits out the sync PR's
 checks, the quiet rerun before it merges, and another run's recent lock, then
-prints one final `Sync outcome:` line and exits:
+prints one final `Sync outcome:` line per paper after any progress messages and exits:
 
 | Exit | Outcome | Next step |
 |------|---------|-----------|
@@ -38,8 +39,10 @@ or timing out loses nothing. With several paired papers and no `--dir`, each
 paper gets its own outcome line and the exit code is the most urgent one.
 Papers not attempted before the shared deadline are reported as still waiting.
 An empty checks list may mean CI has not started yet, so it keeps waiting
-within the deadline. If the repository has no checks for the sync PR, a person
-must merge it; rerun sync afterward to publish.
+within the deadline. If no checks appear before a positive wait expires, exit 4
+asks a person to inspect CI setup. If the repository has no checks for the sync
+PR, that person must merge it; rerun sync afterward to publish. `--wait 0`
+reports missing checks as still waiting because it allows no time for CI to start.
 
 A scheduled runner is worth it when co-authors edit in Overleaf between the
 moments above, for example several active co-authors or long stretches without

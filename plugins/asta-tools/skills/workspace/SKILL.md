@@ -29,8 +29,9 @@ first so newer co-author edits conflict on your change before it lands. If it
 has not caught up, run `asta workspace overleaf sync --wait 1800` where the
 Overleaf token is available (in the background is fine; act on its final
 `Sync outcome:` line and exit code), then update your branch. Sync the same way
-before editing the paper and after merging a paper PR. Resolve a sync conflict on that PR and
-rerun its checks; do not bypass it by advancing the `.asta/overleaf` pairing record manually.
+before editing the paper and after merging a paper PR. Resolve a sync conflict on
+that PR and rerun its checks; do not bypass it by advancing the `.asta/overleaf`
+pairing record manually.
 For scheduling, invited-coauthor access, lock recovery and repository status,
 read [Overleaf sync](workflows/overleaf-sync-command.md).
 

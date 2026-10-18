@@ -4312,9 +4312,9 @@ def test_sync_wait_reruns_until_complete_or_a_person_must_act(
         return state, f"fixture {state}"
 
     monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
-    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
     monkeypatch.setattr(
-        module.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+        module, "_sync_sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
     )
     result = run(project, "sync", "--wait", "300")
     assert result.exit_code == code, result.output
@@ -4372,7 +4372,7 @@ def test_sync_wait_does_not_start_later_papers_after_deadline(
     monkeypatch.setattr(
         module, "paired_directories", lambda _: ["first", "second", "third"]
     )
-    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
     monkeypatch.setattr(
         gate, "require_release_check", lambda *args: checks.append(args[1])
     )
@@ -4396,11 +4396,11 @@ def test_sync_wait_does_not_start_later_papers_after_deadline(
     assert result.output.count("Sync outcome:") == 3
 
 
-def test_sync_wait_zero_attempts_only_first_paper(tmp_path, monkeypatch):
+def test_sync_wait_zero_attempts_each_paper_once(tmp_path, monkeypatch):
     sync_module = importlib.import_module("asta.commands.overleaf_sync")
     calls = []
     monkeypatch.setattr(module, "paired_directories", lambda _: ["first", "second"])
-    monkeypatch.setattr(module.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(module, "_sync_monotonic", lambda: 0.0)
 
     def fake_sync(_, directory):
         calls.append(directory)
@@ -4409,5 +4409,143 @@ def test_sync_wait_zero_attempts_only_first_paper(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
     result = run(tmp_path, "sync", "--wait", "0")
     assert result.exit_code == 5, result.output
-    assert calls == ["first"]
+    assert calls == ["first", "second"]
     assert result.output.count("Sync outcome:") == 2
+
+
+def test_sync_wait_visits_other_papers_before_retrying(tmp_path, monkeypatch):
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    gate = importlib.import_module("asta.commands.overleaf_gate")
+    clock = [0.0]
+    calls, checks, sleeps = [], [], []
+    monkeypatch.setattr(module, "paired_directories", lambda _: ["first", "second"])
+    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        gate, "require_release_check", lambda *args: checks.append(args[1:])
+    )
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    def fake_sync(_, directory):
+        calls.append(directory)
+        state = "waiting" if directory == "first" and len(calls) == 1 else "complete"
+        return state, "fixture result"
+
+    monkeypatch.setattr(module, "_sync_sleep", sleep)
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(tmp_path, "sync", "--wait", "60", "--check-repo", "allenai/test")
+    assert result.exit_code == 0, result.output
+    assert calls == ["first", "second", "first"]
+    assert checks == [("first", "allenai/test", 60), ("second", "allenai/test", 60)]
+    assert sleeps == [30]
+    assert result.output.count("Sync outcome: complete.") == 2
+
+
+def test_sync_wait_stops_after_release_check_consumes_deadline(tmp_path, monkeypatch):
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    gate = importlib.import_module("asta.commands.overleaf_gate")
+    clock = [0.0]
+    calls, checks = [], []
+    monkeypatch.setattr(module, "paired_directories", lambda _: ["first", "second"])
+    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
+
+    def check(*args):
+        checks.append(args[1:])
+        clock[0] = 60.0
+
+    monkeypatch.setattr(gate, "require_release_check", check)
+    monkeypatch.setattr(sync_module, "sync_workspace", lambda *args: calls.append(args))
+    result = run(tmp_path, "sync", "--wait", "60", "--check-repo", "allenai/test")
+    assert result.exit_code == 5, result.output
+    assert checks == [("first", "allenai/test", 60)]
+    assert calls == []
+    assert result.output.count("Sync outcome: still waiting") == 2
+
+
+@pytest.mark.parametrize("failure", ["os", "json", "subprocess", "none", "format"])
+def test_sync_wait_reports_errors_and_continues_other_papers(
+    tmp_path, monkeypatch, failure
+):
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    calls = []
+    monkeypatch.setattr(module, "paired_directories", lambda _: ["first", "second"])
+
+    def fake_sync(_, directory):
+        calls.append(directory)
+        if directory == "second":
+            return "complete", "fixture result"
+        if failure == "os":
+            raise OSError("fixture-private-transport-detail\nextra line")
+        if failure == "json":
+            raise json.JSONDecodeError("fixture-private-transport-detail", "", 0)
+        if failure == "subprocess":
+            raise subprocess.SubprocessError("fixture-private-transport-detail")
+        if failure == "format":
+            raise module.FormatError("fixture format refusal")
+        return None
+
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(tmp_path, "sync", "--wait", "60")
+    assert result.exit_code == 1, result.output
+    assert calls == ["first", "second"]
+    assert result.output.count("Sync outcome:") == 2
+    assert "first: Sync outcome: failed; an operator must act." in result.output
+    assert "second: Sync outcome: complete." in result.output
+    assert "fixture-private-transport-detail" not in result.output
+    assert (
+        "fixture format refusal" in result.output
+        if failure == "format"
+        else "Unexpected" in result.output
+    )
+
+
+def test_sync_wait_reports_directory_discovery_failure(tmp_path, monkeypatch):
+    def refuse(_):
+        raise module.SyncError("fixture invalid pairing")
+
+    monkeypatch.setattr(module, "paired_directories", refuse)
+    result = run(tmp_path, "sync", "--wait", "60")
+    assert result.exit_code == 1, result.output
+    assert (
+        "Sync outcome: failed; an operator must act. fixture invalid pairing"
+        in result.output
+    )
+
+
+def test_sync_wait_does_not_swallow_interrupt(tmp_path, monkeypatch):
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    monkeypatch.setattr(module, "paired_directories", lambda _: ["first", "second"])
+
+    def interrupt(*_):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sync_module, "sync_workspace", interrupt)
+    result = run(tmp_path, "sync", "--wait", "60")
+    assert result.exit_code == 1
+    assert "Aborted" in result.output
+    assert "Sync outcome:" not in result.output
+
+
+@pytest.mark.parametrize("wait", [None, "0"])
+def test_sync_wait_disables_git_prompts_even_in_a_terminal(tmp_path, monkeypatch, wait):
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    environments = []
+    monkeypatch.setattr(module, "paired_directories", lambda _: ["paper"])
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "1")
+    monkeypatch.setenv("GIT_ASKPASS", "fixture-askpass")
+    monkeypatch.setenv("SSH_ASKPASS", "fixture-ssh-askpass")
+
+    def fake_sync(*_):
+        monkeypatch.setattr(module.sys.stdin, "isatty", lambda: True)
+        environments.append(module.git_environment())
+        return "complete", "fixture result"
+
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(tmp_path, "sync", *([] if wait is None else ["--wait", wait]))
+    assert result.exit_code == 0, result.output
+    env = environments[0]
+    assert env["GIT_TERMINAL_PROMPT"] == ("1" if wait is None else "0")
+    assert env["GIT_ASKPASS"] == ("fixture-askpass" if wait is None else "")
+    assert env["SSH_ASKPASS"] == ("fixture-ssh-askpass" if wait is None else "")

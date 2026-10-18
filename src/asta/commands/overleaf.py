@@ -8,10 +8,11 @@ import stat
 import subprocess
 import sys
 import tempfile
-import time
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
+from time import monotonic as _sync_monotonic
+from time import sleep as _sync_sleep
 from uuid import uuid4
 
 import click
@@ -63,10 +64,14 @@ def git_environment() -> dict:
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
-    if not sys.stdin.isatty():
+    ctx = click.get_current_context(silent=True)
+    noninteractive = bool(ctx and ctx.meta.get("overleaf_noninteractive"))
+    if not sys.stdin.isatty() or noninteractive:
         env["GIT_TERMINAL_PROMPT"] = "0"
         # Empty overrides also suppress core.askPass and SSH_ASKPASS fallbacks.
         env["GIT_ASKPASS"] = ""
+    if noninteractive:
+        env["SSH_ASKPASS"] = ""
     return env
 
 
@@ -1629,7 +1634,7 @@ def release_check_timeout(ctx, param, value):
 @click.option(
     "--wait",
     type=click.IntRange(min=0),
-    help="Rerun for up to this many seconds until sync completes or a person must "
+    help="Rerun for up to this many seconds (0: one pass) until sync completes or a person must "
     "act, then print one outcome line; exit 0 complete, 4 a person must act, "
     "5 still waiting.",
 )
@@ -1645,6 +1650,7 @@ def sync(
     from .overleaf_sync import sync_workspace
 
     if wait is not None:
+        click.get_current_context().meta["overleaf_noninteractive"] = True
         return sync_and_wait(directory, project, check_repo, check_timeout, wait)
 
     # Without --dir, sync every paired paper in turn so runners need no settings.
@@ -1679,51 +1685,90 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
     from . import overleaf_sync as sync_module
     from .overleaf_gate import require_release_check
 
-    deadline = time.monotonic() + wait
-    directories = (
-        [directory]
-        if directory is not None
-        else paired_directories(project) or [DEFAULT_DIR]
-    )
-    outcomes = []
+    deadline = _sync_monotonic() + wait
+    try:
+        directories = (
+            [directory]
+            if directory is not None
+            else paired_directories(project) or [DEFAULT_DIR]
+        )
+    except Exception as exc:
+        click.echo(
+            f"Sync outcome: failed; an operator must act. {sync_failure_message(exc)}"
+        )
+        raise SystemExit(1) from None
+    outcomes = {
+        paper_directory: (
+            sync_module.WAITING,
+            "Wait deadline reached before this paper's sync attempt.",
+        )
+        for paper_directory in directories
+    }
+    pending = list(directories)
+    checked = set()
     first_attempt = True
-    for paper_directory in directories:
-        name = f"{paper_directory}: " if len(directories) > 1 else ""
-        state = sync_module.WAITING
-        message = "Wait deadline reached before this paper's sync attempt."
-        try:
-            while True:
-                # --wait 0 permits one attempt; all later attempts share the deadline.
-                if not first_attempt and time.monotonic() >= deadline:
-                    break
-                first_attempt = False
-                if check_repo is not None:
-                    require_release_check(
-                        project, paper_directory, check_repo, check_timeout
-                    )
+    while pending:
+        for paper_directory in list(pending):
+            # --wait 0 is one pass over the papers; positive waits share a deadline.
+            if wait and not first_attempt and _sync_monotonic() >= deadline:
+                break
+            first_attempt = False
+            try:
+                if check_repo is not None and paper_directory not in checked:
+                    timeout = check_timeout
+                    if wait:
+                        timeout = min(
+                            timeout, max(1, int(deadline - _sync_monotonic()))
+                        )
+                    require_release_check(project, paper_directory, check_repo, timeout)
+                    checked.add(paper_directory)
+                    if wait and _sync_monotonic() >= deadline:
+                        break
                 state, message = sync_module.sync_workspace(project, paper_directory)
-                remaining = deadline - time.monotonic()
-                if (
-                    state in {sync_module.COMPLETE, sync_module.PERSON}
-                    or remaining <= 0
-                ):
-                    break
-                time.sleep(min(sync_module.POLL_SECONDS, remaining))
-        except click.ClickException as exc:
-            state, message = "failed", exc.format_message()
-        outcomes.append(state)
+            except Exception as exc:
+                state, message = sync_module.FAILED, sync_failure_message(exc)
+            outcomes[paper_directory] = state, message
+            if state in {sync_module.COMPLETE, sync_module.PERSON, sync_module.FAILED}:
+                pending.remove(paper_directory)
+        remaining = deadline - _sync_monotonic()
+        if not pending or remaining <= 0 or wait == 0:
+            break
+        _sync_sleep(min(sync_module.POLL_SECONDS, remaining))
+        if _sync_monotonic() >= deadline:
+            break
+    for paper_directory, (state, message) in outcomes.items():
+        if state == sync_module.MISSING_CHECKS and wait > 0:
+            state = sync_module.PERSON
+            message += (
+                " No checks appeared before the wait deadline. A person must inspect "
+                "CI setup; if this PR has no configured checks, merge it by hand. "
+                "Then rerun sync to publish."
+            )
+            outcomes[paper_directory] = state, message
+        name = f"{paper_directory}: " if len(directories) > 1 else ""
         label = {
             sync_module.COMPLETE: "complete",
             sync_module.PERSON: "a person must act",
-            "failed": "failed; an operator must act",
+            sync_module.FAILED: "failed; an operator must act",
         }.get(state, "still waiting; rerun sync to continue")
         click.echo(f"{name}Sync outcome: {label}. {message}")
-    if "failed" in outcomes:
+    states = {state for state, _ in outcomes.values()}
+    if sync_module.FAILED in states:
         raise SystemExit(1)
-    if sync_module.PERSON in outcomes:
+    if sync_module.PERSON in states:
         raise SystemExit(PERSON_EXIT)
-    if any(state != sync_module.COMPLETE for state in outcomes):
+    if states - {sync_module.COMPLETE}:
         raise SystemExit(WAIT_EXPIRED_EXIT)
+
+
+def sync_failure_message(exc: Exception) -> str:
+    if isinstance(exc, click.ClickException):
+        return " ".join(exc.format_message().splitlines())
+    # Transport and filesystem exceptions can embed credentials in their text.
+    return (
+        f"Unexpected {type(exc).__name__} during sync; check local files, Git and "
+        "GitHub access, then retry."
+    )
 
 
 @overleaf.command(name="check")

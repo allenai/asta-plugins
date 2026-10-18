@@ -40,11 +40,12 @@ RECORD_RESOLVED_MARKER = "<!-- asta-overleaf-record-used-again -->"
 CONFLICTS = f"{ov.RECOVERY}#conflict-markers-after-pull-exit-3"
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
-FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
+FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,isDraft,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
 STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
 POLL_SECONDS = 30  # Between --wait reruns; checks rarely settle faster.
-# Outcomes for --wait: COMPLETE and PERSON end the wait; WAITING and LOCKED retry.
+# COMPLETE, PERSON and FAILED end a paper's wait; the other states retry.
 COMPLETE, WAITING, LOCKED, PERSON = "complete", "waiting", "locked", "person"
+MISSING_CHECKS, FAILED = "missing_checks", "failed"
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
     "Merge current workspace paper into Overleaf sync",
@@ -189,7 +190,9 @@ def waiting_message(pr: dict, head: str) -> str:
         "DIRTY": "A person must resolve merge conflicts on the sync PR.",
         "DRAFT": "A person must mark the sync PR ready when its review is complete.",
     }
-    if state in actions:
+    if pr.get("isDraft"):
+        action = actions["DRAFT"]
+    elif state in actions:
         action = actions[state]
     elif not pr.get("statusCheckRollup"):
         action = (
@@ -211,10 +214,12 @@ def waiting_on_person(pr: dict, head: str) -> bool:
     """Whether a rerun cannot make progress until a person acts on the sync PR."""
     if pr.get("headRefOid") != head:
         return False
+    if pr.get("isDraft") or pr.get("mergeStateStatus") == "DRAFT":
+        return True
     checks = pr.get("statusCheckRollup") or []
     # GitHub can show an empty rollup before CI has started.
     if not checks:
-        return pr.get("mergeStateStatus") == "DRAFT"
+        return False
     for check in checks:
         if ("conclusion" in check and check.get("status") != "COMPLETED") or check.get(
             "state"
@@ -606,7 +611,7 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
-def sync_workspace(project: Path, directory: str):
+def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
     if not prefix or not prefix.endswith("/"):
@@ -908,6 +913,7 @@ def sync_workspace(project: Path, directory: str):
                     )
                     if (
                         pr["headRefOid"] != head
+                        or pr.get("isDraft")
                         or pr["mergeable"] != "MERGEABLE"
                         or pr["mergeStateStatus"] != "CLEAN"
                         or not checks_pass(pr)
@@ -916,9 +922,14 @@ def sync_workspace(project: Path, directory: str):
                         reset_status(root, repo, pr, notice)
                         message = f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
                         click.echo(message)
-                        return (
-                            PERSON if waiting_on_person(pr, head) else WAITING
-                        ), message
+                        state = WAITING
+                        if waiting_on_person(pr, head):
+                            state = PERSON
+                        elif pr["headRefOid"] == head and not pr.get(
+                            "statusCheckRollup"
+                        ):
+                            state = MISSING_CHECKS
+                        return state, message
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
                     default_config = json.loads(

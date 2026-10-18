@@ -911,7 +911,7 @@ def test_sync_wait_allows_ci_checks_to_appear(
     assert invoke(project).exit_code == 0
     clock = [0.0]
     sleeps = []
-    monkeypatch.setattr(sync.ov.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
 
     def sleep(seconds):
         sleeps.append(seconds)
@@ -920,13 +920,45 @@ def test_sync_wait_allows_ci_checks_to_appear(
             github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
             github["allow_merge"] = True
 
-    monkeypatch.setattr(sync.ov.time, "sleep", sleep)
+    monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
     result = run(project, "sync", "--wait", "60")
-    assert result.exit_code == (0 if checks_appear else 5), result.output
+    assert result.exit_code == (0 if checks_appear else 4), result.output
     assert sleeps == ([30] if checks_appear else [30, 30])
     assert len(github["merges"]) == int(checks_appear)
-    assert "Sync outcome: a person must act" not in result.output
+    assert ("Sync outcome: a person must act" in result.output) is not checks_appear
+    if not checks_appear:
+        assert "A person must inspect CI setup" in result.output
     assert git(project, "status", "--porcelain") == ""
+
+
+def test_sync_wait_zero_does_not_escalate_checks_that_may_still_start(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    result = run(project, "sync", "--wait", "0")
+    assert result.exit_code == 5, result.output
+    assert "Sync outcome: still waiting" in result.output
+    assert "No checks have appeared yet" in result.output
+    assert not github["merges"]
+
+
+@pytest.mark.parametrize("merge_state", ["BLOCKED", "CLEAN"])
+def test_sync_wait_draft_with_pending_checks_names_the_action(
+    setup, github, merge_state
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0].update(
+        isDraft=True,
+        mergeStateStatus=merge_state,
+        statusCheckRollup=[{"state": "PENDING"}],
+    )
+    result = run(project, "sync", "--wait", "60")
+    assert result.exit_code == 4, result.output
+    assert "Sync outcome: a person must act" in result.output
+    assert "mark the sync PR ready" in result.output
+    assert not github["merges"]
 
 
 def test_markerless_pull_conflict_names_directory(setup, github, monkeypatch):
@@ -1970,6 +2002,18 @@ def test_credits_keep_author_when_publication_git_verification_fails(
             True,
         ),
         ({"mergeStateStatus": "DRAFT"}, True),
+        (
+            {"mergeStateStatus": "DRAFT", "statusCheckRollup": [{"state": "PENDING"}]},
+            True,
+        ),
+        (
+            {
+                "isDraft": True,
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"state": "PENDING"}],
+            },
+            True,
+        ),
         (
             {
                 "mergeStateStatus": "BLOCKED",
