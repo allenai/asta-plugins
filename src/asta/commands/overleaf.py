@@ -1738,7 +1738,8 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
         if state == sync_module.MISSING_CHECKS and wait > 0:
             state = sync_module.PERSON
             message += (
-                " No checks appeared before the wait deadline. A person must inspect "
+                " No checks were visible on the last sync attempt before the wait "
+                "deadline. A person must inspect "
                 "CI setup; if this PR has no configured checks, merge it by hand. "
                 "Then rerun sync to publish."
             )

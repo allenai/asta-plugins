@@ -928,6 +928,7 @@ def test_sync_wait_allows_ci_checks_to_appear(
     assert ("Sync outcome: a person must act" in result.output) is not checks_appear
     if not checks_appear:
         assert "A person must inspect CI setup" in result.output
+        assert "No checks were visible on the last sync attempt" in result.output
     assert git(project, "status", "--porcelain") == ""
 
 
