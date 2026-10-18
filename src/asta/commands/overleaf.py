@@ -4,6 +4,7 @@ import errno
 import json
 import os
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -72,6 +73,13 @@ def git_environment() -> dict:
         env["GIT_ASKPASS"] = ""
     if noninteractive:
         env["SSH_ASKPASS"] = ""
+        # SSH can read /dev/tty even when Git's credential prompts are disabled.
+        # Put BatchMode first: OpenSSH uses the first value of each option.
+        ssh = shlex.split(
+            env.get("GIT_SSH_COMMAND") or shlex.quote(env.get("GIT_SSH", "ssh"))
+        )
+        env["GIT_SSH_COMMAND"] = shlex.join([ssh[0], "-oBatchMode=yes", *ssh[1:]])
+        env["GH_PROMPT_DISABLED"] = "1"
     return env
 
 
@@ -1706,11 +1714,14 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
     }
     pending = list(directories)
     checked = set()
+    missing_checks_since = {}
+    missing_checks_span = {}
     while pending:
         for paper_directory in list(pending):
             # --wait 0 is one pass over the papers; positive waits share a deadline.
             if wait and _sync_monotonic() >= deadline:
                 break
+            missing_head = []
             try:
                 if check_repo is not None and paper_directory not in checked:
                     timeout = check_timeout
@@ -1722,9 +1733,26 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
                     checked.add(paper_directory)
                     if wait and _sync_monotonic() >= deadline:
                         break
-                state, message = sync_module.sync_workspace(project, paper_directory)
+                state, message = sync_module.sync_workspace(
+                    project, paper_directory, on_missing_checks=missing_head.append
+                )
             except Exception as exc:
                 state, message = sync_module.FAILED, sync_failure_message(exc)
+            if state == sync_module.MISSING_CHECKS:
+                observed = _sync_monotonic()
+                head = missing_head[-1] if missing_head else None
+                previous_head, first = missing_checks_since.get(
+                    paper_directory, (head, observed)
+                )
+                if head != previous_head:
+                    first = observed
+                missing_checks_since[paper_directory] = head, first
+                missing_checks_span[paper_directory] = observed - first
+            else:
+                # A pushed head, visible checks or an unreadable/locked attempt
+                # breaks the observations; never reuse another head's grace.
+                missing_checks_since.pop(paper_directory, None)
+                missing_checks_span.pop(paper_directory, None)
             outcomes[paper_directory] = state, message
             if state in {sync_module.COMPLETE, sync_module.PERSON, sync_module.FAILED}:
                 pending.remove(paper_directory)
@@ -1735,10 +1763,15 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
         if _sync_monotonic() >= deadline:
             break
     for paper_directory, (state, message) in outcomes.items():
-        if state == sync_module.MISSING_CHECKS and wait > 0:
+        if (
+            state == sync_module.MISSING_CHECKS
+            and wait > 0
+            and missing_checks_span.get(paper_directory, 0) >= sync_module.POLL_SECONDS
+        ):
             state = sync_module.PERSON
             message += (
-                " No checks were visible on the last sync attempt before the wait "
+                " No checks were visible across quiet sync attempts at least "
+                f"{sync_module.POLL_SECONDS} seconds apart before the wait "
                 "deadline. A person must inspect "
                 "CI setup; if this PR has no configured checks, merge it by hand. "
                 "Then rerun sync to publish."

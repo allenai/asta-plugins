@@ -6,6 +6,7 @@ import re
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -225,6 +226,13 @@ def waiting_on_person(pr: dict, head: str) -> bool:
             "state"
         ) in {"PENDING", "EXPECTED"}:
             return False
+    if (
+        pr.get("mergeStateStatus") == "BLOCKED"
+        and checks_pass(pr)
+        and pr.get("reviewDecision") not in {"REVIEW_REQUIRED", "CHANGES_REQUESTED"}
+    ):
+        # The rollup can omit required checks that GitHub has not created yet.
+        return False
     # A rerun refreshes a BEHIND or DIRTY base itself, or reports its conflict.
     return (
         pr.get("mergeStateStatus", "UNKNOWN")
@@ -611,7 +619,12 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
-def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
+def sync_workspace(
+    project: Path,
+    directory: str,
+    *,
+    on_missing_checks: Callable[[str], None] | None = None,
+) -> tuple[str, str]:
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
     if not prefix or not prefix.endswith("/"):
@@ -920,8 +933,8 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
                             pr.get("isDraft") or pr.get("mergeStateStatus") == "DRAFT"
                         ):
                             return PERSON, f"{message} {waiting_message(pr, head)}"
-                        if pr["headRefOid"] == head and not pr.get("statusCheckRollup"):
-                            return MISSING_CHECKS, message
+                        # A just-pushed head has had no grace for CI to start.
+                        # Only later quiet attempts can establish missing checks.
                         return WAITING, message
                     pr = gh(
                         root,
@@ -951,6 +964,8 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
                             "statusCheckRollup"
                         ):
                             state = MISSING_CHECKS
+                            if on_missing_checks is not None:
+                                on_missing_checks(head)
                         return state, message
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
