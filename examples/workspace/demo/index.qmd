@@ -11,4 +11,4 @@ When the report has not been built, this page describes the example only. To see
 Check these views:
 
 1. **A small literature review:** Quarto HTML marks the revised Transformer claim, the added BERT claim, and the new reference. `lit-review/index.qmd` is its editable source.
-2. **Paper:** the separate `paper/main.tex` has an HTML diff and a PDF diff. Look for the added citation and equation, the revised sentence, and the changed figure caption. Both paths use `references.bib`.
+2. **Paper:** the separate `paper/main.tex` has an HTML diff and a PDF diff. Look for the added citation and equation, the revised sentence, and the changed figure caption. The review cites `references.bib`; the paper cites its own copies in `paper/references.bib`.

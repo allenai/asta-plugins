@@ -18,6 +18,9 @@ skills-lock.json
 .idea/
 *.iml
 
-# Local asta state, except Overleaf pairing records, which are committed.
-.asta/*
-!.asta/overleaf/
+# Local asta state at any depth, except the root's Overleaf pairing records,
+# which are committed.
+.asta
+!/.asta/
+/.asta/*
+!/.asta/overleaf/

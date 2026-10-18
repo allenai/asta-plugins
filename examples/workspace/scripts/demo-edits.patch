@@ -25,7 +25,7 @@ index b1bb0fa168436a22fbd9350c3d9b2a635dca14ff..2469f9a7e450c47638f3a7d5d8bc51f9
 +[Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. [BERT later applied the Transformer encoder to bidirectional language representation]{.ev key="bert-encoder"} [@devlin2019bert]. Each highlighted claim shows its source quote on hover or keyboard focus.
  
 diff --git a/paper/main.tex b/paper/main.tex
-index ee1f080511d41764ab9acc04e1a6fe61a31f47a6..87f0343c5768c74a5331ae70d2e2920905837967 100644
+index ee1f080511d41764ab9acc04e1a6fe61a31f47a6..e44b56814fc10ba53365f53d17bc628a874cfad3 100644
 --- a/paper/main.tex
 +++ b/paper/main.tex
 @@ -13,14 +13,14 @@
@@ -41,7 +41,7 @@ index ee1f080511d41764ab9acc04e1a6fe61a31f47a6..87f0343c5768c74a5331ae70d2e29209
    \centering
    \fcolorbox{astateal}{astagreen!15}{\parbox{0.72\linewidth}{\centering\vspace{0.7em}Quarto page \quad $\longleftarrow$ \quad \textbf{references.bib}\\[0.5em]copied entries \quad $\longrightarrow$ \quad \textbf{paper/references.bib} \quad $\longleftrightarrow$ \quad Overleaf\vspace{0.7em}}}
 -  \caption{The workspace bibliography feeds the Quarto page directly and the paired paper through copied entries.}
-+  \caption{Both writing formats draw their citations from the workspace bibliography.}
++  \caption{The Quarto page cites the workspace bibliography; the paired paper cites its own copies.}
    \label{fig:workspace}
  \end{figure}
  
