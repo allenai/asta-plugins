@@ -1,4 +1,23 @@
-use Cwd 'abs_path';
+use Cwd 'getcwd';
 use File::Basename 'dirname';
+use File::Spec::Functions 'abs2rel';
 $pdf_mode = 1;
-$ENV{'BIBINPUTS'} = abs_path(dirname(__FILE__) . '/..') . $search_path_separator . ($ENV{'BIBINPUTS'} // '') . $search_path_separator;
+# latexmk may evaluate rc files as strings; locate the bibliography from cwd.
+# An Overleaf-synced paper can't see outside its directory, so don't search up.
+my $bib_dir = getcwd();
+my $root = $bib_dir;
+# Exported workspaces may retain their pairing records without .git. Look for
+# the paper's record at each ancestor, stopping at the nearest Git boundary.
+my $synced = 0;
+while (1) {
+    if ($root ne $bib_dir && -f "$root/.asta/overleaf/" . abs2rel($bib_dir, $root) . ".json") {
+        $synced = 1;
+        last;
+    }
+    last if (-e "$root/.git" || dirname($root) eq $root);
+    $root = dirname($root);
+}
+while (!$synced && !-f "$bib_dir/references.bib" && !-e "$bib_dir/.git" && dirname($bib_dir) ne $bib_dir) {
+    $bib_dir = dirname($bib_dir);
+}
+$ENV{'BIBINPUTS'} = $bib_dir . $search_path_separator . ($ENV{'BIBINPUTS'} // '') . $search_path_separator;
