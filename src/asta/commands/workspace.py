@@ -56,9 +56,11 @@ WORKFLOW_FILE = ".github/workflows/docs.yml"
 def selected_source(project: Path) -> tuple[str, str]:
     workflow = project / WORKFLOW_FILE
     try:
-        lines = workflow.read_text().splitlines()
+        lines = workflow.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError as exc:
         raise click.ClickException(f"Missing {workflow}") from exc
+    except UnicodeDecodeError as exc:
+        raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
     refs = []
     for line in lines:
         if WORKFLOW not in line or line.lstrip().startswith("#"):
@@ -486,6 +488,84 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
         + b"\n",
     )
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
+
+
+@workspace.command("bump-pin")
+@click.option(
+    "--project",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=Path("."),
+)
+def bump_pin(project: Path) -> None:
+    """Commit an upgrade from an older release pin to the installed asta release."""
+    project = project.resolve()
+    workflow = project / WORKFLOW_FILE
+    for relative in (".github", ".github/workflows", WORKFLOW_FILE):
+        if (project / relative).is_symlink():
+            raise click.ClickException(
+                f"Workspace workflow path must not contain symlinks: {relative}"
+            )
+    _, ref = selected_source(project)
+    target = workspace_versions.pin_target(ref, workspace_versions.installed())
+    if target is None:
+        click.echo(f"Pin asta-plugins@{ref} is current; nothing to do")
+        return
+    status = _git(project, "status", "--porcelain", "--", WORKFLOW_FILE)
+    if status.returncode != 0:
+        raise click.ClickException(
+            f"Could not check the workflow's Git status: {status.stderr.strip()}"
+        )
+    if status.stdout.strip():
+        raise click.ClickException(
+            f"{WORKFLOW_FILE} has uncommitted changes; commit them first"
+        )
+    original = workflow.read_bytes()
+    lines = original.decode("utf-8").splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
+            start, end = match.span("ref")
+            lines[index] = line[:start] + target + line[end:]
+    message = f"Move workspace pin to asta-plugins@{target}"
+    head = _git(project, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        raise click.ClickException("Could not determine the workflow's Git HEAD")
+    commit_started = False
+    try:
+        workflow.write_bytes("".join(lines).encode("utf-8"))
+        if selected_source(project)[1] != target:
+            raise click.ClickException(f"Could not move the pin in {workflow}")
+        commit_started = True
+        committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
+        if committed.returncode != 0:
+            raise click.ClickException(
+                f"Could not commit the pin move: {committed.stderr.strip()}"
+            )
+        current = _git(project, "rev-parse", "HEAD")
+        if current.returncode != 0:
+            raise click.ClickException("Could not read the pin move's commit SHA")
+        sha = current.stdout.strip()
+    except BaseException:
+        # A signal can arrive after Git committed but before subprocess.run returned.
+        # Never restore the old bytes over an already-advanced HEAD.
+        if commit_started:
+            try:
+                current = _git(project, "rev-parse", "HEAD")
+            except OSError:
+                current = None
+            if current is None or current.returncode != 0:
+                click.echo(
+                    f"Could not determine whether the pin move committed; "
+                    f"{WORKFLOW_FILE} may still be modified. Inspect Git HEAD and "
+                    "the workflow before opening the PR; no rollback was attempted.",
+                    err=True,
+                )
+                raise
+            if current.stdout != head.stdout:
+                click.echo(f"Committed {current.stdout.strip()}: {message}", err=True)
+                raise
+        workflow.write_bytes(original)
+        raise
+    click.echo(f"Committed {sha}: {message} (was @{ref})")
 
 
 def _git(project: Path, *args: str) -> subprocess.CompletedProcess:

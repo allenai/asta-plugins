@@ -126,3 +126,17 @@ def pin_behind(ref: str, cli: str | None, source: str | None = None) -> str | No
         f"To move the pin, change @{ref} to @v{format_release(current)}{where} "
         "and run 'asta workspace sync'"
     )
+
+
+def pin_target(ref: str, cli: str | None) -> str | None:
+    """The release ref a release pin should move to, or None to leave it.
+
+    Only a final-release CLI moves a final-release pin; ``main``, ``latest``,
+    commits and pre-release CLIs are left alone.
+    """
+    pinned = release(ref)
+    current = release(cli) if cli else None
+    if pinned is None or current is None or current <= pinned:
+        return None
+    prefix = "v" if ref.startswith("v") else ""
+    return f"{prefix}{format_release(current)}"
