@@ -4286,3 +4286,72 @@ def test_invalid_record_format_refuses_instead_of_falling_back(
     assert {p.name: p.read_bytes() for p in (project / "paper").iterdir()} == before
     assert git(project, "ls-remote", "origin") == origin_refs
     assert git(seed, "ls-remote", "origin") == overleaf_refs
+
+
+@pytest.mark.parametrize(
+    "results, code, outcome",
+    [
+        (["waiting", "locked", "complete"], 0, "Sync outcome: complete."),
+        (["waiting", "person"], 4, "Sync outcome: a person must act."),
+        (["waiting"] * 50, 5, "Sync outcome: still waiting; rerun sync to continue."),
+    ],
+)
+def test_sync_wait_reruns_until_complete_or_a_person_must_act(
+    setup, monkeypatch, results, code, outcome
+):
+    _, project = setup
+    assert run(project, "pull", URL, "--dir", "paper").exit_code == 0
+    commit_all(project)
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    clock = [0.0]
+    calls = []
+
+    def fake_sync(_, directory):
+        calls.append(directory)
+        state = results[len(calls) - 1]
+        return state, f"fixture {state}"
+
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        module.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
+    result = run(project, "sync", "--wait", "300")
+    assert result.exit_code == code, result.output
+    last = result.output.strip().splitlines()[-1]
+    assert last.startswith(outcome)
+    if code == 5:
+        # Bounded: 300 seconds of 30-second polls, then one final outcome.
+        assert len(calls) == 11
+    else:
+        assert len(calls) == len(results)
+
+
+def test_sync_wait_reports_refusal_as_operator_outcome(setup, monkeypatch):
+    _, project = setup
+    assert run(project, "pull", URL, "--dir", "paper").exit_code == 0
+    commit_all(project)
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+
+    def refuse(*_):
+        raise module.SyncError("fixture refusal")
+
+    monkeypatch.setattr(sync_module, "sync_workspace", refuse)
+    result = run(project, "sync", "--wait", "60")
+    assert result.exit_code == 1, result.output
+    assert (
+        "Sync outcome: failed; an operator must act. fixture refusal" in result.output
+    )
+
+
+def test_plain_sync_exit_codes_are_unchanged_by_outcomes(setup, monkeypatch):
+    _, project = setup
+    assert run(project, "pull", URL, "--dir", "paper").exit_code == 0
+    commit_all(project)
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    monkeypatch.setattr(
+        sync_module, "sync_workspace", lambda *_: ("person", "fixture person")
+    )
+    result = run(project, "sync")
+    assert result.exit_code == 0, result.output
+    assert "Sync outcome" not in result.output

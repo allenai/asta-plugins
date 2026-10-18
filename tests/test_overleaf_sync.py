@@ -1919,3 +1919,42 @@ def test_credits_keep_author_when_publication_git_verification_fails(
     assert sync.credits(project, {"url": URL, "base": base}, new, "paper/") == [
         "Coauthor <coauthor@example.invalid>"
     ]
+
+
+@pytest.mark.parametrize(
+    "pr, person",
+    [
+        ({"mergeStateStatus": "BLOCKED", "statusCheckRollup": []}, True),
+        (
+            {
+                "mergeStateStatus": "UNSTABLE",
+                "statusCheckRollup": [{"status": "COMPLETED", "conclusion": "FAILURE"}],
+            },
+            True,
+        ),
+        ({"mergeStateStatus": "DRAFT"}, True),
+        (
+            {
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"status": "IN_PROGRESS", "conclusion": None}],
+            },
+            False,
+        ),
+        (
+            {
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"state": "PENDING"}],
+            },
+            False,
+        ),
+        ({"mergeStateStatus": "UNKNOWN"}, False),
+        ({"mergeStateStatus": "BEHIND"}, False),
+        ({"mergeStateStatus": "DIRTY"}, False),
+        ({"mergeStateStatus": "CLEAN", "mergeable": "UNKNOWN"}, False),
+        ({"mergeStateStatus": "BLOCKED", "headRefOid": "other"}, False),
+    ],
+)
+def test_waiting_on_person_only_when_a_rerun_cannot_progress(pr, person):
+    sync = importlib.import_module("asta.commands.overleaf_sync")
+    pr = {"headRefOid": "head", "mergeable": "MERGEABLE", **pr}
+    assert sync.waiting_on_person(pr, "head") is person

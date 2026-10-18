@@ -42,6 +42,9 @@ BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
 FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
 STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
+POLL_SECONDS = 30  # Between --wait reruns; checks rarely settle faster.
+# Outcomes for --wait: COMPLETE and PERSON end the wait; WAITING and LOCKED retry.
+COMPLETE, WAITING, LOCKED, PERSON = "complete", "waiting", "locked", "person"
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
     "Merge current workspace paper into Overleaf sync",
@@ -202,6 +205,27 @@ def waiting_message(pr: dict, head: str) -> str:
     elif mergeable == "CONFLICTING":
         action = "A person must resolve merge conflicts on the sync PR."
     return f"Sync PR mergeStateStatus={state}, mergeable={mergeable}. {action}"
+
+
+def waiting_on_person(pr: dict, head: str) -> bool:
+    """Whether a rerun cannot make progress until a person acts on the sync PR."""
+    if pr.get("headRefOid") != head:
+        return False
+    for check in pr.get("statusCheckRollup") or []:
+        if ("conclusion" in check and check.get("status") != "COMPLETED") or check.get(
+            "state"
+        ) in {"PENDING", "EXPECTED"}:
+            return False
+    # A rerun refreshes a BEHIND or DIRTY base itself, or reports its conflict.
+    return (
+        pr.get("mergeStateStatus", "UNKNOWN")
+        not in {
+            "UNKNOWN",
+            "BEHIND",
+            "DIRTY",
+        }
+        and pr.get("mergeable") != "UNKNOWN"
+    )
 
 
 def checks_pass(pr: dict) -> bool:
@@ -642,10 +666,9 @@ def sync_workspace(project: Path, directory: str):
     with lock(root, project_id) as acquired:
         if not acquired:
             if not stale_lock(root, project_id):
-                click.echo(
-                    "Overleaf sync lock is held by a recent run; leaving its status unchanged."
-                )
-                return
+                message = "Overleaf sync lock is held by a recent run; leaving its status unchanged."
+                click.echo(message)
+                return LOCKED, message
             message = "Overleaf sync lock is held; confirm the owning run is active, or recover its interrupted lock."
             try:
                 try:
@@ -863,11 +886,12 @@ def sync_workspace(project: Path, directory: str):
                     # a later quiet run; never merge a just-created/updated head.
                     if changed or head != old_head:
                         reset_status(root, repo, pr, notice)
-                        click.echo(
+                        message = (
                             f"{'Opened' if opened else 'Updated'} {pr['url']}; "
                             "waiting for checks and a run with no new Overleaf edits."
                         )
-                        return
+                        click.echo(message)
+                        return WAITING, message
                     pr = gh(
                         root,
                         "pr",
@@ -886,10 +910,11 @@ def sync_workspace(project: Path, directory: str):
                     ):
                         # GitHub's merge box already shows why; keep the body quiet.
                         reset_status(root, repo, pr, notice)
-                        click.echo(
-                            f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
-                        )
-                        return
+                        message = f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
+                        click.echo(message)
+                        return (
+                            PERSON if waiting_on_person(pr, head) else WAITING
+                        ), message
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
                     default_config = json.loads(
@@ -958,6 +983,7 @@ def sync_workspace(project: Path, directory: str):
                             payload={"state": "closed"},
                         )
                 click.echo("Overleaf sync complete.")
+                return COMPLETE, "Overleaf sync complete."
         except ov.FormatError:
             # An unreadable format must not be replaced by this runner's status.
             raise
@@ -979,5 +1005,5 @@ def sync_workspace(project: Path, directory: str):
             # a scheduler's failure alert fires only when an operator must act.
             if isinstance(exc, ConflictError):
                 click.echo(exc.format_message())
-                return
+                return PERSON, exc.format_message()
             raise

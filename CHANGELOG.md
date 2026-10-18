@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `asta workspace overleaf sync --wait SECONDS` for papers synced by hand:
+  one call reruns sync through checks, the quiet merge run and another run's
+  recent lock until it completes or a person must act, bounded by the deadline.
+  It ends with one `Sync outcome:` line and exits 0 complete, 4 a person must
+  act, 5 still waiting (rerun resumes), 1 an operator must act. Plain `sync`
+  for scheduled runners is unchanged. The workspace docs say when to sync by
+  hand and when a scheduled runner is worth it.
 - Add `asta workspace overleaf check` for an opt-in live round trip on a
   scratch pair reserved for checks: merge co-author edits after GitHub checks,
   publish a workspace edit, then resolve and merge a conflict, moving the pair

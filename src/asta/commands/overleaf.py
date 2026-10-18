@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
@@ -795,6 +796,9 @@ MERGE_SUFFIXES = {
 }
 # Distinct from the exit status 1 used for errors, so callers can detect conflicts.
 CONFLICT_EXIT = 3
+# sync --wait only; plain sync keeps exiting 0 while waiting on people.
+PERSON_EXIT = 4
+WAIT_EXPIRED_EXIT = 5
 
 
 def merge_text(
@@ -1622,15 +1626,26 @@ def release_check_timeout(ctx, param, value):
     show_default=True,
     help="Seconds for an uncached release check.",
 )
+@click.option(
+    "--wait",
+    type=click.IntRange(min=0),
+    help="Rerun for up to this many seconds until sync completes or a person must "
+    "act, then print one outcome line; exit 0 complete, 4 a person must act, "
+    "5 still waiting.",
+)
 def sync(
     directory: str | None,
     project: Path,
     check_repo: str | None = None,
     check_timeout: int = 600,
+    wait: int | None = None,
 ) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_gate import require_release_check
     from .overleaf_sync import sync_workspace
+
+    if wait is not None:
+        return sync_and_wait(directory, project, check_repo, check_timeout, wait)
 
     # Without --dir, sync every paired paper in turn so runners need no settings.
     directories = (
@@ -1657,6 +1672,51 @@ def sync(
             + ", ".join(failed)
             + ". All paired papers were attempted."
         )
+
+
+def sync_and_wait(directory, project, check_repo, check_timeout, wait):
+    """Rerun sync until it completes or names who must act, within a deadline."""
+    from . import overleaf_sync as sync_module
+    from .overleaf_gate import require_release_check
+
+    deadline = time.monotonic() + wait
+    directories = (
+        [directory]
+        if directory is not None
+        else paired_directories(project) or [DEFAULT_DIR]
+    )
+    outcomes = []
+    for paper_directory in directories:
+        name = f"{paper_directory}: " if len(directories) > 1 else ""
+        try:
+            while True:
+                if check_repo is not None:
+                    require_release_check(
+                        project, paper_directory, check_repo, check_timeout
+                    )
+                state, message = sync_module.sync_workspace(project, paper_directory)
+                remaining = deadline - time.monotonic()
+                if (
+                    state in {sync_module.COMPLETE, sync_module.PERSON}
+                    or remaining <= 0
+                ):
+                    break
+                time.sleep(min(sync_module.POLL_SECONDS, remaining))
+        except click.ClickException as exc:
+            state, message = "failed", exc.format_message()
+        outcomes.append(state)
+        label = {
+            sync_module.COMPLETE: "complete",
+            sync_module.PERSON: "a person must act",
+            "failed": "failed; an operator must act",
+        }.get(state, "still waiting; rerun sync to continue")
+        click.echo(f"{name}Sync outcome: {label}. {message}")
+    if "failed" in outcomes:
+        raise SystemExit(1)
+    if sync_module.PERSON in outcomes:
+        raise SystemExit(PERSON_EXIT)
+    if any(state != sync_module.COMPLETE for state in outcomes):
+        raise SystemExit(WAIT_EXPIRED_EXIT)
 
 
 @overleaf.command(name="check")

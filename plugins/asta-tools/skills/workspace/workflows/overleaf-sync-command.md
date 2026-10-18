@@ -1,10 +1,46 @@
-# Schedule Overleaf sync
+# Overleaf sync
 
 Import the project with `asta workspace overleaf pull <url>`, review the paper
 and its `.asta/overleaf` record together, and merge them. Before enabling the schedule, the
 project owner must **turn off Overleaf link sharing** and invite each co-author
 (and the sync account) explicitly as an editor. Anyone who can edit this project
 can contribute paper content to the default branch through the sync PR.
+
+## Sync by hand
+
+A paper without a scheduled runner is synced by a person or their agent. Sync
+at the moments co-authors' edits matter: **before editing the paper**, so you
+work on their latest text; **before merging a paper PR**, so their edits
+conflict on your change instead of being overwritten; and **after merging one**,
+so the merged change reaches Overleaf. Use one call that finishes:
+
+```bash
+asta workspace overleaf sync --wait 1800
+```
+
+`--wait SECONDS` reruns sync, polling every 30 seconds, until it completes or
+someone must act, and never past the deadline. It waits out the sync PR's
+checks, the quiet rerun before it merges, and another run's recent lock, then
+prints one final `Sync outcome:` line and exits:
+
+| Exit | Outcome | Next step |
+|------|---------|-----------|
+| 0 | complete: merged co-author edits, published | none |
+| 4 | a person must act; the line names what and, for a conflict, whose change | that person acts, then rerun |
+| 5 | still waiting when the deadline passed | rerun; it picks up where this run stopped |
+| 1 | failed; an operator must act (credentials, permissions, a refusal) | fix the cause, rerun |
+
+It never prompts, so an agent can start it in the background and act on the
+exit code. A rerun reconstructs its state from GitHub and Overleaf, so stopping
+or timing out loses nothing. With several paired papers and no `--dir`, each
+paper gets its own outcome line and the exit code is the most urgent one.
+
+A scheduled runner is worth it when co-authors edit in Overleaf between the
+moments above, for example several active co-authors or long stretches without
+an agent session, or when nobody reliably syncs by hand. Without `--wait`,
+sync behaves as scheduled runners expect, described below.
+
+## Schedule sync
 
 Run `asta workspace overleaf sync --project /path/to/checkout` from cron or any
 scheduler. Without `--dir`, it visits every paper paired by a tracked
