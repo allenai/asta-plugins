@@ -4396,6 +4396,39 @@ def test_sync_wait_does_not_start_later_papers_after_deadline(
     assert result.output.count("Sync outcome:") == 3
 
 
+@pytest.mark.parametrize("wait", [0, 60])
+@pytest.mark.parametrize("discovery_seconds", [60, 61])
+def test_sync_wait_checks_deadline_after_discovering_papers(
+    tmp_path, monkeypatch, wait, discovery_seconds
+):
+    sync_module = importlib.import_module("asta.commands.overleaf_sync")
+    gate = importlib.import_module("asta.commands.overleaf_gate")
+    clock = [0.0]
+    calls, checks = [], []
+
+    def discover(_):
+        clock[0] += discovery_seconds
+        return ["first", "second"]
+
+    monkeypatch.setattr(module, "paired_directories", discover)
+    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        gate, "require_release_check", lambda *args: checks.append(args[1])
+    )
+
+    def fake_sync(_, directory):
+        calls.append(directory)
+        return "complete", "fixture result"
+
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(tmp_path, "sync", "--wait", str(wait), "--check-repo", "allenai/test")
+    assert result.exit_code == (0 if wait == 0 else 5), result.output
+    assert calls == checks == (["first", "second"] if wait == 0 else [])
+    assert result.output.count("Sync outcome:") == 2
+    if wait:
+        assert result.output.count("Wait deadline reached before this paper") == 2
+
+
 def test_sync_wait_zero_attempts_each_paper_once(tmp_path, monkeypatch):
     sync_module = importlib.import_module("asta.commands.overleaf_sync")
     calls = []

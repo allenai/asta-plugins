@@ -1706,13 +1706,11 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
     }
     pending = list(directories)
     checked = set()
-    first_attempt = True
     while pending:
         for paper_directory in list(pending):
             # --wait 0 is one pass over the papers; positive waits share a deadline.
-            if wait and not first_attempt and _sync_monotonic() >= deadline:
+            if wait and _sync_monotonic() >= deadline:
                 break
-            first_attempt = False
             try:
                 if check_repo is not None and paper_directory not in checked:
                     timeout = check_timeout

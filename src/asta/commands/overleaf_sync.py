@@ -895,11 +895,33 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
                     # a later quiet run; never merge a just-created/updated head.
                     if changed or head != old_head:
                         reset_status(root, repo, pr, notice)
+                        # Creation already reads the new PR. After an update,
+                        # refresh checks for the pushed head before returning:
+                        # a short wait may expire before another quiet run.
+                        if not opened and click.get_current_context().meta.get(
+                            "overleaf_noninteractive"
+                        ):
+                            pr = gh(
+                                root,
+                                "pr",
+                                "view",
+                                str(pr["number"]),
+                                "--repo",
+                                repo,
+                                "--json",
+                                FIELDS,
+                            )
                         message = (
                             f"{'Opened' if opened else 'Updated'} {pr['url']}; "
                             "waiting for checks and a run with no new Overleaf edits."
                         )
                         click.echo(message)
+                        if pr["headRefOid"] == head and (
+                            pr.get("isDraft") or pr.get("mergeStateStatus") == "DRAFT"
+                        ):
+                            return PERSON, f"{message} {waiting_message(pr, head)}"
+                        if pr["headRefOid"] == head and not pr.get("statusCheckRollup"):
+                            return MISSING_CHECKS, message
                         return WAITING, message
                     pr = gh(
                         root,

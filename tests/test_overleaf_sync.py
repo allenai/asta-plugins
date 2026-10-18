@@ -931,6 +931,86 @@ def test_sync_wait_allows_ci_checks_to_appear(
     assert git(project, "status", "--porcelain") == ""
 
 
+@pytest.mark.parametrize("updated", [False, True])
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize(
+    "wait,checks,expected",
+    [
+        (0, [], 5),
+        (1, [], 4),
+        (1, [{"state": "PENDING"}], 5),
+        (1, [{"state": "SUCCESS"}], 5),
+    ],
+)
+@pytest.mark.parametrize("expires_during_attempt", [False, True])
+def test_sync_wait_classifies_checks_before_the_next_quiet_run(
+    setup,
+    github,
+    monkeypatch,
+    updated,
+    draft,
+    wait,
+    checks,
+    expected,
+    expires_during_attempt,
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "first edit\n")
+    if updated:
+        assert invoke(project).exit_code == 0
+        # A refreshed head must not reuse successful checks on the old head.
+        github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+        overleaf_edit(seed, "main.tex", "next edit\n")
+    clock = [0.0]
+    calls, sleeps = [], []
+    gh = sync.gh
+
+    def read_pr(root, *args, payload=None):
+        result = gh(root, *args, payload=payload)
+        if args[:2] == ("pr", "view"):
+            return {
+                **result,
+                "headRefOid": git(
+                    root, "ls-remote", "origin", "refs/heads/asta/overleaf-sync/1234567"
+                ).split()[0],
+                "statusCheckRollup": checks,
+                "isDraft": draft,
+            }
+        return result
+
+    sync_workspace = sync.sync_workspace
+
+    def attempt(*args):
+        calls.append(args[1])
+        result = sync_workspace(*args)
+        if expires_during_attempt:
+            clock[0] = 2.0
+        return result
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(sync, "gh", read_pr)
+    monkeypatch.setattr(sync, "sync_workspace", attempt)
+    monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
+    monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
+    result = run(project, "sync", "--wait", str(wait))
+    assert result.exit_code == (4 if draft else expected), result.output
+    assert calls == ["paper"]
+    assert sleeps == ([] if draft or wait == 0 or expires_during_attempt else [1])
+    assert ("A person must inspect CI setup" in result.output) == (
+        expected == 4 and not draft
+    )
+    assert ("mark the sync PR ready" in result.output) == draft
+    assert result.output.count("Sync outcome:") == 1
+    assert ("Updated" if updated else "Opened") in result.output
+    assert not github["merges"]
+    assert not git(
+        project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+    )
+
+
 def test_sync_wait_zero_does_not_escalate_checks_that_may_still_start(setup, github):
     seed, project = prepare(setup)
     overleaf_edit(seed, "main.tex", "ready\n")

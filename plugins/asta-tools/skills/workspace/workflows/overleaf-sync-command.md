@@ -39,10 +39,12 @@ or timing out loses nothing. With several paired papers and no `--dir`, each
 paper gets its own outcome line and the exit code is the most urgent one.
 Papers not attempted before the shared deadline are reported as still waiting.
 An empty checks list may mean CI has not started yet, so it keeps waiting
-within the deadline. If no checks appear before a positive wait expires, exit 4
-asks a person to inspect CI setup. If the repository has no checks for the sync
-PR, that person must merge it; rerun sync afterward to publish. `--wait 0`
-reports missing checks as still waiting because it allows no time for CI to start.
+within the deadline. If the latest attempt still sees no checks when a positive
+wait expires, exit 4 asks a person to inspect CI setup. This includes an attempt
+that opens or updates the sync PR, using the checks observed during that attempt.
+If the repository has no checks for the sync PR, that person must merge it;
+rerun sync afterward to publish. `--wait 0` reports missing checks as still
+waiting because it allows no time for CI to start.
 
 A scheduled runner is worth it when co-authors edit in Overleaf between the
 moments above, for example several active co-authors or long stretches without
