@@ -39,7 +39,7 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 Before opening any workspace PR, for both local and headless agents, keep the pin current:
 
 1. Commit your work, run `make check`, and note whether it passed.
-2. Run `asta workspace bump-pin`. If it moves the pin, it prints `Committed <sha>`; otherwise nothing was committed.
+2. Run `asta workspace bump-pin`; report errors and follow any recovery message. A bump prints `Committed <sha>`.
 3. If it printed a SHA, run `make check` again. If the build passed before and fails now, run `git revert --no-edit <sha>` and carry on without the bump.
 
 For a headless agent (the user only sees results via deployed URL):

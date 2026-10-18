@@ -540,19 +540,31 @@ def bump_pin(project: Path) -> None:
             raise click.ClickException(
                 f"Could not commit the pin move: {committed.stderr.strip()}"
             )
+        current = _git(project, "rev-parse", "HEAD")
+        if current.returncode != 0:
+            raise click.ClickException("Could not read the pin move's commit SHA")
+        sha = current.stdout.strip()
     except BaseException:
         # A signal can arrive after Git committed but before subprocess.run returned.
         # Never restore the old bytes over an already-advanced HEAD.
         if commit_started:
-            current = _git(project, "rev-parse", "HEAD")
-            if current.returncode != 0:
+            try:
+                current = _git(project, "rev-parse", "HEAD")
+            except OSError:
+                current = None
+            if current is None or current.returncode != 0:
+                click.echo(
+                    f"Could not determine whether the pin move committed; "
+                    f"{WORKFLOW_FILE} may still be modified. Inspect Git HEAD and "
+                    "the workflow before opening the PR; no rollback was attempted.",
+                    err=True,
+                )
                 raise
             if current.stdout != head.stdout:
                 click.echo(f"Committed {current.stdout.strip()}: {message}", err=True)
                 raise
         workflow.write_bytes(original)
         raise
-    sha = _git(project, "rev-parse", "HEAD").stdout.strip()
     click.echo(f"Committed {sha}: {message} (was @{ref})")
 
 
