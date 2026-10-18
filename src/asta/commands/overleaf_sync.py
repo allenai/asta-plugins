@@ -193,8 +193,8 @@ def waiting_message(pr: dict, head: str) -> str:
         action = actions[state]
     elif not pr.get("statusCheckRollup"):
         action = (
-            "No checks are configured for the sync PR, and sync merges only after "
-            "a check passes, so a person must merge it."
+            "No checks have appeared yet; wait for CI to start. If no checks are "
+            "configured for this PR, a person must merge it."
         )
     else:
         action = "Wait for completed successful checks; fix any failing checks."
@@ -211,7 +211,11 @@ def waiting_on_person(pr: dict, head: str) -> bool:
     """Whether a rerun cannot make progress until a person acts on the sync PR."""
     if pr.get("headRefOid") != head:
         return False
-    for check in pr.get("statusCheckRollup") or []:
+    checks = pr.get("statusCheckRollup") or []
+    # GitHub can show an empty rollup before CI has started.
+    if not checks:
+        return pr.get("mergeStateStatus") == "DRAFT"
+    for check in checks:
         if ("conclusion" in check and check.get("status") != "COMPLETED") or check.get(
             "state"
         ) in {"PENDING", "EXPECTED"}:

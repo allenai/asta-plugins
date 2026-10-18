@@ -1686,10 +1686,17 @@ def sync_and_wait(directory, project, check_repo, check_timeout, wait):
         else paired_directories(project) or [DEFAULT_DIR]
     )
     outcomes = []
+    first_attempt = True
     for paper_directory in directories:
         name = f"{paper_directory}: " if len(directories) > 1 else ""
+        state = sync_module.WAITING
+        message = "Wait deadline reached before this paper's sync attempt."
         try:
             while True:
+                # --wait 0 permits one attempt; all later attempts share the deadline.
+                if not first_attempt and time.monotonic() >= deadline:
+                    break
+                first_attempt = False
                 if check_repo is not None:
                     require_release_check(
                         project, paper_directory, check_repo, check_timeout

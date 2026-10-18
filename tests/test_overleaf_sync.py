@@ -887,7 +887,7 @@ def test_waiting_reports_actual_state(setup, github, state, action):
     assert action in result.output
 
 
-def test_waiting_without_checks_says_none_are_configured(setup, github):
+def test_waiting_without_checks_does_not_assume_ci_is_unconfigured(setup, github):
     seed, project = prepare(setup)
     overleaf_edit(seed, "main.tex", "ready\n")
     assert invoke(project).exit_code == 0
@@ -895,10 +895,38 @@ def test_waiting_without_checks_says_none_are_configured(setup, github):
     github["prs"][0]["statusCheckRollup"] = []
     result = invoke(project)
     assert result.exit_code == 0, result.output
-    assert "No checks are configured" in result.output
+    assert "No checks have appeared yet" in result.output
+    assert "If no checks are configured" in result.output
     assert "Wait for completed successful checks" not in result.output
     assert "Copied Overleaf commit" not in result.output
     assert not github["merges"]
+
+
+@pytest.mark.parametrize("checks_appear", [False, True])
+def test_sync_wait_allows_ci_checks_to_appear(
+    setup, github, monkeypatch, checks_appear
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    clock = [0.0]
+    sleeps = []
+    monkeypatch.setattr(sync.ov.time, "monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+        if checks_appear:
+            github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+            github["allow_merge"] = True
+
+    monkeypatch.setattr(sync.ov.time, "sleep", sleep)
+    result = run(project, "sync", "--wait", "60")
+    assert result.exit_code == (0 if checks_appear else 5), result.output
+    assert sleeps == ([30] if checks_appear else [30, 30])
+    assert len(github["merges"]) == int(checks_appear)
+    assert "Sync outcome: a person must act" not in result.output
+    assert git(project, "status", "--porcelain") == ""
 
 
 def test_markerless_pull_conflict_names_directory(setup, github, monkeypatch):
@@ -1924,7 +1952,16 @@ def test_credits_keep_author_when_publication_git_verification_fails(
 @pytest.mark.parametrize(
     "pr, person",
     [
-        ({"mergeStateStatus": "BLOCKED", "statusCheckRollup": []}, True),
+        ({"mergeStateStatus": "BLOCKED", "statusCheckRollup": []}, False),
+        ({"mergeStateStatus": "CLEAN", "statusCheckRollup": []}, False),
+        ({"mergeStateStatus": "CLEAN", "statusCheckRollup": None}, False),
+        (
+            {
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"state": "SUCCESS"}],
+            },
+            True,
+        ),
         (
             {
                 "mergeStateStatus": "UNSTABLE",

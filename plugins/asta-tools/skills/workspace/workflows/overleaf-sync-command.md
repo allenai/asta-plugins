@@ -19,7 +19,9 @@ asta workspace overleaf sync --wait 1800
 ```
 
 `--wait SECONDS` reruns sync, polling every 30 seconds, until it completes or
-someone must act, and never past the deadline. It waits out the sync PR's
+someone must act. No further attempt starts at or after the shared deadline;
+an attempt already running finishes normally so it can release its lock.
+`--wait 0` makes one attempt without polling. It waits out the sync PR's
 checks, the quiet rerun before it merges, and another run's recent lock, then
 prints one final `Sync outcome:` line and exits:
 
@@ -34,6 +36,10 @@ It never prompts, so an agent can start it in the background and act on the
 exit code. A rerun reconstructs its state from GitHub and Overleaf, so stopping
 or timing out loses nothing. With several paired papers and no `--dir`, each
 paper gets its own outcome line and the exit code is the most urgent one.
+Papers not attempted before the shared deadline are reported as still waiting.
+An empty checks list may mean CI has not started yet, so it keeps waiting
+within the deadline. If the repository has no checks for the sync PR, a person
+must merge it; rerun sync afterward to publish.
 
 A scheduled runner is worth it when co-authors edit in Overleaf between the
 moments above, for example several active co-authors or long stretches without
@@ -74,8 +80,9 @@ run paper builds without privileged tokens or secrets.
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
 markers, and GitHub reports completed successful checks and permits merging.
-With no checks configured, the PR waits for a person to merge it, and the run
-says so. Failed checks or conflicts leave the PR for a person.
+With no checks configured, the PR waits for a person to merge it. An empty
+checks list is reported as checks not yet visible because CI may still start.
+Failed checks or conflicts leave the PR for a person.
 
 Sync exits 0 when the run ends waiting on people: a conflict recorded on the
 sync PR, or a PR waiting for checks or a reviewer. It exits nonzero only when

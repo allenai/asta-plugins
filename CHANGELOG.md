@@ -5,6 +5,8 @@
 - Add `asta workspace overleaf sync --wait SECONDS` for papers synced by hand:
   one call reruns sync through checks, the quiet merge run and another run's
   recent lock until it completes or a person must act, bounded by the deadline.
+  Checks not yet visible keep waiting; the shared deadline prevents starting
+  retries or later papers, while an attempt already running finishes normally.
   It ends with one `Sync outcome:` line and exits 0 complete, 4 a person must
   act, 5 still waiting (rerun resumes), 1 an operator must act. Plain `sync`
   for scheduled runners is unchanged. The workspace docs say when to sync by
