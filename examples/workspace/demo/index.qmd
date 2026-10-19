@@ -2,13 +2,39 @@
 title: "What changed: edited papers"
 ---
 
-This is the example workspace's fixed example of edits to a literature review and a separate LaTeX paper. The release build makes it from `scripts/demo-edits.patch` and adds a link below after validating the report. The rendered snapshot is published to Pages and is never committed.
+Every pull request in a workspace gets a preview with a **What changed** page: each page it changes, with additions and removals marked, and the paper's PDF diff. Below is the one for a pull request with a fixed set of edits to this example's literature review and paper. Its page titles open the edited pages in a new tab.
 
+::: {.column-body-outset-right}
 <!-- template-demo-report -->
+:::
 
-When the report has not been built, this page describes the example only. To see changes to your own project, open **What changed** in your pull request's preview comment. You can remove this example page and its navigation entries when replacing the sample content.
+```{=html}
+<style>
+#template-demo-report iframe { width: 100%; min-height: 80vh; border: 0; display: block; }
+</style>
+<script>
+// Size the report to its content, and open its links to the edited pages in a
+// new tab, so that the page reads as one page of this site.
+(() => {
+  const frame = document.querySelector('#template-demo-report iframe');
+  if (!frame) return;
+  frame.addEventListener('load', () => {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    for (const link of doc.querySelectorAll('a[href]')) {
+      if (!link.getAttribute('href').startsWith('#')) link.target = '_blank';
+    }
+    const fit = () => { frame.style.height = doc.documentElement.scrollHeight + 'px'; };
+    fit();
+    new ResizeObserver(fit).observe(doc.body);
+  });
+})();
+</script>
+```
 
-Check these views:
+Look for:
 
-1. **A small literature review:** Quarto HTML marks the revised Transformer claim, the added BERT claim, and the new reference. `lit-review/index.qmd` is its editable source.
-2. **Paper:** the separate `paper/main.tex` has an HTML diff and a PDF diff. Look for the added citation and equation, the revised sentence, and the changed figure caption. The review cites `references.bib`; the paper cites its own copies in `paper/references.bib`.
+1. **A small literature review:** the revised Transformer claim, the added BERT claim, and the new reference.
+2. **Paper:** the added citation and equation, the revised sentence, and the changed figure caption, in the HTML diff and the PDF diff.
+
+The edits are `scripts/demo-edits.patch`, and each release builds the report from them. A local render shows no report above until `make demo-build` builds it.

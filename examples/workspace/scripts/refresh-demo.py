@@ -107,8 +107,8 @@ def report_link(page: Path, href: str) -> str:
     content = page.read_text(encoding="utf-8")
     content, count = re.subn(
         r'<!-- template-demo-report -->|<p id="template-demo-report">.*?</p>',
-        f'<p id="template-demo-report"><a href="{href}">'
-        "Open the edited-workspace What changed page</a></p>",
+        f'<p id="template-demo-report"><iframe src="{href}" '
+        'title="What changed in the demo pull request"></iframe></p>',
         content,
         flags=re.DOTALL,
     )
