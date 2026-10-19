@@ -12,54 +12,77 @@ ASTA_PLUGINS_REF ?=
 # a local archive). When set, it is used verbatim and ref resolution is skipped.
 ASTA_PLUGINS_ARCHIVE_URL ?=
 
-# The evidence extension is maintained with the workspace skill rather than
-# vendored into every report. Replace it only after a complete download and
-# extraction so a network failure cannot leave a partial extension behind.
+# Managed Quarto extensions: the evidence filter and the Asta site theme. They
+# are maintained with the workspace skill rather than vendored into every report.
+# Replace them only after a complete download and extraction so a network failure
+# cannot leave a partial extension behind.
 #
 # Offline-tolerant: if the network can't be reached (tag resolution or download
-# fails) but a previously fetched _extensions/evidence already exists, keep that
-# cached copy and warn instead of failing — so a render works on a plane. Only a
-# first fetch with no cache is a hard error.
+# fails) but all extensions referenced by _quarto.yml are cached, keep those
+# copies and warn instead of failing. Missing required cached assets are a hard
+# error. The theme ships its own fonts, so cached copies render offline.
+# Keep .evidence-install.lock to serialize installs with older workspace rules.
 workspace-assets:
 	@set -eu; \
-	if [ -L _extensions/evidence ]; then \
-		echo "workspace-assets: _extensions/evidence is a symlink (local development); not refreshing"; exit 0; \
+	theme_files="light.scss dark.scss asta.css asta-head.html fonts/Manrope.woff2 fonts/RobotoMono.woff2 fonts/Manrope-OFL.txt fonts/RobotoMono-OFL.txt"; \
+	required_exts=evidence; \
+	if cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
+		required_exts="$$required_exts asta-theme"; \
 	fi; \
-	if git ls-files --error-unmatch _extensions/evidence >/dev/null 2>&1; then \
-		echo "workspace-assets: _extensions/evidence is committed (customized copy); not refreshing"; exit 0; \
-	fi; \
-	ref="$(ASTA_PLUGINS_REF)"; \
-	url="$(ASTA_PLUGINS_ARCHIVE_URL)"; \
-	have_cache=0; \
-	if [ -d _extensions/evidence ] || [ -L _extensions/evidence ]; then have_cache=1; fi; \
+	exts=; \
+	for ext in $$required_exts; do \
+		if [ -L "_extensions/$$ext" ]; then \
+			echo "workspace-assets: _extensions/$$ext is a symlink (local development); not refreshing"; \
+		elif git ls-files --error-unmatch "_extensions/$$ext" >/dev/null 2>&1; then \
+			echo "workspace-assets: _extensions/$$ext is committed (customized copy); not refreshing"; \
+		else exts="$$exts $$ext"; fi; \
+	done; \
+	[ -n "$$exts" ] || exit 0; \
+	ref='$(subst ','"'"',$(value ASTA_PLUGINS_REF))'; \
+	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \
+	repo='$(subst ','"'"',$(value ASTA_PLUGINS_REPO))'; \
+	have_cache=1; \
+	for ext in $$required_exts; do \
+		[ -d "_extensions/$$ext" ] || have_cache=0; \
+	done; \
+	case " $$exts " in *' asta-theme '*) \
+		for file in $$theme_files; do \
+			[ -s "_extensions/asta-theme/$$file" ] || have_cache=0; \
+		done ;; esac; \
 	offline_ok() { \
 		if [ "$$have_cache" -eq 1 ]; then \
-			echo "workspace-assets: could not reach asta-plugins ($$1); keeping the cached _extensions/evidence — re-run with network access to refresh" >&2; \
+			echo "workspace-assets: could not reach asta-plugins ($$1); keeping the cached extensions — re-run with network access to refresh" >&2; \
 			exit 0; \
 		fi; \
-		echo "workspace-assets: could not reach asta-plugins ($$1) and no cached _extensions/evidence exists — network access is required for the first fetch" >&2; \
+		echo "workspace-assets: could not reach asta-plugins ($$1) and no cached copy of all required extensions exists — network access is required for the first fetch" >&2; \
 		exit 1; \
 	}; \
 	if [ -z "$$url" ]; then \
 		if [ -z "$$ref" ]; then \
-			ref=$$(git ls-remote --tags --refs "$(ASTA_PLUGINS_REPO)" 'v*' 2>/dev/null \
+			ref=$$(git ls-remote --tags --refs "$$repo" 'v*' 2>/dev/null \
 				| awk -F/ '{print $$NF}' \
 				| grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' \
 				| sort -V | tail -n 1) || true; \
-			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $(ASTA_PLUGINS_REPO)"; \
+			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $$repo"; \
 		fi; \
-		url="$(ASTA_PLUGINS_REPO)/archive/$$ref.tar.gz"; \
+		url="$$repo/archive/$$ref.tar.gz"; \
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
-	backup="$$tmp/previous-evidence"; \
+	backup="$$tmp/previous"; \
 	lock_held=0; \
+	installing=; \
 	cleanup() { \
 		status=$$?; \
 		trap - 0 1 2 15; \
-		if [ "$$status" -ne 0 ] && { [ -e "$$backup" ] || [ -L "$$backup" ]; }; then \
-			rm -rf _extensions/evidence; \
-			mv "$$backup" _extensions/evidence || status=1; \
+		if [ "$$status" -ne 0 ]; then \
+			for ext in $$installing; do rm -rf "_extensions/$$ext"; done; \
+			for ext in $$exts; do \
+				if [ -e "$$backup/$$ext" ] || [ -L "$$backup/$$ext" ]; then \
+					rm -rf "_extensions/$$ext"; \
+					mv "$$backup/$$ext" "_extensions/$$ext" || status=1; \
+				fi; \
+			done; \
 		fi; \
 		[ "$$lock_held" -eq 0 ] || rmdir "$$lock" 2>/dev/null || true; \
 		rm -rf "$$tmp"; \
@@ -69,17 +92,36 @@ workspace-assets:
 	trap 'exit 1' 1 2 15; \
 	curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz" || offline_ok "download from $$url failed"; \
 	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
-	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
-	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
-	cp -R "$$source_dir" "$$tmp/evidence"; \
+	mkdir "$$tmp/new" "$$backup"; \
+	for ext in $$exts; do \
+		source_dir=$$(find "$$tmp" -type d -path "*/plugins/asta-tools/skills/workspace/assets/_extensions/$$ext" -print -quit); \
+		if [ -z "$$source_dir" ]; then \
+			case " $$required_exts " in *" $$ext "*) \
+				echo "$$ext extension not found in asta-plugins@$${ref:-$$url}; select a ref that supplies it before rendering this _quarto.yml" >&2; exit 1 ;; esac; \
+			echo "workspace-assets: asta-plugins@$${ref:-$$url} has no $$ext extension; skipping" >&2; continue; \
+		fi; \
+		cp -R "$$source_dir" "$$tmp/new/$$ext"; \
+		if [ "$$ext" = asta-theme ]; then \
+			for file in $$theme_files; do \
+				asset="$$tmp/new/$$ext/$$file"; \
+				if [ ! -f "$$asset" ] || [ -L "$$asset" ] || [ ! -s "$$asset" ]; then \
+					echo "workspace-assets: incomplete asta-theme in asta-plugins@$${ref:-$$url}: $$file must be a nonempty regular file; keeping existing extensions" >&2; exit 1; \
+				fi; \
+			done; \
+		fi; \
+	done; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
-	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
-		mv _extensions/evidence "$$backup"; \
-	fi; \
-	mv "$$tmp/evidence" _extensions/evidence; \
-	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
+	for ext in $$exts; do \
+		[ -d "$$tmp/new/$$ext" ] || continue; \
+		if [ -e "_extensions/$$ext" ] || [ -L "_extensions/$$ext" ]; then \
+			mv "_extensions/$$ext" "$$backup/$$ext"; \
+		fi; \
+		installing="$$installing $$ext"; \
+		mv "$$tmp/new/$$ext" "_extensions/$$ext"; \
+		echo "workspace-assets: installed $$ext extension from asta-plugins@$${ref:-$$url}"; \
+	done
 
 preview: workspace-assets
 	quarto preview --no-browser

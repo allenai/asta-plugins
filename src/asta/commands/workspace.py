@@ -279,10 +279,212 @@ workspace.add_command(overleaf)
 )
 def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
-    sync_workspace(project, refresh, require_scripts)
+    archive = sync_workspace(project, refresh, require_scripts)
+    if archive is not None and archive_has_asta_theme(archive):
+        makefile = project.resolve() / "Makefile"
+        if not makefile.is_file() or not re.search(
+            r"^include[ \t]+\.asta/cache/workspace\.mk[ \t]*(?:#.*)?$",
+            makefile.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        ):
+            click.echo(
+                "Warning: theme adoption skipped: Makefile must use "
+                "'include .asta/cache/workspace.mk' to fetch managed theme assets. "
+                "Keep your current theme or migrate to the managed Makefile first.",
+                err=True,
+            )
+            return
+        adopt_asta_theme(project)
+        config = project.resolve() / "_quarto.yml"
+        ignore = project.resolve() / ".gitignore"
+        extension = project.resolve() / "_extensions/asta-theme"
+        if (
+            config.is_file()
+            and not config.is_symlink()
+            and ASTA_CSS in config.read_text(encoding="utf-8")
+            and not ignore.is_symlink()
+            and not extension.is_symlink()
+        ):
+            tracked = subprocess.run(
+                ["git", "-C", str(project), "ls-files", "--", "_extensions/asta-theme"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            # A committed directory is intentionally customized, not a cache.
+            if tracked.returncode == 0 and not tracked.stdout.strip():
+                previous = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+                if (
+                    "_extensions/asta-theme" not in previous.splitlines()
+                    and "_extensions/asta-theme/" not in previous.splitlines()
+                ):
+                    _atomic_write(
+                        ignore,
+                        (
+                            previous.rstrip("\n")
+                            + ("\n" if previous else "")
+                            + "_extensions/asta-theme/\n"
+                        ).encode("utf-8"),
+                    )
 
 
-def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
+SCAFFOLD_THEME = "    theme: cosmo\n"
+ASTA_THEME = """    theme:
+      dark: [cosmo, _extensions/asta-theme/dark.scss]
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    # Asta's look: start dark, with a persistent toggle to light.
+    # Set your own theme here to replace it.
+    respect-user-color-scheme: false
+"""
+ASTA_CSS = "_extensions/asta-theme/asta.css"
+ASTA_HEADER = "_extensions/asta-theme/asta-head.html"
+ASTA_THEME_FILES = (
+    "light.scss",
+    "dark.scss",
+    "asta.css",
+    "asta-head.html",
+    "fonts/Manrope.woff2",
+    "fonts/RobotoMono.woff2",
+    "fonts/Manrope-OFL.txt",
+    "fonts/RobotoMono-OFL.txt",
+)
+
+
+def archive_has_asta_theme(archive: bytes) -> bool:
+    """Only adopt a theme that the project's selected source can supply."""
+    required = {
+        ASSET_DIR + "_extensions/asta-theme/" + name for name in ASTA_THEME_FILES
+    }
+    found = set()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
+            for member in bundle:
+                parts = member.name.split("/", 1)
+                if len(parts) != 2 or parts[1] not in required:
+                    continue
+                if (
+                    parts[1] in found
+                    or not member.isfile()
+                    or not 0 < member.size <= MAX_ASSET_BYTES
+                ):
+                    return False
+                found.add(parts[1])
+    except (tarfile.TarError, OSError):
+        return False
+    return found == required
+
+
+def adopt_asta_theme(project: Path) -> bool:
+    """Move a site still on the scaffold's default theme to Asta's look.
+
+    Any other theme is the project's own choice and is left alone.
+    """
+    config = project.resolve() / "_quarto.yml"
+    if config.is_symlink() or not config.is_file():
+        return False
+    text = config.read_text(encoding="utf-8")
+    if not text.endswith("\n"):
+        text += "\n"  # so a final block-list item is matched
+    # Deliberately recognize only the scaffold's block mappings. Leave flow
+    # mappings, anchors and nonstandard indentation to the project owner. Scope
+    # both theme and css edits to format.html, preserving all other formats.
+    formats = list(re.finditer(r"^format:[ \t]*(?:#.*)?\n", text, re.MULTILINE))
+    if len(formats) != 1:
+        return False
+    start = formats[0].end()
+    end_match = re.search(r"^[^\s#]", text[start:], re.MULTILINE)
+    end = start + end_match.start() if end_match else len(text)
+    htmls = list(
+        re.finditer(r"^  html:[ \t]*(?:#.*)?\n", text[start:end], re.MULTILINE)
+    )
+    if len(htmls) != 1:
+        return False
+    start += htmls[0].end()
+    end_match = re.search(r"^ {0,2}[^\s#]", text[start:end], re.MULTILINE)
+    end = start + end_match.start() if end_match else end
+    html = text[start:end]
+    if (
+        "asta-theme" in html
+        or re.search(r"^" + re.escape(SCAFFOLD_THEME), html, re.MULTILINE) is None
+        or len(re.findall(r"^    theme:", html, re.MULTILINE)) != 1
+    ):
+        return False
+    if re.search(r"^    respect-user-color-scheme:", html, re.MULTILINE):
+        # An explicit project preference wins over the managed default.
+        theme = ASTA_THEME.replace(
+            "    respect-user-color-scheme: false\n", ""
+        ).replace(
+            "    # Asta's look: start dark, with a persistent toggle to light.\n", ""
+        )
+    else:
+        theme = ASTA_THEME
+    html = re.sub(
+        r"^" + re.escape(SCAFFOLD_THEME),
+        lambda _: theme,
+        html,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    # Add managed resources to the existing HTML lists without duplicate keys.
+    project_css = ""
+    for key, resource in (("css", ASTA_CSS), ("include-in-header", ASTA_HEADER)):
+        if len(re.findall(rf"^    {key}:", html, re.MULTILINE)) > 1:
+            return False
+        entry = re.search(
+            rf"^    {key}:([^\n]*)(?:\n|$)((?:      - .*\n)*)", html, re.MULTILINE
+        )
+        if entry is None:
+            html = html.replace(theme, f"{theme}    {key}: {resource}\n")
+        else:
+            value = entry[1].strip()
+            if value.startswith("[") and value.endswith("]"):
+                own = value[1:-1].strip()
+                joined = f"    {key}: [{resource}{', ' + own if own else ''}]\n"
+            elif value and (value[0] in "|>&*!{[" or value.startswith("#")):
+                return False
+            else:
+                if not value and re.match(r"    - ", html[entry.end() :]):
+                    return False
+                if not value and not entry[2]:
+                    following = next(
+                        (
+                            line
+                            for line in html[entry.end() :].splitlines()
+                            if line.strip() and not line.lstrip().startswith("#")
+                        ),
+                        "",
+                    )
+                    if following.startswith("     ") and not following.startswith(
+                        "      - "
+                    ):
+                        return False
+                if value in ("null", "~"):
+                    value = ""
+                own = f"      - {value}\n" if value else entry[2]
+                joined = f"    {key}:\n      - {resource}\n{own}"
+            if key == "css":
+                project_css = (
+                    own
+                    if value.startswith("[")
+                    else ", ".join(re.findall(r"^\s*-\s*(.+)$", own, re.MULTILINE))
+                )
+            html = html[: entry.start()] + joined + html[entry.end() :]
+    text = text[:start] + html + text[end:]
+    _atomic_write(config, text.encode("utf-8"))
+    click.echo(
+        "Gave the site Asta's look in _quarto.yml; to customize or opt out, "
+        "see the workspace developer guide, Site appearance (theme, css, and include-in-header)"
+    )
+    if project_css:
+        click.echo(
+            "Warning: existing project CSS is kept after Asta's stylesheet. "
+            f"Review its colors in dark and light mode: {project_css}",
+            err=True,
+        )
+    return True
+
+
+def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes | None:
     project = project.resolve()
     if (project / "workspace.mk").exists():
         if require_scripts:
@@ -433,7 +635,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
                 err=True,
             )
         click.echo(f"workspace.mk already cached from asta-plugins@{ref}")
-        return
+        return cached_archive
     try:
         asset, archive = load_asset(repository, source_ref)
         scripts = load_scripts(archive)
@@ -446,7 +648,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
             click.echo(
                 f"Could not refresh asta-plugins@{ref}; using the cached copy", err=True
             )
-            return
+            return cached_archive
         raise
     _require_cli(asset, ref, cli)
     if require_scripts:
@@ -488,6 +690,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:
         + b"\n",
     )
     click.echo(f"Loaded workspace.mk from asta-plugins@{ref}")
+    return archive
 
 
 @workspace.command("bump-pin")

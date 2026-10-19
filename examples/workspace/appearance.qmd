@@ -1,0 +1,88 @@
+---
+title: "Reading in Asta"
+---
+
+The workspace is a place to read research notes, inspect supporting evidence,
+and review a paper as it develops. This page shows the shared reading surface
+in light and dark, including headings, links, tables, code and callouts.
+
+## A familiar reading surface
+
+Light mode uses a cream background with dark-teal text. Dark mode uses an
+extra-dark teal background with cream text. Both come from
+[Asta's design system](https://github.com/allenai/design/tree/main/asta), and both
+use the same Manrope type and page layout. Changing the mode keeps the text in
+the same place, so you can keep reading where you left off.
+
+The page opens in dark mode on a fresh visit, regardless of your system setting. Use the light/dark
+toggle in the navigation to choose a mode yourself. Your choice persists as
+you move between pages or reload the site.
+
+::: {.callout-note}
+## Keep your place
+
+Scroll through this section. Its heading stays above the text until the next
+section takes over. The table of contents also marks the section you are
+reading, and its links let you return to a heading directly.
+:::
+
+### Reading the components
+
+Links use Asta's teal on the light surface and green on the dark surface.
+Inline code such as `asta workspace sync` uses a monospace face. A separate
+code block keeps commands easy to scan:
+
+```bash
+asta workspace sync
+make check
+make preview
+```
+
+| Part of the page | Purpose |
+|---|---|
+| Section heading | Keep the current reading context in view |
+| Table of contents | Jump to another part of a long page |
+| Theme toggle | Choose the light or dark reading surface |
+| Evidence highlight | Inspect the quote backing a research claim |
+
+Read the [sample literature review](lit-review/index.qmd) to try an evidence
+highlight. Hover over its marked claim, or focus it with the keyboard, to see
+the source quote alongside its citation.
+
+[Read the sample review](lit-review/index.qmd){.btn .btn-primary}
+
+## A project can choose its own appearance
+
+The theme is a managed workspace asset. A project receives it from the same
+selected source as its shared build rules and evidence extension. A refresh
+updates those assets together instead of leaving a copied stylesheet behind.
+
+Existing projects adopt the Asta theme when their HTML theme still has the
+scaffold's original `cosmo` value and their selected source supplies the new
+assets. A project with another theme keeps its choice. Older pinned sources
+keep their original appearance until the project selects a compatible release.
+
+### Customize deliberately
+
+For a different HTML theme, edit the project's `_quarto.yml`. Keep any
+project-specific styles alongside it:
+
+```yaml
+format:
+  html:
+    theme: flatly
+    css: styles.css
+```
+
+To customize the Asta theme directly, commit a copy of
+`_extensions/asta-theme`. Managed refreshes preserve committed copies and local
+development symlinks. This keeps intentional project styling under the
+project's own version control.
+
+::: {.callout-tip}
+## Share the rendered work
+
+A workspace preview includes the same light/dark controls as the published
+site. Send a reader the preview URL so they can inspect the actual page,
+follow its links, and choose the reading surface they prefer.
+:::

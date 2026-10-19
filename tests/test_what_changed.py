@@ -362,7 +362,7 @@ def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
 
     The extension's default 1px, 32%-opacity border is too subtle against the
     diff's green insertion tint, so the generator strengthens that one cue with
-    an information-blue rule. The claim itself must also survive the word-diff
+    a theme-aware rule. The claim itself must also survive the word-diff
     intact.
     """
     old = tmp_path / "old"
@@ -390,7 +390,11 @@ def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
     underline_contexts = _underline_contexts(result)
     assert underline_contexts
     assert _only_underline_on_hover(result), underline_contexts
-    assert ".wc-scope .ev { border-bottom: 2px dotted #2a88ef; }" in result
+    assert (
+        ".wc-scope .ev { border-bottom: 2px dotted var(--bs-link-color, var(--wc-changed)); }"
+        in result
+    )
+    assert "#2a88ef" not in result
     # The extension's own `.ev` styling still survives via the reused head CSS.
     assert ".ev { border-bottom: 1px dotted rgba(0, 0, 0, 0.32); }" in result
     # The claim survives the word-diff with its class intact.
@@ -463,8 +467,42 @@ def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
 
     result = WHAT_CHANGED.build(old, new, "", "PR #1")
 
-    assert "wc-scope wc-dark" in result
+    assert 'data-wc-mode="dark"' in result
+    assert '[data-wc-mode="dark"] .wc-scope' in result
     assert "--wc-tag-fg: #0d1117" in result
+
+
+def test_dark_default_site_starts_dark_and_follows_the_stored_toggle(tmp_path):
+    # Quarto renders the light sheet first and picks dark only in the browser.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    shell = """<html><head>
+      <link href="site_libs/bootstrap.min.css" rel="stylesheet"
+        class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+      <link href="site_libs/bootstrap-dark.min.css" rel="prefetch"
+        class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap"
+        data-mode="dark">
+      <script>const authorPrefersDark = true;
+        const darkModeDefault = authorPrefersDark;</script>
+      </head><body><main><p>{text}</p></main></body></html>"""
+    (old / "index.html").write_text(shell.format(text="Old"))
+    (new / "index.html").write_text(shell.format(text="New"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+
+    assert '<html lang="en" data-wc-mode="dark">' in result
+    assert '<body class="quarto-dark">' in result
+    assert re.search(
+        r'<link rel="stylesheet" href="site_libs/bootstrap.min.css"', result
+    )
+    assert re.search(
+        r'<link rel="stylesheet" href="site_libs/bootstrap-dark.min.css"', result
+    )
+    # The reader's toggle (Quarto's sentinel) still wins in the browser.
+    assert 'localStorage.getItem("quarto-color-scheme")' in result
+    assert "data-wc-follow-system" not in result
 
 
 def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):

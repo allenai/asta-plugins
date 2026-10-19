@@ -131,6 +131,47 @@ underline; hovering it shows the quote and a body-style citation, and the same
 popover appears on the `what-changed` diff so a reviewer can check the backing.
 Full reference (available after the first render or `make workspace-assets`): [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
 
+## Site appearance
+
+Workspace sites use the Asta palette and components from
+[`allenai/design`](https://github.com/allenai/design/tree/main/asta). Light mode
+pairs cream with dark-teal text; dark mode pairs extra-dark teal with cream.
+Both modes keep the same Manrope typography and layout. The site starts in dark mode regardless of the
+reader's system setting, and remembers a light mode chosen with the theme toggle. Section
+headings remain visible while reading long sections.
+
+Use Quarto 1.7.29 or newer for this theme's dark-default behavior and persistent
+toggle, matching the version in the workspace container.
+
+`asta workspace sync` adopts the theme for an existing site only when
+`format.html.theme` is still the scaffold's `cosmo` and the selected source
+contains the theme assets and the project Makefile includes the managed
+`.asta/cache/workspace.mk` rules. Standalone Makefiles keep their current theme;
+migrate to `Makefile.managed` before adopting it. An older pin keeps its current appearance; upgrade
+the ref in `.github/workflows/docs.yml` when ready. `make workspace-assets`
+fetches the theme and evidence extension together. Offline rendering needs a
+complete cached copy of both referenced extensions.
+
+Sync preserves existing HTML stylesheets after Asta's stylesheet and warns with
+their names on adoption. Review any hard-coded text, link, and background colors
+in those files in both dark and light modes; use theme-aware colors such as
+`var(--bs-body-color)` and `var(--bs-body-bg)` where appropriate. A project with
+its own theme and no Asta asset references fetches only the evidence extension.
+Manrope and Roboto Mono are bundled with the theme, including their licenses,
+so cached sites load their fonts offline without contacting another host.
+Asset detection scans root `_quarto*.yml` files, including profiles. If a theme
+reference lives only in page front matter, `_metadata.yml`, or another included
+YAML file, also reference its stylesheet in the root HTML configuration so
+`make workspace-assets` fetches it.
+
+To use another theme, set `format.html.theme` to your choice and remove
+`_extensions/asta-theme/asta.css` from `format.html.css` and `asta-head.html`
+from `format.html.include-in-header` to replace the shared typography and heading behavior. Sync preserves your theme
+and other formats. To customize the Asta theme itself, commit a copy of
+`_extensions/asta-theme`; asset refreshes preserve committed directories and
+development symlinks. Projects with local `workspace.mk` rules control their
+own migration.
+
 ## Edit without preview
 
 Edit `.qmd` files on GitHub directly or in any editor.
@@ -145,7 +186,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make clean` | wipe Quarto build artifacts |
 | `make paper` | compile a separate LaTeX source paper using its latexmkrc |
 | `make paper-clean` | clean that paper's build outputs |
-| `make workspace-assets` | refresh the evidence extension at the managed ref selected in `docs.yml`; standalone rules default to the newest release tag |
+| `make workspace-assets` | refresh the evidence extension and Asta theme at the managed ref selected in `docs.yml`; standalone rules default to the newest release tag |
 | `make update-workspace` | refresh managed rules and helpers at the selected ref; available with `Makefile.managed` |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |

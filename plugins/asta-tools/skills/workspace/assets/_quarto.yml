@@ -30,10 +30,17 @@ website:
 
 format:
   html:
-    theme: cosmo
+    theme:
+      dark: [cosmo, _extensions/asta-theme/dark.scss]
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    # Asta's look: start dark, with a persistent toggle to light.
+    # Set your own theme here to replace it.
+    respect-user-color-scheme: false
+    css: _extensions/asta-theme/asta.css
     toc: true
     toc-location: left
     include-in-header:
+      - _extensions/asta-theme/asta-head.html
       - _extensions/evidence/evidence.head.html
     include-after-body:
       - _extensions/evidence/evidence.body.html
