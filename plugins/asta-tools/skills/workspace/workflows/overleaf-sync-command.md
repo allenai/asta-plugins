@@ -38,15 +38,10 @@ exit code. A rerun reconstructs its state from GitHub and Overleaf, so stopping
 or timing out loses nothing. With several paired papers and no `--dir`, each
 paper gets its own outcome line and the exit code is the most urgent one.
 Papers not attempted before the shared deadline are reported as still waiting.
-An empty checks list may mean CI has not started yet, so it keeps waiting
-within the deadline. If quiet attempts at least 30 seconds apart still see no
-checks when a positive wait expires, exit 4 asks a person to inspect CI setup.
-Opening or updating the sync PR resets this observation period so a new head
-has time for CI to start. Short waits or a paper first attempted near the shared
-deadline report exit 5 instead.
-If the repository has no checks for the sync PR, that person must merge it;
-rerun sync afterward to publish. `--wait 0` reports missing checks as still
-waiting because it allows no time for CI to start.
+Exit 4 is only for what sync records: a conflict on the sync PR, failed
+checks, or a required or rejected review. Anything inferred from GitHub's state,
+such as no checks yet, a draft, or a merge blocked for no stated reason, keeps
+waiting; at the deadline, exit 5's line says what it last saw.
 
 A scheduled runner is worth it when co-authors edit in Overleaf between the
 moments above, for example several active co-authors or long stretches without
