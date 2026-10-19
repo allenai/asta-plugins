@@ -280,6 +280,34 @@ workspace.add_command(overleaf)
 def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
     sync_workspace(project, refresh, require_scripts)
+    adopt_asta_theme(project)
+
+
+SCAFFOLD_THEME = "    theme: cosmo\n"
+ASTA_THEME = """    theme:
+      light: [cosmo, _extensions/asta-theme/light.scss]
+      dark: [cosmo, _extensions/asta-theme/dark.scss]
+    # Asta's look (_extensions/asta-theme/README.md): follow the reader's
+    # system setting, with a toggle. Set your own theme here to replace it.
+    respect-user-color-scheme: true
+    css: _extensions/asta-theme/asta.css
+"""
+
+
+def adopt_asta_theme(project: Path) -> bool:
+    """Move a site still on the scaffold's default theme to Asta's look.
+
+    Any other theme is the project's own choice and is left alone.
+    """
+    config = project.resolve() / "_quarto.yml"
+    if config.is_symlink() or not config.is_file():
+        return False
+    text = config.read_text()
+    if "asta-theme" in text or text.count(SCAFFOLD_THEME) != 1:
+        return False
+    _atomic_write(config, text.replace(SCAFFOLD_THEME, ASTA_THEME).encode())
+    click.echo("Gave the site Asta's look in _quarto.yml; set your own theme: to opt out")
+    return True
 
 
 def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> None:

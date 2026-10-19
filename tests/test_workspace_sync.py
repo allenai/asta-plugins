@@ -1521,3 +1521,29 @@ def test_missing_helpers_do_not_warn_about_build_or_dependency_papers(
     )
     assert result.returncode == 0, result.stderr
     assert not result.stderr
+
+
+def test_adopt_asta_theme_upgrades_only_the_scaffold_default(tmp_path: Path) -> None:
+    config = tmp_path / "_quarto.yml"
+    config.write_text("format:\n  html:\n    theme: cosmo\n    toc: true\n")
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    text = config.read_text()
+    assert "_extensions/asta-theme/light.scss" in text
+    assert "respect-user-color-scheme: true" in text
+    assert "    toc: true\n" in text
+    assert not workspace_module.adopt_asta_theme(tmp_path)
+    assert config.read_text() == text
+
+    config.write_text("format:\n  html:\n    theme: flatly\n")
+    assert not workspace_module.adopt_asta_theme(tmp_path)
+    assert config.read_text() == "format:\n  html:\n    theme: flatly\n"
+
+
+def test_scaffold_quarto_config_uses_the_managed_asta_theme() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assets = root / "plugins/asta-tools/skills/workspace/assets"
+    for config in (assets / "_quarto.yml", root / "examples/workspace/_quarto.yml"):
+        assert workspace_module.ASTA_THEME in config.read_text()
+    for name in ("light.scss", "dark.scss", "asta.css"):
+        assert (assets / "_extensions/asta-theme" / name).is_file()
+        assert (root / "examples/workspace/_extensions/asta-theme" / name).is_file()
