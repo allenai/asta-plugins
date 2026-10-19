@@ -362,7 +362,7 @@ def test_evidence_claim_underline_is_legible_on_the_diff(tmp_path):
 
     The extension's default 1px, 32%-opacity border is too subtle against the
     diff's green insertion tint, so the generator strengthens that one cue with
-    an information-blue rule. The claim itself must also survive the word-diff
+    a theme-aware rule. The claim itself must also survive the word-diff
     intact.
     """
     old = tmp_path / "old"
@@ -495,7 +495,7 @@ def test_dark_default_site_starts_dark_and_follows_the_stored_toggle(tmp_path):
     assert '<html lang="en" data-wc-mode="dark">' in result
     assert '<body class="quarto-dark">' in result
     assert re.search(
-        r'<link rel="disabled-stylesheet" href="site_libs/bootstrap.min.css"', result
+        r'<link rel="stylesheet" href="site_libs/bootstrap.min.css"', result
     )
     assert re.search(
         r'<link rel="stylesheet" href="site_libs/bootstrap-dark.min.css"', result

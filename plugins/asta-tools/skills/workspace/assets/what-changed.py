@@ -915,9 +915,9 @@ FOLD_JS = r"""
 """
 
 # Quarto picks light or dark only in the browser (author default, then the
-# reader's stored toggle), so the diff page repeats that choice on load: enable
-# the matching theme stylesheets and mark the mode for DIFF_STYLE. Mirrors the
-# `quarto-color-scheme` sentinel in Quarto's quarto-html-before-body template.
+# reader's stored toggle), so the diff page repeats that choice on load: layer
+# the active theme over the primary sheets and mark the mode for DIFF_STYLE.
+# Mirrors the `quarto-color-scheme` sentinel in Quarto's before-body template.
 MODE_JS = """
 (() => {
   const root = document.documentElement;
@@ -929,8 +929,12 @@ MODE_JS = """
     dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const mode = dark ? "dark" : "light";
   root.dataset.wcMode = mode;
-  document.querySelectorAll("link.quarto-color-scheme").forEach((link) => {
-    link.rel = link_mode(link) === mode ? "stylesheet" : "disabled-stylesheet";
+  document.querySelectorAll("link.quarto-color-scheme, link.quarto-color-scheme-extra").forEach((link) => {
+    // Quarto keeps primary styles enabled and layers the alternate over them.
+    // Extra sheets are render-time helpers and are disabled in either mode.
+    const enabled = !link.classList.contains("quarto-color-scheme-extra") &&
+      (!link.classList.contains("quarto-color-alternate") || link_mode(link) === mode);
+    link.rel = enabled ? "stylesheet" : "disabled-stylesheet";
   });
   document.body.classList.remove("quarto-light", "quarto-dark");
   document.body.classList.add("quarto-" + mode);
@@ -980,9 +984,14 @@ def extract_theme_css(doc, depth):
     return "\n".join(parts) if parts else None
 
 
+def _link_classes(tag):
+    classes = re.search(r"\bclass\s*=\s*[\"']([^\"']*)[\"']", tag, re.I)
+    return set(classes.group(1).split()) if classes else set()
+
+
 def _is_color_scheme_link(tag):
     return bool(
-        re.search(r'\bclass\s*=\s*["\'][^"\']*\bquarto-color-scheme\b', tag, re.I)
+        _link_classes(tag) & {"quarto-color-scheme", "quarto-color-scheme-extra"}
     )
 
 
@@ -990,17 +999,21 @@ def _link_mode(tag):
     mode = re.search(r'\bdata-mode\s*=\s*["\'](light|dark)["\']', tag, re.I)
     if mode:
         return mode.group(1).lower()
-    return "dark" if "quarto-color-alternate" in tag else "light"
+    return "dark" if "quarto-color-alternate" in _link_classes(tag) else "light"
 
 
 def set_theme_mode(theme_css, mode):
-    """Enable only the color-scheme stylesheets for `mode`, as Quarto would."""
+    """Keep primary styles, layer the active alternate, and disable extra sheets."""
 
     def fix(m):
         tag = m.group(0)
         if not _is_color_scheme_link(tag):
             return tag
-        rel = "stylesheet" if _link_mode(tag) == mode else "disabled-stylesheet"
+        classes = _link_classes(tag)
+        enabled = "quarto-color-scheme-extra" not in classes and (
+            "quarto-color-alternate" not in classes or _link_mode(tag) == mode
+        )
+        rel = "stylesheet" if enabled else "disabled-stylesheet"
         tag = re.sub(r'\srel\s*=\s*(["\'])[^"\']*\1', "", tag, flags=re.I)
         return re.sub(r"(?i)^<link\b", f'<link rel="{rel}"', tag)
 

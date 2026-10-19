@@ -1,14 +1,35 @@
 // Run against an actual Quarto render, not a mock document.
 // npm test -- <rendered site directory> <output directory> [reference URL]
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 
 const site = resolve(process.argv[2] ?? "../../examples/workspace/_site");
 const output = resolve(process.argv[3] ?? "artifacts");
 const referenceURL = process.argv[4];
+// Generate a real diff from the rendered example, including its evidence CSS.
+// The extra light sheet reproduces Quarto versions that emit helper sheets.
+const fixture = await mkdtemp(join(tmpdir(), "workspace-diff-theme-"));
+try {
+  await mkdir(join(fixture, "old"));
+  await mkdir(join(fixture, "new/lit-review"), { recursive: true });
+  const index = await readFile(join(site, "index.html"), "utf8");
+  const primary = index.match(/<link\b(?=[^>]*id="quarto-bootstrap")(?=[^>]*data-mode="light")[^>]*>/)[0];
+  const extra = primary.replace('class="quarto-color-scheme"', 'class="quarto-color-scheme-extra"');
+  await writeFile(join(fixture, "new/index.html"), index.replace("</head>", extra + "</head>"));
+  await writeFile(join(fixture, "new/lit-review/index.html"), await readFile(join(site, "lit-review/index.html")));
+  const generated = spawnSync("python3", [
+    "../../plugins/asta-tools/skills/workspace/assets/what-changed.py",
+    "--old", join(fixture, "old"), "--new", join(fixture, "new"),
+    "--out", join(site, "what-changed-theme-check.html"),
+  ], { encoding: "utf8" });
+  assert.equal(generated.status, 0, generated.stderr);
+} finally {
+  await rm(fixture, { recursive: true, force: true });
+}
 await mkdir(output, { recursive: true });
 const server = spawn("python3", ["-m", "http.server", "4848", "--bind", "127.0.0.1", "--directory", site], { stdio: "ignore" });
 const base = "http://127.0.0.1:4848";
@@ -192,8 +213,55 @@ try {
     }
     await context.close();
   }
+  results.diffModes = [];
+  for (const scenario of [
+    { system: "light", stored: null, mode: "dark" },
+    { system: "dark", stored: null, mode: "dark" },
+    { system: "dark", stored: "default", mode: "light" },
+    { system: "light", stored: "alternate", mode: "dark" },
+  ]) {
+    const context = await browser.newContext({ colorScheme: scenario.system });
+    if (scenario.stored) await context.addInitScript((stored) => {
+      localStorage.setItem("quarto-color-scheme", stored);
+    }, scenario.stored);
+    const page = await context.newPage();
+    await page.goto(`${base}/what-changed-theme-check.html`, { waitUntil: "networkidle" });
+    await settled(page);
+    const actual = await page.evaluate(() => {
+      const css = (el) => getComputedStyle(el);
+      const body = css(document.body);
+      const insertion = css(document.querySelector(".legend ins"));
+      const evidence = css(document.querySelector(".ev"));
+      return {
+        mode: document.documentElement.dataset.wcMode,
+        bodyMode: document.body.className,
+        background: body.backgroundColor, text: body.color, font: body.fontFamily,
+        insertedBackground: insertion.backgroundColor, insertedText: insertion.color,
+        evidenceBorder: evidence.borderBottomColor,
+        sheets: [...document.querySelectorAll("link.quarto-color-scheme, link.quarto-color-scheme-extra")]
+          .map((link) => ({ extra: link.classList.contains("quarto-color-scheme-extra"),
+            alternate: link.classList.contains("quarto-color-alternate"), rel: link.rel })),
+      };
+    });
+    assert.equal(actual.mode, scenario.mode);
+    assert.equal(actual.bodyMode, `quarto-${scenario.mode}`);
+    assert.equal(actual.background, scenario.mode === "dark" ? "rgb(3, 38, 41)" : "rgb(250, 242, 233)");
+    assert.equal(actual.text, scenario.mode === "dark" ? "rgb(250, 242, 233)" : "rgb(10, 50, 53)");
+    assert.match(actual.font, /Manrope/);
+    assert.equal(actual.insertedBackground, scenario.mode === "dark" ? "rgb(18, 52, 31)" : "rgb(215, 245, 221)");
+    assert.ok(contrast(rgba(actual.insertedText), rgba(actual.insertedBackground)) >= 4.5, "Diff insertions must be readable");
+    assert.ok(contrast(rgba(actual.evidenceBorder), rgba(actual.background)) >= 3, "Diff evidence underline must be visible");
+    assert.equal(actual.evidenceBorder, scenario.mode === "dark" ? "rgb(15, 203, 140)" : "rgb(16, 82, 87)");
+    assert.ok(actual.sheets.some((sheet) => sheet.extra), "Exercise the extra stylesheet case");
+    for (const sheet of actual.sheets) {
+      const enabled = !sheet.extra && (!sheet.alternate || scenario.mode === "dark");
+      assert.equal(sheet.rel, enabled ? "stylesheet" : "disabled-stylesheet");
+    }
+    results.diffModes.push({ ...scenario, ...actual });
+    await context.close();
+  }
   await writeFile(`${output}/checks.json`, JSON.stringify(results, null, 2));
-  console.log("Theme checks passed: dark default regardless of system preference, persistent toggle, evidence contrast, identical layout, and visible headings in both modes.");
+  console.log("Theme checks passed: dark default regardless of system preference, persistent toggle, evidence contrast, identical layout, visible headings, and matching What changed palettes in both modes.");
 } finally {
   await browser.close();
   server.kill();
