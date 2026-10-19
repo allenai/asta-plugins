@@ -15,6 +15,21 @@ const base = "http://127.0.0.1:4848";
 const browser = await chromium.launch({ headless: true });
 const results = { referenceURL, modes: {} };
 
+function rgba(color, under = [0, 0, 0]) {
+  const values = color.match(/[\d.]+/g).map(Number);
+  const alpha = values[3] ?? 1;
+  return values.slice(0, 3).map((value, i) => value * alpha + under[i] * (1 - alpha));
+}
+
+function contrast(a, b) {
+  const luminance = (rgb) => rgb.map((v) => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const [low, high] = [luminance(a), luminance(b)].sort((a, b) => a - b);
+  return (high + 0.05) / (low + 0.05);
+}
+
 async function settled(page) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -43,6 +58,16 @@ async function assertMode(page, mode) {
   assert.equal(colors.background, mode === "light" ? "rgb(250, 242, 233)" : "rgb(3, 38, 41)");
   assert.equal(colors.text, mode === "light" ? "rgb(10, 50, 53)" : "rgb(250, 242, 233)");
   assert.match(colors.font, /Manrope/);
+  const background = rgba(colors.background);
+  assert.ok(contrast(rgba(colors.link), background) >= 4.5, "Body links must remain readable");
+  const code = await page.locator("main p code:not(.sourceCode)").first().evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { color: style.color, background: style.backgroundColor };
+  });
+  const codeBackground = rgba(code.background, background);
+  const codeContrast = contrast(rgba(code.color, codeBackground), codeBackground);
+  assert.ok(codeContrast >= 4.5, `Inline code must remain readable (${codeContrast.toFixed(2)}:1)`);
+  colors.inlineCodeContrast = codeContrast;
   return colors;
 }
 
