@@ -38,7 +38,7 @@ DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 def search(query: str, fields: str, limit: int, offset: int, output_format: str):
     """BM25 lexical search over the patent corpus.
 
-    Searches title, abstract, claims, and specification.
+    Searches title, abstract, brief summary, claims, and party names.
 
     Examples:
 

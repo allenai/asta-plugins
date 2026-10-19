@@ -82,7 +82,7 @@ class PatentClient:
         limit: int = 10,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """BM25 lexical search over title/abstract/claims/specification.
+        """BM25 lexical search over title/abstract/brief-summary/claims/parties.
 
         Args:
             query: Search query.
@@ -106,7 +106,7 @@ class PatentClient:
             ucid: Unified Citation Identifier -- office, document number, and
                 kind code concatenated with no separators, e.g. ``US10123456B2``.
             fields: Comma-separated patent fields to return. The detail endpoint
-                can return ``claims`` and ``specification``, which search omits.
+                can return ``claims`` and ``briefSummary``, which search omits.
         """
         params = {"fields": fields} if fields else None
         ucid_quoted = urllib.parse.quote(ucid, safe="")

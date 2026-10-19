@@ -6,7 +6,7 @@ import click
 
 from asta.patents.client import PatentClient
 
-# Rich default that stays readable. `claims` and `specification` are available
+# Rich default that stays readable. `claims` and `briefSummary` are available
 # from the detail endpoint but omitted here (they can be very large) — request
 # them explicitly with --fields when needed.
 DEFAULT_FIELDS = (
@@ -20,7 +20,7 @@ DEFAULT_FIELDS = (
 @click.option(
     "--fields",
     default=DEFAULT_FIELDS,
-    help="Comma-separated fields to return. Add claims,specification for full text.",
+    help="Comma-separated fields to return. Add claims,briefSummary for full text.",
 )
 @click.option(
     "--format",
@@ -39,7 +39,7 @@ def get(ucid: str, fields: str, output_format: str):
 
         asta patents get US10123456B2
 
-        asta patents get US10123456B2 --fields ucid,title,claims,specification
+        asta patents get US10123456B2 --fields ucid,title,claims,briefSummary
     """
     try:
         client = PatentClient()

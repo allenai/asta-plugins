@@ -13,8 +13,9 @@ skill.
 
 ## When to Use This Skill
 
-- User asks about a specific patent (by UCID) or wants its claims / specification
-- User wants a keyword search across patent title, abstract, claims, and specification
+- User asks about a specific patent (by UCID) or wants its claims / brief summary
+- User wants a keyword search across patent title, abstract, brief summary, claims,
+  and party names
 - User wants to know which patents cite a given paper (forward citations)
 - A task needs patent context (prior art, assignee activity, paper-to-patent impact)
 
@@ -25,7 +26,8 @@ queries as keywords, not natural-language questions.
 
 ### Search patents (BM25)
 
-**asta patents search** — lexical search over title, abstract, claims, specification.
+**asta patents search** — lexical search over title, abstract, brief summary,
+claims, and party names.
 
 ```bash
 asta patents search "graphene battery electrode"
@@ -42,8 +44,9 @@ Options:
 - `--offset`: Starting position for pagination (default 0)
 - `--format`: `json` (default) or `text`
 
-Note: `claims` and `specification` are searchable but **not** returned in search
-hits — fetch them per-patent with `asta patents get`.
+Note: `claims` and `briefSummary` are searchable but **not** returned in search
+hits — requesting them here is a 400. Fetch them per-patent with
+`asta patents get`.
 
 ### Get patent detail
 
@@ -52,7 +55,7 @@ hits — fetch them per-patent with `asta patents get`.
 ```bash
 asta patents get US10123456B2
 
-asta patents get US10123456B2 --fields ucid,title,claims,specification
+asta patents get US10123456B2 --fields ucid,title,claims,briefSummary
 
 asta patents get US10123456B2 --format text
 ```
@@ -61,12 +64,12 @@ UCID (Unified Citation Identifier) form: `<office><docNumber><kind>` concatenate
 with **no separators**, e.g. `US10123456B2`. A dashed form like `US-10123456-B2`
 is a common display convention elsewhere, but the API does not accept it and will
 return 404. Copy the `ucid` verbatim from a search hit rather than assembling one.
-The detail endpoint can return the full `claims` and `specification` text
+The detail endpoint can return the full `claims` and `briefSummary` text
 (omitted by default because they are large).
 
-Available fields: `ucid, office, docNumber, kind, patentType, filingDate,
-publicationDate, assignees, inventors, cpcCodes, title, abstract, claims,
-specification, citedPaperCorpusIds`.
+Available fields: `ucid, office, docNumber, kind, stage, docType, corpusId,
+filingDate, publicationDate, assignees, inventors, cpcCodes, title, abstract,
+claims, briefSummary, citedPaperCorpusIds`. Unrecognized fields are a 400.
 
 ### Forward citations (paper → patents)
 
