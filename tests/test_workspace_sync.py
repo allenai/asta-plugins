@@ -1687,10 +1687,12 @@ def test_theme_adoption_preserves_utf8_under_ascii_locale(tmp_path):
     assert workspace_module.ASTA_CSS in path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("has_theme", [False, True])
+@pytest.mark.parametrize(
+    "missing_asset", [None, "all", *workspace_module.ASTA_THEME_FILES]
+)
 @pytest.mark.parametrize("mode", ["fresh", "cached", "offline-refresh"])
 def test_sync_only_adopts_theme_from_its_selected_archive(
-    tmp_path, monkeypatch, has_theme, mode
+    tmp_path, monkeypatch, missing_asset, mode
 ):
     project = project_with_ref(tmp_path, "main")
     path = project / "_quarto.yml"
@@ -1699,9 +1701,10 @@ def test_sync_only_adopts_theme_from_its_selected_archive(
     theme = (
         {
             f"{workspace_module.ASSET_DIR}_extensions/asta-theme/{name}": b"theme asset"
-            for name in ("light.scss", "dark.scss", "asta.css", "asta-head.html")
+            for name in workspace_module.ASTA_THEME_FILES
+            if name != missing_asset
         }
-        if has_theme
+        if missing_asset != "all"
         else {}
     )
     archive = _archive(theme)
@@ -1720,8 +1723,10 @@ def test_sync_only_adopts_theme_from_its_selected_archive(
             args += ["--refresh"]
     result = runner.invoke(cli, args)
     assert result.exit_code == 0, result.output
-    assert ("_extensions/asta-theme/light.scss" in path.read_text()) is has_theme
-    if not has_theme:
+    assert ("_extensions/asta-theme/light.scss" in path.read_text()) is (
+        missing_asset is None
+    )
+    if missing_asset is not None:
         assert path.read_text() == original
 
 

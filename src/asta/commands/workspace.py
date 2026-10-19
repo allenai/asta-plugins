@@ -325,13 +325,22 @@ ASTA_THEME = """    theme:
 """
 ASTA_CSS = "_extensions/asta-theme/asta.css"
 ASTA_HEADER = "_extensions/asta-theme/asta-head.html"
+ASTA_THEME_FILES = (
+    "light.scss",
+    "dark.scss",
+    "asta.css",
+    "asta-head.html",
+    "fonts/Manrope.woff2",
+    "fonts/RobotoMono.woff2",
+    "fonts/Manrope-OFL.txt",
+    "fonts/RobotoMono-OFL.txt",
+)
 
 
 def archive_has_asta_theme(archive: bytes) -> bool:
     """Only adopt a theme that the project's selected source can supply."""
     required = {
-        ASSET_DIR + "_extensions/asta-theme/" + name
-        for name in ("light.scss", "dark.scss", "asta.css", "asta-head.html")
+        ASSET_DIR + "_extensions/asta-theme/" + name for name in ASTA_THEME_FILES
     }
     found = set()
     try:

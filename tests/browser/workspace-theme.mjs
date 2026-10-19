@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { chromium } from "playwright";
 
 const site = resolve(process.argv[2] ?? "../../examples/workspace/_site");
@@ -31,9 +32,16 @@ try {
   await rm(fixture, { recursive: true, force: true });
 }
 await mkdir(output, { recursive: true });
-const server = spawn("python3", ["-m", "http.server", "4848", "--bind", "127.0.0.1", "--directory", site], { stdio: "ignore" });
-const base = "http://127.0.0.1:4848";
-const browser = await chromium.launch({ headless: true });
+// Bind port 0 in the serving process so selecting a port cannot race another
+// process. Announce it only after HTTPServer has successfully bound the socket.
+const server = spawn("python3", ["-u", "-c", `
+import functools, http.server, sys
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
+with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+    print(server.server_port, flush=True)
+    server.serve_forever()
+`, site], { stdio: ["ignore", "pipe", "inherit"] });
+let browser;
 const results = { referenceURL, modes: {} };
 
 function rgba(color, under = [0, 0, 0]) {
@@ -93,16 +101,31 @@ async function assertMode(page, mode) {
 }
 
 try {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const response = await fetch(base);
-      assert.equal(response.status, 200);
-      break;
-    } catch (error) {
-      if (attempt >= 50) throw error;
-      await new Promise((done) => setTimeout(done, 100));
+  const port = await new Promise((resolve, reject) => {
+    const lines = createInterface({ input: server.stdout });
+    const fail = (error) => { cleanup(); reject(error); };
+    const exited = (code, signal) => fail(new Error(`Site server exited before binding (${signal ?? code})`));
+    const timer = setTimeout(() => fail(new Error("Site server did not announce a port")), 5000);
+    function cleanup() {
+      clearTimeout(timer);
+      lines.close();
+      server.off("error", fail);
+      server.off("exit", exited);
     }
-  }
+    server.once("error", fail);
+    server.once("exit", exited);
+    lines.once("line", (line) => {
+      const value = Number(line);
+      if (!Number.isInteger(value) || value < 1 || value > 65535) {
+        fail(new Error(`Invalid site server port: ${line}`));
+        return;
+      }
+      cleanup();
+      resolve(value);
+    });
+  });
+  const base = `http://127.0.0.1:${port}`;
+  browser = await chromium.launch({ headless: true });
   for (const mode of ["light", "dark"]) {
     const context = await browser.newContext({ viewport: { width: 1100, height: 900 }, colorScheme: mode, deviceScaleFactor: 1 });
     const page = await context.newPage();
@@ -263,6 +286,7 @@ try {
   await writeFile(`${output}/checks.json`, JSON.stringify(results, null, 2));
   console.log("Theme checks passed: dark default regardless of system preference, persistent toggle, evidence contrast, identical layout, visible headings, and matching What changed palettes in both modes.");
 } finally {
-  await browser.close();
+  await browser?.close();
   server.kill();
+  await rm(join(site, "what-changed-theme-check.html"), { force: true });
 }

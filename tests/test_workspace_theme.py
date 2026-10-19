@@ -26,15 +26,67 @@ def install(project, archive, rules="workspace.mk"):
     )
 
 
-def source_archive(tmp_path, theme=True):
+def source_archive(tmp_path, theme=True, invalid_asset=None, damage="missing"):
     root = tmp_path / "source/asta-plugins-test"
     extensions = root / "plugins/asta-tools/skills/workspace/assets/_extensions"
     for name in ("evidence", "asta-theme") if theme else ("evidence",):
         shutil.copytree(ASSETS / "_extensions" / name, extensions / name)
+    if invalid_asset:
+        path = extensions / "asta-theme" / invalid_asset
+        path.unlink()
+        if damage == "empty":
+            path.touch()
+        elif damage == "directory":
+            path.mkdir()
+        elif damage == "symlink":
+            path.symlink_to("../asta.css")
     archive = tmp_path / "source.tar.gz"
     with tarfile.open(archive, "w:gz") as bundle:
         bundle.add(root, arcname=root.name)
     return archive
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("damage", ["missing", "empty", "directory", "symlink"])
+@pytest.mark.parametrize(
+    "asset",
+    [
+        "fonts/Manrope.woff2",
+        "fonts/RobotoMono.woff2",
+        "fonts/Manrope-OFL.txt",
+        "fonts/RobotoMono-OFL.txt",
+    ],
+)
+def test_incomplete_theme_is_rejected_before_replacing_any_extension(
+    tmp_path, rules, cached, damage, asset
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = (ASSETS / "_quarto.yml").read_bytes()
+    (project / "_quarto.yml").write_bytes(config)
+    if cached:
+        shutil.copytree(ASSETS / "_extensions", project / "_extensions")
+        (project / "_extensions/evidence/previous.txt").write_text("cached evidence")
+        (project / "_extensions/asta-theme/previous.txt").write_text("cached theme")
+
+    def snapshot():
+        return {
+            path.relative_to(project): path.read_bytes()
+            for path in (project / "_extensions").rglob("*")
+            if path.is_file()
+        }
+
+    before = snapshot()
+    archive = source_archive(tmp_path, invalid_asset=asset, damage=damage)
+    result = install(project, archive, rules)
+    assert result.returncode != 0
+    assert "incomplete asta-theme" in result.stderr
+    assert asset in result.stderr
+    assert "installed" not in result.stdout
+    assert snapshot() == before
+    assert (project / "_quarto.yml").read_bytes() == config
+    assert not (project / "_extensions/.evidence-install.lock").exists()
 
 
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])

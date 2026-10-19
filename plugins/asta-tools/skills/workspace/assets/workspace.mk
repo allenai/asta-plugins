@@ -28,6 +28,7 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # error. The theme ships its own fonts, so cached copies render offline.
 workspace-assets:
 	@set -eu; \
+	theme_files="light.scss dark.scss asta.css asta-head.html fonts/Manrope.woff2 fonts/RobotoMono.woff2 fonts/Manrope-OFL.txt fonts/RobotoMono-OFL.txt"; \
 	required_exts=evidence; \
 	if cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
 		required_exts="$$required_exts asta-theme"; \
@@ -50,7 +51,7 @@ workspace-assets:
 		[ -d "_extensions/$$ext" ] || have_cache=0; \
 	done; \
 	case " $$required_exts " in *' asta-theme '*) \
-		for file in light.scss dark.scss asta.css asta-head.html fonts/Manrope.woff2 fonts/RobotoMono.woff2; do \
+		for file in $$theme_files; do \
 			[ -s "_extensions/asta-theme/$$file" ] || have_cache=0; \
 		done ;; esac; \
 	offline_ok() { \
@@ -116,6 +117,14 @@ workspace-assets:
 			echo "workspace-assets: asta-plugins@$${ref:-$$url} has no $$ext extension; skipping" >&2; continue; \
 		fi; \
 		cp -R "$$source_dir" "$$tmp/new/$$ext"; \
+		if [ "$$ext" = asta-theme ]; then \
+			for file in $$theme_files; do \
+				asset="$$tmp/new/$$ext/$$file"; \
+				if [ ! -f "$$asset" ] || [ -L "$$asset" ] || [ ! -s "$$asset" ]; then \
+					echo "workspace-assets: incomplete asta-theme in asta-plugins@$${ref:-$$url}: $$file must be a nonempty regular file; keeping existing extensions" >&2; exit 1; \
+				fi; \
+			done; \
+		fi; \
 	done; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
