@@ -78,16 +78,18 @@ def test_old_source_only_allowed_for_configurations_without_the_theme(
         assert (project / "_extensions/evidence/snippet.lua").is_file()
 
 
-@pytest.mark.parametrize("complete", [True, False])
-def test_offline_render_needs_all_referenced_assets(tmp_path, complete):
+@pytest.mark.parametrize("cache", ["complete", "without-fonts", "none"])
+def test_offline_render_needs_all_referenced_assets(tmp_path, cache):
     (tmp_path / "_quarto.yml").write_bytes((ASSETS / "_quarto.yml").read_bytes())
     shutil.copytree(ASSETS / "_extensions/evidence", tmp_path / "_extensions/evidence")
-    if complete:
+    if cache != "none":
         shutil.copytree(
             ASSETS / "_extensions/asta-theme", tmp_path / "_extensions/asta-theme"
         )
+    if cache == "without-fonts":
+        shutil.rmtree(tmp_path / "_extensions/asta-theme/fonts")
     result = install(tmp_path, tmp_path / "missing.tar.gz")
-    assert (result.returncode == 0) is complete
+    assert (result.returncode == 0) is (cache == "complete")
 
 
 @pytest.mark.parametrize("customization", ["symlink", "committed"])

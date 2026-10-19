@@ -11,6 +11,10 @@ and [`asta/tokens.json`](https://github.com/allenai/design/blob/main/asta/tokens
 - `asta.css` — shared, mode-independent rules: one font (Manrope; Roboto Mono
   for code), one type scale, and a sticky section heading so a reader of a long
   page can see where they are. Toggling modes changes colors only.
+- `fonts/` — Manrope and Roboto Mono as variable WOFF2 files from
+  [google/fonts](https://github.com/google/fonts), each beside its SIL Open
+  Font License 1.1 text (no Reserved Font Names). Serving them from the site
+  means a reader's browser contacts no font host.
 - `asta-head.html` — measures the navigation header so pinned headings remain
   visible when it returns on upward scrolling or wraps on a smaller screen.
 
@@ -43,5 +47,4 @@ copy of every extension the configuration references.
 Existing project CSS remains after `asta.css`; sync warns with its names when
 adopting the theme. Check any hard-coded colors in those files in both modes.
 Projects using another theme without references to Asta's assets do not fetch
-this extension. Manrope and Roboto Mono are loaded from Google Fonts at runtime;
-offline pages use the configured fallback fonts.
+this extension.

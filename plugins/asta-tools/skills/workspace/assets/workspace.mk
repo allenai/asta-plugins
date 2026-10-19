@@ -25,7 +25,7 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # Offline-tolerant: if the network can't be reached (tag resolution or download
 # fails) but all extensions referenced by _quarto.yml are cached, keep those
 # copies and warn instead of failing. Missing required cached assets are a hard
-# error. Web fonts still need network access; offline pages use fallback fonts.
+# error. The theme ships its own fonts, so cached copies render offline.
 workspace-assets:
 	@set -eu; \
 	required_exts=evidence; \
@@ -50,7 +50,7 @@ workspace-assets:
 		[ -d "_extensions/$$ext" ] || have_cache=0; \
 	done; \
 	case " $$required_exts " in *' asta-theme '*) \
-		for file in light.scss dark.scss asta.css asta-head.html; do \
+		for file in light.scss dark.scss asta.css asta-head.html fonts/Manrope.woff2 fonts/RobotoMono.woff2; do \
 			[ -s "_extensions/asta-theme/$$file" ] || have_cache=0; \
 		done ;; esac; \
 	offline_ok() { \

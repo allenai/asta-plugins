@@ -1,4 +1,18 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Roboto+Mono:wght@400;600&display=swap");
+/* Fonts ship with the theme (SIL OFL 1.1, see fonts/), so pages contact no font host. */
+@font-face {
+  font-family: Manrope;
+  src: url("fonts/Manrope.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("fonts/RobotoMono.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* Mode-independent: identical metrics in light and dark (Asta type scale). */
 body { font-size: 16px; line-height: 1.6; }
