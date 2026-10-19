@@ -34,7 +34,9 @@ prints one final `Sync outcome:` line per paper after any progress messages and 
 | 1 | failed; an operator must act (credentials, permissions, a refusal) | fix the cause, rerun |
 
 It never prompts, so an agent can start it in the background and act on the
-exit code. A rerun reconstructs its state from GitHub and Overleaf, so stopping
+exit code. Git runs with no terminal and your SSH command and Git config are
+left as they are, so an SSH key passphrase or unknown host key fails at once
+(exit 1) instead of waiting; load the key into `ssh-agent` or use HTTPS first. A rerun reconstructs its state from GitHub and Overleaf, so stopping
 or timing out loses nothing. With several paired papers and no `--dir`, each
 paper gets its own outcome line and the exit code is the most urgent one.
 Papers not attempted before the shared deadline are reported as still waiting.

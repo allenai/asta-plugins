@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -4571,8 +4572,8 @@ def test_sync_wait_disables_git_prompts_even_in_a_terminal(tmp_path, monkeypatch
     monkeypatch.setenv("GIT_TERMINAL_PROMPT", "1")
     monkeypatch.setenv("GIT_ASKPASS", "fixture-askpass")
     monkeypatch.setenv("SSH_ASKPASS", "fixture-ssh-askpass")
-    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
-    monkeypatch.delenv("GIT_SSH", raising=False)
+    monkeypatch.delenv("SSH_ASKPASS_REQUIRE", raising=False)
+    monkeypatch.setenv("GIT_SSH_COMMAND", 'ssh -i "$HOME/key with spaces"')
     monkeypatch.setenv("GH_PROMPT_DISABLED", "0")
 
     def fake_sync(*_, **kwargs):
@@ -4587,81 +4588,50 @@ def test_sync_wait_disables_git_prompts_even_in_a_terminal(tmp_path, monkeypatch
     assert env["GIT_TERMINAL_PROMPT"] == ("1" if wait is None else "0")
     assert env["GIT_ASKPASS"] == ("fixture-askpass" if wait is None else "")
     assert env["SSH_ASKPASS"] == ("fixture-ssh-askpass" if wait is None else "")
-    assert env.get("GIT_SSH_COMMAND") == (
-        None if wait is None else "ssh -oBatchMode=yes"
-    )
+    assert env.get("SSH_ASKPASS_REQUIRE") == (None if wait is None else "never")
+    # The person's SSH command and Git config are left exactly as written.
+    assert env["GIT_SSH_COMMAND"] == 'ssh -i "$HOME/key with spaces"'
     assert env["GH_PROMPT_DISABLED"] == ("0" if wait is None else "1")
 
 
-@pytest.mark.parametrize(
-    "ssh_command, configured, ssh_program, expected",
-    [
-        (None, None, "/fixture path/ssh", "'/fixture path/ssh' -oBatchMode=yes"),
-        (
-            'ssh -i "$HOME/key with spaces"',
-            None,
-            "/ignored/ssh",
-            'ssh -i "$HOME/key with spaces" -oBatchMode=yes',
-        ),
-        (
-            None,
-            'ssh -i "$HOME"/key',
-            "/ignored/ssh",
-            'ssh -i "$HOME"/key -oBatchMode=yes',
-        ),
-        ('plink -load "my session"', None, None, 'plink -load "my session" -batch'),
-        ("ssh-wrapper --flag", None, None, None),
-    ],
-)
-def test_sync_wait_keeps_ssh_command_meaning_and_adds_batch_mode(
-    tmp_path, monkeypatch, ssh_command, configured, ssh_program, expected
-):
-    sync_module = importlib.import_module("asta.commands.overleaf_sync")
-    environments = []
-    monkeypatch.setattr(module, "paired_directories", lambda _: ["paper"])
-    global_config = tmp_path / "gitconfig"
-    global_config.write_text(
-        ""
-        if configured is None
-        else "[core]\n\tsshCommand = " + configured.replace('"', '\\"') + "\n"
+@pytest.mark.parametrize("wait", [False, True])
+def test_sync_wait_runs_git_with_no_terminal(tmp_path, monkeypatch, wait):
+    calls = []
+    real_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", recording_run)
+    with click.Context(click.Command("sync")) as ctx:
+        ctx.meta["overleaf_noninteractive"] = wait
+        module.git_bytes("--version", cwd=tmp_path)
+        module.git_bytes("hash-object", "--stdin", cwd=tmp_path, input=b"x")
+    plain, with_input = calls
+    if wait:
+        assert plain["stdin"] is subprocess.DEVNULL
+        assert "stdin" not in with_input
+        assert plain["start_new_session"] is (os.name == "posix")
+    else:
+        assert "stdin" not in plain and "start_new_session" not in plain
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs POSIX sessions")
+def test_sync_wait_ssh_cannot_reach_a_terminal(tmp_path, monkeypatch):
+    marker = tmp_path / "marker"
+    ssh = tmp_path / "fixture-ssh"
+    ssh.write_text(
+        "#!/bin/sh\n"
+        'if (exec </dev/tty) 2>/dev/null; then echo terminal >"$MARKER";'
+        ' else echo none >"$MARKER"; fi\n'
+        "exit 255\n"
     )
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
-    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    monkeypatch.setenv("HOME", str(tmp_path / "fixture home"))
-    monkeypatch.delenv("GIT_SSH_VARIANT", raising=False)
-    if ssh_program is None:
-        monkeypatch.delenv("GIT_SSH", raising=False)
-    else:
-        monkeypatch.setenv("GIT_SSH", ssh_program)
-    if ssh_command is None:
-        monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
-    else:
-        monkeypatch.setenv("GIT_SSH_COMMAND", ssh_command)
-
-    def attempt(*_, **kwargs):
-        environments.append(module.git_environment())
-        return "complete", "fixture result"
-
-    monkeypatch.setattr(sync_module, "sync_workspace", attempt)
-    result = run(tmp_path, "sync", "--wait", "0")
-    assert result.exit_code == 0, result.output
-    command = environments[0].get("GIT_SSH_COMMAND")
-    assert command == (ssh_command if expected is None else expected)
-    if expected and expected.startswith("ssh "):
-        # Run it the way Git does, so variables and quoting expand as the person meant.
-        config = subprocess.run(
-            ["sh", "-c", f'{command} "$@"', command, "-G", "fixture.invalid"],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=environments[0],
-        ).stdout
-        assert "batchmode yes\n" in config
-        words = subprocess.run(
-            ["sh", "-c", f'set -- {command}; printf "%s\\n" "$@"'],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=environments[0],
-        ).stdout.splitlines()
-        assert words[2].startswith(f"{tmp_path}/fixture home/key")
+    ssh.chmod(0o755)
+    monkeypatch.setenv("MARKER", str(marker))
+    monkeypatch.setenv("GIT_SSH_COMMAND", str(ssh))
+    with click.Context(click.Command("sync")) as ctx:
+        ctx.meta["overleaf_noninteractive"] = True
+        with pytest.raises(click.ClickException):
+            module.git_bytes("ls-remote", "ssh://fixture.invalid/paper", cwd=tmp_path)
+    assert marker.read_text() == "none\n"

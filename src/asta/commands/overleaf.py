@@ -4,7 +4,6 @@ import errno
 import json
 import os
 import re
-import shlex
 import stat
 import subprocess
 import sys
@@ -56,7 +55,7 @@ LOCAL_GIT_ENV = {
 }
 
 
-def git_environment(cwd: Path | str | None = None) -> dict:
+def git_environment() -> dict:
     # Local Git hooks need no Overleaf token; tracing can log authorization headers.
     env = {
         key: value
@@ -65,52 +64,34 @@ def git_environment(cwd: Path | str | None = None) -> dict:
         and not key.startswith("GIT_TRACE")
         and key != "GIT_CURL_VERBOSE"
     }
-    ctx = click.get_current_context(silent=True)
-    noninteractive = bool(ctx and ctx.meta.get("overleaf_noninteractive"))
+    noninteractive = wait_mode()
     if not sys.stdin.isatty() or noninteractive:
         env["GIT_TERMINAL_PROMPT"] = "0"
         # Empty overrides also suppress core.askPass and SSH_ASKPASS fallbacks.
         env["GIT_ASKPASS"] = ""
     if noninteractive:
+        # With no terminal (see no_terminal), SSH would fall back to an askpass GUI.
         env["SSH_ASKPASS"] = ""
-        # SSH can read /dev/tty even when Git's credential prompts are disabled.
-        ssh = batch_ssh_command(env, cwd)
-        if ssh:
-            env["GIT_SSH_COMMAND"] = ssh
+        env["SSH_ASKPASS_REQUIRE"] = "never"
         env["GH_PROMPT_DISABLED"] = "1"
     return env
 
 
-SSH_BATCH_OPTIONS = {"ssh": "-oBatchMode=yes", "plink": "-batch", "putty": "-batch"}
+def wait_mode() -> bool:
+    ctx = click.get_current_context(silent=True)
+    return bool(ctx and ctx.meta.get("overleaf_noninteractive"))
 
 
-def batch_ssh_command(env: dict, cwd: Path | str | None) -> str | None:
-    """The person's SSH command with batch mode appended, or None to leave it alone."""
-    # Same precedence as Git; core.sshCommand would be shadowed if we set the env.
-    command = env.get("GIT_SSH_COMMAND")
-    if not command:
-        configured = subprocess.run(
-            ["git", "config", "--get", "core.sshCommand"],
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        command = configured.stdout.strip() if configured.returncode == 0 else ""
-    command = command or shlex.quote(env.get("GIT_SSH") or "ssh")
-    # Git runs the command through sh, so append to the text instead of re-quoting
-    # it; an explicit BatchMode earlier in the person's command still wins.
-    variant = env.get("GIT_SSH_VARIANT", "auto").lower()
-    if variant == "auto":
-        try:
-            words = shlex.split(command)
-        except ValueError:
-            words = []
-        variant = os.path.basename(words[0]).lower() if words else ""
-        variant = variant.removesuffix(".exe")
-    option = SSH_BATCH_OPTIONS.get(variant)
-    # Unknown wrappers and Git's "simple" variant may reject options.
-    return f"{command} {option}" if option else None
+def no_terminal(*, input: bytes | None = None) -> dict:
+    """subprocess.run options that leave wait-mode Git no terminal to prompt on."""
+    if not wait_mode():
+        return {}
+    # A new session has no controlling terminal, so a passphrase or host-key prompt
+    # fails at once whatever SSH command the person configured.
+    options = {"start_new_session": os.name == "posix"}
+    if input is None:
+        options["stdin"] = subprocess.DEVNULL
+    return options
 
 
 class SyncError(click.ClickException):
@@ -143,9 +124,10 @@ def git_bytes(
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,
-        env=git_environment(cwd) if env is None else env,
+        env=git_environment() if env is None else env,
         capture_output=True,
         input=input,
+        **no_terminal(input=input),
     )
     if result.returncode:
         index = 0
@@ -287,6 +269,7 @@ def commit_settings(root: Path) -> list[str]:
             cwd=root,
             env=git_environment(),
             capture_output=True,
+            **no_terminal(),
         )
         if result.returncode == 0:
             value = os.fsdecode(result.stdout).rstrip("\n")
@@ -588,6 +571,7 @@ def require_visible(root: Path, paths) -> None:
         cwd=root,
         env=git_environment(),
         capture_output=True,
+        **no_terminal(input=b""),
     )
     if result.returncode not in (0, 1):
         raise SyncError(
@@ -876,6 +860,7 @@ def merge_text(
             cwd=tmp,
             env=git_environment(),
             capture_output=True,
+            **no_terminal(),
         )
     # merge-file reports conflict counts from 1 to 127, capped at 127.
     if result.returncode < 0 or result.returncode > 127:
@@ -899,6 +884,7 @@ def has_origin(root: Path) -> bool:
         cwd=root,
         env=git_environment(),
         capture_output=True,
+        **no_terminal(),
     )
     if result.returncode not in (0, 1):
         raise SyncError(
@@ -1599,6 +1585,7 @@ def publish(
                 cwd=root,
                 env=git_environment(),
                 capture_output=True,
+                **no_terminal(),
             )
             if identity_result.returncode:
                 raise SyncError(

@@ -66,7 +66,12 @@ def gh(root: Path, *args: str, payload=None):
                     command += ["--method", "POST"]
                 command += ["--input", str(body)]
             result = subprocess.run(
-                command, cwd=root, env=env, capture_output=True, timeout=90
+                command,
+                cwd=root,
+                env=env,
+                capture_output=True,
+                timeout=90,
+                **ov.no_terminal(),
             )
     except (OSError, subprocess.TimeoutExpired):
         raise ov.SyncError(
@@ -783,6 +788,7 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
                             cwd=work,
                             env=ov.git_environment(),
                             capture_output=True,
+                            **ov.no_terminal(),
                         )
                         if merge.returncode:
                             paths = ov.git(
