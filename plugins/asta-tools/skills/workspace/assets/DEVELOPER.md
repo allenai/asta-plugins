@@ -140,12 +140,22 @@ Both modes keep the same Manrope typography and layout. The site starts in dark 
 reader's system setting, and remembers a light mode chosen with the theme toggle. Section
 headings remain visible while reading long sections.
 
+Use Quarto 1.7.29 or newer for this theme's dark-default behavior and persistent
+toggle, matching the version in the workspace container.
+
 `asta workspace sync` adopts the theme for an existing site only when
 `format.html.theme` is still the scaffold's `cosmo` and the selected source
 contains the theme assets. An older pin keeps its current appearance; upgrade
 the ref in `.github/workflows/docs.yml` when ready. `make workspace-assets`
 fetches the theme and evidence extension together. Offline rendering needs a
 complete cached copy of both referenced extensions.
+
+Sync preserves existing HTML stylesheets after Asta's stylesheet and warns with
+their names on adoption. Review any hard-coded text, link, and background colors
+in those files in both dark and light modes; use theme-aware colors such as
+`var(--bs-body-color)` and `var(--bs-body-bg)` where appropriate. A project with
+its own theme and no Asta asset references fetches only the evidence extension.
+Web fonts need network access; offline pages use the configured fallback fonts.
 
 To use another theme, set `format.html.theme` to your choice and remove
 `_extensions/asta-theme/asta.css` from `format.html.css` and `asta-head.html`

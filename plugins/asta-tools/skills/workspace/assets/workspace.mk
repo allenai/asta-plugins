@@ -23,14 +23,17 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # cannot leave a partial extension behind.
 #
 # Offline-tolerant: if the network can't be reached (tag resolution or download
-# fails) but a previously fetched _extensions/evidence already exists, keep that
-# cached copy and warn instead of failing — so a render works on a plane. Only a
-# first fetch with no cache is a hard error.
-ASTA_WORKSPACE_EXTENSIONS := evidence asta-theme
+# fails) but all extensions referenced by _quarto.yml are cached, keep those
+# copies and warn instead of failing. Missing required cached assets are a hard
+# error. Web fonts still need network access; offline pages use fallback fonts.
 workspace-assets:
 	@set -eu; \
+	required_exts=evidence; \
+	if [ -f _quarto.yml ] && sed '/^[[:space:]]*#/d' _quarto.yml | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
+		required_exts="$$required_exts asta-theme"; \
+	fi; \
 	exts=; \
-	for ext in $(ASTA_WORKSPACE_EXTENSIONS); do \
+	for ext in $$required_exts; do \
 		if [ -L "_extensions/$$ext" ]; then \
 			echo "workspace-assets: _extensions/$$ext is a symlink (local development); not refreshing"; \
 		elif git ls-files --error-unmatch "_extensions/$$ext" >/dev/null 2>&1; then \
@@ -38,10 +41,6 @@ workspace-assets:
 		else exts="$$exts $$ext"; fi; \
 	done; \
 	[ -n "$$exts" ] || exit 0; \
-	required_exts=evidence; \
-	if [ -f _quarto.yml ] && sed '/^[[:space:]]*#/d' _quarto.yml | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
-		required_exts="$$required_exts asta-theme"; \
-	fi; \
 	ref='$(subst ','"'"',$(value ASTA_PLUGINS_REF))'; \
 	archive='$(subst ','"'"',$(value ASTA_WORKSPACE_ARCHIVE))'; \
 	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \

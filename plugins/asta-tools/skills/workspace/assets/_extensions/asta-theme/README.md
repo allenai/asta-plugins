@@ -39,3 +39,9 @@ Sync adopts this theme only when the selected source supplies its assets and
 and a local `workspace.mk` stay unchanged. Upgrade the workflow ref to a release
 with the theme before adopting it. Offline renders require a complete cached
 copy of every extension the configuration references.
+
+Existing project CSS remains after `asta.css`; sync warns with its names when
+adopting the theme. Check any hard-coded colors in those files in both modes.
+Projects using another theme without references to Asta's assets do not fetch
+this extension. Manrope and Roboto Mono are loaded from Google Fonts at runtime;
+offline pages use the configured fallback fonts.

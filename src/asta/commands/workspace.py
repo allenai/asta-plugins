@@ -307,9 +307,11 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
                 ):
                     _atomic_write(
                         ignore,
-                        (previous.rstrip("\n") + "\n_extensions/asta-theme/\n").encode(
-                            "utf-8"
-                        ),
+                        (
+                            previous.rstrip("\n")
+                            + ("\n" if previous else "")
+                            + "_extensions/asta-theme/\n"
+                        ).encode("utf-8"),
                     )
 
 
@@ -358,7 +360,7 @@ def adopt_asta_theme(project: Path) -> bool:
     config = project.resolve() / "_quarto.yml"
     if config.is_symlink() or not config.is_file():
         return False
-    text = config.read_text()
+    text = config.read_text(encoding="utf-8")
     # Deliberately recognize only the scaffold's block mappings. Leave flow
     # mappings, anchors and nonstandard indentation to the project owner. Scope
     # both theme and css edits to format.html, preserving all other formats.
@@ -385,7 +387,11 @@ def adopt_asta_theme(project: Path) -> bool:
         return False
     if re.search(r"^    respect-user-color-scheme:", html, re.MULTILINE):
         # An explicit project preference wins over the managed default.
-        theme = ASTA_THEME.replace("    respect-user-color-scheme: false\n", "")
+        theme = ASTA_THEME.replace(
+            "    respect-user-color-scheme: false\n", ""
+        ).replace(
+            "    # Asta's look: start dark, with a persistent toggle to light.\n", ""
+        )
     else:
         theme = ASTA_THEME
     html = re.sub(
@@ -396,6 +402,7 @@ def adopt_asta_theme(project: Path) -> bool:
         flags=re.MULTILINE,
     )
     # Add managed resources to the existing HTML lists without duplicate keys.
+    project_css = ""
     for key, resource in (("css", ASTA_CSS), ("include-in-header", ASTA_HEADER)):
         if len(re.findall(rf"^    {key}:", html, re.MULTILINE)) > 1:
             return False
@@ -431,13 +438,21 @@ def adopt_asta_theme(project: Path) -> bool:
                     value = ""
                 own = f"      - {value}\n" if value else entry[2]
                 joined = f"    {key}:\n      - {resource}\n{own}"
+            if key == "css":
+                project_css = " ".join(own.splitlines()).strip()
             html = html[: entry.start()] + joined + html[entry.end() :]
     text = text[:start] + html + text[end:]
-    _atomic_write(config, text.encode())
+    _atomic_write(config, text.encode("utf-8"))
     click.echo(
         "Gave the site Asta's look in _quarto.yml; to customize or opt out, "
         "see the workspace developer guide, Site appearance (theme, css, and include-in-header)"
     )
+    if project_css:
+        click.echo(
+            "Warning: existing project CSS is kept after Asta's stylesheet. "
+            f"Review its colors in dark and light mode: {project_css}",
+            err=True,
+        )
     return True
 
 

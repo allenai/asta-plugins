@@ -95,6 +95,7 @@ def test_custom_theme_survives_refresh(tmp_path, customization):
     project = tmp_path / "project"
     target = project / "_extensions/asta-theme"
     target.parent.mkdir(parents=True)
+    (project / "_quarto.yml").write_bytes((ASSETS / "_quarto.yml").read_bytes())
     if customization == "symlink":
         local = tmp_path / "my-theme"
         local.mkdir()
@@ -111,6 +112,32 @@ def test_custom_theme_survives_refresh(tmp_path, customization):
     result = install(project, source_archive(tmp_path))
     assert result.returncode == 0, result.stderr
     assert (target / "dark.scss").read_text() == "my theme"
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize(
+    "config", [None, "format:\n  html:\n    theme: flatly\n    css: styles.css\n"]
+)
+def test_unused_theme_is_not_installed_or_refreshed(tmp_path, rules, config):
+    project = tmp_path / "project"
+    project.mkdir()
+    if config is not None:
+        (project / "_quarto.yml").write_text(config)
+    archive = source_archive(tmp_path)
+    result = install(project, archive, rules)
+    assert result.returncode == 0, result.stderr
+    assert (project / "_extensions/evidence/snippet.lua").is_file()
+    theme = project / "_extensions/asta-theme"
+    assert not theme.exists()
+
+    # A project may have cached the theme before opting out. Preserve it rather
+    # than refreshing an unused directory or deleting project-owned content.
+    theme.mkdir()
+    (theme / "local.txt").write_text("unused theme")
+    result = install(project, archive, rules)
+    assert result.returncode == 0, result.stderr
+    assert sorted(path.name for path in theme.iterdir()) == ["local.txt"]
+    assert (theme / "local.txt").read_text() == "unused theme"
 
 
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])

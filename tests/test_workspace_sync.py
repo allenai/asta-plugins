@@ -1595,14 +1595,17 @@ def test_theme_adoption_preserves_project_and_other_format_settings(tmp_path, co
 @pytest.mark.parametrize(
     "css", ["styles.css", "[a.css, b.css]", "\n      - a.css\n      - b.css", "null"]
 )
-def test_theme_adoption_scopes_css_to_html_and_keeps_preferences(tmp_path, css):
+@pytest.mark.parametrize("respect_system", [True, False])
+def test_theme_adoption_scopes_css_to_html_and_keeps_preferences(
+    tmp_path, css, respect_system
+):
     import yaml
 
     path = tmp_path / "_quarto.yml"
     path.write_text(
         "# Project notes\nformat:\n"
         "  pdf:\n    theme: cosmo\n    css: pdf.css\n"
-        "  html:\n    theme: cosmo\n    respect-user-color-scheme: false\n"
+        f"  html:\n    theme: cosmo\n    respect-user-color-scheme: {str(respect_system).lower()}\n"
         f"    css: {css}\n"
         "  revealjs:\n    theme: cosmo\n    css: slides.css\n"
         "website:\n  title: Project\n"
@@ -1616,13 +1619,64 @@ def test_theme_adoption_scopes_css_to_html_and_keeps_preferences(tmp_path, css):
     assert after["format"]["revealjs"] == before["format"]["revealjs"]
     assert after["website"] == before["website"]
     html = after["format"]["html"]
-    assert html["respect-user-color-scheme"] is False
+    assert html["respect-user-color-scheme"] is respect_system
+    assert "start dark" not in text
     own = before["format"]["html"]["css"] or []
     if isinstance(own, str):
         own = [own]
     assert html["css"] == [workspace_module.ASTA_CSS, *own]
     assert not workspace_module.adopt_asta_theme(tmp_path)
     assert path.read_text() == text
+
+
+@pytest.mark.parametrize(
+    "css,files",
+    [
+        ("styles.css", ["styles.css"]),
+        ("[a.css, b.css]", ["a.css", "b.css"]),
+        ("\n      - a.css\n      - b.css", ["a.css", "b.css"]),
+        ("null", []),
+        ("~", []),
+        ("[]", []),
+    ],
+)
+def test_theme_adoption_warns_once_about_project_css(tmp_path, capsys, css, files):
+    path = tmp_path / "_quarto.yml"
+    path.write_text(f"format:\n  html:\n    theme: cosmo\n    css: {css}\n")
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    warning = capsys.readouterr().err
+    if files:
+        assert "Review its colors in dark and light mode" in warning
+        for name in files:
+            assert name in warning
+    else:
+        assert warning == ""
+    assert "respect-user-color-scheme: false" in path.read_text()
+    assert not workspace_module.adopt_asta_theme(tmp_path)
+    assert capsys.readouterr().err == ""
+
+
+def test_theme_adoption_preserves_utf8_under_ascii_locale(tmp_path):
+    path = tmp_path / "_quarto.yml"
+    original = "title: Café — 研究\nformat:\n  html:\n    theme: cosmo\n"
+    path.write_bytes(original.encode("utf-8"))
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-X",
+            "utf8=0",
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from asta.commands.workspace import adopt_asta_theme; "
+            "assert adopt_asta_theme(Path(sys.argv[1]))",
+            str(tmp_path),
+        ],
+        env={**os.environ, "LC_ALL": "C", "PYTHONCOERCECLOCALE": "0"},
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    assert path.read_bytes().startswith(original.split("format:")[0].encode("utf-8"))
+    assert workspace_module.ASTA_CSS in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("has_theme", [False, True])
@@ -1694,12 +1748,13 @@ def test_theme_adoption_keeps_existing_head_resources(tmp_path, header):
 
 
 @pytest.mark.parametrize("customized", [False, True])
+@pytest.mark.parametrize("previous_ignore", ["", ".asta/cache/\n"])
 def test_sync_ignores_fetched_theme_but_preserves_custom_copy(
-    tmp_path, monkeypatch, customized
+    tmp_path, monkeypatch, customized, previous_ignore
 ):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "_quarto.yml").write_text("format:\n  html:\n    theme: cosmo\n")
-    (tmp_path / ".gitignore").write_text(".asta/cache/\n")
+    (tmp_path / ".gitignore").write_text(previous_ignore)
     if customized:
         extension = tmp_path / "_extensions/asta-theme"
         extension.mkdir(parents=True)
@@ -1714,4 +1769,5 @@ def test_sync_ignores_fetched_theme_but_preserves_custom_copy(
         workspace_module.sync.callback(tmp_path, False, False)
     ignore = (tmp_path / ".gitignore").read_text()
     assert ignore.count("_extensions/asta-theme/") == (0 if customized else 1)
-    assert ".asta/cache/\n" in ignore
+    assert ignore.startswith(previous_ignore)
+    assert not ignore.startswith("\n")
