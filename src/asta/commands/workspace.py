@@ -282,6 +282,35 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     archive = sync_workspace(project, refresh, require_scripts)
     if archive is not None and archive_has_asta_theme(archive):
         adopt_asta_theme(project)
+        config = project.resolve() / "_quarto.yml"
+        ignore = project.resolve() / ".gitignore"
+        extension = project.resolve() / "_extensions/asta-theme"
+        if (
+            config.is_file()
+            and not config.is_symlink()
+            and ASTA_CSS in config.read_text(encoding="utf-8")
+            and not ignore.is_symlink()
+            and not extension.is_symlink()
+        ):
+            tracked = subprocess.run(
+                ["git", "-C", str(project), "ls-files", "--", "_extensions/asta-theme"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            # A committed directory is intentionally customized, not a cache.
+            if tracked.returncode == 0 and not tracked.stdout.strip():
+                previous = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+                if (
+                    "_extensions/asta-theme" not in previous.splitlines()
+                    and "_extensions/asta-theme/" not in previous.splitlines()
+                ):
+                    _atomic_write(
+                        ignore,
+                        (previous.rstrip("\n") + "\n_extensions/asta-theme/\n").encode(
+                            "utf-8"
+                        ),
+                    )
 
 
 SCAFFOLD_THEME = "    theme: cosmo\n"
@@ -406,7 +435,8 @@ def adopt_asta_theme(project: Path) -> bool:
     text = text[:start] + html + text[end:]
     _atomic_write(config, text.encode())
     click.echo(
-        "Gave the site Asta's look in _quarto.yml; set your own theme: to opt out"
+        "Gave the site Asta's look in _quarto.yml; to customize or opt out, "
+        "see the workspace developer guide, Site appearance (theme, css, and include-in-header)"
     )
     return True
 

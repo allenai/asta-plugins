@@ -1691,3 +1691,27 @@ def test_theme_adoption_keeps_existing_head_resources(tmp_path, header):
         workspace_module.ASTA_HEADER,
         *([before] if isinstance(before, str) else before),
     ]
+
+
+@pytest.mark.parametrize("customized", [False, True])
+def test_sync_ignores_fetched_theme_but_preserves_custom_copy(
+    tmp_path, monkeypatch, customized
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "_quarto.yml").write_text("format:\n  html:\n    theme: cosmo\n")
+    (tmp_path / ".gitignore").write_text(".asta/cache/\n")
+    if customized:
+        extension = tmp_path / "_extensions/asta-theme"
+        extension.mkdir(parents=True)
+        (extension / "dark.scss").write_text("custom")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "_extensions/asta-theme/dark.scss"],
+            check=True,
+        )
+    monkeypatch.setattr(workspace_module, "sync_workspace", lambda *args: b"archive")
+    monkeypatch.setattr(workspace_module, "archive_has_asta_theme", lambda *args: True)
+    for _ in range(2):
+        workspace_module.sync.callback(tmp_path, False, False)
+    ignore = (tmp_path / ".gitignore").read_text()
+    assert ignore.count("_extensions/asta-theme/") == (0 if customized else 1)
+    assert ".asta/cache/\n" in ignore
