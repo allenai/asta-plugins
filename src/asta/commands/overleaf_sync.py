@@ -6,7 +6,6 @@ import re
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -45,8 +44,8 @@ FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefNam
 STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
 POLL_SECONDS = 30  # Between --wait reruns; checks rarely settle faster.
 # COMPLETE, PERSON and FAILED end a paper's wait; the other states retry.
-COMPLETE, WAITING, LOCKED, PERSON = "complete", "waiting", "locked", "person"
-MISSING_CHECKS, FAILED = "missing_checks", "failed"
+COMPLETE, WAITING, LOCKED = "complete", "waiting", "locked"
+PERSON, FAILED = "person", "failed"
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
     "Merge current workspace paper into Overleaf sync",
@@ -211,37 +210,55 @@ def waiting_message(pr: dict, head: str) -> str:
     return f"Sync PR mergeStateStatus={state}, mergeable={mergeable}. {action}"
 
 
-def waiting_on_person(pr: dict, head: str) -> bool:
-    """Whether a rerun cannot make progress until a person acts on the sync PR."""
+FAILED_CHECKS = {"FAILURE", "ERROR", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
+
+
+def check_outcome(check: dict) -> str:
+    if "conclusion" in check and check.get("status") != "COMPLETED":
+        return "PENDING"
+    return str(check.get("conclusion") or check.get("state") or "PENDING")
+
+
+def person_action(pr: dict, head: str) -> str | None:
+    """Who must act, from failed checks or a review decision on this head only."""
     if pr.get("headRefOid") != head:
-        return False
-    if pr.get("isDraft") or pr.get("mergeStateStatus") == "DRAFT":
-        return True
-    checks = pr.get("statusCheckRollup") or []
-    # GitHub can show an empty rollup before CI has started.
-    if not checks:
-        return False
-    for check in checks:
-        if ("conclusion" in check and check.get("status") != "COMPLETED") or check.get(
-            "state"
-        ) in {"PENDING", "EXPECTED"}:
-            return False
-    if (
-        pr.get("mergeStateStatus") == "BLOCKED"
-        and checks_pass(pr)
-        and pr.get("reviewDecision") not in {"REVIEW_REQUIRED", "CHANGES_REQUESTED"}
-    ):
-        # The rollup can omit required checks that GitHub has not created yet.
-        return False
-    # A rerun refreshes a BEHIND or DIRTY base itself, or reports its conflict.
+        return None
+    # Only stated facts count; empty, pending or blocked-for-no-reason states wait.
+    actions = []
+    failed = [
+        check.get("name") or check.get("context") or "unnamed check"
+        for check in pr.get("statusCheckRollup") or []
+        if check_outcome(check) in FAILED_CHECKS
+    ]
+    if failed:
+        actions.append(
+            f"A person must fix failed checks ({', '.join(sorted(set(failed)))})."
+        )
+    review = pr.get("reviewDecision")
+    if review == "CHANGES_REQUESTED":
+        actions.append("A reviewer requested changes; a person must address them.")
+    elif review == "REVIEW_REQUIRED":
+        actions.append("A required review is missing; a person must approve the PR.")
+    if not actions:
+        return None
+    return f"{' '.join(actions)} Then rerun sync."
+
+
+def observed_state(pr: dict, head: str) -> str:
+    """What GitHub last showed for the sync PR, without inferring who must act."""
+    if pr.get("headRefOid") != head:
+        return f"GitHub showed head {str(pr.get('headRefOid'))[:12]}, not {head[:12]}."
+    outcomes = [check_outcome(check) for check in pr.get("statusCheckRollup") or []]
+    checks = ", ".join(
+        f"{outcomes.count(outcome)} {outcome.lower()}"
+        for outcome in sorted(set(outcomes))
+    )
     return (
-        pr.get("mergeStateStatus", "UNKNOWN")
-        not in {
-            "UNKNOWN",
-            "BEHIND",
-            "DIRTY",
-        }
-        and pr.get("mergeable") != "UNKNOWN"
+        f"Last seen at {head[:12]}: {'draft, ' if pr.get('isDraft') else ''}"
+        f"mergeStateStatus={pr.get('mergeStateStatus', 'UNKNOWN')}, "
+        f"mergeable={pr.get('mergeable', 'UNKNOWN')}, "
+        f"reviewDecision={pr.get('reviewDecision') or 'none'}, "
+        f"checks: {checks or 'none visible'}."
     )
 
 
@@ -619,12 +636,7 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
-def sync_workspace(
-    project: Path,
-    directory: str,
-    *,
-    on_missing_checks: Callable[[str], None] | None = None,
-) -> tuple[str, str]:
+def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
     if not prefix or not prefix.endswith("/"):
@@ -908,33 +920,11 @@ def sync_workspace(
                     # a later quiet run; never merge a just-created/updated head.
                     if changed or head != old_head:
                         reset_status(root, repo, pr, notice)
-                        # Creation already reads the new PR. After an update,
-                        # refresh checks for the pushed head before returning:
-                        # a short wait may expire before another quiet run.
-                        if not opened and click.get_current_context().meta.get(
-                            "overleaf_noninteractive"
-                        ):
-                            pr = gh(
-                                root,
-                                "pr",
-                                "view",
-                                str(pr["number"]),
-                                "--repo",
-                                repo,
-                                "--json",
-                                FIELDS,
-                            )
                         message = (
                             f"{'Opened' if opened else 'Updated'} {pr['url']}; "
                             "waiting for checks and a run with no new Overleaf edits."
                         )
                         click.echo(message)
-                        if pr["headRefOid"] == head and (
-                            pr.get("isDraft") or pr.get("mergeStateStatus") == "DRAFT"
-                        ):
-                            return PERSON, f"{message} {waiting_message(pr, head)}"
-                        # A just-pushed head has had no grace for CI to start.
-                        # Only later quiet attempts can establish missing checks.
                         return WAITING, message
                     pr = gh(
                         root,
@@ -957,16 +947,10 @@ def sync_workspace(
                         reset_status(root, repo, pr, notice)
                         message = f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
                         click.echo(message)
-                        state = WAITING
-                        if waiting_on_person(pr, head):
-                            state = PERSON
-                        elif pr["headRefOid"] == head and not pr.get(
-                            "statusCheckRollup"
-                        ):
-                            state = MISSING_CHECKS
-                            if on_missing_checks is not None:
-                                on_missing_checks(head)
-                        return state, message
+                        action = person_action(pr, head)
+                        if action:
+                            return PERSON, f"{pr['url']}: {action}"
+                        return WAITING, f"{pr['url']}: {observed_state(pr, head)}"
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
                     default_config = json.loads(

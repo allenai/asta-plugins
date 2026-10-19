@@ -4447,63 +4447,6 @@ def test_sync_wait_zero_attempts_each_paper_once(tmp_path, monkeypatch):
     assert result.output.count("Sync outcome:") == 2
 
 
-@pytest.mark.parametrize(
-    "results, wait, code",
-    [
-        (["missing_checks"], 1, 5),
-        (["missing_checks"], 30, 5),
-        (["missing_checks", "missing_checks"], 31, 4),
-        (["missing_checks", "waiting", "missing_checks"], 90, 5),
-        (["missing_checks", "locked", "missing_checks"], 90, 5),
-        (["waiting", "missing_checks", "missing_checks"], 90, 4),
-    ],
-)
-def test_sync_wait_requires_repeated_missing_checks_after_a_quiet_grace(
-    tmp_path, monkeypatch, results, wait, code
-):
-    sync_module = importlib.import_module("asta.commands.overleaf_sync")
-    clock, calls = [0.0], []
-    monkeypatch.setattr(module, "paired_directories", lambda _: ["paper"])
-    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
-    monkeypatch.setattr(
-        module, "_sync_sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
-    )
-
-    def attempt(_, directory, **kwargs):
-        state = results[len(calls)]
-        calls.append(directory)
-        return state, "fixture result"
-
-    monkeypatch.setattr(sync_module, "sync_workspace", attempt)
-    result = run(tmp_path, "sync", "--wait", str(wait))
-    assert result.exit_code == code, result.output
-    assert len(calls) == len(results)
-    assert ("A person must inspect CI setup" in result.output) == (code == 4)
-
-
-def test_sync_wait_missing_checks_grace_belongs_to_each_paper(tmp_path, monkeypatch):
-    sync_module = importlib.import_module("asta.commands.overleaf_sync")
-    clock, calls = [0.0], []
-    monkeypatch.setattr(module, "paired_directories", lambda _: ["first", "second"])
-    monkeypatch.setattr(module, "_sync_monotonic", lambda: clock[0])
-    monkeypatch.setattr(
-        module, "_sync_sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
-    )
-
-    def attempt(_, directory, **kwargs):
-        calls.append(directory)
-        if directory == "first":
-            clock[0] = 59.0
-            return "complete", "fixture result"
-        return "missing_checks", "fixture result"
-
-    monkeypatch.setattr(sync_module, "sync_workspace", attempt)
-    result = run(tmp_path, "sync", "--wait", "60")
-    assert result.exit_code == 5, result.output
-    assert calls == ["first", "second"]
-    assert "A person must inspect CI setup" not in result.output
-
-
 def test_sync_wait_visits_other_papers_before_retrying(tmp_path, monkeypatch):
     sync_module = importlib.import_module("asta.commands.overleaf_sync")
     gate = importlib.import_module("asta.commands.overleaf_gate")

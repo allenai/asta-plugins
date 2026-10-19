@@ -922,13 +922,13 @@ def test_sync_wait_allows_ci_checks_to_appear(
 
     monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
     result = run(project, "sync", "--wait", "60")
-    assert result.exit_code == (0 if checks_appear else 4), result.output
+    assert result.exit_code == (0 if checks_appear else 5), result.output
     assert sleeps == ([30] if checks_appear else [30, 30])
     assert len(github["merges"]) == int(checks_appear)
-    assert ("Sync outcome: a person must act" in result.output) is not checks_appear
+    assert "Sync outcome: a person must act" not in result.output
     if not checks_appear:
-        assert "A person must inspect CI setup" in result.output
-        assert "No checks were visible across quiet sync attempts" in result.output
+        assert "Sync outcome: still waiting" in result.output
+        assert "checks: none visible" in result.output
     assert git(project, "status", "--porcelain") == ""
 
 
@@ -1026,13 +1026,9 @@ def test_sync_wait_classifies_checks_before_the_next_quiet_run(
     monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
     monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
     result = run(project, "sync", "--wait", str(wait))
-    assert result.exit_code == (4 if draft else expected), result.output
+    assert result.exit_code == expected, result.output
     assert calls == ["paper"]
-    assert sleeps == ([] if draft or wait == 0 or expires_during_attempt else [1])
-    assert ("A person must inspect CI setup" in result.output) == (
-        expected == 4 and not draft
-    )
-    assert ("mark the sync PR ready" in result.output) == draft
+    assert sleeps == ([] if wait == 0 or expires_during_attempt else [1])
     assert result.output.count("Sync outcome:") == 1
     assert ("Updated" if updated else "Opened") in result.output
     assert not github["merges"]
@@ -1118,7 +1114,7 @@ def test_sync_wait_real_early_returns_have_outcomes(setup, github, scenario, cod
 
 
 @pytest.mark.parametrize("merge_state", ["BLOCKED", "CLEAN"])
-def test_sync_wait_draft_with_pending_checks_names_the_action(
+def test_sync_wait_draft_keeps_waiting_and_reports_what_it_saw(
     setup, github, merge_state
 ):
     seed, project = prepare(setup)
@@ -1129,10 +1125,11 @@ def test_sync_wait_draft_with_pending_checks_names_the_action(
         mergeStateStatus=merge_state,
         statusCheckRollup=[{"state": "PENDING"}],
     )
-    result = run(project, "sync", "--wait", "60")
-    assert result.exit_code == 4, result.output
-    assert "Sync outcome: a person must act" in result.output
-    assert "mark the sync PR ready" in result.output
+    result = run(project, "sync", "--wait", "0")
+    assert result.exit_code == 5, result.output
+    assert "Sync outcome: still waiting" in result.output
+    assert f"draft, mergeStateStatus={merge_state}" in result.output
+    assert "checks: 1 pending" in result.output
     assert not github["merges"]
 
 
@@ -2176,19 +2173,16 @@ def test_credits_keep_author_when_publication_git_verification_fails(
             },
             True,
         ),
-        ({"mergeStateStatus": "DRAFT"}, True),
+        ({"mergeStateStatus": "DRAFT"}, False),
+        ({"isDraft": True, "statusCheckRollup": [{"state": "PENDING"}]}, False),
+        ({"statusCheckRollup": [{"state": "ERROR", "context": "ci"}]}, True),
         (
-            {"mergeStateStatus": "DRAFT", "statusCheckRollup": [{"state": "PENDING"}]},
-            True,
+            {"statusCheckRollup": [{"status": "COMPLETED", "conclusion": "CANCELLED"}]},
+            False,
         ),
-        (
-            {
-                "isDraft": True,
-                "mergeStateStatus": "BLOCKED",
-                "statusCheckRollup": [{"state": "PENDING"}],
-            },
-            True,
-        ),
+        ({"mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"}, True),
+        ({"mergeStateStatus": "BLOCKED", "reviewDecision": "CHANGES_REQUESTED"}, True),
+        ({"mergeStateStatus": "BLOCKED", "reviewDecision": "APPROVED"}, False),
         (
             {
                 "mergeStateStatus": "BLOCKED",
@@ -2210,7 +2204,7 @@ def test_credits_keep_author_when_publication_git_verification_fails(
         ({"mergeStateStatus": "BLOCKED", "headRefOid": "other"}, False),
     ],
 )
-def test_waiting_on_person_only_when_a_rerun_cannot_progress(pr, person):
+def test_person_action_only_for_failed_checks_or_review_decisions(pr, person):
     sync = importlib.import_module("asta.commands.overleaf_sync")
     pr = {"headRefOid": "head", "mergeable": "MERGEABLE", **pr}
-    assert sync.waiting_on_person(pr, "head") is person
+    assert (sync.person_action(pr, "head") is not None) is person
