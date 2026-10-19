@@ -23,6 +23,7 @@ class DemoTests(unittest.TestCase):
                 "evidence.yml",
                 "lit-review/index.qmd",
                 "paper/main.tex",
+                "paper/references.bib",
                 "references.bib",
             ):
                 target = root / name
@@ -36,6 +37,7 @@ class DemoTests(unittest.TestCase):
                     "evidence.yml",
                     "lit-review/index.qmd",
                     "paper/main.tex",
+                    "paper/references.bib",
                     "references.bib",
                 ],
                 cwd=root,

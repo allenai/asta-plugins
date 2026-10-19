@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `asta workspace bump-pin`: when `.github/workflows/docs.yml` pins a
+  release older than the installed asta's final release, commit a move of the
+  pin to that release as its own commit. The workspace skill runs it before an
+  agent opens a PR and drops the commit if the bump breaks the build.
 - Add `asta workspace overleaf sync --wait SECONDS` for papers synced by hand:
   one call reruns sync through checks, the quiet merge run and another run's
   recent lock until it completes or a person must act, bounded by the deadline.

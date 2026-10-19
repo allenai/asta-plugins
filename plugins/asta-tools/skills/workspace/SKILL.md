@@ -1,7 +1,7 @@
 ---
 name: workspace
 description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
-allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace bump-pin) Bash(asta workspace bump-pin *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
 # Workspace
@@ -39,10 +39,16 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
 
+Before opening any workspace PR, for both local and headless agents, keep the pin current:
+
+1. Commit your work, run `make check`, and note whether it passed.
+2. Run `asta workspace bump-pin`; report errors and follow any recovery message. A bump prints `Committed <sha>`.
+3. If it printed a SHA, run `make check` again. If the build passed before and fails now, run `git revert --no-edit <sha>` and carry on without the bump.
+
 For a headless agent (the user only sees results via deployed URL):
 
 - **Bootstrap `main` if the repo is empty.** On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
-- First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- First save: keep the pin current (above), then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 

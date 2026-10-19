@@ -13,6 +13,7 @@ on:
   pull_request:
     paths:
       - examples/workspace/**
+      - .asta/overleaf/examples/workspace/**
       - .github/workflows/example-workspace.yml
       - plugins/asta-tools/skills/workspace/assets/**
       - tests/test_example_workspace_workflow.py

@@ -12,15 +12,15 @@
 \begin{document}
 \maketitle
 
-\section{One bibliography}
-This example paper and the companion Quarto page both cite the same project bibliography. Vaswani and colleagues proposed the Transformer architecture based on attention mechanisms~\cite{vaswani2017attention}. The citation resolves from the project-root \texttt{references.bib}; no bibliography copy or Overleaf project is required.
+\section{A paper paired with Overleaf}
+This paper is paired with an Overleaf project, so co-authors can edit it there while the workspace reviews every change in a pull request. Overleaf sees only this \texttt{paper} directory, so the paper keeps its own \texttt{references.bib} here, which co-authors can edit too. Vaswani and colleagues proposed the Transformer architecture based on attention mechanisms~\cite{vaswani2017attention}. That entry was copied from the workspace's \texttt{references.bib}, which the companion Quarto page cites.
 
 \section{A compact figure}
-Figure~\ref{fig:workspace} shows the two document formats sharing one bibliography.
+Figure~\ref{fig:workspace} shows where each writing format gets its citations.
 \begin{figure}[htbp]
   \centering
-  \fcolorbox{astateal}{astagreen!15}{\parbox{0.66\linewidth}{\centering\vspace{0.7em}\textbf{references.bib}\\[0.5em]Quarto page \quad $\longleftarrow$ \quad bibliography \quad $\longrightarrow$ \quad LaTeX paper\vspace{0.7em}}}
-  \caption{A single source of citations for both writing formats.}
+  \fcolorbox{astateal}{astagreen!15}{\parbox{0.72\linewidth}{\centering\vspace{0.7em}Quarto page \quad $\longleftarrow$ \quad \textbf{references.bib}\\[0.5em]copied entries \quad $\longrightarrow$ \quad \textbf{paper/references.bib} \quad $\longleftrightarrow$ \quad Overleaf\vspace{0.7em}}}
+  \caption{The workspace bibliography feeds the Quarto page directly and the paired paper through copied entries.}
   \label{fig:workspace}
 \end{figure}
 

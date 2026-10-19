@@ -1,6 +1,6 @@
 # Goal
 
-Demonstrate an Asta workspace with an evidence-backed Quarto literature review and a separate hand-edited LaTeX paper. The review can be rendered to PDF or LaTeX on demand. Both paths share one bibliography.
+Demonstrate an Asta workspace with an evidence-backed Quarto literature review and a separate hand-edited LaTeX paper. The review can be rendered to PDF or LaTeX on demand. The review cites the workspace bibliography; the paper, paired with Overleaf, keeps copies of the entries it cites in its own bibliography.
 
 # Background
 
