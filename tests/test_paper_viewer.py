@@ -24,6 +24,22 @@ def generate(root, *papers, script=SCRIPT):
     )
 
 
+def test_viewer_names_the_overleaf_project_a_paper_is_paired_with(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    project = tmp_path / "examples/workspace"
+    record = tmp_path / ".asta/overleaf/examples/workspace/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        json.dumps({"format": 1, "url": "https://git.overleaf.com/" + "a1" * 12})
+    )
+    project.mkdir(parents=True)
+    assert generate(project, "paper", "other").returncode == 0
+    paired = (project / "paper/html/index.qmd").read_text()
+    unpaired = (project / "other/html/index.qmd").read_text()
+    assert f'href="https://www.overleaf.com/project/{"a1" * 12}"' in paired
+    assert "Overleaf" not in unpaired
+
+
 def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
     assert generate(tmp_path, "paper", "research/other paper").returncode == 0
     paper = (tmp_path / "paper/html/index.qmd").read_text()
@@ -321,7 +337,8 @@ def test_quarto_renders_the_managed_viewer(tmp_path, directory):
     page = (tmp_path / f"_site/{directory}/html/index.html").read_text()
     assert "const host = document.querySelector" in page
     assert 'href="../../paper-previews/paper/main.pdf"' not in page
-    assert "createElement('iframe')" in page
+    assert "createElement('object')" in page
+    assert "#navpanes=0" in page
     assert f"<code>{directory}/main.tex</code>" in page
 
 

@@ -150,11 +150,11 @@ class DemoTests(unittest.TestCase):
                 demo.refresh.build(args)
                 demo.refresh.build(args)
             demo_page = args.output / "demo/index.html"
-            self.assertIn('href="../what-changed.html"', demo_page.read_text())
+            self.assertIn('src="../what-changed.html"', demo_page.read_text())
             self.assertEqual(
                 (old / "demo/index.html")
                 .read_text()
-                .count('href="showcase/what-changed.html"'),
+                .count('src="showcase/what-changed.html"'),
                 1,
             )
             self.assertIn(
