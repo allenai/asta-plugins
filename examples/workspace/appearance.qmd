@@ -1,5 +1,6 @@
 ---
 title: "Reading in Asta"
+search: false
 ---
 
 The workspace is a place to read research notes, inspect supporting evidence,
