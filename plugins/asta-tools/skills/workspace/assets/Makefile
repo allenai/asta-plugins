@@ -64,13 +64,7 @@ workspace-assets:
 				| sort -V | tail -n 1) || true; \
 			[ -n "$$ref" ] || offline_ok "could not resolve the latest version tag from $$repo"; \
 		fi; \
-		if printf '%s\n' "$$ref" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$'; then \
-			url="$$repo/archive/refs/tags/$$ref.tar.gz"; \
-		elif [ "$$ref" = latest ] || [ "$$ref" = main ]; then \
-			url="$$repo/archive/refs/heads/$$ref.tar.gz"; \
-		else \
-			url="$$repo/archive/$$ref.tar.gz"; \
-		fi; \
+		url="$$repo/archive/$$ref.tar.gz"; \
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
