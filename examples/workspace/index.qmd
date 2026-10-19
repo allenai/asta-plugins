@@ -1,10 +1,8 @@
 ---
-title: "One workspace, two paper paths"
+title: "Attention in sequence models"
 ---
 
-This demo has a workspace [bibliography](references.bib) and two writing paths:
+A short project on how attention replaced recurrence in sequence models. It has two parts:
 
-1. [Literature review](lit-review/index.qmd): edit the Quarto source, which cites the workspace bibliography. Quarto can also render it to PDF or LaTeX on demand (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)).
-2. [Separate paper](paper/main.tex): edit LaTeX directly. The paper is paired with an Overleaf project, which you can [view in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f): co-authors can edit it there, and the workspace reviews their changes in pull requests. Overleaf sees only the `paper` directory, so the paper keeps its own [bibliography](paper/references.bib), with entries copied from the workspace's.
-
-On a pull request, the preview builds a PDF of the separate paper. [The saved diff demo](demo/index.qmd) shows edits to the paper and the Quarto literature review. New files appear as “added” in What changed; edits to existing files show a diff.
+- [A literature review](lit-review/index.qmd) of the work it builds on, citing the project's bibliography.
+- [The paper](paper/html/index.qmd), written in LaTeX with co-authors in Overleaf.

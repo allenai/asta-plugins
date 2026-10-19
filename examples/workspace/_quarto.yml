@@ -3,10 +3,11 @@ project:
   output-dir: _site
   render:
     - index.qmd
-    - demo/index.qmd
     - lit-review/index.qmd
-    - appearance.qmd
     - paper/html/index.qmd
+    - about.qmd
+    - demo/index.qmd
+    - appearance.qmd
   resources:
     - paper/html/paper-viewer.js
   preview:
@@ -26,24 +27,27 @@ metadata-files:
 filters:
   - _extensions/evidence/snippet.lua
 
+# The workspace skill's own site layout (assets/_quarto.yml), so that the
+# example looks like a workspace the skill makes; only the page list is set
+# here, so that the project's pages come first and the notes on the example
+# last.
 website:
   title: "Asta workspace example"
-  navbar:
-    right:
-      - text: Diff demo
-        href: demo/index.html
-      - text: Lit review
-        href: lit-review/index.html
-      - text: Appearance
-        href: appearance.html
-      - text: Separate paper PDF
-        href: paper-previews/paper/main.pdf
   sidebar:
+    tools:
+      - icon: github
+        href: "https://github.com/allenai/asta-plugins/tree/main/examples/workspace"
+        text: "GitHub repo"
+        target: _blank
     contents:
       - index.qmd
-      - demo/index.qmd
       - lit-review/index.qmd
-      - appearance.qmd
+      - paper/html/index.qmd
+      - section: "This example"
+        contents:
+          - about.qmd
+          - demo/index.qmd
+          - appearance.qmd
 
 format:
   html:
