@@ -672,9 +672,9 @@ DIFF_STYLE = """
             --wc-del-bg: #ffd7d5; --wc-del-line: #cf222e; --wc-del-fg: #40100c;
             --wc-muted: #57606a; --wc-changed: #0969da; --wc-new: #1a7f37;
             --wc-removed: #cf222e; --wc-tag-fg: #fff; --wc-border: #d0d7de; }
-/* Follow Quarto's rendered theme mode when a theme is reused. The media-query
-   fallback is only for standalone output, where no Quarto mode is available. */
-.wc-scope.wc-dark { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
+/* Follow the mode the site is shown in (`data-wc-mode`, set by MODE_JS) when a
+   theme is reused. The media query is only for standalone output. */
+[data-wc-mode="dark"] .wc-scope { --wc-ins-bg: #12341f; --wc-ins-line: #3fb950; --wc-ins-fg: #d7ffe4;
                     --wc-del-bg: #4a1512; --wc-del-line: #f85149; --wc-del-fg: #ffdcd7;
                     --wc-muted: #8b949e; --wc-changed: #58a6ff; --wc-new: #3fb950;
                     --wc-removed: #f85149; --wc-tag-fg: #0d1117; --wc-border: #30363d; }
@@ -736,10 +736,9 @@ DIFF_STYLE = """
 /* Evidence claims (`.ev`) need a visible cue on the diff. The extension's
    default 1px black border at 32% opacity is intentionally subtle on a normal
    report, but becomes effectively invisible against the green insertion tint.
-   Use an information-blue 2px dotted rule here: it remains an underline rather
-   than adding another background, while being perceptible in the change-review
-   context. */
-.wc-scope .ev { border-bottom: 2px dotted #2a88ef; }
+   Strengthen it to a 2px dotted rule in the active theme's link color, so it
+   stays an underline rather than another background and follows light/dark. */
+.wc-scope .ev { border-bottom: 2px dotted var(--bs-link-color, var(--wc-changed)); }
 /* Insertions are background-only: the `ins` rule above sets
    `text-decoration: none` to suppress the browser UA-default `ins {
    text-decoration: underline }` (otherwise every added run keeps a green
@@ -915,6 +914,33 @@ FOLD_JS = r"""
 })();
 """
 
+# Quarto picks light or dark only in the browser (author default, then the
+# reader's stored toggle), so the diff page repeats that choice on load: enable
+# the matching theme stylesheets and mark the mode for DIFF_STYLE. Mirrors the
+# `quarto-color-scheme` sentinel in Quarto's quarto-html-before-body template.
+MODE_JS = """
+(() => {
+  const root = document.documentElement;
+  let stored = null;
+  try { stored = window.localStorage.getItem("quarto-color-scheme"); } catch (e) {}
+  let dark = root.dataset.wcMode === "dark";
+  if (stored === "alternate" || stored === "default") dark = stored === "alternate";
+  else if (root.dataset.wcFollowSystem === "true")
+    dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const mode = dark ? "dark" : "light";
+  root.dataset.wcMode = mode;
+  document.querySelectorAll("link.quarto-color-scheme").forEach((link) => {
+    link.rel = link_mode(link) === mode ? "stylesheet" : "disabled-stylesheet";
+  });
+  document.body.classList.remove("quarto-light", "quarto-dark");
+  document.body.classList.add("quarto-" + mode);
+  function link_mode(link) {
+    if (link.dataset.mode) return link.dataset.mode.toLowerCase();
+    return link.classList.contains("quarto-color-alternate") ? "dark" : "light";
+  }
+})();
+"""
+
 # Body typography for the fallback path, when no site theme could be reused.
 STANDALONE_STYLE = """
 :root { color-scheme: light dark; }
@@ -944,15 +970,60 @@ def extract_theme_css(doc, depth):
     parts = []
     for m in re.finditer(r"(?is)<link\b[^>]*>", head):
         tag = m.group(0)
-        if re.search(r'rel\s*=\s*["\']?[^"\'>]*stylesheet', tag, re.I):
+        # Quarto ships the inactive mode's sheets as prefetch/disabled links.
+        if re.search(
+            r'rel\s*=\s*["\']?[^"\'>]*stylesheet', tag, re.I
+        ) or _is_color_scheme_link(tag):
             parts.append(rebase_urls(tag, depth))
     for m in re.finditer(r"(?is)<style\b[^>]*>.*?</style>", head):
         parts.append(rebase_urls(m.group(0), depth))
     return "\n".join(parts) if parts else None
 
 
+def _is_color_scheme_link(tag):
+    return bool(
+        re.search(r'\bclass\s*=\s*["\'][^"\']*\bquarto-color-scheme\b', tag, re.I)
+    )
+
+
+def _link_mode(tag):
+    mode = re.search(r'\bdata-mode\s*=\s*["\'](light|dark)["\']', tag, re.I)
+    if mode:
+        return mode.group(1).lower()
+    return "dark" if "quarto-color-alternate" in tag else "light"
+
+
+def set_theme_mode(theme_css, mode):
+    """Enable only the color-scheme stylesheets for `mode`, as Quarto would."""
+
+    def fix(m):
+        tag = m.group(0)
+        if not _is_color_scheme_link(tag):
+            return tag
+        rel = "stylesheet" if _link_mode(tag) == mode else "disabled-stylesheet"
+        tag = re.sub(r'\srel\s*=\s*(["\'])[^"\']*\1', "", tag, flags=re.I)
+        return re.sub(r"(?i)^<link\b", f'<link rel="{rel}"', tag)
+
+    return re.sub(r"(?is)<link\b[^>]*>", fix, theme_css)
+
+
+def extract_default_mode(doc):
+    """Return (mode, follows_system): the mode a fresh visitor sees.
+
+    Quarto renders the light sheet first and switches in the browser, so the
+    author's choice is read from its color-scheme script before the links.
+    """
+    author = re.search(r"\bauthorPrefersDark\s*=\s*(true|false)\b", doc)
+    follows_system = bool(
+        re.search(r"\bdarkModeDefault\s*=\s*queryPrefersDark\.matches", doc)
+    )
+    if author:
+        return ("dark" if author.group(1) == "true" else "light"), follows_system
+    return extract_theme_mode(doc) or "light", follows_system
+
+
 def extract_theme_mode(doc):
-    """Return Quarto's compiled Bootstrap mode (light or dark), if present."""
+    """Return the first Bootstrap stylesheet's mode (light or dark), if present."""
     bootstrap = re.search(
         r'(?is)<link\b(?=[^>]*\bid\s*=\s*["\']quarto-bootstrap["\'])[^>]*>', doc
     )
@@ -1256,28 +1327,33 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     if theme_css:
         # Reuse the site theme, then wrap our content in Quarto's article
         # container so it inherits the real content width and typography.
+        mode, follows_system = extract_default_mode(template_doc)
+        theme_css = set_theme_mode(theme_css, mode)
         head = f"{theme_css}\n<style>{DIFF_STYLE}</style>"
-        scope_class = (
-            "wc-scope wc-dark"
-            if extract_theme_mode(template_doc) == "dark"
-            else "wc-scope"
-        )
+        html_attrs = f' data-wc-mode="{mode}"'
+        if follows_system:
+            html_attrs += ' data-wc-follow-system="true"'
+        body_attrs = f' class="quarto-{mode}"'
+        mode_js = f"<script>{MODE_JS}</script>"
         body = (
             '<div class="page-columns page-rows-contents page-layout-article '
-            f'{scope_class}">\n'
+            'wc-scope">\n'
             '<main class="content" id="quarto-document-content">\n'
             f"{inner}\n</main>\n</div>"
         )
     else:
         head = f"<style>{STANDALONE_STYLE}{DIFF_STYLE}</style>"
         body = f'<div class="wc-scope wc-standalone">{inner}</div>'
+        html_attrs = body_attrs = mode_js = ""
 
     return (
-        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        "<!doctype html>"
+        f'<html lang="en"{html_attrs}><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
-        f"{head}</head><body>{body}<script>{FOLD_JS}</script></body></html>"
+        f"{head}</head><body{body_attrs}>{mode_js}{body}"
+        f"<script>{FOLD_JS}</script></body></html>"
     )
 
 
