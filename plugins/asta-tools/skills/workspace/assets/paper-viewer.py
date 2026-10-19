@@ -112,6 +112,27 @@ def paper_directories(data: object) -> list[str]:
     return data["papers"]
 
 
+OVERLEAF_GIT = re.compile(r"https://git\.overleaf\.com/([0-9a-f]{24})")
+
+
+def overleaf_project(directory: str) -> str | None:
+    """The Overleaf project a paper is paired with, from its pairing record."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel", "--show-prefix"],
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        top, prefix = (result.stdout.splitlines() + ["", ""])[:2]
+        record = Path(top) / ".asta/overleaf" / f"{prefix}{directory}.json"
+        url = json.loads(record.read_text(encoding="utf-8")).get("url", "")
+    except (OSError, ValueError, AttributeError, subprocess.CalledProcessError):
+        return None
+    match = OVERLEAF_GIT.fullmatch(url) if isinstance(url, str) else None
+    return f"https://www.overleaf.com/project/{match[1]}" if match else None
+
+
 def create_viewer(
     directory: str, tracked: set[str] | None, main_file: str = ""
 ) -> None:
@@ -136,6 +157,15 @@ def create_viewer(
     target = posixpath.relpath(f"paper-previews/{directory}", folder.as_posix())
     target = quote(target, safe="/.")
     source = f"{directory}/{main_file}"
+    overleaf = overleaf_project(directory)
+    paired = (
+        f"""<p>The paper is paired with
+<a href="{html.escape(overleaf, quote=True)}">its Overleaf project</a>:
+co-authors edit it there, and their edits come back as pull requests.</p>
+"""
+        if overleaf
+        else ""
+    )
     content = f"""---
 title: {json.dumps(title)}
 ---
@@ -143,10 +173,9 @@ title: {json.dumps(title)}
 {GENERATED_MARKER}
 
 ```{{=html}}
-<p>The paper is written in <code>{html.escape(source)}</code>.
+{paired}<p>The paper is written in <code>{html.escape(source)}</code>.
 The preview builds a PDF from that LaTeX source.</p>
 <div data-paper-preview="{html.escape(target, quote=True)}">
-<p data-paper-links></p>
 <div data-paper-pdf>
 <p>The paper PDF appears after the preview build.</p>
 </div>
@@ -158,14 +187,17 @@ The preview builds a PDF from that LaTeX source.</p>
   const url = host.dataset.paperPreview + '/main.pdf';
   fetch(url, {{ method: 'HEAD' }}).then(response => {{
     if (!response.ok) return;
-    const link = document.createElement('a');
-    link.href = url;
-    link.textContent = 'Open paper PDF';
-    host.querySelector('[data-paper-links]').append(link);
-    const frame = document.createElement('iframe');
-    frame.src = url;
+    // Without the thumbnail pane, so the page itself fills the frame. The
+    // link shows only where a browser can't display the PDF inline.
+    const frame = document.createElement('object');
+    frame.data = url + '#navpanes=0&view=FitH';
+    frame.type = 'application/pdf';
     frame.title = {json.dumps(title).replace("<", chr(92) + "u003c")};
     frame.style.cssText = 'width:100%;min-height:80vh;border:0';
+    const link = document.createElement('a');
+    link.href = url;
+    link.textContent = 'Open the paper PDF';
+    frame.append(link);
     host.querySelector('[data-paper-pdf]').replaceChildren(frame);
   }}).catch(() => {{}});
 }})();
