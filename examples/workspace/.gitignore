@@ -16,6 +16,9 @@ paper/*.synctex.gz
 paper/what-changed.tex
 
 /.quarto/
+# Quarto adds this on render; listed here so that a render leaves the checkout
+# clean for `make demo-build`.
+**/*.quarto_ipynb
 
 # CLI-managed workspace rules and archive
 .asta/cache/
