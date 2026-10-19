@@ -190,8 +190,8 @@ The preview builds a PDF from that LaTeX source.</p>
     // Without the thumbnail pane, so the page itself fills the frame. The
     // link shows only where a browser can't display the PDF inline.
     const frame = document.createElement('object');
-    frame.data = url + '#navpanes=0&view=FitH';
-    frame.type = 'application/pdf';
+    frame.setAttribute('data', url + '#navpanes=0&view=FitH');
+    frame.setAttribute('type', 'application/pdf');
     frame.title = {json.dumps(title).replace("<", chr(92) + "u003c")};
     frame.style.cssText = 'width:100%;min-height:80vh;border:0';
     const link = document.createElement('a');

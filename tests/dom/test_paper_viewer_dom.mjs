@@ -42,17 +42,21 @@ async function runViewer({ pdf = false, reject = false } = {}) {
 test("missing or unreachable PDF retains the explanation without broken links", async () => {
   for (const options of [{}, { reject: true }]) {
     const { document } = await runViewer(options);
-    assert.equal(document.querySelectorAll("a, iframe").length, 0);
+    assert.equal(document.querySelectorAll("a, iframe, object").length, 0);
     assert.match(document.body.textContent, /PDF appears after the preview build/);
   }
 });
 
-test("available PDF is linked and embedded", async () => {
+test("available PDF is embedded without its thumbnail pane, with a link only as the fallback", async () => {
   const { document } = await runViewer({ pdf: true });
-  const links = document.querySelectorAll("[data-paper-links] a");
-  assert.equal(links.length, 1);
-  assert.equal(links[0].getAttribute("href"), "../../paper-previews/paper/main.pdf");
-  const frame = document.querySelector("iframe");
-  assert.equal(frame.getAttribute("src"), "../../paper-previews/paper/main.pdf");
+  const frame = document.querySelector("[data-paper-pdf] object");
+  assert.equal(frame.getAttribute("data"), "../../paper-previews/paper/main.pdf#navpanes=0&view=FitH");
+  assert.equal(frame.getAttribute("type"), "application/pdf");
   assert.equal(frame.getAttribute("title"), "Paper");
+  // The link sits inside the object, so a browser shows it only when it
+  // can't display the PDF inline.
+  const links = document.querySelectorAll("a");
+  assert.equal(links.length, 1);
+  assert.equal(links[0].parentElement, frame);
+  assert.equal(links[0].getAttribute("href"), "../../paper-previews/paper/main.pdf");
 });
