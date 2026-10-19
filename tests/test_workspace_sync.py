@@ -1570,3 +1570,123 @@ def test_scaffold_quarto_config_uses_the_managed_asta_theme() -> None:
     for name in ("light.scss", "dark.scss", "asta.css"):
         assert (assets / "_extensions/asta-theme" / name).is_file()
         assert (root / "examples/workspace/_extensions/asta-theme" / name).is_file()
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        "format:\n  pdf:\n    theme: cosmo\n",
+        "other:\n  html:\n    theme: cosmo\n",
+        "format:\n  html:\n    theme: flatly\n  pdf:\n    theme: cosmo\n",
+        "format:\n  html:\n    theme: [cosmo, custom.scss]\n",
+        "format:\n  html:\n    theme: flatly\n    metadata:\n      theme: cosmo\n",
+        "format:\n  html:\n    theme: cosmo\n    include-in-header:\n      text: '<style></style>'\n",
+        "format: {html: {theme: cosmo}}\n",
+    ],
+)
+def test_theme_adoption_preserves_project_and_other_format_settings(tmp_path, config):
+    path = tmp_path / "_quarto.yml"
+    path.write_text(config)
+    assert not workspace_module.adopt_asta_theme(tmp_path)
+    assert path.read_text() == config
+
+
+@pytest.mark.parametrize(
+    "css", ["styles.css", "[a.css, b.css]", "\n      - a.css\n      - b.css", "null"]
+)
+def test_theme_adoption_scopes_css_to_html_and_keeps_preferences(tmp_path, css):
+    import yaml
+
+    path = tmp_path / "_quarto.yml"
+    path.write_text(
+        "# Project notes\nformat:\n"
+        "  pdf:\n    theme: cosmo\n    css: pdf.css\n"
+        "  html:\n    theme: cosmo\n    respect-user-color-scheme: false\n"
+        f"    css: {css}\n"
+        "  revealjs:\n    theme: cosmo\n    css: slides.css\n"
+        "website:\n  title: Project\n"
+    )
+    before = yaml.safe_load(path.read_text())
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    text = path.read_text()
+    after = yaml.safe_load(text)
+    assert text.startswith("# Project notes\n")
+    assert after["format"]["pdf"] == before["format"]["pdf"]
+    assert after["format"]["revealjs"] == before["format"]["revealjs"]
+    assert after["website"] == before["website"]
+    html = after["format"]["html"]
+    assert html["respect-user-color-scheme"] is False
+    own = before["format"]["html"]["css"] or []
+    if isinstance(own, str):
+        own = [own]
+    assert html["css"] == [workspace_module.ASTA_CSS, *own]
+    assert not workspace_module.adopt_asta_theme(tmp_path)
+    assert path.read_text() == text
+
+
+@pytest.mark.parametrize("has_theme", [False, True])
+@pytest.mark.parametrize("mode", ["fresh", "cached", "offline-refresh"])
+def test_sync_only_adopts_theme_from_its_selected_archive(
+    tmp_path, monkeypatch, has_theme, mode
+):
+    project = project_with_ref(tmp_path, "main")
+    path = project / "_quarto.yml"
+    original = "format:\n  html:\n    theme: cosmo\n"
+    path.write_text(original)
+    theme = (
+        {
+            f"{workspace_module.ASSET_DIR}_extensions/asta-theme/{name}": b"theme asset"
+            for name in ("light.scss", "dark.scss", "asta.css", "asta-head.html")
+        }
+        if has_theme
+        else {}
+    )
+    archive = _archive(theme)
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (b"rule", archive))
+    args = ["workspace", "sync", "--project", str(project)]
+    runner = CliRunner()
+    if mode != "fresh":
+        assert runner.invoke(cli, args).exit_code == 0
+        path.write_text(original)
+        if mode == "offline-refresh":
+
+            def offline(*_):
+                raise workspace_module.click.ClickException("offline")
+
+            monkeypatch.setattr(workspace_module, "load_asset", offline)
+            args += ["--refresh"]
+    result = runner.invoke(cli, args)
+    assert result.exit_code == 0, result.output
+    assert ("_extensions/asta-theme/light.scss" in path.read_text()) is has_theme
+    if not has_theme:
+        assert path.read_text() == original
+
+
+def test_sync_local_rules_do_not_adopt_managed_theme(tmp_path):
+    (tmp_path / "workspace.mk").write_text("# project rules\n")
+    path = tmp_path / "_quarto.yml"
+    original = "format:\n  html:\n    theme: cosmo\n"
+    path.write_text(original)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert path.read_text() == original
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["custom.html", "[one.html, two.html]", "\n      - one.html\n      - two.html"],
+)
+def test_theme_adoption_keeps_existing_head_resources(tmp_path, header):
+    import yaml
+
+    path = tmp_path / "_quarto.yml"
+    path.write_text(
+        f"format:\n  html:\n    theme: cosmo\n    include-in-header: {header}\n"
+    )
+    before = yaml.safe_load(path.read_text())["format"]["html"]["include-in-header"]
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    after = yaml.safe_load(path.read_text())["format"]["html"]["include-in-header"]
+    assert after == [
+        workspace_module.ASTA_HEADER,
+        *([before] if isinstance(before, str) else before),
+    ]

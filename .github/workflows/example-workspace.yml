@@ -17,6 +17,7 @@ on:
       - .github/workflows/example-workspace.yml
       - plugins/asta-tools/skills/workspace/assets/**
       - tests/test_example_workspace_workflow.py
+      - tests/browser/**
   workflow_dispatch:
 
 permissions:
@@ -50,10 +51,49 @@ jobs:
           make check
           make preview-artifact-check
           test -z "$(git status --porcelain --untracked-files=no)"
+      - if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-workspace-site
+          path: examples/workspace/_site
+          retention-days: 30
       - if: inputs.ref-name != ''
         uses: actions/upload-pages-artifact@v3
         with:
           path: examples/workspace/_site
+
+  theme:
+    needs: build
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: example-workspace-site
+          path: examples/workspace/_site
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - name: Install browser checks
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Check both themes and capture the live Asta comparison
+        working-directory: tests/browser
+        run: npm test -- ../../examples/workspace/_site artifacts https://asta.allen.ai
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-theme-screenshots
+          path: tests/browser/artifacts
+          retention-days: 30
 
   deploy:
     needs: build

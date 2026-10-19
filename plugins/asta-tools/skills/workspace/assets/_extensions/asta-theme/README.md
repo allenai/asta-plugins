@@ -1,13 +1,18 @@
 # Asta site theme
 
 Gives a workspace site Asta's look — colors, type and components from Asta's
-design system (`allenai/design`, `asta/DESIGN.md` + `asta/tokens.json`):
+design system ([`asta/DESIGN.md`](https://github.com/allenai/design/blob/main/asta/DESIGN.md)
+and [`asta/tokens.json`](https://github.com/allenai/design/blob/main/asta/tokens.json)):
 
 - `dark.scss` — the dark palette: cream text on extra-dark teal, green links.
-- `light.scss` — the reversed pair: dark-teal text on cream, pink links.
+- `light.scss` — the reversed pair: dark-teal text on cream, teal links. The
+  design system's pink `link-reversed` token has only 2.96:1 contrast on cream;
+  body links use its teal interactive token (8.00:1) for readable text.
 - `asta.css` — shared, mode-independent rules: one font (Manrope; Roboto Mono
   for code), one type scale, and a sticky section heading so a reader of a long
   page can see where they are. Toggling modes changes colors only.
+- `asta-head.html` — measures the navigation header so pinned headings remain
+  visible when it returns on upward scrolling or wraps on a smaller screen.
 
 `make workspace-assets` refreshes this directory from asta-plugins after
 `asta workspace sync`, like `_extensions/evidence`. The scaffold `_quarto.yml`
@@ -21,8 +26,16 @@ format:
       dark: [cosmo, _extensions/asta-theme/dark.scss]
     respect-user-color-scheme: true   # follow the reader's system setting
     css: _extensions/asta-theme/asta.css
+    include-in-header:
+      - _extensions/asta-theme/asta-head.html
 ```
 
 Quarto adds the light/dark toggle. To use a different theme, set your own
 `theme:` in `_quarto.yml`; to customize this one, commit a copy of
 `_extensions/asta-theme` and `make workspace-assets` stops refreshing it.
+
+Sync adopts this theme only when the selected source supplies its assets and
+`format.html.theme` is still the scaffold's `cosmo`. Older pins, other formats,
+and a local `workspace.mk` stay unchanged. Upgrade the workflow ref to a release
+with the theme before adopting it. Offline renders require a complete cached
+copy of every extension the configuration references.

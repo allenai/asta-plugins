@@ -1,9 +1,10 @@
 /*-- scss:defaults --*/
-// Light: the reversed pair, dark-teal text on cream; pink links (link-reversed). Colors from Asta's design system (allenai/design asta/tokens.json).
+// Light: the reversed pair, dark-teal text on cream. Use the teal interactive
+// token for readable links; the pink link-reversed token is only 2.96:1 on cream.
 // Type and spacing match the other mode exactly so toggling never moves the page.
 $asta-bg: #faf2e9;
 $asta-fg: #0a3235;
-$asta-link: #f0529c;
+$asta-link: #105257;
 $asta-accent: #105257;
 $asta-subtle: rgba(3, 38, 41, 0.06);
 $asta-border: rgba(3, 38, 41, 0.2);
@@ -11,8 +12,12 @@ $asta-border: rgba(3, 38, 41, 0.2);
 $body-bg: $asta-bg;
 $body-color: $asta-fg;
 $link-color: $asta-link;
-$primary: #105257;
+$primary: #0fcb8c;
 $secondary: $asta-subtle;
+$info: #2a88ef;
+$success: #549c35;
+$warning: #ffa31c;
+$danger: #d02f2e;
 $border-color: $asta-border;
 $border-radius: 4px;
 $font-family-sans-serif: Manrope, Arial, sans-serif;
@@ -38,4 +43,4 @@ a:hover { color: $asta-accent; }
 #TOC .nav-link.active { color: $asta-accent; border-color: $asta-accent; }
 blockquote { border-left-color: $asta-accent; }
 code:not(pre > code) { background: $asta-subtle; padding: 0.1em 0.3em; border-radius: 4px; }
-.btn-primary { --bs-btn-color: #faf2e9; --bs-btn-hover-bg: #3f7274; }
+.btn-primary { --bs-btn-color: #032629; --bs-btn-hover-color: #032629; --bs-btn-hover-bg: #6ddbb1; --bs-btn-hover-border-color: #6ddbb1; }

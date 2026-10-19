@@ -40,6 +40,7 @@ format:
     toc: true
     toc-location: left
     include-in-header:
+      - _extensions/asta-theme/asta-head.html
       - _extensions/evidence/evidence.head.html
     include-after-body:
       - _extensions/evidence/evidence.body.html

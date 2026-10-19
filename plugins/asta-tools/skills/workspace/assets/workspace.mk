@@ -18,8 +18,9 @@ ASTA_PLUGINS_REF ?=
 ASTA_PLUGINS_ARCHIVE_URL ?=
 
 # Managed Quarto extensions: the evidence filter and the Asta site theme. They
-# are maintained with the workspace skill rather than vendored into every report. Replace it only after a complete download and
-# extraction so a network failure cannot leave a partial extension behind.
+# are maintained with the workspace skill rather than vendored into every report.
+# Replace them only after a complete download and extraction so a network failure
+# cannot leave a partial extension behind.
 #
 # Offline-tolerant: if the network can't be reached (tag resolution or download
 # fails) but a previously fetched _extensions/evidence already exists, keep that
@@ -37,18 +38,28 @@ workspace-assets:
 		else exts="$$exts $$ext"; fi; \
 	done; \
 	[ -n "$$exts" ] || exit 0; \
+	required_exts=evidence; \
+	if [ -f _quarto.yml ] && sed '/^[[:space:]]*#/d' _quarto.yml | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
+		required_exts="$$required_exts asta-theme"; \
+	fi; \
 	ref='$(subst ','"'"',$(value ASTA_PLUGINS_REF))'; \
 	archive='$(subst ','"'"',$(value ASTA_WORKSPACE_ARCHIVE))'; \
 	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \
 	repo='$(subst ','"'"',$(value ASTA_PLUGINS_REPO))'; \
-	have_cache=0; \
-	if [ -d _extensions/evidence ] || [ -L _extensions/evidence ]; then have_cache=1; fi; \
+	have_cache=1; \
+	for ext in $$required_exts; do \
+		[ -d "_extensions/$$ext" ] || have_cache=0; \
+	done; \
+	case " $$required_exts " in *' asta-theme '*) \
+		for file in light.scss dark.scss asta.css asta-head.html; do \
+			[ -s "_extensions/asta-theme/$$file" ] || have_cache=0; \
+		done ;; esac; \
 	offline_ok() { \
 		if [ "$$have_cache" -eq 1 ]; then \
-			echo "workspace-assets: could not reach asta-plugins ($$1); keeping the cached _extensions/evidence — re-run with network access to refresh" >&2; \
+			echo "workspace-assets: could not reach asta-plugins ($$1); keeping the cached extensions — re-run with network access to refresh" >&2; \
 			exit 0; \
 		fi; \
-		echo "workspace-assets: could not reach asta-plugins ($$1) and no cached _extensions/evidence exists — network access is required for the first fetch" >&2; \
+		echo "workspace-assets: could not reach asta-plugins ($$1) and no cached copy of all required extensions exists — network access is required for the first fetch" >&2; \
 		exit 1; \
 	}; \
 	if [ -z "$$url" ]; then \
@@ -99,7 +110,8 @@ workspace-assets:
 	for ext in $$exts; do \
 		source_dir=$$(find "$$tmp" -type d -path "*/plugins/asta-tools/skills/workspace/assets/_extensions/$$ext" -print -quit); \
 		if [ -z "$$source_dir" ]; then \
-			[ "$$ext" != evidence ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
+			case " $$required_exts " in *" $$ext "*) \
+				echo "$$ext extension not found in asta-plugins@$${ref:-$$url}; select a ref that supplies it before rendering this _quarto.yml" >&2; exit 1 ;; esac; \
 			echo "workspace-assets: asta-plugins@$${ref:-$$url} has no $$ext extension; skipping" >&2; continue; \
 		fi; \
 		cp -R "$$source_dir" "$$tmp/new/$$ext"; \

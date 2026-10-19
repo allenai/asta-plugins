@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Workspace sites use Asta's light and dark palettes with a system-aware toggle,
+  consistent typography, and section headings that stay visible while reading.
+  Managed sync adopts the theme from compatible selected refs while preserving
+  custom themes, CSS, and other output formats.
+
 - Add `asta workspace bump-pin`: when `.github/workflows/docs.yml` pins a
   release older than the installed asta's final release, commit a move of the
   pin to that release as its own commit. The workspace skill runs it before an

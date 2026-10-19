@@ -1,5 +1,2 @@
-/* Asta palette on the light reading surface. */
-body { background: #faf2e9; color: #0a3235; }
-a, .sidebar-navigation a { color: #105257; }
-a:hover, a:focus-visible { color: #3f7274; }
-h1, h2, h3 { color: #032629; }
+/* Project-specific styles belong here. The managed Asta theme supplies colors
+   in both modes; avoid hard-coded page or link colors that override its palette. */

@@ -131,6 +131,30 @@ underline; hovering it shows the quote and a body-style citation, and the same
 popover appears on the `what-changed` diff so a reviewer can check the backing.
 Full reference (available after the first render or `make workspace-assets`): [`_extensions/evidence/README.md`](_extensions/evidence/README.md).
 
+## Site appearance
+
+Workspace sites use the Asta palette and components from
+[`allenai/design`](https://github.com/allenai/design/tree/main/asta). Light mode
+pairs cream with dark-teal text; dark mode pairs extra-dark teal with cream.
+Both modes keep the same Manrope typography and layout. The site follows the
+reader's system setting until they choose a mode with the theme toggle. Section
+headings remain visible while reading long sections.
+
+`asta workspace sync` adopts the theme for an existing site only when
+`format.html.theme` is still the scaffold's `cosmo` and the selected source
+contains the theme assets. An older pin keeps its current appearance; upgrade
+the ref in `.github/workflows/docs.yml` when ready. `make workspace-assets`
+fetches the theme and evidence extension together. Offline rendering needs a
+complete cached copy of both referenced extensions.
+
+To use another theme, set `format.html.theme` to your choice and remove
+`_extensions/asta-theme/asta.css` from `format.html.css` and `asta-head.html`
+from `format.html.include-in-header` to replace the shared typography and heading behavior. Sync preserves your theme
+and other formats. To customize the Asta theme itself, commit a copy of
+`_extensions/asta-theme`; asset refreshes preserve committed directories and
+development symlinks. Projects with local `workspace.mk` rules control their
+own migration.
+
 ## Edit without preview
 
 Edit `.qmd` files on GitHub directly or in any editor.
@@ -145,7 +169,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 | `make clean` | wipe Quarto build artifacts |
 | `make paper` | compile a separate LaTeX source paper using its latexmkrc |
 | `make paper-clean` | clean that paper's build outputs |
-| `make workspace-assets` | refresh the evidence extension at the managed ref selected in `docs.yml`; standalone rules default to the newest release tag |
+| `make workspace-assets` | refresh the evidence extension and Asta theme at the managed ref selected in `docs.yml`; standalone rules default to the newest release tag |
 | `make update-workspace` | refresh managed rules and helpers at the selected ref; available with `Makefile.managed` |
 | `make dev` | open VS Code attached to devcontainer |
 | `make deployed-url` | print deployed URL (needs auto-deploy below) |

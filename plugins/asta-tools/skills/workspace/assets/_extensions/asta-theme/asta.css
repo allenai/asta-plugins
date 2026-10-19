@@ -9,13 +9,17 @@ h4, h5, h6 { font-size: 1rem; font-weight: 600; }
 pre, code { font-size: 14px; }
 
 /* Keep the current section heading in view while reading a long page. */
+body { --asta-heading-top: 0px; }
+body:has(#quarto-header:not(.headroom--unpinned)) {
+  --asta-heading-top: var(--asta-header-height, 0px);
+}
 main section.level2 > h2 {
   position: sticky;
-  top: 0;
+  top: var(--asta-heading-top);
   z-index: 3;
   background: var(--bs-body-bg);
   margin-top: 0;
   padding-block: 0.5rem;
   border-bottom: 1px solid var(--bs-border-color);
 }
-main section.level3 > h3 { scroll-margin-top: 3.5rem; }
+main section.level3 > h3 { scroll-margin-top: calc(var(--asta-heading-top) + 3.5rem); }

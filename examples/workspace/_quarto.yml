@@ -5,6 +5,7 @@ project:
     - index.qmd
     - demo/index.qmd
     - lit-review/index.qmd
+    - appearance.qmd
     - paper/html/index.qmd
   resources:
     - paper/html/paper-viewer.js
@@ -33,6 +34,8 @@ website:
         href: demo/index.html
       - text: Lit review
         href: lit-review/index.html
+      - text: Appearance
+        href: appearance.html
       - text: Separate paper PDF
         href: paper-previews/paper/main.pdf
   sidebar:
@@ -40,6 +43,7 @@ website:
       - index.qmd
       - demo/index.qmd
       - lit-review/index.qmd
+      - appearance.qmd
 
 format:
   html:
@@ -55,6 +59,7 @@ format:
     toc: true
     toc-location: left
     include-in-header:
+      - _extensions/asta-theme/asta-head.html
       - _extensions/evidence/evidence.head.html
     include-after-body:
       - _extensions/evidence/evidence.body.html
