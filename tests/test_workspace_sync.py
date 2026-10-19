@@ -1655,8 +1655,7 @@ def test_theme_adoption_warns_once_about_project_css(tmp_path, capsys, css, file
     warning = capsys.readouterr().err
     if files:
         assert "Review its colors in dark and light mode" in warning
-        for name in files:
-            assert name in warning
+        assert warning.rstrip().endswith(", ".join(files))
     else:
         assert warning == ""
     assert "respect-user-color-scheme: false" in path.read_text()
@@ -1695,6 +1694,7 @@ def test_sync_only_adopts_theme_from_its_selected_archive(
     tmp_path, monkeypatch, missing_asset, mode
 ):
     project = project_with_ref(tmp_path, "main")
+    (project / "Makefile").write_text("include .asta/cache/workspace.mk\n")
     path = project / "_quarto.yml"
     original = "format:\n  html:\n    theme: cosmo\n"
     path.write_text(original)
@@ -1766,6 +1766,7 @@ def test_sync_ignores_fetched_theme_but_preserves_custom_copy(
     tmp_path, monkeypatch, customized, previous_ignore
 ):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "Makefile").write_text("include .asta/cache/workspace.mk\n")
     (tmp_path / "_quarto.yml").write_text("format:\n  html:\n    theme: cosmo\n")
     (tmp_path / ".gitignore").write_text(previous_ignore)
     if customized:
@@ -1784,3 +1785,45 @@ def test_sync_ignores_fetched_theme_but_preserves_custom_copy(
     assert ignore.count("_extensions/asta-theme/") == (0 if customized else 1)
     assert ignore.startswith(previous_ignore)
     assert not ignore.startswith("\n")
+
+
+@pytest.mark.parametrize(
+    "makefile",
+    [
+        None,
+        "workspace-assets:\n\t@echo evidence only\n",
+        "# include .asta/cache/workspace.mk\n",
+    ],
+)
+def test_sync_does_not_adopt_theme_without_managed_asset_rules(
+    tmp_path, monkeypatch, makefile
+):
+    project = project_with_ref(tmp_path, "main")
+    if makefile is not None:
+        (project / "Makefile").write_text(makefile)
+    config = project / "_quarto.yml"
+    original = "format:\n  html:\n    theme: cosmo\n"
+    config.write_text(original)
+    archive = _archive(
+        {
+            f"{workspace_module.ASSET_DIR}_extensions/asta-theme/{name}": b"theme asset"
+            for name in workspace_module.ASTA_THEME_FILES
+        }
+    )
+    monkeypatch.setattr(workspace_module, "load_asset", lambda *_: (b"rule", archive))
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code == 0, result.output
+    assert config.read_text() == original
+    assert "theme adoption skipped" in result.output.lower()
+    assert "include .asta/cache/workspace.mk" in result.output
+    assert not (project / ".gitignore").exists()
+
+
+def test_all_asset_installers_require_the_same_theme_files():
+    import re
+
+    assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
+    for name in ("workspace.mk", "Makefile"):
+        match = re.search(r'theme_files="([^"]+)"', (assets / name).read_text())
+        assert match is not None
+        assert tuple(match[1].split()) == workspace_module.ASTA_THEME_FILES

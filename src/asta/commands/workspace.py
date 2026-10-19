@@ -281,6 +281,19 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
     archive = sync_workspace(project, refresh, require_scripts)
     if archive is not None and archive_has_asta_theme(archive):
+        makefile = project.resolve() / "Makefile"
+        if not makefile.is_file() or not re.search(
+            r"^include[ \t]+\.asta/cache/workspace\.mk[ \t]*(?:#.*)?$",
+            makefile.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        ):
+            click.echo(
+                "Warning: theme adoption skipped: Makefile must use "
+                "'include .asta/cache/workspace.mk' to fetch managed theme assets. "
+                "Keep your current theme or migrate to the managed Makefile first.",
+                err=True,
+            )
+            return
         adopt_asta_theme(project)
         config = project.resolve() / "_quarto.yml"
         ignore = project.resolve() / ".gitignore"
@@ -450,7 +463,11 @@ def adopt_asta_theme(project: Path) -> bool:
                 own = f"      - {value}\n" if value else entry[2]
                 joined = f"    {key}:\n      - {resource}\n{own}"
             if key == "css":
-                project_css = " ".join(own.splitlines()).strip()
+                project_css = (
+                    own
+                    if value.startswith("[")
+                    else ", ".join(re.findall(r"^\s*-\s*(.+)$", own, re.MULTILINE))
+                )
             html = html[: entry.start()] + joined + html[entry.end() :]
     text = text[:start] + html + text[end:]
     _atomic_write(config, text.encode("utf-8"))

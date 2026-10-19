@@ -21,6 +21,7 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 # fails) but all extensions referenced by _quarto.yml are cached, keep those
 # copies and warn instead of failing. Missing required cached assets are a hard
 # error. The theme ships its own fonts, so cached copies render offline.
+# Keep .evidence-install.lock to serialize installs with older workspace rules.
 workspace-assets:
 	@set -eu; \
 	theme_files="light.scss dark.scss asta.css asta-head.html fonts/Manrope.woff2 fonts/RobotoMono.woff2 fonts/Manrope-OFL.txt fonts/RobotoMono-OFL.txt"; \
@@ -44,7 +45,7 @@ workspace-assets:
 	for ext in $$required_exts; do \
 		[ -d "_extensions/$$ext" ] || have_cache=0; \
 	done; \
-	case " $$required_exts " in *' asta-theme '*) \
+	case " $$exts " in *' asta-theme '*) \
 		for file in $$theme_files; do \
 			[ -s "_extensions/asta-theme/$$file" ] || have_cache=0; \
 		done ;; esac; \

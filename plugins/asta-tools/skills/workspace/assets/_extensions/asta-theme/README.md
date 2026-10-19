@@ -38,13 +38,19 @@ Quarto adds the light/dark toggle. To use a different theme, set your own
 `theme:` in `_quarto.yml`; to customize this one, commit a copy of
 `_extensions/asta-theme` and `make workspace-assets` stops refreshing it.
 
-Sync adopts this theme only when the selected source supplies its assets and
+Sync adopts this theme only when the project's Makefile includes the managed
+`.asta/cache/workspace.mk` rules, the selected source supplies its assets, and
 `format.html.theme` is still the scaffold's `cosmo`. Older pins, other formats,
 and a local `workspace.mk` stay unchanged. Upgrade the workflow ref to a release
 with the theme before adopting it. Offline renders require a complete cached
 copy of every extension the configuration references.
+Committed or symlinked theme copies keep their project-defined file set, including
+offline; the bundled-font completeness checks apply only to managed copies.
 
 Existing project CSS remains after `asta.css`; sync warns with its names when
 adopting the theme. Check any hard-coded colors in those files in both modes.
 Projects using another theme without references to Asta's assets do not fetch
 this extension.
+Asset detection scans root `_quarto*.yml` files. If the only reference is in
+page front matter, `_metadata.yml`, or other included YAML, also add the theme
+stylesheet to the root HTML configuration to enable fetching it.

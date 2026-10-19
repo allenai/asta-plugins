@@ -144,8 +144,10 @@ def test_offline_render_needs_all_referenced_assets(tmp_path, cache):
     assert (result.returncode == 0) is (cache == "complete")
 
 
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize("offline", [False, True])
 @pytest.mark.parametrize("customization", ["symlink", "committed"])
-def test_custom_theme_survives_refresh(tmp_path, customization):
+def test_custom_theme_survives_refresh(tmp_path, customization, offline, rules):
     project = tmp_path / "project"
     target = project / "_extensions/asta-theme"
     target.parent.mkdir(parents=True)
@@ -158,14 +160,17 @@ def test_custom_theme_survives_refresh(tmp_path, customization):
         target.mkdir()
         subprocess.run(["git", "init", "-q", str(project)], check=True)
     (target / "dark.scss").write_text("my theme")
+    shutil.copytree(ASSETS / "_extensions/evidence", project / "_extensions/evidence")
     if customization == "committed":
         subprocess.run(
             ["git", "-C", str(project), "add", "_extensions/asta-theme/dark.scss"],
             check=True,
         )
-    result = install(project, source_archive(tmp_path))
+    archive = tmp_path / "missing.tar.gz" if offline else source_archive(tmp_path)
+    result = install(project, archive, rules)
     assert result.returncode == 0, result.stderr
     assert (target / "dark.scss").read_text() == "my theme"
+    assert sorted(path.name for path in target.iterdir()) == ["dark.scss"]
 
 
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])

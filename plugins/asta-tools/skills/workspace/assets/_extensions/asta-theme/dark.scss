@@ -43,7 +43,7 @@ $navbar-fg: $asta-fg;
 
 /*-- scss:rules --*/
 a { text-underline-offset: 2px; }
-a:hover { color: $asta-accent; }
+a:hover { color: #6ddbb1; }
 .sidebar-navigation .sidebar-link.active,
 #TOC .nav-link.active { color: $asta-accent; border-color: $asta-accent; }
 blockquote { border-left-color: $asta-accent; }

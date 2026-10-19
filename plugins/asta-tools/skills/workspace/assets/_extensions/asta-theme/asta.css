@@ -27,6 +27,7 @@ body { --asta-heading-top: 0px; }
 body:has(#quarto-header:not(.headroom--unpinned)) {
   --asta-heading-top: var(--asta-header-height, 0px);
 }
+main section.level2 { margin-top: 1.5rem; }
 main section.level2 > h2 {
   position: sticky;
   top: var(--asta-heading-top);

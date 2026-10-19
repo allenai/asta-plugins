@@ -65,6 +65,19 @@ async function settled(page) {
   await page.waitForTimeout(200); // finish Quarto's theme and navbar updates
 }
 
+async function assertBundledFonts(page) {
+  const loaded = await page.evaluate(async () => {
+    const families = ["Manrope", "Roboto Mono"];
+    return Promise.all(families.map(async (family) => {
+      const faces = await document.fonts.load(`16px "${family}"`);
+      return { family, count: faces.length, loaded: faces.every((face) => face.status === "loaded") };
+    }));
+  });
+  for (const face of loaded) {
+    assert.ok(face.count > 0 && face.loaded, `${face.family} must load from the rendered site, without fallback`);
+  }
+}
+
 async function metrics(page) {
   return page.evaluate(() => {
     const elements = [...document.querySelectorAll("main h1, main h2, main h3, main p, main li, main pre")];
@@ -87,6 +100,7 @@ async function assertMode(page, mode) {
   assert.equal(colors.background, mode === "light" ? "rgb(250, 242, 233)" : "rgb(3, 38, 41)");
   assert.equal(colors.text, mode === "light" ? "rgb(10, 50, 53)" : "rgb(250, 242, 233)");
   assert.match(colors.font, /Manrope/);
+  await assertBundledFonts(page);
   const background = rgba(colors.background);
   assert.ok(contrast(rgba(colors.link), background) >= 4.5, "Body links must remain readable");
   const code = await page.locator("main p code:not(.sourceCode)").first().evaluate((el) => {
@@ -128,6 +142,10 @@ try {
   browser = await chromium.launch({ headless: true });
   for (const mode of ["light", "dark"]) {
     const context = await browser.newContext({ viewport: { width: 1100, height: 900 }, colorScheme: mode, deviceScaleFactor: 1 });
+    const fontResponses = [];
+    context.on("response", (response) => {
+      if (response.request().resourceType() === "font") fontResponses.push(response);
+    });
     const page = await context.newPage();
     await page.goto(`${base}/appearance.html`, { waitUntil: "networkidle" });
     // A fresh visit starts dark even when the operating system prefers light.
@@ -136,6 +154,27 @@ try {
     await assertMode(page, "dark");
     if (mode === "light") await page.locator(".quarto-color-scheme-toggle:visible").first().click();
     results.modes[mode] = await assertMode(page, mode);
+    for (const name of ["Manrope.woff2", "RobotoMono.woff2"]) {
+      assert.ok(fontResponses.some((response) => {
+        const url = new URL(response.url());
+        return url.origin === base && url.pathname.endsWith(`/fonts/${name}`) && response.status() === 200;
+      }), `${name} must be served successfully by the site`);
+    }
+    assert.ok(fontResponses.every((response) => new URL(response.url()).origin === base), "Fonts must not contact another host");
+    const link = page.locator("main a:not(.anchorjs-link)").first();
+    const linkColor = await link.evaluate((el) => getComputedStyle(el).color);
+    await link.hover();
+    assert.notEqual(await link.evaluate((el) => getComputedStyle(el).color), linkColor, "Links must show hover feedback");
+    await page.mouse.move(0, 0);
+    const primaryText = await page.evaluate(() => {
+      const text = document.createElement("span");
+      text.className = "text-primary";
+      document.querySelector("main").append(text);
+      const color = getComputedStyle(text).color;
+      text.remove();
+      return color;
+    });
+    assert.ok(contrast(rgba(primaryText), rgba(results.modes[mode].background)) >= 4.5, "Primary text must be readable");
     const before = await metrics(page);
     const toggle = page.locator(".quarto-color-scheme-toggle:visible").first();
     assert.equal(await toggle.count(), 1, "Quarto must expose a visible theme toggle");
@@ -250,6 +289,7 @@ try {
     const page = await context.newPage();
     await page.goto(`${base}/what-changed-theme-check.html`, { waitUntil: "networkidle" });
     await settled(page);
+    await assertBundledFonts(page);
     const actual = await page.evaluate(() => {
       const css = (el) => getComputedStyle(el);
       const body = css(document.body);

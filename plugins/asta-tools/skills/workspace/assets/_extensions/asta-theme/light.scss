@@ -12,7 +12,7 @@ $asta-border: rgba(3, 38, 41, 0.2);
 $body-bg: $asta-bg;
 $body-color: $asta-fg;
 $link-color: $asta-link;
-$primary: #0fcb8c;
+$primary: #105257; // readable text-primary on cream; buttons keep Asta green
 $secondary: #cbd2cc; // opaque Asta token for Bootstrap contrast calculations
 $info: #2a88ef;
 $success: #549c35;
@@ -44,9 +44,9 @@ $navbar-fg: $asta-fg;
 
 /*-- scss:rules --*/
 a { text-underline-offset: 2px; }
-a:hover { color: $asta-accent; }
+a:hover { color: #3f7274; }
 .sidebar-navigation .sidebar-link.active,
 #TOC .nav-link.active { color: $asta-accent; border-color: $asta-accent; }
 blockquote { border-left-color: $asta-accent; }
 code:not(pre > code) { background: $asta-subtle; padding: 0.1em 0.3em; border-radius: 4px; }
-.btn-primary { --bs-btn-color: #032629; --bs-btn-hover-color: #032629; --bs-btn-hover-bg: #6ddbb1; --bs-btn-hover-border-color: #6ddbb1; }
+.btn-primary { --bs-btn-color: #032629; --bs-btn-bg: #0fcb8c; --bs-btn-border-color: #0fcb8c; --bs-btn-hover-color: #032629; --bs-btn-hover-bg: #6ddbb1; --bs-btn-hover-border-color: #6ddbb1; --bs-btn-active-color: #032629; --bs-btn-active-bg: #0fcb8c; --bs-btn-active-border-color: #0fcb8c; --bs-btn-disabled-color: #032629; --bs-btn-disabled-bg: #0fcb8c; --bs-btn-disabled-border-color: #0fcb8c; }
