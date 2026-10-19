@@ -79,3 +79,19 @@ for (const scenario of [
     assertTheme(document, scenario.mode);
   });
 }
+
+for (const mode of ["light", "dark"]) {
+  test(`single ${mode} theme ignores a saved choice without matching styles`, () => {
+    const { document } = parseHTML(generatedPage);
+    document.querySelectorAll("link.quarto-color-alternate").forEach((link) => link.remove());
+    document.documentElement.dataset.wcMode = mode;
+    document.body.className = `quarto-${mode}`;
+    document.querySelector('link[href="base.css"]').dataset.mode = mode;
+    const window = { localStorage: { getItem: () => mode === "dark" ? "default" : "alternate" } };
+    new Function("document", "window", modeScript)(document, window);
+    assert.equal(document.documentElement.dataset.wcMode, mode);
+    assert.equal(document.body.className, `quarto-${mode}`);
+    assert.equal(document.querySelector('link[href="base.css"]').rel, "stylesheet");
+    assert.equal(document.querySelector('link[href="extra.css"]').rel, "disabled-stylesheet");
+  });
+}

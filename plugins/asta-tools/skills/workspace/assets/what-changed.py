@@ -924,9 +924,14 @@ MODE_JS = """
   let stored = null;
   try { stored = window.localStorage.getItem("quarto-color-scheme"); } catch (e) {}
   let dark = root.dataset.wcMode === "dark";
-  if (stored === "alternate" || stored === "default") dark = stored === "alternate";
-  else if (root.dataset.wcFollowSystem === "true")
-    dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  // A single-theme site has no toggle; a preference saved on another page
+  // must not change the diff palette without a corresponding stylesheet.
+  const hasAlternate = document.querySelector("link.quarto-color-scheme.quarto-color-alternate:not(.quarto-color-scheme-extra)");
+  if (hasAlternate) {
+    if (stored === "alternate" || stored === "default") dark = stored === "alternate";
+    else if (root.dataset.wcFollowSystem === "true")
+      dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
   const mode = dark ? "dark" : "light";
   root.dataset.wcMode = mode;
   document.querySelectorAll("link.quarto-color-scheme, link.quarto-color-scheme-extra").forEach((link) => {
