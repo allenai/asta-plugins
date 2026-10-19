@@ -89,7 +89,12 @@ with the pair's existing credentials before adopting a release; see
 ## Research project documentation
 
 The [`asta-tools:workspace`](plugins/asta-tools/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project. Reports are generated with Quarto and
-publised to GitHub Pages.
+published to GitHub Pages.
+
+See it in the example workspace, rebuilt from each release: [its site](https://allenai.github.io/asta-plugins/),
+with a LaTeX paper and a saved [What changed](https://allenai.github.io/asta-plugins/demo/) demo;
+[its paper in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f)
+(view only); and [its source](examples/workspace/).
 
 The `ghcr.io/allenai/asta` Docker image is published with the `asta` CLI, skills, and Quarto pre-installed 
 
