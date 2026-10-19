@@ -1,0 +1,41 @@
+/*-- scss:defaults --*/
+// Light: the reversed pair, dark-teal text on cream; pink links (link-reversed). Colors from Asta's design system (allenai/design asta/tokens.json).
+// Type and spacing match the other mode exactly so toggling never moves the page.
+$asta-bg: #faf2e9;
+$asta-fg: #0a3235;
+$asta-link: #f0529c;
+$asta-accent: #105257;
+$asta-subtle: rgba(3, 38, 41, 0.06);
+$asta-border: rgba(3, 38, 41, 0.2);
+
+$body-bg: $asta-bg;
+$body-color: $asta-fg;
+$link-color: $asta-link;
+$primary: #105257;
+$secondary: $asta-subtle;
+$border-color: $asta-border;
+$border-radius: 4px;
+$font-family-sans-serif: Manrope, Arial, sans-serif;
+$headings-font-family: $font-family-sans-serif;
+$font-family-monospace: "Roboto Mono", monospace;
+$font-size-root: 16px;
+$headings-font-weight: 700;
+$headings-color: $asta-fg;
+$code-color: $asta-fg;
+$code-block-bg: $asta-subtle;
+$sidebar-bg: $asta-bg;
+$sidebar-fg: $asta-fg;
+$sidebar-hl: $asta-accent;
+$toc-color: $asta-fg;
+$footer-bg: $asta-bg;
+$navbar-bg: $asta-bg;
+$navbar-fg: $asta-fg;
+
+/*-- scss:rules --*/
+a { text-underline-offset: 2px; }
+a:hover { color: $asta-accent; }
+.sidebar-navigation .sidebar-link.active,
+#TOC .nav-link.active { color: $asta-accent; border-color: $asta-accent; }
+blockquote { border-left-color: $asta-accent; }
+code:not(pre > code) { background: $asta-subtle; padding: 0.1em 0.3em; border-radius: 4px; }
+.btn-primary { --bs-btn-color: #faf2e9; --bs-btn-hover-bg: #3f7274; }

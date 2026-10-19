@@ -17,22 +17,26 @@ ASTA_PLUGINS_REF ?=
 # a local archive). When set, it is used verbatim and ref resolution is skipped.
 ASTA_PLUGINS_ARCHIVE_URL ?=
 
-# The evidence extension is maintained with the workspace skill rather than
-# vendored into every report. Replace it only after a complete download and
+# Managed Quarto extensions: the evidence filter and the Asta site theme. They
+# are maintained with the workspace skill rather than vendored into every report. Replace it only after a complete download and
 # extraction so a network failure cannot leave a partial extension behind.
 #
 # Offline-tolerant: if the network can't be reached (tag resolution or download
 # fails) but a previously fetched _extensions/evidence already exists, keep that
 # cached copy and warn instead of failing — so a render works on a plane. Only a
 # first fetch with no cache is a hard error.
+ASTA_WORKSPACE_EXTENSIONS := evidence asta-theme
 workspace-assets:
 	@set -eu; \
-	if [ -L _extensions/evidence ]; then \
-		echo "workspace-assets: _extensions/evidence is a symlink (local development); not refreshing"; exit 0; \
-	fi; \
-	if git ls-files --error-unmatch _extensions/evidence >/dev/null 2>&1; then \
-		echo "workspace-assets: _extensions/evidence is committed (customized copy); not refreshing"; exit 0; \
-	fi; \
+	exts=; \
+	for ext in $(ASTA_WORKSPACE_EXTENSIONS); do \
+		if [ -L "_extensions/$$ext" ]; then \
+			echo "workspace-assets: _extensions/$$ext is a symlink (local development); not refreshing"; \
+		elif git ls-files --error-unmatch "_extensions/$$ext" >/dev/null 2>&1; then \
+			echo "workspace-assets: _extensions/$$ext is committed (customized copy); not refreshing"; \
+		else exts="$$exts $$ext"; fi; \
+	done; \
+	[ -n "$$exts" ] || exit 0; \
 	ref='$(subst ','"'"',$(value ASTA_PLUGINS_REF))'; \
 	archive='$(subst ','"'"',$(value ASTA_WORKSPACE_ARCHIVE))'; \
 	url='$(subst ','"'"',$(value ASTA_PLUGINS_ARCHIVE_URL))'; \
@@ -65,14 +69,18 @@ workspace-assets:
 	fi; \
 	tmp=$$(mktemp -d); \
 	lock=_extensions/.evidence-install.lock; \
-	backup="$$tmp/previous-evidence"; \
+	backup="$$tmp/previous"; \
 	lock_held=0; \
 	cleanup() { \
 		status=$$?; \
 		trap - 0 1 2 15; \
-		if [ "$$status" -ne 0 ] && { [ -e "$$backup" ] || [ -L "$$backup" ]; }; then \
-			rm -rf _extensions/evidence; \
-			mv "$$backup" _extensions/evidence || status=1; \
+		if [ "$$status" -ne 0 ]; then \
+			for ext in $$exts; do \
+				if [ -e "$$backup/$$ext" ] || [ -L "$$backup/$$ext" ]; then \
+					rm -rf "_extensions/$$ext"; \
+					mv "$$backup/$$ext" "_extensions/$$ext" || status=1; \
+				fi; \
+			done; \
 		fi; \
 		[ "$$lock_held" -eq 0 ] || rmdir "$$lock" 2>/dev/null || true; \
 		rm -rf "$$tmp"; \
@@ -87,17 +95,26 @@ workspace-assets:
 		curl -fsSL "$$url" -o "$$tmp/asta-plugins.tar.gz" || offline_ok "download from $$url failed"; \
 	fi; \
 	tar -xzf "$$tmp/asta-plugins.tar.gz" -C "$$tmp"; \
-	source_dir=$$(find "$$tmp" -type d -path '*/plugins/asta-tools/skills/workspace/assets/_extensions/evidence' -print -quit); \
-	[ -n "$$source_dir" ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
-	cp -R "$$source_dir" "$$tmp/evidence"; \
+	mkdir "$$tmp/new" "$$backup"; \
+	for ext in $$exts; do \
+		source_dir=$$(find "$$tmp" -type d -path "*/plugins/asta-tools/skills/workspace/assets/_extensions/$$ext" -print -quit); \
+		if [ -z "$$source_dir" ]; then \
+			[ "$$ext" != evidence ] || { echo "evidence extension not found in asta-plugins@$${ref:-$$url}" >&2; exit 1; }; \
+			echo "workspace-assets: asta-plugins@$${ref:-$$url} has no $$ext extension; skipping" >&2; continue; \
+		fi; \
+		cp -R "$$source_dir" "$$tmp/new/$$ext"; \
+	done; \
 	mkdir -p _extensions; \
 	mkdir "$$lock" 2>/dev/null || { echo "another workspace-assets install is in progress" >&2; exit 1; }; \
 	lock_held=1; \
-	if [ -e _extensions/evidence ] || [ -L _extensions/evidence ]; then \
-		mv _extensions/evidence "$$backup"; \
-	fi; \
-	mv "$$tmp/evidence" _extensions/evidence; \
-	echo "workspace-assets: installed evidence extension from asta-plugins@$${ref:-$$url}"
+	for ext in $$exts; do \
+		[ -d "$$tmp/new/$$ext" ] || continue; \
+		if [ -e "_extensions/$$ext" ] || [ -L "_extensions/$$ext" ]; then \
+			mv "_extensions/$$ext" "$$backup/$$ext"; \
+		fi; \
+		mv "$$tmp/new/$$ext" "_extensions/$$ext"; \
+		echo "workspace-assets: installed $$ext extension from asta-plugins@$${ref:-$$url}"; \
+	done
 
 workspace-viewers:
 	@set -eu; \
