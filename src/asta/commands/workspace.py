@@ -286,11 +286,11 @@ def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
 
 SCAFFOLD_THEME = "    theme: cosmo\n"
 ASTA_THEME = """    theme:
-      light: [cosmo, _extensions/asta-theme/light.scss]
       dark: [cosmo, _extensions/asta-theme/dark.scss]
-    # Asta's look (_extensions/asta-theme/README.md): follow the reader's
-    # system setting, with a toggle. Set your own theme here to replace it.
-    respect-user-color-scheme: true
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    # Asta's look: start dark, with a persistent toggle to light.
+    # Set your own theme here to replace it.
+    respect-user-color-scheme: false
 """
 ASTA_CSS = "_extensions/asta-theme/asta.css"
 ASTA_HEADER = "_extensions/asta-theme/asta-head.html"
@@ -356,7 +356,7 @@ def adopt_asta_theme(project: Path) -> bool:
         return False
     if re.search(r"^    respect-user-color-scheme:", html, re.MULTILINE):
         # An explicit project preference wins over the managed default.
-        theme = ASTA_THEME.replace("    respect-user-color-scheme: true\n", "")
+        theme = ASTA_THEME.replace("    respect-user-color-scheme: false\n", "")
     else:
         theme = ASTA_THEME
     html = re.sub(

@@ -22,9 +22,9 @@ wires it in:
 format:
   html:
     theme:
-      light: [cosmo, _extensions/asta-theme/light.scss]
       dark: [cosmo, _extensions/asta-theme/dark.scss]
-    respect-user-color-scheme: true   # follow the reader's system setting
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    respect-user-color-scheme: false  # start dark; keep a chosen light mode
     css: _extensions/asta-theme/asta.css
     include-in-header:
       - _extensions/asta-theme/asta-head.html

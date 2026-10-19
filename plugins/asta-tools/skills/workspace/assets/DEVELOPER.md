@@ -136,8 +136,8 @@ Full reference (available after the first render or `make workspace-assets`): [`
 Workspace sites use the Asta palette and components from
 [`allenai/design`](https://github.com/allenai/design/tree/main/asta). Light mode
 pairs cream with dark-teal text; dark mode pairs extra-dark teal with cream.
-Both modes keep the same Manrope typography and layout. The site follows the
-reader's system setting until they choose a mode with the theme toggle. Section
+Both modes keep the same Manrope typography and layout. The site starts in dark mode regardless of the
+reader's system setting, and remembers a light mode chosen with the theme toggle. Section
 headings remain visible while reading long sections.
 
 `asta workspace sync` adopts the theme for an existing site only when

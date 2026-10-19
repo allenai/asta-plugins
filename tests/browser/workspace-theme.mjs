@@ -86,6 +86,11 @@ try {
     const context = await browser.newContext({ viewport: { width: 1100, height: 900 }, colorScheme: mode, deviceScaleFactor: 1 });
     const page = await context.newPage();
     await page.goto(`${base}/appearance.html`, { waitUntil: "networkidle" });
+    // A fresh visit starts dark even when the operating system prefers light.
+    await assertMode(page, "dark");
+    await page.emulateMedia({ colorScheme: mode === "light" ? "dark" : "light" });
+    await assertMode(page, "dark");
+    if (mode === "light") await page.locator(".quarto-color-scheme-toggle:visible").first().click();
     results.modes[mode] = await assertMode(page, mode);
     const before = await metrics(page);
     const toggle = page.locator(".quarto-color-scheme-toggle:visible").first();
@@ -104,6 +109,35 @@ try {
     await page.reload({ waitUntil: "networkidle" });
     await assertMode(page, other); // explicit toggle persists across navigation
     await page.locator(".quarto-color-scheme-toggle:visible").first().click();
+    await assertMode(page, mode);
+    // Real evidence markup, with both pointer and keyboard access.
+    await page.goto(`${base}/lit-review/index.html`, { waitUntil: "networkidle" });
+    await page.waitForFunction((mode) => document.body.classList.contains(`quarto-${mode}`), mode);
+    await settled(page);
+    const evidence = page.locator(".ev").first();
+    const evidenceColors = await evidence.evaluate((el) => {
+      const css = getComputedStyle(el);
+      return { border: css.borderBottomColor, background: getComputedStyle(document.body).backgroundColor };
+    });
+    assert.ok(contrast(rgba(evidenceColors.border), rgba(evidenceColors.background)) >= 3, "Evidence underline must be visible");
+    for (const interaction of ["hover", "focus"]) {
+      await page.mouse.move(0, 0);
+      if (interaction === "hover") await evidence.hover();
+      else await evidence.focus();
+      await page.waitForTimeout(400);
+      assert.ok(await evidence.locator(".ev-card").isVisible(), `Evidence quote must open on ${interaction}`);
+      const ratios = await evidence.locator(".ev-card").evaluate((card) => {
+        const bg = getComputedStyle(card).backgroundColor;
+        return [...card.querySelectorAll(".ev-quote, .ev-pop-src, a, .ev-src-label, .ev-prov-body")]
+          .map((el) => ({ color: getComputedStyle(el).color, background: bg }));
+      });
+      assert.ok(ratios.length >= 2, "Check the quote and citation");
+      for (const colors of ratios) {
+        const bg = rgba(colors.background, rgba(evidenceColors.background));
+        assert.ok(contrast(rgba(colors.color, bg), bg) >= 4.5, `Evidence text must be readable in ${mode}`);
+      }
+    }
+    await page.goto(`${base}/appearance.html`, { waitUntil: "networkidle" });
     await assertMode(page, mode);
     const workspace = await page.screenshot({ path: `${output}/workspace-${mode}.png` });
 
@@ -159,7 +193,7 @@ try {
     await context.close();
   }
   await writeFile(`${output}/checks.json`, JSON.stringify(results, null, 2));
-  console.log("Theme checks passed: system preference, persistent toggle, identical layout, and visible section headings in both modes.");
+  console.log("Theme checks passed: dark default regardless of system preference, persistent toggle, evidence contrast, identical layout, and visible headings in both modes.");
 } finally {
   await browser.close();
   server.kill();

@@ -85,9 +85,9 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Check both themes and capture the live Asta comparison
+      - name: Check both themes and evidence readability
         working-directory: tests/browser
-        run: npm test -- ../../examples/workspace/_site artifacts https://asta.allen.ai
+        run: npm test -- ../../examples/workspace/_site artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

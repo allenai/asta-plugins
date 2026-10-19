@@ -31,11 +31,11 @@ website:
 format:
   html:
     theme:
-      light: [cosmo, _extensions/asta-theme/light.scss]
       dark: [cosmo, _extensions/asta-theme/dark.scss]
-    # Asta's look (_extensions/asta-theme/README.md): follow the reader's
-    # system setting, with a toggle. Set your own theme here to replace it.
-    respect-user-color-scheme: true
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    # Asta's look: start dark, with a persistent toggle to light.
+    # Set your own theme here to replace it.
+    respect-user-color-scheme: false
     css: _extensions/asta-theme/asta.css
     toc: true
     toc-location: left

@@ -1529,7 +1529,8 @@ def test_adopt_asta_theme_upgrades_only_the_scaffold_default(tmp_path: Path) -> 
     assert workspace_module.adopt_asta_theme(tmp_path)
     text = config.read_text()
     assert "_extensions/asta-theme/light.scss" in text
-    assert "respect-user-color-scheme: true" in text
+    assert "respect-user-color-scheme: false" in text
+    assert text.index("      dark:") < text.index("      light:")
     assert "    toc: true\n" in text
     assert not workspace_module.adopt_asta_theme(tmp_path)
     assert config.read_text() == text
