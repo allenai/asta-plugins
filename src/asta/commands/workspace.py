@@ -290,8 +290,8 @@ ASTA_THEME = """    theme:
     # Asta's look (_extensions/asta-theme/README.md): follow the reader's
     # system setting, with a toggle. Set your own theme here to replace it.
     respect-user-color-scheme: true
-    css: _extensions/asta-theme/asta.css
 """
+ASTA_CSS = "_extensions/asta-theme/asta.css"
 
 
 def adopt_asta_theme(project: Path) -> bool:
@@ -305,8 +305,19 @@ def adopt_asta_theme(project: Path) -> bool:
     text = config.read_text()
     if "asta-theme" in text or text.count(SCAFFOLD_THEME) != 1:
         return False
-    _atomic_write(config, text.replace(SCAFFOLD_THEME, ASTA_THEME).encode())
-    click.echo("Gave the site Asta's look in _quarto.yml; set your own theme: to opt out")
+    text = text.replace(SCAFFOLD_THEME, ASTA_THEME)
+    # A second css: key is invalid YAML, so join a project's own stylesheets.
+    css = re.search(r"^    css:(.*)\n((?:      - .*\n)*)", text, re.MULTILINE)
+    if css is None:
+        text = text.replace(ASTA_THEME, f"{ASTA_THEME}    css: {ASTA_CSS}\n")
+    else:
+        own = f"      - {css[1].strip()}\n" if css[1].strip() else css[2]
+        joined = f"    css:\n      - {ASTA_CSS}\n{own}"
+        text = text[: css.start()] + joined + text[css.end() :]
+    _atomic_write(config, text.encode())
+    click.echo(
+        "Gave the site Asta's look in _quarto.yml; set your own theme: to opt out"
+    )
     return True
 
 

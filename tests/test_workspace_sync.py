@@ -1534,6 +1534,26 @@ def test_adopt_asta_theme_upgrades_only_the_scaffold_default(tmp_path: Path) -> 
     assert not workspace_module.adopt_asta_theme(tmp_path)
     assert config.read_text() == text
 
+    config.write_text("format:\n  html:\n    theme: cosmo\n    css: styles.css\n")
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    text = config.read_text()
+    assert text.count("css:") == 1
+    assert (
+        "    css:\n      - _extensions/asta-theme/asta.css\n      - styles.css\n"
+        in text
+    )
+
+    config.write_text(
+        "format:\n  html:\n    theme: cosmo\n    css:\n      - a.css\n      - b.css\n"
+    )
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    text = config.read_text()
+    assert text.count("css:") == 1
+    assert (
+        "    css:\n      - _extensions/asta-theme/asta.css\n      - a.css\n      - b.css\n"
+        in text
+    )
+
     config.write_text("format:\n  html:\n    theme: flatly\n")
     assert not workspace_module.adopt_asta_theme(tmp_path)
     assert config.read_text() == "format:\n  html:\n    theme: flatly\n"
@@ -1543,7 +1563,10 @@ def test_scaffold_quarto_config_uses_the_managed_asta_theme() -> None:
     root = Path(__file__).resolve().parents[1]
     assets = root / "plugins/asta-tools/skills/workspace/assets"
     for config in (assets / "_quarto.yml", root / "examples/workspace/_quarto.yml"):
-        assert workspace_module.ASTA_THEME in config.read_text()
+        text = config.read_text()
+        assert workspace_module.ASTA_THEME in text
+        assert workspace_module.ASTA_CSS in text
+        assert text.count("    css:") == 1  # a repeated key fails quarto render
     for name in ("light.scss", "dark.scss", "asta.css"):
         assert (assets / "_extensions/asta-theme" / name).is_file()
         assert (root / "examples/workspace/_extensions/asta-theme" / name).is_file()
