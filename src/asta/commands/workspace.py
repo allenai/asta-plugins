@@ -361,6 +361,8 @@ def adopt_asta_theme(project: Path) -> bool:
     if config.is_symlink() or not config.is_file():
         return False
     text = config.read_text(encoding="utf-8")
+    if not text.endswith("\n"):
+        text += "\n"  # so a final block-list item is matched
     # Deliberately recognize only the scaffold's block mappings. Leave flow
     # mappings, anchors and nonstandard indentation to the project owner. Scope
     # both theme and css edits to format.html, preserving all other formats.

@@ -1555,6 +1555,14 @@ def test_adopt_asta_theme_upgrades_only_the_scaffold_default(tmp_path: Path) -> 
         in text
     )
 
+    # A final block-list item with no trailing newline is kept, not dropped.
+    config.write_text("format:\n  html:\n    theme: cosmo\n    css:\n      - a.css")
+    assert workspace_module.adopt_asta_theme(tmp_path)
+    assert (
+        "    css:\n      - _extensions/asta-theme/asta.css\n      - a.css\n"
+        in config.read_text()
+    )
+
     config.write_text("format:\n  html:\n    theme: flatly\n")
     assert not workspace_module.adopt_asta_theme(tmp_path)
     assert config.read_text() == "format:\n  html:\n    theme: flatly\n"

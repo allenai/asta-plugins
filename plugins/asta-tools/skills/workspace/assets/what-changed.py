@@ -734,7 +734,7 @@ DIFF_STYLE = """
 .wc-scope a { text-decoration: none; font-weight: 600; }
 .wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }
 /* Evidence claims (`.ev`) need a visible cue on the diff. The extension's
-   default 1px black border at 32% opacity is intentionally subtle on a normal
+   default thin currentColor border is intentionally subtle on a normal
    report, but becomes effectively invisible against the green insertion tint.
    Strengthen it to a 2px dotted rule in the active theme's link color, so it
    stays an underline rather than another background and follows light/dark. */

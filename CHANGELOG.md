@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Workspace sites use Asta's light and dark palettes with a system-aware toggle,
+- Workspace sites use Asta's light and dark palettes (dark by default, with a persistent light toggle),
   consistent typography, and section headings that stay visible while reading.
   Managed sync adopts the theme from compatible selected refs while preserving
   custom themes, CSS, and other output formats.

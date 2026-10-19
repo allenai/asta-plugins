@@ -24,7 +24,7 @@ ASTA_PLUGINS_ARCHIVE_URL ?=
 workspace-assets:
 	@set -eu; \
 	required_exts=evidence; \
-	if [ -f _quarto.yml ] && sed '/^[[:space:]]*#/d' _quarto.yml | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
+	if cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
 		required_exts="$$required_exts asta-theme"; \
 	fi; \
 	exts=; \
