@@ -887,7 +887,7 @@ def test_waiting_reports_actual_state(setup, github, state, action):
     assert action in result.output
 
 
-def test_waiting_without_checks_says_none_are_configured(setup, github):
+def test_waiting_without_checks_does_not_assume_ci_is_unconfigured(setup, github):
     seed, project = prepare(setup)
     overleaf_edit(seed, "main.tex", "ready\n")
     assert invoke(project).exit_code == 0
@@ -895,9 +895,241 @@ def test_waiting_without_checks_says_none_are_configured(setup, github):
     github["prs"][0]["statusCheckRollup"] = []
     result = invoke(project)
     assert result.exit_code == 0, result.output
-    assert "No checks are configured" in result.output
+    assert "No checks have appeared yet" in result.output
+    assert "If no checks are configured" in result.output
     assert "Wait for completed successful checks" not in result.output
     assert "Copied Overleaf commit" not in result.output
+    assert not github["merges"]
+
+
+@pytest.mark.parametrize("checks_appear", [False, True])
+def test_sync_wait_allows_ci_checks_to_appear(
+    setup, github, monkeypatch, checks_appear
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    clock = [0.0]
+    sleeps = []
+    monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+        if checks_appear:
+            github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+            github["allow_merge"] = True
+
+    monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
+    result = run(project, "sync", "--wait", "60")
+    assert result.exit_code == (0 if checks_appear else 5), result.output
+    assert sleeps == ([30] if checks_appear else [30, 30])
+    assert len(github["merges"]) == int(checks_appear)
+    assert "Sync outcome: a person must act" not in result.output
+    if not checks_appear:
+        assert "Sync outcome: still waiting" in result.output
+        assert "checks: none visible" in result.output
+    assert git(project, "status", "--porcelain") == ""
+
+
+def test_sync_wait_resets_missing_checks_grace_for_a_coauthors_push(
+    setup, github, monkeypatch
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    clock, sleeps = [0.0], []
+    branch = "asta/overleaf-sync/1234567"
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+        if len(sleeps) == 1:
+            git(project, "fetch", "origin", branch)
+            git(project, "checkout", "-B", "coauthor", f"origin/{branch}")
+            (project / "paper/refs.bib").write_text("coauthor citation\n")
+            commit_all(project)
+            git(project, "push", "origin", f"HEAD:{branch}")
+            git(project, "checkout", "main")
+
+    monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
+    monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
+    result = run(project, "sync", "--wait", "60")
+    assert result.exit_code == 5, result.output
+    assert sleeps == [30, 30]
+    assert "A person must inspect CI setup" not in result.output
+    assert not github["merges"]
+
+
+@pytest.mark.parametrize("updated", [False, True])
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize(
+    "wait,checks,expected",
+    [
+        (0, [], 5),
+        (1, [], 5),
+        (1, [{"state": "PENDING"}], 5),
+        (1, [{"state": "SUCCESS"}], 5),
+    ],
+)
+@pytest.mark.parametrize("expires_during_attempt", [False, True])
+def test_sync_wait_classifies_checks_before_the_next_quiet_run(
+    setup,
+    github,
+    monkeypatch,
+    updated,
+    draft,
+    wait,
+    checks,
+    expected,
+    expires_during_attempt,
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "first edit\n")
+    if updated:
+        assert invoke(project).exit_code == 0
+        # A refreshed head must not reuse successful checks on the old head.
+        github["prs"][0]["statusCheckRollup"] = [{"state": "SUCCESS"}]
+        overleaf_edit(seed, "main.tex", "next edit\n")
+    clock = [0.0]
+    calls, sleeps = [], []
+    gh = sync.gh
+
+    def read_pr(root, *args, payload=None):
+        result = gh(root, *args, payload=payload)
+        if args[:2] == ("pr", "view"):
+            return {
+                **result,
+                "headRefOid": git(
+                    root, "ls-remote", "origin", "refs/heads/asta/overleaf-sync/1234567"
+                ).split()[0],
+                "statusCheckRollup": checks,
+                "isDraft": draft,
+            }
+        return result
+
+    sync_workspace = sync.sync_workspace
+
+    def attempt(*args, **kwargs):
+        calls.append(args[1])
+        result = sync_workspace(*args, **kwargs)
+        if expires_during_attempt:
+            clock[0] = 2.0
+        return result
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(sync, "gh", read_pr)
+    monkeypatch.setattr(sync, "sync_workspace", attempt)
+    monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
+    monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
+    result = run(project, "sync", "--wait", str(wait))
+    assert result.exit_code == expected, result.output
+    assert calls == ["paper"]
+    assert sleeps == ([] if wait == 0 or expires_during_attempt else [1])
+    assert result.output.count("Sync outcome:") == 1
+    assert ("Updated" if updated else "Opened") in result.output
+    assert not github["merges"]
+    assert not git(
+        project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+    )
+
+
+@pytest.mark.parametrize(
+    "review", [None, "APPROVED", "REVIEW_REQUIRED", "CHANGES_REQUESTED"]
+)
+@pytest.mark.parametrize("required_checks_appear", [False, True])
+def test_sync_wait_does_not_confuse_unreported_required_checks_with_reviews(
+    setup, github, monkeypatch, review, required_checks_appear
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0].update(
+        mergeStateStatus="BLOCKED",
+        reviewDecision=review,
+        statusCheckRollup=[{"state": "SUCCESS"}],
+    )
+    clock, sleeps = [0.0], []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+        if required_checks_appear:
+            github["prs"][0].update(
+                mergeStateStatus="CLEAN",
+                statusCheckRollup=[{"state": "SUCCESS"}, {"state": "SUCCESS"}],
+            )
+            github["allow_merge"] = True
+
+    monkeypatch.setattr(sync.ov, "_sync_monotonic", lambda: clock[0])
+    monkeypatch.setattr(sync.ov, "_sync_sleep", sleep)
+    result = run(project, "sync", "--wait", "60")
+    needs_review = review in {"REVIEW_REQUIRED", "CHANGES_REQUESTED"}
+    assert result.exit_code == (
+        4 if needs_review else 0 if required_checks_appear else 5
+    ), result.output
+    assert sleeps == (
+        [] if needs_review else [30] if required_checks_appear else [30, 30]
+    )
+    assert len(github["merges"]) == int(required_checks_appear and not needs_review)
+
+
+def test_sync_wait_zero_does_not_escalate_checks_that_may_still_start(setup, github):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    result = run(project, "sync", "--wait", "0")
+    assert result.exit_code == 5, result.output
+    assert "Sync outcome: still waiting" in result.output
+    assert "No checks have appeared yet" in result.output
+    assert not github["merges"]
+
+
+@pytest.mark.parametrize(
+    "scenario, code", [("noop", 0), ("locked", 5), ("conflict", 4)]
+)
+def test_sync_wait_real_early_returns_have_outcomes(setup, github, scenario, code):
+    seed, project = prepare(setup)
+    if scenario == "conflict":
+        (project / "paper/main.tex").write_text("workspace edit\n")
+        commit_all(project)
+        git(project, "push", "origin", "HEAD:main")
+        overleaf_edit(seed, "main.tex", "Overleaf edit\n")
+    if scenario == "locked":
+        with sync.lock(project, "1234567") as acquired:
+            assert acquired
+            result = run(project, "sync", "--wait", "0")
+    else:
+        result = run(project, "sync", "--wait", "0")
+    assert result.exit_code == code, result.output
+    assert result.output.count("Sync outcome:") == 1
+    assert "Unexpected TypeError" not in result.output
+    assert not github["merges"]
+    assert not git(
+        project, "ls-remote", "origin", "refs/asta/overleaf-sync-lock/1234567"
+    )
+
+
+@pytest.mark.parametrize("merge_state", ["BLOCKED", "CLEAN"])
+def test_sync_wait_draft_keeps_waiting_and_reports_what_it_saw(
+    setup, github, merge_state
+):
+    seed, project = prepare(setup)
+    overleaf_edit(seed, "main.tex", "ready\n")
+    assert invoke(project).exit_code == 0
+    github["prs"][0].update(
+        isDraft=True,
+        mergeStateStatus=merge_state,
+        statusCheckRollup=[{"state": "PENDING"}],
+    )
+    result = run(project, "sync", "--wait", "0")
+    assert result.exit_code == 5, result.output
+    assert "Sync outcome: still waiting" in result.output
+    assert f"draft, mergeStateStatus={merge_state}" in result.output
+    assert "checks: 1 pending" in result.output
     assert not github["merges"]
 
 
@@ -1919,3 +2151,76 @@ def test_credits_keep_author_when_publication_git_verification_fails(
     assert sync.credits(project, {"url": URL, "base": base}, new, "paper/") == [
         "Coauthor <coauthor@example.invalid>"
     ]
+
+
+@pytest.mark.parametrize(
+    "pr, person",
+    [
+        ({"mergeStateStatus": "BLOCKED", "statusCheckRollup": []}, False),
+        ({"mergeStateStatus": "CLEAN", "statusCheckRollup": []}, False),
+        ({"mergeStateStatus": "CLEAN", "statusCheckRollup": None}, False),
+        (
+            {
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"state": "SUCCESS"}],
+            },
+            False,
+        ),
+        (
+            {
+                "mergeStateStatus": "UNSTABLE",
+                "statusCheckRollup": [{"status": "COMPLETED", "conclusion": "FAILURE"}],
+            },
+            True,
+        ),
+        ({"mergeStateStatus": "DRAFT"}, False),
+        ({"isDraft": True, "statusCheckRollup": [{"state": "PENDING"}]}, False),
+        ({"statusCheckRollup": [{"state": "ERROR", "context": "ci"}]}, True),
+        (
+            {"statusCheckRollup": [{"status": "COMPLETED", "conclusion": "CANCELLED"}]},
+            True,
+        ),
+        ({"mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"}, True),
+        ({"mergeStateStatus": "BLOCKED", "reviewDecision": "CHANGES_REQUESTED"}, True),
+        ({"mergeStateStatus": "BLOCKED", "reviewDecision": "APPROVED"}, False),
+        (
+            {
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"status": "IN_PROGRESS", "conclusion": None}],
+            },
+            False,
+        ),
+        (
+            {
+                "mergeStateStatus": "BLOCKED",
+                "statusCheckRollup": [{"state": "PENDING"}],
+            },
+            False,
+        ),
+        ({"mergeStateStatus": "UNKNOWN"}, False),
+        ({"mergeStateStatus": "BEHIND"}, False),
+        ({"mergeStateStatus": "DIRTY"}, False),
+        ({"mergeStateStatus": "CLEAN", "mergeable": "UNKNOWN"}, False),
+        ({"mergeStateStatus": "BLOCKED", "headRefOid": "other"}, False),
+    ],
+)
+def test_person_action_only_for_failed_checks_or_review_decisions(pr, person):
+    sync = importlib.import_module("asta.commands.overleaf_sync")
+    pr = {"headRefOid": "head", "mergeable": "MERGEABLE", **pr}
+    assert (sync.person_action(pr, "head") is not None) is person
+
+
+def test_person_action_names_cancelled_check():
+    action = sync.person_action(
+        {
+            "headRefOid": "a" * 40,
+            "statusCheckRollup": [
+                {"name": "lint", "status": "COMPLETED", "conclusion": "CANCELLED"},
+                {"name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            ],
+        },
+        "a" * 40,
+    )
+    assert action == (
+        "A person must fix or rerun failed checks (lint: cancelled). Then rerun sync."
+    )

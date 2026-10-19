@@ -1,10 +1,56 @@
-# Schedule Overleaf sync
+# Overleaf sync
 
 Import the project with `asta workspace overleaf pull <url>`, review the paper
 and its `.asta/overleaf` record together, and merge them. Before enabling the schedule, the
 project owner must **turn off Overleaf link sharing** and invite each co-author
 (and the sync account) explicitly as an editor. Anyone who can edit this project
 can contribute paper content to the default branch through the sync PR.
+
+## Sync by hand
+
+A paper without a scheduled runner is synced by a person or their agent. Sync
+at the moments co-authors' edits matter: **before editing the paper**, so you
+work on their latest text; **before merging a paper PR**, so their edits
+conflict on your change instead of being overwritten; and **after merging one**,
+so the merged change reaches Overleaf. Use one call that finishes:
+
+```bash
+asta workspace overleaf sync --wait 1800
+```
+
+`--wait SECONDS` visits each pending paper once per round, polling every 30
+seconds between rounds, until it completes or someone must act. For a positive
+wait, no further attempt starts at or after the shared deadline; an attempt
+already running finishes normally so it can release its lock. `--wait 0` makes
+one pass over all paired papers without polling. It waits out the sync PR's
+checks, the quiet rerun before it merges, and another run's recent lock, then
+prints one final `Sync outcome:` line per paper after any progress messages and exits:
+
+| Exit | Outcome | Next step |
+|------|---------|-----------|
+| 0 | complete: merged co-author edits, published | none |
+| 4 | a person must act; the line names what and, for a conflict, whose change | that person acts, then rerun |
+| 5 | still waiting when the deadline passed | rerun; it picks up where this run stopped |
+| 1 | failed; an operator must act (credentials, permissions, a refusal) | fix the cause, rerun |
+
+It never prompts, so an agent can start it in the background and act on the
+exit code. Git runs with no terminal and your SSH command and Git config are
+left as they are, so an SSH key passphrase or unknown host key fails at once
+(exit 1) instead of waiting; load the key into `ssh-agent` or use HTTPS first. A rerun reconstructs its state from GitHub and Overleaf, so stopping
+or timing out loses nothing. With several paired papers and no `--dir`, each
+paper gets its own outcome line and the exit code is the most urgent one.
+Papers not attempted before the shared deadline are reported as still waiting.
+Exit 4 is only for what sync records: a conflict on the sync PR, failed or
+cancelled checks (the line names each one), or a required or rejected review. Anything inferred from GitHub's state,
+such as no checks yet, a draft, or a merge blocked for no stated reason, keeps
+waiting; at the deadline, exit 5's line says what it last saw.
+
+A scheduled runner is worth it when co-authors edit in Overleaf between the
+moments above, for example several active co-authors or long stretches without
+an agent session, or when nobody reliably syncs by hand. Without `--wait`,
+sync behaves as scheduled runners expect, described below.
+
+## Schedule sync
 
 Run `asta workspace overleaf sync --project /path/to/checkout` from cron or any
 scheduler. Without `--dir`, it visits every paper paired by a tracked
@@ -38,8 +84,9 @@ run paper builds without privileged tokens or secrets.
 A run with new edits updates the same PR and stops. A later run squashes that
 PR only when it finds no newer Overleaf edits, the PR has no conflicts or paper
 markers, and GitHub reports completed successful checks and permits merging.
-With no checks configured, the PR waits for a person to merge it, and the run
-says so. Failed checks or conflicts leave the PR for a person.
+With no checks configured, the PR waits for a person to merge it. An empty
+checks list is reported as checks not yet visible because CI may still start.
+Failed checks or conflicts leave the PR for a person.
 
 Sync exits 0 when the run ends waiting on people: a conflict recorded on the
 sync PR, or a PR waiting for checks or a reviewer. It exits nonzero only when

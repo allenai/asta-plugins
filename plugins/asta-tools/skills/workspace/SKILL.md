@@ -26,9 +26,12 @@ Choose a trusted ref and keep source files stable while the copy is made. The ba
 Before merging a paper PR or pushing paper edits directly to the default branch
 where allowed, check for an open PR labeled `asta:overleaf-sync`. Let it merge
 first so newer co-author edits conflict on your change before it lands. If it
-has not caught up, run `asta workspace overleaf sync` where the Overleaf token
-is available, then update your branch. Resolve a sync conflict on that PR and
-rerun its checks; do not bypass it by advancing the `.asta/overleaf` pairing record manually.
+has not caught up, run `asta workspace overleaf sync --wait 1800` where the
+Overleaf token is available (in the background is fine; act on its final
+`Sync outcome:` line and exit code), then update your branch. Sync the same way
+before editing the paper and after merging a paper PR. Resolve a sync conflict on
+that PR and rerun its checks; do not bypass it by advancing the `.asta/overleaf`
+pairing record manually.
 For scheduling, invited-coauthor access, lock recovery and repository status,
 read [Overleaf sync](workflows/overleaf-sync-command.md).
 

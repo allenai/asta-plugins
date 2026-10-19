@@ -4,6 +4,7 @@ import importlib
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -350,8 +351,13 @@ def test_unmergeable_pr_fails_immediately(
 def test_exhausted_budget_reports_its_stage(scratch, monkeypatch, phase):
     project, _, _, _ = scratch
     refs = git(project, "ls-remote", "origin")
-    ticks = iter([0, 600] if phase == "preparation" else [0, 0, 599, 600])
-    monkeypatch.setattr(check.time, "monotonic", lambda: next(ticks))
+    ticks = iter([0, 600] if phase == "preparation" else [0, 0, 0])
+    # Keep the fake clock local to this module, away from subprocess internals.
+    monkeypatch.setattr(
+        check,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(ticks), sleep=check.time.sleep),
+    )
 
     if phase == "preparation":
 
@@ -359,6 +365,31 @@ def test_exhausted_budget_reports_its_stage(scratch, monkeypatch, phase):
             pytest.fail("expired exercise started")
 
         monkeypatch.setattr(check.RoundTrip, "exercise", unexpected_exercise)
+    else:
+
+        def interrupt_exercise(trial):
+            original = check.sync.sync_pr
+
+            def interrupt_sync(root, *args, **kwargs):
+                if kwargs.get("format_only"):
+                    return original(root, *args, **kwargs)
+                # Deliver the real deadline signal while both lock bodies are
+                # active, without racing a one-second wall clock against Git.
+                for project_id in (trial.project_id, f"check-{trial.project_id}"):
+                    assert git(
+                        root,
+                        "ls-remote",
+                        "origin",
+                        f"refs/asta/overleaf-sync-lock/{project_id}",
+                    )
+                assert check.signal.getitimer(check.signal.ITIMER_REAL)[0] > 0
+                check.signal.raise_signal(check.signal.SIGALRM)
+                pytest.fail("expired sync continued")
+
+            monkeypatch.setattr(check.sync, "sync_pr", interrupt_sync)
+            trial.run_sync()
+
+        monkeypatch.setattr(check.RoundTrip, "exercise", interrupt_exercise)
 
     result = invoke(project)
     assert result.exit_code != 0

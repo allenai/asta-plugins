@@ -290,7 +290,7 @@ A held remote lock younger than one hour skips without changing PR status.
 At one hour or older it exits non-zero and reports on the open sync PR, or on
 a labeled issue when no sync PR exists. This threshold never expires a lock. Confirm the
 owning run has stopped before using the explicit lock recovery in
-[Schedule Overleaf sync](overleaf-sync-command.md#interrupted-runs). Never remove
+[Overleaf sync](overleaf-sync-command.md#interrupted-runs). Never remove
 a live run's lock. A publication failure after the sync PR merged is reported on
 an open issue; use the publication recovery above, then rerun sync.
 

@@ -40,8 +40,12 @@ RECORD_RESOLVED_MARKER = "<!-- asta-overleaf-record-used-again -->"
 CONFLICTS = f"{ov.RECOVERY}#conflict-markers-after-pull-exit-3"
 BUILD_CONFIGS = {"latexmkrc", ".latexmkrc"}
 CONFLICT_LABEL = re.compile(rb"(?m)^(?:<<<<<<<|>>>>>>>|\|{7})(?:[ \t]|\r?$)")
-FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
+FIELDS = "isCrossRepository,headRepositoryOwner,number,url,headRefOid,baseRefName,body,labels,isDraft,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision"
 STALE_LOCK_SECONDS = 3600  # Reporting threshold only; never expires ownership.
+POLL_SECONDS = 30  # Between --wait reruns; checks rarely settle faster.
+# COMPLETE, PERSON and FAILED end a paper's wait; the other states retry.
+COMPLETE, WAITING, LOCKED = "complete", "waiting", "locked"
+PERSON, FAILED = "person", "failed"
 SYNC_SUBJECTS = {
     "Sync Overleaf paper",
     "Merge current workspace paper into Overleaf sync",
@@ -62,7 +66,12 @@ def gh(root: Path, *args: str, payload=None):
                     command += ["--method", "POST"]
                 command += ["--input", str(body)]
             result = subprocess.run(
-                command, cwd=root, env=env, capture_output=True, timeout=90
+                command,
+                cwd=root,
+                env=env,
+                capture_output=True,
+                timeout=90,
+                **ov.no_terminal(),
             )
     except (OSError, subprocess.TimeoutExpired):
         raise ov.SyncError(
@@ -186,12 +195,14 @@ def waiting_message(pr: dict, head: str) -> str:
         "DIRTY": "A person must resolve merge conflicts on the sync PR.",
         "DRAFT": "A person must mark the sync PR ready when its review is complete.",
     }
-    if state in actions:
+    if pr.get("isDraft"):
+        action = actions["DRAFT"]
+    elif state in actions:
         action = actions[state]
     elif not pr.get("statusCheckRollup"):
         action = (
-            "No checks are configured for the sync PR, and sync merges only after "
-            "a check passes, so a person must merge it."
+            "No checks have appeared yet; wait for CI to start. If no checks are "
+            "configured for this PR, a person must merge it."
         )
     else:
         action = "Wait for completed successful checks; fix any failing checks."
@@ -202,6 +213,68 @@ def waiting_message(pr: dict, head: str) -> str:
     elif mergeable == "CONFLICTING":
         action = "A person must resolve merge conflicts on the sync PR."
     return f"Sync PR mergeStateStatus={state}, mergeable={mergeable}. {action}"
+
+
+# A cancelled check cannot finish on its own, so a person must rerun or fix it.
+FAILED_CHECKS = {
+    "FAILURE",
+    "ERROR",
+    "TIMED_OUT",
+    "STARTUP_FAILURE",
+    "ACTION_REQUIRED",
+    "CANCELLED",
+}
+
+
+def check_outcome(check: dict) -> str:
+    if "conclusion" in check and check.get("status") != "COMPLETED":
+        return "PENDING"
+    return str(check.get("conclusion") or check.get("state") or "PENDING")
+
+
+def person_action(pr: dict, head: str) -> str | None:
+    """Who must act, from failed checks or a review decision on this head only."""
+    if pr.get("headRefOid") != head:
+        return None
+    # Only stated facts count; empty, pending or blocked-for-no-reason states wait.
+    actions = []
+    failed = [
+        f"{check.get('name') or check.get('context') or 'unnamed check'}: "
+        f"{outcome.lower()}"
+        for check in pr.get("statusCheckRollup") or []
+        if (outcome := check_outcome(check)) in FAILED_CHECKS
+    ]
+    if failed:
+        actions.append(
+            "A person must fix or rerun failed checks "
+            f"({', '.join(sorted(set(failed)))})."
+        )
+    review = pr.get("reviewDecision")
+    if review == "CHANGES_REQUESTED":
+        actions.append("A reviewer requested changes; a person must address them.")
+    elif review == "REVIEW_REQUIRED":
+        actions.append("A required review is missing; a person must approve the PR.")
+    if not actions:
+        return None
+    return f"{' '.join(actions)} Then rerun sync."
+
+
+def observed_state(pr: dict, head: str) -> str:
+    """What GitHub last showed for the sync PR, without inferring who must act."""
+    if pr.get("headRefOid") != head:
+        return f"GitHub showed head {str(pr.get('headRefOid'))[:12]}, not {head[:12]}."
+    outcomes = [check_outcome(check) for check in pr.get("statusCheckRollup") or []]
+    checks = ", ".join(
+        f"{outcomes.count(outcome)} {outcome.lower()}"
+        for outcome in sorted(set(outcomes))
+    )
+    return (
+        f"Last seen at {head[:12]}: {'draft, ' if pr.get('isDraft') else ''}"
+        f"mergeStateStatus={pr.get('mergeStateStatus', 'UNKNOWN')}, "
+        f"mergeable={pr.get('mergeable', 'UNKNOWN')}, "
+        f"reviewDecision={pr.get('reviewDecision') or 'none'}, "
+        f"checks: {checks or 'none visible'}."
+    )
 
 
 def checks_pass(pr: dict) -> bool:
@@ -578,7 +651,7 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
-def sync_workspace(project: Path, directory: str):
+def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
     if not prefix or not prefix.endswith("/"):
@@ -642,10 +715,9 @@ def sync_workspace(project: Path, directory: str):
     with lock(root, project_id) as acquired:
         if not acquired:
             if not stale_lock(root, project_id):
-                click.echo(
-                    "Overleaf sync lock is held by a recent run; leaving its status unchanged."
-                )
-                return
+                message = "Overleaf sync lock is held by a recent run; leaving its status unchanged."
+                click.echo(message)
+                return LOCKED, message
             message = "Overleaf sync lock is held; confirm the owning run is active, or recover its interrupted lock."
             try:
                 try:
@@ -716,6 +788,7 @@ def sync_workspace(project: Path, directory: str):
                             cwd=work,
                             env=ov.git_environment(),
                             capture_output=True,
+                            **ov.no_terminal(),
                         )
                         if merge.returncode:
                             paths = ov.git(
@@ -863,11 +936,12 @@ def sync_workspace(project: Path, directory: str):
                     # a later quiet run; never merge a just-created/updated head.
                     if changed or head != old_head:
                         reset_status(root, repo, pr, notice)
-                        click.echo(
+                        message = (
                             f"{'Opened' if opened else 'Updated'} {pr['url']}; "
                             "waiting for checks and a run with no new Overleaf edits."
                         )
-                        return
+                        click.echo(message)
+                        return WAITING, message
                     pr = gh(
                         root,
                         "pr",
@@ -880,16 +954,19 @@ def sync_workspace(project: Path, directory: str):
                     )
                     if (
                         pr["headRefOid"] != head
+                        or pr.get("isDraft")
                         or pr["mergeable"] != "MERGEABLE"
                         or pr["mergeStateStatus"] != "CLEAN"
                         or not checks_pass(pr)
                     ):
                         # GitHub's merge box already shows why; keep the body quiet.
                         reset_status(root, repo, pr, notice)
-                        click.echo(
-                            f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
-                        )
-                        return
+                        message = f"Waiting on {pr['url']}: {waiting_message(pr, head)}"
+                        click.echo(message)
+                        action = person_action(pr, head)
+                        if action:
+                            return PERSON, f"{pr['url']}: {action}"
+                        return WAITING, f"{pr['url']}: {observed_state(pr, head)}"
                     # Derive squash credits from Overleaf's Git authors across the
                     # entire imported range, never from workspace commit bodies.
                     default_config = json.loads(
@@ -958,6 +1035,7 @@ def sync_workspace(project: Path, directory: str):
                             payload={"state": "closed"},
                         )
                 click.echo("Overleaf sync complete.")
+                return COMPLETE, "Overleaf sync complete."
         except ov.FormatError:
             # An unreadable format must not be replaced by this runner's status.
             raise
@@ -979,5 +1057,5 @@ def sync_workspace(project: Path, directory: str):
             # a scheduler's failure alert fires only when an operator must act.
             if isinstance(exc, ConflictError):
                 click.echo(exc.format_message())
-                return
+                return PERSON, exc.format_message()
             raise
