@@ -19,3 +19,5 @@ skills-lock.json
 *.iml
 
 .asta
+
+.envrc
