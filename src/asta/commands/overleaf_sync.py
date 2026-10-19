@@ -662,6 +662,9 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
             "Import and commit the paper with overleaf pull before scheduling sync."
         )
     project_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
+    lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
+    # Read origin first so a refused Git login fails before any slower GitHub calls.
+    held = ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root)
     info = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
@@ -669,9 +672,8 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     # Compatibility checks precede label updates and lock acquisition. Repeat
     # the reads under the lock below to catch state that changes during preflight.
     sync_pr(root, repo, branch, default_name, format_only=True)
-    lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
     try:
-        if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
+        if held:
             stale_lock(root, project_id)
     except ov.GitCommandError:
         # A concurrent owner can release its lock between ls-remote and fetch.
@@ -739,7 +741,18 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
             origin = ov.git("remote", "get-url", "origin", cwd=root)
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp) / "workspace"
-                ov.git("clone", "--no-checkout", "--", origin, str(work), cwd=root)
+                # Borrow local objects so only commits missing here cross the network.
+                ov.git(
+                    "clone",
+                    "--no-checkout",
+                    "--reference-if-able",
+                    str(root),
+                    "--dissociate",
+                    "--",
+                    origin,
+                    str(work),
+                    cwd=root,
+                )
                 # Preserve identity without copying credential configuration.
                 for key, value in identity.items():
                     ov.git("config", key, value, cwd=work)
