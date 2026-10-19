@@ -210,7 +210,15 @@ def waiting_message(pr: dict, head: str) -> str:
     return f"Sync PR mergeStateStatus={state}, mergeable={mergeable}. {action}"
 
 
-FAILED_CHECKS = {"FAILURE", "ERROR", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
+# A cancelled check cannot finish on its own, so a person must rerun or fix it.
+FAILED_CHECKS = {
+    "FAILURE",
+    "ERROR",
+    "TIMED_OUT",
+    "STARTUP_FAILURE",
+    "ACTION_REQUIRED",
+    "CANCELLED",
+}
 
 
 def check_outcome(check: dict) -> str:
@@ -226,13 +234,15 @@ def person_action(pr: dict, head: str) -> str | None:
     # Only stated facts count; empty, pending or blocked-for-no-reason states wait.
     actions = []
     failed = [
-        check.get("name") or check.get("context") or "unnamed check"
+        f"{check.get('name') or check.get('context') or 'unnamed check'}: "
+        f"{outcome.lower()}"
         for check in pr.get("statusCheckRollup") or []
-        if check_outcome(check) in FAILED_CHECKS
+        if (outcome := check_outcome(check)) in FAILED_CHECKS
     ]
     if failed:
         actions.append(
-            f"A person must fix failed checks ({', '.join(sorted(set(failed)))})."
+            "A person must fix or rerun failed checks "
+            f"({', '.join(sorted(set(failed)))})."
         )
     review = pr.get("reviewDecision")
     if review == "CHANGES_REQUESTED":

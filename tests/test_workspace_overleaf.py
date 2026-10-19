@@ -4,7 +4,6 @@ import importlib
 import json
 import os
 import re
-import shlex
 import shutil
 import stat
 import subprocess
@@ -4595,23 +4594,45 @@ def test_sync_wait_disables_git_prompts_even_in_a_terminal(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize(
-    "ssh_command, ssh_program, expected",
+    "ssh_command, configured, ssh_program, expected",
     [
-        (None, "/fixture path/ssh", ["/fixture path/ssh", "-oBatchMode=yes"]),
+        (None, None, "/fixture path/ssh", "'/fixture path/ssh' -oBatchMode=yes"),
         (
-            'ssh -oBatchMode=no -i "key with spaces"',
+            'ssh -i "$HOME/key with spaces"',
+            None,
             "/ignored/ssh",
-            ["ssh", "-oBatchMode=yes", "-oBatchMode=no", "-i", "key with spaces"],
+            'ssh -i "$HOME/key with spaces" -oBatchMode=yes',
         ),
+        (
+            None,
+            'ssh -i "$HOME"/key',
+            "/ignored/ssh",
+            'ssh -i "$HOME"/key -oBatchMode=yes',
+        ),
+        ('plink -load "my session"', None, None, 'plink -load "my session" -batch'),
+        ("ssh-wrapper --flag", None, None, None),
     ],
 )
-def test_sync_wait_preserves_ssh_settings_and_overrides_interactive_mode(
-    tmp_path, monkeypatch, ssh_command, ssh_program, expected
+def test_sync_wait_keeps_ssh_command_meaning_and_adds_batch_mode(
+    tmp_path, monkeypatch, ssh_command, configured, ssh_program, expected
 ):
     sync_module = importlib.import_module("asta.commands.overleaf_sync")
     environments = []
     monkeypatch.setattr(module, "paired_directories", lambda _: ["paper"])
-    monkeypatch.setenv("GIT_SSH", ssh_program)
+    global_config = tmp_path / "gitconfig"
+    global_config.write_text(
+        ""
+        if configured is None
+        else "[core]\n\tsshCommand = " + configured.replace('"', '\\"') + "\n"
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("HOME", str(tmp_path / "fixture home"))
+    monkeypatch.delenv("GIT_SSH_VARIANT", raising=False)
+    if ssh_program is None:
+        monkeypatch.delenv("GIT_SSH", raising=False)
+    else:
+        monkeypatch.setenv("GIT_SSH", ssh_program)
     if ssh_command is None:
         monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
     else:
@@ -4624,14 +4645,23 @@ def test_sync_wait_preserves_ssh_settings_and_overrides_interactive_mode(
     monkeypatch.setattr(sync_module, "sync_workspace", attempt)
     result = run(tmp_path, "sync", "--wait", "0")
     assert result.exit_code == 0, result.output
-    command = shlex.split(environments[0]["GIT_SSH_COMMAND"])
-    assert command == expected
-    if command[0] == "ssh":
-        # OpenSSH resolves competing command-line options without connecting.
+    command = environments[0].get("GIT_SSH_COMMAND")
+    assert command == (ssh_command if expected is None else expected)
+    if expected and expected.startswith("ssh "):
+        # Run it the way Git does, so variables and quoting expand as the person meant.
         config = subprocess.run(
-            [*command, "-G", "fixture.invalid"],
+            ["sh", "-c", f'{command} "$@"', command, "-G", "fixture.invalid"],
             capture_output=True,
             text=True,
             check=True,
+            env=environments[0],
         ).stdout
         assert "batchmode yes\n" in config
+        words = subprocess.run(
+            ["sh", "-c", f'set -- {command}; printf "%s\\n" "$@"'],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=environments[0],
+        ).stdout.splitlines()
+        assert words[2].startswith(f"{tmp_path}/fixture home/key")

@@ -38,8 +38,8 @@ exit code. A rerun reconstructs its state from GitHub and Overleaf, so stopping
 or timing out loses nothing. With several paired papers and no `--dir`, each
 paper gets its own outcome line and the exit code is the most urgent one.
 Papers not attempted before the shared deadline are reported as still waiting.
-Exit 4 is only for what sync records: a conflict on the sync PR, failed
-checks, or a required or rejected review. Anything inferred from GitHub's state,
+Exit 4 is only for what sync records: a conflict on the sync PR, failed or
+cancelled checks (the line names each one), or a required or rejected review. Anything inferred from GitHub's state,
 such as no checks yet, a draft, or a merge blocked for no stated reason, keeps
 waiting; at the deadline, exit 5's line says what it last saw.
 

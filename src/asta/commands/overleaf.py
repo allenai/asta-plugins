@@ -56,7 +56,7 @@ LOCAL_GIT_ENV = {
 }
 
 
-def git_environment() -> dict:
+def git_environment(cwd: Path | str | None = None) -> dict:
     # Local Git hooks need no Overleaf token; tracing can log authorization headers.
     env = {
         key: value
@@ -74,13 +74,43 @@ def git_environment() -> dict:
     if noninteractive:
         env["SSH_ASKPASS"] = ""
         # SSH can read /dev/tty even when Git's credential prompts are disabled.
-        # Put BatchMode first: OpenSSH uses the first value of each option.
-        ssh = shlex.split(
-            env.get("GIT_SSH_COMMAND") or shlex.quote(env.get("GIT_SSH", "ssh"))
-        )
-        env["GIT_SSH_COMMAND"] = shlex.join([ssh[0], "-oBatchMode=yes", *ssh[1:]])
+        ssh = batch_ssh_command(env, cwd)
+        if ssh:
+            env["GIT_SSH_COMMAND"] = ssh
         env["GH_PROMPT_DISABLED"] = "1"
     return env
+
+
+SSH_BATCH_OPTIONS = {"ssh": "-oBatchMode=yes", "plink": "-batch", "putty": "-batch"}
+
+
+def batch_ssh_command(env: dict, cwd: Path | str | None) -> str | None:
+    """The person's SSH command with batch mode appended, or None to leave it alone."""
+    # Same precedence as Git; core.sshCommand would be shadowed if we set the env.
+    command = env.get("GIT_SSH_COMMAND")
+    if not command:
+        configured = subprocess.run(
+            ["git", "config", "--get", "core.sshCommand"],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        command = configured.stdout.strip() if configured.returncode == 0 else ""
+    command = command or shlex.quote(env.get("GIT_SSH") or "ssh")
+    # Git runs the command through sh, so append to the text instead of re-quoting
+    # it; an explicit BatchMode earlier in the person's command still wins.
+    variant = env.get("GIT_SSH_VARIANT", "auto").lower()
+    if variant == "auto":
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            words = []
+        variant = os.path.basename(words[0]).lower() if words else ""
+        variant = variant.removesuffix(".exe")
+    option = SSH_BATCH_OPTIONS.get(variant)
+    # Unknown wrappers and Git's "simple" variant may reject options.
+    return f"{command} {option}" if option else None
 
 
 class SyncError(click.ClickException):
@@ -113,7 +143,7 @@ def git_bytes(
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,
-        env=git_environment() if env is None else env,
+        env=git_environment(cwd) if env is None else env,
         capture_output=True,
         input=input,
     )

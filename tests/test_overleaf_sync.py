@@ -2178,7 +2178,7 @@ def test_credits_keep_author_when_publication_git_verification_fails(
         ({"statusCheckRollup": [{"state": "ERROR", "context": "ci"}]}, True),
         (
             {"statusCheckRollup": [{"status": "COMPLETED", "conclusion": "CANCELLED"}]},
-            False,
+            True,
         ),
         ({"mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"}, True),
         ({"mergeStateStatus": "BLOCKED", "reviewDecision": "CHANGES_REQUESTED"}, True),
@@ -2208,3 +2208,19 @@ def test_person_action_only_for_failed_checks_or_review_decisions(pr, person):
     sync = importlib.import_module("asta.commands.overleaf_sync")
     pr = {"headRefOid": "head", "mergeable": "MERGEABLE", **pr}
     assert (sync.person_action(pr, "head") is not None) is person
+
+
+def test_person_action_names_cancelled_check():
+    action = sync.person_action(
+        {
+            "headRefOid": "a" * 40,
+            "statusCheckRollup": [
+                {"name": "lint", "status": "COMPLETED", "conclusion": "CANCELLED"},
+                {"name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            ],
+        },
+        "a" * 40,
+    )
+    assert action == (
+        "A person must fix or rerun failed checks (lint: cancelled). Then rerun sync."
+    )
