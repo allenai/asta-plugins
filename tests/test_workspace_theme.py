@@ -111,3 +111,64 @@ def test_custom_theme_survives_refresh(tmp_path, customization):
     result = install(project, source_archive(tmp_path))
     assert result.returncode == 0, result.stderr
     assert (target / "dark.scss").read_text() == "my theme"
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize(
+    "cached", [(), ("evidence",), ("asta-theme",), ("evidence", "asta-theme")]
+)
+@pytest.mark.parametrize("failure", ["before", "after"])
+def test_failed_theme_install_restores_the_entire_previous_state(
+    tmp_path, monkeypatch, rules, cached, failure
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "_quarto.yml").write_bytes((ASSETS / "_quarto.yml").read_bytes())
+    for extension in cached:
+        target = project / "_extensions" / extension
+        target.mkdir(parents=True)
+        (target / "previous.txt").write_text(f"previous {extension}")
+    archive = source_archive(tmp_path)
+
+    # Fail the second replacement, including a move that changed the destination
+    # before reporting failure. Backup restoration must still use the real mv.
+    real_mv = shutil.which("mv")
+    assert real_mv is not None
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    wrapper = tools / "mv"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        'case "$1:$2" in\n'
+        "  */new/asta-theme:_extensions/asta-theme)\n"
+        '    if [ "$ASTA_TEST_MOVE_FAILURE" = after ]; then\n'
+        '      "$ASTA_TEST_REAL_MV" "$@" || exit $?\n'
+        "    fi\n"
+        '    echo "injected theme move failure" >&2\n'
+        "    exit 1 ;;\n"
+        "esac\n"
+        'exec "$ASTA_TEST_REAL_MV" "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    with monkeypatch.context() as patched:
+        patched.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
+        patched.setenv("ASTA_TEST_REAL_MV", real_mv)
+        patched.setenv("ASTA_TEST_MOVE_FAILURE", failure)
+        result = install(project, archive, rules)
+
+    assert result.returncode != 0
+    assert "injected theme move failure" in result.stderr
+    for extension in ("evidence", "asta-theme"):
+        target = project / "_extensions" / extension
+        if extension in cached:
+            assert sorted(path.name for path in target.iterdir()) == ["previous.txt"]
+            assert (target / "previous.txt").read_text() == f"previous {extension}"
+        else:
+            assert not target.exists()
+    assert not (project / "_extensions/.evidence-install.lock").exists()
+
+    # A failed transaction must release the lock and allow a clean retry.
+    retried = install(project, archive, rules)
+    assert retried.returncode == 0, retried.stderr
+    assert (project / "_extensions/evidence/snippet.lua").is_file()
+    assert (project / "_extensions/asta-theme/dark.scss").is_file()

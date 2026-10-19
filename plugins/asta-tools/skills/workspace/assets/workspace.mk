@@ -82,10 +82,12 @@ workspace-assets:
 	lock=_extensions/.evidence-install.lock; \
 	backup="$$tmp/previous"; \
 	lock_held=0; \
+	installing=; \
 	cleanup() { \
 		status=$$?; \
 		trap - 0 1 2 15; \
 		if [ "$$status" -ne 0 ]; then \
+			for ext in $$installing; do rm -rf "_extensions/$$ext"; done; \
 			for ext in $$exts; do \
 				if [ -e "$$backup/$$ext" ] || [ -L "$$backup/$$ext" ]; then \
 					rm -rf "_extensions/$$ext"; \
@@ -124,6 +126,7 @@ workspace-assets:
 		if [ -e "_extensions/$$ext" ] || [ -L "_extensions/$$ext" ]; then \
 			mv "_extensions/$$ext" "$$backup/$$ext"; \
 		fi; \
+		installing="$$installing $$ext"; \
 		mv "$$tmp/new/$$ext" "_extensions/$$ext"; \
 		echo "workspace-assets: installed $$ext extension from asta-plugins@$${ref:-$$url}"; \
 	done
