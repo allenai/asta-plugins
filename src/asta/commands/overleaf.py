@@ -1148,10 +1148,10 @@ def record_match(
         **no_terminal(),
     )
     try:
-        ident = os.fsdecode(result.stdout).rsplit(" ", 2)[0]
-        name, email = ident.rsplit(" <", 1)
         if result.returncode:
             raise ValueError
+        ident = os.fsdecode(result.stdout).rsplit(" ", 2)[0]
+        name, email = ident.rsplit(" <", 1)
         identity = ["-c", f"user.name={name}", "-c", f"user.email={email[:-1]}"]
         record_publication(root, url, previous, overleaf, workspace, identity)
     except (ValueError, SyncError):
@@ -1494,7 +1494,11 @@ def default_branch(root: Path, *, publishing: bool = False):
     help="Require this full workspace commit to remain the default-branch tip.",
 )
 def publish(
-    directory: str | None, project: Path, dry_run: bool, expected_commit: str | None
+    directory: str | None,
+    project: Path,
+    dry_run: bool,
+    expected_commit: str | None,
+    record_noop: bool = False,
 ) -> None:
     """Push the committed paper directory to Overleaf without rewriting its layout."""
     root, paper, prefix = resolve(project, paired_directory(project, directory))
@@ -1628,8 +1632,9 @@ def publish(
             changes = git("status", "--short", cwd=repo)
             if not changes:
                 click.echo("Overleaf already matches the committed paper.")
-                if not dry_run and reviewed and recorded != head:
-                    # Record the match so later syncs can skip cloning.
+                if record_noop and not dry_run and reviewed and recorded != head:
+                    # Sync records the match so later runs can skip cloning.
+                    # Manual no-op publish continues to require only read access.
                     record_match(root, config["url"], previous, head, reviewed)
                 return
             click.echo(changes)

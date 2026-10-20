@@ -7,7 +7,11 @@
   default branch's paper and pairing, with no sync branch or held lock, and Git
   and GitHub agree on the default branch. Report refused Git probes immediately,
   and reuse local objects from complete checkouts when a workspace clone is
-  needed, including linked worktrees.
+  needed, including linked worktrees. Shallow, grafted, partial and
+  alternate-backed checkouts use a regular clone. An unchanged sync seeds a
+  missing sync record for later fast runs; a manual no-op publish writes
+  nothing. Missing Overleaf authentication fails before the workspace clone,
+  with recovery guidance even when no sync record exists.
 
 - Workspace sites use Asta's light and dark palettes (dark by default, with a persistent light toggle),
   consistent typography, and section headings that stay visible while reading.

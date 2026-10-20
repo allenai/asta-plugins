@@ -84,7 +84,16 @@ For these, the CLI will prompt you to authenticate on first use.
 metadata read when Overleaf and the default branch's paper and pairing still
 match the published sync record, with no sync branch or held lock, and Git and
 GitHub agree on the default branch. An unverified state uses the full sync
-workflow; a refused remote Git probe returns immediately.
+workflow; a refused remote Git probe returns immediately, including a missing
+Overleaf login on a project with no published record. On the first unchanged
+sync without a record, the full workflow best-effort writes the sync point to
+origin so later runs can take the shortcut. A manual no-op `publish` writes
+nothing. Workspace clones reuse local objects only from complete checkouts;
+shallow, grafted, partial and alternate-backed checkouts use a regular clone.
+
+Overleaf commands require Git 2.29 or newer: their fetches use
+[`--no-write-fetch-head`](https://github.com/git/git/blob/v2.29.0/Documentation/RelNotes/2.29.0.txt)
+to preserve the caller's `FETCH_HEAD`.
 
 `asta workspace overleaf check --project /path/to/scratch-checkout` exercises
 co-author import/merge, publication and conflict resolution against an

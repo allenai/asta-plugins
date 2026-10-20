@@ -651,13 +651,42 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
+def clone_reference_options(root: Path) -> list[str]:
+    """Borrow objects only from an independent, complete local object store."""
+    reference = (root / ov.git("rev-parse", "--git-common-dir", cwd=root)).resolve()
+    # Shallow/grafted stores cannot be references. Promisor objects may be absent,
+    # and alternates can hide an incomplete store further along the chain.
+    if any(
+        (reference / name).exists()
+        for name in ("shallow", "info/grafts", "objects/info/alternates")
+    ) or any((reference / "objects/pack").glob("*.promisor")):
+        return []
+    try:
+        ov.git(
+            "config",
+            "--get-regexp",
+            r"^(extensions\.partialclone|remote\..*\.promisor)$",
+            cwd=root,
+        )
+    except ov.GitCommandError as exc:
+        if exc.returncode == 1:  # No partial-clone configuration exists.
+            return ["--reference-if-able", str(reference), "--dissociate"]
+    # Configured partial clones need not have any .promisor packs yet. An
+    # unreadable configuration is also no reason to risk the optimization.
+    return []
+
+
 def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
     """True only when nothing can need syncing, without cloning either remote.
 
     Overleaf HEAD must equal the published record's Overleaf commit, origin's
     default branch must carry the paper and pairing the record published, and no
     sync branch (so no sync PR) may exist. Unverified state falls through to the
-    full sync; remote access failures and unsupported formats fail immediately.
+    full sync; remote access failures fail immediately. Record formats are
+    checked while reading the published record and again in the full workflow;
+    unverified tracked pairing metadata defers to that workflow's validation.
+    Probe Overleaf even without a record so missing authentication fails before
+    the full workflow's workspace clone and GitHub calls.
 
     Only a candidate no-op reads GitHub's defaultBranchRef, which must agree
     with origin's HEAD symref. Git access failures precede this API call. These
@@ -827,14 +856,7 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
         try:
             pr = sync_pr(root, repo, branch, default_name)
             origin = ov.git("remote", "get-url", "origin", cwd=root)
-            reference = (
-                root / ov.git("rev-parse", "--git-common-dir", cwd=root)
-            ).resolve()
-            # Repacking borrowed promisor packs can fail on objects that are
-            # absent locally. A normal clone retrieves complete history instead.
-            clone_options = []
-            if not any((reference / "objects/pack").glob("*.promisor")):
-                clone_options = ["--reference-if-able", str(reference), "--dissociate"]
+            clone_options = clone_reference_options(root)
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp) / "workspace"
                 # Borrow local objects so only commits missing here cross the network.
@@ -1121,6 +1143,7 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
                     directory=directory,
                     dry_run=False,
                     expected_commit=tip,
+                    record_noop=True,
                 )
                 issues = gh(
                     root,
