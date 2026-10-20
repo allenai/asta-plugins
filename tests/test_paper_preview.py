@@ -45,7 +45,6 @@ def paper_repo(tmp_path, old_paper=True):
     commands = {
         "latexmk": '#!/bin/bash\nmkdir -p build\nname="${@: -1}"\nprintf pdf > "build/${name%.tex}.pdf"\nprintf "%s\\n" "${FAKE_LATEX_LOG:-}" > build/main.log\nif [ -n "${FAKE_BIBTEX_LOG:-}" ]; then printf "%s\\n" "$FAKE_BIBTEX_LOG" > build/main.blg; fi\nif [ -n "${FAKE_BBL:-}" ]; then printf "%s\\n" "$FAKE_BBL" > build/main.bbl; fi\nprintf "PWD %s\\nINPUT main.tex\\n" "$PWD" > build/main.fls\nif [ -n "${FAKE_LATEX_INPUT:-}" ]; then printf "INPUT %s\\n" "$FAKE_LATEX_INPUT" >> build/main.fls; fi\n',
         "latexdiff": "#!/bin/bash\nprintf '\\\\begin{document}\\n\\\\DIFadd{new}\\n'\n",
-        "pdftoppm": '#!/bin/bash\nname="${@: -1}"\nprintf png > "${name}-1.png"\n',
     }
     for name, contents in commands.items():
         path = bin_dir / name
@@ -89,14 +88,14 @@ def test_paper_preview_builds_current_and_diff_pdfs(tmp_path):
     assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
     assert not (repo / "_site/paper-previews/paper/html").exists()
     assert not (repo / "_site/paper-previews/paper/html-diff").exists()
-    assert (repo / "_site/paper-previews/paper/diff-page-1.png").exists()
+    # What changed reads the diff PDF in the paper's viewer; no page images.
+    assert not list((repo / "_site/paper-previews/paper").glob("diff-page-*.png"))
     assert json.loads(
         (repo / "_site/paper-previews/paper/preview.json").read_text()
     ) == {
         "changed": True,
         "diff": True,
         "other_inputs": False,
-        "thumbnail_limit": 12,
     }
     assert not list((repo / "paper").glob("what-changed.*.tex"))
     commands = (repo / "paper/latexmk-args.txt").read_text().splitlines()
@@ -573,40 +572,6 @@ def test_latexdiff_failure_keeps_current_pdf(tmp_path):
         "diff": False,
         "other_inputs": False,
     }
-
-
-def test_thumbnail_failure_keeps_diff_pdf(tmp_path):
-    repo, base, env, bin_dir = paper_repo(tmp_path)
-    (bin_dir / "pdftoppm").write_text("#!/bin/bash\nexit 1\n")
-
-    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
-
-    assert "Could not render paper diff thumbnails" in result.stdout
-    assert (repo / "_site/paper-previews/paper/what-changed.pdf").exists()
-    assert not list((repo / "_site/paper-previews/paper").glob("diff-page-*.png"))
-    assert json.loads(
-        (repo / "_site/paper-previews/paper/preview.json").read_text()
-    ) == {
-        "changed": True,
-        "diff": True,
-        "other_inputs": False,
-        "thumbnail_limit": 12,
-    }
-
-
-def test_diff_records_actual_page_count_for_thumbnail_note(tmp_path):
-    repo, base, env, bin_dir = paper_repo(tmp_path)
-    (bin_dir / "pdfinfo").write_text("#!/bin/sh\necho 'Pages: 13'\n")
-    (bin_dir / "pdfinfo").chmod(0o755)
-
-    run("bash", str(SCRIPT), base, cwd=repo, env=env)
-
-    assert (
-        json.loads((repo / "_site/paper-previews/paper/preview.json").read_text())[
-            "page_count"
-        ]
-        == 13
-    )
 
 
 def test_diff_does_not_delete_a_tracked_paper_file(tmp_path):

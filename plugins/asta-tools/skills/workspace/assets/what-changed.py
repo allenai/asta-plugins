@@ -45,7 +45,6 @@ Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 
 import argparse
 import difflib
-import glob
 import html
 import json
 import os
@@ -697,9 +696,26 @@ DIFF_STYLE = """
 .wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
     padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
     white-space: pre-wrap; overflow-wrap: break-word; }
-.wc-scope .paper-thumbs { display: flex; flex-wrap: wrap; gap: .75rem; }
-.wc-scope .paper-thumbs img { max-width: 160px; height: auto;
-    border: 1px solid var(--wc-border); }
+/* The paper's own viewer, as on its page: one bar over the PDF, a page tall
+   at the column's width (whatever the window), and ⤢ for the whole window. */
+.wc-scope .paper-view { margin-top: .5rem; }
+.wc-scope .paper-bar { display: flex; flex-wrap: wrap; align-items: center;
+    gap: .25rem .9rem; font-size: .9rem; padding: .35rem 0;
+    border-bottom: 1px solid var(--wc-border); }
+.wc-scope .paper-title { font-size: 1rem; }
+.wc-scope .paper-expand, .wc-scope .paper-modes button { font: inherit; line-height: 1.2;
+    padding: .2rem .55rem; border: 1px solid var(--wc-border); border-radius: 6px;
+    background: transparent; color: inherit; cursor: pointer; }
+.wc-scope .paper-modes { display: inline-flex; gap: .3rem; margin-left: auto; }
+.wc-scope .paper-modes button { font-size: .85rem; padding: .15rem .7rem; }
+.wc-scope .paper-modes button[aria-pressed="true"] { font-weight: 600;
+    background: var(--bs-body-color, #24292f); color: var(--bs-body-bg, #fff);
+    border-color: var(--bs-body-color, #24292f); }
+.wc-scope .paper-view object { display: block; width: 100%; aspect-ratio: 3 / 4; border: 0; }
+.wc-scope .paper-view.paper-full { position: fixed; inset: 0; z-index: 1050; margin: 0;
+    display: flex; flex-direction: column; background: var(--bs-body-bg, #fff); }
+.wc-scope .paper-full .paper-bar { padding: .35rem .75rem; }
+.wc-scope .paper-full object { flex: 1; aspect-ratio: auto; }
 .wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope nav.toc a { display: inline-block; margin-right: 1rem; }
@@ -911,6 +927,42 @@ FOLD_JS = r"""
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", run);
   } else { run(); }
+})();
+"""
+
+# The paper's viewer works as on its own page: the switch picks the marked or
+# the clean PDF, ⤢ gives it the whole window, and Esc gives the report back.
+PAPER_JS = r"""
+(function () {
+  "use strict";
+  document.querySelectorAll(".paper-view").forEach(function (view) {
+    var frame = view.querySelector("object");
+    var expand = view.querySelector(".paper-expand");
+    var buttons = view.querySelectorAll(".paper-modes button");
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        var next = frame.cloneNode(true);
+        next.setAttribute("data", button.getAttribute("data-pdf") + "#navpanes=0&view=FitH");
+        frame.replaceWith(next);
+        frame = next;
+        buttons.forEach(function (other) {
+          other.setAttribute("aria-pressed", String(other === button));
+        });
+      });
+    });
+    function setFull(full) {
+      view.classList.toggle("paper-full", full);
+      document.body.style.overflow = full ? "hidden" : "";
+      expand.setAttribute("aria-pressed", String(full));
+      expand.title = full ? "Back to the report" : "Give the paper the whole window";
+    }
+    expand.addEventListener("click", function () {
+      setFull(!view.classList.contains("paper-full"));
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && view.classList.contains("paper-full")) setFull(false);
+    });
+  });
 })();
 """
 
@@ -1158,37 +1210,31 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     else:
         note = "The LaTeX diff could not be built; the current paper PDF is available."
     status = "new" if state.get("new") else "changed"
-    thumbs = []
+    # The paper reads in the same viewer as on its own page, a page tall here,
+    # with the same switch between its changes marked and the clean paper and
+    # the same ⤢ for the whole window, so that it reads one way wherever the
+    # site shows it.
+    modes = ""
     if state.get("diff"):
-        pages = []
-        for path in glob.glob(
-            os.path.join(new_root, "paper-previews", paper_dir, "diff-page-*.png")
-        ):
-            filename = os.path.basename(path)
-            match = re.fullmatch(r"diff-page-(\d+)\.png", filename)
-            if not match:
-                continue
-            pages.append((int(match.group(1)), filename))
-        for page, filename in sorted(pages):
-            thumbs.append(
-                f'<a href="{pdf}#page={page}"><img src="{paper_url(filename)}" '
-                f'alt="Paper diff page {page}" loading="lazy"></a>'
-            )
-        limit = state.get("thumbnail_limit")
-        page_count = state.get("page_count")
-        if (
-            isinstance(limit, int)
-            and limit > 0
-            and isinstance(page_count, int)
-            and page_count > limit
-            and len(thumbs) >= limit
-        ):
-            note += f" Thumbnails show at most the first {limit} pages; the PDF includes every page."
+        modes = (
+            '<span class="paper-modes" role="group" aria-label="Which PDF">'
+            f'<button type="button" data-pdf="{paper_url("what-changed.pdf")}" '
+            'aria-pressed="true">This PR\'s changes marked</button>'
+            f'<button type="button" data-pdf="{paper_url("main.pdf")}" '
+            'aria-pressed="false">Clean</button></span>'
+        )
+    viewer = (
+        '<div class="paper-view"><div class="paper-bar">'
+        '<button type="button" class="paper-expand" aria-pressed="false" '
+        'title="Give the paper the whole window">&#x2922;</button>'
+        f'<strong class="paper-title">{label}</strong>{modes}</div>'
+        f'<object data="{pdf}#navpanes=0&amp;view=FitH" type="application/pdf" '
+        f'title="{label}"><a href="{pdf}">Open the paper PDF</a></object></div>'
+    )
     section = (
         f'<section class="page-diff {status}" id="{section_id}">'
         f'<h2>{label} <span class="tag {status}">{status}</span></h2>'
-        f'<p class="wc-note">{note} <a href="{pdf}">Open the PDF</a>.</p>'
-        f'<div class="paper-thumbs">{"".join(thumbs)}</div></section>'
+        f'<p class="wc-note">{note}</p>{viewer}</section>'
     )
     return section, status
 
@@ -1371,7 +1417,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body{body_attrs}>{mode_js}{body}"
-        f"<script>{FOLD_JS}</script></body></html>"
+        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script></body></html>"
     )
 
 

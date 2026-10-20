@@ -115,8 +115,8 @@ def paper_directories(data: object) -> list[str]:
 OVERLEAF_GIT = re.compile(r"https://git\.overleaf\.com/([0-9a-f]{24})")
 
 
-def overleaf_project(directory: str) -> str | None:
-    """The Overleaf project a paper is paired with, from its pairing record."""
+def paired_with_overleaf(directory: str) -> bool:
+    """Whether the paper's pairing record names an Overleaf project."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel", "--show-prefix"],
@@ -128,9 +128,30 @@ def overleaf_project(directory: str) -> str | None:
         record = Path(top) / ".asta/overleaf" / f"{prefix}{directory}.json"
         url = json.loads(record.read_text(encoding="utf-8")).get("url", "")
     except (OSError, ValueError, AttributeError, subprocess.CalledProcessError):
-        return None
-    match = OVERLEAF_GIT.fullmatch(url) if isinstance(url, str) else None
-    return f"https://www.overleaf.com/project/{match[1]}" if match else None
+        return False
+    return isinstance(url, str) and OVERLEAF_GIT.fullmatch(url) is not None
+
+
+def overleaf_link_named(directory: str) -> bool:
+    """Whether _quarto.yml's `overleaf-links` names a link for this paper.
+
+    The project sets the link it wants readers to open, and so what that link
+    grants; Quarto reads the value, and this only checks the key is there, so
+    that a page never asks Quarto for a key the project hasn't set.
+    """
+    try:
+        lines = Path("_quarto.yml").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    keys, inside = set(), False
+    for line in lines:
+        if re.fullmatch(r"overleaf-links:\s*(#.*)?", line):
+            inside = True
+        elif inside and (match := re.match(r"\s+([^\s:#][^:#]*?)\s*:", line)):
+            keys.add(match[1].strip("'\""))
+        elif inside and line.strip() and not line.startswith((" ", "#")):
+            inside = False
+    return directory in keys
 
 
 def create_viewer(
@@ -157,49 +178,150 @@ def create_viewer(
     target = posixpath.relpath(f"paper-previews/{directory}", folder.as_posix())
     target = quote(target, safe="/.")
     source = f"{directory}/{main_file}"
-    overleaf = overleaf_project(directory)
-    paired = (
-        f"""<p>The paper is paired with
-<a href="{html.escape(overleaf, quote=True)}">its Overleaf project</a>:
-co-authors edit it there, and their edits come back as pull requests.</p>
-"""
-        if overleaf
-        else ""
+    # Plain text, plus the one link the project names for readers (a share
+    # link, say): who may open the repository or the project is the owner's
+    # to decide, not the page's to assume.
+    where = f"Written in <code>{html.escape(source)}</code>" + (
+        ", paired with an Overleaf project." if paired_with_overleaf(directory) else "."
     )
+    # Quarto reads a key path split at dots and a shortcode's arguments split at
+    # spaces, so only a folder name it can address gets the link.
+    if re.fullmatch(r"[\w/-]+", directory) and overleaf_link_named(directory):
+        where += (
+            ' <a class="paper-link" href="{{< meta overleaf-links.'
+            + directory
+            + ' >}}">Open it in Overleaf</a>'
+        )
     content = f"""---
 title: {json.dumps(title)}
+page-layout: full
+title-block-style: none
+toc: false
 ---
 
 {GENERATED_MARKER}
 
 ```{{=html}}
-{paired}<p>The paper is written in <code>{html.escape(source)}</code>.
-The preview builds a PDF from that LaTeX source.</p>
 <div data-paper-preview="{html.escape(target, quote=True)}">
+<div class="paper-bar">
+<button type="button" class="paper-expand" aria-pressed="false"
+  title="Give the paper the whole window">&#x2922;</button>
+<strong class="paper-title">{html.escape(title)}</strong>
+<span class="paper-where">{where}</span>
+<span class="paper-modes" role="group" aria-label="Which PDF" hidden>
+<button type="button" data-file="what-changed.pdf" aria-pressed="true">This PR's changes marked</button>
+<button type="button" data-file="main.pdf" aria-pressed="false">Clean</button>
+</span>
+</div>
 <div data-paper-pdf>
 <p>The paper PDF appears after the preview build.</p>
 </div>
 </div>
 
+<style>
+.paper-bar {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.9rem;
+  font-size: 0.9rem; padding: 0.35rem 0; margin: 0 0 0.35rem;
+  border-bottom: 1px solid var(--bs-border-color); }}
+.paper-title {{ font-size: 1rem; }}
+.paper-expand {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
+  border: 1px solid var(--bs-border-color); border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer; }}
+/* Collapsed: the site's sidebar and header give way and the paper takes the
+   whole window under its bar, as Overleaf's panels collapse. */
+[data-paper-preview].paper-full {{ position: fixed; inset: 0; z-index: 1050;
+  background: var(--bs-body-bg); display: flex; flex-direction: column; }}
+body.paper-page-full #quarto-sidebar, body.paper-page-full #quarto-header,
+body.paper-page-full .quarto-secondary-nav {{ display: none !important; }}
+/* The bar names the paper, so the page's own title block isn't repeated. */
+body:has([data-paper-preview]) #title-block-header {{ display: none; }}
+/* The paper runs to the window's bottom: the space Quarto keeps under an
+   article goes. A site's footer, if it has one, still shows below. */
+body:has([data-paper-preview]) main.content {{ margin-bottom: 0; }}
+body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
+  [content-top] minmax(max-content, 1fr) [content-bottom] 0 [page-bottom]; }}
+.paper-full .paper-bar {{ padding: 0.35rem 0.75rem; margin: 0; }}
+.paper-modes {{ display: inline-flex; gap: 0.3rem; margin-left: auto; }}
+.paper-modes[hidden] {{ display: none; }}
+.paper-modes button {{ font: inherit; font-size: 0.85rem; padding: 0.15rem 0.7rem;
+  border: 1px solid var(--bs-border-color); border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer; }}
+.paper-modes button[aria-pressed="true"] {{ background: var(--bs-body-color);
+  color: var(--bs-body-bg); border-color: var(--bs-body-color); font-weight: 600; }}
+[data-paper-pdf] object {{ display: block; width: 100%; border: 0; }}
+[data-paper-pdf] object a {{ display: inline-block; padding: 1rem 0; }}
+</style>
+
 <script>
 (() => {{
   const host = document.querySelector('[data-paper-preview]');
-  const url = host.dataset.paperPreview + '/main.pdf';
-  fetch(url, {{ method: 'HEAD' }}).then(response => {{
-    if (!response.ok) return;
-    // Without the thumbnail pane, so the page itself fills the frame. The
-    // link shows only where a browser can't display the PDF inline.
+  const base = host.dataset.paperPreview + '/';
+  const slot = host.querySelector('[data-paper-pdf]');
+  const modes = host.querySelector('.paper-modes');
+  const exists = file => fetch(base + file, {{ method: 'HEAD' }})
+    .then(response => response.ok).catch(() => false);
+  // The PDF fills the window below what's above it and scrolls inside
+  // itself, as Overleaf's PDF pane does, so the page never scrolls to read.
+  const fit = () => {{
+    const frame = slot.querySelector('object');
+    if (!frame) return;
+    const full = host.classList.contains('paper-full');
+    const top = frame.getBoundingClientRect().top + (full ? 0 : scrollY);
+    frame.style.height = Math.max(320, innerHeight - top) + 'px';
+    // What the site puts below the paper (padding, a footer) comes off too.
+    const over = document.documentElement.scrollHeight - innerHeight;
+    if (!full && over > 0)
+      frame.style.height = Math.max(320, innerHeight - top - over) + 'px';
+  }};
+  // Collapsing the site gives the paper the whole window; the choice is kept
+  // for this browser, as Overleaf keeps its layout.
+  const expand = host.querySelector('.paper-expand');
+  const setFull = full => {{
+    host.classList.toggle('paper-full', full);
+    document.body.classList.toggle('paper-page-full', full);
+    expand.setAttribute('aria-pressed', String(full));
+    expand.title = full ? 'Show the site again' : 'Give the paper the whole window';
+    try {{ localStorage.setItem('paper-page-full', full ? '1' : ''); }} catch (e) {{}}
+    fit();
+  }};
+  expand.addEventListener('click', () => setFull(!host.classList.contains('paper-full')));
+  // As in What changed: Esc gives the site back.
+  addEventListener('keydown', event => {{
+    if (event.key === 'Escape' && host.classList.contains('paper-full')) setFull(false);
+  }});
+  try {{ if (localStorage.getItem('paper-page-full')) setFull(true); }} catch (e) {{}}
+  const show = file => {{
+    // Without the thumbnail pane; the link shows only where a browser can't
+    // display a PDF inline (most phones), so the paper still opens.
     const frame = document.createElement('object');
-    frame.setAttribute('data', url + '#navpanes=0&view=FitH');
+    frame.setAttribute('data', base + file + '#navpanes=0&view=FitH');
     frame.setAttribute('type', 'application/pdf');
     frame.title = {json.dumps(title).replace("<", chr(92) + "u003c")};
-    frame.style.cssText = 'width:100%;min-height:80vh;border:0';
     const link = document.createElement('a');
-    link.href = url;
+    link.href = base + file;
     link.textContent = 'Open the paper PDF';
     frame.append(link);
-    host.querySelector('[data-paper-pdf]').replaceChildren(frame);
-  }}).catch(() => {{}});
+    slot.replaceChildren(frame);
+    for (const button of modes.querySelectorAll('button'))
+      button.setAttribute('aria-pressed', String(button.dataset.file === file));
+    fit();
+  }};
+  // The site's own layout settles after load (fonts; a fixed header the page
+  // is padded for), so refit whenever what holds the paper changes size.
+  addEventListener('resize', fit);
+  const settle = new ResizeObserver(fit);
+  for (let box = host.parentElement; box && box !== document.documentElement; box = box.parentElement)
+    settle.observe(box, {{ box: 'border-box' }});
+  Promise.all([exists('main.pdf'), exists('what-changed.pdf')]).then(([clean, marked]) => {{
+    if (!clean) return;
+    // A PR's preview also builds the paper with that PR's changes marked:
+    // show it first there, with a switch to the clean version.
+    if (marked) {{
+      modes.hidden = false;
+      for (const button of modes.querySelectorAll('button'))
+        button.addEventListener('click', () => show(button.dataset.file));
+    }}
+    show(marked ? 'what-changed.pdf' : 'main.pdf');
+  }});
 }})();
 </script>
 ```

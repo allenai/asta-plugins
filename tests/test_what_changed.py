@@ -41,14 +41,15 @@ def test_paper_diff_appears_before_quarto_changes(tmp_path):
     (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": True})
     )
-    (new / "paper-previews/paper/diff-page-1.png").write_bytes(b"png")
     (new / "index.html").write_text("<main><p>New Quarto page</p></main>")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
     assert result.index('id="paper-diff"') < result.index('id="p-index-html"')
-    assert 'href="paper-previews/paper/what-changed.pdf#page=1"' in result
-    assert 'src="paper-previews/paper/diff-page-1.png"' in result
+    assert (
+        'data="paper-previews/paper/what-changed.pdf#navpanes=0&amp;view=FitH"'
+        in result
+    )
 
 
 def test_multiple_papers_have_distinct_diff_sections(tmp_path):
@@ -169,7 +170,7 @@ def test_removed_second_paper_has_its_own_notice(tmp_path):
     assert 'href="paper-previews/latex/main.pdf"' not in result
 
 
-def test_paper_diff_thumbnails_follow_page_number(tmp_path):
+def test_paper_diff_reads_in_the_paper_pages_viewer(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
@@ -177,51 +178,37 @@ def test_paper_diff_thumbnails_follow_page_number(tmp_path):
     (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": True})
     )
-    for page in (10, 2):
-        (new / f"paper-previews/paper/diff-page-{page}.png").write_bytes(b"png")
+    # Thumbnails an older preview left behind are no longer shown.
+    (new / "paper-previews/paper/diff-page-1.png").write_bytes(b"png")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
-    assert result.index('src="paper-previews/paper/diff-page-2.png"') < result.index(
-        'src="paper-previews/paper/diff-page-10.png"'
-    )
+    assert 'class="paper-view"' in result
+    assert 'class="paper-expand"' in result
+    assert (
+        'data-pdf="paper-previews/paper/what-changed.pdf" aria-pressed="true">'
+        "This PR's changes marked</button>"
+    ) in result
+    assert (
+        'data-pdf="paper-previews/paper/main.pdf" aria-pressed="false">Clean</button>'
+    ) in result
+    assert "diff-page-1.png" not in result
+    assert 'event.key === "Escape"' in result
 
 
-def test_paper_diff_explains_thumbnail_limit(tmp_path):
+def test_paper_without_a_diff_shows_the_clean_pdf_and_no_switch(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
     old.mkdir()
     (new / "paper-previews/paper").mkdir(parents=True)
     (new / "paper-previews/paper/preview.json").write_text(
-        json.dumps(
-            {"changed": True, "diff": True, "thumbnail_limit": 2, "page_count": 3}
-        )
+        json.dumps({"changed": True, "diff": False})
     )
-    for page in (1, 2):
-        (new / f"paper-previews/paper/diff-page-{page}.png").write_bytes(b"png")
 
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
 
-    assert "Thumbnails show at most the first 2 pages" in result
-    assert "the PDF includes every page" in result
-
-
-def test_paper_diff_does_not_claim_truncation_at_exact_limit(tmp_path):
-    old = tmp_path / "old"
-    new = tmp_path / "new"
-    old.mkdir()
-    (new / "paper-previews/paper").mkdir(parents=True)
-    (new / "paper-previews/paper/preview.json").write_text(
-        json.dumps(
-            {"changed": True, "diff": True, "thumbnail_limit": 2, "page_count": 2}
-        )
-    )
-    for page in (1, 2):
-        (new / f"paper-previews/paper/diff-page-{page}.png").write_bytes(b"png")
-
-    result = WHAT_CHANGED.build(old, new, "", "PR preview")
-
-    assert "Thumbnails show at most" not in result
+    assert 'data="paper-previews/paper/main.pdf#navpanes=0&amp;view=FitH"' in result
+    assert 'class="paper-modes"' not in result
 
 
 def test_non_tex_paper_inputs_link_current_pdf_without_highlight_claim(tmp_path):
