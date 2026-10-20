@@ -655,8 +655,9 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
     """True only when nothing can need syncing: a cheap check before GitHub calls.
 
     Overleaf HEAD must equal the published record's Overleaf commit, origin's
-    default branch must carry the paper the record published, and no sync branch
-    (so no sync PR) may exist. Any doubt falls through to the full sync.
+    default branch must carry the paper and pairing the record published, and no
+    sync branch (so no sync PR) may exist. Unverified state falls through to the
+    full sync; remote access failures and unsupported formats fail immediately.
     """
     record = ov.record_ref(config["url"])
     advertised = ov.git(
@@ -676,28 +677,34 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
     tip = refs.get("HEAD")
     if not tip or f"refs/heads/{branch}" in refs or record not in refs:
         return False
-    try:
-        head = ov.overleaf_head(config["url"], root)
-        if not head:
+    head = ov.overleaf_head(config["url"], root)
+    if not head:
+        return False
+    with ov.published_record(root, config["url"], warn=False) as (
+        _,
+        overleaf,
+        source,
+    ):
+        if overleaf != head or not source:
             return False
-        with ov.published_record(root, config["url"], warn=False) as (
-            _,
-            overleaf,
-            source,
-        ):
-            if overleaf != head or not source:
-                return False
-        if ov.resolve_commit(root, tip) is None:
-            ov.git(
-                "fetch",
-                "-q",
-                "--no-tags",
-                "--no-write-fetch-head",
-                "origin",
-                tip,
-                cwd=root,
-            )
-        return ov.tree(root, source, prefix) == ov.tree(root, tip, prefix)
+    if ov.resolve_commit(root, tip) is None:
+        ov.git(
+            "fetch",
+            "-q",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "origin",
+            tip,
+            cwd=root,
+        )
+    try:
+        return (
+            ov.is_ancestor(root, source, tip)
+            and ov.tree(root, source, prefix) == ov.tree(root, tip, prefix)
+            and ov.tracked_record(root, prefix, source)
+            == ov.tracked_record(root, prefix, tip)
+        )
     except click.ClickException:
         return False
 

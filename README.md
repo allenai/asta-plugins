@@ -80,6 +80,11 @@ The CLI can be used directly from the command line or invoked by agents via Bash
 work on the local filesystem using your own LLM provider keys. Other commands call external APIs hosted by Ai2
 For these, the CLI will prompt you to authenticate on first use.
 
+`asta workspace overleaf sync` skips GitHub calls and temporary clones when
+Overleaf and the default branch's paper and pairing still match the published
+sync record, with no sync branch or held lock. An unverified state uses the
+full sync workflow; a refused remote Git probe returns immediately.
+
 `asta workspace overleaf check --project /path/to/scratch-checkout` exercises
 co-author import/merge, publication and conflict resolution against an
 Overleaf/repository pair reserved for release checks. Run it outside CI
