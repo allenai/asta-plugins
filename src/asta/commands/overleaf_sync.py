@@ -651,6 +651,116 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
+def clone_reference_options(root: Path) -> list[str]:
+    """Borrow objects only from an independent, complete local object store."""
+    reference = (root / ov.git("rev-parse", "--git-common-dir", cwd=root)).resolve()
+    # Shallow/grafted stores cannot be references. Promisor objects may be absent,
+    # and alternates can hide an incomplete store further along the chain.
+    if any(
+        (reference / name).exists()
+        for name in ("shallow", "info/grafts", "objects/info/alternates")
+    ) or any((reference / "objects/pack").glob("*.promisor")):
+        return []
+    try:
+        ov.git(
+            "config",
+            "--get-regexp",
+            r"^(extensions\.partialclone|remote\..*\.promisor)$",
+            cwd=root,
+        )
+    except ov.GitCommandError as exc:
+        if exc.returncode == 1:  # No partial-clone configuration exists.
+            return ["--reference-if-able", str(reference), "--dissociate"]
+    # Configured partial clones need not have any .promisor packs yet. An
+    # unreadable configuration is also no reason to risk the optimization.
+    return []
+
+
+def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
+    """True only when nothing can need syncing, without cloning either remote.
+
+    Overleaf HEAD must equal the published record's Overleaf commit, origin's
+    default branch must carry the paper and pairing the record published, and no
+    sync branch (so no sync PR) may exist. Unverified state falls through to the
+    full sync; remote access failures fail immediately. Record formats are
+    checked while reading the published record and again in the full workflow;
+    unverified tracked pairing metadata defers to that workflow's validation.
+    Probe Overleaf even without a record so missing authentication fails before
+    the full workflow's workspace clone and GitHub calls.
+
+    Only a candidate no-op reads GitHub's defaultBranchRef, which must agree
+    with origin's HEAD symref. Git access failures precede this API call. These
+    remote reads are observations, not an atomic snapshot: concurrent edits may
+    require another sync invocation.
+    """
+    record = ov.record_ref(config["url"])
+    advertised = ov.git(
+        "ls-remote",
+        "--symref",
+        "origin",
+        "HEAD",
+        f"refs/heads/{branch}",
+        record,
+        cwd=root,
+    )
+    refs = {}
+    default_ref = ""
+    for line in advertised.splitlines():
+        oid, _, name = line.partition("\t")
+        if oid.startswith("ref: ") and name == "HEAD":
+            default_ref = oid.removeprefix("ref: ")
+        elif not oid.startswith("ref:"):
+            refs[name] = oid
+    tip = refs.get("HEAD")
+    # Probe Overleaf before any shortcut exit so a refused login fails fast.
+    head = ov.overleaf_head(config["url"], root)
+    if (
+        not head
+        or not re.fullmatch(r"refs/heads/\S+", default_ref)
+        or not tip
+        or f"refs/heads/{branch}" in refs
+        or record not in refs
+    ):
+        return False
+    with ov.published_record(root, config["url"], warn=False) as (
+        _,
+        overleaf,
+        source,
+    ):
+        if overleaf != head or not source:
+            return False
+    if ov.resolve_commit(root, tip) is None:
+        # Fetch the advertised branch by name: a server need not accept raw OID
+        # requests, especially if its tip changed since ls-remote. The empty
+        # refmap and disabled FETCH_HEAD preserve the caller's refs and state.
+        ov.git(
+            "fetch",
+            "-q",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "origin",
+            default_ref,
+            cwd=root,
+        )
+        if ov.resolve_commit(root, tip) is None:
+            return False  # A concurrent force-push made the observed tip unavailable.
+    try:
+        matches = (
+            ov.is_ancestor(root, source, tip)
+            and ov.tree(root, source, prefix) == ov.tree(root, tip, prefix)
+            and ov.tracked_record(root, prefix, source)
+            == ov.tracked_record(root, prefix, tip)
+        )
+    except click.ClickException:
+        return False
+    if not matches:
+        return False
+    info = gh(root, "repo", "view", "--json", "defaultBranchRef")
+    default = info.get("defaultBranchRef") or {}
+    return default_ref == f"refs/heads/{default.get('name')}"
+
+
 def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
@@ -662,15 +772,24 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
             "Import and commit the paper with overleaf pull before scheduling sync."
         )
     project_id = ov.validate_url(config["url"]).rsplit("/", 1)[1]
+    lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
+    # Read origin first so a refused Git login fails before any slower GitHub calls.
+    held = ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root)
+    branch = f"asta/overleaf-sync/{project_id}"
+    if not held and already_synced(root, config, prefix, branch):
+        message = "Overleaf already matches the committed paper."
+        click.echo(message)
+        return COMPLETE, message
     info = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
-    branch = f"asta/overleaf-sync/{project_id}"
     # Compatibility checks precede label updates and lock acquisition. Repeat
     # the reads under the lock below to catch state that changes during preflight.
     sync_pr(root, repo, branch, default_name, format_only=True)
-    lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
     try:
+        # Another run may acquire a lock during the remote/GitHub preflight.
+        # Validate its format before any shared writes, even if none was held
+        # during the early access probe.
         if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
             stale_lock(root, project_id)
     except ov.GitCommandError:
@@ -737,9 +856,19 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
         try:
             pr = sync_pr(root, repo, branch, default_name)
             origin = ov.git("remote", "get-url", "origin", cwd=root)
+            clone_options = clone_reference_options(root)
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp) / "workspace"
-                ov.git("clone", "--no-checkout", "--", origin, str(work), cwd=root)
+                # Borrow local objects so only commits missing here cross the network.
+                ov.git(
+                    "clone",
+                    "--no-checkout",
+                    *clone_options,
+                    "--",
+                    origin,
+                    str(work),
+                    cwd=root,
+                )
                 # Preserve identity without copying credential configuration.
                 for key, value in identity.items():
                     ov.git("config", key, value, cwd=work)
@@ -1014,6 +1143,7 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
                     directory=directory,
                     dry_run=False,
                     expected_commit=tip,
+                    record_noop=True,
                 )
                 issues = gh(
                     root,

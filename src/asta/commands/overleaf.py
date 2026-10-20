@@ -119,7 +119,11 @@ class ProjectURLError(SyncError):
 
 
 def git_bytes(
-    *args: str, cwd: Path, env: dict | None = None, input: bytes | None = None
+    *args: str,
+    cwd: Path,
+    env: dict | None = None,
+    input: bytes | None = None,
+    overleaf: bool = False,
 ) -> bytes:
     result = subprocess.run(
         ["git", *args],
@@ -136,6 +140,10 @@ def git_bytes(
         operation = args[index] if index < len(args) else "command"
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
+        # An Overleaf ls-remote probe gets the same diagnosis as a clone.
+        remote = operation in ("clone", "push") or (
+            overleaf and operation == "ls-remote"
+        )
         if operation == "push" and (
             b"hook declined" in stderr or b"pre-push" in stderr
         ):
@@ -144,7 +152,7 @@ def git_bytes(
                 "Check the hook against the exported paper directory and Overleaf remote.",
                 recovery="git-hooks-and-signing",
             )
-        if operation in ("clone", "push") and (
+        if remote and (
             re.search(rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)401\b", stderr)
             or b"authentication failed" in stderr
             or b"could not read username" in stderr
@@ -154,7 +162,7 @@ def git_bytes(
                 "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper.",
                 recovery="overleaf-authentication",
             )
-        if operation in ("clone", "push") and re.search(
+        if remote and re.search(
             rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)403\b", stderr
         ):
             raise SyncError(
@@ -179,7 +187,7 @@ def git_bytes(
                 f"git {operation} was rejected. Check access and the remote state.",
                 recovery="overleaf-connection",
             )
-        if operation in ("clone", "push"):
+        if remote:
             raise SyncError(
                 f"git {operation} failed (exit {result.returncode}). "
                 "Check your Overleaf credentials, project access, network and remote state."
@@ -353,6 +361,24 @@ def clone(url: str, dest: Path) -> str:
             "Overleaf project has no commits to sync. Add an initial paper file in Overleaf, then retry.",
             recovery="empty-overleaf-project",
         ) from None
+
+
+def overleaf_head(url: str, cwd: Path) -> str | None:
+    """Overleaf's HEAD commit, read without cloning the project."""
+    with credentials() as (env, options):
+        out = git(
+            *options,
+            "ls-remote",
+            url.replace("https://", "https://git@", 1),
+            "HEAD",
+            cwd=cwd,
+            env=env,
+            overleaf=True,
+        )
+    match = re.search(rf"^({FULL_OID})\tHEAD$", out, re.M)
+    # Empty projects or an unrecognized advertisement cannot prove a no-op;
+    # the full workflow will clone and validate the project instead.
+    return match.group(1) if match else None
 
 
 def push(
@@ -1110,6 +1136,30 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
     )
 
 
+def record_match(
+    root: Path, url: str, previous: str | None, overleaf: str, workspace: str
+) -> None:
+    """Best-effort record that Overleaf already equals the reviewed paper."""
+    result = subprocess.run(
+        ["git", "var", "GIT_COMMITTER_IDENT"],
+        cwd=root,
+        env=git_environment(),
+        capture_output=True,
+        **no_terminal(),
+    )
+    try:
+        if result.returncode:
+            raise ValueError
+        ident = os.fsdecode(result.stdout).rsplit(" ", 2)[0]
+        name, email = ident.rsplit(" <", 1)
+        identity = ["-c", f"user.name={name}", "-c", f"user.email={email[:-1]}"]
+        record_publication(root, url, previous, overleaf, workspace, identity)
+    except (ValueError, SyncError):
+        click.echo(
+            "Could not record the Overleaf sync point; nothing changed.", err=True
+        )
+
+
 def record_publication(
     root: Path,
     url: str,
@@ -1444,7 +1494,11 @@ def default_branch(root: Path, *, publishing: bool = False):
     help="Require this full workspace commit to remain the default-branch tip.",
 )
 def publish(
-    directory: str | None, project: Path, dry_run: bool, expected_commit: str | None
+    directory: str | None,
+    project: Path,
+    dry_run: bool,
+    expected_commit: str | None,
+    record_noop: bool = False,
 ) -> None:
     """Push the committed paper directory to Overleaf without rewriting its layout."""
     root, paper, prefix = resolve(project, paired_directory(project, directory))
@@ -1578,6 +1632,10 @@ def publish(
             changes = git("status", "--short", cwd=repo)
             if not changes:
                 click.echo("Overleaf already matches the committed paper.")
+                if record_noop and not dry_run and reviewed and recorded != head:
+                    # Sync records the match so later runs can skip cloning.
+                    # Manual no-op publish continues to require only read access.
+                    record_match(root, config["url"], previous, head, reviewed)
                 return
             click.echo(changes)
             identity_result = subprocess.run(

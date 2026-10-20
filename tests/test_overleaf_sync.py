@@ -4,6 +4,7 @@ import ast
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -131,6 +132,517 @@ def prepare(setup):
     git(project, "config", "user.email", "t@t")
     git(project, "push", "origin", "HEAD:main")
     return seed, project
+
+
+@pytest.fixture
+def published(setup):
+    seed, project = prepare(setup)
+    (project / "paper/main.tex").write_text("published paper\n")
+    commit_all(project)
+    result = run(project, "publish")
+    assert result.exit_code == 0, result.output
+    return seed, project
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("new_default_tip", [False, True])
+def test_noop_only_reads_github_default_and_skips_clones_and_shared_writes(
+    published, github, monkeypatch, new_default_tip
+):
+    seed, project = published
+    git(project, "fetch", "origin", "main")
+    if new_default_tip:
+        # The default branch may advance without this checkout fetching it.
+        other = project.parent / "other"
+        git(project, "clone", str(project.parent / "workspace.git"), str(other))
+        (other / "README.md").write_text("Unrelated reviewed change\n")
+        commit_all(other)
+        git(other, "push", "origin", "main")
+    fetch_head = project / git(project, "rev-parse", "--git-path", "FETCH_HEAD")
+    before_fetch = fetch_head.read_bytes()
+    before_refs = git(project, "show-ref")
+    before_workspace = git(project, "ls-remote", "origin")
+    before_overleaf = git(seed, "ls-remote", "origin")
+    before_head = git(project, "rev-parse", "HEAD")
+    original = sync.ov.git
+
+    def reads_only(*args, **kwargs):
+        assert args[0] not in {"clone", "push"}, args
+        if args[0] == "fetch" and re.fullmatch(sync.ov.FULL_OID, args[-1]):
+            # Some servers accept advertised branch names but refuse raw OIDs.
+            raise sync.ov.GitCommandError("server requires a named ref", 128)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", reads_only)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert "Overleaf already matches the committed paper." in result.output
+    assert github["calls"] == [(("repo", "view", "--json", "defaultBranchRef"), None)]
+    assert git(project, "rev-parse", "HEAD") == before_head
+    assert not git(project, "status", "--porcelain")
+    assert git(project, "show-ref") == before_refs
+    assert fetch_head.read_bytes() == before_fetch
+    assert git(project, "ls-remote", "origin") == before_workspace
+    assert git(seed, "ls-remote", "origin") == before_overleaf
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_noop_defers_when_git_head_differs_from_github_default(published, github):
+    _, project = published
+    origin = project.parent / "workspace.git"
+    git(project, "push", "origin", "HEAD:refs/heads/stale-default")
+    git(origin, "symbolic-ref", "HEAD", "refs/heads/stale-default")
+    (project / "paper/main.tex").write_text("new reviewed default-branch text\n")
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    before = git(origin, "show-ref")
+    result = invoke(project)
+    assert "Overleaf already matches the committed paper." not in result.output
+    assert any(args[:2] == ("pr", "list") for args, _ in github["calls"])
+    assert git(origin, "show-ref") == before
+
+
+def test_noop_github_refusal_does_not_report_complete_or_clone(published, monkeypatch):
+    _, project = published
+    original = sync.ov.git
+    calls = []
+
+    def refuse(root, *args, **kwargs):
+        calls.append(args)
+        raise sync.ov.SyncError("GitHub request refused; check gh authentication.")
+
+    def reads_only(*args, **kwargs):
+        assert args[0] not in {"clone", "push"}, args
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync, "gh", refuse)
+    monkeypatch.setattr(sync.ov, "git", reads_only)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "GitHub request refused" in result.output
+    assert "Overleaf already matches" not in result.output
+    assert calls == [("repo", "view", "--json", "defaultBranchRef")]
+
+
+def test_matching_unpublished_pair_records_sync_point_then_takes_shortcut(
+    setup, github, monkeypatch
+):
+    seed, project = prepare(setup)
+    record = sync.ov.record_ref(URL)
+    assert not git(project, "ls-remote", "origin", record)
+    assert run(project, "publish", "--dry-run").exit_code == 0
+    assert not git(project, "ls-remote", "origin", record)
+    first = invoke(project)
+    assert first.exit_code == 0, first.output
+    assert "Overleaf already matches the committed paper." in first.output
+    assert git(project, "ls-remote", "origin", record)
+    github["calls"].clear()
+    original = sync.ov.git
+
+    def reads_only(*args, **kwargs):
+        assert args[0] not in {"clone", "push"}, args
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", reads_only)
+    second = invoke(project)
+    assert second.exit_code == 0, second.output
+    assert "Overleaf already matches the committed paper." in second.output
+    assert github["calls"] == [(("repo", "view", "--json", "defaultBranchRef"), None)]
+
+
+def test_manual_noop_publish_does_not_write_sync_record(setup, monkeypatch):
+    _, project = prepare(setup)
+    before = git(project, "ls-remote", "origin")
+    original = sync.ov.git
+    record_writes = []
+
+    def read_only_origin(*args, **kwargs):
+        if "push" in args and any(":refs/asta/overleaf/" in arg for arg in args):
+            record_writes.append(args)
+            raise sync.ov.GitCommandError("origin is read-only", 128)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", read_only_origin)
+    result = run(project, "publish", merge=False)
+    assert result.exit_code == 0, result.output
+    assert "Overleaf already matches" in result.output
+    assert "Could not record" not in result.output
+    assert not record_writes
+    assert git(project, "ls-remote", "origin") == before
+
+
+@pytest.mark.parametrize("operation", ["hash-object", "push"])
+def test_noop_sync_record_failure_is_best_effort(setup, github, monkeypatch, operation):
+    _, project = prepare(setup)
+    original = sync.ov.git
+    failures = []
+
+    def fail_record(*args, **kwargs):
+        if args[0] == operation and (
+            operation == "hash-object"
+            or any(":refs/asta/overleaf/" in arg for arg in args)
+        ):
+            failures.append(args)
+            raise sync.ov.GitCommandError("fixture record failure", 128)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", fail_record)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert "Overleaf already matches" in result.output
+    assert "Could not record the Overleaf sync point" in result.output
+    assert "Published Overleaf commit" not in result.output
+    assert len(failures) == 1
+    assert not git(project, "ls-remote", "origin", sync.ov.record_ref(URL))
+
+
+@pytest.mark.parametrize("published_first", [False, True])
+def test_refused_overleaf_login_fails_before_clone_or_github(
+    setup, github, monkeypatch, published_first
+):
+    _, project = prepare(setup)
+    if published_first:
+        (project / "paper/main.tex").write_text("published paper\n")
+        commit_all(project)
+        assert run(project, "publish").exit_code == 0
+    original = sync.ov.git
+    calls = []
+
+    def refuse_overleaf(*args, **kwargs):
+        calls.append(args)
+        assert args[0] not in {"clone", "push"}, args
+        if "ls-remote" in args and any("git@" in str(arg) for arg in args):
+            raise sync.ov.GitCommandError("Authentication failed", 128)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", refuse_overleaf)
+    result = invoke(project)
+    assert result.exit_code != 0, result.output
+    assert "Authentication failed" in result.output
+    assert github["calls"] == []
+    assert sum("ls-remote" in args for args in calls) == 3
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"fatal: Authentication failed for 'https://git.overleaf.com/1234567/'",
+        b"fatal: could not read Username for 'https://git.overleaf.com': "
+        b"terminal prompts disabled",
+        b"error: RPC failed; HTTP 401 curl 22",
+    ],
+)
+def test_refused_overleaf_login_names_authentication_and_recovery(
+    published, github, monkeypatch, stderr
+):
+    _, project = published
+    original = subprocess.run
+
+    def refuse_overleaf(argv, *args, **kwargs):
+        if "ls-remote" in argv and str(argv[-2]).endswith("overleaf.git"):
+            return subprocess.CompletedProcess(argv, 128, b"", stderr)
+        return original(argv, *args, **kwargs)
+
+    monkeypatch.setattr(sync.ov.subprocess, "run", refuse_overleaf)
+    git_calls = []
+    original_git = sync.ov.git
+    monkeypatch.setattr(
+        sync.ov, "git", lambda *a, **k: git_calls.append(a) or original_git(*a, **k)
+    )
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "Overleaf authentication failed." in result.output
+    assert f"{sync.ov.RECOVERY}#overleaf-authentication" in result.output
+    assert "git ls-remote failed" not in result.output
+    assert not github["calls"]
+    assert not [a for a in git_calls if {"clone", "push"} & set(a)]
+
+
+def test_noop_defers_if_default_tip_is_replaced_before_fetch(published, monkeypatch):
+    _, project = published
+    origin = project.parent / "workspace.git"
+    tree = git(project, "rev-parse", "HEAD^{tree}")
+    observed = git(origin, "commit-tree", tree, "-m", "Observed default")
+    replacement = git(origin, "commit-tree", tree, "-m", "Concurrent replacement")
+    git(origin, "update-ref", "refs/heads/main", observed)
+    original = sync.ov.git
+    moved = False
+
+    def replace_before_fetch(*args, **kwargs):
+        nonlocal moved
+        if args[0] == "fetch" and args[-1] == "refs/heads/main":
+            git(origin, "update-ref", "refs/heads/main", replacement)
+            moved = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", replace_before_fetch)
+    config = sync.ov.load_config(project / "paper")
+    assert not sync.already_synced(
+        project, config, "paper/", "asta/overleaf-sync/1234567"
+    )
+    assert moved
+    assert sync.ov.resolve_commit(project, observed) is None
+
+
+@pytest.mark.parametrize("fast", [False, True])
+def test_overleaf_sync_preserves_site_files(published, github, monkeypatch, fast):
+    _, project = published
+    site = {
+        "_quarto.yml": b"format:\n  html:\n    theme:\n      - cosmo\n",
+        "docs.yml": b"asta-plugins: main\n",
+        "Makefile": b"include .asta/cache/workspace.mk\n",
+        "_extensions/asta-theme/_extension.yml": b"title: Project theme\n",
+    }
+    for name, content in site.items():
+        path = project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    tip = git(project, "rev-parse", "HEAD")
+    if not fast:
+        # Exercise the same synchronized state through the original full workflow.
+        monkeypatch.setattr(sync, "already_synced", lambda *args: False)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    if fast:
+        assert github["calls"] == [
+            (("repo", "view", "--json", "defaultBranchRef"), None)
+        ]
+    else:
+        assert any(args[0] == "label" for args, _ in github["calls"])
+    assert not github["prs"]
+    assert git(project, "ls-remote", "origin", "HEAD").split()[0] == tip
+    for name, content in site.items():
+        assert (project / name).read_bytes() == content
+        assert sync.ov.git_bytes("show", f"{tip}:{name}", cwd=project) == content
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize(
+    "checkout",
+    [
+        "ordinary",
+        "worktree",
+        "partial",
+        "shallow",
+        "grafted",
+        "promisor-config",
+        "partialclone-config",
+        "alternate",
+    ],
+)
+def test_full_sync_clones_from_varied_local_object_stores(
+    setup, github, monkeypatch, checkout
+):
+    seed, project = prepare(setup)
+    if checkout == "worktree":
+        linked = project.parent / "linked"
+        git(project, "worktree", "add", "--detach", str(linked), "HEAD")
+        project = linked
+    elif checkout == "partial":
+        # Keep a historical blob absent from the source's partial object store.
+        old_asset = project / "old-asset.txt"
+        old_asset.write_text("historical asset\n")
+        commit_all(project)
+        missing = git(project, "rev-parse", "HEAD:old-asset.txt")
+        git(project, "rm", "old-asset.txt")
+        commit_all(project)
+        git(project, "push", "origin", "main")
+        origin = project.parent / "workspace.git"
+        git(origin, "config", "uploadpack.allowFilter", "true")
+        partial = project.parent / "partial"
+        git(
+            project,
+            "clone",
+            "--filter=blob:none",
+            "--no-checkout",
+            origin.as_uri(),
+            str(partial),
+        )
+        git(partial, "checkout", "main")
+        assert git(partial, "config", "--get", "remote.origin.promisor") == "true"
+        assert "?" + missing in git(
+            partial, "rev-list", "--objects", "--all", "--missing=print"
+        )
+        project = partial
+    elif checkout == "shallow":
+        shallow = project.parent / "shallow"
+        origin = project.parent / "workspace.git"
+        git(project, "clone", "--depth=1", origin.as_uri(), str(shallow))
+        assert git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+        project = shallow
+    elif checkout == "grafted":
+        grafts = project / ".git/info/grafts"
+        grafts.write_text(git(project, "rev-parse", "HEAD") + "\n")
+    elif checkout == "promisor-config":
+        git(project, "config", "remote.origin.promisor", "true")
+        assert not list((project / ".git/objects/pack").glob("*.promisor"))
+    elif checkout == "partialclone-config":
+        git(project, "config", "core.repositoryFormatVersion", "1")
+        git(project, "config", "extensions.partialClone", "origin")
+        assert not list((project / ".git/objects/pack").glob("*.promisor"))
+    elif checkout == "alternate":
+        # An alternate can itself be incomplete; do not borrow through the chain.
+        alternate = project.parent / "alternate"
+        git(project, "clone", "--shared", str(project), str(alternate))
+        git(
+            alternate,
+            "remote",
+            "set-url",
+            "origin",
+            str(project.parent / "workspace.git"),
+        )
+        project = alternate
+    git(project, "config", "user.name", "t")
+    git(project, "config", "user.email", "t@t")
+    clones = []
+    original = sync.ov.git
+
+    def track_clones(*args, **kwargs):
+        if args[0] == "clone" and Path(args[-1]).name == "workspace":
+            clones.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", track_clones)
+    before_refs = git(project, "show-ref")
+    before_head = git(project, "rev-parse", "HEAD")
+    overleaf_edit(seed, "main.tex", "new coauthor edit\n")
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert len(github["prs"]) == 1
+    assert len(clones) == 1
+    assert ("--reference-if-able" in clones[0]) == (
+        checkout in {"ordinary", "worktree"}
+    )
+    head = github["prs"][0]["headRefOid"]
+    origin = project.parent / "workspace.git"
+    assert git(origin, "show", f"{head}:paper/main.tex") == "new coauthor edit"
+    assert git(project, "show-ref") == before_refs
+    assert git(project, "rev-parse", "HEAD") == before_head
+    assert not git(project, "status", "--porcelain")
+    git(origin, "fsck", "--no-dangling")
+
+
+@pytest.mark.parametrize("remote", ["origin", "overleaf"])
+def test_git_refusal_returns_before_github_or_clone(
+    published, github, monkeypatch, remote
+):
+    _, project = published
+    original = sync.ov.git
+    probes = []
+
+    def refused(*args, **kwargs):
+        if args[0] == "ls-remote":
+            target = "origin" if "origin" in args else "overleaf"
+            probes.append(target)
+            if target == remote:
+                raise sync.ov.GitCommandError("git ls-remote failed (exit 128).", 128)
+        assert args[0] != "clone", "a refused probe must not retry with a clone"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", refused)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "git ls-remote failed (exit 128)" in result.output
+    assert probes.count(remote) == 1
+    assert not github["calls"]
+
+
+@pytest.mark.parametrize("stage", ["record", "default_tip"])
+def test_fast_path_fetch_refusal_returns_before_github(
+    published, github, monkeypatch, stage
+):
+    _, project = published
+    if stage == "default_tip":
+        other = project.parent / "other"
+        git(project, "clone", str(project.parent / "workspace.git"), str(other))
+        (other / "README.md").write_text("Unrelated change\n")
+        commit_all(other)
+        git(other, "push", "origin", "main")
+    original = sync.ov.git
+
+    def refused(*args, **kwargs):
+        if args[0] == "fetch" and (
+            stage == "record" or not args[-1].startswith(sync.ov.record_ref(URL) + ":")
+        ):
+            raise sync.ov.GitCommandError("git fetch failed (exit 128).", 128)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", refused)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert (
+        "Could not read the Overleaf sync record"
+        if stage == "record"
+        else "git fetch failed (exit 128)"
+    ) in result.output
+    assert not github["calls"]
+
+
+def test_published_noop_does_not_bypass_live_lock(published, github):
+    _, project = published
+    with sync.lock(project, "1234567") as acquired:
+        assert acquired
+        result = invoke(project)
+        assert result.exit_code == 0, result.output
+        assert "lock is held" in result.output
+        assert github["calls"]
+        assert not github["prs"]
+
+
+def test_fast_path_does_not_trust_an_unreviewed_source(published, github):
+    from tests.test_workspace_overleaf import forge_record, origin_record
+
+    _, project = published
+    origin = project.parent / "workspace.git"
+    # The same paper tree on an orphan commit is not reviewed default history.
+    source = git(project, "commit-tree", "HEAD^{tree}", "-m", "Unreviewed source")
+    _, record = origin_record(project.parent)
+    git(
+        origin,
+        "update-ref",
+        sync.ov.record_ref(URL),
+        forge_record(origin, {**record, "workspace": source}),
+    )
+    result = invoke(project)
+    assert github["calls"], result.output
+
+
+@pytest.mark.parametrize("change", ["paper", "overleaf", "branch", "record", "pairing"])
+def test_fast_path_defers_changed_or_unverified_state(published, github, change):
+    seed, project = published
+    if change == "overleaf":
+        overleaf_edit(seed, "main.tex", "new coauthor edit\n")
+    elif change == "branch":
+        git(project, "push", "origin", "HEAD:refs/heads/asta/overleaf-sync/1234567")
+    elif change == "record":
+        git(
+            project.parent / "workspace.git",
+            "update-ref",
+            "-d",
+            sync.ov.record_ref(URL),
+        )
+    elif change == "pairing":
+        # A stale checkout must not hide a new pairing format on main.
+        before = git(project, "rev-parse", "HEAD")
+        data = json.loads(_record(project / "paper").read_text())
+        _record(project / "paper").write_text(json.dumps({**data, "format": 99}))
+        commit_all(project)
+        git(project, "push", "origin", "main")
+        git(project, "reset", "--hard", before)
+    else:
+        (project / "paper/main.tex").write_text("new reviewed edit\n")
+        commit_all(project)
+        git(project, "push", "origin", "main")
+    result = invoke(project)
+    assert github["calls"], result.output
+    if change == "pairing":
+        assert result.exit_code == 1, result.output
+        assert "newer" in result.output
+    else:
+        assert result.exit_code == 0, result.output
 
 
 def test_new_edits_create_one_pr_and_quiet_rerun_waits_for_checks(setup, github):
@@ -1828,6 +2340,35 @@ def test_preflight_tolerates_concurrent_unlock(setup, github, monkeypatch):
     assert result.exit_code == 0, result.output
     assert not github["issues"]
     assert not git(project, "ls-remote", "origin", ref)
+
+
+def test_preflight_checks_lock_acquired_during_github_read(setup, github, monkeypatch):
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    origin = project.parent / "workspace.git"
+    tree = git(project, "mktree")
+    owner = git(
+        project,
+        "commit-tree",
+        tree,
+        "-m",
+        "New owner\n\nAsta-Sync-Format: 99 requires-asta: 9.9.9\n",
+    )
+    original = sync.gh
+
+    def acquire_during_preflight(root, *args, **kwargs):
+        if args[:2] == ("pr", "list"):
+            git(project, "push", "origin", f"{owner}:{ref}")
+        return original(root, *args, **kwargs)
+
+    monkeypatch.setattr(sync, "gh", acquire_during_preflight)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "newer" in result.output
+    assert not github["writes"]
+    assert not github["issues"]
+    assert all(args[0] != "label" for args, _ in github["calls"])
+    assert git(origin, "rev-parse", ref) == owner
 
 
 def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypatch):
