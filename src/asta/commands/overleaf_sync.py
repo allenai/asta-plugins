@@ -651,6 +651,57 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
     return all(ov.in_pair(name, prefix) for name in changed.splitlines())
 
 
+def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
+    """True only when nothing can need syncing: a cheap check before GitHub calls.
+
+    Overleaf HEAD must equal the published record's Overleaf commit, origin's
+    default branch must carry the paper the record published, and no sync branch
+    (so no sync PR) may exist. Any doubt falls through to the full sync.
+    """
+    record = ov.record_ref(config["url"])
+    advertised = ov.git(
+        "ls-remote",
+        "--symref",
+        "origin",
+        "HEAD",
+        f"refs/heads/{branch}",
+        record,
+        cwd=root,
+    )
+    refs = {}
+    for line in advertised.splitlines():
+        oid, _, name = line.partition("\t")
+        if not oid.startswith("ref:"):
+            refs[name] = oid
+    tip = refs.get("HEAD")
+    if not tip or f"refs/heads/{branch}" in refs or record not in refs:
+        return False
+    try:
+        head = ov.overleaf_head(config["url"], root)
+        if not head:
+            return False
+        with ov.published_record(root, config["url"], warn=False) as (
+            _,
+            overleaf,
+            source,
+        ):
+            if overleaf != head or not source:
+                return False
+        if ov.resolve_commit(root, tip) is None:
+            ov.git(
+                "fetch",
+                "-q",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "origin",
+                tip,
+                cwd=root,
+            )
+        return ov.tree(root, source, prefix) == ov.tree(root, tip, prefix)
+    except click.ClickException:
+        return False
+
+
 def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     root, paper, prefix = ov.resolve(project, directory)
     # resolve() currently guarantees this; keep the write boundary explicit here.
@@ -665,10 +716,14 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     lock_ref = f"refs/asta/overleaf-sync-lock/{project_id}"
     # Read origin first so a refused Git login fails before any slower GitHub calls.
     held = ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root)
+    branch = f"asta/overleaf-sync/{project_id}"
+    if not held and already_synced(root, config, prefix, branch):
+        message = "Overleaf already matches the committed paper."
+        click.echo(message)
+        return COMPLETE, message
     info = gh(root, "repo", "view", "--json", "nameWithOwner,defaultBranchRef")
     repo = info["nameWithOwner"]
     default_name = info["defaultBranchRef"]["name"]
-    branch = f"asta/overleaf-sync/{project_id}"
     # Compatibility checks precede label updates and lock acquisition. Repeat
     # the reads under the lock below to catch state that changes during preflight.
     sync_pr(root, repo, branch, default_name, format_only=True)

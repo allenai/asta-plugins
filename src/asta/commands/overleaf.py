@@ -355,6 +355,21 @@ def clone(url: str, dest: Path) -> str:
         ) from None
 
 
+def overleaf_head(url: str, cwd: Path) -> str | None:
+    """Overleaf's HEAD commit, read without cloning the project."""
+    with credentials() as (env, options):
+        out = git(
+            *options,
+            "ls-remote",
+            url.replace("https://", "https://git@", 1),
+            "HEAD",
+            cwd=cwd,
+            env=env,
+        )
+    match = re.search(rf"^({FULL_OID})\tHEAD$", out, re.M)
+    return match.group(1) if match else None
+
+
 def push(
     repo: Path,
     root: Path,
