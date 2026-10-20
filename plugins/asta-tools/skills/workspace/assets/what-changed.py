@@ -943,6 +943,9 @@ PAPER_JS = r"""
       button.addEventListener("click", function () {
         var next = frame.cloneNode(true);
         next.setAttribute("data", button.getAttribute("data-pdf") + "#navpanes=0&view=FitH");
+        // Where a browser can't show the PDF inline, its link opens the same one.
+        var fallback = next.querySelector("a");
+        if (fallback) fallback.setAttribute("href", button.getAttribute("data-pdf"));
         frame.replaceWith(next);
         frame = next;
         buttons.forEach(function (other) {

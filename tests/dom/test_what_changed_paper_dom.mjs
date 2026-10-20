@@ -61,9 +61,9 @@ test("the paper opens on its changes marked, with a switch to the clean paper", 
     [...document.querySelectorAll(".paper-modes button")].map(b => b.getAttribute("aria-pressed")),
     ["false", "true"],
   );
-  // The fallback link stays inside the new frame.
+  // The fallback link stays inside the new frame and opens the PDF chosen.
   assert.equal(document.querySelector(".paper-view object a").getAttribute("href"),
-    "paper-previews/paper/what-changed.pdf");
+    "paper-previews/paper/main.pdf");
 });
 
 test("the expand button gives the paper the whole window, and Esc gives the report back", () => {

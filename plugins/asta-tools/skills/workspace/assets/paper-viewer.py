@@ -132,26 +132,32 @@ def paired_with_overleaf(directory: str) -> bool:
     return isinstance(url, str) and OVERLEAF_GIT.fullmatch(url) is not None
 
 
-def overleaf_link_named(directory: str) -> bool:
-    """Whether _quarto.yml's `overleaf-links` names a link for this paper.
+OVERLEAF_LINK = re.compile(
+    r"""\s+(['"]?)(?P<key>.+?)\1\s*:\s*(['"]?)(?P<url>https://\S+?)\3(?:\s+#.*)?"""
+)
 
-    The project sets the link it wants readers to open, and so what that link
-    grants; Quarto reads the value, and this only checks the key is there, so
-    that a page never asks Quarto for a key the project hasn't set.
+
+def overleaf_link(directory: str) -> str | None:
+    """The https link _quarto.yml's `overleaf-links` names for this paper.
+
+    The project names the link it wants readers to open, and so what that
+    link grants. Read here rather than by Quarto, so that any folder name,
+    with spaces or dots, can have one.
     """
     try:
         lines = Path("_quarto.yml").read_text(encoding="utf-8").splitlines()
     except OSError:
-        return False
-    keys, inside = set(), False
+        return None
+    inside = False
     for line in lines:
         if re.fullmatch(r"overleaf-links:\s*(#.*)?", line):
             inside = True
-        elif inside and (match := re.match(r"\s+([^\s:#][^:#]*?)\s*:", line)):
-            keys.add(match[1].strip("'\""))
+        elif inside and (match := OVERLEAF_LINK.fullmatch(line)):
+            if match["key"] == directory:
+                return match["url"]
         elif inside and line.strip() and not line.startswith((" ", "#")):
             inside = False
-    return directory in keys
+    return None
 
 
 def create_viewer(
@@ -184,13 +190,11 @@ def create_viewer(
     where = f"Written in <code>{html.escape(source)}</code>" + (
         ", paired with an Overleaf project." if paired_with_overleaf(directory) else "."
     )
-    # Quarto reads a key path split at dots and a shortcode's arguments split at
-    # spaces, so only a folder name it can address gets the link.
-    if re.fullmatch(r"[\w/-]+", directory) and overleaf_link_named(directory):
+    link = overleaf_link(directory)
+    if link:
         where += (
-            ' <a class="paper-link" href="{{< meta overleaf-links.'
-            + directory
-            + ' >}}">Open it in Overleaf</a>'
+            f' <a class="paper-link" href="{html.escape(link, quote=True)}">'
+            "Open it in Overleaf</a>"
         )
     content = f"""---
 title: {json.dumps(title)}

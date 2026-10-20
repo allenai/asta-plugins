@@ -48,23 +48,28 @@ def test_viewer_links_the_overleaf_link_the_project_names(tmp_path):
         "# Links readers open\n"
         "overleaf-links:  # by folder\n"
         "  # the main paper\n"
-        "  paper: https://www.overleaf.com/read/abc\n"
-        "  'papers/b': https://www.overleaf.com/read/def\n"
+        "  paper: https://www.overleaf.com/project/abc/share#def  # its share link\n"
+        "  'papers/b': \"https://www.overleaf.com/read/ghi\"\n"
+        "  research/other paper: https://www.overleaf.com/read/jkl\n"
+        "  v1.2: https://www.overleaf.com/read/mno?x=1&y=2\n"
+        "  unsafe: javascript:alert(1)\n"
         "bibliography: references.bib\n"
     )
-    names = ("paper", "papers/b", "other", "v1.2")
+    names = ("paper", "papers/b", "research/other paper", "v1.2", "unsafe", "other")
     assert generate(tmp_path, *names).returncode == 0
     pages = {name: (tmp_path / name / "html/index.qmd").read_text() for name in names}
-    # Quarto fills in the link, so changing it needs no regeneration.
+    # A URL's own # stays; a comment after a space doesn't.
     assert (
-        '<a class="paper-link" href="{{< meta overleaf-links.paper >}}">'
+        '<a class="paper-link" href="https://www.overleaf.com/project/abc/share#def">'
         "Open it in Overleaf</a>"
     ) in pages["paper"]
-    assert "{{< meta overleaf-links.papers/b >}}" in pages["papers/b"]
-    # A paper the block doesn't name, or one Quarto's key path can't address,
-    # never asks Quarto for a missing key.
-    assert "overleaf-links" not in pages["other"]
-    assert "overleaf-links" not in pages["v1.2"]
+    assert 'href="https://www.overleaf.com/read/ghi"' in pages["papers/b"]
+    # Folder names with spaces or dots get their link too, escaped.
+    assert 'href="https://www.overleaf.com/read/jkl"' in pages["research/other paper"]
+    assert 'href="https://www.overleaf.com/read/mno?x=1&amp;y=2"' in pages["v1.2"]
+    # Only an https link, and only for a folder the block names.
+    assert "paper-link" not in pages["unsafe"]
+    assert "paper-link" not in pages["other"]
 
 
 def test_viewer_links_nothing_without_an_overleaf_links_block(tmp_path):
@@ -72,7 +77,7 @@ def test_viewer_links_nothing_without_an_overleaf_links_block(tmp_path):
         "project:\n  type: website\nwebsite:\n  paper: x\n"
     )
     assert generate(tmp_path, "paper").returncode == 0
-    assert "overleaf-links" not in (tmp_path / "paper/html/index.qmd").read_text()
+    assert "paper-link" not in (tmp_path / "paper/html/index.qmd").read_text()
 
 
 def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
