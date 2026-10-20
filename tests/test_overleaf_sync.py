@@ -277,6 +277,41 @@ def test_refused_overleaf_login_fails_before_clone_or_github(
     assert sum("ls-remote" in args for args in calls) == 3
 
 
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"fatal: Authentication failed for 'https://git.overleaf.com/1234567/'",
+        b"fatal: could not read Username for 'https://git.overleaf.com': "
+        b"terminal prompts disabled",
+        b"error: RPC failed; HTTP 401 curl 22",
+    ],
+)
+def test_refused_overleaf_login_names_authentication_and_recovery(
+    published, github, monkeypatch, stderr
+):
+    _, project = published
+    original = subprocess.run
+
+    def refuse_overleaf(argv, *args, **kwargs):
+        if "ls-remote" in argv and str(argv[-2]).endswith("overleaf.git"):
+            return subprocess.CompletedProcess(argv, 128, b"", stderr)
+        return original(argv, *args, **kwargs)
+
+    monkeypatch.setattr(sync.ov.subprocess, "run", refuse_overleaf)
+    git_calls = []
+    original_git = sync.ov.git
+    monkeypatch.setattr(
+        sync.ov, "git", lambda *a, **k: git_calls.append(a) or original_git(*a, **k)
+    )
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "Overleaf authentication failed." in result.output
+    assert f"{sync.ov.RECOVERY}#overleaf-authentication" in result.output
+    assert "git ls-remote failed" not in result.output
+    assert not github["calls"]
+    assert not [a for a in git_calls if {"clone", "push"} & set(a)]
+
+
 def test_noop_defers_if_default_tip_is_replaced_before_fetch(published, monkeypatch):
     _, project = published
     origin = project.parent / "workspace.git"

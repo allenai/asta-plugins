@@ -119,7 +119,11 @@ class ProjectURLError(SyncError):
 
 
 def git_bytes(
-    *args: str, cwd: Path, env: dict | None = None, input: bytes | None = None
+    *args: str,
+    cwd: Path,
+    env: dict | None = None,
+    input: bytes | None = None,
+    overleaf: bool = False,
 ) -> bytes:
     result = subprocess.run(
         ["git", *args],
@@ -136,6 +140,10 @@ def git_bytes(
         operation = args[index] if index < len(args) else "command"
         # Diagnostics may contain URLs or credential-helper output, so never echo them.
         stderr = result.stderr.lower()
+        # An Overleaf ls-remote probe gets the same diagnosis as a clone.
+        remote = operation in ("clone", "push") or (
+            overleaf and operation == "ls-remote"
+        )
         if operation == "push" and (
             b"hook declined" in stderr or b"pre-push" in stderr
         ):
@@ -144,7 +152,7 @@ def git_bytes(
                 "Check the hook against the exported paper directory and Overleaf remote.",
                 recovery="git-hooks-and-signing",
             )
-        if operation in ("clone", "push") and (
+        if remote and (
             re.search(rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)401\b", stderr)
             or b"authentication failed" in stderr
             or b"could not read username" in stderr
@@ -154,7 +162,7 @@ def git_bytes(
                 "Overleaf authentication failed. Check OVERLEAF_TOKEN or your Git credential helper.",
                 recovery="overleaf-authentication",
             )
-        if operation in ("clone", "push") and re.search(
+        if remote and re.search(
             rb"(?:http(?:/[\d.]+)?\s+|returned error:\s*)403\b", stderr
         ):
             raise SyncError(
@@ -179,7 +187,7 @@ def git_bytes(
                 f"git {operation} was rejected. Check access and the remote state.",
                 recovery="overleaf-connection",
             )
-        if operation in ("clone", "push"):
+        if remote:
             raise SyncError(
                 f"git {operation} failed (exit {result.returncode}). "
                 "Check your Overleaf credentials, project access, network and remote state."
@@ -365,6 +373,7 @@ def overleaf_head(url: str, cwd: Path) -> str | None:
             "HEAD",
             cwd=cwd,
             env=env,
+            overleaf=True,
         )
     match = re.search(rf"^({FULL_OID})\tHEAD$", out, re.M)
     # Empty projects or an unrecognized advertisement cannot prove a no-op;
