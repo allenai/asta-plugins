@@ -367,6 +367,8 @@ def overleaf_head(url: str, cwd: Path) -> str | None:
             env=env,
         )
     match = re.search(rf"^({FULL_OID})\tHEAD$", out, re.M)
+    # Empty projects or an unrecognized advertisement cannot prove a no-op;
+    # the full workflow will clone and validate the project instead.
     return match.group(1) if match else None
 
 

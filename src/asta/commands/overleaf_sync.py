@@ -658,6 +658,10 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
     default branch must carry the paper and pairing the record published, and no
     sync branch (so no sync PR) may exist. Unverified state falls through to the
     full sync; remote access failures and unsupported formats fail immediately.
+
+    This GitHub workflow assumes origin's HEAD symref agrees with the full
+    workflow's defaultBranchRef. These remote reads are observations, not an
+    atomic snapshot: concurrent edits may require another sync invocation.
     """
     record = ov.record_ref(config["url"])
     advertised = ov.git(
@@ -670,12 +674,20 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
         cwd=root,
     )
     refs = {}
+    default_ref = ""
     for line in advertised.splitlines():
         oid, _, name = line.partition("\t")
-        if not oid.startswith("ref:"):
+        if oid.startswith("ref: ") and name == "HEAD":
+            default_ref = oid.removeprefix("ref: ")
+        elif not oid.startswith("ref:"):
             refs[name] = oid
     tip = refs.get("HEAD")
-    if not tip or f"refs/heads/{branch}" in refs or record not in refs:
+    if (
+        not re.fullmatch(r"refs/heads/\S+", default_ref)
+        or not tip
+        or f"refs/heads/{branch}" in refs
+        or record not in refs
+    ):
         return False
     head = ov.overleaf_head(config["url"], root)
     if not head:
@@ -688,6 +700,9 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
         if overleaf != head or not source:
             return False
     if ov.resolve_commit(root, tip) is None:
+        # Fetch the advertised branch by name: a server need not accept raw OID
+        # requests, especially if its tip changed since ls-remote. The empty
+        # refmap and disabled FETCH_HEAD preserve the caller's refs and state.
         ov.git(
             "fetch",
             "-q",
@@ -695,9 +710,11 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
             "--no-write-fetch-head",
             "--refmap=",
             "origin",
-            tip,
+            default_ref,
             cwd=root,
         )
+        if ov.resolve_commit(root, tip) is None:
+            return False  # A concurrent force-push made the observed tip unavailable.
     try:
         return (
             ov.is_ancestor(root, source, tip)
@@ -735,7 +752,10 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
     # the reads under the lock below to catch state that changes during preflight.
     sync_pr(root, repo, branch, default_name, format_only=True)
     try:
-        if held:
+        # Another run may acquire a lock during the remote/GitHub preflight.
+        # Validate its format before any shared writes, even if none was held
+        # during the early access probe.
+        if ov.git("ls-remote", "--refs", "origin", lock_ref, cwd=root):
             stale_lock(root, project_id)
     except ov.GitCommandError:
         # A concurrent owner can release its lock between ls-remote and fetch.
@@ -801,15 +821,21 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
         try:
             pr = sync_pr(root, repo, branch, default_name)
             origin = ov.git("remote", "get-url", "origin", cwd=root)
+            reference = (
+                root / ov.git("rev-parse", "--git-common-dir", cwd=root)
+            ).resolve()
+            # Repacking borrowed promisor packs can fail on objects that are
+            # absent locally. A normal clone retrieves complete history instead.
+            clone_options = []
+            if not any((reference / "objects/pack").glob("*.promisor")):
+                clone_options = ["--reference-if-able", str(reference), "--dissociate"]
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp) / "workspace"
                 # Borrow local objects so only commits missing here cross the network.
                 ov.git(
                     "clone",
                     "--no-checkout",
-                    "--reference-if-able",
-                    str(root),
-                    "--dissociate",
+                    *clone_options,
                     "--",
                     origin,
                     str(work),

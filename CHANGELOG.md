@@ -5,7 +5,8 @@
 - Skip GitHub calls and temporary clones for an unchanged Overleaf sync when
   the published sync record still matches Overleaf and the default branch's
   paper and pairing, with no sync branch or held lock. Report refused Git
-  probes immediately, and reuse local objects when a workspace clone is needed.
+  probes immediately, and reuse local objects from complete checkouts when a
+  workspace clone is needed, including linked worktrees.
 
 - Workspace sites use Asta's light and dark palettes (dark by default, with a persistent light toggle),
   consistent typography, and section headings that stay visible while reading.

@@ -4,6 +4,7 @@ import ast
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -167,6 +168,9 @@ def test_noop_skips_github_clones_and_shared_writes(
 
     def reads_only(*args, **kwargs):
         assert args[0] not in {"clone", "push"}, args
+        if args[0] == "fetch" and re.fullmatch(sync.ov.FULL_OID, args[-1]):
+            # Some servers accept advertised branch names but refuse raw OIDs.
+            raise sync.ov.GitCommandError("server requires a named ref", 128)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(sync.ov, "git", reads_only)
@@ -180,6 +184,113 @@ def test_noop_skips_github_clones_and_shared_writes(
     assert fetch_head.read_bytes() == before_fetch
     assert git(project, "ls-remote", "origin") == before_workspace
     assert git(seed, "ls-remote", "origin") == before_overleaf
+
+
+def test_noop_defers_if_default_tip_is_replaced_before_fetch(published, monkeypatch):
+    _, project = published
+    origin = project.parent / "workspace.git"
+    tree = git(project, "rev-parse", "HEAD^{tree}")
+    observed = git(origin, "commit-tree", tree, "-m", "Observed default")
+    replacement = git(origin, "commit-tree", tree, "-m", "Concurrent replacement")
+    git(origin, "update-ref", "refs/heads/main", observed)
+    original = sync.ov.git
+    moved = False
+
+    def replace_before_fetch(*args, **kwargs):
+        nonlocal moved
+        if args[0] == "fetch" and args[-1] == "refs/heads/main":
+            git(origin, "update-ref", "refs/heads/main", replacement)
+            moved = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", replace_before_fetch)
+    config = sync.ov.load_config(project / "paper")
+    assert not sync.already_synced(
+        project, config, "paper/", "asta/overleaf-sync/1234567"
+    )
+    assert moved
+    assert sync.ov.resolve_commit(project, observed) is None
+
+
+@pytest.mark.parametrize("fast", [False, True])
+def test_overleaf_sync_preserves_site_files(published, github, monkeypatch, fast):
+    _, project = published
+    site = {
+        "_quarto.yml": b"format:\n  html:\n    theme:\n      - cosmo\n",
+        "docs.yml": b"asta-plugins: main\n",
+        "Makefile": b"include .asta/cache/workspace.mk\n",
+        "_extensions/asta-theme/_extension.yml": b"title: Project theme\n",
+    }
+    for name, content in site.items():
+        path = project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    tip = git(project, "rev-parse", "HEAD")
+    if not fast:
+        # Exercise the same synchronized state through the original full workflow.
+        monkeypatch.setattr(sync, "already_synced", lambda *args: False)
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert bool(github["calls"]) is not fast
+    assert not github["prs"]
+    assert git(project, "ls-remote", "origin", "HEAD").split()[0] == tip
+    for name, content in site.items():
+        assert (project / name).read_bytes() == content
+        assert sync.ov.git_bytes("show", f"{tip}:{name}", cwd=project) == content
+    assert not git(project, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+@pytest.mark.parametrize("checkout", ["ordinary", "worktree", "partial"])
+def test_full_sync_clones_from_varied_local_object_stores(setup, github, checkout):
+    seed, project = prepare(setup)
+    if checkout == "worktree":
+        linked = project.parent / "linked"
+        git(project, "worktree", "add", "--detach", str(linked), "HEAD")
+        project = linked
+    elif checkout == "partial":
+        # Keep a historical blob absent from the source's partial object store.
+        old_asset = project / "old-asset.txt"
+        old_asset.write_text("historical asset\n")
+        commit_all(project)
+        missing = git(project, "rev-parse", "HEAD:old-asset.txt")
+        git(project, "rm", "old-asset.txt")
+        commit_all(project)
+        git(project, "push", "origin", "main")
+        origin = project.parent / "workspace.git"
+        git(origin, "config", "uploadpack.allowFilter", "true")
+        partial = project.parent / "partial"
+        git(
+            project,
+            "clone",
+            "--filter=blob:none",
+            "--no-checkout",
+            origin.as_uri(),
+            str(partial),
+        )
+        git(partial, "checkout", "main")
+        assert git(partial, "config", "--get", "remote.origin.promisor") == "true"
+        assert "?" + missing in git(
+            partial, "rev-list", "--objects", "--all", "--missing=print"
+        )
+        project = partial
+    git(project, "config", "user.name", "t")
+    git(project, "config", "user.email", "t@t")
+    before_refs = git(project, "show-ref")
+    before_head = git(project, "rev-parse", "HEAD")
+    overleaf_edit(seed, "main.tex", "new coauthor edit\n")
+    result = invoke(project)
+    assert result.exit_code == 0, result.output
+    assert len(github["prs"]) == 1
+    head = github["prs"][0]["headRefOid"]
+    origin = project.parent / "workspace.git"
+    assert git(origin, "show", f"{head}:paper/main.tex") == "new coauthor edit"
+    assert git(project, "show-ref") == before_refs
+    assert git(project, "rev-parse", "HEAD") == before_head
+    assert not git(project, "status", "--porcelain")
+    git(origin, "fsck", "--no-dangling")
 
 
 @pytest.mark.parametrize("remote", ["origin", "overleaf"])
@@ -1997,6 +2108,35 @@ def test_preflight_tolerates_concurrent_unlock(setup, github, monkeypatch):
     assert result.exit_code == 0, result.output
     assert not github["issues"]
     assert not git(project, "ls-remote", "origin", ref)
+
+
+def test_preflight_checks_lock_acquired_during_github_read(setup, github, monkeypatch):
+    _, project = prepare(setup)
+    ref = "refs/asta/overleaf-sync-lock/1234567"
+    origin = project.parent / "workspace.git"
+    tree = git(project, "mktree")
+    owner = git(
+        project,
+        "commit-tree",
+        tree,
+        "-m",
+        "New owner\n\nAsta-Sync-Format: 99 requires-asta: 9.9.9\n",
+    )
+    original = sync.gh
+
+    def acquire_during_preflight(root, *args, **kwargs):
+        if args[:2] == ("pr", "list"):
+            git(project, "push", "origin", f"{owner}:{ref}")
+        return original(root, *args, **kwargs)
+
+    monkeypatch.setattr(sync, "gh", acquire_during_preflight)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "newer" in result.output
+    assert not github["writes"]
+    assert not github["issues"]
+    assert all(args[0] != "label" for args, _ in github["calls"])
+    assert git(origin, "rev-parse", ref) == owner
 
 
 def test_preflight_does_not_ignore_unreadable_live_lock(setup, github, monkeypatch):
