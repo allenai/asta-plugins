@@ -224,6 +224,59 @@ def test_noop_github_refusal_does_not_report_complete_or_clone(published, monkey
     assert calls == [("repo", "view", "--json", "defaultBranchRef")]
 
 
+def test_matching_unpublished_pair_records_sync_point_then_takes_shortcut(
+    setup, github, monkeypatch
+):
+    seed, project = prepare(setup)
+    record = sync.ov.record_ref(URL)
+    assert not git(project, "ls-remote", "origin", record)
+    assert run(project, "publish", "--dry-run").exit_code == 0
+    assert not git(project, "ls-remote", "origin", record)
+    first = invoke(project)
+    assert first.exit_code == 0, first.output
+    assert "Overleaf already matches the committed paper." in first.output
+    assert git(project, "ls-remote", "origin", record)
+    github["calls"].clear()
+    original = sync.ov.git
+
+    def reads_only(*args, **kwargs):
+        assert args[0] not in {"clone", "push"}, args
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", reads_only)
+    second = invoke(project)
+    assert second.exit_code == 0, second.output
+    assert "Overleaf already matches the committed paper." in second.output
+    assert github["calls"] == [(("repo", "view", "--json", "defaultBranchRef"), None)]
+
+
+@pytest.mark.parametrize("published_first", [False, True])
+def test_refused_overleaf_login_fails_before_clone_or_github(
+    setup, github, monkeypatch, published_first
+):
+    _, project = prepare(setup)
+    if published_first:
+        (project / "paper/main.tex").write_text("published paper\n")
+        commit_all(project)
+        assert run(project, "publish").exit_code == 0
+    original = sync.ov.git
+    calls = []
+
+    def refuse_overleaf(*args, **kwargs):
+        calls.append(args)
+        assert args[0] not in {"clone", "push"}, args
+        if "ls-remote" in args and any("git@" in str(arg) for arg in args):
+            raise sync.ov.GitCommandError("Authentication failed", 128)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync.ov, "git", refuse_overleaf)
+    result = invoke(project)
+    assert result.exit_code != 0, result.output
+    assert "Authentication failed" in result.output
+    assert github["calls"] == []
+    assert sum("ls-remote" in args for args in calls) == 3
+
+
 def test_noop_defers_if_default_tip_is_replaced_before_fetch(published, monkeypatch):
     _, project = published
     origin = project.parent / "workspace.git"
