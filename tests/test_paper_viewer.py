@@ -53,9 +53,12 @@ def test_viewer_links_the_overleaf_link_the_project_names(tmp_path):
         "  research/other paper: https://www.overleaf.com/read/jkl\n"
         "  v1.2: https://www.overleaf.com/read/mno?x=1&y=2\n"
         "  unsafe: javascript:alert(1)\n"
+        "  elsewhere: https://example.com/read/pqr\n"
+        "  lookalike: https://overleaf.com.example.com/read/stu\n"
         "bibliography: references.bib\n"
     )
-    names = ("paper", "papers/b", "research/other paper", "v1.2", "unsafe", "other")
+    names = ("paper", "papers/b", "research/other paper", "v1.2")
+    names += ("unsafe", "elsewhere", "lookalike", "other")
     assert generate(tmp_path, *names).returncode == 0
     pages = {name: (tmp_path / name / "html/index.qmd").read_text() for name in names}
     # A URL's own # stays; a comment after a space doesn't.
@@ -67,9 +70,10 @@ def test_viewer_links_the_overleaf_link_the_project_names(tmp_path):
     # Folder names with spaces or dots get their link too, escaped.
     assert 'href="https://www.overleaf.com/read/jkl"' in pages["research/other paper"]
     assert 'href="https://www.overleaf.com/read/mno?x=1&amp;y=2"' in pages["v1.2"]
-    # Only an https link, and only for a folder the block names.
-    assert "paper-link" not in pages["unsafe"]
-    assert "paper-link" not in pages["other"]
+    # Only an https link to overleaf.com, which the page labels as Overleaf, and only
+    # for a folder the block names.
+    for name in ("unsafe", "elsewhere", "lookalike", "other"):
+        assert "paper-link" not in pages[name], name
 
 
 def test_viewer_links_nothing_without_an_overleaf_links_block(tmp_path):
