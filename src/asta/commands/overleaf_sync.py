@@ -652,16 +652,17 @@ def owned_branch(work: Path, tip: str, old_head: str, prefix: str) -> bool:
 
 
 def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
-    """True only when nothing can need syncing: a cheap check before GitHub calls.
+    """True only when nothing can need syncing, without cloning either remote.
 
     Overleaf HEAD must equal the published record's Overleaf commit, origin's
     default branch must carry the paper and pairing the record published, and no
     sync branch (so no sync PR) may exist. Unverified state falls through to the
     full sync; remote access failures and unsupported formats fail immediately.
 
-    This GitHub workflow assumes origin's HEAD symref agrees with the full
-    workflow's defaultBranchRef. These remote reads are observations, not an
-    atomic snapshot: concurrent edits may require another sync invocation.
+    Only a candidate no-op reads GitHub's defaultBranchRef, which must agree
+    with origin's HEAD symref. Git access failures precede this API call. These
+    remote reads are observations, not an atomic snapshot: concurrent edits may
+    require another sync invocation.
     """
     record = ov.record_ref(config["url"])
     advertised = ov.git(
@@ -716,7 +717,7 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
         if ov.resolve_commit(root, tip) is None:
             return False  # A concurrent force-push made the observed tip unavailable.
     try:
-        return (
+        matches = (
             ov.is_ancestor(root, source, tip)
             and ov.tree(root, source, prefix) == ov.tree(root, tip, prefix)
             and ov.tracked_record(root, prefix, source)
@@ -724,6 +725,11 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
         )
     except click.ClickException:
         return False
+    if not matches:
+        return False
+    info = gh(root, "repo", "view", "--json", "defaultBranchRef")
+    default = info.get("defaultBranchRef") or {}
+    return default_ref == f"refs/heads/{default.get('name')}"
 
 
 def sync_workspace(project: Path, directory: str) -> tuple[str, str]:

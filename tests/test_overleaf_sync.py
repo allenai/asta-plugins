@@ -146,7 +146,7 @@ def published(setup):
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("new_default_tip", [False, True])
-def test_noop_skips_github_clones_and_shared_writes(
+def test_noop_only_reads_github_default_and_skips_clones_and_shared_writes(
     published, github, monkeypatch, new_default_tip
 ):
     seed, project = published
@@ -177,13 +177,51 @@ def test_noop_skips_github_clones_and_shared_writes(
     result = invoke(project)
     assert result.exit_code == 0, result.output
     assert "Overleaf already matches the committed paper." in result.output
-    assert not github["calls"]
+    assert github["calls"] == [(("repo", "view", "--json", "defaultBranchRef"), None)]
     assert git(project, "rev-parse", "HEAD") == before_head
     assert not git(project, "status", "--porcelain")
     assert git(project, "show-ref") == before_refs
     assert fetch_head.read_bytes() == before_fetch
     assert git(project, "ls-remote", "origin") == before_workspace
     assert git(seed, "ls-remote", "origin") == before_overleaf
+
+
+@pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
+def test_noop_defers_when_git_head_differs_from_github_default(published, github):
+    _, project = published
+    origin = project.parent / "workspace.git"
+    git(project, "push", "origin", "HEAD:refs/heads/stale-default")
+    git(origin, "symbolic-ref", "HEAD", "refs/heads/stale-default")
+    (project / "paper/main.tex").write_text("new reviewed default-branch text\n")
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    before = git(origin, "show-ref")
+    result = invoke(project)
+    assert "Overleaf already matches the committed paper." not in result.output
+    assert any(args[:2] == ("pr", "list") for args, _ in github["calls"])
+    assert git(origin, "show-ref") == before
+
+
+def test_noop_github_refusal_does_not_report_complete_or_clone(published, monkeypatch):
+    _, project = published
+    original = sync.ov.git
+    calls = []
+
+    def refuse(root, *args, **kwargs):
+        calls.append(args)
+        raise sync.ov.SyncError("GitHub request refused; check gh authentication.")
+
+    def reads_only(*args, **kwargs):
+        assert args[0] not in {"clone", "push"}, args
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync, "gh", refuse)
+    monkeypatch.setattr(sync.ov, "git", reads_only)
+    result = invoke(project)
+    assert result.exit_code == 1, result.output
+    assert "GitHub request refused" in result.output
+    assert "Overleaf already matches" not in result.output
+    assert calls == [("repo", "view", "--json", "defaultBranchRef")]
 
 
 def test_noop_defers_if_default_tip_is_replaced_before_fetch(published, monkeypatch):
@@ -233,7 +271,12 @@ def test_overleaf_sync_preserves_site_files(published, github, monkeypatch, fast
         monkeypatch.setattr(sync, "already_synced", lambda *args: False)
     result = invoke(project)
     assert result.exit_code == 0, result.output
-    assert bool(github["calls"]) is not fast
+    if fast:
+        assert github["calls"] == [
+            (("repo", "view", "--json", "defaultBranchRef"), None)
+        ]
+    else:
+        assert any(args[0] == "label" for args, _ in github["calls"])
     assert not github["prs"]
     assert git(project, "ls-remote", "origin", "HEAD").split()[0] == tip
     for name, content in site.items():
