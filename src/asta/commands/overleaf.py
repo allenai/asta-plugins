@@ -1127,6 +1127,30 @@ def confirm_publication(repo: Path, pushed: str, synced: str) -> str:
     )
 
 
+def record_match(
+    root: Path, url: str, previous: str | None, overleaf: str, workspace: str
+) -> None:
+    """Best-effort record that Overleaf already equals the reviewed paper."""
+    result = subprocess.run(
+        ["git", "var", "GIT_COMMITTER_IDENT"],
+        cwd=root,
+        env=git_environment(),
+        capture_output=True,
+        **no_terminal(),
+    )
+    try:
+        ident = os.fsdecode(result.stdout).rsplit(" ", 2)[0]
+        name, email = ident.rsplit(" <", 1)
+        if result.returncode:
+            raise ValueError
+        identity = ["-c", f"user.name={name}", "-c", f"user.email={email[:-1]}"]
+        record_publication(root, url, previous, overleaf, workspace, identity)
+    except (ValueError, SyncError):
+        click.echo(
+            "Could not record the Overleaf sync point; nothing changed.", err=True
+        )
+
+
 def record_publication(
     root: Path,
     url: str,
@@ -1595,6 +1619,9 @@ def publish(
             changes = git("status", "--short", cwd=repo)
             if not changes:
                 click.echo("Overleaf already matches the committed paper.")
+                if not dry_run and reviewed and recorded != head:
+                    # Record the match so later syncs can skip cloning.
+                    record_match(root, config["url"], previous, head, reviewed)
                 return
             click.echo(changes)
             identity_result = subprocess.run(

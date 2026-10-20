@@ -683,15 +683,15 @@ def already_synced(root: Path, config: dict, prefix: str, branch: str) -> bool:
         elif not oid.startswith("ref:"):
             refs[name] = oid
     tip = refs.get("HEAD")
+    # Probe Overleaf before any shortcut exit so a refused login fails fast.
+    head = ov.overleaf_head(config["url"], root)
     if (
-        not re.fullmatch(r"refs/heads/\S+", default_ref)
+        not head
+        or not re.fullmatch(r"refs/heads/\S+", default_ref)
         or not tip
         or f"refs/heads/{branch}" in refs
         or record not in refs
     ):
-        return False
-    head = ov.overleaf_head(config["url"], root)
-    if not head:
         return False
     with ov.published_record(root, config["url"], warn=False) as (
         _,
