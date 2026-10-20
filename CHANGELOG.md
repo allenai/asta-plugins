@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Each paper's page is one bar over the paper's PDF, which runs to the
+  window's bottom: the paper's name, its source file, whether it's paired with
+  Overleaf, an "Open it in Overleaf" link when `_quarto.yml` names one for the
+  paper's folder under `overleaf-links`, and in a pull request's preview a
+  switch between that pull request's changes marked and the clean paper. ⤢
+  hides the site's sidebar and header to give the paper the whole window; Esc
+  brings them back. What changed shows a changed paper in the same viewer, a
+  page tall, in place of page thumbnails, which previews no longer render.
+
 - Skip temporary clones and all but one GitHub metadata read for an unchanged
   Overleaf sync when the published sync record still matches Overleaf and the
   default branch's paper and pairing, with no sync branch or held lock, and Git

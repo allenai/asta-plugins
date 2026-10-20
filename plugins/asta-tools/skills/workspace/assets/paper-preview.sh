@@ -262,16 +262,7 @@ fi
 if (cd "$dir" && latexmk -e '$pdf_mode ||= 1;' -interaction=nonstopmode \
   -halt-on-error -file-line-error -outdir=build "$diff_name"); then
   cp "$dir/build/$diff_stem.pdf" "$site_dir/what-changed.pdf"
-  if ! pdftoppm -f 1 -l 12 -png -r 54 "$site_dir/what-changed.pdf" "$site_dir/diff-page" >/dev/null 2>&1; then
-    rm -f "$site_dir"/diff-page-*.png
-    echo '::warning::Could not render paper diff thumbnails; the diff PDF remains available'
-  fi
-  pages=$(pdfinfo "$site_dir/what-changed.pdf" 2>/dev/null | awk '/^Pages:/ {print $2; exit}') || pages=""
-  if [[ "$pages" =~ ^[0-9]+$ ]]; then
-    printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12,"page_count":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" "$pages" > "$site_dir/preview.json"
-  else
-    printf '{"changed":true,"diff":true,"other_inputs":%s,"thumbnail_limit":12}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
-  fi
+  printf '{"changed":true,"diff":true,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
 else
   printf '{"changed":true,"diff":false,"other_inputs":%s}\n' "$([ "$other_changed" = 1 ] && echo true || echo false)" > "$site_dir/preview.json"
   echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'

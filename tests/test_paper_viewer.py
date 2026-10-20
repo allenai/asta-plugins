@@ -24,7 +24,7 @@ def generate(root, *papers, script=SCRIPT):
     )
 
 
-def test_viewer_names_the_overleaf_project_a_paper_is_paired_with(tmp_path):
+def test_viewer_says_a_paper_is_paired_without_linking_its_project(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     project = tmp_path / "examples/workspace"
     record = tmp_path / ".asta/overleaf/examples/workspace/paper.json"
@@ -36,8 +36,52 @@ def test_viewer_names_the_overleaf_project_a_paper_is_paired_with(tmp_path):
     assert generate(project, "paper", "other").returncode == 0
     paired = (project / "paper/html/index.qmd").read_text()
     unpaired = (project / "other/html/index.qmd").read_text()
-    assert f'href="https://www.overleaf.com/project/{"a1" * 12}"' in paired
-    assert "Overleaf" not in unpaired
+    assert "paired with an Overleaf project" in paired
+    # Who can open the project is the owner's to say, so the page doesn't link it.
+    assert "overleaf.com" not in paired
+    assert "paired with" not in unpaired
+
+
+def test_viewer_links_the_overleaf_link_the_project_names(tmp_path):
+    (tmp_path / "_quarto.yml").write_text(
+        "project:\n  type: website\n"
+        "# Links readers open\n"
+        "overleaf-links:  # by folder\n"
+        "  # the main paper\n"
+        "  paper: https://www.overleaf.com/project/abc/share#def  # its share link\n"
+        "  'papers/b': \"https://www.overleaf.com/read/ghi\"\n"
+        "  research/other paper: https://www.overleaf.com/read/jkl\n"
+        "  v1.2: https://www.overleaf.com/read/mno?x=1&y=2\n"
+        "  unsafe: javascript:alert(1)\n"
+        "  elsewhere: https://example.com/read/pqr\n"
+        "  lookalike: https://overleaf.com.example.com/read/stu\n"
+        "bibliography: references.bib\n"
+    )
+    names = ("paper", "papers/b", "research/other paper", "v1.2")
+    names += ("unsafe", "elsewhere", "lookalike", "other")
+    assert generate(tmp_path, *names).returncode == 0
+    pages = {name: (tmp_path / name / "html/index.qmd").read_text() for name in names}
+    # A URL's own # stays; a comment after a space doesn't.
+    assert (
+        '<a class="paper-link" href="https://www.overleaf.com/project/abc/share#def">'
+        "Open it in Overleaf</a>"
+    ) in pages["paper"]
+    assert 'href="https://www.overleaf.com/read/ghi"' in pages["papers/b"]
+    # Folder names with spaces or dots get their link too, escaped.
+    assert 'href="https://www.overleaf.com/read/jkl"' in pages["research/other paper"]
+    assert 'href="https://www.overleaf.com/read/mno?x=1&amp;y=2"' in pages["v1.2"]
+    # Only an https link to overleaf.com, which the page labels as Overleaf, and only
+    # for a folder the block names.
+    for name in ("unsafe", "elsewhere", "lookalike", "other"):
+        assert "paper-link" not in pages[name], name
+
+
+def test_viewer_links_nothing_without_an_overleaf_links_block(tmp_path):
+    (tmp_path / "_quarto.yml").write_text(
+        "project:\n  type: website\nwebsite:\n  paper: x\n"
+    )
+    assert generate(tmp_path, "paper").returncode == 0
+    assert "paper-link" not in (tmp_path / "paper/html/index.qmd").read_text()
 
 
 def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
@@ -48,9 +92,9 @@ def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
     assert (
         'data-paper-preview="../../../paper-previews/research/other%20paper"' in nested
     )
-    assert "/main.pdf'" in nested
+    assert "exists('main.pdf')" in nested
     assert "html/index.html" not in nested
-    assert "if (!response.ok) return" in nested
+    assert "if (!clean) return" in nested
     assert "The paper PDF appears after the preview build" in nested
 
 
@@ -117,7 +161,7 @@ def test_generated_viewer_refreshes_and_is_removed_after_paper_moves(tmp_path):
     current = old.read_text()
     prior_script = tmp_path / "old-viewer.py"
     prior_script.write_text(
-        SCRIPT.read_text().replace("The preview builds a PDF", "Old template")
+        SCRIPT.read_text().replace("The paper PDF appears", "Old template")
     )
     old.unlink()
     assert generate(tmp_path, "paper", script=prior_script).returncode == 0
@@ -137,7 +181,7 @@ def test_uncommitted_edits_survive_refresh_and_cleanup(tmp_path, discovered):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     assert generate(tmp_path, "paper").returncode == 0
     page = tmp_path / "paper/html/index.qmd"
-    custom = page.read_text().replace("The preview builds a PDF", "My viewer")
+    custom = page.read_text().replace("The paper PDF appears", "My viewer")
     page.write_text(custom)
     result = generate(tmp_path, *(("paper",) if discovered else ()))
     assert result.returncode == 0

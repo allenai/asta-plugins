@@ -16,6 +16,11 @@ project:
 
 bibliography: references.bib
 
+# Where readers can open each paper in Overleaf, by its folder; the paper's
+# page links it. What the link grants is set in Overleaf's sharing.
+overleaf-links:
+  paper: https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f
+
 # Supporting-evidence store for the `.ev` hover snippets (see
 # _extensions/evidence/README.md). Merged into document metadata so a claim can
 # back itself with a verbatim quote by key: `[90 tasks]{.ev key="…"}`.
