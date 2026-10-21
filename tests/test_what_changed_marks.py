@@ -175,6 +175,29 @@ def test_only_pages_the_site_renders_are_compared_and_load_the_script(tmp_path):
     assert json.loads((new / "_changes/index.json").read_text())["on"] is False
 
 
+def test_a_page_whose_only_change_is_unseen_counts_with_nothing_marked(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    site(old, {"index.html": page("<p>One.</p>"), "b.html": page("<p>Bee.</p>")})
+    site(
+        new,
+        {
+            "index.html": page("<p>Two.</p>"),
+            "b.html": page('<p>Bee.<span id="anchor"></span></p>'),
+        },
+    )
+    mark(old, new)
+    manifest = json.loads((new / "_changes/c0/manifest.json").read_text())
+    # As the report lists it, so that the sidebar and its count agree with it.
+    assert manifest["pages"]["b.html"] == {
+        "state": "changed",
+        "title": "Page",
+        "unseen": True,
+    }
+    assert manifest["total"] == 2
+    assert not (new / "_changes/c0/pages/b.html.txt").exists()
+    assert "p-b-html" in (new.parent / "what-changed.html").read_text()
+
+
 def test_a_copied_page_in_another_encoding_doesnt_stop_the_marks(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     site(old, {"index.html": page("<p>One.</p>")})

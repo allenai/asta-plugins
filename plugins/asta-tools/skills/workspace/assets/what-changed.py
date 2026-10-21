@@ -43,9 +43,10 @@ Design notes:
     changes, shown in place under a line that hides them, so that a reviewer
     reads a change where it sits as well as in this report. The marked content
     replaces the page's own on the project's site, so it keeps the page's
-    anchors and data, and still drops scripts and event handlers: what the
-    site's scripts attach to each element (a citation's hover, say) is back
-    once the changes are hidden. It marks `--new` as a fresh copy of the site,
+    anchors and data, and still drops scripts and event handlers; the hovers
+    Quarto gives footnotes, citations and cross-references are set up again on
+    it, and anything else the site's scripts attach to an element is back once
+    the changes are hidden. It marks `--new` as a fresh copy of the site,
     as a preview, the CLI and the demo each make one.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
@@ -1580,6 +1581,34 @@ MARKS_JS = r"""
     // keeps what the site's scripts attached to them (citation hovers, say).
     const original = main ? [...main.childNodes] : [];
     const restore = () => main.replaceChildren(...original);
+    // The hovers Quarto gives footnotes, citations and cross-references
+    // (tippy), carried to their marked copies by what each points at: its
+    // content is looked up by id in the page as it is, so the same setup
+    // serves the copy. A link is keyed by where it resolves, since the site's
+    // scripts rewrite the page's own "#ref-x" to a full address.
+    const pointsAt = el => {
+      const href = el.getAttribute('href');
+      if (href === null) return el.getAttribute('data-cites') || '';
+      try {
+        const url = new URL(href, location.href);
+        return url.origin + url.pathname.replace(/index\.html$/, '') + url.search + url.hash;
+      } catch (e) { return href; }
+    };
+    const hoverKey = el => el.tagName + ' ' + (el.getAttribute('role') || '') + ' ' + pointsAt(el);
+    const rehover = () => {
+      if (!window.tippy) return;
+      const hovers = new Map();
+      for (const node of original) {
+        if (node.nodeType !== 1) continue;
+        for (const el of [node, ...node.querySelectorAll('*')])
+          if (el._tippy && !hovers.has(hoverKey(el))) hovers.set(hoverKey(el), el._tippy.props);
+      }
+      if (!hovers.size) return;
+      for (const el of main.querySelectorAll('[data-cites], a[href]')) {
+        const props = hovers.get(hoverKey(el));
+        if (props) window.tippy(el, props);
+      }
+    };
     const marked = {};
     const save = () => {
       try { localStorage.setItem(key, JSON.stringify({ on: shown })); } catch (e) {}
@@ -1679,6 +1708,7 @@ MARKS_JS = r"""
           // Hidden while the marks were loading: the later choice stands.
           if (shown !== on) return;
           main.innerHTML = '<div class="wc-scope">' + text + '</div>';
+          rehover();
           // Swapped-in content arrives as source; the page's math typesetter
           // ran once at load, so it runs again on what's now shown.
           if (window.MathJax?.typesetPromise) {
@@ -1701,6 +1731,7 @@ MARKS_JS = r"""
         status.textContent = on ? page.marks + (page.marks === 1 ? ' change' : ' changes') + ' marked on this page' : '';
       } else {
         status.textContent = !on ? '' : page?.state === 'new' ? 'a new page'
+          : page?.unseen ? 'only markup a reader doesn’t see changed here (an anchor, say), so nothing is marked'
           : page ? 'this page changed, but draws its content with scripts, so it isn’t marked'
           : 'no changes on this page';
       }
@@ -1713,6 +1744,10 @@ MARKS_JS = r"""
     };
     for (const button of [toggle, hide, show]) button.addEventListener('click', flip);
     markSidebar();
+    // After the site's own setup (its hovers among it), which runs once the
+    // page has loaded.
+    if (document.readyState === 'loading')
+      await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
     apply(shown);
   });
 })();
@@ -1749,6 +1784,8 @@ def compare_pages(old_root, new_root):
             pages[rel] = {"state": "changed", "title": title}
             continue
         if markup_signature(old_c) == markup_signature(new_c):
+            # Changed, as the report lists it, with nothing a reader sees to mark.
+            pages[rel] = {"state": "changed", "title": title, "unseen": True}
             continue
         body, changed = diff_content(page_fragment(old_c), page_fragment(new_c))
         if not changed:
