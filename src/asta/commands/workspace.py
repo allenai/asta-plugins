@@ -36,11 +36,9 @@ ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
 CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
-# Cached when the selected ref ships them; `asta workspace what-changed` runs
-# the report, then the marks on each page beside it.
+# Cached when the selected ref ships it; `asta workspace what-changed` runs it.
 DIFF_SCRIPT = "what-changed.py"
-MARK_SCRIPT = "site-changes.py"
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, MARK_SCRIPT)
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT,)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -610,11 +608,9 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
     scripts_header = (
         f"override ASTA_WORKSPACE_SCRIPTS := .asta/cache/scripts/{archive_sha}\n"
     ).encode()
-    # A cache an older CLI made looked for fewer scripts in the same archive.
     if cache_valid and (
         not isinstance(state.get("scripts"), dict)
         or state["scripts"] != _scripts_state(scripts_dir, state["scripts"])
-        or state.get("looked_for") != sorted(SCRIPTS)
         or not target.read_bytes().startswith(scripts_header)
     ):
         try:
@@ -628,7 +624,6 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
                 _atomic_write(target, scripts_header + target.read_bytes())
                 state["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
             state["scripts"] = _script_hashes(scripts)
-            state["looked_for"] = sorted(SCRIPTS)
             _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
         _require_cli(target.read_bytes(), ref, cli)
@@ -690,7 +685,6 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
                 "sha256": hashlib.sha256(managed).hexdigest(),
                 "archive_sha256": archive_sha,
                 "scripts": _script_hashes(scripts),
-                "looked_for": sorted(SCRIPTS),
             },
             sort_keys=True,
         ).encode()
@@ -1124,19 +1118,31 @@ def compare_workspace(ref: str, project: Path) -> None:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
+                # The shipped report also marks each page of the site copy in
+                # place, on by default, as a pull request's preview does. A
+                # project's own report needn't know how, nor one from a release
+                # before it.
+                marking = (
+                    script.parent != project / "scripts"
+                    and b'"--mark"' in script.read_bytes()
+                )
+                command = [
+                    sys.executable,
+                    str(script),
+                    "--old",
+                    str(old_site),
+                    "--new",
+                    str(staged if marking else new_site),
+                    "--out",
+                    str(report),
+                    "--title",
+                    f"Changes since {ref}",
+                ]
+                if marking:
+                    label = _ref_label(project, ref, commit.stdout.strip())
+                    command += ["--mark", label, "--on"]
                 with preview_process(
-                    [
-                        sys.executable,
-                        str(script),
-                        "--old",
-                        str(old_site),
-                        "--new",
-                        str(new_site),
-                        "--out",
-                        str(report),
-                        "--title",
-                        f"Changes since {ref}",
-                    ],
+                    command,
                     project,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -1157,36 +1163,6 @@ def compare_workspace(ref: str, project: Path) -> None:
                     raise click.ClickException(
                         f"{DIFF_SCRIPT} did not write nonempty HTML"
                     )
-                # The site copy also marks each page's changes in place, on by
-                # default, with the report as their overview, as a pull
-                # request's preview does. Rules from before it have no marker.
-                marker = script.parent / MARK_SCRIPT
-                if marker.is_file():
-                    marked = subprocess.run(
-                        [
-                            sys.executable,
-                            str(marker),
-                            "--new",
-                            str(staged),
-                            "--compare",
-                            _ref_label(project, ref, commit.stdout.strip()),
-                            str(old_site),
-                            "--on",
-                        ],
-                        cwd=project,
-                        capture_output=True,
-                        text=True,
-                    )
-                    click.echo(marked.stdout + marked.stderr, nl=False, err=True)
-                    # As in a preview, the report stands without its marks;
-                    # none half-written are left to show.
-                    if marked.returncode != 0:
-                        shutil.rmtree(staged / "_changes", ignore_errors=True)
-                        click.echo(
-                            f"Warning: {MARK_SCRIPT} failed, so the pages show no "
-                            "changes in place; the report is published",
-                            err=True,
-                        )
                 try:
                     _publish(staged, owned)
                 except OSError as exc:

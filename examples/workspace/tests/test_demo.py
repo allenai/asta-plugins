@@ -135,29 +135,25 @@ class DemoTests(unittest.TestCase):
 
             def generate(command, **kwargs):
                 steps.append(Path(command[1]).name)
-                # Neither step sees a previous demo, and neither writes into the inputs.
-                if command[1].endswith("site-changes.py"):
-                    self.assertEqual(
-                        command[command.index("--compare") + 1], "in this pull request"
-                    )
-                    self.assertIn("--on", command)
-                    staged = Path(command[command.index("--new") + 1])
-                    compared = Path(command[command.index("--compare") + 2])
-                    self.assertFalse((compared / "demo").exists())
-                    self.assertFalse(staged.is_relative_to(old))
-                    self.marked(staged)
-                    return
+                # As a preview runs it: the report, marking the pages it reads.
+                self.assertEqual(
+                    command[command.index("--mark") + 1], "in this pull request"
+                )
+                self.assertIn("--on", command)
                 output = Path(command[command.index("--out") + 1])
                 self.assertFalse(output.is_relative_to(old))
                 self.assertFalse(output.is_relative_to(new))
+                # It sees no previous demo, and writes into neither input.
                 for flag in ("--old", "--new"):
                     compared = Path(command[command.index(flag) + 1])
                     self.assertFalse((compared / "demo").exists())
+                    self.assertFalse(flag == "--new" and compared.is_relative_to(new))
                 page = (
                     '<section class="page-diff changed" id="p-lit-review-index-html">'
                     + "<ins>new</ins><del>old</del>" * 3
                 )
                 output.write_text(page + '<a href="./index.html">home</a>')
+                self.marked(Path(command[command.index("--new") + 1]))
 
             with (
                 patch.object(demo.refresh, "workflow_ref", return_value="fixture"),
@@ -165,8 +161,8 @@ class DemoTests(unittest.TestCase):
             ):
                 demo.refresh.build(args)
                 demo.refresh.build(args)
-            # The preview's two steps, in its order, each build.
-            self.assertEqual(steps, ["generator.py", "site-changes.py"] * 2)
+            # One run of the report, which marks the pages, each build.
+            self.assertEqual(steps, ["generator.py"] * 2)
             self.assertTrue((args.output / "what-changed.html").is_file())
             self.assertTrue((args.output / "_changes/c0/manifest.json").is_file())
             self.assertFalse((args.output / "demo").exists())

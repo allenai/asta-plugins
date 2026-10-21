@@ -91,34 +91,45 @@ def test_highlights_edit_since_ref(project: Path) -> None:
     assert_single_worktree(project)
 
 
-def test_the_site_copy_runs_the_marker_on_by_default_with_the_version_named(
-    project: Path,
+def test_the_shipped_report_marks_the_site_copy_with_the_version_named(
+    project: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch
 ) -> None:
-    # The fake build renders no Quarto pages, so this checks the marker runs and
-    # what it's told; what it marks is test_site_changes.py's.
-    shutil.copy(ASSETS / "site-changes.py", project / "scripts/site-changes.py")
+    # The shipped report, from a cache outside the project, as a pinned release
+    # gives it. The fake build renders no Quarto pages, so this checks that the
+    # marks are asked for and named; what they mark is test_what_changed_marks.py's.
+    shipped = tmp_path_factory.mktemp("cache") / "what-changed.py"
+    shutil.copy(ASSETS / "what-changed.py", shipped)
+    monkeypatch.setattr(workspace_module, "diff_script", lambda _project: shipped)
     (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
     assert result.exit_code == 0, result.output
-    index = json.loads(
-        (project / ".asta/cache/what-changed/_changes/index.json").read_text()
-    )
+    published = project / ".asta/cache/what-changed"
+    assert "<ins" in (published / "what-changed.html").read_text()
+    index = json.loads((published / "_changes/index.json").read_text())
     label = index["comparisons"][0]["label"]
     assert label.startswith("since last-read (") and index["on"] is True
 
 
-def test_a_failed_marking_still_publishes_the_report_without_marks(
-    project: Path,
+@pytest.mark.parametrize("which", ["project's own", "from an older release"])
+def test_a_report_that_cant_mark_still_compares(
+    project: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch, which: str
 ) -> None:
-    (project / "scripts/site-changes.py").write_text(
-        "import pathlib, sys\n"
-        "new = pathlib.Path(sys.argv[sys.argv.index('--new') + 1])\n"
-        "(new / '_changes').mkdir()\n"
-        "(new / '_changes/index.json').write_text('{}')\n"
-        "sys.exit(1)\n"
-    )
+    # A project's own report needn't know --mark, nor one from before it; the
+    # comparison then runs as it always has, without marks.
+    if which == "from an older release":
+        # One that refuses options it doesn't know, as argparse does.
+        older = tmp_path_factory.mktemp("cache") / "what-changed.py"
+        older.write_text(
+            "import argparse, pathlib\n"
+            "ap = argparse.ArgumentParser()\n"
+            "for name in ('--old', '--new', '--out', '--title'):\n"
+            "    ap.add_argument(name)\n"
+            "args = ap.parse_args()\n"
+            "pathlib.Path(args.out).write_text('<ins>an older report</ins>')\n"
+        )
+        monkeypatch.setattr(workspace_module, "diff_script", lambda _project: older)
     (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
@@ -127,7 +138,6 @@ def test_a_failed_marking_still_publishes_the_report_without_marks(
     published = project / ".asta/cache/what-changed"
     assert "<ins" in (published / "what-changed.html").read_text()
     assert not (published / "_changes").exists()
-    assert "site-changes.py failed" in result.stderr
 
 
 @pytest.mark.parametrize("explicit_project", [False, True])

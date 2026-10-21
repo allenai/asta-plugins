@@ -15,7 +15,8 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent.parent
 PAPERS = ("paper",)
 # What a pull request's preview calls its comparison, as the shared workflow
-# passes it to site-changes.py, so that the demo reads as that preview does.
+# passes it to what-changed.py's --mark, so that the demo reads as that
+# preview does.
 PREVIEW_LABEL = "in this pull request"
 
 
@@ -123,8 +124,8 @@ def build(args) -> None:
         copy_site(new, after)
         staged = Path(directory) / "preview"
         shutil.copytree(after, staged)
-        # The two steps a pull request's preview runs after its build: What
-        # changed, then each page's changes marked in place.
+        # What a pull request's preview runs after its build: What changed,
+        # with each page's changes marked in place.
         subprocess.run(
             [
                 "python3",
@@ -132,23 +133,13 @@ def build(args) -> None:
                 "--old",
                 str(before),
                 "--new",
-                str(after),
+                str(staged),
                 "--out",
                 str(staged / "what-changed.html"),
                 "--title",
                 "Workspace demo",
-            ],
-            check=True,
-        )
-        subprocess.run(
-            [
-                "python3",
-                str(generator.parent / "site-changes.py"),
-                "--new",
-                str(staged),
-                "--compare",
+                "--mark",
                 PREVIEW_LABEL,
-                str(before),
                 "--on",
             ],
             check=True,

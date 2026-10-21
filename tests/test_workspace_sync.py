@@ -766,34 +766,6 @@ def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -
         assert cached.read_bytes() == f"echo {name}".encode()
 
 
-def test_a_cache_an_older_cli_made_picks_up_scripts_it_now_looks_for(
-    tmp_path: Path, monkeypatch
-) -> None:
-    project = project_with_ref(tmp_path, "v0.106.0")
-    archive = _archive(
-        {
-            workspace_module.ASSET_DIR + name: f"echo {name}".encode()
-            for name in workspace_module.SCRIPTS
-        }
-    )
-    runner = CliRunner()
-    args = ["workspace", "sync", "--project", str(project)]
-    scripts = workspace_module.SCRIPTS
-    older = tuple(name for name in scripts if name != workspace_module.MARK_SCRIPT)
-    with monkeypatch.context() as patched:
-        patched.setattr(workspace_module, "load_asset", lambda r, f: (b"rule", archive))
-        patched.setattr(workspace_module, "SCRIPTS", older)
-        assert runner.invoke(cli, args).exit_code == 0
-    assert not (cached_scripts(project) / workspace_module.MARK_SCRIPT).exists()
-    # The same archive, from the cache: no refresh and no fetch.
-    monkeypatch.setattr(
-        workspace_module, "load_asset", lambda r, f: pytest.fail("fetched again")
-    )
-    assert runner.invoke(cli, args).exit_code == 0
-    marker = cached_scripts(project) / workspace_module.MARK_SCRIPT
-    assert marker.read_bytes() == f"echo {workspace_module.MARK_SCRIPT}".encode()
-
-
 @pytest.mark.parametrize("mode", ["fresh", "cached", "offline-refresh"])
 def test_require_scripts_allows_removal_only_with_working_managed_targets(
     tmp_path: Path, monkeypatch, mode: str

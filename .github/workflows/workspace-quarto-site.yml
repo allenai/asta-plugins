@@ -263,13 +263,13 @@ jobs:
               exit 0
             fi
           fi
-          assets="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets"
           if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
             gen=scripts/what-changed.py
             echo "Using project-owned scripts/what-changed.py"
           else
             gen="$tmpdir/what-changed.py"
-            if ! curl -fsSL "$assets/what-changed.py" -o "$gen"; then
+            url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
+            if ! curl -fsSL "$url" -o "$gen"; then
               echo "::warning::could not fetch what-changed.py; skipping the diff page"
               exit 0
             fi
@@ -277,40 +277,21 @@ jobs:
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
+          # The shipped report also marks each page's changes in place, with
+          # itself as their overview. A project's own report needn't know how,
+          # and before the first deploy there's nothing to mark against.
+          mark=()
+          if [ "$gen" != scripts/what-changed.py ] && [ "$baseline_label" != "no deployed baseline" ]; then
+            mark=(--mark "in this pull request" --on)
+          fi
           tmpout="$tmpdir/what-changed.html"
           if python3 "$gen" \
             --old "$baseline" --new _site \
-            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
+            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" "${mark[@]}" \
               && [ -s "$tmpout" ]; then
             mv "$tmpout" _site/what-changed.html
           else
             echo "::warning::what-changed page generation failed; preview still published"
-            exit 0
-          fi
-          # Each page then shows its changes in place, from the same comparison,
-          # with the report as their overview. site-changes.py loads the
-          # report's code from beside it, so the two run from one folder.
-          # Before the first deploy there's nothing to mark against.
-          if [ "$baseline_label" = "no deployed baseline" ]; then
-            exit 0
-          fi
-          marker="$tmpdir/marker"
-          mkdir "$marker"
-          cp "$gen" "$marker/what-changed.py"
-          if git ls-files --error-unmatch scripts/site-changes.py >/dev/null 2>&1; then
-            cp scripts/site-changes.py "$marker/site-changes.py"
-            echo "Using project-owned scripts/site-changes.py"
-          elif [ "$gen" = scripts/what-changed.py ]; then
-            # The shipped marker needs the shipped report's code.
-            echo "Project-owned scripts/what-changed.py without scripts/site-changes.py; pages show no changes in place"
-            exit 0
-          elif ! curl -fsSL "$assets/site-changes.py" -o "$marker/site-changes.py"; then
-            echo "::warning::could not fetch site-changes.py; pages show no changes in place"
-            exit 0
-          fi
-          if ! python3 "$marker/site-changes.py" --new _site \
-            --compare "in this pull request" "$baseline" --on; then
-            echo "::warning::marking changes on the pages failed; preview still published"
           fi
 
       - name: Check project preview artifacts
