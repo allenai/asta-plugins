@@ -258,7 +258,7 @@ overleaf-links:
   paper: https://www.overleaf.com/read/…
 ```
 
-What the link grants is set in Overleaf's sharing, and the page doesn't describe it. Anyone who can read the site can follow it.
+What a named link grants is set in Overleaf's sharing, and the page doesn't describe it. Anyone who can read the site can follow it.
 
 Add the viewer path to `project.render` if your `_quarto.yml` uses an explicit render list, and link it from your navbar or write-up. Automatic render discovery includes it without a list. Managed `make preview`, `make render` and `make check` generate the same missing viewer pages locally through `workspace-viewers`, so explicit render lists work without committed viewer sources. The PDFs are still built by CI; for local paper compilation and viewing, use LaTeX Workshop. Run `asta workspace sync --refresh --require-scripts` before adopting this behavior; keep custom or existing viewer pages until your installed CLI and selected ref provide the viewer scripts.
 

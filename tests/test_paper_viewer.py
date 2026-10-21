@@ -45,6 +45,27 @@ def test_viewer_links_a_paired_papers_project_for_its_collaborators(tmp_path):
     assert "paired with" not in unpaired and "overleaf.com" not in unpaired
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://git.overleaf.com/" + "a1" * 12 + "/extra",
+        "https://git.overleaf.com/" + "A1" * 12,
+        "https://git.overleaf.com/" + "a1" * 12 + "\n",
+        "https://example.com/" + "a1" * 12,
+        ["https://git.overleaf.com/" + "a1" * 12],
+        None,
+    ],
+)
+def test_an_odd_pairing_record_links_nothing(tmp_path, url):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    record = tmp_path / ".asta/overleaf/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"format": 1, "url": url}))
+    assert generate(tmp_path, "paper").returncode == 0
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert "paper-link" not in page and "paired with" not in page
+
+
 def test_a_link_the_project_names_takes_the_place_of_its_project(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     record = tmp_path / ".asta/overleaf/paper.json"

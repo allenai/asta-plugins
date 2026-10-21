@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- A paired paper's page links its Overleaf project for the project's
-  collaborators when `_quarto.yml` names no link for it, so that co-authors
-  reading the site can open the paper to edit it.
+- A paired paper's page now links its Overleaf project, labeled for the
+  project's collaborators, when `_quarto.yml` names no link for it under
+  `overleaf-links`, so that co-authors reading the site can open the paper to
+  edit it.
 
 - Each paper's page is one bar over the paper's PDF, which runs to the
   window's bottom: the paper's name, its source file, whether it's paired with
