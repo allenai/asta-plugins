@@ -1178,6 +1178,15 @@ def compare_workspace(ref: str, project: Path) -> None:
                         text=True,
                     )
                     click.echo(marked.stdout + marked.stderr, nl=False, err=True)
+                    # As in a preview, the report stands without its marks;
+                    # none half-written are left to show.
+                    if marked.returncode != 0:
+                        shutil.rmtree(staged / "_changes", ignore_errors=True)
+                        click.echo(
+                            f"Warning: {MARK_SCRIPT} failed, so the pages show no "
+                            "changes in place; the report is published",
+                            err=True,
+                        )
                 try:
                     _publish(staged, owned)
                 except OSError as exc:

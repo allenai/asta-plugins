@@ -91,6 +91,41 @@ def test_highlights_edit_since_ref(project: Path) -> None:
     assert_single_worktree(project)
 
 
+def test_the_site_copy_marks_its_pages_and_names_the_version(project: Path) -> None:
+    shutil.copy(ASSETS / "site-changes.py", project / "scripts/site-changes.py")
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    index = json.loads(
+        (project / ".asta/cache/what-changed/_changes/index.json").read_text()
+    )
+    label = index["comparisons"][0]["label"]
+    assert label.startswith("since last-read (") and index["on"] is True
+
+
+def test_a_failed_marking_still_publishes_the_report_without_marks(
+    project: Path,
+) -> None:
+    (project / "scripts/site-changes.py").write_text(
+        "import pathlib, sys\n"
+        "new = pathlib.Path(sys.argv[sys.argv.index('--new') + 1])\n"
+        "(new / '_changes').mkdir()\n"
+        "(new / '_changes/index.json').write_text('{}')\n"
+        "sys.exit(1)\n"
+    )
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    published = project / ".asta/cache/what-changed"
+    assert "<ins" in (published / "what-changed.html").read_text()
+    assert not (published / "_changes").exists()
+    assert "site-changes.py failed" in result.stderr
+
+
 @pytest.mark.parametrize("explicit_project", [False, True])
 def test_subdirectory_uses_matching_baseline(
     project: Path, monkeypatch: pytest.MonkeyPatch, explicit_project: bool
@@ -1529,9 +1564,24 @@ def test_the_version_compared_with_is_named_as_github_names_it(tmp_path):
     def git(*args):
         env = {**os.environ, "GIT_COMMITTER_DATE": "2026-10-15T12:00:00Z"}
         return subprocess.run(
-            ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@x",
-             "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
-            check=True, capture_output=True, text=True, env=env,
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@x",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "tag.gpgsign=false",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
         ).stdout.strip()
 
     git("init", "-q", "-b", "main")

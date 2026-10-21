@@ -15,7 +15,6 @@ import argparse
 import html
 import importlib.util
 import json
-import os
 import re
 import shutil
 import sys
@@ -79,14 +78,18 @@ def rendered_page(path):
             doc = f.read()
     except (OSError, UnicodeDecodeError):
         return False
-    return 'name="generator" content="quarto-' in doc and "data-paper-preview" not in doc
+    return (
+        'name="generator" content="quarto-' in doc and "data-paper-preview" not in doc
+    )
 
 
 # The site's own pages only, for the marking and the overview alike: copied
 # HTML (generated run reports, say) isn't what a reader browses as the site.
 _all_pages = wc.list_pages
 wc.list_pages = lambda root, *rest, **kw: {
-    rel: path for rel, path in _all_pages(root, *rest, **kw).items() if rendered_page(path)
+    rel: path
+    for rel, path in _all_pages(root, *rest, **kw).items()
+    if rendered_page(path)
 }
 
 STYLE = """
@@ -252,6 +255,8 @@ SCRIPT = r"""
         if (on) {
           const text = marked[choice.id] ?? (marked[choice.id] = await fetch(
             new URL(choice.id + '/pages/' + rel + '.txt', base)).then(r => r.text()));
+          // Hidden while the marks were loading: the later choice stands.
+          if (shown !== on) return;
           main.innerHTML = '<div class="wc-scope">' + text + '</div>';
           // Swapped-in content arrives as source; the page's math typesetter
           // ran once at load, so it runs again on what's now shown.
@@ -335,9 +340,18 @@ def changed_papers(new_root):
             state = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(state, dict) and state.get("changed") and not state.get("removed"):
+        if (
+            isinstance(state, dict)
+            and state.get("changed")
+            and not state.get("removed")
+        ):
             directory = manifest.parent.relative_to(previews).as_posix()
-            papers.append({"page": f"{directory}/html/index.html", "marked": bool(state.get("diff"))})
+            papers.append(
+                {
+                    "page": f"{directory}/html/index.html",
+                    "marked": bool(state.get("diff")),
+                }
+            )
     return papers
 
 
@@ -345,12 +359,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--new", required=True, type=Path)
     ap.add_argument(
-        "--compare", nargs=2, required=True, metavar=("LABEL", "OLD_SITE"),
+        "--compare",
+        nargs=2,
+        required=True,
+        metavar=("LABEL", "OLD_SITE"),
         help='what the site is compared with, as the page names it ("in this pull '
-        'request"), and that version\'s rendered site',
+        "request\"), and that version's rendered site",
     )
     ap.add_argument("--title", default="Site")
-    ap.add_argument("--on", action="store_true", help="show changes until a reader turns them off")
+    ap.add_argument(
+        "--on", action="store_true", help="show changes until a reader turns them off"
+    )
     args = ap.parse_args()
     label, old = args.compare
     new_root = args.new.resolve()
@@ -368,16 +387,31 @@ def main():
     # The overview is the What changed report the preview or CLI just made.
     overview = "what-changed.html"
     if not (new_root / overview).exists():
-        report = wc.build(str(Path(old).resolve()), str(new_root), "", f"{args.title} {label}")
+        report = wc.build(
+            str(Path(old).resolve()), str(new_root), "", f"{args.title} {label}"
+        )
         (new_root / overview).write_text(report, encoding="utf-8")
     count = len(pages) + len(removed) + len(papers)
-    manifest = {"label": label, "overview": overview, "total": count,
-                "count": f"{count} page{'s' if count != 1 else ''}",
-                "pages": pages, "papers": papers, "removed": removed}
+    manifest = {
+        "label": label,
+        "overview": overview,
+        "total": count,
+        "count": f"{count} page{'s' if count != 1 else ''}",
+        "pages": pages,
+        "papers": papers,
+        "removed": removed,
+    }
     (out / "c0").mkdir(parents=True, exist_ok=True)
-    (out / "c0" / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    index = {"on": args.on, "comparisons": [{"id": "c0", "label": label, "total": count}]}
-    print(f"site-changes: {label}: {len(pages)} pages, {len(papers)} papers, {len(removed)} removed")
+    (out / "c0" / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    index = {
+        "on": args.on,
+        "comparisons": [{"id": "c0", "label": label, "total": count}],
+    }
+    print(
+        f"site-changes: {label}: {len(pages)} pages, {len(papers)} papers, {len(removed)} removed"
+    )
     (out / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
     (out / "changes.js").write_text(SCRIPT, encoding="utf-8")
     (out / "changes.css").write_text(STYLE, encoding="utf-8")
@@ -387,8 +421,10 @@ def main():
         if MARK in doc or "</body>" not in doc or 'content="quarto-' not in doc:
             continue
         up = "../" * rel.count("/")
-        tags = (f'{MARK}<link rel="stylesheet" href="{up}_changes/changes.css">'
-                f'<script src="{up}_changes/changes.js" defer></script>')
+        tags = (
+            f'{MARK}<link rel="stylesheet" href="{up}_changes/changes.css">'
+            f'<script src="{up}_changes/changes.js" defer></script>'
+        )
         # The document's own closing tag, the last one, never one quoted in a script.
         end = doc.rfind("</body>")
         Path(path).write_text(doc[:end] + tags + doc[end:], encoding="utf-8")

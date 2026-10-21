@@ -14,7 +14,7 @@ SCRIPT = (
 def page(body, title="Page", extra=""):
     return (
         f'<html><head><meta name="generator" content="quarto-1.7.29"><title>{title}'
-        f"</title></head><body>{extra}<main id=\"quarto-document-content\">{body}</main>"
+        f'</title></head><body>{extra}<main id="quarto-document-content">{body}</main>'
         "</body></html>"
     )
 
@@ -28,28 +28,46 @@ def site(root, pages):
 
 def mark(old, new, *extra):
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--new", str(new), "--compare",
-         "in this pull request", str(old), *extra],
-        capture_output=True, text=True, check=True,
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--new",
+            str(new),
+            "--compare",
+            "in this pull request",
+            str(old),
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
 def test_a_changed_page_carries_its_marks_and_an_unchanged_one_none(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
-    site(old, {
-        "index.html": page("<p>The same words.</p>"),
-        "review/index.html": page("<p>Attention replaced recurrence.</p>"),
-    })
-    site(new, {
-        "index.html": page("<p>The same words.</p>"),
-        "review/index.html": page("<p>Attention largely replaced recurrence.</p>"),
-        "notes.html": page("<p>A new page.</p>", title="Notes"),
-    })
+    site(
+        old,
+        {
+            "index.html": page("<p>The same words.</p>"),
+            "review/index.html": page("<p>Attention replaced recurrence.</p>"),
+        },
+    )
+    site(
+        new,
+        {
+            "index.html": page("<p>The same words.</p>"),
+            "review/index.html": page("<p>Attention largely replaced recurrence.</p>"),
+            "notes.html": page("<p>A new page.</p>", title="Notes"),
+        },
+    )
     result = mark(old, new, "--on")
     assert "in this pull request: 2 pages" in result.stdout
     index = json.loads((new / "_changes/index.json").read_text())
-    assert index == {"on": True, "comparisons": [
-        {"id": "c0", "label": "in this pull request", "total": 2}]}
+    assert index == {
+        "on": True,
+        "comparisons": [{"id": "c0", "label": "in this pull request", "total": 2}],
+    }
     manifest = json.loads((new / "_changes/c0/manifest.json").read_text())
     assert manifest["pages"]["review/index.html"]["marks"] >= 1
     assert manifest["pages"]["notes.html"]["state"] == "new"
@@ -97,11 +115,16 @@ def test_only_pages_the_site_renders_are_compared_and_load_the_script(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     report = "<html><body><main>Run report, copied through</main></body></html>"
     site(old, {"index.html": page("<p>One.</p>"), "artifacts/run.html": report})
-    site(new, {
-        "index.html": page("<p>Two.</p>"),
-        "artifacts/run.html": report.replace("copied", "copied again"),
-        "paper/html/index.html": page("<p>Viewer</p>", extra='<div data-paper-preview="x">'),
-    })
+    site(
+        new,
+        {
+            "index.html": page("<p>Two.</p>"),
+            "artifacts/run.html": report.replace("copied", "copied again"),
+            "paper/html/index.html": page(
+                "<p>Viewer</p>", extra='<div data-paper-preview="x">'
+            ),
+        },
+    )
     mark(old, new)
     manifest = json.loads((new / "_changes/c0/manifest.json").read_text())
     assert set(manifest["pages"]) == {"index.html"}
@@ -113,7 +136,9 @@ def test_only_pages_the_site_renders_are_compared_and_load_the_script(tmp_path):
     assert json.loads((new / "_changes/index.json").read_text())["on"] is False
 
 
-def test_the_report_already_made_is_the_overview_and_a_rerun_adds_no_second_tag(tmp_path):
+def test_the_report_already_made_is_the_overview_and_a_rerun_adds_no_second_tag(
+    tmp_path,
+):
     old, new = tmp_path / "old", tmp_path / "new"
     site(old, {"index.html": page("<p>One.</p>")})
     site(new, {"index.html": page("<p>Two.</p>")})
@@ -138,7 +163,7 @@ def test_a_preview_marks_nothing_without_a_baseline_or_with_its_own_report_alone
     workflow = (
         Path(__file__).parents[1] / ".github/workflows/workspace-quarto-site.yml"
     ).read_text()
-    marking = workflow[workflow.index("Each page then shows its changes in place"):]
+    marking = workflow[workflow.index("Each page then shows its changes in place") :]
     marking = marking[: marking.index("--compare")]
     # Before the first deploy, and for a project's own report without its own
     # marker, which the shipped one couldn't load, the step stops first.
