@@ -201,9 +201,10 @@ def create_viewer(
         link = f"https://www.overleaf.com/project/{project}"
         note = " (for its collaborators)"
     if link:
+        # Who it's for is part of the link's name, read out with it.
         where += (
             f' <a class="paper-link" href="{html.escape(link, quote=True)}">'
-            f"Open it in Overleaf</a>{note}"
+            f"Open it in Overleaf{note}</a>"
         )
     content = f"""---
 title: {json.dumps(title)}

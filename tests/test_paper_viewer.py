@@ -40,7 +40,7 @@ def test_viewer_links_a_paired_papers_project_for_its_collaborators(tmp_path):
     # The project opens only for its collaborators, so the page says who it's for.
     assert (
         f'<a class="paper-link" href="https://www.overleaf.com/project/{"a1" * 12}">'
-        "Open it in Overleaf</a> (for its collaborators)"
+        "Open it in Overleaf (for its collaborators)</a>"
     ) in paired
     assert "paired with" not in unpaired and "overleaf.com" not in unpaired
 
