@@ -115,8 +115,8 @@ def paper_directories(data: object) -> list[str]:
 OVERLEAF_GIT = re.compile(r"https://git\.overleaf\.com/([0-9a-f]{24})")
 
 
-def paired_with_overleaf(directory: str) -> bool:
-    """Whether the paper's pairing record names an Overleaf project."""
+def overleaf_project(directory: str) -> str | None:
+    """The Overleaf project the paper's pairing record names, by its ID."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel", "--show-prefix"],
@@ -128,8 +128,9 @@ def paired_with_overleaf(directory: str) -> bool:
         record = Path(top) / ".asta/overleaf" / f"{prefix}{directory}.json"
         url = json.loads(record.read_text(encoding="utf-8")).get("url", "")
     except (OSError, ValueError, AttributeError, subprocess.CalledProcessError):
-        return False
-    return isinstance(url, str) and OVERLEAF_GIT.fullmatch(url) is not None
+        return None
+    match = OVERLEAF_GIT.fullmatch(url) if isinstance(url, str) else None
+    return match[1] if match else None
 
 
 OVERLEAF_LINK = re.compile(
@@ -187,17 +188,22 @@ def create_viewer(
     target = posixpath.relpath(f"paper-previews/{directory}", folder.as_posix())
     target = quote(target, safe="/.")
     source = f"{directory}/{main_file}"
-    # Plain text, plus the one link the project names for readers (a share
-    # link, say): who may open the repository or the project is the owner's
-    # to decide, not the page's to assume.
+    # The link the project names for readers (a share link, say), since what
+    # it grants is the owner's to decide. Without one, a paired paper links
+    # its project, which opens only for the project's collaborators and so
+    # grants nothing; the page says who it's for.
+    project = overleaf_project(directory)
     where = f"Written in <code>{html.escape(source)}</code>" + (
-        ", paired with an Overleaf project." if paired_with_overleaf(directory) else "."
+        ", paired with an Overleaf project." if project else "."
     )
-    link = overleaf_link(directory)
+    link, note = overleaf_link(directory), ""
+    if not link and project:
+        link = f"https://www.overleaf.com/project/{project}"
+        note = " (for its collaborators)"
     if link:
         where += (
             f' <a class="paper-link" href="{html.escape(link, quote=True)}">'
-            "Open it in Overleaf</a>"
+            f"Open it in Overleaf</a>{note}"
         )
     content = f"""---
 title: {json.dumps(title)}

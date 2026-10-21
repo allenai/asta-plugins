@@ -251,7 +251,7 @@ Cleanup removes only the two temporary worktrees, without pruning others. Failed
 
 For each discovered LaTeX paper, the shared preview generates `<paper-dir>/html/index.qmd` before `make check`. The page is one bar over the paper's PDF, which runs to the window's bottom: the paper's name, its source file, and whether it's paired with Overleaf. ⤢ hides the site's sidebar and header to give the paper the whole window; Esc brings them back. In a pull request's preview the page opens on the latexdiff PDF, with that pull request's changes marked, and a switch to the clean paper; What changed shows a changed paper in the same viewer. Keep the LaTeX source and bibliography committed, and ignore only the generated page, for example `/paper/html/index.qmd` in `.gitignore`. Viewer scripts are managed; copy them into `scripts/` only to customize or eject them.
 
-To give readers who can't open the Overleaf project a way to it, such as a share link, name the link for the paper's folder in `_quarto.yml`; the page then links it as "Open it in Overleaf":
+A paired paper's page links its Overleaf project as "Open it in Overleaf (for its collaborators)": the project opens only for those it's shared with, so the link grants nothing. To give other readers a way to it, such as a share link, name the link for the paper's folder in `_quarto.yml`; the page then links that instead, as "Open it in Overleaf":
 
 ```yaml
 overleaf-links:

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A paired paper's page links its Overleaf project for the project's
+  collaborators when `_quarto.yml` names no link for it, so that co-authors
+  reading the site can open the paper to edit it.
+
 - Each paper's page is one bar over the paper's PDF, which runs to the
   window's bottom: the paper's name, its source file, whether it's paired with
   Overleaf, an "Open it in Overleaf" link when `_quarto.yml` names one for the
