@@ -14,6 +14,9 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 PAPERS = ("paper",)
+# What a pull request's preview calls its comparison, as the shared workflow
+# passes it to site-changes.py, so that the demo reads as that preview does.
+PREVIEW_LABEL = "in this pull request"
 
 
 def workflow_ref() -> str:
@@ -79,42 +82,24 @@ def check(snapshot: Path) -> None:
             raise ValueError(f"demo report links outside snapshot: {name}")
         if not target.is_file() and not (target / "index.html").is_file():
             raise ValueError(f"demo report links to a missing file: {name}")
+    # As in a pull request's preview, the edited page shows its changes in place.
+    changes = json.loads(
+        (snapshot / "_changes/c0/manifest.json").read_text(encoding="utf-8")
+    )
+    if not changes.get("pages", {}).get("lit-review/index.html", {}).get("marks"):
+        raise ValueError("demo's edited page shows no changes in place")
 
 
 def copy_site(source: Path, target: Path) -> None:
+    # A previous demo, at demo/, isn't part of either site.
     shutil.copytree(
         source,
         target,
         ignore=lambda path, names: (
             [name for name in names if name == ".nojekyll"]
-            + (["showcase"] if Path(path) == source / "demo" else [])
+            + (["demo"] if Path(path) == source else [])
         ),
     )
-    landing = target / "demo/index.html"
-    if landing.is_file():
-        landing.write_text(
-            re.sub(
-                r'<p id="template-demo-report">.*?</p>',
-                "<!-- template-demo-report -->",
-                landing.read_text(encoding="utf-8"),
-                flags=re.DOTALL,
-            ),
-            encoding="utf-8",
-        )
-
-
-def report_link(page: Path, href: str) -> str:
-    content = page.read_text(encoding="utf-8")
-    content, count = re.subn(
-        r'<!-- template-demo-report -->|<p id="template-demo-report">.*?</p>',
-        f'<p id="template-demo-report"><iframe src="{href}" '
-        'title="What changed in the demo pull request"></iframe></p>',
-        content,
-        flags=re.DOTALL,
-    )
-    if count != 1:
-        raise ValueError("demo landing page needs exactly one report placeholder")
-    return content
 
 
 def build(args) -> None:
@@ -129,8 +114,6 @@ def build(args) -> None:
         raise ValueError("both rendered sites and the shared generator are required")
     snapshot = args.output.resolve()
     snapshot.parent.mkdir(parents=True, exist_ok=True)
-    landing = snapshot.parent / "index.html"
-    landing_content = report_link(landing, "showcase/what-changed.html")
     # Keep staging outside the inputs so the diff cannot discover its own output.
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
@@ -138,23 +121,10 @@ def build(args) -> None:
         before, after = directory / "before", directory / "after"
         copy_site(old, before)
         copy_site(new, after)
-        staged = Path(directory) / "showcase"
+        staged = Path(directory) / "preview"
         shutil.copytree(after, staged)
-        nested_landing = staged / "demo/index.html"
-        nested_landing.write_text(
-            report_link(nested_landing, "../what-changed.html"), encoding="utf-8"
-        )
-        search = staged / "search.json"
-        if search.is_file():
-            entries = json.loads(search.read_text(encoding="utf-8"))
-            if not isinstance(entries, list):
-                raise ValueError("unexpected Quarto search index format")
-            entries = [
-                entry
-                for entry in entries
-                if not entry.get("href", "").startswith("demo/")
-            ]
-            search.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+        # The two steps a pull request's preview runs after its build: What
+        # changed, then each page's changes marked in place.
         subprocess.run(
             [
                 "python3",
@@ -167,6 +137,19 @@ def build(args) -> None:
                 str(staged / "what-changed.html"),
                 "--title",
                 "Workspace demo",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "python3",
+                str(generator.parent / "site-changes.py"),
+                "--new",
+                str(staged),
+                "--compare",
+                PREVIEW_LABEL,
+                str(before),
+                "--on",
             ],
             check=True,
         )
@@ -183,7 +166,7 @@ def build(args) -> None:
             encoding="utf-8",
         )
         check(staged)
-        backup = snapshot.with_name(f".showcase-backup-{uuid4().hex}")
+        backup = snapshot.with_name(f".demo-backup-{uuid4().hex}")
         if snapshot.exists():
             snapshot.rename(backup)
         try:
@@ -196,7 +179,6 @@ def build(args) -> None:
             raise
         if backup.exists():
             shutil.rmtree(backup)
-        landing.write_text(landing_content, encoding="utf-8")
     print(f"refreshed {snapshot}")
 
 

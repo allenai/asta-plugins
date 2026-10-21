@@ -223,11 +223,13 @@ The PR's “What changed” page uses the version of `what-changed.py` shipped w
 
 A custom script must accept `--old <site-dir>`, `--new <site-dir>`, `--out <html-file>`, and `--title <text>`. It must write a nonempty HTML file to `--out` and exit successfully to publish the page. `--old` is a snapshot of the deployed main site (empty before the first deploy); `--new` is the PR's rendered `_site/`.
 
+From the same comparison, each page of the preview shows that pull request's changes in place, under a line at the top ("Changes in this pull request: 8 changes marked on this page · All changes (3 pages) · Hide"); the sidebar marks the changed pages, and "All changes" opens What changed. A paper's page opens on its marked PDF. Hiding the changes is remembered for that preview. The marks come from `site-changes.py`, which runs right after `what-changed.py` and reuses its code from the same folder; a project that commits `scripts/what-changed.py` gets marks only if it also commits `scripts/site-changes.py`. A first preview, before anything is deployed, has nothing to mark against. A failure there leaves the preview without marks and still publishes it. The published site never shows them.
+
 ### Local comparisons
 
 Run `asta workspace what-changed <ref>`, for example a tag marking the version you last read. Git 2.30 or newer is required and checked before checkout. The command renders `<ref>` and a private working-tree copy with `make render`, then runs the project's `scripts/what-changed.py` or the copy cached from the asta-plugins ref selected in the working tree's `docs.yml`. Older asta-plugins refs need a project script or a newer selected ref. Use `--project <directory>` for a workspace in a repository subdirectory; both renders use Git's relative project prefix.
 
-The page is written only to `.asta/cache/what-changed/what-changed.html`. This command-owned directory contains a rendered-site copy so links resolve, and is replaced on each successful comparison. Both renders leave the live `_site/` untouched. A failed comparison preserves the previous page.
+The page is written only to `.asta/cache/what-changed/what-changed.html`. This command-owned directory contains a rendered-site copy so links resolve, and is replaced on each successful comparison. Each page of that copy shows its changes in place, as a pull request's preview does, under a line that names the version compared with as GitHub does: a commit by its message, a branch or tag by its name, with its short ID and date ("Changes since “Add the ablation table” (1a2b3c4, Oct 15)"). The marks need an asta-plugins ref that ships `site-changes.py`. Both renders leave the live `_site/` untouched. A failed comparison preserves the previous page.
 
 #### Render inputs and trust
 

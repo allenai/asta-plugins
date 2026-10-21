@@ -1523,3 +1523,30 @@ def test_comparison_preview_preserves_http_file_behavior(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_the_version_compared_with_is_named_as_github_names_it(tmp_path):
+    def git(*args):
+        env = {**os.environ, "GIT_COMMITTER_DATE": "2026-10-15T12:00:00Z"}
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), "-c", "user.name=T", "-c", "user.email=t@x",
+             "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
+            check=True, capture_output=True, text=True, env=env,
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("commit", "-q", "--allow-empty", "-m", "Add the ablation table")
+    git("tag", "v1.0.0")
+    git("commit", "-q", "--allow-empty", "-m", "x" * 80)
+    first, second = git("rev-parse", "HEAD~1"), git("rev-parse", "HEAD")
+    label = workspace_module._ref_label
+    # A commit goes by its message, with its short ID and date.
+    assert label(tmp_path, first[:9], first) == (
+        f"since “Add the ablation table” ({first[:7]}, Oct 15)"
+    )
+    assert label(tmp_path, "HEAD", second) == (
+        f"since “{'x' * 59}…” ({second[:7]}, Oct 15)"
+    )
+    # A branch or tag keeps its name.
+    assert label(tmp_path, "main", second) == f"since main ({second[:7]}, Oct 15)"
+    assert label(tmp_path, "v1.0.0", first) == f"since v1.0.0 ({first[:7]}, Oct 15)"

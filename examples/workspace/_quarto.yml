@@ -5,8 +5,6 @@ project:
     - index.qmd
     - lit-review/index.qmd
     - paper/html/index.qmd
-    - about.qmd
-    - demo/index.qmd
     # The theme's browser check reads this page; it isn't in the navigation.
     - appearance.qmd
   resources:
@@ -35,8 +33,7 @@ filters:
 
 # The workspace skill's own site layout (assets/_quarto.yml), so that the
 # example looks like a workspace the skill makes; only the page list is set
-# here, so that the project's pages come first and the notes on the example
-# last.
+# here.
 website:
   title: "Asta workspace example"
   sidebar:
@@ -49,10 +46,6 @@ website:
       - index.qmd
       - lit-review/index.qmd
       - paper/html/index.qmd
-      - section: "This example"
-        contents:
-          - about.qmd
-          - demo/index.qmd
 
 format:
   html:

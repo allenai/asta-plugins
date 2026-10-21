@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import datetime
 import functools
 import hashlib
 import http.client
@@ -35,9 +36,11 @@ ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
 CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
-# Cached when the selected ref ships it; `asta workspace what-changed` runs it.
+# Cached when the selected ref ships them; `asta workspace what-changed` runs
+# the report, then the marks on each page beside it.
 DIFF_SCRIPT = "what-changed.py"
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT,)
+MARK_SCRIPT = "site-changes.py"
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, MARK_SCRIPT)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -607,9 +610,11 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
     scripts_header = (
         f"override ASTA_WORKSPACE_SCRIPTS := .asta/cache/scripts/{archive_sha}\n"
     ).encode()
+    # A cache an older CLI made looked for fewer scripts in the same archive.
     if cache_valid and (
         not isinstance(state.get("scripts"), dict)
         or state["scripts"] != _scripts_state(scripts_dir, state["scripts"])
+        or state.get("looked_for") != sorted(SCRIPTS)
         or not target.read_bytes().startswith(scripts_header)
     ):
         try:
@@ -623,6 +628,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
                 _atomic_write(target, scripts_header + target.read_bytes())
                 state["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
             state["scripts"] = _script_hashes(scripts)
+            state["looked_for"] = sorted(SCRIPTS)
             _atomic_write(manifest, json.dumps(state, sort_keys=True).encode() + b"\n")
     if cache_valid and not refresh:
         _require_cli(target.read_bytes(), ref, cli)
@@ -684,6 +690,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
                 "sha256": hashlib.sha256(managed).hexdigest(),
                 "archive_sha256": archive_sha,
                 "scripts": _script_hashes(scripts),
+                "looked_for": sorted(SCRIPTS),
             },
             sort_keys=True,
         ).encode()
@@ -1008,6 +1015,35 @@ def what_changed(ref: str, project: Path) -> None:
         raise click.exceptions.Exit(128 + exc.signum) from None
 
 
+def _ref_label(project: Path, ref: str, commit: str) -> str:
+    """How a reader knows what the site is compared with, as GitHub names it.
+
+    A branch or tag keeps its name; a commit goes by its message. Either way
+    with its short ID and date, so that a bare commit ID never stands alone.
+    """
+    shown = _git(project, "log", "-1", "--format=%s%x00%cs", commit)
+    subject, _, day = shown.stdout.strip().partition("\0")
+    try:
+        when = datetime.date.fromisoformat(day)
+        day = f"{when:%b} {when.day}"
+    except ValueError:
+        day = ""
+    about = ", ".join(part for part in (commit[:7], day) if part)
+    # rev-parse echoes --end-of-options back as a line of its own.
+    named = _git(
+        project, "rev-parse", "--symbolic-full-name", "--end-of-options", ref
+    ).stdout.splitlines()
+    # HEAD resolves to the current branch, but "since HEAD" says nothing.
+    if ref not in ("HEAD", "@") and any(
+        line.startswith(("refs/heads/", "refs/remotes/", "refs/tags/"))
+        for line in named
+    ):
+        return f"since {ref} ({about})"
+    if len(subject) > 60:
+        subject = subject[:59].rstrip() + "…"
+    return f"since “{subject}” ({about})" if subject else f"since {about}"
+
+
 def compare_workspace(ref: str, project: Path) -> None:
     project = project.resolve()
     if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
@@ -1121,6 +1157,27 @@ def compare_workspace(ref: str, project: Path) -> None:
                     raise click.ClickException(
                         f"{DIFF_SCRIPT} did not write nonempty HTML"
                     )
+                # The site copy also marks each page's changes in place, on by
+                # default, with the report as their overview, as a pull
+                # request's preview does. Rules from before it have no marker.
+                marker = script.parent / MARK_SCRIPT
+                if marker.is_file():
+                    marked = subprocess.run(
+                        [
+                            sys.executable,
+                            str(marker),
+                            "--new",
+                            str(staged),
+                            "--compare",
+                            _ref_label(project, ref, commit.stdout.strip()),
+                            str(old_site),
+                            "--on",
+                        ],
+                        cwd=project,
+                        capture_output=True,
+                        text=True,
+                    )
+                    click.echo(marked.stdout + marked.stderr, nl=False, err=True)
                 try:
                     _publish(staged, owned)
                 except OSError as exc:

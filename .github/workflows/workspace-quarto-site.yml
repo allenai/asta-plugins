@@ -263,13 +263,13 @@ jobs:
               exit 0
             fi
           fi
+          assets="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets"
           if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
             gen=scripts/what-changed.py
             echo "Using project-owned scripts/what-changed.py"
           else
             gen="$tmpdir/what-changed.py"
-            url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
-            if ! curl -fsSL "$url" -o "$gen"; then
+            if ! curl -fsSL "$assets/what-changed.py" -o "$gen"; then
               echo "::warning::could not fetch what-changed.py; skipping the diff page"
               exit 0
             fi
@@ -285,6 +285,32 @@ jobs:
             mv "$tmpout" _site/what-changed.html
           else
             echo "::warning::what-changed page generation failed; preview still published"
+            exit 0
+          fi
+          # Each page then shows its changes in place, from the same comparison,
+          # with the report as their overview. site-changes.py loads the
+          # report's code from beside it, so the two run from one folder.
+          # Before the first deploy there's nothing to mark against.
+          if [ "$baseline_label" = "no deployed baseline" ]; then
+            exit 0
+          fi
+          marker="$tmpdir/marker"
+          mkdir "$marker"
+          cp "$gen" "$marker/what-changed.py"
+          if git ls-files --error-unmatch scripts/site-changes.py >/dev/null 2>&1; then
+            cp scripts/site-changes.py "$marker/site-changes.py"
+            echo "Using project-owned scripts/site-changes.py"
+          elif [ "$gen" = scripts/what-changed.py ]; then
+            # The shipped marker needs the shipped report's code.
+            echo "Project-owned scripts/what-changed.py without scripts/site-changes.py; pages show no changes in place"
+            exit 0
+          elif ! curl -fsSL "$assets/site-changes.py" -o "$marker/site-changes.py"; then
+            echo "::warning::could not fetch site-changes.py; pages show no changes in place"
+            exit 0
+          fi
+          if ! python3 "$marker/site-changes.py" --new _site \
+            --compare "in this pull request" "$baseline" --on; then
+            echo "::warning::marking changes on the pages failed; preview still published"
           fi
 
       - name: Check project preview artifacts
