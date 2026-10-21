@@ -175,6 +175,20 @@ def test_only_pages_the_site_renders_are_compared_and_load_the_script(tmp_path):
     assert json.loads((new / "_changes/index.json").read_text())["on"] is False
 
 
+def test_a_copied_page_in_another_encoding_doesnt_stop_the_marks(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    site(old, {"index.html": page("<p>One.</p>")})
+    site(new, {"index.html": page("<p>Two.</p>")})
+    report = "<html><body>Résumé of the run</body></html>"
+    for root in (old, new):
+        (root / "artifacts").mkdir()
+        (root / "artifacts/run.html").write_bytes(report.encode("latin-1"))
+    result = mark(old, new)
+    assert "marked 1 pages" in result.stderr
+    assert "_changes/changes.js" in (new / "index.html").read_text()
+    assert (new / "artifacts/run.html").read_bytes() == report.encode("latin-1")
+
+
 def test_a_rerun_adds_no_second_tag(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     site(old, {"index.html": page("<p>One.</p>")})

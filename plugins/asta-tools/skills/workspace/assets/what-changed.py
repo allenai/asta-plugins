@@ -43,7 +43,10 @@ Design notes:
     changes, shown in place under a line that hides them, so that a reviewer
     reads a change where it sits as well as in this report. The marked content
     replaces the page's own on the project's site, so it keeps the page's
-    anchors and data, and still drops scripts and event handlers.
+    anchors and data, and still drops scripts and event handlers: what the
+    site's scripts attach to each element (a citation's hover, say) is back
+    once the changes are hidden. It marks `--new` as a fresh copy of the site,
+    as a preview, the CLI and the demo each make one.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
 """
@@ -1824,7 +1827,11 @@ def tag_pages(new_root, tagged):
     """Every page the site renders loads the marks, its paper pages included;
     each page tagged is added to `tagged`, so that a failed run untags only those."""
     for rel, path in list_pages(new_root).items():
-        doc = Path(path).read_text(encoding="utf-8")
+        try:
+            doc = Path(path).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # Copied through, not rendered: Quarto writes UTF-8.
+            continue
         if MARKS_TAG in doc or "</body>" not in doc or 'content="quarto-' not in doc:
             continue
         up = "../" * rel.count("/")
