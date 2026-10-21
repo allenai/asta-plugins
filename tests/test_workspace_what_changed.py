@@ -91,7 +91,11 @@ def test_highlights_edit_since_ref(project: Path) -> None:
     assert_single_worktree(project)
 
 
-def test_the_site_copy_marks_its_pages_and_names_the_version(project: Path) -> None:
+def test_the_site_copy_runs_the_marker_on_by_default_with_the_version_named(
+    project: Path,
+) -> None:
+    # The fake build renders no Quarto pages, so this checks the marker runs and
+    # what it's told; what it marks is test_site_changes.py's.
     shutil.copy(ASSETS / "site-changes.py", project / "scripts/site-changes.py")
     (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
     result = CliRunner().invoke(
