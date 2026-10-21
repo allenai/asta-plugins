@@ -24,7 +24,7 @@ def generate(root, *papers, script=SCRIPT):
     )
 
 
-def test_viewer_says_a_paper_is_paired_without_linking_its_project(tmp_path):
+def test_viewer_links_a_paired_papers_project_for_its_collaborators(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     project = tmp_path / "examples/workspace"
     record = tmp_path / ".asta/overleaf/examples/workspace/paper.json"
@@ -37,9 +37,49 @@ def test_viewer_says_a_paper_is_paired_without_linking_its_project(tmp_path):
     paired = (project / "paper/html/index.qmd").read_text()
     unpaired = (project / "other/html/index.qmd").read_text()
     assert "paired with an Overleaf project" in paired
-    # Who can open the project is the owner's to say, so the page doesn't link it.
-    assert "overleaf.com" not in paired
-    assert "paired with" not in unpaired
+    # The project opens only for its collaborators, so the page says who it's for.
+    assert (
+        f'<a class="paper-link" href="https://www.overleaf.com/project/{"a1" * 12}">'
+        "Open it in Overleaf (for its collaborators)</a>"
+    ) in paired
+    assert "paired with" not in unpaired and "overleaf.com" not in unpaired
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://git.overleaf.com/" + "a1" * 12 + "/extra",
+        "https://git.overleaf.com/" + "A1" * 12,
+        "https://git.overleaf.com/" + "a1" * 12 + "\n",
+        "https://example.com/" + "a1" * 12,
+        ["https://git.overleaf.com/" + "a1" * 12],
+        None,
+    ],
+)
+def test_an_odd_pairing_record_links_nothing(tmp_path, url):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    record = tmp_path / ".asta/overleaf/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"format": 1, "url": url}))
+    assert generate(tmp_path, "paper").returncode == 0
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert "paper-link" not in page and "paired with" not in page
+
+
+def test_a_link_the_project_names_takes_the_place_of_its_project(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    record = tmp_path / ".asta/overleaf/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        json.dumps({"format": 1, "url": "https://git.overleaf.com/" + "a1" * 12})
+    )
+    (tmp_path / "_quarto.yml").write_text(
+        "overleaf-links:\n  paper: https://www.overleaf.com/read/abc\n"
+    )
+    assert generate(tmp_path, "paper").returncode == 0
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert 'href="https://www.overleaf.com/read/abc">Open it in Overleaf</a>' in page
+    assert "/project/" not in page and "collaborators" not in page
 
 
 def test_viewer_links_the_overleaf_link_the_project_names(tmp_path):
