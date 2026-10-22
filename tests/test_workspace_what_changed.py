@@ -91,6 +91,55 @@ def test_highlights_edit_since_ref(project: Path) -> None:
     assert_single_worktree(project)
 
 
+def test_the_shipped_report_marks_the_site_copy_with_the_version_named(
+    project: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch
+) -> None:
+    # The shipped report, from a cache outside the project, as a pinned release
+    # gives it. The fake build renders no Quarto pages, so this checks that the
+    # marks are asked for and named; what they mark is test_what_changed_marks.py's.
+    shipped = tmp_path_factory.mktemp("cache") / "what-changed.py"
+    shutil.copy(ASSETS / "what-changed.py", shipped)
+    monkeypatch.setattr(workspace_module, "diff_script", lambda _project: shipped)
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    published = project / ".asta/cache/what-changed"
+    assert "<ins" in (published / "what-changed.html").read_text()
+    index = json.loads((published / "_changes/index.json").read_text())
+    label = index["comparisons"][0]["label"]
+    assert label.startswith("since last-read (") and index["on"] is True
+
+
+@pytest.mark.parametrize("which", ["project's own", "from an older release"])
+def test_a_report_that_cant_mark_still_compares(
+    project: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch, which: str
+) -> None:
+    # A project's own report needn't know --mark, nor one from before it; the
+    # comparison then runs as it always has, without marks.
+    if which == "from an older release":
+        # One that refuses options it doesn't know, as argparse does.
+        older = tmp_path_factory.mktemp("cache") / "what-changed.py"
+        older.write_text(
+            "import argparse, pathlib\n"
+            "ap = argparse.ArgumentParser()\n"
+            "for name in ('--old', '--new', '--out', '--title'):\n"
+            "    ap.add_argument(name)\n"
+            "args = ap.parse_args()\n"
+            "pathlib.Path(args.out).write_text('<ins>an older report</ins>')\n"
+        )
+        monkeypatch.setattr(workspace_module, "diff_script", lambda _project: older)
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new one.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    published = project / ".asta/cache/what-changed"
+    assert "<ins" in (published / "what-changed.html").read_text()
+    assert not (published / "_changes").exists()
+
+
 @pytest.mark.parametrize("explicit_project", [False, True])
 def test_subdirectory_uses_matching_baseline(
     project: Path, monkeypatch: pytest.MonkeyPatch, explicit_project: bool
@@ -1523,3 +1572,45 @@ def test_comparison_preview_preserves_http_file_behavior(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_the_version_compared_with_is_named_as_github_names_it(tmp_path):
+    def git(*args):
+        env = {**os.environ, "GIT_COMMITTER_DATE": "2026-10-15T12:00:00Z"}
+        return subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@x",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "tag.gpgsign=false",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("commit", "-q", "--allow-empty", "-m", "Add the ablation table")
+    git("tag", "v1.0.0")
+    git("commit", "-q", "--allow-empty", "-m", "x" * 80)
+    first, second = git("rev-parse", "HEAD~1"), git("rev-parse", "HEAD")
+    label = workspace_module._ref_label
+    # A commit goes by its message, with its short ID and date.
+    assert label(tmp_path, first[:9], first) == (
+        f"since “Add the ablation table” ({first[:7]}, Oct 15)"
+    )
+    assert label(tmp_path, "HEAD", second) == (
+        f"since “{'x' * 59}…” ({second[:7]}, Oct 15)"
+    )
+    # A branch or tag keeps its name.
+    assert label(tmp_path, "main", second) == f"since main ({second[:7]}, Oct 15)"
+    assert label(tmp_path, "v1.0.0", first) == f"since v1.0.0 ({first[:7]}, Oct 15)"

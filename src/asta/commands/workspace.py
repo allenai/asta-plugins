@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import datetime
 import functools
 import hashlib
 import http.client
@@ -1008,6 +1009,35 @@ def what_changed(ref: str, project: Path) -> None:
         raise click.exceptions.Exit(128 + exc.signum) from None
 
 
+def _ref_label(project: Path, ref: str, commit: str) -> str:
+    """How a reader knows what the site is compared with, as GitHub names it.
+
+    A branch or tag keeps its name; a commit goes by its message. Either way
+    with its short ID and date, so that a bare commit ID never stands alone.
+    """
+    shown = _git(project, "log", "-1", "--format=%s%x00%cs", commit)
+    subject, _, day = shown.stdout.strip().partition("\0")
+    try:
+        when = datetime.date.fromisoformat(day)
+        day = f"{when:%b} {when.day}"
+    except ValueError:
+        day = ""
+    about = ", ".join(part for part in (commit[:7], day) if part)
+    # rev-parse echoes --end-of-options back as a line of its own.
+    named = _git(
+        project, "rev-parse", "--symbolic-full-name", "--end-of-options", ref
+    ).stdout.splitlines()
+    # HEAD resolves to the current branch, but "since HEAD" says nothing.
+    if ref not in ("HEAD", "@") and any(
+        line.startswith(("refs/heads/", "refs/remotes/", "refs/tags/"))
+        for line in named
+    ):
+        return f"since {ref} ({about})"
+    if len(subject) > 60:
+        subject = subject[:59].rstrip() + "…"
+    return f"since “{subject}” ({about})" if subject else f"since {about}"
+
+
 def compare_workspace(ref: str, project: Path) -> None:
     project = project.resolve()
     if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
@@ -1088,19 +1118,31 @@ def compare_workspace(ref: str, project: Path) -> None:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
+                # The shipped report also marks each page of the site copy in
+                # place, on by default, as a pull request's preview does. A
+                # project's own report needn't know how, nor one from a release
+                # before it.
+                marking = (
+                    script.parent != project / "scripts"
+                    and b'"--mark"' in script.read_bytes()
+                )
+                command = [
+                    sys.executable,
+                    str(script),
+                    "--old",
+                    str(old_site),
+                    "--new",
+                    str(staged if marking else new_site),
+                    "--out",
+                    str(report),
+                    "--title",
+                    f"Changes since {ref}",
+                ]
+                if marking:
+                    label = _ref_label(project, ref, commit.stdout.strip())
+                    command += ["--mark", label, "--on"]
                 with preview_process(
-                    [
-                        sys.executable,
-                        str(script),
-                        "--old",
-                        str(old_site),
-                        "--new",
-                        str(new_site),
-                        "--out",
-                        str(report),
-                        "--title",
-                        f"Changes since {ref}",
-                    ],
+                    command,
                     project,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,

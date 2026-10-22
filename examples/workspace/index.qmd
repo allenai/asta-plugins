@@ -6,3 +6,5 @@ A short project on how attention replaced recurrence in sequence models. It has 
 
 - [A literature review](lit-review/index.qmd) of the work it builds on, citing the project's bibliography.
 - [The paper](paper/html/index.qmd), written in LaTeX with co-authors in Overleaf.
+
+An example workspace for the Asta workspace skill, rebuilt from each release; see its [README](https://github.com/allenai/asta-plugins/tree/main/examples/workspace#readme) for the demo and how to start your own.

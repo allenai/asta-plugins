@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A pull request's preview now shows that pull request's changes on each
+  page, under a line at the top that hides them, and the sidebar marks the
+  changed pages, so that a reviewer reads each change in context; What
+  changed stays their overview. `asta workspace what-changed <ref>` marks its
+  site copy the same way, and names the version it compares with by its
+  commit message, or its branch or tag, and date. The example workspace's
+  demo is now such a preview, and its site has no pages about the example; one
+  line on its home page points to its README.
+
 - A paired paper's page now links its Overleaf project, labeled for the
   project's collaborators, when `_quarto.yml` names no link for it under
   `overleaf-links`, so that co-authors reading the site can open the paper to

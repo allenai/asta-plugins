@@ -19,6 +19,6 @@ demo-check:
 	python3 scripts/refresh-demo.py check "$${DEMO_DIR:?set DEMO_DIR to a built demo snapshot}"
 
 preview-artifact-check: demo-build
-	python3 scripts/refresh-demo.py check "$${SITE_DIR:-_site}/demo/showcase"
+	python3 scripts/refresh-demo.py check "$${SITE_DIR:-_site}/demo"
 	bash ../../plugins/asta-tools/skills/workspace/assets/paper-preview.sh "" paper
 	sh scripts/check-paper.sh "$${SITE_DIR:-_site}"

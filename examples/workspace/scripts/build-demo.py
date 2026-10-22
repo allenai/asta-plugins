@@ -86,7 +86,7 @@ def build(site):
                 "--changed-commit",
                 changed,
                 "--output",
-                str(site / "demo/showcase"),
+                str(site / "demo"),
             )
         finally:
             try:

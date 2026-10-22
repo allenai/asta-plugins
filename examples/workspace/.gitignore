@@ -23,8 +23,9 @@ paper/what-changed.tex
 # CLI-managed workspace rules and archive
 .asta/cache/
 
-# Rendered demo output; CI publishes it with the site.
-demo/showcase/
+# Rendered demo output, should a build write it here; CI publishes it with the
+# site.
+/demo/
 __pycache__/
 
 # Generated paper viewer; commit a copy only to customize it.
