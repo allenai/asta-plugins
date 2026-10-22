@@ -1253,7 +1253,9 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     return section, status
 
 
-def build(old_root, new_root, preview_url, title, out_path=None):
+def build(old_root, new_root, preview_url, title, out_path=None, stats=None):
+    """The report's page. `stats`, if given, gets the number of pages it lists
+    as "pages", so that the marks count what it does."""
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1381,6 +1383,8 @@ def build(old_root, new_root, preview_url, title, out_path=None):
             f'<span class="tag {state_class}">{label}</span></a>'
         )
 
+    if stats is not None:
+        stats["pages"] = len(sections)
     if sections:
         n = len(sections)
         summary = f"{n} page{'s' if n != 1 else ''} changed"
@@ -1833,7 +1837,7 @@ def changed_papers(new_root):
     return papers
 
 
-def write_marks(old_root, new_root, label, on):
+def write_marks(old_root, new_root, label, on, total=None):
     out = Path(new_root) / "_changes"
     shutil.rmtree(out, ignore_errors=True)
     pages, fragments, removed = compare_pages(old_root, new_root)
@@ -1845,7 +1849,9 @@ def write_marks(old_root, new_root, label, on):
         target = out / "c0" / "pages" / f"{rel}.txt"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body, encoding="utf-8")
-    count = len(pages) + len(removed) + len(papers)
+    # What the report lists, copied pages (a run's own HTML) among them, so that
+    # "All changes" counts what it opens on.
+    count = total if total is not None else len(pages) + len(removed) + len(papers)
     manifest = {
         "label": label,
         "overview": "what-changed.html",
@@ -1903,13 +1909,13 @@ def untag_pages(tagged):
         replace_text(path, MARKS_TAGS.sub("", doc))
 
 
-def mark_site(old_root, new_root, label, on):
+def mark_site(old_root, new_root, label, on, total=None):
     """Mark each page's changes in place, or, failing, leave the site as it was,
     so that no page loads marks that aren't there or shows some of them; the
     report stands either way."""
     tagged = []
     try:
-        counts = write_marks(old_root, new_root, label, on)
+        counts = write_marks(old_root, new_root, label, on, total)
         tag_pages(new_root, tagged)
     except Exception as exc:
         # The cleanup is best effort: nothing in it may take the report down.
@@ -1963,18 +1969,20 @@ def main(argv=None):
         help="with --mark, show them until a reader hides them",
     )
     args = ap.parse_args(argv)
+    stats = {}
     doc = build(
         args.old,
         args.new,
         args.preview_url,
         args.title,
         out_path=args.out,
+        stats=stats,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
     print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)
     if args.mark:
-        mark_site(args.old, args.new, args.mark, args.on)
+        mark_site(args.old, args.new, args.mark, args.on, stats.get("pages"))
 
 
 if __name__ == "__main__":

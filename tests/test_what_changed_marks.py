@@ -167,6 +167,12 @@ def test_only_pages_the_site_renders_are_compared_and_load_the_script(tmp_path):
     mark(old, new)
     manifest = json.loads((new / "_changes/c0/manifest.json").read_text())
     assert set(manifest["pages"]) == {"index.html"}
+    # "All changes" counts what the report lists, the copied page and the new
+    # paper page among them.
+    assert "3 pages changed" in (new.parent / "what-changed.html").read_text()
+    assert manifest["total"] == 3 and manifest["count"] == "3 pages"
+    index = json.loads((new / "_changes/index.json").read_text())
+    assert index["comparisons"][0]["total"] == 3
     # Every rendered page loads the script, the paper's included; copied HTML doesn't.
     assert "_changes/changes.js" in (new / "index.html").read_text()
     assert "../../_changes/changes.js" in (new / "paper/html/index.html").read_text()
