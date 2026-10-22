@@ -44,9 +44,9 @@ Design notes:
     reads a change where it sits as well as in this report. The marked content
     replaces the page's own on the project's site, so it keeps the page's
     anchors and data, and still drops scripts and event handlers; the hovers
-    Quarto gives footnotes, citations and cross-references are set up again on
-    it, and anything else the site's scripts attach to an element is back once
-    the changes are hidden. It marks `--new` as a fresh copy of the site,
+    Quarto gives footnotes, citations and cross-references, and its code copy
+    buttons, are set up again on it, and anything else the site's scripts
+    attach to an element is back once the changes are hidden. It marks `--new` as a fresh copy of the site,
     as a preview, the CLI and the demo each make one.
 
 Pure standard library so it runs anywhere Quarto CI already runs (no pip step).
@@ -1609,6 +1609,19 @@ MARKS_JS = r"""
         if (props) window.tippy(el, props);
       }
     };
+    // A code block's copy button, which the marked copy can't carry (no
+    // buttons in it): Quarto's copying listens on the page for any button of
+    // its class, so the one put back works as the page's own.
+    const recopy = () => {
+      for (const scaffold of main.querySelectorAll('.code-copy-outer-scaffold')) {
+        if (scaffold.querySelector(':scope > .code-copy-button')) continue;
+        const button = document.createElement('button');
+        button.title = 'Copy to Clipboard';
+        button.className = 'code-copy-button';
+        button.innerHTML = '<i class="bi"></i>';
+        scaffold.append(button);
+      }
+    };
     const marked = {};
     const save = () => {
       try { localStorage.setItem(key, JSON.stringify({ on: shown })); } catch (e) {}
@@ -1709,6 +1722,7 @@ MARKS_JS = r"""
           if (shown !== on) return;
           main.innerHTML = '<div class="wc-scope">' + text + '</div>';
           rehover();
+          recopy();
           // Swapped-in content arrives as source; the page's math typesetter
           // ran once at load, so it runs again on what's now shown.
           if (window.MathJax?.typesetPromise) {
