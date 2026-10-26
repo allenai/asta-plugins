@@ -93,26 +93,27 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("--output", result.stderr)
 
+    @staticmethod
+    def paper_preview(site):
+        paper = site / "paper-previews/paper"
+        (paper / "html").mkdir(parents=True)
+        (paper / "html-diff").mkdir()
+        (paper / "preview.json").write_text('{"diff":true,"html_diff":true}')
+        (paper / "what-changed.pdf").write_bytes(b"pdf")
+        (paper / "html/index.html").write_text("paper")
+        (paper / "html-diff/index.html").write_text("diff")
+
     def test_packaging_does_not_pollute_the_compared_sites(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             old, new = root / "old", root / "new"
-            old.mkdir()
-            new.mkdir()
             for site in (old, new):
+                (site / "demo").mkdir(parents=True)
                 (site / "index.html").write_text("site")
-                (site / "demo/showcase").mkdir(parents=True)
-                (site / "demo/showcase/stale.html").write_text("previous demo")
-                (site / "demo/index.html").write_text("<!-- template-demo-report -->")
+                (site / "demo/stale.html").write_text("previous demo")
             generator = root / "generator.py"
             generator.touch()
-            paper = new / "paper-previews/paper"
-            (paper / "html").mkdir(parents=True)
-            (paper / "html-diff").mkdir()
-            (paper / "preview.json").write_text('{"diff":true,"html_diff":true}')
-            (paper / "what-changed.pdf").write_bytes(b"pdf")
-            (paper / "html/index.html").write_text("paper")
-            (paper / "html-diff/index.html").write_text("diff")
+            self.paper_preview(new)
             args = SimpleNamespace(
                 old=old,
                 new=new,
@@ -120,56 +121,48 @@ class DemoTests(unittest.TestCase):
                 ref="fixture",
                 baseline_commit="before",
                 changed_commit="after",
-                output=old / "demo/showcase",
+                output=old / "demo",
             )
+            steps = []
 
             def generate(command, **kwargs):
+                steps.append(Path(command[1]).name)
                 output = Path(command[command.index("--out") + 1])
                 self.assertFalse(output.is_relative_to(old))
                 self.assertFalse(output.is_relative_to(new))
+                # It sees no previous demo, and writes into neither input.
                 for flag in ("--old", "--new"):
                     compared = Path(command[command.index(flag) + 1])
-                    self.assertFalse((compared / "demo/showcase").exists())
-                    self.assertEqual(
-                        (compared / "demo/index.html").read_text(),
-                        "<!-- template-demo-report -->",
-                    )
+                    self.assertFalse((compared / "demo").exists())
+                    self.assertFalse(compared.is_relative_to(new))
                 page = (
                     '<section class="page-diff changed" id="p-lit-review-index-html">'
                     + "<ins>new</ins><del>old</del>" * 3
                 )
-                output.write_text(page + '<a href="./demo/index.html">demo</a>')
+                output.write_text(page + '<a href="./index.html">home</a>')
 
             with (
                 patch.object(demo.refresh, "workflow_ref", return_value="fixture"),
                 patch.object(demo.refresh.subprocess, "run", side_effect=generate),
             ):
-                self.assertNotIn(
-                    "showcase/what-changed.html", (old / "demo/index.html").read_text()
-                )
                 demo.refresh.build(args)
                 demo.refresh.build(args)
-            demo_page = args.output / "demo/index.html"
-            self.assertIn('src="../what-changed.html"', demo_page.read_text())
-            self.assertEqual(
-                (old / "demo/index.html")
-                .read_text()
-                .count('src="showcase/what-changed.html"'),
-                1,
-            )
-            self.assertIn(
-                "<!-- template-demo-report -->", (new / "demo/index.html").read_text()
-            )
-            self.assertFalse((args.output / "demo/showcase").exists())
+            # One run of the report each build.
+            self.assertEqual(steps, ["generator.py"] * 2)
+            self.assertTrue((args.output / "what-changed.html").is_file())
+            self.assertFalse((args.output / "demo").exists())
+            self.assertFalse((args.output / "stale.html").exists())
+            self.assertEqual((new / "demo/stale.html").read_text(), "previous demo")
 
-    def test_failed_packaging_does_not_publish_a_report_link(self):
+    def test_failed_packaging_keeps_the_previous_demo(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for name in ("old", "new"):
                 site = root / name
-                (site / "demo").mkdir(parents=True)
+                site.mkdir()
                 (site / "index.html").write_text("site")
-                (site / "demo/index.html").write_text("<!-- template-demo-report -->")
+            (root / "old/demo").mkdir()
+            (root / "old/demo/index.html").write_text("previous demo")
             generator = root / "generator.py"
             generator.touch()
             args = SimpleNamespace(
@@ -179,7 +172,7 @@ class DemoTests(unittest.TestCase):
                 ref="fixture",
                 baseline_commit="before",
                 changed_commit="after",
-                output=root / "old/demo/showcase",
+                output=root / "old/demo",
             )
             with (
                 patch.object(
@@ -190,19 +183,9 @@ class DemoTests(unittest.TestCase):
                 self.assertRaises(subprocess.CalledProcessError),
             ):
                 demo.refresh.build(args)
-            self.assertFalse(args.output.exists())
             self.assertEqual(
-                (root / "old/demo/index.html").read_text(),
-                "<!-- template-demo-report -->",
+                (root / "old/demo/index.html").read_text(), "previous demo"
             )
-
-    def test_missing_landing_placeholder_rejects_packaging(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            page = Path(temporary) / "index.html"
-            for content in ("no marker", "<!-- template-demo-report -->" * 2):
-                page.write_text(content)
-                with self.assertRaises(ValueError):
-                    demo.refresh.report_link(page, "showcase/what-changed.html")
 
     def test_render_failure_restores_checkout_and_removes_worktree(self):
         self.check_render_failure()
@@ -302,7 +285,7 @@ class DemoTests(unittest.TestCase):
                 git("worktree", "list", "--porcelain").count("worktree "), 1
             )
             self.assertFalse(any((root / ".git/worktrees").glob("*")))
-            self.assertFalse((root / "demo/showcase").exists())
+            self.assertFalse((root / "demo").exists())
 
     def test_report_links_must_exist_inside_demo(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -310,13 +293,7 @@ class DemoTests(unittest.TestCase):
             (root / "manifest.json").write_text(
                 json.dumps({"asta_plugins_ref": "fixture"})
             )
-            paper = root / "paper-previews/paper"
-            (paper / "html").mkdir(parents=True)
-            (paper / "html-diff").mkdir()
-            (paper / "preview.json").write_text('{"diff":true,"html_diff":true}')
-            (paper / "what-changed.pdf").write_bytes(b"pdf")
-            (paper / "html/index.html").write_text("paper")
-            (paper / "html-diff/index.html").write_text("diff")
+            self.paper_preview(root)
             page = (
                 '<section class="page-diff changed" id="p-lit-review-index-html">'
                 + "<ins>new</ins><del>old</del>" * 3
@@ -332,6 +309,21 @@ class DemoTests(unittest.TestCase):
                     )
                     with self.assertRaises(ValueError):
                         demo.refresh.check(root)
+
+    def test_a_demo_whose_report_lists_no_change_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "manifest.json").write_text(
+                json.dumps({"asta_plugins_ref": "fixture"})
+            )
+            self.paper_preview(root)
+            (root / "what-changed.html").write_text("<p>No changes.</p>")
+            with (
+                patch.object(demo.refresh, "workflow_ref", return_value="fixture"),
+                self.assertRaises(ValueError) as raised,
+            ):
+                demo.refresh.check(root)
+            self.assertIn("no edited Quarto page", str(raised.exception))
 
 
 if __name__ == "__main__":
