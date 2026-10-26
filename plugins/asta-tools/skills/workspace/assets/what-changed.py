@@ -1128,7 +1128,8 @@ def rebase_urls(text, depth):
 def page_title(doc, rel):
     m = re.search(r"(?is)<title>(.*?)</title>", doc)
     if m:
-        t = re.sub(r"\s+", " ", m.group(1)).strip()
+        # <title> holds entity-encoded text; decode it so callers escape it once.
+        t = html.unescape(re.sub(r"[ \t\r\n\f]+", " ", m.group(1))).strip()
         if t:
             return t
     return rel

@@ -844,3 +844,23 @@ def test_has_computed_output_detects_widgets_and_ignores_prose():
     assert not WHAT_CHANGED.has_computed_output(
         "<p>Just prose with <a href='x'>a link</a> and <code>code</code>.</p>"
     )
+
+
+def test_page_title_entities_read_as_on_the_page(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "notes.html").write_text(
+        "<title>Tea&nbsp;notes: milk &amp; sugar</title><main><p>Old</p></main>"
+    )
+    (new / "notes.html").write_text(
+        "<title>Tea&nbsp;notes: milk &amp; sugar</title><main><p>New</p></main>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "&amp;nbsp;" not in result
+    assert "&amp;amp;" not in result
+    assert '<h2><a href="notes.html">Tea\xa0notes: milk &amp; sugar</a>' in result
+    assert '"#p-notes-html">Tea\xa0notes: milk &amp; sugar ' in result

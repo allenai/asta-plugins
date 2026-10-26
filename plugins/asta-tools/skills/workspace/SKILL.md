@@ -1,6 +1,6 @@
 ---
 name: workspace
-description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
+description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Load before committing to or opening a PR in a workspace (a repo whose `.github/workflows/docs.yml` pins asta-plugins), whichever skill wrote the change. Doesn't handle research execution (use `asta-flows`).
 allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace bump-pin) Bash(asta workspace bump-pin *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
@@ -39,7 +39,7 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
 
-Before opening any workspace PR, for both local and headless agents, keep the pin current:
+Before opening any workspace PR, for both local and headless agents, keep the pin current — also when another skill (for example `literature-report`) or your harness's own instructions produced the change or open the PR:
 
 1. Commit your work, run `make check`, and note whether it passed.
 2. Run `asta workspace bump-pin`; report errors and follow any recovery message. A bump prints `Committed <sha>`.
