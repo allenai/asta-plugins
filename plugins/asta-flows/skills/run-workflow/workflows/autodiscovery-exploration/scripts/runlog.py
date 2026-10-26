@@ -30,10 +30,14 @@ ROW_LEVEL = re.compile(
     r"\b(caseid|hhid|\w+_id)\s*[=:]\s*\d+|\b(row|index|record)\s*#?\s*\d{2,}\b|\bdf\.(loc|iloc)\[",
     re.I,
 )
-rank_key = lambda x: (
-    x["belief_after"] < x["belief_before"],
-    -abs(x["belief_after"] - x["belief_before"]),
-)  # noqa: E731
+
+
+def rank_key(x):
+    """Rises in belief first, then falls, each largest change first."""
+    return (
+        x["belief_after"] < x["belief_before"],
+        -abs(x["belief_after"] - x["belief_before"]),
+    )
 
 
 def local_results(d):
