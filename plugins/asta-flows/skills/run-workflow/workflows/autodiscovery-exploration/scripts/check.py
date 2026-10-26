@@ -8,32 +8,55 @@
 - every marker in index.qmd has an evidence entry with a verbatim quote from its experiment, the run's shared link, and a page
 - every internal link in index.qmd points at a file that exists
 """
-import csv, glob, json, re, sys
+
+import csv
+import glob
+import json
+import re
+import sys
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNS_COLS = "run,round,label,title,run_id,prompt,sub_questions,files,extract_hash,n_experiments,exploration_weight,surprisal_width,evidence_weight,status,shared_url,decision".split(",")
-EXP_COLS = "run,experiment,hypothesis,analysis,belief_before,belief_after,surprise,surprising,link".split(",")
-INDEX_HEADINGS = ["## Prompt", "## Data", "## Runs", "## Findings", "## Null results", "## Next steps"]  # Answers is optional
+RUNS_COLS = "run,round,label,title,run_id,prompt,sub_questions,files,extract_hash,n_experiments,exploration_weight,surprisal_width,evidence_weight,status,shared_url,decision".split(
+    ","
+)
+EXP_COLS = "run,experiment,hypothesis,analysis,belief_before,belief_after,surprise,surprising,link".split(
+    ","
+)
+INDEX_HEADINGS = [
+    "## Prompt",
+    "## Data",
+    "## Runs",
+    "## Findings",
+    "## Null results",
+    "## Next steps",
+]  # Answers is optional
 DATA_HEADINGS = ["## Source", "## Extract", "## Files", "## Description", "## Columns"]
 norm = lambda s: " ".join(str(s).split())  # noqa: E731
 errors = []
 
 
 def headings(path, expected):
-    found = [l.strip() for l in path.read_text().splitlines() if l.startswith("## ")]
+    found = [
+        line.strip() for line in path.read_text().splitlines() if line.startswith("## ")
+    ]
     seq = [h for h in found if h in expected]
-    if seq != [h for h in expected if h in found] or any(h not in found for h in expected):
-        errors.append(f"{path.name}: headings are {found}; the template wants {expected} in that order")
+    if seq != [h for h in expected if h in found] or any(
+        h not in found for h in expected
+    ):
+        errors.append(
+            f"{path.name}: headings are {found}; the template wants {expected} in that order"
+        )
 
 
 def main():
     for name, cols in (("runs.csv", RUNS_COLS), ("experiments.csv", EXP_COLS)):
         p = ROOT / "autodiscovery" / name
         if not p.exists():
-            errors.append(f"{name} missing"); continue
+            errors.append(f"{name} missing")
+            continue
         have = next(csv.reader(open(p)))
         if have != cols:
             errors.append(f"{name}: columns {have} differ from the template's {cols}")
@@ -42,7 +65,11 @@ def main():
     for pat in q["project"]["render"]:
         rendered |= {str(Path(f).relative_to(ROOT)) for f in glob.glob(str(ROOT / pat))}
     side = ROOT / "_generated/sidebar.yml"
-    listed = set(re.findall(r"(?:href:\s*|-\s+)(\S+\.qmd)", side.read_text())) if side.exists() else set()
+    listed = (
+        set(re.findall(r"(?:href:\s*|-\s+)(\S+\.qmd)", side.read_text()))
+        if side.exists()
+        else set()
+    )
     for missing in sorted(rendered - listed):
         errors.append(f"{missing} renders but is not in the sidebar")
     for extra in sorted(listed - rendered):
@@ -52,25 +79,37 @@ def main():
         headings(ROOT / "data.qmd", DATA_HEADINGS)
     text = (ROOT / "index.qmd").read_text()
     ev = (yaml.safe_load((ROOT / "evidence.yml").read_text()) or {}).get("evidence", {})
-    runs = {r["label"]: r for r in csv.DictReader(open(ROOT / "autodiscovery/runs.csv"))}
+    runs = {
+        r["label"]: r for r in csv.DictReader(open(ROOT / "autodiscovery/runs.csv"))
+    }
     indexes = {}
     for key in sorted(set(re.findall(r'\.ev key="([^"]+)"', text))):
         v = ev.get(key)
         if v is None:
-            errors.append(f"marker {key}: no evidence entry"); continue
+            errors.append(f"marker {key}: no evidence entry")
+            continue
         m = re.search(r"run (\w+), experiment (\d+)", v.get("source", ""))
         if not m:
             continue  # a literature entry
         label, n = m.group(1), int(m.group(2))
         r = runs.get(label)
         if r is None:
-            errors.append(f"{key}: no run labelled {label}"); continue
+            errors.append(f"{key}: no run labelled {label}")
+            continue
         if r["run"] not in indexes:
-            indexes[r["run"]] = {e["experiment"]: e for e in json.loads((ROOT / "autodiscovery" / r["run"] / "index.json").read_text())["experiments"]}
+            indexes[r["run"]] = {
+                e["experiment"]: e
+                for e in json.loads(
+                    (ROOT / "autodiscovery" / r["run"] / "index.json").read_text()
+                )["experiments"]
+            }
         e = indexes[r["run"]].get(n)
         if e is None:
-            errors.append(f"{key}: run {label} has no experiment {n}"); continue
-        if norm(v["quote"]) not in norm(" ".join([e["hypothesis"], e["analysis"], e.get("review", "")])):
+            errors.append(f"{key}: run {label} has no experiment {n}")
+            continue
+        if norm(v["quote"]) not in norm(
+            " ".join([e["hypothesis"], e["analysis"], e.get("review", "")])
+        ):
             errors.append(f"{key}: quote not verbatim in {label}-{n}")
         if e["link"] and v.get("url") != e["link"]:
             errors.append(f"{key}: url is not the experiment's shared link")
