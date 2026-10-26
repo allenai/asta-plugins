@@ -45,7 +45,7 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
    1. List each question or idea in the message as a sub-question, in their words.
    2. For each, name the outcome and the columns that could answer it. If there are none, say so, and what data it would need.
-   3. Group sub-questions that share an outcome and a set of columns; each group is a run. Split a group that names more than about ten columns or needs a different file.
+   3. Group sub-questions that share an outcome and a set of columns; each group is a run, since a run is one prompt over one set of files. Keep each prompt to what its experiments can cover: a run of fifty experiments goes only a few deep on each thing it asks about, so a prompt that asks for a great deal spreads thin.
    4. Add one run with no question on the main file, as the control for the others.
    5. Write each run's seed prompt ([Seeding protocol](#seeding-protocol)).
    6. Spread the budget, 40 to 60 experiments per run; merge groups if there are too many.
@@ -69,10 +69,10 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
 ## Seeding protocol
 
-A seed prompt says where to look. It names an area and the columns in scope, and a contrast when the sub-question asks for one. It does not name a mechanism, a direction, an effect size or an earlier result, and neither does the description: AutoDiscovery told what to find tends to find it.
+A seed prompt says where to look, in plain language, as the researcher would put it: the question or the area, and a contrast when the sub-question asks for one. It does not need to list columns; the description already tells AutoDiscovery what the data hold, and choosing columns is the search. It does not name a mechanism, a direction, an effect size or an earlier result, and neither does the description: AutoDiscovery told what to find tends to find it.
 
 ```
-Explore <area> in relation to <outcome columns>: <the columns in scope, named or grouped>.
+Explore <the question or area, in the researcher's words>.
 Compare <A> with <B>.                       (only when the sub-question asks for it)
 ```
 
