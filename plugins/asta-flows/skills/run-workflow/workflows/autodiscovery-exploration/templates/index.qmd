@@ -1,0 +1,56 @@
+---
+title: "<Descriptive title, a noun phrase>"
+subtitle: "An AutoDiscovery exploration of <the dataset>."
+date: today
+---
+
+<!-- Headline: a few sentences on what came back and what could not be answered. No section heading. -->
+
+## Prompt
+
+> <The researcher's message, lightly edited for typos and anonymised. The message as sent stays in questions.md.>
+
+## Data
+
+<Three sentences: what the source is; what AutoDiscovery received (one row per <unit>, the files and their sizes); a link to [the data page](data.qmd).>
+
+Not available: <what the prompt would need that the data do not hold>.
+
+## Runs
+
+<N> runs of <M> experiments each.
+
+{{< include _generated/runs-table.md >}}
+
+<If every prompt shared a sentence, give it once here: Every prompt except the open run's ended with the same sentence: "...".>
+
+Download: [experiments.csv](autodiscovery/experiments.csv) (one row per experiment, with its hypothesis and analysis) and [runs.csv](autodiscovery/runs.csv) (one row per run).
+
+## Answers
+
+<!-- Only when the researcher asked questions. One row per sub-question, the question as a complete sentence in their words.
+     The answer opens in bold with one of: Worth a follow-up analysis. / Worth a small validation effort. / Null result.
+     Where the data cannot answer the question, no bold phrase; say so in plain words.
+     One number per row, with its marker: [20% lack type 3]{.ev key="<prefix>-a-40"}. Define a term the first time it is used. -->
+
+| Question | Answer |
+|---|---|
+| <question> | **Worth a follow-up analysis.** <one sentence with the one number and its marker> |
+
+## Findings
+
+### <A result worth calling out, as a noun phrase or a plain statement>
+
+<Led by the experiments that found it, in their words with markers, and their figures. Why it matters and which question it bears on. End with a sentence on how far to trust it and why.>
+
+![<caption>. From experiment <A-32>.](figures/<a-32>.jpg){fig-alt="<what the figure shows>"}
+
+## Null results
+
+**<Topic>.** <What was tested and came back with nothing, with markers.>
+
+**Not testable.** <What the data cannot answer, and what it would need.>
+
+## Next steps
+
+1. **<Step>.** <Why, in a sentence or two.>
