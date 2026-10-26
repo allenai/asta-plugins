@@ -1,0 +1,57 @@
+<script>
+  /* evidence — optional progressive enhancement only.
+
+     The popover itself is shown entirely with CSS (:hover / :focus-within in
+     evidence.head.html), so evidence works with no JavaScript at all — including
+     on the workspace "what-changed" diff page, where <script> is stripped. This
+     script flips the popover leftward when it would otherwise spill past the
+     right edge of the viewport, and closes an open popover when a tap lands
+     elsewhere. It is theme- and framework-independent so the same bundle drops
+     into any Quarto project. */
+  (function () {
+    function place(ev) {
+      var pop = ev.querySelector(".ev-pop");
+      if (!pop) return;
+      ev.classList.remove("ev-flip");
+      // Measure with the popover momentarily in place but not painted.
+      var prev = pop.style.visibility;
+      pop.style.visibility = "hidden";
+      pop.style.opacity = "0";
+      pop.style.transform = "none";
+      var card = pop.querySelector(".ev-card") || pop;
+      var right = card.getBoundingClientRect().right;
+      pop.style.visibility = prev;
+      pop.style.opacity = "";
+      pop.style.transform = "";
+      var vw = document.documentElement.clientWidth;
+      if (right > vw - 8) ev.classList.add("ev-flip");
+    }
+
+    function wire() {
+      document.querySelectorAll(".ev").forEach(function (ev) {
+        ev.addEventListener("mouseenter", function () { place(ev); });
+        ev.addEventListener("focusin", function () { place(ev); });
+      });
+      // A tap opens a popover by focusing its claim. Not every mobile browser
+      // moves focus when the reader then taps plain text, so close it here.
+      document.addEventListener("pointerdown", function (event) {
+        var focused = document.activeElement;
+        var open = focused && focused.closest && focused.closest(".ev");
+        if (open && !open.contains(event.target)) focused.blur();
+      });
+    }
+
+    // Quarto shows a reference tooltip on every citation. A citation that is
+    // an evidence marker, or sits inside a popover, already opens the evidence,
+    // so drop Quarto's tooltip there (it is attached after DOMContentLoaded).
+    function untip() {
+      document.querySelectorAll('.ev-marker a[role="doc-biblioref"], .ev-pop a[role="doc-biblioref"]')
+        .forEach(function (a) { if (a._tippy) a._tippy.destroy(); });
+    }
+
+    if (document.readyState !== "loading") wire();
+    else document.addEventListener("DOMContentLoaded", wire);
+    if (document.readyState === "complete") untip();
+    else window.addEventListener("load", untip);
+  })();
+</script>

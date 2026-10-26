@@ -1,0 +1,45 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - data.qmd
+    - runs/*.qmd
+  resources:
+    - robots.txt
+    - figures/*.jpg
+    - autodiscovery/experiments.csv
+    - autodiscovery/runs.csv
+  preview:
+    port: 4848
+
+# The evidence store behind the markers, and the sidebar that scripts/build_pages.py
+# writes from the run log (every rendered page is listed there).
+metadata-files:
+  - evidence.yml
+  - _generated/sidebar.yml
+
+filters:
+  - _extensions/evidence/snippet.lua
+evidence-provenance: false
+
+website:
+  title: "<Title, the same as the write-up's>"
+
+format:
+  html:
+    theme:
+      dark: [cosmo, _extensions/asta-theme/dark.scss]
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    respect-user-color-scheme: false
+    lightbox: false
+    css:
+      - _extensions/asta-theme/asta.css
+    toc: true
+    toc-location: left
+    include-in-header:
+      - robots-noindex.html
+      - _extensions/asta-theme/asta-head.html
+      - _extensions/evidence/evidence.head.html
+    include-after-body:
+      - _extensions/evidence/evidence.body.html
