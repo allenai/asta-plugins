@@ -37,11 +37,11 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 
 ## Save
 
-`git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
+**Don't `git push` without explicit user approval.**
 
-Before opening any workspace PR, for both local and headless agents, keep the pin current — also when another skill (for example `literature-report`) or your harness's own instructions produced the change or open the PR:
+For every workspace save, including commit-only saves and updates to an existing PR, keep the pin current before reporting the save complete or opening a PR. This applies to both local and headless agents, also when another skill (for example `literature-report`) or your harness's own instructions produced the change or open the PR:
 
-1. Commit your work, run `make check`, and note whether it passed.
+1. Commit your work (`git add` + `git commit -m "<concise message>"`), run `make check`, and note whether it passed.
 2. Run `asta workspace bump-pin`; report errors and follow any recovery message. A bump prints `Committed <sha>`.
 3. If it printed a SHA, run `make check` again. If the build passed before and fails now, run `git revert --no-edit <sha>` and carry on without the bump.
 

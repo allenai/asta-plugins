@@ -1129,7 +1129,8 @@ def page_title(doc, rel):
     m = re.search(r"(?is)<title>(.*?)</title>", doc)
     if m:
         # <title> holds entity-encoded text; decode it so callers escape it once.
-        t = html.unescape(re.sub(r"[ \t\r\n\f]+", " ", m.group(1))).strip()
+        # Trim only HTML whitespace so non-breaking spaces remain part of the title.
+        t = html.unescape(re.sub(r"[ \t\r\n\f]+", " ", m.group(1))).strip(" \t\r\n\f")
         if t:
             return t
     return rel

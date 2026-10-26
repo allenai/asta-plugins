@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 
 def _underline_contexts(css):
     """Selector text preceding every `text-decoration: underline` in the output.
@@ -864,3 +866,18 @@ def test_page_title_entities_read_as_on_the_page(tmp_path):
     assert "&amp;amp;" not in result
     assert '<h2><a href="notes.html">Tea\xa0notes: milk &amp; sugar</a>' in result
     assert '"#p-notes-html">Tea\xa0notes: milk &amp; sugar ' in result
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("&nbsp;Tea&nbsp;", "\xa0Tea\xa0"),
+        ("&#160;Tea&#xA0;", "\xa0Tea\xa0"),
+        ("&nbsp;", "\xa0"),
+        ("\xa0Tea\xa0", "\xa0Tea\xa0"),
+        (" \t\nTea&nbsp;notes\r\f ", "Tea\xa0notes"),
+        (" \t\r\n\f ", "notes.html"),
+    ],
+)
+def test_page_title_preserves_nonbreaking_spaces(title, expected):
+    assert WHAT_CHANGED.page_title(f"<title>{title}</title>", "notes.html") == expected
