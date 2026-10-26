@@ -132,16 +132,3 @@ scripts/check.py        the form and the quotes; fails the build on any drift
 ```
 
 The templates and the scripts are what keep explorations alike; the prose above is for the judgment calls.
-
-## For asta-assistant
-
-Six work items, each the step with the same number. `brainstorm` writes them into `project.md`; `plan-work` takes each plan from its step.
-
-| Item | Goal |
-|---|---|
-| `workspace` | The repository, and a look at the data (step 1). |
-| `prompts` | The seed prompts, budget and extract, settled in the seeding conversation (step 2). `do-work` sets `needs-input` when it shows the proposal; the item is done once the researcher's answer is recorded. |
-| `extract` | The extract, its descriptions and the run metadata, neutrality check passed (step 3). |
-| `runs` | The runs created, verified, submitted, finished, saved and logged (step 4). |
-| `write-up` | The data page, the run pages and the write-up (step 5). |
-| `publish` | The checks passed, the researcher shown the preview, the site published (step 6). |
