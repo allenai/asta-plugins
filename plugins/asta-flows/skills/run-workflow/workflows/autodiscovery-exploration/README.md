@@ -19,15 +19,15 @@ Data stays where it belongs. AutoDiscovery sees a de-identified or aggregated ex
 
 Show the person this table with the values for their dataset. Anything not in it runs on the service's defaults.
 
-| Step | Agent | What it does | Configuration |
-|---|---|---|---|
-| 1 | Workspace | Sets up the repository and looks at the data | the repository the person names |
-| 2 | Planner | Turns the prompt into seed prompts, one per run, with a budget and an extract | 250 credits by default |
-| | Seeding conversation | The researcher and the agent settle the prompts, the budget and the extract before any run exists | |
-| 3 | Workspace | Builds and describes the extract | |
-| 4 | AutoDS | Runs AutoDiscovery; saves the ranked list of surfaced hypotheses; logs each run | one open run plus the planned runs, 40 to 60 experiments each |
-| 5 | Workspace | Writes up what came back, including null results; the data page and a page per run | |
-| 6 | Workspace | Checks the quotes and claims; shows the researcher; publishes | |
+| Name | Description | Configuration |
+|---|---|---|
+| Nominate the dataset | Set up the repository and look at the data | the repository the person names |
+| Seed prompts | Turn the prompt into seed prompts, one per run, with a budget and an extract | 250 credits by default |
+| Seeding conversation | The researcher settles the prompts, the budget and the extract before any run exists | |
+| Extract and describe | Build the extract and describe it for AutoDiscovery | |
+| Run AutoDiscovery | Run, save the ranked list of surfaced hypotheses, log each run | one open run plus the planned runs, 40 to 60 experiments each |
+| Write up | The write-up, including null results; the data page and a page per run | |
+| Check and publish | Check the quotes and claims; show the researcher; publish | |
 
 After the table, list what they can change:
 
