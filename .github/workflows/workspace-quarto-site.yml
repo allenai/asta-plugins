@@ -277,17 +277,10 @@ jobs:
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
-          # The shipped report also marks each page's changes in place, with
-          # itself as their overview. A project's own report needn't know how,
-          # and before the first deploy there's nothing to mark against.
-          mark=()
-          if [ "$gen" != scripts/what-changed.py ] && [ "$baseline_label" != "no deployed baseline" ]; then
-            mark=(--mark "in this pull request" --on)
-          fi
           tmpout="$tmpdir/what-changed.html"
           if python3 "$gen" \
             --old "$baseline" --new _site \
-            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" "${mark[@]}" \
+            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
               && [ -s "$tmpout" ]; then
             mv "$tmpout" _site/what-changed.html
           else

@@ -103,14 +103,6 @@ class DemoTests(unittest.TestCase):
         (paper / "html/index.html").write_text("paper")
         (paper / "html-diff/index.html").write_text("diff")
 
-    @staticmethod
-    def marked(site):
-        changes = site / "_changes/c0"
-        changes.mkdir(parents=True, exist_ok=True)
-        (changes / "manifest.json").write_text(
-            json.dumps({"pages": {"lit-review/index.html": {"marks": 6}}})
-        )
-
     def test_packaging_does_not_pollute_the_compared_sites(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -135,11 +127,6 @@ class DemoTests(unittest.TestCase):
 
             def generate(command, **kwargs):
                 steps.append(Path(command[1]).name)
-                # As a preview runs it: the report, marking the pages it reads.
-                self.assertEqual(
-                    command[command.index("--mark") + 1], "in this pull request"
-                )
-                self.assertIn("--on", command)
                 output = Path(command[command.index("--out") + 1])
                 self.assertFalse(output.is_relative_to(old))
                 self.assertFalse(output.is_relative_to(new))
@@ -147,13 +134,12 @@ class DemoTests(unittest.TestCase):
                 for flag in ("--old", "--new"):
                     compared = Path(command[command.index(flag) + 1])
                     self.assertFalse((compared / "demo").exists())
-                    self.assertFalse(flag == "--new" and compared.is_relative_to(new))
+                    self.assertFalse(compared.is_relative_to(new))
                 page = (
                     '<section class="page-diff changed" id="p-lit-review-index-html">'
                     + "<ins>new</ins><del>old</del>" * 3
                 )
                 output.write_text(page + '<a href="./index.html">home</a>')
-                self.marked(Path(command[command.index("--new") + 1]))
 
             with (
                 patch.object(demo.refresh, "workflow_ref", return_value="fixture"),
@@ -161,10 +147,9 @@ class DemoTests(unittest.TestCase):
             ):
                 demo.refresh.build(args)
                 demo.refresh.build(args)
-            # One run of the report, which marks the pages, each build.
+            # One run of the report each build.
             self.assertEqual(steps, ["generator.py"] * 2)
             self.assertTrue((args.output / "what-changed.html").is_file())
-            self.assertTrue((args.output / "_changes/c0/manifest.json").is_file())
             self.assertFalse((args.output / "demo").exists())
             self.assertFalse((args.output / "stale.html").exists())
             self.assertEqual((new / "demo/stale.html").read_text(), "previous demo")
@@ -309,7 +294,6 @@ class DemoTests(unittest.TestCase):
                 json.dumps({"asta_plugins_ref": "fixture"})
             )
             self.paper_preview(root)
-            self.marked(root)
             page = (
                 '<section class="page-diff changed" id="p-lit-review-index-html">'
                 + "<ins>new</ins><del>old</del>" * 3
@@ -326,25 +310,20 @@ class DemoTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         demo.refresh.check(root)
 
-    def test_a_demo_whose_edited_page_shows_no_changes_is_rejected(self):
+    def test_a_demo_whose_report_lists_no_change_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "manifest.json").write_text(
                 json.dumps({"asta_plugins_ref": "fixture"})
             )
             self.paper_preview(root)
-            (root / "what-changed.html").write_text(
-                '<section class="page-diff changed" id="p-lit-review-index-html">'
-                + "<ins>new</ins><del>old</del>" * 3
-            )
-            (root / "_changes/c0").mkdir(parents=True)
-            (root / "_changes/c0/manifest.json").write_text('{"pages": {}}')
+            (root / "what-changed.html").write_text("<p>No changes.</p>")
             with (
                 patch.object(demo.refresh, "workflow_ref", return_value="fixture"),
                 self.assertRaises(ValueError) as raised,
             ):
                 demo.refresh.check(root)
-            self.assertIn("shows no changes in place", str(raised.exception))
+            self.assertIn("no edited Quarto page", str(raised.exception))
 
 
 if __name__ == "__main__":

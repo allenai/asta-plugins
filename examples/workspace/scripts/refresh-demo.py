@@ -14,10 +14,6 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 PAPERS = ("paper",)
-# What a pull request's preview calls its comparison, as the shared workflow
-# passes it to what-changed.py's --mark, so that the demo reads as that
-# preview does.
-PREVIEW_LABEL = "in this pull request"
 
 
 def workflow_ref() -> str:
@@ -83,12 +79,6 @@ def check(snapshot: Path) -> None:
             raise ValueError(f"demo report links outside snapshot: {name}")
         if not target.is_file() and not (target / "index.html").is_file():
             raise ValueError(f"demo report links to a missing file: {name}")
-    # As in a pull request's preview, the edited page shows its changes in place.
-    changes = json.loads(
-        (snapshot / "_changes/c0/manifest.json").read_text(encoding="utf-8")
-    )
-    if not changes.get("pages", {}).get("lit-review/index.html", {}).get("marks"):
-        raise ValueError("demo's edited page shows no changes in place")
 
 
 def copy_site(source: Path, target: Path) -> None:
@@ -124,8 +114,7 @@ def build(args) -> None:
         copy_site(new, after)
         staged = Path(directory) / "preview"
         shutil.copytree(after, staged)
-        # What a pull request's preview runs after its build: What changed,
-        # with each page's changes marked in place.
+        # What a pull request's preview runs after its build: What changed.
         subprocess.run(
             [
                 "python3",
@@ -133,14 +122,11 @@ def build(args) -> None:
                 "--old",
                 str(before),
                 "--new",
-                str(staged),
+                str(after),
                 "--out",
                 str(staged / "what-changed.html"),
                 "--title",
                 "Workspace demo",
-                "--mark",
-                PREVIEW_LABEL,
-                "--on",
             ],
             check=True,
         )
