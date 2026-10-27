@@ -5,10 +5,6 @@
 - What changed shows a page title with an HTML entity, such as a non-breaking
   space or `&`, as the page does, instead of the escaped entity text.
 
-- The workspace skill loads before an agent commits to or opens a pull request
-  in a workspace, whichever skill wrote the change, so the release pin moves in
-  its own commit without being asked.
-
 - The example workspace's demo is now a pull request's preview, whose What
   changed lists that pull request's edits, and its site has no pages about the
   example; one line on its home page points to its README.
