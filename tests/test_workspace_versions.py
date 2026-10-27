@@ -232,8 +232,9 @@ def test_sync_moves_a_pin_older_than_managed_rules(tmp_path: Path, monkeypatch) 
 
 @pytest.mark.parametrize("failure", ["fetch", "rules", "cache"])
 @pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("refresh", [False, True])
 def test_sync_keeps_old_pin_until_new_release_is_ready(
-    tmp_path: Path, monkeypatch, failure: str, cached: bool
+    tmp_path: Path, monkeypatch, failure: str, cached: bool, refresh: bool
 ) -> None:
     _local(monkeypatch)
     project = project_with_ref(tmp_path, "v0.110.0")
@@ -243,12 +244,14 @@ def test_sync_keeps_old_pin_until_new_release_is_ready(
         result, _ = _sync(project, monkeypatch, "0.110.0")
         assert result.exit_code == 0, result.output
     monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+    calls = []
 
     def fetch(repository, ref):
-        assert ref == "v0.113.0"
+        calls.append(ref)
         assert docs.read_bytes() == before
         if failure == "fetch":
             raise ClickException("offline")
+        assert ref == "v0.113.0"
         rules = (
             b"ASTA_WORKSPACE_MIN_CLI := 0.114.0\n" if failure == "rules" else b"rule\n"
         )
@@ -264,9 +267,72 @@ def test_sync_keeps_old_pin_until_new_release_is_ready(
             write(path, data)
 
         monkeypatch.setattr(workspace_module, "_atomic_write", fail_cache)
+    args = ["workspace", "sync", "--project", str(project)]
+    result = CliRunner().invoke(cli, args + (["--refresh"] if refresh else []))
+    if failure == "fetch" and cached:
+        assert result.exit_code == 0, result.output
+        assert "keeping the workspace pin at @v0.110.0" in result.output
+        assert (project / ".asta/cache/workspace.mk").read_bytes().endswith(b"rule\n")
+        assert workspace_module.selected_source(project)[1] == "v0.110.0"
+    else:
+        assert result.exit_code != 0, result.output
+    assert calls == (
+        ["v0.113.0", "v0.110.0"]
+        if failure == "fetch" and (not cached or refresh)
+        else ["v0.113.0"]
+    )
+    assert docs.read_bytes() == before
+    assert "Moved the workspace pin" not in result.output
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_sync_falls_back_when_fork_lacks_the_new_release(
+    tmp_path, monkeypatch, refresh
+):
+    _local(monkeypatch)
+    project = project_with_ref(tmp_path, "v0.110.0", "example/asta-plugins")
+    docs = project / workspace_module.WORKFLOW_FILE
+    before = docs.read_bytes()
+    calls = []
+    archive = _archive({})
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+
+    def fetch(repository, ref):
+        assert repository == "example/asta-plugins"
+        calls.append(ref)
+        if ref == "v0.113.0":
+            raise ClickException("tag not found")
+        return b"old rules\n", archive
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    assert workspace_module.sync_workspace(project, refresh, False) == archive
+    assert calls == ["v0.113.0", "v0.110.0"]
+    assert docs.read_bytes() == before
+    assert (project / ".asta/cache/workspace.mk").read_bytes().endswith(b"old rules\n")
+
+
+@pytest.mark.parametrize("edit", ["comment", "pin"])
+def test_sync_preserves_workflow_edits_during_fetch(tmp_path, monkeypatch, edit):
+    _local(monkeypatch)
+    project = project_with_ref(tmp_path, "v0.110.0")
+    docs = project / workspace_module.WORKFLOW_FILE
+    before = docs.read_bytes()
+    concurrent = (
+        before + b"# concurrent edit\n"
+        if edit == "comment"
+        else before.replace(b"@v0.110.0", b"@main")
+    )
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+
+    def fetch(repository, ref):
+        docs.write_bytes(concurrent)
+        return b"rule\n", _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
     result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
     assert result.exit_code != 0, result.output
-    assert docs.read_bytes() == before
+    assert "changed during sync" in result.output
+    assert docs.read_bytes() == concurrent
     assert "Moved the workspace pin" not in result.output
 
 

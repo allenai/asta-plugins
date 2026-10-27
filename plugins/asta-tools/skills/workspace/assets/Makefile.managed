@@ -15,6 +15,7 @@ ifneq ($(origin ASTA_PLUGINS_REF),undefined)
 $(error ASTA_PLUGINS_REF cannot select managed rules; unset ASTA_PLUGINS_REF and change the ref in .github/workflows/docs.yml)
 endif
 # Re-sync when asta or its pin-movement guards change, including CI -> local use.
+# Each managed-rules parse runs a version probe and a guard checksum.
 ASTA_VERSION_STAMP := .asta/cache/asta-version
 ASTA_WORKSPACE_CLI_VERSION := $(shell asta --version 2>/dev/null)
 # Fingerprint guard inputs rather than duplicating the CLI's boolean parsing.

@@ -495,17 +495,30 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         return
     repository, ref = selected_source(project)
     original_ref = ref
-    unattended = bool(os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA")) or any(
-        os.environ.get(name, "").strip().casefold() not in ("", "0", "false")
-        for name in ("CI", "GITHUB_ACTIONS")
-    )
-    if not unattended:
+    if not _is_unattended():
         ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
     if ref != original_ref:
         _reject_workflow_symlinks(project)
         original = (project / WORKFLOW_FILE).read_bytes()
-    archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
+    try:
+        archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
+    except _WorkspaceFetchError:
+        if ref == original_ref:
+            raise
+        click.echo(
+            f"Could not fetch asta-plugins@{ref}; keeping the workspace pin at "
+            f"@{original_ref} and trying its rules",
+            err=True,
+        )
+        return _sync_workspace(
+            project, repository, original_ref, refresh, require_scripts
+        )
     if ref != original_ref:
+        _reject_workflow_symlinks(project)
+        if (project / WORKFLOW_FILE).read_bytes() != original:
+            raise click.ClickException(
+                f"{WORKFLOW_FILE} changed during sync; left it unchanged. Run sync again."
+            )
         _write_pin(project, original, ref)
         click.echo(
             f"Moved the workspace pin in {WORKFLOW_FILE} from asta-plugins@{original_ref} "
@@ -515,6 +528,10 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         # The workflow must not remain newer than the rules just loaded for it.
         (project / ".asta/cache/workspace.mk").touch()
     return archive
+
+
+class _WorkspaceFetchError(click.ClickException):
+    """The selected source could not be fetched and no matching cache exists."""
 
 
 def _sync_workspace(
@@ -664,7 +681,7 @@ def _sync_workspace(
     try:
         asset, archive = load_asset(repository, source_ref)
         scripts = load_scripts(archive)
-    except click.ClickException:
+    except click.ClickException as exc:
         if cache_valid:
             _require_cli(target.read_bytes(), ref, cli)
             if require_scripts:
@@ -674,7 +691,7 @@ def _sync_workspace(
                 f"Could not refresh asta-plugins@{ref}; using the cached copy", err=True
             )
             return cached_archive
-        raise
+        raise _WorkspaceFetchError(str(exc)) from exc
     _require_cli(asset, ref, cli)
     if require_scripts:
         _require_scripts(asset, scripts, ref)
@@ -787,6 +804,15 @@ def bump_pin(project: Path) -> None:
 
 # Runs that build a commit (CI, the Overleaf sync runner) must build the pin it names.
 UNATTENDED_ENV = ("ASTA_WORKSPACE_RESOLVED_SHA", "CI", "GITHUB_ACTIONS")
+
+
+def _is_unattended() -> bool:
+    return any(
+        bool(os.environ.get(name))
+        if name == "ASTA_WORKSPACE_RESOLVED_SHA"
+        else os.environ.get(name, "").strip().casefold() not in ("", "0", "false")
+        for name in UNATTENDED_ENV
+    )
 
 
 def _reject_workflow_symlinks(project: Path) -> None:
