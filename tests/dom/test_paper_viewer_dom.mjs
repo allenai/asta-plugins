@@ -134,6 +134,19 @@ test("a failed latest build says so beside the last good PDF", async () => {
   assert.ok(document.querySelector("[data-paper-pdf] object"));
 });
 
+test("a compiler failure with no counted LaTeX errors shows its exit status", async () => {
+  const { document } = await runViewer({
+    files: ["main.pdf", "latex-errors.json"],
+    contents: { "latex-errors.json": '{"errors":0,"warnings":0,"latexmk_exit_status":12}' },
+  });
+  const issues = document.querySelector(".paper-issues");
+  assert.equal(issues.hidden, false);
+  assert.match(issues.textContent, /a compiler failure \(exit status 12\)/);
+  assert.doesNotMatch(issues.textContent, /LaTeX errors/);
+  assert.equal(issues.querySelector("a").getAttribute("href"), base + "main.log");
+  assert.ok(document.querySelector("[data-paper-pdf] object"));
+});
+
 test("a clean build shows no issues note", async () => {
   const { document } = await runViewer({ files: ["main.pdf"] });
   assert.equal(document.querySelector(".paper-issues").hidden, true);

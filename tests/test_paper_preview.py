@@ -505,6 +505,7 @@ def test_unresolved_citations_with_pdf_pass_and_are_reported(tmp_path):
     assert json.loads((site / "latex-errors.json").read_text()) == {
         "errors": 0,
         "warnings": 1,
+        "latexmk_exit_status": 0,
     }
     assert (
         "::warning" in result.stdout and "Unresolved paper citations" in result.stdout
@@ -1007,11 +1008,31 @@ def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
     assert json.loads((site / "latex-errors.json").read_text()) == {
         "errors": 2,
         "warnings": 0,
+        "latexmk_exit_status": 12,
     }
     assert "Undefined control sequence" in (site / "main.log").read_text()
     assert "produced a PDF" in result.stdout
     commands = (repo / "paper/latexmk-args.txt").read_text().splitlines()
     assert "-halt-on-error" not in commands[0] and " -f " in commands[0]
+
+
+def test_compiler_failure_with_pdf_and_no_counted_errors_is_reported(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("exit 12\n")
+
+    result = run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert json.loads((site / "latex-errors.json").read_text()) == {
+        "errors": 0,
+        "warnings": 0,
+        "latexmk_exit_status": 12,
+    }
+    assert (site / "main.log").is_file()
+    assert "Compiler exited with status 12 but produced a PDF" in result.stdout
+    assert "LaTeX reported 0 error(s)" not in result.stdout
 
 
 def test_latex_errors_without_pdf_fail(tmp_path):

@@ -344,12 +344,13 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
   Promise.all([text('build-failed.txt'), text('latex-errors.json')]).then(([failed, report]) => {{
     if (failed !== null) return note('The latest version did not build.', 'build-failed.txt', 'Why');
     if (report === null) return;
-    let errors = 0, warnings = 0;
-    try {{ ({{ errors = 0, warnings = 0 }} = JSON.parse(report)); }} catch (e) {{}}
+    let errors = 0, warnings = 0, latexmk_exit_status = 0;
+    try {{ ({{ errors = 0, warnings = 0, latexmk_exit_status = 0 }} = JSON.parse(report)); }} catch (e) {{}}
     const parts = [];
     if (errors) parts.push(errors + (errors === 1 ? ' LaTeX error' : ' LaTeX errors'));
+    if (latexmk_exit_status && !errors) parts.push('a compiler failure (exit status ' + latexmk_exit_status + ')');
     if (warnings) parts.push('unresolved citations or a missing bibliography');
-    note('This PDF built with ' + (parts.join(' and ') || 'LaTeX errors') + '.', 'main.log', 'See the log');
+    note('This PDF built with ' + (parts.join(' and ') || 'build diagnostics') + '.', 'main.log', 'See the log');
   }});
   Promise.all([exists('main.pdf'), exists('what-changed.pdf')]).then(([clean, marked]) => {{
     if (!clean) return;

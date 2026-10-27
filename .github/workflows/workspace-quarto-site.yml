@@ -367,14 +367,16 @@ jobs:
           if [ "$PUBLISH_MAIN" = "true" ]; then
             # Main deploy: replace the site root, keep pr-preview/. A paper that
             # failed to build keeps its last good PDF, next to the failure note.
-            find "$GITHUB_WORKSPACE/_site/paper-previews" -name build-failed.txt -print0 2>/dev/null |
-              while IFS= read -r -d '' note; do
-                rel=${note#"$GITHUB_WORKSPACE/_site/"}; rel=${rel%/build-failed.txt}
-                if [ ! -f "$GITHUB_WORKSPACE/_site/$rel/main.pdf" ] && [ -f "$tmp/$rel/main.pdf" ]; then
-                  cp "$tmp/$rel/main.pdf" "$GITHUB_WORKSPACE/_site/$rel/main.pdf"
-                  printf 'The latest version did not build; this is the last PDF that built.\n' >> "$note"
-                fi
-              done
+            if [ -d "$GITHUB_WORKSPACE/_site/paper-previews" ]; then
+              find "$GITHUB_WORKSPACE/_site/paper-previews" -name build-failed.txt -print0 |
+                while IFS= read -r -d '' note; do
+                  rel=${note#"$GITHUB_WORKSPACE/_site/"}; rel=${rel%/build-failed.txt}
+                  if [ ! -f "$GITHUB_WORKSPACE/_site/$rel/main.pdf" ] && [ -f "$tmp/$rel/main.pdf" ]; then
+                    cp "$tmp/$rel/main.pdf" "$GITHUB_WORKSPACE/_site/$rel/main.pdf"
+                    printf 'The latest version did not build; this is the last PDF that built.\n' >> "$note"
+                  fi
+                done
+            fi
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
           else
@@ -456,7 +458,7 @@ jobs:
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/latex-errors.json" ]; then
-                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w=r.get("errors", 0), r.get("warnings", 0); print(", ".join(p for p in (e and f"{e} LaTeX error(s)", w and "unresolved citations or a missing bibliography") if p) or "LaTeX errors")' "$paper_dir/latex-errors.json")
+                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w, s=r.get("errors", 0), r.get("warnings", 0), r.get("latexmk_exit_status", 0); print(", ".join(p for p in (e and f"{e} LaTeX error(s)", s and not e and f"a compiler failure (exit status {s})", w and "unresolved citations or a missing bibliography") if p) or "build diagnostics")' "$paper_dir/latex-errors.json")
                 body=$(printf '%s\n⚠️ %s built with %s, as Overleaf would; log: %s/main.log' "$body" "$label" "$report" "$paper_url")
               fi
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then

@@ -135,10 +135,12 @@ fi
 # The paper page and PR comment show the count with the log beside the PDF.
 if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ] || [ "$warnings" -gt 0 ]; then
   cp "$dir/build/$stem.log" "$site_dir/main.log"
-  printf '{"errors":%s,"warnings":%s}\n' "$errors" "$warnings" > "$site_dir/latex-errors.json"
+  printf '{"errors":%s,"warnings":%s,"latexmk_exit_status":%s}\n' "$errors" "$warnings" "$latexmk_status" > "$site_dir/latex-errors.json"
 fi
-if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ]; then
+if [ "$errors" -gt 0 ]; then
   annotation warning "$dir/$main" "LaTeX reported $errors error(s) but produced a PDF, as Overleaf would"
+elif [ "$latexmk_status" -ne 0 ]; then
+  annotation warning "$dir/$main" "Compiler exited with status $latexmk_status but produced a PDF; see $dir/build/$stem.log"
 fi
 cp "$dir/build/$stem.pdf" "$site_dir/main.pdf"
 if [ -s "$dir/build/$stem.bbl" ]; then

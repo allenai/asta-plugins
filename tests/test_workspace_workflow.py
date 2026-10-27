@@ -1563,18 +1563,58 @@ def test_failed_default_branch_paper_keeps_last_good_pdf(tmp_path: Path) -> None
         (published / "paper-previews" / name).mkdir(parents=True)
         (published / "paper-previews" / name / "main.pdf").write_text(pdf)
     script = _workflow_snippet(
-        'find "$GITHUB_WORKSPACE/_site/paper-previews" -name build-failed.txt', "done\n"
+        "# Main deploy: replace the site root",
+        'cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"',
     )
 
     subprocess.run(
         ["bash", "-c", "set -euo pipefail\n" + script],
-        env={**os.environ, "GITHUB_WORKSPACE": str(workspace), "tmp": str(published)},
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_WORKSPACE": str(workspace),
+            "tmp": str(published),
+        },
         check=True,
     )
 
-    assert (failed / "main.pdf").read_text() == "last good"
-    assert "did not build" in (failed / "build-failed.txt").read_text()
-    assert (built / "main.pdf").read_text() == "new other"
+    assert (published / "paper-previews/paper/main.pdf").read_text() == "last good"
+    assert (
+        "did not build"
+        in (published / "paper-previews/paper/build-failed.txt").read_text()
+    )
+    assert (published / "paper-previews/other/main.pdf").read_text() == "new other"
+
+
+@pytest.mark.parametrize("empty_paper_directory", [False, True])
+def test_default_branch_site_without_papers_still_publishes(
+    tmp_path: Path, empty_paper_directory: bool
+) -> None:
+    workspace, published = tmp_path / "workspace", tmp_path / "published"
+    site = workspace / "_site"
+    site.mkdir(parents=True)
+    (site / "index.html").write_text("new site")
+    if empty_paper_directory:
+        (site / "paper-previews").mkdir()
+    (published / "pr-preview/pr-7").mkdir(parents=True)
+    (published / "pr-preview/pr-7/index.html").write_text("existing preview")
+    (published / "index.html").write_text("old site")
+    script = _workflow_snippet(
+        "# Main deploy: replace the site root",
+        'cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"',
+    )
+
+    subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + script],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_WORKSPACE": str(workspace),
+            "tmp": str(published),
+        },
+        check=True,
+    )
+
+    assert (published / "index.html").read_text() == "new site"
+    assert (published / "pr-preview/pr-7/index.html").read_text() == "existing preview"
 
 
 @pytest.mark.parametrize(
@@ -1584,6 +1624,10 @@ def test_failed_default_branch_paper_keeps_last_good_pdf(tmp_path: Path) -> None
         (
             {"errors": 0, "warnings": 1},
             "unresolved citations or a missing bibliography, as Overleaf",
+        ),
+        (
+            {"errors": 0, "warnings": 0, "latexmk_exit_status": 12},
+            "a compiler failure (exit status 12), as Overleaf",
         ),
     ],
 )
