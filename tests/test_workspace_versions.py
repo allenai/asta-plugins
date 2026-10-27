@@ -217,6 +217,17 @@ def test_sync_moves_a_release_pin_behind_the_cli_without_committing(
     ]
 
 
+def test_sync_moves_a_pin_older_than_managed_rules(tmp_path: Path, monkeypatch) -> None:
+    _local(monkeypatch)
+    project = project_with_ref(tmp_path, "v0.104.0")
+    docs = project / ".github/workflows/docs.yml"
+    before = docs.read_text()
+    result, calls = _sync(project, monkeypatch, "0.113.0")
+    assert result.exit_code == 0, result.output
+    assert calls == ["v0.113.0"]
+    assert docs.read_text() == before.replace("@v0.104.0", "@v0.113.0")
+
+
 @pytest.mark.parametrize(
     ("ref", "cli_version"),
     [

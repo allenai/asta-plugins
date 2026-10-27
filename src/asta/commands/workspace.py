@@ -494,9 +494,9 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
+    ref = move_pin_forward(project, ref)
     if message := workspace_versions.pin_too_old(ref, WORKFLOW_FILE):
         raise click.ClickException(message)
-    ref = move_pin_forward(project, ref)
     cli = workspace_versions.installed()
     source_ref = os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA") or ref
     resolved_repository = os.environ.get("ASTA_WORKSPACE_RESOLVED_REPOSITORY")
