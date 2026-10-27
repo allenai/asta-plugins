@@ -20,6 +20,10 @@ on:
         description: Quarto CLI version used to render generated sources
         type: string
         default: release
+      paper-strict:
+        description: Fail paper builds on any LaTeX error (for the live example), instead of building past errors as Overleaf does
+        type: boolean
+        default: false
       artifact-command:
         description: Optional project command after rendering and paper previews, before publication
         type: string
@@ -210,7 +214,7 @@ jobs:
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
             if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-                --user "$(id -u):$(id -g)" -e HOME=/tmp \
+                --user "$(id -u):$(id -g)" -e HOME=/tmp -e ASTA_PAPER_STRICT=${{ inputs.paper-strict && '1' || '' }} \
                 -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
                 "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
@@ -360,7 +364,16 @@ jobs:
           git worktree add "$tmp" gh-pages
 
           if [ "$PUBLISH_MAIN" = "true" ]; then
-            # Main deploy: replace the site root, keep pr-preview/.
+            # Main deploy: replace the site root, keep pr-preview/. A paper that
+            # failed to build keeps its last good PDF, next to the failure note.
+            find "$GITHUB_WORKSPACE/_site/paper-previews" -name build-failed.txt -print0 2>/dev/null |
+              while IFS= read -r -d '' note; do
+                rel=${note#"$GITHUB_WORKSPACE/_site/"}; rel=${rel%/build-failed.txt}
+                if [ ! -f "$GITHUB_WORKSPACE/_site/$rel/main.pdf" ] && [ -f "$tmp/$rel/main.pdf" ]; then
+                  cp "$tmp/$rel/main.pdf" "$GITHUB_WORKSPACE/_site/$rel/main.pdf"
+                  printf 'The latest version did not build; this is the last PDF that built.\n' >> "$note"
+                fi
+              done
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
           else
