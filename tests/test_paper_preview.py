@@ -969,3 +969,48 @@ def test_new_paper_does_not_allocate_diff_worktree(tmp_path):
         "diff": False,
         "new": True,
     }
+
+
+def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("exit 12\n")
+    env = {**env, "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence.\n! Emergency stop."}
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert json.loads((site / "latex-errors.json").read_text()) == {"count": 2}
+    assert "Undefined control sequence" in (site / "main.log").read_text()
+    assert "produced a PDF" in result.stdout
+    commands = (repo / "paper/latexmk-args.txt").read_text().splitlines()
+    assert "-halt-on-error" not in commands[0] and " -f " in commands[0]
+
+
+def test_latex_errors_without_pdf_fail(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write('rm -f build/main.pdf\nexit 12\n')
+    env = {**env, "FAKE_LATEX_LOG": "! Emergency stop."}
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "produced no PDF" in result.stdout
+    assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+def test_strict_build_fails_on_any_latex_error(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    env = {**env, "ASTA_PAPER_STRICT": "1", "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence."}
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "strict builds fail" in result.stdout
+    assert "-halt-on-error" in (repo / "paper/latexmk-args.txt").read_text()

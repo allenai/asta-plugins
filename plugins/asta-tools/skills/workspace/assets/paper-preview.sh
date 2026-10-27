@@ -102,11 +102,30 @@ else
 fi
 # Preserve a configured engine; request a PDF when no rc selected one.
 # -e runs after rc files: override their escaping for this private dependency file.
+# Like Overleaf, keep going past LaTeX errors (-f) and fail only without a PDF.
+# ASTA_PAPER_STRICT=1 (the live example) halts and fails on any LaTeX error.
+if [ "${ASTA_PAPER_STRICT:-}" = 1 ]; then error_mode=-halt-on-error; else error_mode=-f; fi
+rm -f "$dir/build/$stem.pdf"
+latexmk_status=0
 (cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out="build/$stem.dep" \
-  -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build "./$main")
+  -interaction=nonstopmode "$error_mode" -file-line-error -outdir=build "./$main") || latexmk_status=$?
 if [ ! -f "$dir/build/$stem.log" ]; then
   annotation error "$dir/$main" "LaTeX did not write $dir/build/$stem.log"
   exit 1
+fi
+errors=$(grep -Ec '^(! |[^ :]+:[0-9]+: )' "$dir/build/$stem.log" || true)
+if [ "${ASTA_PAPER_STRICT:-}" = 1 ] && { [ "$latexmk_status" -ne 0 ] || [ "$errors" -gt 0 ]; }; then
+  annotation error "$dir/$main" "LaTeX reported $errors error(s); strict builds fail on any error"
+  exit 1
+fi
+if [ ! -s "$dir/build/$stem.pdf" ]; then
+  annotation error "$dir/$main" "LaTeX produced no PDF ($errors error(s)); see $dir/build/$stem.log"
+  exit 1
+fi
+if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ]; then
+  cp "$dir/build/$stem.log" "$site_dir/main.log"
+  printf '{"count":%s}\n' "$errors" > "$site_dir/latex-errors.json"
+  annotation warning "$dir/$main" "LaTeX reported $errors error(s) but produced a PDF, as Overleaf would"
 fi
 if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || \
    { [ -f "$dir/build/$stem.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg"; }; then
