@@ -975,7 +975,10 @@ def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     with (bin_dir / "latexmk").open("a") as mock:
         mock.write("exit 12\n")
-    env = {**env, "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence.\n! Emergency stop."}
+    env = {
+        **env,
+        "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence.\n! Emergency stop.",
+    }
 
     result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
 
@@ -991,7 +994,7 @@ def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
 def test_latex_errors_without_pdf_fail(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
     with (bin_dir / "latexmk").open("a") as mock:
-        mock.write('rm -f build/main.pdf\nexit 12\n')
+        mock.write("rm -f build/main.pdf\nexit 12\n")
     env = {**env, "FAKE_LATEX_LOG": "! Emergency stop."}
 
     result = subprocess.run(
@@ -1005,7 +1008,11 @@ def test_latex_errors_without_pdf_fail(tmp_path):
 
 def test_strict_build_fails_on_any_latex_error(tmp_path):
     repo, base, env, bin_dir = paper_repo(tmp_path)
-    env = {**env, "ASTA_PAPER_STRICT": "1", "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence."}
+    env = {
+        **env,
+        "ASTA_PAPER_STRICT": "1",
+        "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence.",
+    }
 
     result = subprocess.run(
         ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
