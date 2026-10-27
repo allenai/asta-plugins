@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- What changed shows a page title with an HTML entity, such as a non-breaking
+  space or `&`, as the page does, instead of the escaped entity text.
+
 - The example workspace's demo is now a pull request's preview, whose What
   changed lists that pull request's edits, and its site has no pages about the
   example; one line on its home page points to its README.

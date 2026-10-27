@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 
 def _underline_contexts(css):
     """Selector text preceding every `text-decoration: underline` in the output.
@@ -844,3 +846,100 @@ def test_has_computed_output_detects_widgets_and_ignores_prose():
     assert not WHAT_CHANGED.has_computed_output(
         "<p>Just prose with <a href='x'>a link</a> and <code>code</code>.</p>"
     )
+
+
+def test_page_title_entities_read_as_on_the_page(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "notes.html").write_text(
+        "<title>Tea&nbsp;notes: milk &amp; sugar</title><main><p>Old</p></main>"
+    )
+    (new / "notes.html").write_text(
+        "<title>Tea&nbsp;notes: milk &amp; sugar</title><main><p>New</p></main>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    assert "&amp;nbsp;" not in result
+    assert "&amp;amp;" not in result
+    assert '<h2><a href="notes.html">Tea\xa0notes: milk &amp; sugar</a>' in result
+    assert '"#p-notes-html">Tea\xa0notes: milk &amp; sugar ' in result
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("&nbsp;Tea&nbsp;", "\xa0Tea\xa0"),
+        ("&#160;Tea&#xA0;", "\xa0Tea\xa0"),
+        ("&nbsp;", "\xa0"),
+        ("\xa0Tea\xa0", "\xa0Tea\xa0"),
+        (" \t\nTea&nbsp;notes\r\f ", "Tea\xa0notes"),
+        (" \t\r\n\f ", "notes.html"),
+    ],
+)
+def test_page_title_preserves_nonbreaking_spaces(title, expected):
+    assert WHAT_CHANGED.page_title(f"<title>{title}</title>", "notes.html") == expected
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Tea&#10;notes",
+        "Tea&#9;notes",
+        "Tea&#13;notes",
+        "Tea&#12;notes",
+        "Tea &#x9;&#10; \t&#13;notes",
+        "&#9;Tea notes&#10;",
+    ],
+)
+def test_page_title_collapses_encoded_html_whitespace(title):
+    assert (
+        WHAT_CHANGED.page_title(f"<title>{title}</title>", "notes.html") == "Tea notes"
+    )
+
+
+@pytest.mark.parametrize(
+    ("old_body", "new_body"),
+    [
+        ("<p>Old</p>", "<p>New</p>"),
+        ('<p id="old">Same</p>', '<p id="new">Same</p>'),
+        (None, "<p>New</p>"),
+        ("<p>Old</p>", None),
+        (
+            '<script type="application/json">{"value": 1}</script>',
+            '<script type="application/json">{"value": 2}</script>',
+        ),
+        (None, '<script type="application/json">{"value": 2}</script>'),
+        ('<script type="application/json">{"value": 1}</script>', None),
+    ],
+    ids=[
+        "changed",
+        "markup-only",
+        "new",
+        "removed",
+        "interactive-changed",
+        "interactive-new",
+        "interactive-removed",
+    ],
+)
+def test_page_title_markup_stays_escaped_in_every_output_path(
+    tmp_path, old_body, new_body
+):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    encoded_title = "&lt;img src=x onerror=alert(1)&gt; &quot;x&quot;"
+    for root, body in ((old, old_body), (new, new_body)):
+        root.mkdir()
+        if body is not None:
+            (root / "notes.html").write_text(
+                f"<title>{encoded_title}</title><main>{body}</main>"
+            )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview")
+
+    # The heading and table of contents display text, never live title markup.
+    assert result.count(encoded_title) == 2
+    assert "<img" not in result
+    assert '"x"' not in result
