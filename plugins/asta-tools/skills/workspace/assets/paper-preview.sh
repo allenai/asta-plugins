@@ -108,6 +108,7 @@ if [ "${ASTA_PAPER_STRICT:-}" = 1 ]; then error_mode=-halt-on-error; else error_
 # A local rebuild can reuse both directories. Never publish artifacts from an
 # earlier attempt, including a diff that would otherwise take over the viewer.
 rm -f "$dir/build/$stem.pdf" "$dir/build/$stem.log" \
+  "$dir/build/$stem.bbl" "$dir/build/$stem.blg" \
   "$site_dir/main.pdf" "$site_dir/main.bbl" "$site_dir/what-changed.pdf" \
   "$site_dir/latex-errors.json" "$site_dir/main.log" "$site_dir/build-failed.txt"
 latexmk_status=0
@@ -135,24 +136,33 @@ if [ ! -s "$dir/build/$stem.pdf" ]; then
   annotation error "$dir/$main" "LaTeX produced no PDF ($errors error(s)); see $dir/build/$stem.log"
   exit 1
 fi
-warnings=0
-if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || \
-   { [ -f "$dir/build/$stem.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg"; }; then
+# Count diagnostic lines, not warning categories or distinct citation keys.
+# A summary only counts when no more specific diagnostic was available.
+warnings=$(grep -Eic 'Citation .+ undefined|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || true)
+warnings=${warnings:-0}
+if [ -f "$dir/build/$stem.blg" ]; then
+  bib_warnings=$(grep -Eic 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg" || true)
+  warnings=$((warnings + ${bib_warnings:-0}))
+fi
+if [ "$warnings" -eq 0 ] && grep -Eiq 'There were undefined citations' "$dir/build/$stem.log"; then warnings=1; fi
+if [ "$warnings" -gt 0 ]; then
   if [ "${ASTA_PAPER_STRICT:-}" = 1 ]; then
     annotation error "$dir/$main" "Unresolved paper citations or missing bibliography"
     exit 1
   fi
-  warnings=1
   annotation warning "$dir/$main" "Unresolved paper citations or missing bibliography"
 fi
 # The paper page and PR comment show the count with the log beside the PDF.
 if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ] || [ "$warnings" -gt 0 ]; then
-  python3 - "$dir/build/$stem.log" "$site_dir/main.log" "$PWD" <<'PY'
+  python3 - "$dir/build/$stem.log" "$site_dir/main.log" "$PWD" "$dir/build/$stem.blg" <<'PY'
 import pathlib
 import sys
 
-source, target, root = sys.argv[1:]
-pathlib.Path(target).write_text(pathlib.Path(source).read_text(errors="replace").replace(root + "/", ""))
+source, target, root, bibliography_log = sys.argv[1:]
+log = pathlib.Path(source).read_text(errors="replace")
+if pathlib.Path(bibliography_log).is_file():
+    log += "\n=== Bibliography log ===\n" + pathlib.Path(bibliography_log).read_text(errors="replace")
+pathlib.Path(target).write_text(log.replace(root + "/", ""))
 PY
   printf '{"errors":%s,"warnings":%s,"latexmk_exit_status":%s}\n' "$errors" "$warnings" "$latexmk_status" > "$site_dir/latex-errors.json"
 fi
@@ -162,7 +172,9 @@ elif [ "$latexmk_status" -ne 0 ]; then
   annotation warning "$dir/$main" "Compiler exited with status $latexmk_status but produced a PDF; see $dir/build/$stem.log"
 fi
 cp "$dir/build/$stem.pdf" "$site_dir/main.pdf"
-if [ -s "$dir/build/$stem.bbl" ]; then
+# A partial bibliography is unsuitable for the arXiv download, even when the
+# best-effort PDF remains useful. Never expose one from a warned or failed build.
+if [ "$latexmk_status" -eq 0 ] && [ "$warnings" -eq 0 ] && [ -s "$dir/build/$stem.bbl" ]; then
   cp "$dir/build/$stem.bbl" "$site_dir/main.bbl"
 fi
 

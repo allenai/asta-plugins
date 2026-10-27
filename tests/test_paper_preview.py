@@ -523,6 +523,113 @@ def test_paper_preview_publishes_arxiv_bibliography(tmp_path):
     ]
 
 
+def test_rebuild_does_not_publish_cached_bibliography(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_BBL": "old bibliography"})
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.bbl").read_text().strip() == "old bibliography"
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (site / "main.pdf").is_file()
+    assert not (site / "main.bbl").exists()
+
+
+@pytest.mark.parametrize("latexmk_status", [0, 12])
+@pytest.mark.parametrize("citation_warning", [False, True])
+def test_bibliography_download_requires_successful_current_build(
+    tmp_path, latexmk_status, citation_warning
+):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    env["FAKE_BBL"] = "current bibliography"
+    if citation_warning:
+        env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write(f"exit {latexmk_status}\n")
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert (site / "main.bbl").exists() == (
+        latexmk_status == 0 and not citation_warning
+    )
+
+
+@pytest.mark.parametrize(
+    ("latex_log", "bib_log", "expected"),
+    [
+        (
+            "LaTeX Warning: Citation `first' on page 1 undefined\n"
+            "LaTeX Warning: Citation `second' on page 2 undefined\n"
+            "LaTeX Warning: There were undefined citations.",
+            "",
+            2,
+        ),
+        ("LaTeX Warning: There were undefined citations.", "", 1),
+        (
+            "",
+            'Warning--I didn\'t find a database entry for "first"\n'
+            'Warning--I didn\'t find a database entry for "second"',
+            2,
+        ),
+        (
+            "LaTeX Warning: There were undefined citations.",
+            'Warning--I didn\'t find a database entry for "first"\n'
+            'Warning--I didn\'t find a database entry for "second"',
+            2,
+        ),
+        (
+            "LaTeX Warning: Citation `missing' on page 1 undefined",
+            'Warning--I didn\'t find a database entry for "missing"',
+            2,
+        ),
+        ("Package biblatex Warning: Empty bibliography\nPlease (re)run Biber", "", 2),
+        ("No file main.bbl.", "", 1),
+    ],
+)
+def test_warning_count_reports_diagnostic_lines(tmp_path, latex_log, bib_log, expected):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run(
+        "bash",
+        str(SCRIPT),
+        cwd=repo,
+        env={**env, "FAKE_LATEX_LOG": latex_log, "FAKE_BIBTEX_LOG": bib_log},
+    )
+
+    site = repo / "_site/paper-previews/paper"
+    assert json.loads((site / "latex-errors.json").read_text())["warnings"] == expected
+    published_log = (site / "main.log").read_text()
+    if latex_log:
+        assert latex_log in published_log
+    if bib_log:
+        assert bib_log in published_log
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_clean_rebuild_clears_old_bibliography_warnings(tmp_path, strict):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run(
+        "bash",
+        str(SCRIPT),
+        cwd=repo,
+        env={
+            **env,
+            "FAKE_BIBTEX_LOG": 'Warning--I didn\'t find a database entry for "missing"',
+        },
+    )
+    env["FAKE_BBL"] = "fresh bibliography"
+    if strict:
+        env["ASTA_PAPER_STRICT"] = "1"
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.bbl").read_text().strip() == "fresh bibliography"
+    assert not (site / "latex-errors.json").exists()
+    assert not (site / "main.log").exists()
+
+
 def test_unchanged_paper_has_no_diff_manifest(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
     base = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
