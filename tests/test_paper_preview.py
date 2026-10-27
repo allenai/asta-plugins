@@ -451,8 +451,9 @@ def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
     }
 
 
-def test_paper_preview_rejects_unresolved_citations(tmp_path):
+def test_strict_paper_preview_rejects_unresolved_citations(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
+    env["ASTA_PAPER_STRICT"] = "1"
     env["FAKE_BIBTEX_LOG"] = 'Warning--I didn\'t find a database entry for "missing"'
 
     result = subprocess.run(
@@ -464,8 +465,9 @@ def test_paper_preview_rejects_unresolved_citations(tmp_path):
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
 
 
-def test_paper_preview_rejects_missing_bibliography_command(tmp_path):
+def test_strict_paper_preview_rejects_missing_bibliography_command(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
+    env["ASTA_PAPER_STRICT"] = "1"
     env["FAKE_BIBTEX_LOG"] = (
         r"I found no \bibdata command---while reading file main.aux"
     )
@@ -479,8 +481,9 @@ def test_paper_preview_rejects_missing_bibliography_command(tmp_path):
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
 
 
-def test_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
+def test_strict_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
+    env["ASTA_PAPER_STRICT"] = "1"
     env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
 
     result = subprocess.run(
@@ -489,6 +492,21 @@ def test_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
 
     assert result.returncode != 0
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+def test_unresolved_citations_with_pdf_pass_and_are_reported(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
+
+    result = run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert json.loads((site / "latex-errors.json").read_text()) == {
+        "errors": 0,
+        "warnings": 1,
+    }
+    assert "::warning" in result.stdout and "Unresolved paper citations" in result.stdout
 
 
 def test_paper_preview_publishes_arxiv_bibliography(tmp_path):
@@ -984,7 +1002,10 @@ def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
 
     site = repo / "_site/paper-previews/paper"
     assert (site / "main.pdf").is_file()
-    assert json.loads((site / "latex-errors.json").read_text()) == {"count": 2}
+    assert json.loads((site / "latex-errors.json").read_text()) == {
+        "errors": 2,
+        "warnings": 0,
+    }
     assert "Undefined control sequence" in (site / "main.log").read_text()
     assert "produced a PDF" in result.stdout
     commands = (repo / "paper/latexmk-args.txt").read_text().splitlines()

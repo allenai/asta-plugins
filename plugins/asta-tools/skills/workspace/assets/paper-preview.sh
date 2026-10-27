@@ -122,15 +122,23 @@ if [ ! -s "$dir/build/$stem.pdf" ]; then
   annotation error "$dir/$main" "LaTeX produced no PDF ($errors error(s)); see $dir/build/$stem.log"
   exit 1
 fi
-if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ]; then
-  cp "$dir/build/$stem.log" "$site_dir/main.log"
-  printf '{"count":%s}\n' "$errors" > "$site_dir/latex-errors.json"
-  annotation warning "$dir/$main" "LaTeX reported $errors error(s) but produced a PDF, as Overleaf would"
-fi
+warnings=0
 if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliography|Please \(re\)run Biber|No file .+\.bbl' "$dir/build/$stem.log" || \
    { [ -f "$dir/build/$stem.blg" ] && grep -Eiq 'no \\bibdata|didn.t find a database entry|couldn.t open database file|cannot find .+\.bib' "$dir/build/$stem.blg"; }; then
-  annotation error "$dir/$main" "Unresolved paper citations or missing bibliography"
-  exit 1
+  if [ "${ASTA_PAPER_STRICT:-}" = 1 ]; then
+    annotation error "$dir/$main" "Unresolved paper citations or missing bibliography"
+    exit 1
+  fi
+  warnings=1
+  annotation warning "$dir/$main" "Unresolved paper citations or missing bibliography"
+fi
+# The paper page and PR comment show the count with the log beside the PDF.
+if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ] || [ "$warnings" -gt 0 ]; then
+  cp "$dir/build/$stem.log" "$site_dir/main.log"
+  printf '{"errors":%s,"warnings":%s}\n' "$errors" "$warnings" > "$site_dir/latex-errors.json"
+fi
+if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ]; then
+  annotation warning "$dir/$main" "LaTeX reported $errors error(s) but produced a PDF, as Overleaf would"
 fi
 cp "$dir/build/$stem.pdf" "$site_dir/main.pdf"
 if [ -s "$dir/build/$stem.bbl" ]; then

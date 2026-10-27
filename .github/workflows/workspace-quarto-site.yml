@@ -455,6 +455,10 @@ jobs:
               if [ -f "$paper_dir/build-failed.txt" ]; then
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
               fi
+              if [ -f "$paper_dir/latex-errors.json" ]; then
+                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w=r.get("errors", 0), r.get("warnings", 0); print(", ".join(p for p in (e and f"{e} LaTeX error(s)", w and "unresolved citations or a missing bibliography") if p) or "LaTeX errors")' "$paper_dir/latex-errors.json")
+                body=$(printf '%s\n⚠️ %s built with %s, as Overleaf would; log: %s/main.log' "$body" "$label" "$report" "$paper_url")
+              fi
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")
               fi

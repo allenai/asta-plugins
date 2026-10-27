@@ -227,6 +227,7 @@ toc: false
 <button type="button" data-file="main.pdf" aria-pressed="false">Clean</button>
 </span>
 </div>
+<p class="paper-issues" role="status" hidden></p>
 <div data-paper-pdf>
 <p>The paper PDF appears after the preview build.</p>
 </div>
@@ -261,6 +262,9 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
   background: transparent; color: inherit; cursor: pointer; }}
 .paper-modes button[aria-pressed="true"] {{ background: var(--bs-body-color);
   color: var(--bs-body-bg); border-color: var(--bs-body-color); font-weight: 600; }}
+.paper-issues {{ font-size: 0.9rem; margin: 0 0 0.35rem; padding: 0.3rem 0.6rem;
+  border-left: 3px solid var(--bs-warning, #d39e00); }}
+.paper-issues[hidden] {{ display: none; }}
 [data-paper-pdf] object {{ display: block; width: 100%; border: 0; }}
 [data-paper-pdf] object a {{ display: inline-block; padding: 1rem 0; }}
 </style>
@@ -325,6 +329,28 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
   const settle = new ResizeObserver(fit);
   for (let box = host.parentElement; box && box !== document.documentElement; box = box.parentElement)
     settle.observe(box, {{ box: 'border-box' }});
+  // Like Overleaf's log button: errors the paper built past, or why the latest
+  // version did not build, show beside the PDF with the log.
+  const issues = host.querySelector('.paper-issues');
+  const note = (text, file, label) => {{
+    const link = document.createElement('a');
+    link.href = base + file;
+    link.textContent = label;
+    issues.replaceChildren(text + ' ', link);
+    issues.hidden = false;
+    fit();
+  }};
+  const text = file => fetch(base + file).then(r => r.ok ? r.text() : null).catch(() => null);
+  Promise.all([text('build-failed.txt'), text('latex-errors.json')]).then(([failed, report]) => {{
+    if (failed !== null) return note('The latest version did not build.', 'build-failed.txt', 'Why');
+    if (report === null) return;
+    let errors = 0, warnings = 0;
+    try {{ ({{ errors = 0, warnings = 0 }} = JSON.parse(report)); }} catch (e) {{}}
+    const parts = [];
+    if (errors) parts.push(errors + (errors === 1 ? ' LaTeX error' : ' LaTeX errors'));
+    if (warnings) parts.push('unresolved citations or a missing bibliography');
+    note('This PDF built with ' + (parts.join(' and ') || 'LaTeX errors') + '.', 'main.log', 'See the log');
+  }});
   Promise.all([exists('main.pdf'), exists('what-changed.pdf')]).then(([clean, marked]) => {{
     if (!clean) return;
     // A PR's preview also builds the paper with that PR's changes marked:
