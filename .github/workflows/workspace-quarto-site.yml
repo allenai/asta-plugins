@@ -131,6 +131,7 @@ jobs:
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           WORKFLOW_REF: ${{ job.workflow_ref }}
+          ASTA_PAPER_STRICT: ${{ inputs.paper-strict && '1' || '' }}
         run: |
           if [ -e _site/paper-previews ]; then
             echo '::error::Quarto output already uses paper-previews/; reserve that path for paper previews'
@@ -214,7 +215,7 @@ jobs:
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
             if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-                --user "$(id -u):$(id -g)" -e HOME=/tmp -e ASTA_PAPER_STRICT=${{ inputs.paper-strict && '1' || '' }} \
+                --user "$(id -u):$(id -g)" -e HOME=/tmp -e ASTA_PAPER_STRICT \
                 -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
                 "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
