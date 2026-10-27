@@ -413,6 +413,46 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     assert "managed-preview" in result.stdout
 
 
+def test_thin_makefile_resyncs_after_the_asta_version_changes(tmp_path: Path) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "v0.110.0")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(source.read_text())
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    version = tmp_path / "version"
+    syncs = tmp_path / "syncs"
+    fake_cli = tool_dir / "asta"
+    fake_cli.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = --version ]; then echo "asta, version $(cat {version})"; exit 0; fi\n'
+        'if [ "$3" = --help ]; then exit 0; fi\n'
+        f"echo sync >> {syncs}\n"
+        "mkdir -p .asta/cache\n"
+        "printf 'preview:\\n\\t@echo managed-preview\\n' > .asta/cache/workspace.mk\n"
+    )
+    fake_cli.chmod(0o755)
+    env = {**os.environ, "PATH": str(tool_dir) + os.pathsep + os.environ["PATH"]}
+
+    def preview(cli_version: str) -> int:
+        version.write_text(cli_version)
+        result = subprocess.run(
+            ["make", "preview"], cwd=project, env=env, text=True, capture_output=True
+        )
+        assert result.returncode == 0, result.stderr
+        assert "managed-preview" in result.stdout
+        return len(syncs.read_text().splitlines())
+
+    assert preview("0.110.0") == 1
+    assert preview("0.110.0") == 1
+    assert preview("0.113.0") == 2
+    assert preview("0.113.0") == 2
+
+
 def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:
     if shutil.which("make") is None:
         pytest.skip("make not installed")

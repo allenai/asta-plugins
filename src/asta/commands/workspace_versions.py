@@ -114,20 +114,6 @@ def pin_too_old(ref: str, source: str | None = None) -> str | None:
     )
 
 
-def pin_behind(ref: str, cli: str | None, source: str | None = None) -> str | None:
-    """Notice when a final-release CLI is newer than a release pin; changes nothing."""
-    pinned = release(ref)
-    current = release(cli) if cli else None
-    if pinned is None or current is None or current <= pinned:
-        return None
-    where = f" in {source}" if source else ""
-    return (
-        f"asta {format_release(current)} is newer than the pinned {_pin(ref, source)}. "
-        f"To move the pin, change @{ref} to @v{format_release(current)}{where} "
-        "and run 'asta workspace sync'"
-    )
-
-
 def pin_target(ref: str, cli: str | None) -> str | None:
     """The release ref a release pin should move to, or None to leave it.
 

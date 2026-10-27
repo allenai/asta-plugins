@@ -14,8 +14,11 @@ else
 ifneq ($(origin ASTA_PLUGINS_REF),undefined)
 $(error ASTA_PLUGINS_REF cannot select managed rules; unset ASTA_PLUGINS_REF and change the ref in .github/workflows/docs.yml)
 endif
+# Re-sync when the installed asta changes, so a release pin behind it moves forward.
+ASTA_VERSION_STAMP := .asta/cache/asta-version
+$(shell v="$$(asta --version 2>/dev/null)"; [ -z "$$v" ] || [ "$$v" = "$$(cat $(ASTA_VERSION_STAMP) 2>/dev/null)" ] || { mkdir -p .asta/cache && printf '%s\n' "$$v" > $(ASTA_VERSION_STAMP); })
 include .asta/cache/workspace.mk
-.asta/cache/workspace.mk: .github/workflows/docs.yml
+.asta/cache/workspace.mk: .github/workflows/docs.yml $(wildcard $(ASTA_VERSION_STAMP))
 	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
 endif

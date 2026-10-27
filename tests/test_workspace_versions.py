@@ -77,7 +77,6 @@ def test_messages_name_the_source_only_when_given() -> None:
     for message in (
         workspace_versions.cli_too_old(rules, "v0.106.0", "0.105.0"),
         workspace_versions.pin_too_old("v0.104.0"),
-        workspace_versions.pin_behind("v0.106.0", "0.110.0"),
     ):
         assert message is not None and "docs.yml" not in message
     named = workspace_versions.pin_too_old("v0.104.0", "Makefile")
@@ -193,22 +192,69 @@ def test_pin_older_than_supported_rules_says_to_move_it(
     assert "Move the asta-plugins pin in .github/workflows/docs.yml" in result.output
 
 
-def test_newer_cli_than_pin_explains_how_to_move_it_without_changing_files(
-    tmp_path: Path, monkeypatch
+def _local(monkeypatch) -> None:
+    for name in workspace_module.UNATTENDED_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.parametrize("ref", ["v0.110.0", "0.110.0"])
+def test_sync_moves_a_release_pin_behind_the_cli_without_committing(
+    tmp_path: Path, monkeypatch, ref
 ) -> None:
+    _local(monkeypatch)
+    project = project_with_ref(tmp_path, ref)
+    docs = project / ".github/workflows/docs.yml"
+    before = docs.read_text()
+    target = ("v" if ref.startswith("v") else "") + "0.113.0"
+    result, calls = _sync(project, monkeypatch, "0.113.0")
+    assert result.exit_code == 0, result.output
+    assert calls == [target]
+    assert docs.read_text() == before.replace(f"@{ref}", f"@{target}")
+    moved = [line for line in result.output.splitlines() if "Moved" in line]
+    assert moved == [
+        "Moved the workspace pin in .github/workflows/docs.yml from "
+        f"asta-plugins@{ref} to @{target}, the installed asta's release (not committed)"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ref", "cli_version"),
+    [
+        ("v0.113.0", "0.113.0"),
+        ("v0.120.0", "0.113.0"),
+        ("main", "0.113.0"),
+        ("latest", "0.113.0"),
+        ("0123456789abcdef0123456789abcdef01234567", "0.113.0"),
+        ("v0.110.0", "0.113.0.dev1"),
+    ],
+)
+def test_sync_leaves_current_newer_and_moving_pins_alone(
+    tmp_path: Path, monkeypatch, ref, cli_version
+) -> None:
+    _local(monkeypatch)
+    project = project_with_ref(tmp_path, ref)
+    docs = project / ".github/workflows/docs.yml"
+    before = docs.read_text()
+    result, calls = _sync(project, monkeypatch, cli_version)
+    assert docs.read_text() == before
+    assert calls == [ref]
+    assert "Moved" not in result.output
+
+
+@pytest.mark.parametrize("name", workspace_module.UNATTENDED_ENV)
+def test_unattended_sync_builds_the_pinned_release(
+    tmp_path: Path, monkeypatch, name
+) -> None:
+    _local(monkeypatch)
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    monkeypatch.setenv(name, sha if name == "ASTA_WORKSPACE_RESOLVED_SHA" else "true")
     project = project_with_ref(tmp_path, "v0.110.0")
     docs = project / ".github/workflows/docs.yml"
     before = docs.read_text()
-    result, calls = _sync(project, monkeypatch, "0.113.0")
+    result, _ = _sync(project, monkeypatch, "0.113.0")
     assert result.exit_code == 0, result.output
-    assert calls == ["v0.110.0"]
-    assert (
-        "asta 0.113.0 is newer than the pinned asta-plugins@v0.110.0" in result.output
-    )
-    assert (
-        "change @v0.110.0 to @v0.113.0 in .github/workflows/docs.yml" in result.output
-    )
     assert docs.read_text() == before
+    assert "Moved" not in result.output
 
 
 @pytest.mark.parametrize(
