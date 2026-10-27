@@ -506,7 +506,9 @@ def test_unresolved_citations_with_pdf_pass_and_are_reported(tmp_path):
         "errors": 0,
         "warnings": 1,
     }
-    assert "::warning" in result.stdout and "Unresolved paper citations" in result.stdout
+    assert (
+        "::warning" in result.stdout and "Unresolved paper citations" in result.stdout
+    )
 
 
 def test_paper_preview_publishes_arxiv_bibliography(tmp_path):

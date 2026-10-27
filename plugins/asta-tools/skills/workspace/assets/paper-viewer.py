@@ -340,7 +340,7 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
     issues.hidden = false;
     fit();
   }};
-  const text = file => fetch(base + file).then(r => r.ok ? r.text() : null).catch(() => null);
+  const text = file => fetch(base + file, {{ method: 'GET' }}).then(r => r.ok ? r.text() : null).catch(() => null);
   Promise.all([text('build-failed.txt'), text('latex-errors.json')]).then(([failed, report]) => {{
     if (failed !== null) return note('The latest version did not build.', 'build-failed.txt', 'Why');
     if (report === null) return;

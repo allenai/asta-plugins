@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -1542,3 +1543,71 @@ def test_preview_comment_reports_asta_plugins_version_change(
         assert any("issues/comments/123 -X PATCH" in command for command in commands)
     else:
         assert any("issues/7/comments -f body=" in command for command in commands)
+
+
+def _workflow_snippet(start: str, end: str) -> str:
+    text = WORKFLOW.read_text()
+    begin = text.index(start)
+    return textwrap.dedent(text[begin : text.index(end, begin) + len(end)])
+
+
+def test_failed_default_branch_paper_keeps_last_good_pdf(tmp_path: Path) -> None:
+    workspace, published = tmp_path / "workspace", tmp_path / "published"
+    failed = workspace / "_site/paper-previews/paper"
+    failed.mkdir(parents=True)
+    (failed / "build-failed.txt").write_text("LaTeX produced no PDF\n")
+    built = workspace / "_site/paper-previews/other"
+    built.mkdir(parents=True)
+    (built / "main.pdf").write_text("new other")
+    for name, pdf in [("paper", "last good"), ("other", "old other")]:
+        (published / "paper-previews" / name).mkdir(parents=True)
+        (published / "paper-previews" / name / "main.pdf").write_text(pdf)
+    script = _workflow_snippet(
+        'find "$GITHUB_WORKSPACE/_site/paper-previews" -name build-failed.txt', "done\n"
+    )
+
+    subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + script],
+        env={**os.environ, "GITHUB_WORKSPACE": str(workspace), "tmp": str(published)},
+        check=True,
+    )
+
+    assert (failed / "main.pdf").read_text() == "last good"
+    assert "did not build" in (failed / "build-failed.txt").read_text()
+    assert (built / "main.pdf").read_text() == "new other"
+
+
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        ({"errors": 2, "warnings": 0}, "2 LaTeX error(s), as Overleaf"),
+        (
+            {"errors": 0, "warnings": 1},
+            "unresolved citations or a missing bibliography, as Overleaf",
+        ),
+    ],
+)
+def test_pr_comment_reports_latex_errors_with_log(tmp_path, report, expected) -> None:
+    paper_dir = tmp_path / "paper"
+    paper_dir.mkdir()
+    (paper_dir / "latex-errors.json").write_text(json.dumps(report))
+    script = _workflow_snippet(
+        'if [ -f "$paper_dir/latex-errors.json" ]; then', "              fi\n"
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", script + 'printf "%s" "$body"'],
+        env={
+            **os.environ,
+            "paper_dir": str(paper_dir),
+            "label": "Paper",
+            "paper_url": "https://x/paper-previews/paper",
+            "body": "",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert expected in result.stdout
+    assert "https://x/paper-previews/paper/main.log" in result.stdout

@@ -23,7 +23,7 @@ const raw = page.match(/```\{=html\}\n([\s\S]*?)\n```/)[1];
 const code = raw.match(/<script>([\s\S]*?)<\/script>/)[1];
 const base = "../../paper-previews/paper/";
 
-async function runViewer({ files = [], reject = false, stored = {} } = {}) {
+async function runViewer({ files = [], reject = false, stored = {}, contents = {} } = {}) {
   const { document, window } = parseHTML(`<html><body>${raw}</body></html>`);
   Object.defineProperty(document, "baseURI", { value: "https://preview.example/project/paper/html/index.html" });
   assert.equal(document.querySelectorAll("a[href], iframe[src]").length, 0,
@@ -33,7 +33,8 @@ async function runViewer({ files = [], reject = false, stored = {} } = {}) {
   const fetch = async (url, options) => {
     requests.push([url, options.method]);
     if (reject) throw new Error("offline");
-    return { ok: files.some(file => url === base + file) };
+    const file = files.find(name => url === base + name);
+    return { ok: file !== undefined, text: async () => contents[file] ?? "" };
   };
   const listeners = {};
   const storage = { ...stored };
@@ -49,7 +50,10 @@ async function runViewer({ files = [], reject = false, stored = {} } = {}) {
     ResizeObserver: class { observe() {} },
   });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(requests, [[base + "main.pdf", "HEAD"], [base + "what-changed.pdf", "HEAD"]]);
+  assert.deepEqual(requests, [
+    [base + "build-failed.txt", "GET"], [base + "latex-errors.json", "GET"],
+    [base + "main.pdf", "HEAD"], [base + "what-changed.pdf", "HEAD"],
+  ]);
   const press = key => (listeners.keydown ?? []).forEach(listener => listener({ key }));
   return { document, window, storage, press };
 }
@@ -109,4 +113,28 @@ test("the expand button gives the paper the whole window, and Esc gives the site
 test("the whole-window choice is kept for the next page load", async () => {
   const { document } = await runViewer({ files: ["main.pdf"], stored: { "paper-page-full": "1" } });
   assert.equal(document.querySelector("[data-paper-preview]").classList.contains("paper-full"), true);
+});
+
+test("errors the paper built past show beside the PDF with the log", async () => {
+  const { document } = await runViewer({
+    files: ["main.pdf", "latex-errors.json"],
+    contents: { "latex-errors.json": '{"errors":2,"warnings":1}' },
+  });
+  const issues = document.querySelector(".paper-issues");
+  assert.equal(issues.hidden, false);
+  assert.match(issues.textContent, /2 LaTeX errors and unresolved citations or a missing bibliography/);
+  assert.equal(issues.querySelector("a").getAttribute("href"), base + "main.log");
+});
+
+test("a failed latest build says so beside the last good PDF", async () => {
+  const { document } = await runViewer({ files: ["main.pdf", "build-failed.txt"] });
+  const issues = document.querySelector(".paper-issues");
+  assert.match(issues.textContent, /latest version did not build/);
+  assert.equal(issues.querySelector("a").getAttribute("href"), base + "build-failed.txt");
+  assert.ok(document.querySelector("[data-paper-pdf] object"));
+});
+
+test("a clean build shows no issues note", async () => {
+  const { document } = await runViewer({ files: ["main.pdf"] });
+  assert.equal(document.querySelector(".paper-issues").hidden, true);
 });
