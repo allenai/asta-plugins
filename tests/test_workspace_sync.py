@@ -18,6 +18,8 @@ from click.testing import CliRunner
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
 
+pytestmark = pytest.mark.usefixtures("pinned_workspace")
+
 
 def project_with_ref(
     tmp_path: Path, ref: str, repository: str = "allenai/asta-plugins"
@@ -413,7 +415,10 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     assert "managed-preview" in result.stdout
 
 
-def test_thin_makefile_resyncs_after_the_asta_version_changes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("fail_once", [False, True])
+def test_thin_makefile_resyncs_after_the_asta_version_changes(
+    tmp_path: Path, fail_once: bool
+) -> None:
     if shutil.which("make") is None:
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "v0.110.0")
@@ -426,31 +431,52 @@ def test_thin_makefile_resyncs_after_the_asta_version_changes(tmp_path: Path) ->
     tool_dir.mkdir()
     version = tmp_path / "version"
     syncs = tmp_path / "syncs"
+    failure = tmp_path / "fail-sync"
     fake_cli = tool_dir / "asta"
     fake_cli.write_text(
         "#!/bin/sh\n"
         f'if [ "$1" = --version ]; then echo "asta, version $(cat {version})"; exit 0; fi\n'
         'if [ "$3" = --help ]; then exit 0; fi\n'
         f"echo sync >> {syncs}\n"
+        f'if [ -f "{failure}" ]; then rm "{failure}"; exit 1; fi\n'
         "mkdir -p .asta/cache\n"
         "printf 'preview:\\n\\t@echo managed-preview\\n' > .asta/cache/workspace.mk\n"
     )
     fake_cli.chmod(0o755)
     env = {**os.environ, "PATH": str(tool_dir) + os.pathsep + os.environ["PATH"]}
 
-    def preview(cli_version: str) -> int:
+    def preview(cli_version: str, succeeds: bool = True) -> int:
         version.write_text(cli_version)
         result = subprocess.run(
-            ["make", "preview"], cwd=project, env=env, text=True, capture_output=True
+            ["make", "preview"],
+            cwd=project,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=10,
         )
-        assert result.returncode == 0, result.stderr
-        assert "managed-preview" in result.stdout
+        if succeeds:
+            assert result.returncode == 0, result.stderr
+            assert "managed-preview" in result.stdout
+        else:
+            assert result.returncode != 0
         return len(syncs.read_text().splitlines())
 
     assert preview("0.110.0") == 1
     assert preview("0.110.0") == 1
-    assert preview("0.113.0") == 2
-    assert preview("0.113.0") == 2
+    stamp = project / ".asta/cache/asta-version"
+    assert stamp.read_text() == "asta, version 0.110.0\n"
+    # Equal, future mtimes simulate a coarse clock and rule out timestamp ordering.
+    coarse_time = int(time.time()) + 60
+    for path in (stamp, project / ".asta/cache/workspace.mk"):
+        os.utime(path, (coarse_time, coarse_time))
+    if fail_once:
+        failure.touch()
+        assert preview("0.113.0", succeeds=False) == 2
+        assert stamp.read_text() == "asta, version 0.110.0\n"
+    assert preview("0.113.0") == 2 + fail_once
+    assert stamp.read_text() == "asta, version 0.113.0\n"
+    assert preview("0.113.0") == 2 + fail_once
 
 
 def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:

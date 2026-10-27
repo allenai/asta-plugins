@@ -39,11 +39,11 @@ read [Overleaf sync](workflows/overleaf-sync-command.md).
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
 
-Before opening any workspace PR, for both local and headless agents, keep the pin current. The pin in `.github/workflows/docs.yml` works like a lockfile: `make check` moves a release pin that is behind the installed asta forward and prints `Moved the workspace pin ...`, without committing.
+Before opening any workspace PR, both local and headless agents run `make check`. The pin in `.github/workflows/docs.yml` works like a lockfile: outside CI and the Overleaf sync runner, `make check` moves a release pin that is behind the installed asta forward and prints `Moved the workspace pin ...`, without committing. CI and Overleaf runs keep the committed pin; a headless agent outside those runners uses the same pin update flow as a local agent.
 
 1. Commit your work, then run `make check`.
 2. If it moved the pin, commit only that change as its own commit: `git commit -m "Move workspace pin to asta-plugins@<release>" -- .github/workflows/docs.yml`.
-3. If `make check` failed after moving the pin, run it again on the old release, pinned by commit so sync leaves it alone: in `docs.yml`, replace the ref with the old release's commit SHA (the last SHA `git ls-remote https://github.com/allenai/asta-plugins.git 'refs/tags/<old release>' 'refs/tags/<old release>^{}'` prints), then run `make check`. If that passes, the new release broke the build: commit the SHA pin as its own commit and say in the PR that the pin holds the old release and why. If it fails too, the new release isn't the cause: `git checkout -- .github/workflows/docs.yml` and fix the build.
+3. If `make check` failed after moving the pin, run it again on the old release, pinned by commit so sync leaves it alone. Resolve the old release's commit with `git ls-remote https://github.com/allenai/asta-plugins.git 'refs/tags/<old release>^{}'`; if that exact peeled ref is absent, use `git ls-remote https://github.com/allenai/asta-plugins.git 'refs/tags/<old release>'` for a lightweight tag. Require one full 40-hex SHA before replacing the ref in `docs.yml`, then run `make check`. If that passes, the new release broke the build: commit the SHA pin as its own commit and say in the PR that the pin holds the old release and why. If it fails too, the new release isn't the cause: `git checkout -- .github/workflows/docs.yml` and fix the build.
 
 For a headless agent (the user only sees results via deployed URL):
 

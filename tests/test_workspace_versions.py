@@ -1,8 +1,9 @@
-"""Workspace sync explains a mismatch between the installed asta and the pin."""
+"""Workspace sync keeps local release pins current and checks CLI compatibility."""
 
 from pathlib import Path
 
 import pytest
+from click import ClickException
 from click.testing import CliRunner
 
 from asta import __version__
@@ -12,6 +13,7 @@ from asta.commands import workspace_versions
 from tests.test_workspace_sync import _archive, project_with_ref
 
 RULES = Path(__file__).parents[1] / workspace_module.ASSET
+pytestmark = pytest.mark.usefixtures("pinned_workspace")
 
 
 @pytest.mark.parametrize(
@@ -228,6 +230,60 @@ def test_sync_moves_a_pin_older_than_managed_rules(tmp_path: Path, monkeypatch) 
     assert docs.read_text() == before.replace("@v0.104.0", "@v0.113.0")
 
 
+@pytest.mark.parametrize("failure", ["fetch", "rules", "cache"])
+@pytest.mark.parametrize("cached", [False, True])
+def test_sync_keeps_old_pin_until_new_release_is_ready(
+    tmp_path: Path, monkeypatch, failure: str, cached: bool
+) -> None:
+    _local(monkeypatch)
+    project = project_with_ref(tmp_path, "v0.110.0")
+    docs = project / ".github/workflows/docs.yml"
+    before = docs.read_bytes()
+    if cached:
+        result, _ = _sync(project, monkeypatch, "0.110.0")
+        assert result.exit_code == 0, result.output
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+
+    def fetch(repository, ref):
+        assert ref == "v0.113.0"
+        assert docs.read_bytes() == before
+        if failure == "fetch":
+            raise ClickException("offline")
+        rules = (
+            b"ASTA_WORKSPACE_MIN_CLI := 0.114.0\n" if failure == "rules" else b"rule\n"
+        )
+        return rules, _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    if failure == "cache":
+        write = workspace_module._atomic_write
+
+        def fail_cache(path, data):
+            if path.name == "workspace.json":
+                raise OSError("disk full")
+            write(path, data)
+
+        monkeypatch.setattr(workspace_module, "_atomic_write", fail_cache)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0, result.output
+    assert docs.read_bytes() == before
+    assert "Moved the workspace pin" not in result.output
+
+
+def test_pin_rewrite_restores_bytes_if_verification_raises(tmp_path, monkeypatch):
+    project = project_with_ref(tmp_path, "v0.110.0")
+    docs = project / ".github/workflows/docs.yml"
+    before = docs.read_bytes()
+
+    def invalid_source(_project):
+        raise ClickException("invalid workflow")
+
+    monkeypatch.setattr(workspace_module, "selected_source", invalid_source)
+    with pytest.raises(ClickException, match="invalid workflow"):
+        workspace_module._write_pin(project, before, "v0.113.0")
+    assert docs.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     ("ref", "cli_version"),
     [
@@ -266,6 +322,18 @@ def test_unattended_sync_builds_the_pinned_release(
     assert result.exit_code == 0, result.output
     assert docs.read_text() == before
     assert "Moved" not in result.output
+
+
+@pytest.mark.parametrize("name", ["CI", "GITHUB_ACTIONS"])
+@pytest.mark.parametrize("value", ["false", "FALSE", "0"])
+def test_false_ci_flags_allow_local_pin_moves(tmp_path, monkeypatch, name, value):
+    _local(monkeypatch)
+    monkeypatch.setenv(name, value)
+    project = project_with_ref(tmp_path, "v0.110.0")
+    result, calls = _sync(project, monkeypatch, "0.113.0")
+    assert result.exit_code == 0, result.output
+    assert calls == ["v0.113.0"]
+    assert workspace_module.selected_source(project)[1] == "v0.113.0"
 
 
 @pytest.mark.parametrize(

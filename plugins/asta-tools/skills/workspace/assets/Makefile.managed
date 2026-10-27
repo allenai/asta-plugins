@@ -16,11 +16,20 @@ $(error ASTA_PLUGINS_REF cannot select managed rules; unset ASTA_PLUGINS_REF and
 endif
 # Re-sync when the installed asta changes, so a release pin behind it moves forward.
 ASTA_VERSION_STAMP := .asta/cache/asta-version
-$(shell v="$$(asta --version 2>/dev/null)"; [ -z "$$v" ] || [ "$$v" = "$$(cat $(ASTA_VERSION_STAMP) 2>/dev/null)" ] || { mkdir -p .asta/cache && printf '%s\n' "$$v" > $(ASTA_VERSION_STAMP); })
+ASTA_WORKSPACE_CLI_VERSION := $(shell asta --version 2>/dev/null)
+ifneq ($(ASTA_WORKSPACE_CLI_VERSION),)
+ifneq ($(ASTA_WORKSPACE_CLI_VERSION),$(shell cat $(ASTA_VERSION_STAMP) 2>/dev/null))
+# Compare the version itself, including when file mtimes have coarse resolution.
+# On the include restart the successful sync's stamp removes this prerequisite.
+.PHONY: asta-workspace-cli-changed
+.asta/cache/workspace.mk: asta-workspace-cli-changed
+endif
+endif
 include .asta/cache/workspace.mk
-.asta/cache/workspace.mk: .github/workflows/docs.yml $(wildcard $(ASTA_VERSION_STAMP))
+.asta/cache/workspace.mk: .github/workflows/docs.yml
 	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
+	@printf '%s\n' '$(ASTA_WORKSPACE_CLI_VERSION)' > $(ASTA_VERSION_STAMP)
 endif
 
 .PHONY: update-workspace

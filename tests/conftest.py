@@ -1,8 +1,9 @@
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def _ci(monkeypatch):
+@pytest.fixture
+def pinned_workspace(monkeypatch):
     # GitHub Actions sets CI for this suite; set it locally too so `asta workspace
-    # sync` keeps test pins as written. Tests of local pin moves unset it.
+    # sync` keeps fixture pins as written. Only sync/version/bump-pin tests opt
+    # in; tests of local pin moves unset it.
     monkeypatch.setenv("CI", "true")

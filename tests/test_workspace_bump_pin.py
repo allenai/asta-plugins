@@ -15,6 +15,8 @@ from click.testing import CliRunner
 from asta.cli import cli
 from asta.commands import workspace, workspace_versions
 
+pytestmark = pytest.mark.usefixtures("pinned_workspace")
+
 STUB = (
     "jobs:\n"
     "  docs:\n"
@@ -216,19 +218,20 @@ def test_failed_validation_restores_workflow(project, monkeypatch) -> None:
     assert not _git(root, "status", "--porcelain")
 
 
-def test_partial_write_failure_restores_workflow(project, monkeypatch) -> None:
+def test_atomic_pin_write_failure_leaves_workflow_unchanged(
+    project, monkeypatch
+) -> None:
     root = project("v0.115.0")
     workflow = root / workspace.WORKFLOW_FILE
     original = workflow.read_bytes()
-    write_bytes = Path.write_bytes
+    atomic_write = workspace._atomic_write
 
     def write(path, data):
         if path == workflow and data != original:
-            write_bytes(path, b"partial")
             raise OSError("write failed")
-        return write_bytes(path, data)
+        return atomic_write(path, data)
 
-    monkeypatch.setattr(Path, "write_bytes", write)
+    monkeypatch.setattr(workspace, "_atomic_write", write)
     result = _run(root, "0.116.0", monkeypatch, catch_exceptions=True)
     assert result.exit_code != 0
     assert workflow.read_bytes() == original

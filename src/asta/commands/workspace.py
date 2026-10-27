@@ -494,7 +494,33 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
-    ref = move_pin_forward(project, ref)
+    original_ref = ref
+    unattended = bool(os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA")) or any(
+        os.environ.get(name, "").strip().casefold() not in ("", "0", "false")
+        for name in ("CI", "GITHUB_ACTIONS")
+    )
+    if not unattended:
+        ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
+    if ref != original_ref:
+        _reject_workflow_symlinks(project)
+        original = (project / WORKFLOW_FILE).read_bytes()
+    archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
+    if ref != original_ref:
+        _write_pin(project, original, ref)
+        click.echo(
+            f"Moved the workspace pin in {WORKFLOW_FILE} from asta-plugins@{original_ref} "
+            f"to @{ref}, the installed asta's release (not committed)",
+            err=True,
+        )
+        # The workflow must not remain newer than the rules just loaded for it.
+        (project / ".asta/cache/workspace.mk").touch()
+    return archive
+
+
+def _sync_workspace(
+    project: Path, repository: str, ref: str, refresh: bool, require_scripts: bool
+) -> bytes:
+    """Prepare and validate the selected release before publishing a pin move."""
     if message := workspace_versions.pin_too_old(ref, WORKFLOW_FILE):
         raise click.ClickException(message)
     cli = workspace_versions.installed()
@@ -763,23 +789,6 @@ def bump_pin(project: Path) -> None:
 UNATTENDED_ENV = ("ASTA_WORKSPACE_RESOLVED_SHA", "CI", "GITHUB_ACTIONS")
 
 
-def move_pin_forward(project: Path, ref: str) -> str:
-    """Move a release pin behind the installed asta up to it, uncommitted, like a lockfile."""
-    if any(os.environ.get(name) for name in UNATTENDED_ENV):
-        return ref
-    target = workspace_versions.pin_target(ref, workspace_versions.installed())
-    if target is None:
-        return ref
-    _reject_workflow_symlinks(project)
-    _write_pin(project, (project / WORKFLOW_FILE).read_bytes(), target)
-    click.echo(
-        f"Moved the workspace pin in {WORKFLOW_FILE} from asta-plugins@{ref} to "
-        f"@{target}, the installed asta's release (not committed)",
-        err=True,
-    )
-    return target
-
-
 def _reject_workflow_symlinks(project: Path) -> None:
     for relative in (".github", ".github/workflows", WORKFLOW_FILE):
         if (project / relative).is_symlink():
@@ -795,10 +804,13 @@ def _write_pin(project: Path, original: bytes, target: str) -> None:
         if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
             start, end = match.span("ref")
             lines[index] = line[:start] + target + line[end:]
-    workflow.write_bytes("".join(lines).encode("utf-8"))
-    if selected_source(project)[1] != target:
-        workflow.write_bytes(original)
-        raise click.ClickException(f"Could not move the pin in {workflow}")
+    _atomic_write(workflow, "".join(lines).encode("utf-8"))
+    try:
+        if selected_source(project)[1] != target:
+            raise click.ClickException(f"Could not move the pin in {workflow}")
+    except BaseException:
+        _atomic_write(workflow, original)
+        raise
 
 
 def _git(project: Path, *args: str) -> subprocess.CompletedProcess:
