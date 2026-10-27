@@ -1006,7 +1006,7 @@ def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
     site = repo / "_site/paper-previews/paper"
     assert (site / "main.pdf").is_file()
     assert json.loads((site / "latex-errors.json").read_text()) == {
-        "errors": 2,
+        "errors": 1,
         "warnings": 0,
         "latexmk_exit_status": 12,
     }
@@ -1033,6 +1033,83 @@ def test_compiler_failure_with_pdf_and_no_counted_errors_is_reported(tmp_path):
     assert (site / "main.log").is_file()
     assert "Compiler exited with status 12 but produced a PDF" in result.stdout
     assert "LaTeX reported 0 error(s)" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("log", "expected"),
+    [
+        ("./conference draft.tex:3: Undefined control sequence.\n! Emergency stop.", 1),
+        ("./parts/draft:v2.tex:3: Undefined control sequence.\n! Emergency stop.", 1),
+        ("! Undefined control sequence.\n! Emergency stop.", 1),
+        ("! First error.\n! Second error.\n! Emergency stop.", 2),
+        (
+            "./main.tex:3: First error.\n./main.tex:8: Second error.\n! Emergency stop.",
+            2,
+        ),
+        ("! Emergency stop.", 1),
+    ],
+)
+def test_error_count_handles_source_paths_and_emergency_summaries(
+    tmp_path, log, expected
+):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_LATEX_LOG": log})
+
+    site = repo / "_site/paper-previews/paper"
+    assert json.loads((site / "latex-errors.json").read_text())["errors"] == expected
+
+
+def test_reused_output_directory_drops_diagnostics_and_diff_after_clean_rebuild(
+    tmp_path,
+):
+    repo, base, env, _ = paper_repo(tmp_path)
+    run(
+        "bash",
+        str(SCRIPT),
+        base,
+        cwd=repo,
+        env={**env, "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence."},
+    )
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "latex-errors.json").exists()
+    assert (site / "what-changed.pdf").exists()
+    (site / "build-failed.txt").write_text("earlier failure")
+    (site / "main.bbl").write_text("earlier bibliography")
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (site / "main.pdf").read_text() == "pdf"
+    for name in (
+        "latex-errors.json",
+        "main.log",
+        "build-failed.txt",
+        "main.bbl",
+        "what-changed.pdf",
+    ):
+        assert not (site / name).exists(), name
+
+
+def test_reused_output_directory_does_not_publish_old_pdf_on_failure(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+    (bin_dir / "latexmk").write_text("#!/bin/sh\nexit 12\n")
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+def test_published_log_removes_workspace_prefix(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    log = f"{repo}/paper/main.tex:3: Undefined control sequence."
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_LATEX_LOG": log})
+
+    published = (repo / "_site/paper-previews/paper/main.log").read_text()
+    assert str(repo) not in published
+    assert "paper/main.tex:3: Undefined control sequence." in published
 
 
 def test_latex_errors_without_pdf_fail(tmp_path):

@@ -105,7 +105,11 @@ fi
 # Like Overleaf, keep going past LaTeX errors (-f) and fail only without a PDF.
 # ASTA_PAPER_STRICT=1 (the live example) halts and fails on any LaTeX error.
 if [ "${ASTA_PAPER_STRICT:-}" = 1 ]; then error_mode=-halt-on-error; else error_mode=-f; fi
-rm -f "$dir/build/$stem.pdf"
+# A local rebuild can reuse both directories. Never publish artifacts from an
+# earlier attempt, including a diff that would otherwise take over the viewer.
+rm -f "$dir/build/$stem.pdf" "$dir/build/$stem.log" \
+  "$site_dir/main.pdf" "$site_dir/main.bbl" "$site_dir/what-changed.pdf" \
+  "$site_dir/latex-errors.json" "$site_dir/main.log" "$site_dir/build-failed.txt"
 latexmk_status=0
 (cd "$dir" && latexmk -e '$pdf_mode ||= 1; $deps_escape = "none";' -recorder -deps-out="build/$stem.dep" \
   -interaction=nonstopmode "$error_mode" -file-line-error -outdir=build "./$main") || latexmk_status=$?
@@ -113,7 +117,16 @@ if [ ! -f "$dir/build/$stem.log" ]; then
   annotation error "$dir/$main" "LaTeX did not write $dir/build/$stem.log"
   exit 1
 fi
-errors=$(grep -Ec '^(! |[^ :]+:[0-9]+: )' "$dir/build/$stem.log" || true)
+# File-line diagnostics can contain spaces or colons in the source path. TeX
+# also emits an emergency-stop summary; count that only if no real error was
+# reported. Fall back to classic ! diagnostics when file-line mode is absent.
+errors=$(grep -Ec '^.+:[0-9]+: ' "$dir/build/$stem.log" || true)
+errors=${errors:-0}
+if [ "$errors" -eq 0 ]; then
+  errors=$(grep '^! ' "$dir/build/$stem.log" | grep -Evc '^! Emergency stop\.' || true)
+  errors=${errors:-0}
+  if [ "$errors" -eq 0 ] && grep -q '^! Emergency stop\.' "$dir/build/$stem.log"; then errors=1; fi
+fi
 if [ "${ASTA_PAPER_STRICT:-}" = 1 ] && { [ "$latexmk_status" -ne 0 ] || [ "$errors" -gt 0 ]; }; then
   annotation error "$dir/$main" "LaTeX reported $errors error(s); strict builds fail on any error"
   exit 1
@@ -134,7 +147,13 @@ if grep -Eiq 'Citation .+ undefined|There were undefined citations|Empty bibliog
 fi
 # The paper page and PR comment show the count with the log beside the PDF.
 if [ "$errors" -gt 0 ] || [ "$latexmk_status" -ne 0 ] || [ "$warnings" -gt 0 ]; then
-  cp "$dir/build/$stem.log" "$site_dir/main.log"
+  python3 - "$dir/build/$stem.log" "$site_dir/main.log" "$PWD" <<'PY'
+import pathlib
+import sys
+
+source, target, root = sys.argv[1:]
+pathlib.Path(target).write_text(pathlib.Path(source).read_text(errors="replace").replace(root + "/", ""))
+PY
   printf '{"errors":%s,"warnings":%s,"latexmk_exit_status":%s}\n' "$errors" "$warnings" "$latexmk_status" > "$site_dir/latex-errors.json"
 fi
 if [ "$errors" -gt 0 ]; then

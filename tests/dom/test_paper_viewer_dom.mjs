@@ -51,7 +51,7 @@ async function runViewer({ files = [], reject = false, stored = {}, contents = {
   });
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(requests, [
-    [base + "build-failed.txt", "GET"], [base + "latex-errors.json", "GET"],
+    [base + "build-failed.txt", "HEAD"], [base + "latex-errors.json", "GET"],
     [base + "main.pdf", "HEAD"], [base + "what-changed.pdf", "HEAD"],
   ]);
   const press = key => (listeners.keydown ?? []).forEach(listener => listener({ key }));

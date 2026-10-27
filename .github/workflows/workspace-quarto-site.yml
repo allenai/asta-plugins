@@ -365,6 +365,7 @@ jobs:
           git worktree add "$tmp" gh-pages
 
           if [ "$PUBLISH_MAIN" = "true" ]; then
+            # BEGIN main publication
             # Main deploy: replace the site root, keep pr-preview/. A paper that
             # failed to build keeps its last good PDF, next to the failure note.
             if [ -d "$GITHUB_WORKSPACE/_site/paper-previews" ]; then
@@ -372,13 +373,23 @@ jobs:
                 while IFS= read -r -d '' note; do
                   rel=${note#"$GITHUB_WORKSPACE/_site/"}; rel=${rel%/build-failed.txt}
                   if [ ! -f "$GITHUB_WORKSPACE/_site/$rel/main.pdf" ] && [ -f "$tmp/$rel/main.pdf" ]; then
+                    # Keep the bibliography paired with the retained PDF. Diffs
+                    # and diagnostics from another build must not describe it.
+                    rm -f "$GITHUB_WORKSPACE/_site/$rel/main.bbl" \
+                      "$GITHUB_WORKSPACE/_site/$rel/what-changed.pdf" \
+                      "$GITHUB_WORKSPACE/_site/$rel/latex-errors.json" \
+                      "$GITHUB_WORKSPACE/_site/$rel/main.log"
                     cp "$tmp/$rel/main.pdf" "$GITHUB_WORKSPACE/_site/$rel/main.pdf"
+                    if [ -f "$tmp/$rel/main.bbl" ]; then
+                      cp "$tmp/$rel/main.bbl" "$GITHUB_WORKSPACE/_site/$rel/main.bbl"
+                    fi
                     printf 'The latest version did not build; this is the last PDF that built.\n' >> "$note"
                   fi
                 done
             fi
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
+            # END main publication
           else
             # PR preview: publish under pr-preview/pr-<N>/.
             rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
@@ -458,9 +469,10 @@ jobs:
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/latex-errors.json" ]; then
-                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w, s=r.get("errors", 0), r.get("warnings", 0), r.get("latexmk_exit_status", 0); print(", ".join(p for p in (e and f"{e} LaTeX error(s)", s and not e and f"a compiler failure (exit status {s})", w and f"{w} warning(s) (unresolved citations or a missing bibliography)") if p) or "build diagnostics")' "$paper_dir/latex-errors.json")
+                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w, s=r.get("errors", 0), r.get("warnings", 0), r.get("latexmk_exit_status", 0); print(" and ".join(p for p in (e and f"{e} LaTeX error" + ("" if e == 1 else "s"), s and not e and f"a compiler failure (exit status {s})", w and f"{w} warning" + ("" if w == 1 else "s") + " (unresolved citations or a missing bibliography)") if p) or "build diagnostics")' "$paper_dir/latex-errors.json" 2>/dev/null) || report="build diagnostics"
                 body=$(printf '%s\n⚠️ %s built with %s, as Overleaf would; log: %s/main.log' "$body" "$label" "$report" "$paper_url")
               fi
+              # End paper build diagnostics
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")
               fi

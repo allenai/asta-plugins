@@ -1551,20 +1551,31 @@ def _workflow_snippet(start: str, end: str) -> str:
     return textwrap.dedent(text[begin : text.index(end, begin) + len(end)])
 
 
-def test_failed_default_branch_paper_keeps_last_good_pdf(tmp_path: Path) -> None:
+@pytest.mark.parametrize("previous_bibliography", [False, True])
+def test_failed_default_branch_paper_keeps_last_good_pdf(
+    tmp_path: Path, previous_bibliography: bool
+) -> None:
     workspace, published = tmp_path / "workspace", tmp_path / "published"
     failed = workspace / "_site/paper-previews/paper"
     failed.mkdir(parents=True)
     (failed / "build-failed.txt").write_text("LaTeX produced no PDF\n")
+    for name in ("main.bbl", "what-changed.pdf", "latex-errors.json", "main.log"):
+        (failed / name).write_text("mismatched artifact")
     built = workspace / "_site/paper-previews/other"
     built.mkdir(parents=True)
     (built / "main.pdf").write_text("new other")
     for name, pdf in [("paper", "last good"), ("other", "old other")]:
         (published / "paper-previews" / name).mkdir(parents=True)
         (published / "paper-previews" / name / "main.pdf").write_text(pdf)
+    previous = published / "paper-previews/paper"
+    if previous_bibliography:
+        (previous / "main.bbl").write_text("last good bibliography")
+    (previous / "what-changed.pdf").write_text("old diff")
+    (previous / "latex-errors.json").write_text('{"errors":3}')
+    (previous / "main.log").write_text("old log")
     script = _workflow_snippet(
-        "# Main deploy: replace the site root",
-        'cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"',
+        "# BEGIN main publication",
+        "# END main publication",
     )
 
     subprocess.run(
@@ -1583,6 +1594,13 @@ def test_failed_default_branch_paper_keeps_last_good_pdf(tmp_path: Path) -> None
         in (published / "paper-previews/paper/build-failed.txt").read_text()
     )
     assert (published / "paper-previews/other/main.pdf").read_text() == "new other"
+    retained = published / "paper-previews/paper"
+    if previous_bibliography:
+        assert (retained / "main.bbl").read_text() == "last good bibliography"
+    else:
+        assert not (retained / "main.bbl").exists()
+    for name in ("what-changed.pdf", "latex-errors.json", "main.log"):
+        assert not (retained / name).exists(), name
 
 
 @pytest.mark.parametrize("empty_paper_directory", [False, True])
@@ -1599,8 +1617,8 @@ def test_default_branch_site_without_papers_still_publishes(
     (published / "pr-preview/pr-7/index.html").write_text("existing preview")
     (published / "index.html").write_text("old site")
     script = _workflow_snippet(
-        "# Main deploy: replace the site root",
-        'cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"',
+        "# BEGIN main publication",
+        "# END main publication",
     )
 
     subprocess.run(
@@ -1620,27 +1638,36 @@ def test_default_branch_site_without_papers_still_publishes(
 @pytest.mark.parametrize(
     ("report", "expected"),
     [
-        ({"errors": 2, "warnings": 0}, "2 LaTeX error(s), as Overleaf"),
+        ({"errors": 2, "warnings": 0}, "2 LaTeX errors, as Overleaf"),
+        ({"errors": 1, "warnings": 0}, "1 LaTeX error, as Overleaf"),
         (
             {"errors": 0, "warnings": 1},
-            "1 warning(s) (unresolved citations or a missing bibliography), as Overleaf",
+            "1 warning (unresolved citations or a missing bibliography), as Overleaf",
+        ),
+        (
+            {"errors": 2, "warnings": 1},
+            "2 LaTeX errors and 1 warning (unresolved citations or a missing bibliography), as Overleaf",
         ),
         (
             {"errors": 0, "warnings": 0, "latexmk_exit_status": 12},
             "a compiler failure (exit status 12), as Overleaf",
         ),
+        ("malformed JSON", "build diagnostics, as Overleaf"),
     ],
 )
 def test_pr_comment_reports_latex_errors_with_log(tmp_path, report, expected) -> None:
     paper_dir = tmp_path / "paper"
     paper_dir.mkdir()
-    (paper_dir / "latex-errors.json").write_text(json.dumps(report))
+    (paper_dir / "latex-errors.json").write_text(
+        report if isinstance(report, str) else json.dumps(report)
+    )
     script = _workflow_snippet(
-        'if [ -f "$paper_dir/latex-errors.json" ]; then', "              fi\n"
+        'if [ -f "$paper_dir/latex-errors.json" ]; then',
+        "# End paper build diagnostics",
     )
 
     result = subprocess.run(
-        ["bash", "-c", script + 'printf "%s" "$body"'],
+        ["bash", "-e", "-o", "pipefail", "-c", script + '\nprintf "%s" "$body"'],
         env={
             **os.environ,
             "paper_dir": str(paper_dir),
