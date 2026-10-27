@@ -1623,7 +1623,7 @@ def test_default_branch_site_without_papers_still_publishes(
         ({"errors": 2, "warnings": 0}, "2 LaTeX error(s), as Overleaf"),
         (
             {"errors": 0, "warnings": 1},
-            "unresolved citations or a missing bibliography, as Overleaf",
+            "1 warning(s) (unresolved citations or a missing bibliography), as Overleaf",
         ),
         (
             {"errors": 0, "warnings": 0, "latexmk_exit_status": 12},

@@ -122,7 +122,7 @@ test("errors the paper built past show beside the PDF with the log", async () =>
   });
   const issues = document.querySelector(".paper-issues");
   assert.equal(issues.hidden, false);
-  assert.match(issues.textContent, /2 LaTeX errors and unresolved citations or a missing bibliography/);
+  assert.match(issues.textContent, /2 LaTeX errors and 1 warning \(unresolved citations or a missing bibliography\)/);
   assert.equal(issues.querySelector("a").getAttribute("href"), base + "main.log");
 });
 

@@ -458,7 +458,7 @@ jobs:
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
               fi
               if [ -f "$paper_dir/latex-errors.json" ]; then
-                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w, s=r.get("errors", 0), r.get("warnings", 0), r.get("latexmk_exit_status", 0); print(", ".join(p for p in (e and f"{e} LaTeX error(s)", s and not e and f"a compiler failure (exit status {s})", w and "unresolved citations or a missing bibliography") if p) or "build diagnostics")' "$paper_dir/latex-errors.json")
+                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w, s=r.get("errors", 0), r.get("warnings", 0), r.get("latexmk_exit_status", 0); print(", ".join(p for p in (e and f"{e} LaTeX error(s)", s and not e and f"a compiler failure (exit status {s})", w and f"{w} warning(s) (unresolved citations or a missing bibliography)") if p) or "build diagnostics")' "$paper_dir/latex-errors.json")
                 body=$(printf '%s\n⚠️ %s built with %s, as Overleaf would; log: %s/main.log' "$body" "$label" "$report" "$paper_url")
               fi
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then

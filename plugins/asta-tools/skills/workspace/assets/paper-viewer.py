@@ -349,7 +349,7 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
     const parts = [];
     if (errors) parts.push(errors + (errors === 1 ? ' LaTeX error' : ' LaTeX errors'));
     if (latexmk_exit_status && !errors) parts.push('a compiler failure (exit status ' + latexmk_exit_status + ')');
-    if (warnings) parts.push('unresolved citations or a missing bibliography');
+    if (warnings) parts.push(warnings + (warnings === 1 ? ' warning' : ' warnings') + ' (unresolved citations or a missing bibliography)');
     note('This PDF built with ' + (parts.join(' and ') || 'build diagnostics') + '.', 'main.log', 'See the log');
   }});
   Promise.all([exists('main.pdf'), exists('what-changed.pdf')]).then(([clean, marked]) => {{
