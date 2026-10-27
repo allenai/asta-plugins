@@ -43,7 +43,7 @@ Before opening any workspace PR, for both local and headless agents, keep the pi
 
 1. Commit your work, then run `make check`.
 2. If it moved the pin, commit only that change as its own commit: `git commit -m "Move workspace pin to asta-plugins@<release>" -- .github/workflows/docs.yml`.
-3. If `make check` failed after moving the pin, run it again on the old release: `git revert --no-edit HEAD`, then `make check`. If that passes, the new release broke the build: hold the old release by replacing the old release's ref in `docs.yml` with its commit SHA (`git ls-remote https://github.com/allenai/asta-plugins.git refs/tags/<old release>^{}`), commit that as its own commit, and say in the PR that the pin holds the old release and why.
+3. If `make check` failed after moving the pin, run it again on the old release, pinned by commit so sync leaves it alone: in `docs.yml`, replace the ref with the old release's commit SHA (the last SHA `git ls-remote https://github.com/allenai/asta-plugins.git 'refs/tags/<old release>' 'refs/tags/<old release>^{}'` prints), then run `make check`. If that passes, the new release broke the build: commit the SHA pin as its own commit and say in the PR that the pin holds the old release and why. If it fails too, the new release isn't the cause: `git checkout -- .github/workflows/docs.yml` and fix the build.
 
 For a headless agent (the user only sees results via deployed URL):
 
