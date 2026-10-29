@@ -24,6 +24,12 @@ Asking the agent to set up an "asta workspace" will trigger the `asta-tools:work
 This will set up a persistent document server for the project. Artifacts created by humans or agents
 will be checked into the repo and published on a `github.io` URL
 
+### Overleaf sync
+
+To keep a workspace paper in step with an Overleaf project, ask `@gas2own` in `#s2-ai-automation` to add
+your repo to its Overleaf sync, then invite the Overleaf account it names to your Overleaf project.
+The workspace skill's [Overleaf sync guide](../asta-tools/skills/workspace/workflows/overleaf-sync.md) covers the rest.
+
 ### Example
 
  - Slack channel: [#ai-for-science-survey](https://allenai.slack.com/archives/C0APB5FEZSA)
