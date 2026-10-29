@@ -18,6 +18,8 @@ from click.testing import CliRunner
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
 
+pytestmark = pytest.mark.usefixtures("pinned_workspace")
+
 
 def project_with_ref(
     tmp_path: Path, ref: str, repository: str = "allenai/asta-plugins"
@@ -411,6 +413,89 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "managed-preview" in result.stdout
+
+
+@pytest.mark.parametrize("fail_once", [False, True])
+@pytest.mark.parametrize(
+    "guard", ["CI", "GITHUB_ACTIONS", "ASTA_WORKSPACE_RESOLVED_SHA"]
+)
+def test_thin_makefile_resyncs_after_the_asta_version_or_pin_mode_changes(
+    tmp_path: Path, fail_once: bool, guard: str
+) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    project = project_with_ref(tmp_path, "v0.110.0")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(source.read_text())
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    version = tmp_path / "version"
+    syncs = tmp_path / "syncs"
+    failure = tmp_path / "fail-sync"
+    fake_cli = tool_dir / "asta"
+    fake_cli.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = --version ]; then echo "asta, version $(cat {version})"; exit 0; fi\n'
+        'if [ "$3" = --help ]; then exit 0; fi\n'
+        f"echo sync >> {syncs}\n"
+        f'if [ -f "{failure}" ]; then rm "{failure}"; exit 1; fi\n'
+        "mkdir -p .asta/cache\n"
+        "printf 'preview:\\n\\t@echo managed-preview\\n' > .asta/cache/workspace.mk\n"
+    )
+    fake_cli.chmod(0o755)
+    env = {**os.environ, "PATH": str(tool_dir) + os.pathsep + os.environ["PATH"]}
+    for name in ("CI", "GITHUB_ACTIONS", "ASTA_WORKSPACE_RESOLVED_SHA"):
+        env.pop(name, None)
+    env[guard] = "a" * 40 if guard == "ASTA_WORKSPACE_RESOLVED_SHA" else "true"
+
+    def preview(cli_version: str, succeeds: bool = True) -> int:
+        version.write_text(cli_version)
+        result = subprocess.run(
+            ["make", "preview"],
+            cwd=project,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        if succeeds:
+            assert result.returncode == 0, result.stderr
+            assert "managed-preview" in result.stdout
+        else:
+            assert result.returncode != 0
+        return len(syncs.read_text().splitlines())
+
+    assert preview("0.110.0") == 1
+    assert preview("0.110.0") == 1
+    stamp = project / ".asta/cache/asta-version"
+    original_stamp = stamp.read_text()
+    assert original_stamp.startswith("asta, version 0.110.0 ")
+    # Equal, future mtimes simulate a coarse clock and rule out timestamp ordering.
+    coarse_time = int(time.time()) + 60
+    for path in (stamp, project / ".asta/cache/workspace.mk"):
+        os.utime(path, (coarse_time, coarse_time))
+    if fail_once:
+        failure.touch()
+        assert preview("0.113.0", succeeds=False) == 2
+        assert stamp.read_text() == original_stamp
+    assert preview("0.113.0") == 2 + fail_once
+    unattended_stamp = stamp.read_text()
+    assert unattended_stamp.startswith("asta, version 0.113.0 ")
+    assert preview("0.113.0") == 2 + fail_once
+
+    # The same CLI must check for a pin move on the first local run after CI.
+    env.pop(guard)
+    assert preview("0.113.0") == 3 + fail_once
+    assert stamp.read_text() != unattended_stamp
+    assert preview("0.113.0") == 3 + fail_once
+    # Reusing the cache in unattended mode must also restore the pinned rules.
+    env[guard] = "a" * 40 if guard == "ASTA_WORKSPACE_RESOLVED_SHA" else "true"
+    assert preview("0.113.0") == 4 + fail_once
+    assert stamp.read_text() == unattended_stamp
+    assert preview("0.113.0") == 4 + fail_once
 
 
 def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:

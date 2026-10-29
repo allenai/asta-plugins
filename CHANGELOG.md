@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- A workspace's pin in `.github/workflows/docs.yml` now works like a lockfile:
+  `asta workspace sync`, run locally, moves a release pin that is behind the
+  installed asta forward to its release, without committing, and says so in
+  one line. It never moves a pin backward and leaves `main`, `latest` and
+  commit pins alone; CI and the Overleaf sync runner build the pin as
+  committed. The managed Makefile reruns sync when the installed asta changes,
+  and the workspace skill commits a moved pin as its own commit before a PR
+  instead of running `asta workspace bump-pin`. If the new release cannot be
+  fetched, sync keeps the old pin and tries its rules, including an offline
+  cached copy. Concurrent workflow edits are preserved, and agents commit a
+  pin move only after its checks pass.
+
 - What changed shows a page title with an HTML entity, such as a non-breaking
   space or `&`, as the page does, instead of the escaped entity text.
 
@@ -41,8 +53,8 @@
 
 - Add `asta workspace bump-pin`: when `.github/workflows/docs.yml` pins a
   release older than the installed asta's final release, commit a move of the
-  pin to that release as its own commit. The workspace skill runs it before an
-  agent opens a PR and drops the commit if the bump breaks the build.
+  pin to that release as its own commit. This explicit command remains available;
+  workspace agents now use sync as described above.
 - Add `asta workspace overleaf sync --wait SECONDS` for papers synced by hand:
   one call reruns sync through checks, the quiet merge run and another run's
   recent lock until it completes or a person must act, bounded by the deadline.

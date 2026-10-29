@@ -494,11 +494,53 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     repository, ref = selected_source(project)
+    original_ref = ref
+    if not _is_unattended():
+        ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
+    if ref != original_ref:
+        _reject_workflow_symlinks(project)
+        original = (project / WORKFLOW_FILE).read_bytes()
+    try:
+        archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
+    except _WorkspaceFetchError:
+        if ref == original_ref:
+            raise
+        click.echo(
+            f"Could not fetch asta-plugins@{ref}; keeping the workspace pin at "
+            f"@{original_ref} and trying its rules",
+            err=True,
+        )
+        return _sync_workspace(
+            project, repository, original_ref, refresh, require_scripts
+        )
+    if ref != original_ref:
+        _reject_workflow_symlinks(project)
+        if (project / WORKFLOW_FILE).read_bytes() != original:
+            raise click.ClickException(
+                f"{WORKFLOW_FILE} changed during sync; left it unchanged. Run sync again."
+            )
+        _write_pin(project, original, ref)
+        click.echo(
+            f"Moved the workspace pin in {WORKFLOW_FILE} from asta-plugins@{original_ref} "
+            f"to @{ref}, the installed asta's release (not committed)",
+            err=True,
+        )
+        # The workflow must not remain newer than the rules just loaded for it.
+        (project / ".asta/cache/workspace.mk").touch()
+    return archive
+
+
+class _WorkspaceFetchError(click.ClickException):
+    """The selected source could not be fetched and no matching cache exists."""
+
+
+def _sync_workspace(
+    project: Path, repository: str, ref: str, refresh: bool, require_scripts: bool
+) -> bytes:
+    """Prepare and validate the selected release before publishing a pin move."""
     if message := workspace_versions.pin_too_old(ref, WORKFLOW_FILE):
         raise click.ClickException(message)
     cli = workspace_versions.installed()
-    if message := workspace_versions.pin_behind(ref, cli, WORKFLOW_FILE):
-        click.echo(message, err=True)
     source_ref = os.environ.get("ASTA_WORKSPACE_RESOLVED_SHA") or ref
     resolved_repository = os.environ.get("ASTA_WORKSPACE_RESOLVED_REPOSITORY")
     if resolved_repository and resolved_repository.casefold() != repository.casefold():
@@ -639,7 +681,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
     try:
         asset, archive = load_asset(repository, source_ref)
         scripts = load_scripts(archive)
-    except click.ClickException:
+    except click.ClickException as exc:
         if cache_valid:
             _require_cli(target.read_bytes(), ref, cli)
             if require_scripts:
@@ -649,7 +691,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
                 f"Could not refresh asta-plugins@{ref}; using the cached copy", err=True
             )
             return cached_archive
-        raise
+        raise _WorkspaceFetchError(str(exc)) from exc
     _require_cli(asset, ref, cli)
     if require_scripts:
         _require_scripts(asset, scripts, ref)
@@ -703,11 +745,7 @@ def bump_pin(project: Path) -> None:
     """Commit an upgrade from an older release pin to the installed asta release."""
     project = project.resolve()
     workflow = project / WORKFLOW_FILE
-    for relative in (".github", ".github/workflows", WORKFLOW_FILE):
-        if (project / relative).is_symlink():
-            raise click.ClickException(
-                f"Workspace workflow path must not contain symlinks: {relative}"
-            )
+    _reject_workflow_symlinks(project)
     _, ref = selected_source(project)
     target = workspace_versions.pin_target(ref, workspace_versions.installed())
     if target is None:
@@ -723,20 +761,13 @@ def bump_pin(project: Path) -> None:
             f"{WORKFLOW_FILE} has uncommitted changes; commit them first"
         )
     original = workflow.read_bytes()
-    lines = original.decode("utf-8").splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
-            start, end = match.span("ref")
-            lines[index] = line[:start] + target + line[end:]
     message = f"Move workspace pin to asta-plugins@{target}"
     head = _git(project, "rev-parse", "HEAD")
     if head.returncode != 0:
         raise click.ClickException("Could not determine the workflow's Git HEAD")
     commit_started = False
     try:
-        workflow.write_bytes("".join(lines).encode("utf-8"))
-        if selected_source(project)[1] != target:
-            raise click.ClickException(f"Could not move the pin in {workflow}")
+        _write_pin(project, original, target)
         commit_started = True
         committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
         if committed.returncode != 0:
@@ -769,6 +800,43 @@ def bump_pin(project: Path) -> None:
         workflow.write_bytes(original)
         raise
     click.echo(f"Committed {sha}: {message} (was @{ref})")
+
+
+# Runs that build a commit (CI, the Overleaf sync runner) must build the pin it names.
+UNATTENDED_ENV = ("ASTA_WORKSPACE_RESOLVED_SHA", "CI", "GITHUB_ACTIONS")
+
+
+def _is_unattended() -> bool:
+    return any(
+        bool(os.environ.get(name))
+        if name == "ASTA_WORKSPACE_RESOLVED_SHA"
+        else os.environ.get(name, "").strip().casefold() not in ("", "0", "false")
+        for name in UNATTENDED_ENV
+    )
+
+
+def _reject_workflow_symlinks(project: Path) -> None:
+    for relative in (".github", ".github/workflows", WORKFLOW_FILE):
+        if (project / relative).is_symlink():
+            raise click.ClickException(
+                f"Workspace workflow path must not contain symlinks: {relative}"
+            )
+
+
+def _write_pin(project: Path, original: bytes, target: str) -> None:
+    workflow = project / WORKFLOW_FILE
+    lines = original.decode("utf-8").splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
+            start, end = match.span("ref")
+            lines[index] = line[:start] + target + line[end:]
+    _atomic_write(workflow, "".join(lines).encode("utf-8"))
+    try:
+        if selected_source(project)[1] != target:
+            raise click.ClickException(f"Could not move the pin in {workflow}")
+    except BaseException:
+        _atomic_write(workflow, original)
+        raise
 
 
 def _git(project: Path, *args: str) -> subprocess.CompletedProcess:
