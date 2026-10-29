@@ -10,6 +10,16 @@
   },
   "rules": [
     {
+      "type": "pull_request",
+      "parameters": {
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": false
+      }
+    },
+    {
       "type": "required_status_checks",
       "parameters": {
         "strict_required_status_checks_policy": false,
