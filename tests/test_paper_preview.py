@@ -1249,3 +1249,67 @@ def test_strict_build_fails_on_any_latex_error(tmp_path):
     assert result.returncode == 1
     assert "strict builds fail" in result.stdout
     assert "-halt-on-error" in (repo / "paper/latexmk-args.txt").read_text()
+
+
+# Log lines as pdfTeX 1.40.29 writes them with -file-line-error, where the stop
+# summaries take the file:line form too.
+PDFTEX_STRICT_UNDEFINED_LOG = (
+    "./iclr2027_conference.tex:39: Undefined control sequence.\n"
+    "l.39 \\undefinedcommand\n"
+    "./iclr2027_conference.tex:39: "
+    " ==> Fatal error occurred, no output PDF file produced!"
+)
+PDFTEX_MISSING_PACKAGE_LOG = (
+    "! LaTeX Error: File `nonexistentpackageasta.sty' not found.\n"
+    "Type X to quit or <RETURN> to proceed,\n"
+    "./iclr2027_conference.tex:9: Emergency stop.\n"
+    "./iclr2027_conference.tex:9:  ==> Fatal error occurred, no output PDF file produced!"
+)
+
+
+def test_strict_error_count_excludes_file_line_stop_summary(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("rm -f build/main.pdf\nexit 12\n")
+    env = {
+        **env,
+        "ASTA_PAPER_STRICT": "1",
+        "FAKE_LATEX_LOG": PDFTEX_STRICT_UNDEFINED_LOG,
+    }
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "LaTeX reported 1 error(s)" in result.stdout
+
+
+def test_missing_package_counts_the_error_not_the_stop_summaries(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("rm -f build/main.pdf\nexit 12\n")
+    env = {**env, "FAKE_LATEX_LOG": PDFTEX_MISSING_PACKAGE_LOG}
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "LaTeX produced no PDF (1 error(s))" in result.stdout
+
+
+def test_file_line_stop_summary_alone_counts_as_one_error(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    log = "./main.tex:9: Emergency stop.\n./main.tex:9:  ==> Fatal error occurred, no output PDF file produced!"
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_LATEX_LOG": log})
+
+    site = repo / "_site/paper-previews/paper"
+    assert json.loads((site / "latex-errors.json").read_text())["errors"] == 1
+
+
+def test_build_records_main_stem_for_failure_log(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (repo / "paper/build/.asta-paper-stem").read_text().strip() == "main"

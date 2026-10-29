@@ -21,6 +21,8 @@ def _run_paper_step(
     download_fails: bool = False,
     workflow_ref: str = "owner/repo/workflow.yml@refs/heads/main",
     pull_failures: int = 5,
+    run_fails: bool = False,
+    build_files: dict[str, str] | None = None,
 ):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -33,6 +35,9 @@ def _run_paper_step(
     paper = project / "paper"
     paper.mkdir(parents=True)
     (paper / "main.tex").write_text("paper")
+    for name, text in (build_files or {}).items():
+        (paper / "build").mkdir(exist_ok=True)
+        (paper / "build" / name).write_text(text)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     curl = bin_dir / "curl"
@@ -48,6 +53,7 @@ def _run_paper_step(
     docker.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$DOCKER_LOG"\n'
+        '[ "$1" != run ] || exit "${DOCKER_RUN_STATUS:-0}"\n'
         '[ "$1" = pull ] || exit 0\n'
         "attempt=$(grep -c '^pull ' \"$DOCKER_LOG\")\n"
         '[ "$attempt" -gt "$PULL_FAILURES" ]\n'
@@ -63,6 +69,7 @@ def _run_paper_step(
         "PULL_FAILURES": str(pull_failures),
         "DISCOVERY_SOURCE": str(source.resolve()),
         "FAIL_CURL": "1" if download_fails else "0",
+        "DOCKER_RUN_STATUS": "1" if run_fails else "0",
     }
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
@@ -1682,3 +1689,19 @@ def test_pr_comment_reports_latex_errors_with_log(tmp_path, report, expected) ->
 
     assert expected in result.stdout
     assert "https://x/paper-previews/paper/main.log" in result.stdout
+
+
+def test_failed_paper_note_includes_log_of_non_main_tex_file(tmp_path: Path) -> None:
+    project, result = _run_paper_step(
+        tmp_path,
+        pull_failures=0,
+        run_fails=True,
+        build_files={
+            ".asta-paper-stem": "iclr2027_conference\n",
+            "iclr2027_conference.log": "./iclr2027_conference.tex:9: Emergency stop.\n",
+        },
+    )
+
+    assert result.returncode != 0
+    note = (project / "_site/paper-previews/paper/build-failed.txt").read_text()
+    assert "iclr2027_conference.tex:9: Emergency stop." in note

@@ -87,6 +87,8 @@ PY
 main=$(find_main "$dir") || exit 0
 stem=${main%.tex}
 mkdir -p "$dir/build" "$site_dir"
+# The site workflow reads this to find the LaTeX log when the build fails.
+printf '%s\n' "$stem" > "$dir/build/.asta-paper-stem"
 printf '{"changed":false}\n' > "$site_dir/preview.json"
 
 # The -tex image selects its shared rc; otherwise skip host-wide defaults such
@@ -118,16 +120,14 @@ if [ ! -f "$dir/build/$stem.log" ]; then
   annotation error "$dir/$main" "LaTeX did not write $dir/build/$stem.log"
   exit 1
 fi
-# File-line diagnostics can contain spaces or colons in the source path. TeX
-# also emits an emergency-stop summary; count that only if no real error was
-# reported. Fall back to classic ! diagnostics when file-line mode is absent.
-errors=$(grep -Ec '^.+:[0-9]+: ' "$dir/build/$stem.log" || true)
+# Diagnostics are "! msg" or, with -file-line-error, "path:line: msg"; the path
+# can contain spaces or colons. A stop summary (Emergency stop, Fatal error
+# occurred) can take either form and counts only when no real error was reported.
+diagnostic='^(! |.+:[0-9]+: )'
+stop_summary="$diagnostic *(Emergency stop\\.|==> Fatal error occurred)"
+errors=$(grep -E "$diagnostic" "$dir/build/$stem.log" | grep -Evc "$stop_summary" || true)
 errors=${errors:-0}
-if [ "$errors" -eq 0 ]; then
-  errors=$(grep '^! ' "$dir/build/$stem.log" | grep -Evc '^! Emergency stop\.' || true)
-  errors=${errors:-0}
-  if [ "$errors" -eq 0 ] && grep -q '^! Emergency stop\.' "$dir/build/$stem.log"; then errors=1; fi
-fi
+if [ "$errors" -eq 0 ] && grep -Eq "$stop_summary" "$dir/build/$stem.log"; then errors=1; fi
 if [ "${ASTA_PAPER_STRICT:-}" = 1 ] && { [ "$latexmk_status" -ne 0 ] || [ "$errors" -gt 0 ]; }; then
   annotation error "$dir/$main" "LaTeX reported $errors error(s); strict builds fail on any error"
   exit 1

@@ -224,7 +224,8 @@ jobs:
                 {
                   echo "The paper in $d/ failed to build; the rest of the preview was published without it."
                   echo
-                  if [ -f "$d/build/main.log" ]; then tail -n 200 "$d/build/main.log"; fi
+                  stem=$(cat "$d/build/.asta-paper-stem" 2>/dev/null || echo main)
+                  if [ -f "$d/build/$stem.log" ]; then tail -n 200 "$d/build/$stem.log"; fi
                   for log in "$d"/build/*.blg; do
                     if [ -f "$log" ]; then tail -n 100 "$log"; fi
                   done
