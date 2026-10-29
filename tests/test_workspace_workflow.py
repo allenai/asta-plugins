@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -20,6 +21,8 @@ def _run_paper_step(
     download_fails: bool = False,
     workflow_ref: str = "owner/repo/workflow.yml@refs/heads/main",
     pull_failures: int = 5,
+    run_fails: bool = False,
+    build_files: dict[str, str] | None = None,
 ):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -32,6 +35,9 @@ def _run_paper_step(
     paper = project / "paper"
     paper.mkdir(parents=True)
     (paper / "main.tex").write_text("paper")
+    for name, text in (build_files or {}).items():
+        (paper / "build").mkdir(exist_ok=True)
+        (paper / "build" / name).write_text(text)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     curl = bin_dir / "curl"
@@ -47,6 +53,7 @@ def _run_paper_step(
     docker.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$DOCKER_LOG"\n'
+        '[ "$1" != run ] || exit "${DOCKER_RUN_STATUS:-0}"\n'
         '[ "$1" = pull ] || exit 0\n'
         "attempt=$(grep -c '^pull ' \"$DOCKER_LOG\")\n"
         '[ "$attempt" -gt "$PULL_FAILURES" ]\n'
@@ -62,6 +69,7 @@ def _run_paper_step(
         "PULL_FAILURES": str(pull_failures),
         "DISCOVERY_SOURCE": str(source.resolve()),
         "FAIL_CURL": "1" if download_fails else "0",
+        "DOCKER_RUN_STATUS": "1" if run_fails else "0",
     }
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
@@ -1542,3 +1550,158 @@ def test_preview_comment_reports_asta_plugins_version_change(
         assert any("issues/comments/123 -X PATCH" in command for command in commands)
     else:
         assert any("issues/7/comments -f body=" in command for command in commands)
+
+
+def _workflow_snippet(start: str, end: str) -> str:
+    text = WORKFLOW.read_text()
+    begin = text.index(start)
+    return textwrap.dedent(text[begin : text.index(end, begin) + len(end)])
+
+
+@pytest.mark.parametrize("previous_bibliography", [False, True])
+def test_failed_default_branch_paper_keeps_last_good_pdf(
+    tmp_path: Path, previous_bibliography: bool
+) -> None:
+    workspace, published = tmp_path / "workspace", tmp_path / "published"
+    failed = workspace / "_site/paper-previews/paper"
+    failed.mkdir(parents=True)
+    (failed / "build-failed.txt").write_text("LaTeX produced no PDF\n")
+    for name in ("main.bbl", "what-changed.pdf", "latex-errors.json", "main.log"):
+        (failed / name).write_text("mismatched artifact")
+    built = workspace / "_site/paper-previews/other"
+    built.mkdir(parents=True)
+    (built / "main.pdf").write_text("new other")
+    for name, pdf in [("paper", "last good"), ("other", "old other")]:
+        (published / "paper-previews" / name).mkdir(parents=True)
+        (published / "paper-previews" / name / "main.pdf").write_text(pdf)
+    previous = published / "paper-previews/paper"
+    if previous_bibliography:
+        (previous / "main.bbl").write_text("last good bibliography")
+    (previous / "what-changed.pdf").write_text("old diff")
+    (previous / "latex-errors.json").write_text('{"errors":3}')
+    (previous / "main.log").write_text("old log")
+    script = _workflow_snippet(
+        "# BEGIN main publication",
+        "# END main publication",
+    )
+
+    subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + script],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_WORKSPACE": str(workspace),
+            "tmp": str(published),
+        },
+        check=True,
+    )
+
+    assert (published / "paper-previews/paper/main.pdf").read_text() == "last good"
+    assert (
+        "did not build"
+        in (published / "paper-previews/paper/build-failed.txt").read_text()
+    )
+    assert (published / "paper-previews/other/main.pdf").read_text() == "new other"
+    retained = published / "paper-previews/paper"
+    if previous_bibliography:
+        assert (retained / "main.bbl").read_text() == "last good bibliography"
+    else:
+        assert not (retained / "main.bbl").exists()
+    for name in ("what-changed.pdf", "latex-errors.json", "main.log"):
+        assert not (retained / name).exists(), name
+
+
+@pytest.mark.parametrize("empty_paper_directory", [False, True])
+def test_default_branch_site_without_papers_still_publishes(
+    tmp_path: Path, empty_paper_directory: bool
+) -> None:
+    workspace, published = tmp_path / "workspace", tmp_path / "published"
+    site = workspace / "_site"
+    site.mkdir(parents=True)
+    (site / "index.html").write_text("new site")
+    if empty_paper_directory:
+        (site / "paper-previews").mkdir()
+    (published / "pr-preview/pr-7").mkdir(parents=True)
+    (published / "pr-preview/pr-7/index.html").write_text("existing preview")
+    (published / "index.html").write_text("old site")
+    script = _workflow_snippet(
+        "# BEGIN main publication",
+        "# END main publication",
+    )
+
+    subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + script],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_WORKSPACE": str(workspace),
+            "tmp": str(published),
+        },
+        check=True,
+    )
+
+    assert (published / "index.html").read_text() == "new site"
+    assert (published / "pr-preview/pr-7/index.html").read_text() == "existing preview"
+
+
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        ({"errors": 2, "warnings": 0}, "2 LaTeX errors, as Overleaf"),
+        ({"errors": 1, "warnings": 0}, "1 LaTeX error, as Overleaf"),
+        (
+            {"errors": 0, "warnings": 1},
+            "1 warning (unresolved citations or a missing bibliography), as Overleaf",
+        ),
+        (
+            {"errors": 2, "warnings": 1},
+            "2 LaTeX errors and 1 warning (unresolved citations or a missing bibliography), as Overleaf",
+        ),
+        (
+            {"errors": 0, "warnings": 0, "latexmk_exit_status": 12},
+            "a compiler failure (exit status 12), as Overleaf",
+        ),
+        ("malformed JSON", "build diagnostics, as Overleaf"),
+    ],
+)
+def test_pr_comment_reports_latex_errors_with_log(tmp_path, report, expected) -> None:
+    paper_dir = tmp_path / "paper"
+    paper_dir.mkdir()
+    (paper_dir / "latex-errors.json").write_text(
+        report if isinstance(report, str) else json.dumps(report)
+    )
+    script = _workflow_snippet(
+        'if [ -f "$paper_dir/latex-errors.json" ]; then',
+        "# End paper build diagnostics",
+    )
+
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script + '\nprintf "%s" "$body"'],
+        env={
+            **os.environ,
+            "paper_dir": str(paper_dir),
+            "label": "Paper",
+            "paper_url": "https://x/paper-previews/paper",
+            "body": "",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert expected in result.stdout
+    assert "https://x/paper-previews/paper/main.log" in result.stdout
+
+
+def test_failed_paper_note_includes_log_of_non_main_tex_file(tmp_path: Path) -> None:
+    project, result = _run_paper_step(
+        tmp_path,
+        pull_failures=0,
+        run_fails=True,
+        build_files={
+            ".asta-paper-stem": "iclr2027_conference\n",
+            "iclr2027_conference.log": "./iclr2027_conference.tex:9: Emergency stop.\n",
+        },
+    )
+
+    assert result.returncode != 0
+    note = (project / "_site/paper-previews/paper/build-failed.txt").read_text()
+    assert "iclr2027_conference.tex:9: Emergency stop." in note

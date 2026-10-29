@@ -20,6 +20,10 @@ on:
         description: Quarto CLI version used to render generated sources
         type: string
         default: release
+      paper-strict:
+        description: Fail paper builds on any LaTeX error (for the live example), instead of building past errors as Overleaf does
+        type: boolean
+        default: false
       artifact-command:
         description: Optional project command after rendering and paper previews, before publication
         type: string
@@ -127,6 +131,7 @@ jobs:
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           WORKFLOW_REF: ${{ job.workflow_ref }}
+          ASTA_PAPER_STRICT: ${{ inputs.paper-strict && '1' || '' }}
         run: |
           if [ -e _site/paper-previews ]; then
             echo '::error::Quarto output already uses paper-previews/; reserve that path for paper previews'
@@ -210,7 +215,7 @@ jobs:
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
             if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
-                --user "$(id -u):$(id -g)" -e HOME=/tmp \
+                --user "$(id -u):$(id -g)" -e HOME=/tmp -e ASTA_PAPER_STRICT \
                 -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
                 "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
@@ -219,7 +224,8 @@ jobs:
                 {
                   echo "The paper in $d/ failed to build; the rest of the preview was published without it."
                   echo
-                  if [ -f "$d/build/main.log" ]; then tail -n 200 "$d/build/main.log"; fi
+                  stem=$(cat "$d/build/.asta-paper-stem" 2>/dev/null || echo main)
+                  if [ -f "$d/build/$stem.log" ]; then tail -n 200 "$d/build/$stem.log"; fi
                   for log in "$d"/build/*.blg; do
                     if [ -f "$log" ]; then tail -n 100 "$log"; fi
                   done
@@ -360,9 +366,31 @@ jobs:
           git worktree add "$tmp" gh-pages
 
           if [ "$PUBLISH_MAIN" = "true" ]; then
-            # Main deploy: replace the site root, keep pr-preview/.
+            # BEGIN main publication
+            # Main deploy: replace the site root, keep pr-preview/. A paper that
+            # failed to build keeps its last good PDF, next to the failure note.
+            if [ -d "$GITHUB_WORKSPACE/_site/paper-previews" ]; then
+              find "$GITHUB_WORKSPACE/_site/paper-previews" -name build-failed.txt -print0 |
+                while IFS= read -r -d '' note; do
+                  rel=${note#"$GITHUB_WORKSPACE/_site/"}; rel=${rel%/build-failed.txt}
+                  if [ ! -f "$GITHUB_WORKSPACE/_site/$rel/main.pdf" ] && [ -f "$tmp/$rel/main.pdf" ]; then
+                    # Keep the bibliography paired with the retained PDF. Diffs
+                    # and diagnostics from another build must not describe it.
+                    rm -f "$GITHUB_WORKSPACE/_site/$rel/main.bbl" \
+                      "$GITHUB_WORKSPACE/_site/$rel/what-changed.pdf" \
+                      "$GITHUB_WORKSPACE/_site/$rel/latex-errors.json" \
+                      "$GITHUB_WORKSPACE/_site/$rel/main.log"
+                    cp "$tmp/$rel/main.pdf" "$GITHUB_WORKSPACE/_site/$rel/main.pdf"
+                    if [ -f "$tmp/$rel/main.bbl" ]; then
+                      cp "$tmp/$rel/main.bbl" "$GITHUB_WORKSPACE/_site/$rel/main.bbl"
+                    fi
+                    printf 'The latest version did not build; this is the last PDF that built.\n' >> "$note"
+                  fi
+                done
+            fi
             find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/_site/." "$tmp/"
+            # END main publication
           else
             # PR preview: publish under pr-preview/pr-<N>/.
             rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
@@ -441,6 +469,11 @@ jobs:
               if [ -f "$paper_dir/build-failed.txt" ]; then
                 body=$(printf '%s\n⚠️ %s build failed (preview published without it): %s/build-failed.txt' "$body" "$label" "$paper_url")
               fi
+              if [ -f "$paper_dir/latex-errors.json" ]; then
+                report=$(python3 -c 'import json, sys; r=json.load(open(sys.argv[1])); e, w, s=r.get("errors", 0), r.get("warnings", 0), r.get("latexmk_exit_status", 0); print(" and ".join(p for p in (e and f"{e} LaTeX error" + ("" if e == 1 else "s"), s and not e and f"a compiler failure (exit status {s})", w and f"{w} warning" + ("" if w == 1 else "s") + " (unresolved citations or a missing bibliography)") if p) or "build diagnostics")' "$paper_dir/latex-errors.json" 2>/dev/null) || report="build diagnostics"
+                body=$(printf '%s\n⚠️ %s built with %s, as Overleaf would; log: %s/main.log' "$body" "$label" "$report" "$paper_url")
+              fi
+              # End paper build diagnostics
               if [ -f "$paper_dir/preview.json" ] && grep -q '"removed":true' "$paper_dir/preview.json"; then
                 body=$(printf '%s\n🗑️ %s removed' "$body" "$label")
               fi

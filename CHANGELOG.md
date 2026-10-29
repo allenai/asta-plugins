@@ -14,6 +14,13 @@
   cached copy. Concurrent workflow edits are preserved, and agents commit a
   pin move only after its checks pass.
 
+- Workspace papers compile past LaTeX errors like Overleaf: a produced PDF
+  passes with error and citation-warning counts and a log on the paper page
+  and PR comment. Failed default-branch builds retain the last published PDF
+  and matching bibliography; the live example remains strict. Rebuilds clear
+  stale bibliography artifacts and publish the arXiv bibliography download
+  only after a successful compilation without citation or bibliography warnings.
+
 - What changed shows a page title with an HTML entity, such as a non-breaking
   space or `&`, as the page does, instead of the escaped entity text.
 

@@ -451,8 +451,9 @@ def test_new_paper_links_current_pdf_without_diff_warning(tmp_path):
     }
 
 
-def test_paper_preview_rejects_unresolved_citations(tmp_path):
+def test_strict_paper_preview_rejects_unresolved_citations(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
+    env["ASTA_PAPER_STRICT"] = "1"
     env["FAKE_BIBTEX_LOG"] = 'Warning--I didn\'t find a database entry for "missing"'
 
     result = subprocess.run(
@@ -464,8 +465,9 @@ def test_paper_preview_rejects_unresolved_citations(tmp_path):
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
 
 
-def test_paper_preview_rejects_missing_bibliography_command(tmp_path):
+def test_strict_paper_preview_rejects_missing_bibliography_command(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
+    env["ASTA_PAPER_STRICT"] = "1"
     env["FAKE_BIBTEX_LOG"] = (
         r"I found no \bibdata command---while reading file main.aux"
     )
@@ -479,8 +481,9 @@ def test_paper_preview_rejects_missing_bibliography_command(tmp_path):
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
 
 
-def test_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
+def test_strict_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
     repo, _, env, _ = paper_repo(tmp_path)
+    env["ASTA_PAPER_STRICT"] = "1"
     env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
 
     result = subprocess.run(
@@ -489,6 +492,24 @@ def test_paper_preview_rejects_undefined_citation_in_latex_log(tmp_path):
 
     assert result.returncode != 0
     assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+def test_unresolved_citations_with_pdf_pass_and_are_reported(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
+
+    result = run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert json.loads((site / "latex-errors.json").read_text()) == {
+        "errors": 0,
+        "warnings": 1,
+        "latexmk_exit_status": 0,
+    }
+    assert (
+        "::warning" in result.stdout and "Unresolved paper citations" in result.stdout
+    )
 
 
 def test_paper_preview_publishes_arxiv_bibliography(tmp_path):
@@ -500,6 +521,113 @@ def test_paper_preview_publishes_arxiv_bibliography(tmp_path):
     assert (repo / "_site/paper-previews/paper/main.bbl").read_text().strip() == env[
         "FAKE_BBL"
     ]
+
+
+def test_rebuild_does_not_publish_cached_bibliography(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_BBL": "old bibliography"})
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.bbl").read_text().strip() == "old bibliography"
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (site / "main.pdf").is_file()
+    assert not (site / "main.bbl").exists()
+
+
+@pytest.mark.parametrize("latexmk_status", [0, 12])
+@pytest.mark.parametrize("citation_warning", [False, True])
+def test_bibliography_download_requires_successful_current_build(
+    tmp_path, latexmk_status, citation_warning
+):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    env["FAKE_BBL"] = "current bibliography"
+    if citation_warning:
+        env["FAKE_LATEX_LOG"] = "LaTeX Warning: Citation `missing' on page 1 undefined"
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write(f"exit {latexmk_status}\n")
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert (site / "main.bbl").exists() == (
+        latexmk_status == 0 and not citation_warning
+    )
+
+
+@pytest.mark.parametrize(
+    ("latex_log", "bib_log", "expected"),
+    [
+        (
+            "LaTeX Warning: Citation `first' on page 1 undefined\n"
+            "LaTeX Warning: Citation `second' on page 2 undefined\n"
+            "LaTeX Warning: There were undefined citations.",
+            "",
+            2,
+        ),
+        ("LaTeX Warning: There were undefined citations.", "", 1),
+        (
+            "",
+            'Warning--I didn\'t find a database entry for "first"\n'
+            'Warning--I didn\'t find a database entry for "second"',
+            2,
+        ),
+        (
+            "LaTeX Warning: There were undefined citations.",
+            'Warning--I didn\'t find a database entry for "first"\n'
+            'Warning--I didn\'t find a database entry for "second"',
+            2,
+        ),
+        (
+            "LaTeX Warning: Citation `missing' on page 1 undefined",
+            'Warning--I didn\'t find a database entry for "missing"',
+            2,
+        ),
+        ("Package biblatex Warning: Empty bibliography\nPlease (re)run Biber", "", 2),
+        ("No file main.bbl.", "", 1),
+    ],
+)
+def test_warning_count_reports_diagnostic_lines(tmp_path, latex_log, bib_log, expected):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run(
+        "bash",
+        str(SCRIPT),
+        cwd=repo,
+        env={**env, "FAKE_LATEX_LOG": latex_log, "FAKE_BIBTEX_LOG": bib_log},
+    )
+
+    site = repo / "_site/paper-previews/paper"
+    assert json.loads((site / "latex-errors.json").read_text())["warnings"] == expected
+    published_log = (site / "main.log").read_text()
+    if latex_log:
+        assert latex_log in published_log
+    if bib_log:
+        assert bib_log in published_log
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_clean_rebuild_clears_old_bibliography_warnings(tmp_path, strict):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run(
+        "bash",
+        str(SCRIPT),
+        cwd=repo,
+        env={
+            **env,
+            "FAKE_BIBTEX_LOG": 'Warning--I didn\'t find a database entry for "missing"',
+        },
+    )
+    env["FAKE_BBL"] = "fresh bibliography"
+    if strict:
+        env["ASTA_PAPER_STRICT"] = "1"
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.bbl").read_text().strip() == "fresh bibliography"
+    assert not (site / "latex-errors.json").exists()
+    assert not (site / "main.log").exists()
 
 
 def test_unchanged_paper_has_no_diff_manifest(tmp_path):
@@ -969,3 +1097,219 @@ def test_new_paper_does_not_allocate_diff_worktree(tmp_path):
         "diff": False,
         "new": True,
     }
+
+
+def test_latex_errors_with_pdf_pass_and_are_reported(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("exit 12\n")
+    env = {
+        **env,
+        "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence.\n! Emergency stop.",
+    }
+
+    result = run("bash", str(SCRIPT), base, cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert json.loads((site / "latex-errors.json").read_text()) == {
+        "errors": 1,
+        "warnings": 0,
+        "latexmk_exit_status": 12,
+    }
+    assert "Undefined control sequence" in (site / "main.log").read_text()
+    assert "produced a PDF" in result.stdout
+    commands = (repo / "paper/latexmk-args.txt").read_text().splitlines()
+    assert "-halt-on-error" not in commands[0] and " -f " in commands[0]
+
+
+def test_compiler_failure_with_pdf_and_no_counted_errors_is_reported(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("exit 12\n")
+
+    result = run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "main.pdf").is_file()
+    assert json.loads((site / "latex-errors.json").read_text()) == {
+        "errors": 0,
+        "warnings": 0,
+        "latexmk_exit_status": 12,
+    }
+    assert (site / "main.log").is_file()
+    assert "Compiler exited with status 12 but produced a PDF" in result.stdout
+    assert "LaTeX reported 0 error(s)" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("log", "expected"),
+    [
+        ("./conference draft.tex:3: Undefined control sequence.\n! Emergency stop.", 1),
+        ("./parts/draft:v2.tex:3: Undefined control sequence.\n! Emergency stop.", 1),
+        ("! Undefined control sequence.\n! Emergency stop.", 1),
+        ("! First error.\n! Second error.\n! Emergency stop.", 2),
+        (
+            "./main.tex:3: First error.\n./main.tex:8: Second error.\n! Emergency stop.",
+            2,
+        ),
+        ("! Emergency stop.", 1),
+    ],
+)
+def test_error_count_handles_source_paths_and_emergency_summaries(
+    tmp_path, log, expected
+):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_LATEX_LOG": log})
+
+    site = repo / "_site/paper-previews/paper"
+    assert json.loads((site / "latex-errors.json").read_text())["errors"] == expected
+
+
+def test_reused_output_directory_drops_diagnostics_and_diff_after_clean_rebuild(
+    tmp_path,
+):
+    repo, base, env, _ = paper_repo(tmp_path)
+    run(
+        "bash",
+        str(SCRIPT),
+        base,
+        cwd=repo,
+        env={**env, "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence."},
+    )
+    site = repo / "_site/paper-previews/paper"
+    assert (site / "latex-errors.json").exists()
+    assert (site / "what-changed.pdf").exists()
+    (site / "build-failed.txt").write_text("earlier failure")
+    (site / "main.bbl").write_text("earlier bibliography")
+
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (site / "main.pdf").read_text() == "pdf"
+    for name in (
+        "latex-errors.json",
+        "main.log",
+        "build-failed.txt",
+        "main.bbl",
+        "what-changed.pdf",
+    ):
+        assert not (site / name).exists(), name
+
+
+def test_reused_output_directory_does_not_publish_old_pdf_on_failure(tmp_path):
+    repo, _, env, bin_dir = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+    (bin_dir / "latexmk").write_text("#!/bin/sh\nexit 12\n")
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+def test_published_log_removes_workspace_prefix(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    log = f"{repo}/paper/main.tex:3: Undefined control sequence."
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_LATEX_LOG": log})
+
+    published = (repo / "_site/paper-previews/paper/main.log").read_text()
+    assert str(repo) not in published
+    assert "paper/main.tex:3: Undefined control sequence." in published
+
+
+def test_latex_errors_without_pdf_fail(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("rm -f build/main.pdf\nexit 12\n")
+    env = {**env, "FAKE_LATEX_LOG": "! Emergency stop."}
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "produced no PDF" in result.stdout
+    assert not (repo / "_site/paper-previews/paper/main.pdf").exists()
+
+
+def test_strict_build_fails_on_any_latex_error(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    env = {
+        **env,
+        "ASTA_PAPER_STRICT": "1",
+        "FAKE_LATEX_LOG": "./main.tex:3: Undefined control sequence.",
+    }
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "strict builds fail" in result.stdout
+    assert "-halt-on-error" in (repo / "paper/latexmk-args.txt").read_text()
+
+
+# Log lines as pdfTeX 1.40.29 writes them with -file-line-error, where the stop
+# summaries take the file:line form too.
+PDFTEX_STRICT_UNDEFINED_LOG = (
+    "./iclr2027_conference.tex:39: Undefined control sequence.\n"
+    "l.39 \\undefinedcommand\n"
+    "./iclr2027_conference.tex:39: "
+    " ==> Fatal error occurred, no output PDF file produced!"
+)
+PDFTEX_MISSING_PACKAGE_LOG = (
+    "! LaTeX Error: File `nonexistentpackageasta.sty' not found.\n"
+    "Type X to quit or <RETURN> to proceed,\n"
+    "./iclr2027_conference.tex:9: Emergency stop.\n"
+    "./iclr2027_conference.tex:9:  ==> Fatal error occurred, no output PDF file produced!"
+)
+
+
+def test_strict_error_count_excludes_file_line_stop_summary(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("rm -f build/main.pdf\nexit 12\n")
+    env = {
+        **env,
+        "ASTA_PAPER_STRICT": "1",
+        "FAKE_LATEX_LOG": PDFTEX_STRICT_UNDEFINED_LOG,
+    }
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "LaTeX reported 1 error(s)" in result.stdout
+
+
+def test_missing_package_counts_the_error_not_the_stop_summaries(tmp_path):
+    repo, base, env, bin_dir = paper_repo(tmp_path)
+    with (bin_dir / "latexmk").open("a") as mock:
+        mock.write("rm -f build/main.pdf\nexit 12\n")
+    env = {**env, "FAKE_LATEX_LOG": PDFTEX_MISSING_PACKAGE_LOG}
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), base], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    assert "LaTeX produced no PDF (1 error(s))" in result.stdout
+
+
+def test_file_line_stop_summary_alone_counts_as_one_error(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    log = "./main.tex:9: Emergency stop.\n./main.tex:9:  ==> Fatal error occurred, no output PDF file produced!"
+    run("bash", str(SCRIPT), cwd=repo, env={**env, "FAKE_LATEX_LOG": log})
+
+    site = repo / "_site/paper-previews/paper"
+    assert json.loads((site / "latex-errors.json").read_text())["errors"] == 1
+
+
+def test_build_records_main_stem_for_failure_log(tmp_path):
+    repo, _, env, _ = paper_repo(tmp_path)
+    run("bash", str(SCRIPT), cwd=repo, env=env)
+
+    assert (repo / "paper/build/.asta-paper-stem").read_text().strip() == "main"
