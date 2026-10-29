@@ -2,8 +2,9 @@
 
 Setup-only steps for pairing a paper repository with an Overleaf project kept
 in step by [`asta workspace overleaf sync`](overleaf-sync-command.md). Setup
-applies safe defaults with one yes from the project owner; each can be turned
-off later, with the consequence stated below.
+checks the repo defaults the workspace already applied and asks the project
+owner one yes only for what the sync alone needs; each can be turned off later,
+with the consequence stated below.
 
 ## 1. What the sync can't work without
 
@@ -29,8 +30,9 @@ loudly, so they are not optional and need no per-run check.
   `refs/asta/` refs that hold its sync record and lock, open PRs, and write
   issues for its notices.
 
-Then the project owner invites the sync account as Editor (Share → invite by
-email). Never share a personal Overleaf token.
+The project owner then invites the sync account as Editor, which step 3's one
+message asks for; send it before this check. Never share a personal Overleaf
+token.
 
 Check access once the sync account has accepted the invitation and made its
 Git token. Copy the project's Git URL from Overleaf's Git integration dialog,
@@ -52,8 +54,9 @@ is an Editor, not a Viewer or Reviewer.
 
 ## 2. What lets it run unattended
 
-Allow squash merges and let the sync identity merge: the sync squash-merges its
-PR to credit co-authors. An owner who would rather merge each sync PR can
+Allow squash merges, delete branches after merge, and let the sync identity
+merge: the sync squash-merges its PR to credit co-authors, and stale sync
+branches don't pile up. An owner who would rather merge each sync PR can
 decline; the sync then posts its notice and waits for them.
 
 Give the workspace its checks: the sync merges its PR only after at least one
@@ -62,30 +65,36 @@ to merge it, and `main` lags Overleaf until they do.
 
 ## 3. Defaults, applied with one yes
 
-Tell the owner, in one plain message before applying anything:
+**Check the repo's defaults; don't ask for them.** A workspace repo set up as
+[repo setup](repo-setup.md) describes already has them: a private repo, a
+private Pages site with PR previews, and both rulesets (`default-branch.json`,
+`docs-checks.json`). Check each with `gh repo view --json visibility`,
+`gh api repos/{owner}/{repo}/pages --jq .public`, and the read-back in
+[repo protections](repo-protections.md). If the repo already has rules, keep
+that guide's stop conditions and read-back: stop if they are not the shipped
+files. If a default is missing, propose it in the message below, with its cost
+from [repo setup](repo-setup.md), under the same yes.
+
+**Ask only for what only the sync needs.** Tell the owner, in one plain message
+before applying anything:
 
 - A direct push to `main` is refused, theirs included. Changes reach `main`
   through PRs whose paper builds.
 - Co-authors keep writing in Overleaf. Their edits arrive as a sync PR that
   merges itself once it builds.
-- Each default below can be turned off later in Settings → Rules (Overleaf
-  link sharing in Overleaf's Share menu), with the consequence listed.
+- Each default below can be turned off later in Overleaf's Share menu, with
+  the consequence listed.
 
-On one yes, apply all of them:
+The same yes covers step 2's merge settings. On it, the owner does both in
+Overleaf:
 
 | Default | Without it |
 |---|---|
-| No force-push on `main` (`default-branch.json`) | A force-push makes the next sync start over from its last known point, so published text can come back as conflicts, though no edit is lost. |
-| Link sharing off in Overleaf | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
-| Changes reach `main` only through PRs whose paper builds (`docs-checks.json`) | Text whose paper does not build can reach `main` and be published to Overleaf. |
-| Pages previews, branches deleted after merge, and a private repo for an unpublished paper | Changes can't be previewed before merge, stale sync branches pile up, and a public repo exposes the draft. |
+| The sync account invited as Editor (Share → invite by email) | The sync can't push co-authors' edits back to Overleaf. |
+| Link sharing off | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
 
-Apply the two rulesets as [repo protections](repo-protections.md) describes,
-with its stop conditions and read-back, but both together under this one yes
-rather than asking for each.
-
-After applying, read the settings back and confirm to the owner what is on,
-with a link to Settings → Rules, and what a refused push looks like
+Afterwards, confirm to the owner what is on, with a link to Settings → Rules,
+and what a refused push looks like
 (`GH013: Repository rule violations found`).
 
 ## 4. Told, not applied

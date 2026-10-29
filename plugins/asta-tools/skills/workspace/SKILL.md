@@ -47,7 +47,7 @@ Before opening any workspace PR, both local and headless agents run `make check`
 
 For a headless agent (the user only sees results via deployed URL):
 
-- **Bootstrap `main` if the repo is empty.** On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
+- **Bootstrap `main` if the repo is empty.** Propose the repo defaults first ([repo setup](workflows/repo-setup.md)). On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
 - First save: keep the pin current (above), then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
@@ -60,13 +60,13 @@ When `asta workspace overleaf pull` or `publish` refuses, or a sync PR conflicts
 
 ## Scaffold components as needed
 
-Add components only when needed; don't proactively offer.
+Add components only when needed; don't proactively offer them, except when you create a workspace's GitHub repo or set up one that exists but is empty (asked to share it, a Codespace, or a remote start in an empty repo). Then propose the repo defaults in one message and apply them on one yes: follow [`workflows/repo-setup.md`](workflows/repo-setup.md).
 
 | Component | When to add |
 |---|---|
 | **Quarto build tool** | Always — it's the project structure. |
 | **Version workflow stub** | Always for managed rules; enable automatic Pages deploy only when needed. |
-| **GitHub Pages deploy** | When you have no user-reachable port, or the user asks for a deployed URL. |
+| **GitHub Pages deploy** | When you have no user-reachable port, the user asks for a deployed URL, or the owner accepts the repo defaults. |
 | **Dev container** | User wants to avoid installing host dependencies, or wants browser-only access from another machine. See subsection for the two flows. |
 
 Before writing any file in the steps below, check whether the target path already exists. If it does, ask the user before overwriting, or merge the asset's contents into the existing file.
@@ -114,7 +114,8 @@ Structural validation of these entries belongs in deterministic build tooling. W
 
 1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — try it with `gh api`; if GitHub refuses, give the user the command.
 2. Configure Pages to serve from `gh-pages` with the shipped `assets/github-pages.json`: run `gh api repos/{owner}/{repo}/pages -X POST --input <skill-dir>/assets/github-pages.json`; if GitHub refuses, give the user that command, the file and GitHub's error. Read it back with `gh api repos/{owner}/{repo}/pages` and confirm the source matches; if Pages already exists with another source, tell the user.
-3. Optional, for this or any GitHub repo you set up: recommend repo protections (default-branch rulesets, required docs checks). Read `workflows/repo-protections.md` and follow it before proposing or applying any.
+3. Make the site private: `gh api repos/{owner}/{repo}/pages -X PUT -F public=false`. Read it back with `gh api repos/{owner}/{repo}/pages --jq .public` and confirm `false`. If GitHub refuses or the site reads back public, stop: if you created the site in step 2, take it down (`gh api repos/{owner}/{repo}/pages -X DELETE`) so nothing stays public, then tell the owner the site would be public, with GitHub's error, and ask how to proceed. Unpublished work never goes public by default.
+4. For a repo set up outside [`workflows/repo-setup.md`](workflows/repo-setup.md): recommend repo protections (default-branch rulesets, required docs checks). Read `workflows/repo-protections.md` and follow it before proposing or applying any.
 
 On every PR the workflow publishes a full rendered preview under
 `<pages>/pr-preview/pr-<N>/` and a `what-changed.html` beside it. The latter
@@ -128,4 +129,4 @@ content directly.
 Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`. If the project has a `paper/`, change `image` to the `-tex` variant (`ghcr.io/allenai/asta:latest-tex`, or `<version>-tex` when pinned) so LaTeX Workshop builds with the same TeX packages as the PR preview. The `-tex` image adds the LaTeX Workshop extension through its dev container metadata, so do not list it in `devcontainer.json`; one image covers any number of papers. Then pick the flow that matches the user's intent:
 
 - **Local container** (working on their machine without installs): run `make dev` to open VS Code attached to the local container.
-- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed), then `gh codespace create` and give the user the URL. Authenticate with `asta auth login` in the codespace terminal (persisted across rebuilds) or the optional `ASTA_TOKEN` Codespaces secret. Port 4848 raises a notification (`onAutoForward: notify`) and the forwarded preview URL is printed in the attach terminal. Open either link in a separate browser tab. `localhost:4848` in Simple Browser does not reach a browser-based codespace's forwarded port, and a private forwarded URL may fail in its embedded frame. Local VS Code can use **Ports → Preview in Editor**.
+- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed, with [repo setup](workflows/repo-setup.md)), then `gh codespace create` and give the user the URL. Authenticate with `asta auth login` in the codespace terminal (persisted across rebuilds) or the optional `ASTA_TOKEN` Codespaces secret. Port 4848 raises a notification (`onAutoForward: notify`) and the forwarded preview URL is printed in the attach terminal. Open either link in a separate browser tab. `localhost:4848` in Simple Browser does not reach a browser-based codespace's forwarded port, and a private forwarded URL may fail in its embedded frame. Local VS Code can use **Ports → Preview in Editor**.
