@@ -1,18 +1,11 @@
 # Overleaf sync
 
-Import the project with `asta workspace overleaf pull <url>`, review the paper
-and its `.asta/overleaf` record together, and merge them. Before enabling the schedule, the
-project owner must **turn off Overleaf link sharing** and invite each co-author
-(and the sync account) explicitly as an editor. Anyone who can edit this project
-can contribute paper content to the default branch through the sync PR.
+This is the agent and scheduler command reference. For when to sync and the
+short manual workflow, read [the researcher guide](../assets/DEVELOPER.md#sync-a-paper-with-overleaf).
+Pairing, access and repository settings belong in [setup](overleaf-sync.md).
+Record and publication contracts belong in [the technical reference](../../../../../docs/overleaf-sync.md).
 
 ## Sync by hand
-
-A paper without a scheduled runner is synced by a person or their agent. Sync
-at the moments co-authors' edits matter: **before editing the paper**, so you
-work on their latest text; **before merging a paper PR**, so their edits
-conflict on your change instead of being overwritten; and **after merging one**,
-so the merged change reaches Overleaf. Use one call that finishes:
 
 ```bash
 asta workspace overleaf sync --wait 1800
@@ -45,10 +38,7 @@ cancelled checks (the line names each one), or a required or rejected review. An
 such as no checks yet, a draft, or a merge blocked for no stated reason, keeps
 waiting; at the deadline, exit 5's line says what it last saw.
 
-A scheduled runner is worth it when co-authors edit in Overleaf between the
-moments above, for example several active co-authors or long stretches without
-an agent session, or when nobody reliably syncs by hand. Without `--wait`,
-sync behaves as scheduled runners expect, described below.
+Without `--wait`, sync behaves as scheduled runners expect, described below.
 
 ## Schedule sync
 
@@ -58,11 +48,10 @@ scheduler. Without `--dir`, it visits every paper paired by a tracked
 Use `--dir` to sync only one pairing. A failure on one paper does not stop the
 remaining papers; the command reports each failure and exits nonzero after
 attempting them all. `pull` and `publish` require `--dir` when several papers
-are paired. Supply the Overleaf
-Git token through `OVERLEAF_TOKEN` or the Git credential helper, configure Git's
-user.name/user.email, and authenticate `gh` for the workspace repository with
-contents, pull-request and issue write access. Install the GitHub CLI alongside
-Asta. No runner, service account or scheduler is prescribed here.
+are paired. Configure [Overleaf authentication and Git identity](../../../../../docs/overleaf-sync.md#authentication-and-hooks),
+and authenticate `gh` for the workspace repository with contents, pull-request
+and issue write access. Install the GitHub CLI alongside Asta. No runner,
+service account or scheduler is prescribed here.
 
 The command uses a temporary full clone, writes only the linked paper's files
 and its own pairing record to its branch, and leaves the caller's working tree alone. A remote lock
@@ -75,9 +64,8 @@ Fork PRs with the same branch name are ignored. Ownership is checked using the
 exact sync commit subjects and the diff limited to the paper and its pairing
 record, not cryptographic attestation.
 People with repository push access are trusted, as with pull/publish; they can
-copy these subjects. The build-configuration guard covers only `latexmkrc` and
-`.latexmkrc`; it is not a general execution sandbox. Quarto metadata, notebooks
-and filters can also execute code. Trust invited editors with the imported build
+copy these subjects. The build-configuration guard described below is not a
+general execution sandbox. Quarto metadata, notebooks and filters can also execute code. Trust invited editors with the imported build
 inputs before enabling automatic previews, keep TeX shell escape disabled, and
 run paper builds without privileged tokens or secrets.
 
@@ -118,12 +106,10 @@ merging. While waiting, the command prints GitHub's merge state and the required
 action; the PR description stays unchanged.
 
 Publish still sends only the default branch's committed paper. New Overleaf
-edits must reach that branch through the sync PR first. Publication and the two
-services cannot form one transaction: an edit racing the final fetch remains
-for the next run, and publish's existing ancestry and race checks apply.
-Configure required checks, default-branch PR requirements and squash merging
-in the repository as appropriate. The CLI publishes whatever reaches default;
-it does not inspect how that content was approved.
+edits must reach that branch through the sync PR first. An edit racing the
+final fetch remains for the next run; publication's
+[ancestry and race checks](../../../../../docs/overleaf-sync.md#failure-handling) apply.
+For required checks, PRs, approvals and squash merging, follow [setup](overleaf-sync.md).
 
 Refusals update one persistent status on the sync PR, or one labeled issue when
 no sync PR exists (including publication failures after a sync PR has merged).
@@ -138,17 +124,6 @@ Restore access and retry after transport failures. See [recovery](overleaf-recov
 
 ## Interrupted runs
 
-A killed process deliberately leaves its remote lock in place. This prevents
-a paused process from resuming after another publisher has taken over. Normal
-errors release it automatically. If sync says a run already owns the lock,
-a lock less than one hour old causes a successful skip without modifying status.
-A lock at least one hour old causes a nonzero refusal recorded on the open sync
-PR, or on a labeled issue if no sync PR exists. This is only a reporting threshold,
-not an expiry or evidence that the owner stopped. Age uses the lock creator's
-clock; clock skew can affect when a notice appears, but never transfers ownership. First
-confirm that the owning scheduler/process has stopped; then inspect and
-delete `refs/asta/overleaf-sync-lock/<project-id>` with an explicit
-`git push --force-with-lease=<ref>:<observed-object-id> origin :<ref>`. Do not
-remove a live run's lock. Retry sync; it reconstructs its state from GitHub and
-Overleaf, including a branch pushed before PR creation. Do not expire locks
-on a timer.
+An interrupted process can leave its remote lock in place. Age never transfers
+ownership. See [lock recovery](overleaf-recovery.md#interrupted-runs) before
+removing one; never expire locks on a timer.

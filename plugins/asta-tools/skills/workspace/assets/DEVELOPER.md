@@ -55,28 +55,28 @@ Keeping that intermediate LaTeX is useful even when you only want a PDF: preprin
 
 ## Sync a paper with Overleaf
 
-The workspace repo is the reviewed copy of the paper; Overleaf is where co-authors edit. One command keeps them in step:
+The workspace repo holds the paper that sync publishes; Overleaf is where co-authors edit. One command keeps them in step:
 
 ```bash
 asta workspace overleaf sync --wait 1800
 ```
 
-A run pulls co-authors' Overleaf edits into a sync PR, waits for its checks and merges it, then publishes the default branch's paper back to Overleaf. It never prompts, so you or your agent can run it in the background. It ends with one `Sync outcome:` line per paired paper: exit 0 means done, 4 means a person must act (the line says who and what), 5 means it was still waiting at the deadline (rerun; nothing is lost), and 1 means it failed (fix the cause it names, then rerun).
+A run pulls co-authors' Overleaf edits into a sync PR, waits for checks and any required approvals, merges it, then publishes the default branch's paper back to Overleaf. It never prompts, so you or your agent can run it in the background. It ends with one `Sync outcome:` line per paired paper: exit 0 means done, 4 means a person must act (the line says who and what), 5 means it was still waiting at the deadline (rerun; nothing is lost), and 1 means it failed (fix the cause it names, then rerun).
 
-**When to run it.** Before editing the paper, so you work on co-authors' latest text; before merging a paper PR, so their edits conflict with your change instead of being overwritten; and after merging one, so your change reaches Overleaf. If co-authors edit often between those moments, schedule it; see [Schedule sync](https://github.com/allenai/asta-plugins/blob/v0.121.0/plugins/asta-tools/skills/workspace/workflows/overleaf-sync-command.md#schedule-sync).
+**When to run it.** Before editing the paper, so you work on co-authors' latest text; before merging a paper PR, so their edits conflict with your change instead of being overwritten; and after merging one, so your change reaches Overleaf. If co-authors edit often between those moments, schedule it; see [Schedule sync](../workflows/overleaf-sync-command.md#schedule-sync).
 
 **Pairing, once.** On a branch, run `asta workspace overleaf pull https://git.overleaf.com/<project-id>`. It copies the Overleaf project into `paper/` and records the pairing in `.asta/overleaf/paper.json`. Review both in a PR and merge it. Before syncing on a schedule, the Overleaf project owner should turn off link sharing and invite each co-author as an editor, because anyone who can edit the project can change the paper through the sync PR. Sync uses your Overleaf Git token from `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password the token); it is never written to the repo.
 
-**Conflicts.** When you and a co-author change the same lines, the sync PR gets `workspace` / `overleaf` conflict markers and sync exits 4. Resolve them in the PR, merge it, and rerun. Concurrent edits to figures or other non-text files, and files added on both sides, are refused rather than merged; reconcile those by hand. When sync refuses, its message links the step that fixes it in the [recovery guide](https://github.com/allenai/asta-plugins/blob/v0.121.0/plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md).
+**Conflicts.** When you and a co-author change the same lines, the sync PR gets `workspace` / `overleaf` conflict markers and sync exits 4. Resolve them in the PR, merge it, and rerun. Concurrent edits to figures or other non-text files, and files added on both sides, are refused rather than merged; reconcile those by hand. When sync refuses, its message links the step that fixes it in the [recovery guide](../workflows/overleaf-recovery.md).
 
 **By hand.** `sync` runs two commands you can also run yourself:
 
 1. `asta workspace overleaf pull` (on a branch) brings Overleaf edits into `paper/`. Review with `git diff`, commit, and open a PR.
 2. After that PR merges, `asta workspace overleaf publish --dry-run`, then `asta workspace overleaf publish`. Publish refuses if Overleaf has edits you have not pulled.
 
-Merging to the default branch is the review gate: sync publishes whatever paper is there, so require PRs on that branch if every change should be reviewed. Keep paper figures and supplied files committed; untracked files are not published.
+Sync publishes the default branch. Require PRs with approving reviews there if every change needs human review; checks alone allow automatic merging. Keep paper figures and supplied files committed; untracked files are not published.
 
-How sync tracks where it left off, file-layout limits, authentication details and failure handling are in the [sync reference](https://github.com/allenai/asta-plugins/blob/v0.121.0/docs/overleaf-sync.md).
+Record rules, file limits, credentials and failure handling are in the [sync reference](../../../../../docs/overleaf-sync.md).
 
 ## Back a claim with supporting evidence
 
@@ -174,7 +174,7 @@ Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<o
 - **Pinned plus a Dependabot config**, for projects only people work on. Add a `.github/dependabot.yml` with a weekly `github-actions` update; Dependabot then opens a PR per release. A person must merge it: GitHub never lets the workflow token merge or auto-merge a PR that edits a workflow file, and every bump edits `docs.yml`.
 - **`@latest`**, for throwaway projects. No upkeep, but rebuilding an old commit uses today's tooling, and the live site picks up a new release only at the next push or a manual redeploy.
 
-`docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/v0.121.0/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying; see **Upgrading asta-plugins** above for how the pinned ref moves.
+`docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](../../../../../.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying; see **Upgrading asta-plugins** above for how the pinned ref moves.
 
 The PR's “What changed” page uses the version of `what-changed.py` shipped with the reusable workflow. To customize it, commit `scripts/what-changed.py` in your project; that copy takes precedence and runs in the read-only build job. The write-enabled deploy job only publishes its rendered output. A PR that changes the project script runs its changed copy for its own preview, so treat that page as a review aid rather than a trusted check.
 
