@@ -24,8 +24,14 @@ presence does not authorize changing existing rules. Keep the github.com and
 `docs.yml`/check-name preconditions above. Read all rulesets, including inherited
 ones (`gh api --paginate 'repos/{owner}/{repo}/rulesets?includes_parents=true'`),
 and read default-branch protection
-(`gh api repos/{owner}/{repo}/branches/<default-branch>/protection`). A failed
-lookup is not evidence of absence.
+(`gh api --include repos/{owner}/{repo}/branches/<default-branch>/protection`).
+Inspect the HTTP status and JSON error body even when `gh` exits nonzero:
+`200` means branch protection exists; `404` with `Branch not protected` confirms
+its absence, so verification continues. For a generic `404 Not Found`, confirm
+the repo, branch and credential's access to this endpoint before treating it
+as absence: [GitHub also uses 404 for authentication failures](https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api#404-not-found-for-an-existing-resource).
+Stop if that access is inconclusive or on any other error, including a failed
+ruleset listing. Never treat those failures as missing protections.
 
 - If no rules exist, report the defaults missing. Do not apply anything as part
   of verification.
