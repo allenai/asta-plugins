@@ -140,6 +140,15 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
    significance threshold; power or sample-size reasoning; and the robustness checks.
    ```
 
+   **Check the plan before going on.** When a model call fails, `theorize plan` can still save a plan with no search query and no schema, and print its usual next step. Both of these must exit 0 and print something non-empty: a search query, and a list of schema fields that includes the methods fields the mission asked for.
+
+   ```bash
+   theorize -p <run>/theory load plan --key output.paper_search_query
+   theorize -p <run>/theory load plan --key output.extraction_schema
+   ```
+
+   If either fails or is empty, stop. Read the error above the plan's output (often a model the endpoint does not serve), tell the person, and run the plan again once it is fixed. Check every later plan the same way, such as `plan-gaps` in step 5.
+
    Then gather papers from the local index, Paper Finder (Theory generation's step 2), or both, as [Papers from a local index](#papers-from-a-local-index) describes. Say how many papers came from each source, out of the target.
 
 2. **Extract,** once:
@@ -264,7 +273,7 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    **Check scale.** Set aside, and say why, any theory too broad to fail ("X influences Y"), any that only restates one study, and any that names no gap. A theory is at the right scale when one study, or one dataset, could decide its prediction, and deciding it would settle the gap it names.
 
-   **A second extraction only if needed.** If a chosen gap needs a variable the extraction did not record (check with `theorize -p <run>/theory show plan`), plan again with `mission.md --save-as plan-gaps`, extract with `--schema plan-gaps --schema-id schema-gaps --save-as extraction-gaps`, and generate from that extraction with `--extraction extraction-gaps`. Say so, and say what it costs: one more pass over every paper.
+   **A second extraction only if needed.** If a chosen gap needs a variable the extraction did not record (check with `theorize -p <run>/theory show plan`), plan again with `mission.md --save-as plan-gaps` and check it as in step 1, extract with `--schema plan-gaps --schema-id schema-gaps --save-as extraction-gaps`, and generate from that extraction with `--extraction extraction-gaps`. Say so, and say what it costs: one more pass over every paper.
 
    Read the theories from their saves (`theorize show theories-gaps`, `theorize show theories-gaps-typed`). Cluster them by the gap they close and the explanation they give, as in Theory generation's step 7.
 
