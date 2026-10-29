@@ -15,7 +15,7 @@ It differs from [Data Driven Theory Generation](data-driven-theory-generation.md
 | 3. Gap map | Theorizer sweeps the extraction for gap-shaped statements; the agent adds what the papers state as open, searches Paper Finder for each candidate gap, and drops those already answered | 6 sweep runs; one Paper Finder search per candidate gap |
 | Check-in | Shows the gap map; the person picks the gaps to target | |
 | 4. Theories | Theorizer generates theories aimed at the chosen gaps, from the same extraction, with the gap map as its mission | generation `gpt-6-sol`; one general pass, then one sweep run per Theorizer type the gaps call for |
-| 5. Predictions | The agent turns each theory into committed predictions | before any data is opened |
+| 5. Theory cards | The agent writes a card for each theory: rationale, known, unknown, proposal, how it closes the gap, supporting and falsifying experiments with the techniques that make them feasible, and all related evidence | committed before any data is opened |
 | 6. Data and testability | Takes the person's datasets, finds more with Data Search if needed, and judges which predictions each can decide | the person's datasets, plus any found during the run |
 | 7. Tests | Runs the committed tests and audits them; AutoDS may explore alongside | one test per prediction; AutoDS optional, 10 experiments |
 | 8. What is missing | Specifies the experiment or data each undecided prediction needs | |
@@ -56,7 +56,7 @@ The person may have a local paper index: an asta-documents index built with the 
 
 The person can give datasets at any point: with the question, at the check-in, or after the report. Each one goes into `<run>/data/<name>/` with its own description and test results.
 
-- **Keep it out of the theories.** A dataset given before step 5 is not opened, described or shown to Theorizer until the predictions are committed. Only its file names and a one-line summary from the person go into the plan. If the person wants their data to shape the theories, that is [Data Driven Theory Generation](data-driven-theory-generation.md), not this workflow.
+- **Keep it out of the theories.** A dataset given early is not opened, described or shown to Theorizer until the theory cards are committed in step 5. Only its file names and a one-line summary from the person go into the plan. If the person wants their data to shape the theories, that is [Data Driven Theory Generation](data-driven-theory-generation.md), not this workflow.
 - **Check independence.** Compare it with the corpus: same cohort, site, authors, accession or deposit as a paper the theories rest on? If yes, it is not an independent test. Say so, and report its results as consistency checks only.
 - **Describe it from its own documentation and the file.** Use Data Driven Theory Generation's step 2. Ask the person for a codebook or README when a column the predictions need has none; do not guess its meaning.
 - **A dataset given after the report** re-enters at step 6. The committed predictions stay unchanged. Re-judge testability, run steps 7 and 8 for it, and update the report: which undecided predictions it decided, and which remain.
@@ -201,10 +201,13 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
    - <finding, population, effect size, tags>
 
    WHAT EACH THEORY MUST GIVE:
-   - the variables, by name, each something that can be measured;
-   - the direction, and the form where possible (threshold, monotone, interaction);
-   - one prediction that would be false if the theory were wrong, in a setting where it has
-     not yet been tested.
+   - its rationale: how the known findings lead to it, and why it is the explanation the gap
+     calls for;
+   - what it proposes: the variables, by name, each something that can be measured; the
+     direction, and the form where possible (threshold, monotone, interaction);
+   - how it closes the gap: which answer to the gap's question it commits to;
+   - an experiment whose result would support it, and one whose result would falsify it, each
+     in a setting where it has not yet been tested.
    ```
 
    **Check scale.** Set aside, and say why, any theory too broad to fail ("X influences Y"), any that only restates one study, and any that names no gap. A theory is at the right scale when one study, or one dataset, could decide its prediction, and deciding it would settle the gap it names.
@@ -213,7 +216,54 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    Read the theories from their saves (`theorize show theories-gaps`, `theorize show theories-gaps-typed`). Cluster them by the gap they close and the explanation they give, as in Theory generation's step 7.
 
-5. **Predictions.** For each kept theory, write `<run>/theories/<id>.md`: the gap it targets, its predictions, and for each prediction the measured quantity, the statistic, the direction, and the threshold (significance and smallest effect that counts). Commit them before opening any data. Do not change them after.
+5. **Theory cards.** Write a card for each kept theory, in `<run>/theories/<id>.md`. Theorizer's output gives part of it: the statement, scope and special cases; the supporting, conflicting and unaccounted-for evidence; and what already exists, from its novelty evaluation. Write the rest from `gaps.md` and the extraction. Every claim on the card names its paper by tag.
+
+   ```
+   # <theory name> -- closes <gap IDs>
+
+   ## Rationale
+   How the known findings lead to this theory, step by step, and why it is a better answer to
+   the gap than its main rival. Name the rival.
+
+   ## What is known
+   The findings the theory builds on and must stay consistent with: finding, population,
+   effect size, tags. Note any known finding the theory overturns, and why.
+
+   ## What is unknown
+   The gap or gaps it targets, by ID, as questions, with the result of each gap's targeted
+   search.
+
+   ## What the theory proposes
+   The statement; the variables, each measurable; the direction and form; the scope; where it
+   should fail.
+
+   ## How it closes the gap
+   Which answer to each gap's question the theory commits to, and which experiment result
+   below would settle it.
+
+   ## Supporting experiments
+   Experiments whose predicted result would support the theory. A result counts as support
+   only if the main rival predicts otherwise.
+
+   ## Falsifying experiments
+   Experiments whose result would refute the theory. At least one per theory; a theory no
+   experiment could falsify fails the scale check.
+
+   ## Evidence
+   Every piece of related evidence, none left out: supporting, conflicting, and unaccounted
+   for, from Theorizer's output and the gap map, each with its tag and a one-line summary.
+   ```
+
+   Give each experiment, supporting or falsifying, these parts:
+   - **Design:** the system or population, what is varied or compared, and what is measured.
+   - **Prediction, committed:** the measured quantity, the statistic, the direction, and the threshold (significance and smallest effect that counts). For a falsifying experiment, the result that would refute the theory.
+   - **Feasibility:** the list of known techniques that make the experiment possible: for measuring each variable, for manipulating it if the design calls for that, and for the analysis. For each technique, give what it does in this experiment, a paper in the run that used it (tag), and its limits (resolution, scale, cost or access) as that paper reports them. If no paper in the run uses a technique for a variable, search Paper Finder for one (`theorize papers search "methods for measuring <variable> in <system>" --save-as techcheck-<id>`) and cite each technique the abstracts name by the paper's corpus id, marked "from abstract". If none is found, write "no known technique found". That is a finding: the experiment is not feasible yet, and the card says so.
+
+   An experiment supports a theory; it does not prove it. Use "support" and "falsify" on the card, never "prove".
+
+   **Check the cards** as the gap map is checked: every tag is in the run, every known and gap matches `gaps.md`, and every technique's paper reports using it. A subagent given only the cards, `gaps.md` and the extraction is the cleanest check.
+
+   Commit the cards before opening any data. Do not change the predictions after; later steps add results beside them.
 
 6. **Data and testability.** Start with the person's datasets (see [Datasets from the person](#datasets-from-the-person)). If they leave predictions untested, or the person gave none, Data Search finds more data independent of the corpus: a different cohort, site, instrument, period or method from the studies the theory was built on. Use Data Driven Theory Generation's step 2 to find, describe and measure the data. Then judge each prediction:
    - **testable:** the data has the same quantity, enough cases at the expected effect size, and a positive control that recovers a known effect;
@@ -224,7 +274,7 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    AutoDS may run alongside, with the theories' predictions as its `--intent`, to look for findings the committed tests did not ask about. Report its findings as exploratory, never as tests of the theories.
 
-8. **What is missing.** For each prediction that no dataset could decide, and each *thin* or *underpowered null* gap sent here from the check-in, write the study that would decide it, in `<run>/missing.md`:
+8. **What is missing.** For each prediction that no dataset could decide, and each *thin* or *underpowered null* gap sent here from the check-in, write the study that would decide it, in `<run>/missing.md`. For a theory, start from its card's supporting and falsifying experiments and their feasibility; for a gap, write the experiment and its feasibility in the same form. Add:
    - **What to measure:** the quantity, its unit, and how it is measured; the system or population, and the setting.
    - **Design:** observational, intervention or natural experiment, and why it separates the claim from its main rival explanation. Name that rival. An observational design that cannot separate them is not enough; say what would.
    - **Size:** the sample needed to detect the expected effect at conventional power (80 percent, alpha 0.05), with the source of the expected effect size: a paper in the corpus by tag, or the smallest effect that would matter, said to be that. Do not invent an effect size.
@@ -237,6 +287,6 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
 10. **Report.** Under 300 words in the reply; the detail is in the files.
     - **Gap map,** in three lines: the main known, the main gap, the main unknown.
-    - **Theories,** one line each: name, gap targeted, verdict.
+    - **Theories,** one line each: name, gap targeted, verdict, and its card's path.
     - **What the data could not decide,** and the study that would.
     - **Confidence,** as a label, with what might make it wrong.
