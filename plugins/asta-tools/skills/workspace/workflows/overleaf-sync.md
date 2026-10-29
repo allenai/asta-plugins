@@ -10,9 +10,10 @@ with the consequence stated below.
 
 **Check the repo's defaults; don't ask for them.** A workspace repo set up as
 [repo setup](repo-setup.md) describes already has them: a private repo, a
-private Pages site with PR previews, and both rulesets (`default-branch.json`,
-`docs-checks.json`). Check each with `gh repo view --json visibility`,
-`gh api repos/{owner}/{repo}/pages --jq .public`, and
+private Pages site with PR previews, both rulesets (`default-branch.json`,
+`docs-checks.json`), and branches deleted after merge. Check each with `gh repo view --json visibility`,
+`gh api repos/{owner}/{repo}/pages --jq .public`,
+`gh api repos/{owner}/{repo} --jq .delete_branch_on_merge`, and
 **Verify existing defaults without changing them** in
 [repo protections](repo-protections.md). That read-only path accepts matching
 shipped rules, and stops on different, extra or inherited rules and existing
@@ -105,19 +106,20 @@ is an Editor, not a Viewer or Reviewer.
 
 ## 3. Apply the accepted sync merge settings
 
-Under step 1's same yes, enable squash merges and delete merged branches:
+Under step 1's same yes, enable squash merges (branch deletion after merge is
+a repo setup default, checked in step 1):
 
 ```sh
-gh repo edit <owner>/<repo> --enable-squash-merge --delete-branch-on-merge
-gh api repos/{owner}/{repo} --jq '{allow_squash_merge, delete_branch_on_merge}'
+gh repo edit <owner>/<repo> --enable-squash-merge
+gh api repos/{owner}/{repo} --jq .allow_squash_merge
 ```
 
-Require both read-back values to be boolean `true`, and confirm the sync
+Require the read-back to be boolean `true`, and confirm the sync
 identity can merge under the verified rules. If GitHub refuses or read-back
 fails, give the owner the command and error; do not claim it was applied or
 schedule unattended merges. Do not grant permissions to the sync identity
 without the owner's separate authorization. An owner who chooses to merge
-sync PRs themselves can decline these settings; the sync then posts its notice
+sync PRs themselves can decline this setting; the sync then posts its notice
 and waits for them.
 
 Give the workspace its checks: the sync merges its PR only after at least one

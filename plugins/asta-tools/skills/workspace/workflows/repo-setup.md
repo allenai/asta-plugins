@@ -15,28 +15,25 @@ Say what each default does and what leaving it out costs:
 | A private repo | If it were public instead, anyone could read the unpublished work. |
 | Its site on GitHub Pages, private, with a preview and What changed for every PR | Collaborators see the files on GitHub rather than the rendered pages, and no change can be previewed before it merges. The shipped workflow stays manual-only, so its required-check ruleset is also left unapplied and unattended Overleaf merging is unavailable. |
 | Changes reach the default branch only through PRs whose checks pass, with no force-push (`docs-checks.json`, `default-branch.json`) | A change can skip its preview and land unbuilt, and a later Overleaf sync can't merge its own PRs safely. |
+| Branches deleted after their PR merges | Merged branches, including each Overleaf sync branch, pile up in the repo. |
 
-Add that each can be turned off later in Settings (Pages, Rules). Explain the
+Add that each can be turned off later in Settings (General, Pages, Rules). Explain the
 dependency in the proposal: with the shipped workflow, PR checks and previews
 are enabled together after Pages verification. Declining Pages still permits
 the private repo and no-force-push/deletion ruleset, but leaves the PR-only
 required-check ruleset unapplied. Apply the independent accepted defaults and
 don't ask again about declined ones.
-Say that private hosting must be verified during setup; if GitHub cannot
-provide it, setup stops for the owner's choice rather than publishing publicly.
-Do not offer a private Pages site with a public repo: that combination is not
-supported. If the owner wants a public repo, explain before setup that anyone
-can read its source and offer a private repo with a verified private site,
-a public repo without Pages (local preview remains available), or a public
-repo and an explicitly public site. Public hosting exposes the rendered work
-as well and requires a separate, explicit publication choice. If their choice
-still combines a public repo with private Pages, stop before creating or
-pushing anything and ask them to choose a supported option.
+Say that private hosting is verified during setup. If the owner wants a
+public repo, or GitHub can't keep the site private, stop and ask the owner how
+to proceed: before creating or pushing anything when they want a public repo,
+and as step 2 describes when the site check fails. Never publish publicly by
+default.
 
 Record the decision in the workspace's `.asta/repo-setup.json`, committed with
 the scaffold, so a later session can honor it. Store only the declined default
 IDs, for example `{"declined":["private_pages"]}`; use `private_repo`,
-`private_pages`, and `repo_protections` for the three rows, and an empty list
+`private_pages`, `repo_protections`, and `delete_branch_on_merge` for the four
+rows, and an empty list
 when all were accepted. Preserve an existing record and update it only for a
 new explicit owner decision. This is a record of choices, never authorization
 to change settings. Overleaf pairing reads it before proposing anything.
@@ -53,12 +50,9 @@ different, including in the scaffold's `docs.yml` push filter.
    (`gh repo create <owner>/<name> --private --add-readme`), or check an
    existing one with `gh repo view <owner>/<name> --json visibility`. If an
    existing repo is public and the owner accepted the private-repo default,
-   that yes covers making it private; read visibility back afterwards. A
-   declined private-repo default is not permission to publish unpublished work:
-   creating a public repo requires the owner's explicit choice of public.
-   For a new repo, if they declined private without choosing public, stop
-   before creating or pushing anything and ask whether to create a public
-   repo or leave it uncreated.
+   that yes covers making it private; read visibility back afterwards. If the
+   owner declines the private repo or wants it public, stop before creating,
+   changing or pushing anything and ask how to proceed.
    For an existing repo with no commits, seed `main` with an empty root commit
    (`git mktree </dev/null`, then
    `git commit-tree <empty-tree> -m 'Initialize default branch'`, then
@@ -107,7 +101,11 @@ different, including in the scaffold's `docs.yml` push filter.
    Report that PR-only required checks and unattended Overleaf merging remain
    unavailable, as explained in the proposal, rather than installing checks
    that cannot run on PRs or asking again about the declined site.
-5. Read the settings back and tell the owner what is on, with links to
-   Settings → Pages and Settings → Rules. Only for verified protections,
+5. With branch deletion accepted, run
+   `gh repo edit <owner>/<name> --delete-branch-on-merge` and require
+   `gh api repos/{owner}/{repo} --jq .delete_branch_on_merge` to read back
+   boolean `true`; if GitHub refuses, give the owner the command and error.
+6. Read the settings back and tell the owner what is on, with links to
+   Settings → General, Settings → Pages and Settings → Rules. Only for verified protections,
    explain what a refused push looks like
    (`GH013: Repository rule violations found`); otherwise name what is missing.

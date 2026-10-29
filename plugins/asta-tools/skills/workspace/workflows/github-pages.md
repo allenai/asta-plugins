@@ -2,12 +2,11 @@
 
 Run this before pushing or enabling the docs deployment workflow. A private
 repository does not by itself make its Pages site private. New workspace sites
-default to private. A public repo cannot have a private Pages site: before
-setup, explain the exposure and offer a private repo with a verified private
-site, no Pages (use local preview), or an explicitly public site. Stop for the
-owner's choice; never infer permission to change repo visibility or publish
-publicly from a request for a URL. Keep the source empty until the API
-confirms the site's agreed visibility (`public` exactly `false` by default).
+default to private. If the repo is public, the owner wants a public site, or
+GitHub can't keep the site private, stop and ask the owner how to proceed;
+never infer permission to change repo visibility or publish publicly from a
+request for a URL. Keep the source empty until the API confirms the site is
+private (`public` exactly `false`).
 See GitHub's [Pages API](https://docs.github.com/en/enterprise-cloud@latest/rest/pages/pages)
 and [publishing-source requirements](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
@@ -19,19 +18,12 @@ a build type other than `legacy` or a source other than `gh-pages` at `/`,
 stop and tell the owner rather than replacing their configuration. Record an
 existing site's visibility and source before changes. Under repo setup, the
 accepted private-site default authorizes making it private. Outside that flow,
-ask before changing visibility. For an existing public site, explain the
-exposure and ask whether to keep it public or make it private before deploying
-new content. An already-private site needs only the read-back, not a visibility
-change. Never recreate an existing site or overwrite its `gh-pages` branch.
+ask before changing visibility. For an existing public site, stop and ask the
+owner how to proceed before deploying new content. An already-private site
+needs only the read-back, not a visibility change. Never recreate an existing site or overwrite its `gh-pages` branch.
 
-Only an owner's explicit choice to publish publicly permits a public site.
-Explain that anyone could read the rendered unpublished work, and that a
-public repo also exposes its source. A request for a deployed URL alone is not
-that choice. For an explicit public choice, follow the same empty-source
-sequence and read-backs below with boolean `true` instead of `false`. Public
-hosting is never an automatic fallback when private hosting fails: stop for
-the owner's decision first. A recorded decline of Pages does not choose public
-hosting.
+Public hosting is never an automatic fallback when private hosting fails, and
+a recorded decline of Pages does not choose it: stop for the owner's decision.
 
 ## 2. Create a new site from an empty branch
 
