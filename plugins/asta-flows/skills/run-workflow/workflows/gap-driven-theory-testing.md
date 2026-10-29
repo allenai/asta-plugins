@@ -20,7 +20,7 @@ It differs from [Data Driven Theory Generation](data-driven-theory-generation.md
 | 7. Tests | Runs the committed tests and audits them; AutoDS may explore alongside | one test per prediction; AutoDS optional, 10 experiments |
 | 8. What is missing | Specifies the experiment or data each undecided prediction needs | |
 | 9. Revision (optional) | Theorizer revises the theories against the verdicts | verdicts as mission statement |
-| 10. Report | The gap map, the theories with their verdicts, and the studies still needed | under 300 words; the detail is in the run's files |
+| 10. Report | A written report in the person's format, or by default a review-article report: what the literature knows, the gaps with their provenance, the theories, the test results, and the data and experiments still needed; then a short summary in the reply | `report.md`; reply under 300 words |
 
 > You can make the run more specific:
 >
@@ -28,6 +28,7 @@ It differs from [Data Driven Theory Generation](data-driven-theory-generation.md
 > - **Data:** Datasets you have or have in mind, such as your own files, a cohort, a portal or a paper's deposit? You can also add datasets later in the run.
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** A local paper index to search, and whether it is the whole corpus or adds to Paper Finder?
+> - **Report format:** A format for the final report, such as a journal's review style, a grant section or your lab's template? By default it is a review-article report.
 
 ## Papers from a local index
 
@@ -285,8 +286,41 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
 9. **Revision (optional).** Feed the verdicts back to Theorizer as the mission statement, as in Secondary reproduction's step 5. Theories that failed are evidence, not noise.
 
-10. **Report.** Under 300 words in the reply; the detail is in the files.
+10. **Report.** Write `<run>/report.md`, then reply with a short summary.
+
+    **Format.** If the person gave a format, follow it: its sections, order, length and citation style. Whatever the format, keep three things, in the place it allows: the provenance of every claim, what the run could not decide, and the confidence. If their format has no place for one of these, say so and add a short section for it at the end.
+
+    **Default: a review-article report,** in the style of a Nature Reviews article. It is written for a scientist outside the immediate field: every acronym expanded on first use, no tool names in the text, and the run's machinery left to an appendix.
+
+    1. **Title and abstract.** A title that states the main finding. An abstract of about 150 words: the question, what is known, the main gaps, the theories, and what the tests found or could not decide.
+    2. **Key points.** Four to six one-sentence points, each tagged as *known*, *gap*, *proposed*, *supported*, *refuted* or *undecided*.
+    3. **Introduction.** Why the question matters, and the scope of the literature the run read: how many papers, from which sources, over which years.
+    4. **What the literature knows.** A synthesis of the knowns, organized by theme, not paper by paper. Each finding with its population, effect size and citations. A table of the main findings where it helps.
+    5. **Gaps.** A table of every gap the person chose, and a list of the others:
+
+       | ID | Kind | The gap, as a question | Rests on | Targeted search | Would close it |
+       |---|---|---|---|---|---|
+
+       "Rests on" cites the papers. "Targeted search" gives the query and its result: not answered, or partly answered by the papers it names. Then a short paragraph per chosen gap on why it matters.
+    6. **Theories.** One subsection per theory, from its card: the rationale, what it proposes, how it closes its gap, and its supporting and falsifying experiments with their feasibility. Cite the evidence for and against it. Point to the full card.
+    7. **Tests on data.** A table of every committed prediction tested:
+
+       | Theory | Prediction | Dataset | Effect size | n | p | Verdict |
+       |---|---|---|---|---|---|---|
+
+       Then the datasets: what they are, why they are independent of the papers, and their limits. Report exploratory AutoDS findings separately, labelled exploratory.
+    8. **What remains: data and experiments needed.** From `missing.md`: each undecided prediction and each data gap, with the study that would decide it, the techniques that make it feasible, the sample size and its source, and whether the data may already exist. Experiments with no known technique are listed as not yet feasible.
+    9. **Outlook.** What the field should do next, ranked: the one test that would settle the most, then the rest. End with the confidence in the run's main conclusion, as a label, with what might make it wrong.
+    10. **References.** Every cited paper: authors, year, title, venue, DOI or corpus id, and its source (Paper Finder, local index, or targeted search). Mark unpublished and abstract-only sources.
+    11. **Appendix: methods.** The question as run, the paper sources and counts, the extraction schema, the gap sweep, the targeted searches, the models, and what was dropped at each check and why.
+
+    **Provenance.** Every claim about the literature cites its papers. Every number comes from a paper in the run or a file the run wrote; name which. Nothing comes from outside the run. If a section needs a source the run does not have, the report says the run does not cover it.
+
+    **Check the report** before replying: every citation is in the references, every reference is in the run, and every number in the tables matches its file. A subagent given only the report and the run directory is the cleanest check. If you have a tool for publishing artifacts, publish the report with it.
+
+    **Reply,** under 300 words; the detail is in the report.
     - **Gap map,** in three lines: the main known, the main gap, the main unknown.
     - **Theories,** one line each: name, gap targeted, verdict, and its card's path.
     - **What the data could not decide,** and the study that would.
     - **Confidence,** as a label, with what might make it wrong.
+    - **The report's path.**
