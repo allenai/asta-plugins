@@ -11,34 +11,24 @@ with the consequence stated below.
 **Check the repo's defaults; don't ask for them.** A workspace repo set up as
 [repo setup](repo-setup.md) describes already has them: a private repo, a
 private Pages site with PR previews, both rulesets (`default-branch.json`,
-`docs-checks.json`), and branches deleted after merge. Check each with `gh repo view --json visibility`,
-`gh api repos/{owner}/{repo}/pages --jq .public`,
-`gh api repos/{owner}/{repo} --jq .delete_branch_on_merge`, and
-**Verify existing defaults without changing them** in
-[repo protections](repo-protections.md). That read-only path accepts matching
-shipped rules, and stops on different, extra or inherited rules and existing
-branch protection. The guide's apply path still stops if any rules exist.
-Read `.asta/repo-setup.json` if present. Do not propose declined defaults again
-or silently turn them on; report what is missing and its cost
-from [repo setup](repo-setup.md). For a repo with a setup record, verification
-does not reopen the repo-settings decision. A public or unverifiably private
-site with no explicit public-publication choice still triggers
-[GitHub Pages setup](github-pages.md)'s stop condition; do not deploy new
-content or change visibility as part of verification. For a repo that has
-never had that proposal, include any missing defaults once in the message
-below, with their costs, and record
-the choices as repo setup describes. Missing settings are not implied consent
-to change them, and existing rules are never replaced.
+`docs-checks.json`), and branches deleted after merge. Check them with
+`gh repo view --json visibility`, `gh api repos/{owner}/{repo}/pages --jq .public`,
+`gh api repos/{owner}/{repo}/rulesets` and
+`gh api repos/{owner}/{repo} --jq .delete_branch_on_merge`, and read
+`.asta/repo-setup.json` if present. Don't propose a declined default again.
+For a repo that never had that proposal, include any missing defaults, with
+their costs, once in the message below, apply them as repo setup does, and
+record the choices. If a check fails or GitHub reports something unexpected,
+stop and tell the owner what GitHub said.
 
 **Ask only for what only the sync needs.** Tell the owner, in one plain message
 before applying anything or checking the sync account's access. Explain
 step 2's prerequisites and the sync merge settings in step 3 in this same
 message, including that declining unattended merging leaves PRs for the owner:
 
-- When the repo's protections were verified, a direct push to `main` is
-  refused, theirs included. Changes reach `main` through PRs whose paper
-  builds. Otherwise say which protection is missing; do not schedule the
-  unattended sync unless its PR-only requirement in step 5 is met.
+- With the rulesets on, a direct push to `main` is refused, theirs included.
+  Changes reach `main` through PRs whose paper builds. Otherwise say which is
+  missing; don't schedule the unattended sync without the PR-only rule.
 - Co-authors keep writing in Overleaf. With unattended merging accepted,
   their edits arrive as a sync PR that merges itself once it builds.
 - Each Share setting below can be changed later (remove the invite/access or
@@ -54,9 +44,8 @@ completion before step 2's access check:
 | Link sharing off | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
 
 After the checks and accepted changes, confirm what is on, with a link to
-Settings → Rules. Only if the protections were verified, show what a refused
-push looks like (`GH013: Repository rule violations found`); otherwise name
-the missing protections and do not imply pushes are blocked.
+Settings → Rules, and what a refused push looks like
+(`GH013: Repository rule violations found`).
 
 ## 2. Confirm access after the owner acts
 
@@ -114,11 +103,7 @@ gh repo edit <owner>/<repo> --enable-squash-merge
 gh api repos/{owner}/{repo} --jq .allow_squash_merge
 ```
 
-Require the read-back to be boolean `true`, and confirm the sync
-identity can merge under the verified rules. If GitHub refuses or read-back
-fails, give the owner the command and error; do not claim it was applied or
-schedule unattended merges. Do not grant permissions to the sync identity
-without the owner's separate authorization. An owner who chooses to merge
+If GitHub refuses, stop and tell the owner what GitHub said. An owner who chooses to merge
 sync PRs themselves can decline this setting; the sync then posts its notice
 and waits for them.
 
