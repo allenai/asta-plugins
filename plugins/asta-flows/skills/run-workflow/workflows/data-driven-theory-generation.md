@@ -8,12 +8,12 @@ The papers and theories are [Theory generation](theory-generation.md)'s steps. T
 
 Show the person this table, with the values for their question. Everything not in it runs on the command's own default.
 
-| Step | Agent | What it does | Configuration |
-|---|---|---|---|
-| 1 | Paper Finder | Searches for the question, fetches the top papers' full text, and fills any gap to the target | 100 papers (`papers fetch --top`) |
-| 2 | Data Search | Finds a dataset the question can be tested on | the person's data, or chosen during the run |
-| 3 | AutoDS | Runs experiments on the data | 10 experiments (`--n_experiments`), model `openai/gpt-6-luna` |
-| 4 | Theorizer | Extracts findings from the papers and builds theories that must explain the experiments; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
+| Name | Description | Configuration |
+|---|---|---|
+| 1. Papers | Paper Finder searches for the question, fetches the top papers' full text, and fills any gap to the target | 100 papers (`papers fetch --top`) |
+| 2. Data | Data Search finds a dataset the question can be tested on | the person's data, or chosen during the run |
+| 3. Experiments | AutoDS runs experiments on the data | 10 experiments (`--n_experiments`), model `openai/gpt-6-luna` |
+| 4. Theories | Theorizer extracts findings from the papers and builds theories that must explain the experiments; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
 
 After the table, write this word for word, filling in only the two examples of a focus from their question. Before it, say in one sentence which parts of the question AutoDS can test on data and which rest on the literature, so they can choose where the experiments go. The examples are suggestions, so use only what the person picks.
 

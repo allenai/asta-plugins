@@ -23,18 +23,18 @@ That location works from any directory and sits outside any repository; a copy i
 
 ## Plan
 
-Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The commands under Steps say which models and settings each step uses.
+Show the person this table, with the values for their question (the paper target, for one). Quote their question in step 1 exactly as Theorizer will get it, so they see what it will work from. The Configuration column gives the main settings; the commands under Steps give the rest.
 
-With the person's own papers, step 1 plans the extraction schema only and step 2 reads `| 2 | Theorizer | Imports their N papers from <their folder>. No search. |`. Count the files first, so N is real.
+With the person's own papers, step 1 plans the extraction schema only and step 2 reads `| 2. Papers | Theorizer imports their N papers from <their folder>. No search. | N papers |`. Count the files first, so N is real.
 
-| Step | Agent | What it does |
+| Name | Description | Configuration |
 |---|---|---|
-| 1 | Theorizer | Plans the paper search and extraction schema for "<their question>" |
-| 2 | Paper Finder | Finds 100 papers and fetches their full text |
-| 3 | Theorizer | Extracts findings and generates the first theories |
-| | Check-in | Shows you the first theories; you choose 4a or 4b |
-| 4a | Theorizer | Refines the theories with your direction, from the same findings |
-| 4b | Theorizer | Discovers variables the first pass missed, then generates theories for each new schema |
+| 1. Plan | Theorizer plans the paper search and extraction schema for "<their question>" | generation `gpt-6-sol`, extraction `gpt-6-luna` |
+| 2. Papers | Paper Finder finds 100 papers and fetches their full text | 100 papers (`papers fetch --top`) |
+| 3. First pass | Theorizer extracts findings and generates the first theories | `--max-data-tokens 750000` |
+| Check-in | Shows you the first theories; you choose 4a or 4b | |
+| 4a. Refine | Theorizer refines the theories with your direction, from the same findings | |
+| 4b. New variables | Theorizer discovers variables the first pass missed, then generates theories for each new schema | usually 2 to 4 more schemas |
 
 After the table, write this word for word, filling in only the two examples of a focus from their question. The examples are suggestions, so use only what the person picks.
 
