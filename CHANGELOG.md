@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- When the workspace skill creates a workspace's GitHub repo, or sets up one
+  that exists but is empty, it proposes a private repo, a private Pages site
+  with a preview and What changed for every PR, and both default-branch
+  rulesets, and deleting branches after merge in one message, each with what
+  leaving it out costs, and applies them on one yes. It checks that the site
+  is private, and stops to ask the owner if it can't be or if they want the
+  repo public. Overleaf pairing then checks these instead of asking
+  again, and asks only for the sync account's Editor invite and link sharing
+  off in Overleaf.
+
 - A workspace's pin in `.github/workflows/docs.yml` now works like a lockfile:
   `asta workspace sync`, run locally, moves a release pin that is behind the
   installed asta forward to its release, without committing, and says so in

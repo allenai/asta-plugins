@@ -55,16 +55,32 @@ def test_default_branch_ruleset_blocks_force_push_and_deletion():
 
 
 def test_docs_checks_match_reusable_workflow_jobs():
-    (rule,) = _load("docs-checks.json")["rules"]
-    assert rule["type"] == "required_status_checks"
+    (rule,) = (
+        rule
+        for rule in _load("docs-checks.json")["rules"]
+        if rule["type"] == "required_status_checks"
+    )
     contexts = [c["context"] for c in rule["parameters"]["required_status_checks"]]
     assert contexts == [_check_context("build"), _check_context("paper-gate")]
 
 
 def test_docs_checks_require_github_actions_source():
-    (rule,) = _load("docs-checks.json")["rules"]
+    (rule,) = (
+        rule
+        for rule in _load("docs-checks.json")["rules"]
+        if rule["type"] == "required_status_checks"
+    )
     checks = rule["parameters"]["required_status_checks"]
     assert all(check.get("integration_id") == 15368 for check in checks)
+
+
+def test_docs_checks_require_pull_requests_without_required_approvals_or_bypass():
+    ruleset = _load("docs-checks.json")
+    (rule,) = (rule for rule in ruleset["rules"] if rule["type"] == "pull_request")
+    assert rule["parameters"]["required_approving_review_count"] == 0
+    assert rule["parameters"]["require_code_owner_review"] is False
+    assert rule["parameters"]["require_last_push_approval"] is False
+    assert not ruleset.get("bypass_actors")
 
 
 def test_pages_asset_serves_gh_pages_root():

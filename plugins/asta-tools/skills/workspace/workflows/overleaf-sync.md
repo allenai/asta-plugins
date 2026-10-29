@@ -2,13 +2,56 @@
 
 Setup-only steps for pairing a paper repository with an Overleaf project kept
 in step by [`asta workspace overleaf sync`](overleaf-sync-command.md). Setup
-applies safe defaults with one yes from the project owner; each can be turned
-off later, with the consequence stated below.
+checks the repo defaults the workspace already applied and asks the project
+owner one yes only for what the sync alone needs; each can be turned off later,
+with the consequence stated below.
 
-## 1. What the sync can't work without
+## 1. Check repo defaults, then propose sync setup once
 
-Apply these before inviting the sync account. Without them the sync fails
-loudly, so they are not optional and need no per-run check.
+**Check the repo's defaults; don't ask for them.** A workspace repo set up as
+[repo setup](repo-setup.md) describes already has them: a private repo, a
+private Pages site with PR previews, both rulesets (`default-branch.json`,
+`docs-checks.json`), and branches deleted after merge. Check them with
+`gh repo view --json visibility`, `gh api repos/{owner}/{repo}/pages --jq .public`,
+`gh api repos/{owner}/{repo}/rulesets` and
+`gh api repos/{owner}/{repo} --jq .delete_branch_on_merge`, and read
+`.asta/repo-setup.json` if present. Don't propose a declined default again.
+For a repo that never had that proposal, include any missing defaults, with
+their costs, once in the message below, apply them as repo setup does, and
+record the choices. If a check fails or GitHub reports something unexpected,
+stop and tell the owner what GitHub said.
+
+**Ask only for what only the sync needs.** Tell the owner, in one plain message
+before applying anything or checking the sync account's access. Explain
+step 2's prerequisites and the sync merge settings in step 3 in this same
+message, including that declining unattended merging leaves PRs for the owner:
+
+- With the rulesets on, a direct push to `main` is refused, theirs included.
+  Changes reach `main` through PRs whose paper builds. Otherwise say which is
+  missing; don't schedule the unattended sync without the PR-only rule.
+- Co-authors keep writing in Overleaf. With unattended merging accepted,
+  their edits arrive as a sync PR that merges itself once it builds.
+- Each Share setting below can be changed later (remove the invite/access or
+  re-enable link sharing), with the consequence listed.
+
+On the same yes, the agent applies step 3's sync merge settings and the owner
+does both in Overleaf's Share menu. These are owner actions; wait for their
+completion before step 2's access check:
+
+| Default | Without it |
+|---|---|
+| The sync account invited as Editor (Share → invite by email) | The sync can't push co-authors' edits back to Overleaf. |
+| Link sharing off | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
+
+After the checks and accepted changes, confirm what is on, with a link to
+Settings → Rules, and what a refused push looks like
+(`GH013: Repository rule violations found`).
+
+## 2. Confirm access after the owner acts
+
+Explain these prerequisites with step 1's proposal, before the owner invites
+the sync account. Without them the sync fails loudly. After the owner accepts
+and completes the Share actions, verify access once before scheduling.
 
 - **Git integration for the syncing Overleaf account.** Overleaf's
   [Git integration](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration)
@@ -29,8 +72,8 @@ loudly, so they are not optional and need no per-run check.
   `refs/asta/` refs that hold its sync record and lock, open PRs, and write
   issues for its notices.
 
-Then the project owner invites the sync account as Editor (Share → invite by
-email). Never share a personal Overleaf token.
+The project owner invites the sync account as Editor under step 1's one yes.
+Never share a personal Overleaf token.
 
 Check access once the sync account has accepted the invitation and made its
 Git token. Copy the project's Git URL from Overleaf's Git integration dialog,
@@ -50,43 +93,24 @@ if neither does, one of them needs such a plan. A success shows read access
 only: the sync also pushes, so confirm in the Share menu that the sync account
 is an Editor, not a Viewer or Reviewer.
 
-## 2. What lets it run unattended
+## 3. Apply the accepted sync merge settings
 
-Allow squash merges and let the sync identity merge: the sync squash-merges its
-PR to credit co-authors. An owner who would rather merge each sync PR can
-decline; the sync then posts its notice and waits for them.
+Under step 1's same yes, enable squash merges (branch deletion after merge is
+a repo setup default, checked in step 1):
+
+```sh
+gh repo edit <owner>/<repo> --enable-squash-merge
+gh api repos/{owner}/{repo} --jq .allow_squash_merge
+```
+
+If GitHub refuses, stop and tell the owner what GitHub said. An owner who chooses to merge
+sync PRs themselves can decline this setting; the sync then posts its notice
+and waits for them.
 
 Give the workspace its checks: the sync merges its PR only after at least one
 check passes. In a repository with no checks, each sync PR waits for a person
-to merge it, and `main` lags Overleaf until they do.
-
-## 3. Defaults, applied with one yes
-
-Tell the owner, in one plain message before applying anything:
-
-- A direct push to `main` is refused, theirs included. Changes reach `main`
-  through PRs whose paper builds.
-- Co-authors keep writing in Overleaf. Their edits arrive as a sync PR that
-  merges itself once it builds.
-- Each default below can be turned off later in Settings → Rules (Overleaf
-  link sharing in Overleaf's Share menu), with the consequence listed.
-
-On one yes, apply all of them:
-
-| Default | Without it |
-|---|---|
-| No force-push on `main` (`default-branch.json`) | A force-push makes the next sync start over from its last known point, so published text can come back as conflicts, though no edit is lost. |
-| Link sharing off in Overleaf | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
-| Changes reach `main` only through PRs whose paper builds (`docs-checks.json`) | Text whose paper does not build can reach `main` and be published to Overleaf. |
-| Pages previews, branches deleted after merge, and a private repo for an unpublished paper | Changes can't be previewed before merge, stale sync branches pile up, and a public repo exposes the draft. |
-
-Apply the two rulesets as [repo protections](repo-protections.md) describes,
-with its stop conditions and read-back, but both together under this one yes
-rather than asking for each.
-
-After applying, read the settings back and confirm to the owner what is on,
-with a link to Settings → Rules, and what a refused push looks like
-(`GH013: Repository rule violations found`).
+to merge it, and `main` lags Overleaf until they do. Missing checks never
+justify bypassing the PR-only prerequisite in step 5.
 
 ## 4. Told, not applied
 

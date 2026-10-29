@@ -1,11 +1,11 @@
 # Workflow: recommended repo protections
 
-None of these is required for the workspace to work. The defaults ship as GitHub ruleset files in the skill's `assets/rulesets/` directory, released with each version. Apply them exactly as shipped.
+For a new workspace repo, [repo setup](repo-setup.md) proposes these with its other defaults instead. None of these is required for the workspace to work. The defaults ship as GitHub ruleset files in the skill's `assets/rulesets/` directory, released with each version. Apply them exactly as shipped.
 
 | Ruleset | Recommend when |
 |---|---|
 | `default-branch.json` — blocks force-pushes and deletion of the default branch | Every repo. |
-| `docs-checks.json` — requires the `docs / build` and `docs / paper-gate` checks from GitHub Actions | The repo has a paper or co-authors, and the user checks changes on a branch before updating the default branch (normally by merging a PR). Direct pushes without passing checks are rejected, including admins'. |
+| `docs-checks.json` — requires a PR and the `docs / build` and `docs / paper-gate` checks from GitHub Actions | The repo has a paper or co-authors, and the user checks changes on a branch before updating the default branch (normally by merging a PR). Direct pushes are rejected, including admins'. |
 
 1. Stop and tell the user this guide doesn't cover their repo, without applying anything, if:
    - the repo is not on github.com;
