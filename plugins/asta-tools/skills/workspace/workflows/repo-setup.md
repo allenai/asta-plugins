@@ -34,14 +34,15 @@ something unexpected, stop and tell the owner what GitHub said.
 
 1. Create the repo private with a README, so the default branch exists
    (`gh repo create <owner>/<name> --private --add-readme`), or make an
-   existing empty repo private. Merge that branch into the local workspace
-   without losing local work or force-pushing.
+   existing empty repo private. If it has no branches, push an empty-tree root
+   commit to `main` first, before any Pages branch. Merge the established default
+   branch into the local workspace without losing local work or force-pushing.
 2. Scaffold the Quarto build with its `docs.yml` stub manual-only, and run
    `make check`, without pushing.
 3. With Pages accepted, follow [GitHub Pages setup](github-pages.md) before
    the scaffold's first push, so no content reaches a site that could be
    public. Then enable the stub's `on.push` and `on.pull_request`.
-4. Push the scaffold to the default branch.
+4. Push the scaffold to that established default branch.
 5. With protections accepted, apply both rulesets from `assets/rulesets/`
    (`gh api repos/{owner}/{repo}/rulesets -X POST --input <file>`) only now
    that `docs.yml` is on the default branch. Without Pages, apply only
