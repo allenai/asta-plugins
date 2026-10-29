@@ -2,8 +2,12 @@
 
 Run this before pushing or enabling the docs deployment workflow. A private
 repository does not by itself make its Pages site private. New workspace sites
-default to private, including a new site in a public repo. Keep the source
-empty until the API confirms the site's `public` field is exactly `false`.
+default to private. A public repo cannot have a private Pages site: before
+setup, explain the exposure and offer a private repo with a verified private
+site, no Pages (use local preview), or an explicitly public site. Stop for the
+owner's choice; never infer permission to change repo visibility or publish
+publicly from a request for a URL. Keep the source empty until the API
+confirms the site's agreed visibility (`public` exactly `false` by default).
 See GitHub's [Pages API](https://docs.github.com/en/enterprise-cloud@latest/rest/pages/pages)
 and [publishing-source requirements](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
