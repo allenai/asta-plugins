@@ -8,13 +8,13 @@ The papers and theories are [Theory generation](theory-generation.md)'s steps. T
 
 Show the person this table, with the values for their run. Everything not in it runs on the command's own default.
 
-| Name | Description | Configuration |
-|---|---|---|
-| 1. Selection | Selects the hypotheses to reproduce from the AutoDS run | the directory the person gives, or a new run of 10 experiments on their data with model `openai/gpt-6-luna`; every surprising hypothesis, plus the N highest and N lowest by posterior belief, N = 10 |
-| 2. Literature | Paper Finder gathers the literature on the hypotheses' themes | 5 themes plus the run's intent; 20 papers per theme (`papers fetch --top`) |
-| 3. Independent data | Data Search finds independent data for each hypothesis | chosen during the run |
-| 4. Reproduction | Re-runs each hypothesis's test on the new data | one test per hypothesis |
-| 5. Theories | Theorizer builds theories that must explain the verdicts; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
+| Step | Agent | What it does | Configuration |
+|---|---|---|---|
+| 1 | AutoDS | Selects the hypotheses to reproduce from the run | the directory the person gives, or a new run of 10 experiments on their data with model `openai/gpt-6-luna`; every surprising hypothesis, plus the N highest and N lowest by posterior belief, N = 10 |
+| 2 | Paper Finder | Gathers the literature on the hypotheses' themes | 5 themes plus the run's intent; 20 papers per theme (`papers fetch --top`) |
+| 3 | Data Search | Finds independent data for each hypothesis | chosen during the run |
+| 4 | Reproduce | Re-runs each hypothesis's test on the new data | one test per hypothesis |
+| 5 | Theorizer | Builds theories that must explain the verdicts; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
 
 ## Verdicts
 
