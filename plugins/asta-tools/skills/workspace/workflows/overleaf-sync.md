@@ -72,14 +72,23 @@ private Pages site with PR previews, and both rulesets (`default-branch.json`,
 `gh api repos/{owner}/{repo}/pages --jq .public`, and the read-back in
 [repo protections](repo-protections.md). If the repo already has rules, keep
 that guide's stop conditions and read-back: stop if they are not the shipped
-files. If a default is missing, propose it in the message below, with its cost
-from [repo setup](repo-setup.md), under the same yes.
+files. Read `.asta/repo-setup.json` if present. Do not propose declined
+defaults again or silently turn them on; report what is missing and its cost
+from [repo setup](repo-setup.md). For a repo with a setup record, verification
+does not reopen the repo-settings decision. A public or unverifiably private
+site still triggers [private Pages setup](github-pages.md)'s stop condition;
+do not deploy new content. For a repo that has never had that proposal, include
+any missing defaults once in the message below, with their costs, and record
+the choices as repo setup describes. Missing settings are not implied consent
+to change them, and existing rules are never replaced.
 
 **Ask only for what only the sync needs.** Tell the owner, in one plain message
 before applying anything:
 
-- A direct push to `main` is refused, theirs included. Changes reach `main`
-  through PRs whose paper builds.
+- When the repo's protections were verified, a direct push to `main` is
+  refused, theirs included. Changes reach `main` through PRs whose paper
+  builds. Otherwise say which protection is missing; do not schedule the
+  unattended sync unless its PR-only requirement in step 5 is met.
 - Co-authors keep writing in Overleaf. Their edits arrive as a sync PR that
   merges itself once it builds.
 - Each default below can be turned off later in Overleaf's Share menu, with
