@@ -25,10 +25,8 @@ that base, publish still refuses until those edits have been pulled and reviewed
 
 An unsupported file layout in a record's historical paper can refuse instead of
 falling back. A workspace maintainer can restore a valid record from its history
-or delete `refs/asta/overleaf/<project-id>` to use the committed base. Then pull
-and review the result before publishing; do not change historical paper files.
-
-If the ref does not name a commit, use [sync-record ref recovery](#sync-record-ref).
+or delete it as in [Sync record ref](#sync-record-ref) to use the committed base.
+Then pull and review the result before publishing; do not change historical paper files.
 
 ## Base not in Overleaf history
 
@@ -64,9 +62,8 @@ co-author's edit. Overleaf keeps every edit. To bring one back:
    `git log -p -- <file>` (or Overleaf's History panel).
 2. Set `base` in a PR to that commit's parent, or to any earlier Overleaf commit,
    and merge it.
-3. If a hand-written sync record would select a later Overleaf commit, ask a
-   workspace maintainer to delete `refs/asta/overleaf/<project-id>` with
-   `git push origin :refs/asta/overleaf/<project-id>`. Otherwise that record can
+3. If a hand-written sync record would select a later Overleaf commit, have it
+   deleted as in [Sync record ref](#sync-record-ref). Otherwise that record can
    override the earlier base again. Keep the record deleted until the recovery
    PR has merged.
 4. Run `pull`; the edit comes back in the sync PR, possibly as a conflict. Review
@@ -79,6 +76,8 @@ and resolve the conflicts there; sync keeps fixes pushed to that branch. When a
 record was not used, follow the line-by-line guidance in
 [Record not used](#record-not-used); never take one side wholesale.
 `publish` refuses files that still contain markers.
+
+When both sides edit an existing text source, pull merges against its last synced contents. Non-overlapping lines merge cleanly; overlapping lines get `workspace` / `overleaf` conflict markers to resolve in the PR. Merge output uses the same two-sided style regardless of workspace or global Git conflict-style settings. Pull still writes the merged files and sync record but exits with status 3 (errors exit 1), so scripts can detect conflicts without parsing output. Publish refuses generated conflict-marker labels (`workspace`, `last sync`, `overleaf`) in supported text files, including partially resolved blocks that retain a label. A lone `=======` line is not detected because it can be legitimate source text; remove all separators while resolving conflicts. Differently labeled documentation examples and binary assets do not trigger that check. Literal examples using those exact generated labels must be escaped or relabeled before publication. Automatic line merging is limited to `.tex`, `.ltx`, `.bib`, `.bst`, `.bbx`, `.cbx`, `.sty`, `.cls`, `.clo`, `.def`, `.cfg`, `.dtx`, `.ins`, `.tikz`, `.pgf`, `.csv`, `.tsv`, `.dat`, `.txt` and `.md` files without NUL bytes. Concurrent edits to other assets (including ASCII PDFs, EPS and SVG), files added independently on both sides, and modify/delete disagreements refuse before any copying. Reconcile those files by hand first; one-sided asset changes still sync normally.
 
 ## Workspace history is shallow
 
@@ -100,8 +99,8 @@ enforce review.
 ## Sync record ref
 
 A ref that names a tree or annotated tag cannot be replaced by a fast-forward commit
-push. Ask a workspace maintainer to restore the ref to a commit from its history, or
-run `git push origin :refs/asta/overleaf/<project-id>`, then retry. A damaged commit
+push. To restore or delete the record, ask a workspace maintainer to reset the ref to
+a commit from its history, or run `git push origin :refs/asta/overleaf/<project-id>`, then retry. A damaged commit
 record can be replaced by the next successful publish without deleting it.
 
 ## Newer sync format
@@ -134,7 +133,7 @@ section after `<!-- asta-overleaf-record-not-used -->`. A publication
 record with an invalid format stops the sync instead of falling back to
 the `.asta/overleaf` record. If a lock was damaged by an interrupted run,
 confirm its owner has stopped before following the
-[interrupted-run recovery](overleaf-sync-command.md#interrupted-runs).
+[interrupted-run recovery](#interrupted-runs).
 
 ## Incomplete publication
 
@@ -309,7 +308,9 @@ use [publication recovery](#incomplete-publication), then rerun sync.
 
 Sync lists the workspace changes to conflicted files; their authors should resolve
 those conflicts in the existing sync PR. Changes to `latexmkrc` or `.latexmkrc`
-are refused before any sync-branch push and reported on the labeled issue;
-a person must review and import them manually. Restore a removed `.asta/overleaf` record
+(including nested files, additions and deletions) are refused before any
+sync-branch push and reported on the labeled issue, even if a sync PR exists;
+a person must review and import them manually. These files execute build
+commands; refusing only at merge would let CI execute them before review. Restore a removed `.asta/overleaf` record
 from the linked paper's history. For a missing-identity refusal, follow
 [Git identity](#git-identity).
