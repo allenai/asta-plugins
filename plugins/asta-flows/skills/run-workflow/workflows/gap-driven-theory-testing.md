@@ -12,15 +12,16 @@ It differs from [Data Driven Theory Generation](data-driven-theory-generation.md
 |---|---|---|
 | 1. Plan and papers | Theorizer plans a search and a schema that records what a gap map needs; Paper Finder, the person's local paper index, or both, gather the papers | 100 papers in total |
 | 2. Extract | Theorizer extracts the schema from every paper, once | extraction `gpt-6-luna` |
-| 3. Gap map | Theorizer sweeps the extraction for gap-shaped statements; the agent adds what the papers state as open, searches Paper Finder for each candidate gap, and drops those already answered | 6 sweep runs; one Paper Finder search per candidate gap |
-| Check-in | Shows the gap map; the person picks the gaps to target | |
-| 4. Theories | Theorizer generates theories aimed at the chosen gaps, from the same extraction, with the gap map as its mission | generation `gpt-6-sol`; one general pass, then one sweep run per Theorizer type the gaps call for |
-| 5. Theory cards | The agent writes a card for each theory: rationale, known, unknown, proposal, how it closes the gap, supporting and falsifying experiments with the techniques that make them feasible, and all related evidence | committed before any data is opened |
-| 6. Data and testability | Takes the person's datasets, finds more with Data Search if needed, and judges which predictions each can decide | the person's datasets, plus any found during the run |
-| 7. Tests | Runs the committed tests and audits them; AutoDS may explore alongside | one test per prediction; AutoDS optional, 10 experiments |
-| 8. What is missing | Specifies the experiment or data each undecided prediction needs | |
-| 9. Revision (optional) | Theorizer revises the theories against the verdicts | verdicts as mission statement |
-| 10. Report | A written report in the person's format, or by default a review-article report: what the literature knows, the gaps with their provenance, the theories, the test results, and the data and experiments still needed; then a short summary in the reply | `report.md`; reply under 300 words |
+| 3. Field standards | The agent learns how the field tests hypotheses and writes, from the corpus and up to 5 methods-guidance papers, into a recipe the later steps follow | up to 5 guidance papers, in a separate project |
+| 4. Gap map | Theorizer sweeps the extraction for gap-shaped statements; the agent adds what the papers state as open, searches Paper Finder for each candidate gap, and drops those already answered | 6 sweep runs; one Paper Finder search per candidate gap |
+| Check-in | Shows the gap map and a summary of the recipe; the person picks the gaps to target, and may correct the recipe | |
+| 5. Theories | Theorizer generates theories aimed at the chosen gaps, from the same extraction, with the gap map as its mission | generation `gpt-6-sol`; one general pass, then one sweep run per Theorizer type the gaps call for |
+| 6. Theory cards | The agent writes a card for each theory: rationale, known, unknown, proposal, how it closes the gap, supporting and falsifying experiments with the techniques that make them feasible, and all related evidence | committed before any data is opened |
+| 7. Data and testability | Takes the person's datasets, finds more with Data Search if needed, and judges which predictions each can decide | the person's datasets, plus any found during the run |
+| 8. Tests | Runs the committed tests and audits them; AutoDS may explore alongside | one test per prediction; AutoDS optional, 10 experiments |
+| 9. What is missing | Specifies the experiment or data each undecided prediction needs | |
+| 10. Revision (optional) | Theorizer revises the theories against the verdicts | verdicts as mission statement |
+| 11. Report | A written report in the person's format, or by default a review-article report: what the literature knows, the gaps with their provenance, the theories, the test results, and the data and experiments still needed; then a short summary in the reply | `report.md`; reply under 300 words |
 
 > You can make the run more specific:
 >
@@ -28,6 +29,7 @@ It differs from [Data Driven Theory Generation](data-driven-theory-generation.md
 > - **Data:** Datasets you have or have in mind, such as your own files, a cohort, a portal or a paper's deposit? You can also add datasets later in the run.
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** A local paper index to search, and whether it is the whole corpus or adds to Paper Finder?
+> - **Writing style:** Papers whose writing the report should follow? By default it follows the style of the papers in the run.
 > - **Report format:** A format for the final report, such as a journal's review style, a grant section or your lab's template? By default it is a review-article report.
 
 ## Papers from a local index
@@ -57,10 +59,10 @@ The person may have a local paper index: an asta-documents index built with the 
 
 The person can give datasets at any point: with the question, at the check-in, or after the report. Each one goes into `<run>/data/<name>/` with its own description and test results.
 
-- **Keep it out of the theories.** A dataset given early is not opened, described or shown to Theorizer until the theory cards are committed in step 5. Only its file names and a one-line summary from the person go into the plan. If the person wants their data to shape the theories, that is [Data Driven Theory Generation](data-driven-theory-generation.md), not this workflow.
+- **Keep it out of the theories.** A dataset given early is not opened, described or shown to Theorizer until the theory cards are committed in step 6. Only its file names and a one-line summary from the person go into the plan. If the person wants their data to shape the theories, that is [Data Driven Theory Generation](data-driven-theory-generation.md), not this workflow.
 - **Check independence.** Compare it with the corpus: same cohort, site, authors, accession or deposit as a paper the theories rest on? If yes, it is not an independent test. Say so, and report its results as consistency checks only.
 - **Describe it from its own documentation and the file.** Use Data Driven Theory Generation's step 2. Ask the person for a codebook or README when a column the predictions need has none; do not guess its meaning.
-- **A dataset given after the report** re-enters at step 6. The committed predictions stay unchanged. Re-judge testability, run steps 7 and 8 for it, and update the report: which undecided predictions it decided, and which remain.
+- **A dataset given after the report** re-enters at step 7. The committed predictions stay unchanged. Re-judge testability, run steps 8 and 9 for it, and update the report: which undecided predictions it decided, and which remain.
 - **Several datasets.** Test each prediction on each dataset that can decide it, separately. Report agreement across datasets. Do not pool them unless the person asks and the measures are the same.
 
 ## Identifying gaps
@@ -83,7 +85,7 @@ A gap is a question the field has reason to ask and has not settled. The gap map
 Gaps come from three sources, and the map uses all of them:
 
 1. **What the authors say.** The limitations, future-work and open-question statements the extraction recorded.
-2. **What the evidence shows.** Theorizer's sweep over the gap-shaped types (step 3): the state of the literature ("of N studies, K address Y and none address Z"), appraisals of evidence quality, context dependence, null results, disagreement between results, and critical appraisal of the evidence.
+2. **What the evidence shows.** Theorizer's sweep over the gap-shaped types (step 4): the state of the literature ("of N studies, K address Y and none address Z"), appraisals of evidence quality, context dependence, null results, disagreement between results, and critical appraisal of the evidence.
 3. **What the agent sees across papers.** Chains of findings with a missing link, and empty cells in the table of settings against outcomes.
 
 **A candidate is not a gap until Paper Finder has been asked about it.** The corpus is a sample of the field. A gap in 100 papers may be answered in the 101st. For each candidate, state it as a direct question and search for it:
@@ -114,7 +116,7 @@ Write each gap as:
 
 ## Steps
 
-The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mission.md`, `gaps.md`, `mission.md`, `theories/`, `data/`, `tests/`, `missing.md` and `report.md`.
+The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mission.md`, `methods/` (the guidance project), `field-standards.md`, `gaps.md`, `mission.md`, `theories/`, `data/`, `tests/`, `missing.md` and `report.md`.
 
 1. **Plan and papers.** Plan once, with a mission that asks the schema for what a gap map needs. Put the theory shape, if the person gave one, into the question: the plan's request is the theory query the generator reads.
 
@@ -130,7 +132,12 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
    theories aimed at the gaps. Besides the findings themselves, the schema must record for each
    finding: the population or system and the setting; the study design; the sample size; the
    effect, its direction and its size; any result that conflicts with another study's; and the
-   limitations, future work and open questions the authors state.
+   limitations, future work and open questions the authors state. For each test of a claim, it
+   must also record the methods: the statistical test; how the null distribution was built
+   (parametric, permutation or shuffle, surrogate data, bootstrap, simulation); the controls
+   (positive, negative, sham, vehicle, scrambled); the unit of analysis and the number of
+   independent units; the correction for multiple comparisons; the effect-size metric; the
+   significance threshold; power or sample-size reasoning; and the robustness checks.
    ```
 
    Then gather papers from the local index, Paper Finder (Theory generation's step 2), or both, as [Papers from a local index](#papers-from-a-local-index) describes. Say how many papers came from each source, out of the target.
@@ -141,9 +148,53 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
    theorize -p <run>/theory extract
    ```
 
-   This is the run's only extraction, unless step 4 needs a field it did not record.
+   This is the run's only extraction, unless step 5 needs a field it did not record.
 
-3. **Gap map.** Sweep the extraction for gap-shaped statements, one run per type:
+3. **Field standards.** Learn how the field builds and tests its claims, and how it writes, so the tests and the report meet its standards. Write `<run>/field-standards.md`, the recipe steps 6 to 11 follow. This step reads the extraction and runs alongside the gap map.
+
+   - **Practice, from the corpus.** From the methods fields of the extraction, tabulate for each kind of claim the papers test (a group difference, a correlation, a dose–response, a time series, a classification, and so on) what the papers do: tests, null distributions, controls, units of analysis, corrections, effect-size metrics, thresholds, robustness checks. Count, for example "permutation null in 34 of 60 papers testing a correlation".
+   - **Guidance, from up to 5 methods papers.** Common practice is not always good practice. Search Paper Finder, in a separate project so these papers stay out of the theories' corpus, for the field's own guidance on statistics and reporting:
+
+     ```bash
+     theorize -p <run>/methods init --model gpt-6-sol --extraction-model gpt-6-luna
+     theorize -p <run>/methods papers search "statistical best practices and reporting guidelines in <field>" --save-as guidance-1
+     theorize -p <run>/methods papers search "common statistical errors in <field> research" --save-as guidance-2
+     theorize -p <run>/methods papers fetch <corpus ids>
+     ```
+
+     Keep only papers whose abstracts show they are guidance for this field: a reporting guideline or checklist, a statistics tutorial, or a review of statistical practice. Fetch at most 5, and read their full text in `<run>/methods/paperstore.json`. If none exist, say so: the recipe then rests on the corpus's practice alone.
+   - **Writing, from the corpus or the person's papers.** By default, learn the style of the papers in the run: section structure, terminology and nomenclature, units, how results are stated (for example "mean ± s.e.m., n = 12 mice"), how far claims are hedged, which figures are standard, and which metrics and statistics the field reports. Name two or three well-cited papers from the run as style models. If the person gave papers whose writing to follow, import them into `<run>/methods` with `theorize papers import` and use them instead. Follow their style, never their sentences.
+
+   `<run>/field-standards.md`:
+
+   ```
+   # Field standards: <field>
+
+   ## Hypothesis testing, per kind of claim
+   ### <kind of claim, e.g. group difference>
+   - test statistic and null distribution: <what> -- practice: <k of n papers, tags>; guidance: <tags or none>
+   - required controls: ...
+   - unit of analysis: ... (and how pseudoreplication is avoided)
+   - correction for multiple comparisons: ...
+   - effect-size metric, and the size the field treats as meaningful: ...
+   - threshold: ...
+   - robustness checks: ...
+   - standard figures: ...
+
+   ## Where practice and guidance differ
+   - <the difference>; this run follows <which>, because <reason>
+
+   ## Writing
+   - style models: <tags>
+   - structure, terminology, units, reporting of statistics, hedging: ...
+   - metrics and statistics the field reports: ...
+   ```
+
+   Every rule names its papers. Where practice and guidance differ, follow the guidance and say so. Where the field is stricter than this workflow, follow the field; where this workflow is stricter, such as committing predictions before the data is opened, keep the workflow's rule. If the question spans fields, follow the field of the data the theories are tested on, and say which.
+
+   Show a summary of the recipe at the gap map's check-in: one line per kind of claim, the main differences between practice and guidance, and the style models. The person may correct it. Do not wait for approval of the recipe itself; go on when the gaps are picked.
+
+4. **Gap map.** Sweep the extraction for gap-shaped statements, one run per type:
 
    ```bash
    theorize -p <run>/theory theories sweep \
@@ -165,9 +216,9 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
    - every gap has its targeted search recorded;
    - every entry matches the extraction rows of the papers it cites. A subagent given only `gaps.md` and the extractions is the cleanest check. Correct or drop any entry the rows do not support, and say how many you dropped.
 
-   **Check in and wait.** Show the gap map, ranked, with how many candidates the targeted searches dropped. The person picks the gaps the theories should aim at. *Thin* and *underpowered null* gaps call for data, not a theory: offer to send them straight to step 8. If the person asked to run without check-ins, pick the top-ranked gaps a theory could close, and say which you picked.
+   **Check in and wait.** Show the gap map, ranked, with how many candidates the targeted searches dropped, and the recipe's summary from step 3. The person picks the gaps the theories should aim at. *Thin* and *underpowered null* gaps call for data, not a theory: offer to send them straight to step 9. If the person asked to run without check-ins, pick the top-ranked gaps a theory could close, and say which you picked.
 
-4. **Theories.** Write the chosen gaps into `<run>/mission.md` in the shape below, then generate from the same extraction: one general pass, then a sweep over the Theorizer types the chosen gaps call for.
+5. **Theories.** Write the chosen gaps into `<run>/mission.md` in the shape below, then generate from the same extraction: one general pass, then a sweep over the Theorizer types the chosen gaps call for.
 
    | Gap kind | Output type | Inference type |
    |---|---|---|
@@ -217,7 +268,7 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    Read the theories from their saves (`theorize show theories-gaps`, `theorize show theories-gaps-typed`). Cluster them by the gap they close and the explanation they give, as in Theory generation's step 7.
 
-5. **Theory cards.** Write a card for each kept theory, in `<run>/theories/<id>.md`. Theorizer's output gives part of it: the statement, scope and special cases; the supporting, conflicting and unaccounted-for evidence; and what already exists, from its novelty evaluation. Write the rest from `gaps.md` and the extraction. Every claim on the card names its paper by tag.
+6. **Theory cards.** Write a card for each kept theory, in `<run>/theories/<id>.md`. Theorizer's output gives part of it: the statement, scope and special cases; the supporting, conflicting and unaccounted-for evidence; and what already exists, from its novelty evaluation. Write the rest from `gaps.md` and the extraction. Every claim on the card names its paper by tag.
 
    ```
    # <theory name> -- closes <gap IDs>
@@ -257,7 +308,7 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    Give each experiment, supporting or falsifying, these parts:
    - **Design:** the system or population, what is varied or compared, and what is measured.
-   - **Prediction, committed:** the measured quantity, the statistic, the direction, and the threshold (significance and smallest effect that counts). For a falsifying experiment, the result that would refute the theory.
+   - **Prediction, committed:** the measured quantity, the statistic and its null distribution, the controls, the unit of analysis, the direction, and the threshold (significance and smallest effect that counts), each as `field-standards.md` gives it for this kind of claim. For a falsifying experiment, the result that would refute the theory.
    - **Feasibility:** the list of known techniques that make the experiment possible: for measuring each variable, for manipulating it if the design calls for that, and for the analysis. For each technique, give what it does in this experiment, a paper in the run that used it (tag), and its limits (resolution, scale, cost or access) as that paper reports them. If no paper in the run uses a technique for a variable, search Paper Finder for one (`theorize papers search "methods for measuring <variable> in <system>" --save-as techcheck-<id>`) and cite each technique the abstracts name by the paper's corpus id, marked "from abstract". If none is found, write "no known technique found". That is a finding: the experiment is not feasible yet, and the card says so.
 
    An experiment supports a theory; it does not prove it. Use "support" and "falsify" on the card, never "prove".
@@ -266,31 +317,31 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    Commit the cards before opening any data. Do not change the predictions after; later steps add results beside them.
 
-6. **Data and testability.** Start with the person's datasets (see [Datasets from the person](#datasets-from-the-person)). If they leave predictions untested, or the person gave none, Data Search finds more data independent of the corpus: a different cohort, site, instrument, period or method from the studies the theory was built on. Use Data Driven Theory Generation's step 2 to find, describe and measure the data. Then judge each prediction:
-   - **testable:** the data has the same quantity, enough cases at the expected effect size, and a positive control that recovers a known effect;
+7. **Data and testability.** Start with the person's datasets (see [Datasets from the person](#datasets-from-the-person)). If they leave predictions untested, or the person gave none, Data Search finds more data independent of the corpus: a different cohort, site, instrument, period or method from the studies the theory was built on. Use Data Driven Theory Generation's step 2 to find, describe and measure the data. Then judge each prediction:
+   - **testable:** the data has the same quantity, enough independent units at the expected effect size, the controls and unit of analysis `field-standards.md` requires, and a positive control that recovers a known effect;
    - **proxy:** the data has a related quantity; test it, and carry the proxy as a caveat;
    - **not testable,** with one reason: *no data*, *underpowered*, or *not identifiable* (the data cannot separate the claim from a rival explanation, or the relation is true by construction).
 
-7. **Tests.** Run exactly the committed test for each testable prediction. A subagent given only the design and the data is the cleanest way. Record effect size, p, n, the code and a figure in `<run>/tests/`. Audit each result with a negative control for an effect, a positive control for a null, and a check for influential points. Give each prediction a verdict from Secondary reproduction: supported, partly supported, opposite effect, rejected, or undecided with its reason.
+8. **Tests.** Run exactly the committed test for each testable prediction. A subagent given only the design and the data is the cleanest way. Record effect size, p, n, the code and a figure in `<run>/tests/`. Build the null distribution and run the controls as `field-standards.md` gives them, and report the effect in the field's metric. Then audit each result with a negative control for an effect, a positive control for a null, and a check for influential points. Give each prediction a verdict from Secondary reproduction: supported, partly supported, opposite effect, rejected, or undecided with its reason.
 
    AutoDS may run alongside, with the theories' predictions as its `--intent`, to look for findings the committed tests did not ask about. Report its findings as exploratory, never as tests of the theories.
 
-8. **What is missing.** For each prediction that no dataset could decide, and each *thin* or *underpowered null* gap sent here from the check-in, write the study that would decide it, in `<run>/missing.md`. For a theory, start from its card's supporting and falsifying experiments and their feasibility; for a gap, write the experiment and its feasibility in the same form. Add:
+9. **What is missing.** For each prediction that no dataset could decide, and each *thin* or *underpowered null* gap sent here from the check-in, write the study that would decide it, in `<run>/missing.md`. For a theory, start from its card's supporting and falsifying experiments and their feasibility; for a gap, write the experiment and its feasibility in the same form. Add:
    - **What to measure:** the quantity, its unit, and how it is measured; the system or population, and the setting.
-   - **Design:** observational, intervention or natural experiment, and why it separates the claim from its main rival explanation. Name that rival. An observational design that cannot separate them is not enough; say what would.
-   - **Size:** the sample needed to detect the expected effect at conventional power (80 percent, alpha 0.05), with the source of the expected effect size: a paper in the corpus by tag, or the smallest effect that would matter, said to be that. Do not invent an effect size.
+   - **Design:** observational, intervention or natural experiment, with the field's standard controls from `field-standards.md`, and why it separates the claim from its main rival explanation. Name that rival. An observational design that cannot separate them is not enough; say what would.
+   - **Size:** the number of independent units needed to detect the expected effect, in the field's effect-size metric, at the field's power and threshold (80 percent and alpha 0.05 if the field sets none), with the source of the expected effect size: a paper in the corpus by tag, or the smallest effect that would matter, said to be that. Do not invent an effect size.
    - **Existing data:** whether such data may already exist. Name a repository, cohort or deposit only if a paper in the corpus or a Data Search result points to it; otherwise say it must be collected.
    - **What each result would mean:** which outcome supports the theory, which refutes it, and which leaves it undecided.
 
-   Link each one to the gap it would close. Then ask the person whether they have, or can get, such data. If they give it, it enters at step 6.
+   Link each one to the gap it would close. Then ask the person whether they have, or can get, such data. If they give it, it enters at step 7.
 
-9. **Revision (optional).** Feed the verdicts back to Theorizer as the mission statement, as in Secondary reproduction's step 5. Theories that failed are evidence, not noise.
+10. **Revision (optional).** Feed the verdicts back to Theorizer as the mission statement, as in Secondary reproduction's step 5. Theories that failed are evidence, not noise.
 
-10. **Report.** Write `<run>/report.md`, then reply with a short summary.
+11. **Report.** Write `<run>/report.md`, then reply with a short summary.
 
     **Format.** If the person gave a format, follow it: its sections, order, length and citation style. Whatever the format, keep three things, in the place it allows: the provenance of every claim, what the run could not decide, and the confidence. If their format has no place for one of these, say so and add a short section for it at the end.
 
-    **Default: a review-article report,** in the style of a Nature Reviews article. It is written for a scientist outside the immediate field: every acronym expanded on first use, no tool names in the text, and the run's machinery left to an appendix.
+    **Default: a review-article report,** in the style of a Nature Reviews article. It is written as the field writes, following the writing section of `field-standards.md`: its terminology, units, statistics and metrics, and the style of its models. Expand every acronym on first use, keep tool names out of the text, and leave the run's machinery to an appendix.
 
     1. **Title and abstract.** A title that states the main finding. An abstract of about 150 words: the question, what is known, the main gaps, the theories, and what the tests found or could not decide.
     2. **Key points.** Four to six one-sentence points, each tagged as *known*, *gap*, *proposed*, *supported*, *refuted* or *undecided*.
@@ -312,7 +363,7 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
     8. **What remains: data and experiments needed.** From `missing.md`: each undecided prediction and each data gap, with the study that would decide it, the techniques that make it feasible, the sample size and its source, and whether the data may already exist. Experiments with no known technique are listed as not yet feasible.
     9. **Outlook.** What the field should do next, ranked: the one test that would settle the most, then the rest. End with the confidence in the run's main conclusion, as a label, with what might make it wrong.
     10. **References.** Every cited paper: authors, year, title, venue, DOI or corpus id, and its source (Paper Finder, local index, or targeted search). Mark unpublished and abstract-only sources.
-    11. **Appendix: methods.** The question as run, the paper sources and counts, the extraction schema, the gap sweep, the targeted searches, the models, and what was dropped at each check and why.
+    11. **Appendix: methods.** The question as run, the paper sources and counts, the extraction schema, the field standards the tests followed and their sources, the gap sweep, the targeted searches, the models, and what was dropped at each check and why.
 
     **Provenance.** Every claim about the literature cites its papers. Every number comes from a paper in the run or a file the run wrote; name which. Nothing comes from outside the run. If a section needs a source the run does not have, the report says the run does not cover it.
 
