@@ -1,7 +1,7 @@
 ---
 name: run-workflow
 description: Runs an Asta research workflow for the person, from plan to report, using Paper Finder, Data Search, AutoDS and Theorizer. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *)
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *) Bash(asta documents *)
 ---
 
 # Research workflows
@@ -12,6 +12,7 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(comm
 - [Data Driven Theory Generation](workflows/data-driven-theory-generation.md): Paper Finder, Data Search, AutoDS, then Theorizer to explain experimental findings.
 - [Secondary reproduction](workflows/secondary-reproduction.md): re-test an AutoDS run's hypotheses on independent data, then build theories from the verdicts with Theorizer.
 - [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md): break a researcher's question about their data into AutoDS runs, log them, and write up what came back with every number linked to its experiment.
+- [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing.md): Paper Finder or a local paper index, a map of what the literature knows and leaves open, Theorizer theories aimed at the gaps, tests on independent data the person gives or Data Search finds, and the experiment each untested theory still needs.
 
 Pick one with the person and read its file.
 
