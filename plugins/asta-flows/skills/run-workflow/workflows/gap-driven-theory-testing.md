@@ -67,9 +67,13 @@ The person can give datasets at any point: with the question, at the check-in, o
 
 ## Identifying gaps
 
-A gap is a question the field has reason to ask and has not settled. The gap map has three lists:
+A gap is a question the field has reason to ask and has not settled.
 
-- **Known:** a finding reported by at least two independent studies, in agreement. Give the population or system, the effect and its size.
+**Start from the competing accounts.** Most questions name, or imply, rival answers ("content, gain, or adaptation?"). Before listing anything, write each account and what it predicts for each condition the question names. Every known then says which account it supports or rules out, and every gap says which accounts its answer would separate. A gap that separates no account is a moderator (a setting, layer or population); keep it, ranked lower.
+
+The gap map has two lists:
+
+- **Known:** a finding reported by at least two independent studies, in agreement. Write it from the extraction rows: the setting (design, stimulus or condition, population, area), the effect with its statistic and size, the sample (and whether inference was across animals or subjects, or across cells or trials), and the accounts it bears on. A preprint and its published version are one study.
 - **Gap:** a question the papers ask but do not settle, of one of these kinds:
 
   | Kind | What it looks like | Where to look |
@@ -80,7 +84,7 @@ A gap is a question the field has reason to ask and has not settled. The gap map
   | *boundary* | known in one setting, untested in another | a table of populations or settings against outcomes; the empty cells |
   | *underpowered null* | a "no effect" result from a study too small to detect one | null results with their sample sizes; absence of evidence is not evidence of absence |
 
-- **Unknown:** a question the papers raise as open, or one that follows from the knowns and that no paper addresses. Only list an unknown that a paper points to; do not add questions from outside the corpus.
+A question the papers raise as open, or one that follows from the knowns, is a gap of one of these kinds, not a separate list. Only list a gap that a paper points to; do not add questions from outside the corpus.
 
 Gaps come from three sources, and the map uses all of them:
 
@@ -107,12 +111,22 @@ Write each gap as:
 
 ```
 [G3, boundary] Does <effect> hold in <setting>?
-  rests on: <paper tags>
-  targeted search: "<query>" -- <not answered | partly answered by <tags>>
+  accounts: <what each account predicts; which accounts the answer separates>
+  rests on: <paper tags, with the result each contributes>
+  targeted search: <search ID> -- <not answered | partly answered by <first author year, abstract>>
   would close it: <the evidence that would settle it>
 ```
 
-**Rank the gaps** for the check-in by three things, in this order: how far closing the gap would advance the person's question; whether a test is plausible with data that exists or could be collected; and how much evidence already surrounds it, since a gap with knowns on both sides is easier to theorize about than one in empty ground.
+**Rank the gaps** by a stated rule, and show the scores in a table. Score each gap from 0 to 2 on three things:
+- **discrimination:** 2 if its answer separates all the accounts, 1 if it separates one from the rest, 0 for a moderator;
+- **evidence state:** 2 if no study tests it, 1 if partly answered, 0 if mostly answered;
+- **testability:** 2 if existing data can test it, at least through a proxy, 1 if it needs a new experiment with known techniques, 0 if no known technique exists.
+
+Break ties by discrimination, then evidence state, and say how any remaining tie was broken.
+
+**Cite by DOI.** Tag full-text corpus papers (P1, P2, ...). Cite abstract-only papers by first author, year and "abstract". Give a source table with each paper's tag or label, title and DOI, taken from the paper's metadata. Never cite by a search engine's internal ID. Mark a result a paper only reports from another study as "cited within P2".
+
+**Keep a search log** in the map: for each search (the corpus search and every targeted search), its ID, purpose (corpus, or which gap), the exact query, the date, the number of results and of relevant results (rated 2 or 3), the outcome, papers added to the corpus, and the file it was saved to.
 
 ## Steps
 
@@ -277,7 +291,7 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
 
    Read the theories from their saves (`theorize show theories-gaps`, `theorize show theories-gaps-typed`). Cluster them by the gap they close and the explanation they give, as in Theory generation's step 7.
 
-6. **Theory cards.** Write a card for each kept theory, in `<run>/theories/<id>.md`. Theorizer's output gives part of it: the statement, scope and special cases; the supporting, conflicting and unaccounted-for evidence; and what already exists, from its novelty evaluation. Write the rest from `gaps.md` and the extraction. Every claim on the card names its paper by tag.
+6. **Theory cards.** Write a card for each kept theory, in `<run>/theories/<id>.md`. Theorizer's output gives part of it: the statement, scope and special cases; the supporting, conflicting and unaccounted-for evidence; and what already exists, from its novelty evaluation. Write the rest from `gaps.md` and the extraction. Every claim on the card names its paper by tag. If the paper only reports another study's result, in its introduction or discussion, write "cited within P2", not "P2"; Theorizer's evidence often files such results under the reporting paper's tag.
 
    ```
    # <theory name> -- closes <gap IDs>
@@ -374,12 +388,22 @@ The run directory holds `theory/` (the Theorizer project), `papers.md`, `plan-mi
     10. **References.** Every cited paper: authors, year, title, venue, DOI or corpus id, and its source (Paper Finder, local index, or targeted search). Mark unpublished and abstract-only sources.
     11. **Appendix: methods.** The question as run, the paper sources and counts, the extraction schema, the field standards the tests followed and their sources, the gap sweep, the targeted searches, the models, and what was dropped at each check and why.
 
-    **Provenance.** Every claim about the literature cites its papers. Every number comes from a paper in the run or a file the run wrote; name which. Nothing comes from outside the run. If a section needs a source the run does not have, the report says the run does not cover it.
+    **Synthesis.** Sections 4 to 6 consolidate the literature; they do not list it.
+    - **One claim per paragraph, several papers per claim.** Open with the claim, bring in the papers that support, qualify or contradict it, and close with what they establish together. A paragraph about one paper is kept for a study whose methods explain a disagreement between others.
+    - **Three depths of treatment.** A few landmark papers get their design, effect size and limits. Most papers get two or three sentences inside a paragraph's argument. Replications are cited as converging evidence in one sentence. Do not give every paper the same depth.
+    - **Conflicts stated, not smoothed.** Where papers disagree, say so in a marked block (`> **Conflicting evidence.**`): what each side found, with tags, and what differs between the studies. Every *conflicting* gap in `gaps.md` has one.
+    - **Primary evidence for mechanisms.** A claim that X drives, gates, targets or mediates Y cites a paper that measured or manipulated it, not one that repeats it. If the run has no such paper, write "commonly described as" and say the primary evidence is missing from the run. That absence is a finding.
 
-    **Check the report** before replying: every citation is in the references, every reference is in the run, and every number in the tables matches its file. A subagent given only the report and the run directory is the cleanest check. If you have a tool for publishing artifacts, publish the report with it.
+    **Provenance.** Every claim about the literature cites its papers. Every number comes from a paper in the run or a file the run wrote; name which. Nothing comes from outside the run. If a section needs a source the run does not have, the report says the run does not cover it.
+    - **Cite only from the run.** Use only papers the run holds. If an argument needs a paper the run lacks, run a targeted search (as in step 4) or say the run does not cover it. Never add a citation from memory.
+    - **The citation must make the claim.** The cited paper must report the claim, not only work on the topic. It must also point the same way: a paper reporting that a method is specific cannot support a claim that the method is unreliable.
+    - **Numbers from the extraction only.** If the extraction states a result without a number, state it without a number.
+    - **Authors from the references.** Take author names in the text from the reference list, which comes from the papers' metadata, never from memory. Mark secondhand results "cited within P2", as on the cards.
+
+    **Check the report** before replying: every citation is in the references, every reference is in the run, and every number in the tables matches its file. Then check each claim–citation pair against the extraction rows of the paper it cites, and label it *supported*, *needs fix* (wrong paper, wrong direction, or a number not in the rows) or *cannot check* (the rows do not cover it). Fix or remove every *needs fix*. Also search the text for mechanistic verbs (drives, gates, targets, mediates, controls, modulates, inhibits) in sentences with no citation in that sentence or the next; cite or qualify each one. A subagent given only the report and the run directory is the cleanest check. Give the counts of the three labels in the methods appendix. If you have a tool for publishing artifacts, publish the report with it.
 
     **Reply,** under 300 words; the detail is in the report.
-    - **Gap map,** in three lines: the main known, the main gap, the main unknown.
+    - **Gap map,** in three lines: the competing accounts, the main known, and the top-ranked gap with the accounts it separates.
     - **Theories,** one line each: name, gap targeted, verdict, and its card's path.
     - **What the data could not decide,** and the study that would.
     - **Confidence,** as a label, with what might make it wrong.
