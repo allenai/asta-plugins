@@ -1,8 +1,8 @@
 # AutoDiscovery exploration
 
-A team nominates a dataset they already work with and writes a short prompt about what they are curious about. AutoDiscovery searches the data and returns a ranked list of surfaced hypotheses. The team reviews the list together, decides what is worth a follow-up analysis or a small validation effort, and writes up what came back, including a null result. This workflow takes a team from the dataset to the write-up, and leaves the record the collaboration asks for: the extraction script, the seed prompts, a log of each run, and the write-up, in one version-controlled repository.
+A team nominates a dataset they already work with and writes down its mission: what they want to learn, and what it would change. AutoDiscovery searches the data and returns a ranked list of surfaced hypotheses. The team reviews the list together, decides what is worth a follow-up analysis or a small validation effort, and starts more runs from those decisions. A write-up of what came back, including null results, is optional. The workflow leaves the record the collaboration asks for in one version-controlled repository: the mission, the extraction script, and each run's configuration and experiments.
 
-The researcher's part is the prompt and the review. AutoDiscovery does not find much without a strong seed prompt, so the workflow stops before any run is created and settles the prompts with them, and stops again before the write-up is published. Budget an hour or two of their time for those two conversations.
+The researcher's part is the mission, settling the runs, and the review. The workflow stops before any run is created and again before anything is published. Budget an hour or two of their time.
 
 ## Setup
 
@@ -11,9 +11,9 @@ asta auth login                 # once; the runs use the hosted service
 asta autodiscovery credits      # the balance has to cover the budget
 ```
 
-The project is an Asta workspace (the `workspace` skill): a git repository that renders to a site, one exploration per repository. A follow-up on the same data is a later round in the same repository. The repository is the team's, in their own organisation and private when the data terms say so; nothing in the workflow depends on where it lives. The site is published where the team publishes, a public unlisted site, a private one, or not at all: the rendered site is a folder of HTML that can be shared by hand.
+The project is an Asta workspace (the `workspace` skill): a git repository that renders to a site, one mission per repository. The repository is the team's, in their own organisation and private when the data terms say so; nothing in the workflow depends on where it lives. The site is published where the team publishes, a public unlisted site, a private one, or not at all: the rendered site is a folder of HTML that can be shared by hand.
 
-Data stays where it belongs. AutoDiscovery sees a de-identified or aggregated extract, and the source data and the extract never enter git. When the extract may not be uploaded to the hosted service, the team brings its own keys: the autodiscovery skill's local workflow runs the `asta-autodiscovery` CLI on their machine against the model their key points at, with no credits. Say once that this model receives the data descriptions, the generated code and its printed output, as with any use of that key, and leave the choice of model to the team; it is theirs to make under their own data terms, so do not propose other providers or a smaller extract unless asked. The record is the same: point the CLI's `--out_dir` at `.asta/autodiscovery/<run>/local/`, put `local` in the run log's run id column, and `runlog.py` reads it as it reads a hosted run. The write-up's markers link to the run pages; the hosted-experiment links are simply absent.
+Data stays where it belongs. AutoDiscovery sees an extract, and the source data and the extract never enter git. When the extract may not be uploaded to the hosted service, the team brings its own keys: the autodiscovery skill's local workflow runs the `asta-autodiscovery` CLI on their machine against the model their key points at, with no credits. Say once that this model receives the data descriptions, the generated code and its printed output, as with any use of that key, and leave the choice of model to the team; it is theirs to make under their own data terms, so do not propose other providers or a smaller extract unless asked. The record is the same: point the CLI's `--out_dir` at `.asta/autodiscovery/<run>/local/`, and `runlog.py` reads it as it reads a hosted run. A local run's `run.md` has no link.
 
 ## Plan
 
@@ -22,113 +22,109 @@ Show the person this table with the values for their dataset. Anything not in it
 | Name | Description | Configuration |
 |---|---|---|
 | Nominate the dataset | Set up the repository and look at the data | the repository the person names |
-| Seed prompts | Turn the prompt into seed prompts, one per run, with a budget and an extract | 250 credits by default |
-| Seeding conversation | The researcher settles the prompts, the budget and the extract before any run exists | |
+| Define the mission | Draft `mission.md` with the person: the goal, the data, the constraints | |
+| Plan the runs | One run by default, more only for angles the person names; the prompts, the budget and the extract | one run of 50 experiments |
 | Extract and describe | Build the extract and describe it for AutoDiscovery | |
-| Run AutoDiscovery | Run, save the ranked list of surfaced hypotheses, log each run | one open run plus the planned runs, 40 to 60 experiments each |
-| Write up | The write-up, including null results; the data page and a page per run | |
-| Check and publish | Check the quotes and claims; show the researcher; publish | |
+| Run AutoDiscovery | Run, then save each run's record and its experiments table | |
+| Review together | The team's decisions on the experiments | |
+| Write up | Optional: the write-up, including null results | |
 
 After the table, list what they can change:
 
-> - **Budget:** 250 experiments by default (credits on the hosted service; model cost with your own keys); more buys deeper or more runs.
-> - **Runs:** merge or split the proposed runs, or add a question.
+> - **Budget:** 50 experiments by default (credits on the hosted service; model cost with your own keys).
+> - **Runs:** add a run for a different angle, such as a different outcome or a different file.
 > - **Data:** a different extract, or more columns.
 
-The workflow is collaborative. Even when the person asks for it to run on its own, the seeding conversation and the look at the write-up are theirs.
+The workflow is collaborative. Even when the person asks for it to run on its own, the mission, the settling of the runs and the review are theirs.
 
 ## Steps
 
-1. **Nominate the dataset.** Scaffold the repository with the `workspace` skill, then copy this folder's `templates/` over it (the site config, the write-up, the data page, the README, `questions.md`, the ignore rules and the two CSV headers) and its `scripts/` into `scripts/`. Then look at the data before proposing anything: what the files or tables hold, how the data were collected (weights, clusters, strata, arms), and what the prompt would need that is not there. Keep the notes in the repository; they are not a page. The template's `_quarto.yml` renders only the write-up, the data page and the run pages, and takes its sidebar from `_generated/sidebar.yml`, which `build_pages.py` writes; nothing else becomes a page.
+1. **Nominate the dataset.** Scaffold the repository with the `workspace` skill, then copy this folder's `templates/` over it (the site config, the write-up, `mission.md`, the README and the ignore rules) and its `scripts/` into `scripts/`. Then look at the data: what the files or tables hold, how the data were collected (weights, clusters, strata, arms), and what the mission would need that is not there. Keep notes in the repository if they help; they are not a page.
 
-2. **Seed prompts.** With the researcher's message and what you learned from the data:
+2. **Define the mission.** Draft `mission.md` with the person: what they want to learn and what it would change, in their words, with their message quoted as sent; the data; what is not available; and the constraints, such as the data terms. It does not have to be a question. With nothing more specific, the mission is to see what the data hold.
 
-   1. List each question or idea in the message as a sub-question, in their words.
-   2. For each, name the outcome and the columns that could answer it. If there are none, say so, and what data it would need.
-   3. Group sub-questions that share an outcome and a set of columns; each group is a run, since a run is one prompt over one set of files. Keep each prompt to what its experiments can cover: a run of fifty experiments goes only a few deep on each thing it asks about, so a prompt that asks for a great deal spreads thin.
-   4. Add one run with no question on the main file, as the control for the others.
-   5. Write each run's seed prompt ([Seeding protocol](#seeding-protocol)).
-   6. Spread the budget, 40 to 60 experiments per run; merge groups if there are too many.
-   7. Write the coverage table in `questions.md`: each sub-question, its run, or why it has none.
-   8. List the extract: the files each run needs and their columns, wider than the prompt suggests (step 3).
-   9. Note, in a few lines, data not in the source that would change the plan, such as a record the researcher may hold. The run goes ahead with what is there; later data is a later round.
+3. **Plan the runs.** One run of 50 experiments on the main file, with the person's prompt ([Seeding protocol](#seeding-protocol)). Add a run only when the person names a different angle, such as a different outcome, population or file; do not split their prompt into sub-questions. A run of fifty experiments goes only a few deep on each thing it asks about, so a prompt that asks for a great deal spreads thin; say so once if it does. For each run, write `runs/<run>/run.md` ([The run folder](#the-run-folder)), and list the extract: the files each run needs and their columns, wider than the prompt suggests (step 4). Note, in a few lines, data not in the source that would change the plan, such as a record the researcher may hold.
 
-   When the researcher brings data and curiosity rather than questions, the data supplies the structure: its main areas become the runs, the open run takes a larger share of the budget, and a sentence or two from them on what they are curious about goes in `questions.md` in place of the sub-questions.
+   Then show the mission, the runs with their prompts and experiment counts, the budget, the extract, and the data that would change the plan. Ask what they would change. End with one question on its own line, such as "Create these runs, or change them?", and do nothing further until they answer.
 
-   Then the seeding conversation. Show the budget, the sub-questions, the runs with their files and experiment counts, the seed prompts, the coverage table, the extract, and the data that would change the plan. Ask what they would merge, split, drop or add, which sub-questions matter most, and whether they hold any of that data. Expect to revise. End with one question on its own line, such as "Create these runs, or change them?", and do nothing further until they answer.
+4. **Extract and describe.** Write the extraction in whatever the team works in, Python, R, Stata, SQL or a notebook, and commit it, so the extract can be rebuilt. Record each file's row count and a hash in `mission.md`. Extract more than the prompt suggests: AutoDiscovery can only use the columns it is given. Keep the design variables, and include a second outcome that is measured the same way but has a different cause when the source has one; it lets a reader tell a result about the mechanism from one about the measurement.
 
-3. **Extract and describe.** Write the extraction in whatever the team works in, Python, R, Stata, SQL or a notebook, and commit it, so the extract can be rebuilt. Record each file's row count and a hash. Extract more than the prompt suggests: AutoDiscovery can only use the columns it is given. Keep the design variables, and include a second outcome that is measured the same way but has a different cause when the source has one; it lets a reader tell a result about the mechanism from one about the measurement.
+   Describe each file for AutoDiscovery in its run's `run.md`: what a row is, each column's meaning, units, coding and missingness, the design, technical cautions. Say what the data are, not what they show. No thresholds, definitions or derived outcomes that belong to the mission; derived covariates are fine with their formula. Run the neutrality check over every prompt and description.
 
-   Describe each file for AutoDiscovery: what a row is, each column's meaning, units, coding and missingness, the design, technical cautions. Say what the data are, not what they show. No thresholds, definitions or derived outcomes that belong to the question; derived covariates are fine with their formula. Write each run's metadata and run the neutrality check over every prompt and description.
+5. **Run AutoDiscovery.** For each run: `asta autodiscovery create`, `upload` the files, `metadata` from a JSON file made from its `run.md` (`name`, `domain`, `description`, the prompt as `intent`, `datasets` with each file's name and description, and `experiments` as `n_experiments`; keep it as `.asta/autodiscovery/<run>/metadata.json`), `metadata-get` to confirm name, prompt, files and experiment count match, then `submit`. A run of 50 takes about two hours. Poll until it finishes, then save its full record as `.asta/autodiscovery/<run>/results.json` (`asta autodiscovery results`), following the `.asta/<skill>/` convention for skill outputs. Share the run in the AutoDiscovery app, put its shared link in `run.md`, and open one experiment link in a private window to confirm it needs no sign-in. Then `python3 scripts/runlog.py` writes the run's `experiments.csv` and its figures; it stops if any experiment text looks like row-level data. Commit the run folder, the record and the figures.
 
-4. **Run AutoDiscovery.** For each run: `asta autodiscovery create`, `upload` the files, `metadata` from the file, `metadata-get` to confirm name, prompt, files and experiment count match, then `submit`. Submit the runs together; a run of 50 takes about two hours. Poll until they finish. Save each run's full record under `.asta/autodiscovery/<run>/results.json` (`asta autodiscovery results`), following the `.asta/<skill>/` convention for skill outputs. Then `scripts/runlog.py` writes the run log, the ranked list and each run's index ([The run log](#the-run-log)); it writes each run's figures beside its record and stops if a hypothesis or analysis looks like row-level data. Commit the records and the figures with the run log. Share each run in the AutoDiscovery app, then open one experiment link in a private window to confirm it needs no sign-in.
+6. **Review together.** Stop. The review is the team's ([Review together](#review-together)).
 
-5. **Write up.** `scripts/build_pages.py` writes the run pages, the write-up's runs table and the sidebar from the run log. Fill the data page and the write-up ([The pages](#the-pages)).
+7. **More runs.** New runs start from the review's decisions: back to step 3, in the same repository, as a pull request whose description says why. `asta autodiscovery fork <run id>` starts a run with another run's metadata and files, to change only the prompt. Change `mission.md` only when the goal changes. Data that arrives later gets a new extract with its own hash.
 
-6. **Check and publish.** `scripts/check.py` checks the form (the CSV columns, every rendered page in the sidebar, the headings, every marker's quote verbatim with the shared link and a page, every internal link) and fails the build otherwise. Run the `check-claims` skill over the write-up. Render with `make check`, show the researcher the preview, and publish once they have seen it.
+8. **Write up.** Only when the team wants one ([The write-up](#the-write-up)). Run the `check-claims` skill over it, confirm each quote is verbatim in its run's `experiments.csv`, render with `make check`, show the researcher the preview, and publish once they have seen it.
 
 ## Seeding protocol
 
-A seed prompt says where to look, in plain language, as the researcher would put it: the question or the area, and a contrast when the sub-question asks for one. It does not need to list columns; the description already tells AutoDiscovery what the data hold, and choosing columns is the search. It does not name a mechanism, a direction, an effect size or an earlier result, and neither does the description: AutoDiscovery told what to find tends to find it.
+A seed prompt says where to look, in plain language, in the person's words: the mission, or the angle the run takes. It does not need to list columns; the description already tells AutoDiscovery what the data hold, and choosing columns is the search. It does not name a mechanism, a direction, an effect size or an earlier result, and neither does the description: AutoDiscovery told what to find tends to find it. With no prompt, the prompt is one line: explore the data; there is no specific question.
 
+One sentence on what the measurement can and cannot show may be added to every prompt, the same on each.
+
+Before anything is created, search every prompt and description for direction and result words (`associated`, `higher`, `lower`, `more likely`, `less likely`, `increase`, `decrease`, `effect`, `odds`, `expected`, `predicts`, `known findings`), and for terms that would name a result in this project. A grep is enough; it catches wording, not intent, so read the prompts once more. Show the person what it finds rather than rewriting their words.
+
+## The run folder
+
+`runs/<run>/run.md` is the configuration the run was submitted with, the same fields as the AutoDiscovery web app's form:
+
+```markdown
+---
+name: <the run's name in AutoDiscovery>
+experiments: 50
+files: [<file>.csv]
+link: <the run's shared link, once shared>
+---
+
+## Prompt
+
+<the prompt>
+
+## Description
+
+<the run's description>
+
+## <file>.csv
+
+<the file's description>
 ```
-Explore <the question or area, in the researcher's words>.
-Compare <A> with <B>.                       (only when the sub-question asks for it)
-```
 
-One sentence on what the measurement can and cannot show may be added to every prompt, the same on each. The open run's prompt is one line: explore the data; there is no specific question.
+Optional fields: `title` (a short title for the run), `label` (the letter in the write-up's markers, such as A for A-32), `domain`, and any search setting changed from the service's default.
 
-Before anything is created, search every prompt, the run description and each file description's prose for direction and result words (`associated`, `higher`, `lower`, `more likely`, `less likely`, `increase`, `decrease`, `effect`, `odds`, `expected`, `predicts`, `known findings`), and the prompts for a per-project list of terms that would name a result. A grep is enough; it catches wording, not intent, so read the prompts once more.
-
-## The run log
-
-`autodiscovery/runs.csv`, one row per run: run, round, label, title, run id, prompt file, the sub-questions it covers, files, extract hash, experiments requested, the search settings as the service reports them, status and shared link. The first columns are filled by hand at step 2 (a short name, a one-letter label for the markers, a title) and the run id after `create`; `runlog.py` fills the rest.
-
-`autodiscovery/experiments.csv`: one row per experiment, a `Run` column and then the same columns, in the same order, as the AutoDiscovery web app's download of a run (`ID` to `Deliverables`), so a team using the web app can paste its downloads in. Rows are in ID order within each run; the run pages rank them. Then three columns left empty for the review: `Decision`, `Reason` and `Reviewer`. `runlog.py` keeps these, and any column a team adds to either file, when it rewrites them.
-
-## The pages
-
-Every page is a template in `templates/` filled in, in the Asta voice (<https://github.com/allenai/design/blob/main/asta/VOICE.md>), with headings that are nouns and are the same in every exploration.
-
-**The write-up**, `index.qmd`:
-
-1. **Headline.** A few sentences: what came back, and what could not be answered.
-2. **Prompt.** The researcher's message as a quote, lightly edited and anonymised. The message as sent stays in `questions.md`.
-3. **Data.** What the extract is, as AutoDiscovery was told, and what was not available.
-4. **Runs.** One sentence: how many runs and experiments. Then the run log as a table with four columns, the prompt as submitted, the experiments, the run's page and its hosted run, with the two CSVs to download under it. A sentence that every prompt shares is shown once under the table rather than in every row. Nothing else. With more than one round, a sub-heading per round above its rows, and a line on what the round was for.
-5. **Answers.** When the researcher asked questions: two columns, the question as a complete sentence in their words and the answer, which opens, in bold, with one of the collaboration's own phrases, worth a follow-up analysis, worth a small validation effort, or null result, and gives the one number that carries it with its marker. Where the data cannot answer the question, the answer says so in plain words with no label. The phrases are not defined on the page. A term such as an odds ratio is defined the first time it is used, here or wherever that is.
-6. **Findings.** The results worth calling out, at your discretion, each led by the experiments that found it in their words and with their figures, with why it matters and how far to trust it, as prose. For an open exploration this section carries the page.
-7. **Null results.** What was tested and came back with nothing, and what could not be tested.
-8. **Next steps.** What to do next, on its own, with more than one entry when there is more than one way to follow up.
-
-**The data page**, `data.qmd`: Source (the survey or study and how it was collected), Extract (why an extract rather than the source, which parts of the source it used and which it did not, what it keeps and what it leaves out, how it is rebuilt, and each file's version), Files (one paragraph per file: what a row is, how many, which runs received it), Description (the text every run received) and Columns (the table).
-
-**A run page**, `runs/<run>.qmd`: the prompt as submitted, then Run (file, experiments, search settings, the hosted link) and Experiments (the run's rows from the ranked list, with links), with links to the previous and next run and back to the write-up.
-
-Every number from an experiment carries a marker that opens the experiment's own words and links to the run page and the hosted experiment. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, looked at before use, and never one mark per unit below the published level of geography.
+`runs/<run>/experiments.csv` is one row per experiment in the columns and order of the web app's download of a run (`ID` to `Deliverables`), so a team using the web app saves the download here. `runlog.py` writes it once the run has finished, and leaves it alone after that. Then three columns left empty for the review: `Decision`, `Reason` and `Reviewer`.
 
 ## Review together
 
-The review is outside the workflow. The researcher and the team go through the write-up and `experiments.csv` and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome); and `Reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what a later round starts from.
+The researcher and the team go through each run's `experiments.csv` and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome); and `Reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what the next runs start from.
 
-## Follow-up rounds
+## The write-up
 
-A later round is new runs in the same repository: new rows in the run log with the next round number, new run pages, and the write-up updated in place so the reader always gets one current answer. Each round is a pull request, and its preview shows what changed. Data that arrives later gets a new extract with its own hash.
+`index.qmd`, in the Asta voice (<https://github.com/allenai/design/blob/main/asta/VOICE.md>), with headings that are nouns and are the same in every exploration:
+
+1. **Headline.** A few sentences: what came back, and what could not be answered.
+2. **Mission.** The mission in a sentence or two; when there was a message, quote it, lightly edited and anonymised.
+3. **Data.** What the extract is, as AutoDiscovery was told, and what was not available.
+4. **Runs.** One sentence: how many runs and experiments. Then a table with a row per run, from its `run.md`: the prompt as submitted, the experiments, the hosted run, and its `experiments.csv`. A sentence that every prompt shares is shown once under the table.
+5. **Answers.** Only when the mission asks questions: the question as a complete sentence in their words and the answer, which opens, in bold, with one of the collaboration's own phrases, worth a follow-up analysis, worth a small validation effort, or null result, and gives the one number that carries it with its marker. Where the data cannot answer the question, the answer says so in plain words with no label.
+6. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose.
+7. **Null results.** What was tested and came back with nothing, and what could not be tested.
+8. **Next steps.** What to do next, with more than one entry when there is more than one way to follow up.
+
+Every number from an experiment carries a marker, `[text]{.ev key="..."}`, whose entry in `evidence.yml` quotes the experiment's own words verbatim from its run's `experiments.csv` (`Hypothesis`, `Findings` or `Validity Check`), names it as `AutoDiscovery run <label>, experiment <ID>`, and links the run's shared link with `?exp=<ID>`. Do not cite an ID that appears twice in a run; its link opens only one of the pair. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, from `.asta/autodiscovery/<run>/figures/`, looked at before use and copied into `figures/`, and never one mark per unit below the published level of geography. A term such as an odds ratio is defined the first time it is used.
 
 ## Records
 
-Tracked: the extraction script and descriptions, the seed prompts, each run's metadata as submitted and as read back, each run's full record as saved under `.asta/autodiscovery/` (`results.json`, or the local CLI's output folder: every experiment's plan, code, printed output, beliefs and figures) with its figures, the run log, the ranked list, the run pages, and the figures that passed review. The repository does not depend on the service keeping the runs. Not tracked: the source data and the extract.
+Tracked: the mission, the extraction script, each run's folder (`run.md` and `experiments.csv`), each run's full record under `.asta/autodiscovery/` (`results.json`, or the local CLI's output folder: every experiment's plan, code, printed output, beliefs and figures) with its figures, and the write-up with its evidence and figures. The repository does not depend on the service keeping the runs. Not tracked: the source data and the extract.
 
 ## This folder
 
 ```
-README.md               this workflow
-templates/              _quarto.yml, index.qmd, data.qmd, README.md, questions.md, gitignore, autodiscovery/runs.csv and experiments.csv (headers),
-                        and _extensions/evidence, the workspace evidence extension with the marker-after-claim popover and the page field, carried
-                        here until the plugin release the project pins ships it; delete the copy then and let the Makefile fetch it
-scripts/runlog.py       the run log, the experiments table and each run's index from the saved results
-scripts/build_pages.py  the run pages, the write-up's runs table and the sidebar from the run log
-scripts/check.py        the form and the quotes; fails the build on any drift
+README.md           this workflow
+templates/          _quarto.yml, index.qmd, mission.md, README.md, gitignore, and _extensions/evidence, the workspace
+                    evidence extension with the marker-after-claim popover, carried here until the plugin release the
+                    project pins ships it; delete the copy then and let the Makefile fetch it
+scripts/runlog.py   each run's experiments.csv and figures from its saved record
 ```
-
-The templates and the scripts are what keep explorations alike; the prose above is for the judgment calls.

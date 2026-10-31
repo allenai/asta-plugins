@@ -1,7 +1,5 @@
 # The source data and the extract: never committed.
 data/
-# Each run's full record and figures are tracked under .asta/autodiscovery/; only the poll log stays local.
-autodiscovery/status.log
 # Build output and caches.
 _site/
 .quarto/

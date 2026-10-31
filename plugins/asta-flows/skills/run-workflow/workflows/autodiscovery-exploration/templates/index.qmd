@@ -6,29 +6,31 @@ date: today
 
 <!-- Headline: a few sentences on what came back and what could not be answered. No section heading. -->
 
-## Prompt
+## Mission
 
-> <The researcher's message, lightly edited for typos and anonymised. The message as sent stays in questions.md.>
+<The mission in a sentence or two. When there was a researcher's message, quote it, lightly edited for typos and anonymised; the message as sent stays in mission.md.>
 
 ## Data
 
-<Three sentences: what the source is; what AutoDiscovery received (one row per <unit>, the files and their sizes); a link to [the data page](data.qmd).>
+<Three sentences: what the source is; what AutoDiscovery received (one row per <unit>, the files and their sizes). Each run's `run.md` has the description it received.>
 
-Not available: <what the prompt would need that the data do not hold>.
+Not available: <what the mission would need that the data do not hold>.
 
 ## Runs
 
 <N> runs of <M> experiments each.
 
-{{< include _generated/runs-table.md >}}
+<!-- One row per run, from its run.md: the prompt as submitted, the experiments, the hosted run, and its experiments.csv. -->
 
-<If every prompt shared a sentence, give it once here: Every prompt except the open run's ended with the same sentence: "...".>
+| Prompt | Experiments | AutoDiscovery | Experiments table |
+|---|---|---|---|
+| <prompt> | 50 | [open](<link>){target="_blank"} | [experiments.csv](runs/<run>/experiments.csv) |
 
-Download: [experiments.csv](autodiscovery/experiments.csv) (one row per experiment, with its hypothesis and analysis) and [runs.csv](autodiscovery/runs.csv) (one row per run).
+<If every prompt shared a sentence, give it once here: Every prompt ended with the same sentence: "...".>
 
 ## Answers
 
-<!-- Only when the researcher asked questions. One row per sub-question, the question as a complete sentence in their words.
+<!-- Only when the mission asks questions. One row per question, as a complete sentence in their words.
      The answer opens in bold with one of: Worth a follow-up analysis. / Worth a small validation effort. / Null result.
      Where the data cannot answer the question, no bold phrase; say so in plain words.
      One number per row, with its marker: [20% lack type 3]{.ev key="<prefix>-a-40"}. Define a term the first time it is used. -->
@@ -41,7 +43,7 @@ Download: [experiments.csv](autodiscovery/experiments.csv) (one row per experime
 
 ### <A result worth calling out, as a noun phrase or a plain statement>
 
-<Led by the experiments that found it, in their words with markers, and their figures. Why it matters and which question it bears on. End with a sentence on how far to trust it and why.>
+<Led by the experiments that found it, in their words with markers, and their figures. Why it matters for the mission. End with a sentence on how far to trust it and why.>
 
 ![<caption>. From experiment <A-32>.](figures/<a-32>.jpg){fig-alt="<what the figure shows>"}
 

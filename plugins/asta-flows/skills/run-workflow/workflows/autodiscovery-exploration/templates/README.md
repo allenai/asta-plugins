@@ -2,9 +2,9 @@
 
 An AutoDiscovery exploration of <the dataset>, by <who>, published as one Quarto site.
 
-## What was asked
+## Mission
 
-<The researcher's question in a paragraph; the message as sent and the sub-questions are in [questions.md](questions.md).>
+<The mission in a paragraph; the goal, the data and the constraints are in [mission.md](mission.md).>
 
 ## How it came out
 
@@ -14,17 +14,13 @@ An AutoDiscovery exploration of <the dataset>, by <who>, published as one Quarto
 
 | Path | What it holds |
 |---|---|
+| `mission.md` | The goal, the data and the constraints |
 | `index.qmd` | The write-up |
-| `data.qmd` | The data page: the description each run received |
-| `runs/*.qmd` | One page per run, with its prompt and experiments |
-| `questions.md` | The researcher's message and the sub-questions |
-| `prompts/` | The prompt each run received |
-| `descriptions/` | The data descriptions each run received |
-| `autodiscovery/` | `runs.csv` (the run log), `experiments.csv` (every experiment, in the web app's download columns, with the review's decisions), and each run's submitted metadata and index |
-| `.asta/autodiscovery/` | Each run's full record as saved, and its figures |
-| `evidence.yml` | Verbatim quotes behind the write-up's numbers, checked by `scripts/check.py` |
+| `runs/<run>/run.md` | The configuration the run was submitted with: prompt, data description, files, experiments, link |
+| `runs/<run>/experiments.csv` | The run's experiments, in the columns of the web app's download, with the review's decisions |
+| `.asta/autodiscovery/<run>/` | The run's full record as saved, and its figures |
+| `evidence.yml` | Verbatim quotes behind the write-up's numbers, each copied from a run's `experiments.csv` |
 | `figures/` | The figures used on the page, each reviewed before use |
-| `scripts/` | Extraction, descriptions, the run log, the run pages and the checks |
-| `project.md`, `work/` | The plan and one folder per workflow step |
+| `scripts/` | The extraction script, and `runlog.py`, which writes each run's `experiments.csv` |
 
 Build and preview with `make check` and `make preview`. The source data and the extract never enter git: `data/` is ignored.

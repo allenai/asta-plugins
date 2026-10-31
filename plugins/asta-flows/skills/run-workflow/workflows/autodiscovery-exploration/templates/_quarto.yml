@@ -3,21 +3,17 @@ project:
   output-dir: _site
   render:
     - index.qmd
-    - data.qmd
-    - runs/*.qmd
   resources:
     - robots.txt
     - figures/*.jpg
-    - autodiscovery/experiments.csv
-    - autodiscovery/runs.csv
+    # The runs table links each run's experiments.
+    - runs/*/experiments.csv
   preview:
     port: 4848
 
-# The evidence store behind the markers, and the sidebar that scripts/build_pages.py
-# writes from the run log (every rendered page is listed there).
+# The evidence store behind the markers.
 metadata-files:
   - evidence.yml
-  - _generated/sidebar.yml
 
 filters:
   - _extensions/evidence/snippet.lua
