@@ -2,7 +2,7 @@
 
     uv run --no-project --with pyyaml python -I scripts/check.py
 
-- runs.csv and experiments.csv have the template's columns
+- runs.csv and experiments.csv have the template's columns (a team may add its own)
 - every page in _quarto.yml's render list is in the sidebar, and the other way round
 - index.qmd and data.qmd have the template's headings, in order
 - every marker in index.qmd has an evidence entry with a verbatim quote from its experiment, the run's shared link, and a page
@@ -57,9 +57,11 @@ def main():
         if not p.exists():
             errors.append(f"{name} missing")
             continue
+        # A team may add its own columns; the template's must all be there.
         have = next(csv.reader(open(p)))
-        if have != cols:
-            errors.append(f"{name}: columns {have} differ from the template's {cols}")
+        missing = [c for c in cols if c not in have]
+        if missing:
+            errors.append(f"{name}: missing the template's columns {missing}")
     q = yaml.safe_load((ROOT / "_quarto.yml").read_text())
     rendered = set()
     for pat in q["project"]["render"]:

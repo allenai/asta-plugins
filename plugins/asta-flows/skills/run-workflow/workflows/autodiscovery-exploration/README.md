@@ -84,7 +84,7 @@ Before anything is created, search every prompt, the run description and each fi
 
 `autodiscovery/runs.csv`, one row per run: run, round, label, title, run id, prompt file, the sub-questions it covers, files, extract hash, experiments requested, the search settings as the service reports them, status and shared link. The first columns are filled by hand at step 2 (a short name, a one-letter label for the markers, a title) and the run id after `create`; `runlog.py` fills the rest.
 
-`autodiscovery/experiments.csv`, the ranked list: one row per experiment, ordered within each run by the change in belief with rises first, with run, number, hypothesis, AutoDiscovery's analysis of what it found, belief before and after, surprisal, the service's surprising flag, and the link, then four columns left empty for the review: decision, methods issue, reason and reviewer. `runlog.py` keeps what the review wrote there when it rewrites the file.
+`autodiscovery/experiments.csv`, the ranked list: one row per experiment, ordered within each run by the change in belief with rises first, with run, number, hypothesis, AutoDiscovery's analysis of what it found, belief before and after, surprisal, the service's surprising flag, and the link, then four columns left empty for the review: decision, methods issue, reason and reviewer. `runlog.py` keeps these, and any column a team adds to either file, when it rewrites them.
 
 ## The pages
 
