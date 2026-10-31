@@ -9,7 +9,8 @@ local CLI) and each run's full record under .asta/autodiscovery/<run>/, either
   local/          the local CLI's --out_dir: mcts_node_*.json, rich_outputs/, args.json
 Writes:
   autodiscovery/runs.csv            status, settings, extract hash and shared link filled in
-  autodiscovery/experiments.csv     the ranked list: within each run, rises in belief first, then falls
+  autodiscovery/experiments.csv     the ranked list: within each run, rises in belief first, then falls;
+                                    the review columns (decision, methods_issue, reason, reviewer) are kept from the previous file
   autodiscovery/<run>/index.json    per-experiment text the pages quote (no code, output or ids)
   .asta/autodiscovery/<run>/figures/   the experiments' figures, for review before use
 Stops before writing anything if a hypothesis or analysis looks like row-level data.
@@ -26,6 +27,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 AD = ROOT / "autodiscovery"
 RAW = ROOT / ".asta" / "autodiscovery"
+# The review is filled in by hand: decision (follow-up analysis, small validation or none), methods_issue
+# (yes when the analysis itself is flawed), reason and reviewer.
+REVIEW = ("decision", "methods_issue", "reason", "reviewer")
 SHARED = "https://autodiscovery.allen.ai/runs/shared/{run_id}"
 ROW_LEVEL = re.compile(
     r"\b(caseid|hhid|\w+_id)\s*[=:]\s*\d+|\b(row|index|record)\s*#?\s*\d{2,}\b|\bdf\.(loc|iloc)\[",
@@ -78,6 +82,13 @@ def local_results(d):
 
 def main():
     rows = list(csv.DictReader(open(AD / "runs.csv")))
+    # Keyed by run, experiment and hypothesis: the service can repeat an experiment number within a run.
+    reviewed = {}
+    if (AD / "experiments.csv").exists():
+        for x in csv.DictReader(open(AD / "experiments.csv")):
+            reviewed[(x["run"], x["experiment"], x["hypothesis"])] = {
+                k: x.get(k, "") for k in REVIEW
+            }
     table, indexes = [], {}
     for r in rows:
         if not r["run_id"]:
@@ -127,6 +138,9 @@ def main():
                     "surprise": round(e.get("surprise") or 0, 4),
                     "surprising": bool(e.get("is_surprising")),
                     "link": link,
+                    **reviewed.get(
+                        (r["run"], str(n), e["hypothesis"]), dict.fromkeys(REVIEW, "")
+                    ),
                 }
             )
             index.append(

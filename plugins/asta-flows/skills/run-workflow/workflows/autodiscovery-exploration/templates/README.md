@@ -20,7 +20,7 @@ An AutoDiscovery exploration of <the dataset>, by <who>, published as one Quarto
 | `questions.md` | The researcher's message and the sub-questions |
 | `prompts/` | The prompt each run received |
 | `descriptions/` | The data descriptions each run received |
-| `autodiscovery/` | `runs.csv` (the run log), `experiments.csv` (the ranked list), and each run's submitted metadata and index |
+| `autodiscovery/` | `runs.csv` (the run log), `experiments.csv` (the ranked list, with the review's decisions), and each run's submitted metadata and index |
 | `.asta/autodiscovery/` | Each run's full record as saved, and its figures |
 | `evidence.yml` | Verbatim quotes behind the write-up's numbers, checked by `scripts/check.py` |
 | `figures/` | The figures used on the page, each reviewed before use |
