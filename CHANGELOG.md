@@ -3,13 +3,10 @@
 ## Unreleased
 
 - The autodiscovery skill's local workflow now covers running on an Anthropic
-  key, and which Python packages experiment code can import under each
-  `--backend` (the default `process` backend has a fixed list; `local` with an
-  activated virtual environment takes any). It names the installed CLI
-  `auto-discovery` throughout, fixes the OpenAI model names and Vertex
+  key (Claude Opus 5) and recommends GPT-6 Luna on an OpenAI key. It names the
+  installed CLI `auto-discovery` throughout, fixes the model names and Vertex
   variables, and lists known behaviours: runs that never stop when every call
-  fails, safety-filter stops that end a run with no experiments, and the
-  reviewer's low pass rate.
+  fails, and safety-filter stops that end a run with no experiments.
 
 - When the workspace skill creates a workspace's GitHub repo, or sets up one
   that exists but is empty, it proposes a private repo, a private Pages site
