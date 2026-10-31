@@ -102,7 +102,7 @@ R packages are installed into the system R (`install.packages(...)`) and are vis
 ### Known behaviours
 
 - A run whose model calls all fail (a missing or invalid key, no quota) does not stop on its own; it retries indefinitely and writes a large log. Watch the first few minutes of a new run and stop it if every call errors.
-- A model's safety filter can stop a response partway through. AutoDiscovery does not retry and records no experiment, so a run can end almost immediately with exit status 0 and no experiments. If a run ends with "No new experiment generated", search the log for `content_filter`. This has been seen with Claude Opus on infectious-disease data; Claude Sonnet ran the same data without it.
+- A model's safety filter can stop a response partway through. AutoDiscovery does not retry and records no experiment, so a run can end almost immediately with exit status 0 and no experiments. If a run ends with "No new experiment generated", search the log for `content_filter`. This has been seen with Claude Opus 5.5 on infectious-disease data; Claude Opus 5 (`anthropic/claude-opus-5`) and Sonnet 5.5 ran the same data without it.
 - The experiment reviewer rejects many experiments, often for incomplete reporting against the plan rather than a wrong result, and allows only one revision. Pass rates of 20–50% are normal, and the CLI has no setting to change the reviewer.
 
 ## Result Summarization
