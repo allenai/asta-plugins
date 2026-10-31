@@ -1,4 +1,4 @@
-"""Write the run log, the ranked list and a per-run index from each run's saved results.
+"""Write the run log, the experiments table and a per-run index from each run's saved results.
 
     python3 scripts/runlog.py
 
@@ -9,11 +9,11 @@ local CLI) and each run's full record under .asta/autodiscovery/<run>/, either
   local/          the local CLI's --out_dir: mcts_node_*.json, rich_outputs/, args.json
 Writes:
   autodiscovery/runs.csv            status, settings, extract hash and shared link filled in
-  autodiscovery/experiments.csv     the ranked list: within each run, rises in belief first, then falls;
-                                    every column it does not write (the review's, and any a team adds) is kept
+  autodiscovery/experiments.csv     a Run column, then the web app's download columns, in ID order; every
+                                    column it does not write (the review's, and any a team adds) is kept
   autodiscovery/<run>/index.json    per-experiment text the pages quote (no code, output or ids)
   .asta/autodiscovery/<run>/figures/   the experiments' figures, for review before use
-Stops before writing anything if a hypothesis or analysis looks like row-level data.
+Stops before writing anything if any experiment text looks like row-level data.
 """
 
 import base64
@@ -27,20 +27,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 AD = ROOT / "autodiscovery"
 RAW = ROOT / ".asta" / "autodiscovery"
-# The review is filled in by hand: decision (follow-up analysis, small validation, none or methods issue),
-# reason and reviewer.
-REVIEW = ("decision", "reason", "reviewer")
+# The review is filled in by hand: Decision (follow-up analysis, small validation, none or methods issue),
+# Reason and Reviewer.
+REVIEW = ("Decision", "Reason", "Reviewer")
 # The columns runlog.py writes in experiments.csv; every other column is kept as the team left it.
+# After Run, they are the web app's download (one file per run), so a download can be pasted in as it is.
 GENERATED = (
-    "run",
-    "experiment",
-    "hypothesis",
-    "analysis",
-    "belief_before",
-    "belief_after",
-    "surprise",
-    "surprising",
-    "link",
+    "Run",
+    "ID",
+    "Hypothesis",
+    "Surprisal",
+    "Belief Before",
+    "Belief After",
+    "Direction",
+    "Findings",
+    "Validity Check",
+    "Objective",
+    "Steps",
+    "Deliverables",
+)
+TEXT = (
+    "Hypothesis",
+    "Findings",
+    "Validity Check",
+    "Objective",
+    "Steps",
+    "Deliverables",
 )
 SHARED = "https://autodiscovery.allen.ai/runs/shared/{run_id}"
 ROW_LEVEL = re.compile(
@@ -49,12 +61,16 @@ ROW_LEVEL = re.compile(
 )
 
 
-def rank_key(x):
-    """Rises in belief first, then falls, each largest change first."""
-    return (
-        x["belief_after"] < x["belief_before"],
-        -abs(x["belief_after"] - x["belief_before"]),
-    )
+def belief(p):
+    """The web app's label for a belief: below 0.25, below 0.5, exactly 0.5, below 0.75, or above."""
+    p = round(p, 6)
+    if p < 0.25:
+        return "Likely False"
+    if p < 0.5:
+        return "Maybe False"
+    if p == 0.5:
+        return "Uncertain"
+    return "Maybe True" if p < 0.75 else "Likely True"
 
 
 def local_results(d):
@@ -97,12 +113,12 @@ def main():
     # Keyed by run, experiment and hypothesis: the service can repeat an experiment number within a run.
     kept, extra = {}, list(REVIEW)
     if (AD / "experiments.csv").exists():
-        with open(AD / "experiments.csv") as f:
+        with open(AD / "experiments.csv", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             extra = [c for c in reader.fieldnames if c not in GENERATED]
             extra += [c for c in REVIEW if c not in extra]
             for x in reader:
-                kept[(x["run"], x["experiment"], x["hypothesis"])] = {
+                kept[(x["Run"], x["ID"], x["Hypothesis"])] = {
                     k: x.get(k) or "" for k in extra
                 }
     table, indexes = [], {}
@@ -143,17 +159,22 @@ def main():
                     p = figdir / f"{n}-{i}.jpg"
                     p.write_bytes(base64.b64decode(ro["image/jpeg"]))
                     figs.append(p.name)
+            plan = e.get("experiment_plan") or {}
+            surprise = e.get("surprise") or 0
             mine.append(
                 {
-                    "run": r["run"],
-                    "experiment": n,
-                    "hypothesis": e["hypothesis"],
-                    "analysis": e.get("analysis") or "",
-                    "belief_before": round(e["prior"], 4),
-                    "belief_after": round(e["posterior"], 4),
-                    "surprise": round(e.get("surprise") or 0, 4),
-                    "surprising": bool(e.get("is_surprising")),
-                    "link": link,
+                    "Run": r["run"],
+                    "ID": n,
+                    "Hypothesis": e["hypothesis"],
+                    "Surprisal": f"{abs(surprise):.3f}",
+                    "Belief Before": belief(e["prior"]),
+                    "Belief After": belief(e["posterior"]),
+                    "Direction": "Positive" if surprise > 0 else "Negative",
+                    "Findings": e.get("analysis") or "",
+                    "Validity Check": e.get("review") or "",
+                    "Objective": plan.get("objective") or "",
+                    "Steps": plan.get("steps") or "",
+                    "Deliverables": plan.get("deliverables") or "",
                     **kept.get(
                         (r["run"], str(n), e["hypothesis"]), dict.fromkeys(extra, "")
                     ),
@@ -178,7 +199,7 @@ def main():
                     "duplicate_number": counts[n] > 1,
                 }
             )
-        table += sorted(mine, key=rank_key)
+        table += sorted(mine, key=lambda x: x["ID"])  # ID order, as the download is
         indexes[r["run"]] = {
             "run": r["run"],
             "run_id": r["run_id"],
@@ -186,9 +207,9 @@ def main():
         }
         print(f"{r['run']}: {r['status']}, {len(index)} experiments")
     hits = [
-        (x["run"], x["experiment"], m.group(0))
+        (x["Run"], x["ID"], m.group(0))
         for x in table
-        for f in ("hypothesis", "analysis")
+        for f in TEXT
         for m in ROW_LEVEL.finditer(x[f])
     ]
     if hits:
@@ -206,7 +227,8 @@ def main():
         w.writeheader()
         w.writerows(rows)
     if table:
-        with open(AD / "experiments.csv", "w", newline="") as f:
+        # With a byte-order mark, as the download has, so Excel reads it as UTF-8.
+        with open(AD / "experiments.csv", "w", newline="", encoding="utf-8-sig") as f:
             w = csv.DictWriter(f, fieldnames=list(table[0]))
             w.writeheader()
             w.writerows(table)

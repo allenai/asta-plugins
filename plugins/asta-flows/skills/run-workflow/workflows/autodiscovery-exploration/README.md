@@ -84,7 +84,7 @@ Before anything is created, search every prompt, the run description and each fi
 
 `autodiscovery/runs.csv`, one row per run: run, round, label, title, run id, prompt file, the sub-questions it covers, files, extract hash, experiments requested, the search settings as the service reports them, status and shared link. The first columns are filled by hand at step 2 (a short name, a one-letter label for the markers, a title) and the run id after `create`; `runlog.py` fills the rest.
 
-`autodiscovery/experiments.csv`, the ranked list: one row per experiment, ordered within each run by the change in belief with rises first, with run, number, hypothesis, AutoDiscovery's analysis of what it found, belief before and after, surprisal, the service's surprising flag, and the link, then three columns left empty for the review: decision, reason and reviewer. `runlog.py` keeps these, and any column a team adds to either file, when it rewrites them.
+`autodiscovery/experiments.csv`: one row per experiment, a `Run` column and then the same columns, in the same order, as the AutoDiscovery web app's download of a run (`ID` to `Deliverables`), so a team using the web app can paste its downloads in. Rows are in ID order within each run; the run pages rank them. Then three columns left empty for the review: `Decision`, `Reason` and `Reviewer`. `runlog.py` keeps these, and any column a team adds to either file, when it rewrites them.
 
 ## The pages
 
@@ -109,7 +109,7 @@ Every number from an experiment carries a marker that opens the experiment's own
 
 ## Review together
 
-The review is outside the workflow. The researcher and the team go through the write-up and the ranked list and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, the ranked list's `decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome); and `reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what a later round starts from.
+The review is outside the workflow. The researcher and the team go through the write-up and `experiments.csv` and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome); and `Reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what a later round starts from.
 
 ## Follow-up rounds
 
@@ -126,7 +126,7 @@ README.md               this workflow
 templates/              _quarto.yml, index.qmd, data.qmd, README.md, questions.md, gitignore, autodiscovery/runs.csv and experiments.csv (headers),
                         and _extensions/evidence, the workspace evidence extension with the marker-after-claim popover and the page field, carried
                         here until the plugin release the project pins ships it; delete the copy then and let the Makefile fetch it
-scripts/runlog.py       the run log, the ranked list and each run's index from the saved results
+scripts/runlog.py       the run log, the experiments table and each run's index from the saved results
 scripts/build_pages.py  the run pages, the write-up's runs table and the sidebar from the run log
 scripts/check.py        the form and the quotes; fails the build on any drift
 ```

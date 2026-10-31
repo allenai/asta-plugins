@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS_COLS = "run,round,label,title,run_id,prompt,sub_questions,files,extract_hash,n_experiments,exploration_weight,surprisal_width,evidence_weight,status,shared_url".split(
     ","
 )
-EXP_COLS = "run,experiment,hypothesis,analysis,belief_before,belief_after,surprise,surprising,link,decision,reason,reviewer".split(
+EXP_COLS = "Run,ID,Hypothesis,Surprisal,Belief Before,Belief After,Direction,Findings,Validity Check,Objective,Steps,Deliverables,Decision,Reason,Reviewer".split(
     ","
 )
 INDEX_HEADINGS = [
@@ -58,7 +58,7 @@ def main():
             errors.append(f"{name} missing")
             continue
         # A team may add its own columns; the template's must all be there.
-        have = next(csv.reader(open(p)))
+        have = next(csv.reader(open(p, encoding="utf-8-sig")))
         missing = [c for c in cols if c not in have]
         if missing:
             errors.append(f"{name}: missing the template's columns {missing}")
