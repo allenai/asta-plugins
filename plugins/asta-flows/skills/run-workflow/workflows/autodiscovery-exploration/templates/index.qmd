@@ -18,26 +18,16 @@ Not available: <what the mission would need that the data do not hold>.
 
 ## Runs
 
-<N> runs of <M> experiments each.
+<N> runs, <M> experiments in all.
 
-<!-- One row per run, from its run.md: the prompt as submitted, the experiments, the hosted run, and its experiments.csv. -->
+Each run below opens to its prompt and every experiment, ranked with rises in belief first, with the team's review decision once it is made.
 
-| Prompt | Experiments | AutoDiscovery | Experiments table |
-|---|---|---|---|
-| <prompt> | 50 | [open](<link>){target="_blank"} | [experiments.csv](runs/<run>/experiments.csv) |
+<!-- Drawn at each render from runs/<run>/run.md and experiments.csv by _extensions/runs/runs.lua. -->
+
+::: {.runs}
+:::
 
 <If every prompt shared a sentence, give it once here: Every prompt ended with the same sentence: "...".>
-
-## Answers
-
-<!-- Only when the mission asks questions. One row per question, as a complete sentence in their words.
-     The answer opens in bold with one of: Worth a follow-up analysis. / Worth a small validation effort. / Null result.
-     Where the data cannot answer the question, no bold phrase; say so in plain words.
-     One number per row, with its marker: [20% lack type 3]{.ev key="<prefix>-a-40"}. Define a term the first time it is used. -->
-
-| Question | Answer |
-|---|---|
-| <question> | **Worth a follow-up analysis.** <one sentence with the one number and its marker> |
 
 ## Findings
 
@@ -54,5 +44,7 @@ Not available: <what the mission would need that the data do not hold>.
 **Not testable.** <What the data cannot answer, and what it would need.>
 
 ## Next steps
+
+<!-- From the review: the experiments the team marked follow-up analysis or small validation, then the data that would open up more. -->
 
 1. **<Step>.** <Why, in a sentence or two.>

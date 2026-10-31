@@ -17,6 +17,8 @@ metadata-files:
 
 filters:
   - _extensions/evidence/snippet.lua
+  # Every run and its experiments, drawn from runs/ into the write-up's ::: {.runs} block.
+  - _extensions/runs/runs.lua
 evidence-provenance: false
 
 website:

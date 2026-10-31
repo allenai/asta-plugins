@@ -107,11 +107,10 @@ The researcher and the team go through each run's `experiments.csv` and decide, 
 1. **Headline.** A few sentences: what came back, and what could not be answered.
 2. **Mission.** The mission in a sentence or two; when there was a message, quote it, lightly edited and anonymised.
 3. **Data.** What the extract is, as AutoDiscovery was told, and what was not available.
-4. **Runs.** One sentence: how many runs and experiments. Then a table with a row per run, from its `run.md`: the prompt as submitted, the experiments, the hosted run, and its `experiments.csv`. A sentence that every prompt shares is shown once under the table.
-5. **Answers.** Only when the mission asks questions: the question as a complete sentence in their words and the answer, which opens, in bold, with one of the collaboration's own phrases, worth a follow-up analysis, worth a small validation effort, or null result, and gives the one number that carries it with its marker. Where the data cannot answer the question, the answer says so in plain words with no label.
-6. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose.
-7. **Null results.** What was tested and came back with nothing, and what could not be tested.
-8. **Next steps.** What to do next, with more than one entry when there is more than one way to follow up.
+4. **Runs.** One sentence: how many runs and experiments. Then the template's `::: {.runs}` block, which `_extensions/runs/runs.lua` fills at each render: one collapsed section per run folder with the prompt, links to the hosted run and its `experiments.csv`, and every experiment ranked with rises in belief first, with the review's `Decision`. A sentence that every prompt shares is shown once under the block.
+5. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose.
+6. **Null results.** What was tested and came back with nothing, and what could not be tested.
+7. **Next steps.** From the review: what the team marked worth a follow-up analysis or a small validation effort, then the data that would open up more. The write-up does not make those calls itself.
 
 Every number from an experiment carries a marker, `[text]{.ev key="..."}`, whose entry in `evidence.yml` quotes the experiment's own words verbatim from its run's `experiments.csv` (`Hypothesis`, `Findings` or `Validity Check`), names it as `AutoDiscovery run <label>, experiment <ID>`, and links the run's shared link with `?exp=<ID>`. Do not cite an ID that appears twice in a run; its link opens only one of the pair. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, from `.asta/autodiscovery/<run>/figures/`, looked at before use and copied into `figures/`, and never one mark per unit below the published level of geography. A term such as an odds ratio is defined the first time it is used.
 
@@ -123,8 +122,9 @@ Tracked: the mission, the extraction script, each run's folder (`run.md` and `ex
 
 ```
 README.md           this workflow
-templates/          _quarto.yml, index.qmd, mission.md, README.md, gitignore, and _extensions/evidence, the workspace
-                    evidence extension with the marker-after-claim popover, carried here until the plugin release the
-                    project pins ships it; delete the copy then and let the Makefile fetch it
+templates/          _quarto.yml, index.qmd, mission.md, README.md, gitignore; _extensions/runs, the filter that draws
+                    every run and its experiments into the write-up; and _extensions/evidence, the workspace evidence
+                    extension with the marker-after-claim popover, carried here until the plugin release the project
+                    pins ships it; delete that copy then and let the Makefile fetch it
 scripts/runlog.py   each run's experiments.csv and figures from its saved record
 ```
