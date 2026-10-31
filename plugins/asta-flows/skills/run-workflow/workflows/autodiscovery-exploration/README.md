@@ -23,7 +23,7 @@ Show the person this table with the values for their dataset. Anything not in it
 |---|---|---|
 | Nominate the dataset | Set up the repository and look at the data | the repository the person names |
 | Define the mission | Draft `mission.md` with the person: the goal, the data, the constraints | |
-| Plan the runs | One run by default, more only for angles the person names; the prompts, the budget and the extract | one run of 50 experiments |
+| Plan the runs | One run by default, more only for angles the person names; the prompts, the budget and the extract | one run of 50 experiments; as much of the data as can be extracted |
 | Extract and describe | Build the extract and describe it for AutoDiscovery | |
 | Run AutoDiscovery | Run, then save each run's record and its experiments table | |
 | Review together | The team's decisions on the experiments | |
@@ -33,7 +33,7 @@ After the table, list what they can change:
 
 > - **Budget:** 50 experiments by default (credits on the hosted service; model cost with your own keys).
 > - **Runs:** add a run for a different angle, such as a different outcome or a different file.
-> - **Data:** a different extract, or more columns.
+> - **Data:** as much of the data as can be extracted, by default; name what to leave out to narrow it.
 
 The workflow is collaborative. Even when the person asks for it to run on its own, the mission, the settling of the runs and the review are theirs.
 
@@ -43,11 +43,13 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
 2. **Define the mission.** Draft `mission.md` with the person: what they want to learn and what it would change, in their words, with their message quoted as sent; the data; what is not available; and the constraints, such as the data terms. It does not have to be a question. With nothing more specific, the mission is to see what the data hold.
 
-3. **Plan the runs.** One run of 50 experiments on the main file, with the person's prompt ([Seeding protocol](#seeding-protocol)). Add a run only when the person names a different angle, such as a different outcome, population or file; do not split their prompt into sub-questions. A run of fifty experiments goes only a few deep on each thing it asks about, so a prompt that asks for a great deal spreads thin; say so once if it does. For each run, write `runs/<run>/run.md` ([The run folder](#the-run-folder)), and list the extract: the files each run needs and their columns, wider than the prompt suggests (step 4). Note, in a few lines, data not in the source that would change the plan, such as a record the researcher may hold.
+3. **Plan the runs.** One run of 50 experiments on the main file, with the person's prompt ([Seeding protocol](#seeding-protocol)). Add a run only when the person names a different angle, such as a different outcome, population or file; do not split their prompt into sub-questions. A run of fifty experiments goes only a few deep on each thing it asks about, so a prompt that asks for a great deal spreads thin; say so once if it does. For each run, write `runs/<run>/run.md` ([The run folder](#the-run-folder)), and list the extract: by default as much of the data as can be extracted, whatever the prompt names (step 4). Note, in a few lines, data not in the source that would change the plan, such as a record the researcher may hold.
 
    Then show the mission, the runs with their prompts and experiment counts, the budget, the extract, and the data that would change the plan. Ask what they would change. End with one question on its own line, such as "Create these runs, or change them?", and do nothing further until they answer.
 
-4. **Extract and describe.** Write the extraction in whatever the team works in, Python, R, Stata, SQL or a notebook, and commit it, so the extract can be rebuilt. Record each file's row count and a hash in `mission.md`. Extract more than the prompt suggests: AutoDiscovery can only use the columns it is given. Keep the design variables, and include a second outcome that is measured the same way but has a different cause when the source has one; it lets a reader tell a result about the mechanism from one about the measurement.
+4. **Extract and describe.** Write the extraction in whatever the team works in, Python, R, Stata, SQL or a notebook, and commit it, so the extract can be rebuilt. Record each file's row count and a hash in `mission.md`.
+
+   Extract as much of the data as you can, unless the person asks to narrow it: every variable that can be joined to the row unit and described, from every file in the source, not only the ones the prompt or the mission names. AutoDiscovery can only use the columns it is given, and the unexpected results come from the columns nobody asked about. Leave out only what the data terms or the person exclude, direct identifiers, and what cannot be described; say what was left out and why in `mission.md`. If the service's limits on file size or description length would be exceeded, say so and ask what to drop rather than choosing. Keep the design variables, and include a second outcome that is measured the same way but has a different cause when the source has one; it lets a reader tell a result about the mechanism from one about the measurement.
 
    Describe each file for AutoDiscovery in its run's `run.md`: what a row is, each column's meaning, units, coding and missingness, the design, technical cautions. Say what the data are, not what they show. No thresholds, definitions or derived outcomes that belong to the mission; derived covariates are fine with their formula. Run the neutrality check over every prompt and description.
 
