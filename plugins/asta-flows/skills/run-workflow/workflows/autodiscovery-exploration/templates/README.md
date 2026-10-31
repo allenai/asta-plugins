@@ -20,10 +20,11 @@ An AutoDiscovery exploration of <the dataset>, by <who>, published as one Quarto
 | `questions.md` | The researcher's message and the sub-questions |
 | `prompts/` | The prompt each run received |
 | `descriptions/` | The data descriptions each run received |
-| `autodiscovery/` | `runs.csv` (the run log) and `experiments.csv` (the ranked list); raw records per run stay local |
+| `autodiscovery/` | `runs.csv` (the run log), `experiments.csv` (the ranked list), and each run's submitted metadata and index |
+| `.asta/autodiscovery/` | Each run's full record as saved, and its figures |
 | `evidence.yml` | Verbatim quotes behind the write-up's numbers, checked by `scripts/check.py` |
 | `figures/` | The figures used on the page, each reviewed before use |
 | `scripts/` | Extraction, descriptions, the run log, the run pages and the checks |
 | `project.md`, `work/` | The plan and one folder per workflow step |
 
-Build and preview with `make check` and `make preview`. Restricted data never enters git: `data/` and AutoDiscovery's raw records are ignored.
+Build and preview with `make check` and `make preview`. The source data and the extract never enter git: `data/` is ignored.

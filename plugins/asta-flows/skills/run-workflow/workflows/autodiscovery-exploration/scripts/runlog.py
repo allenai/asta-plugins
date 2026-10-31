@@ -4,14 +4,14 @@
 
 Reads autodiscovery/runs.csv (run, round, label, title, run_id, prompt, sub_questions, files and
 n_experiments filled in by hand; run_id after `asta autodiscovery create`, or "local" for a run of the
-local CLI) and each run's saved output, either
-  autodiscovery/<run>/results.json        from the hosted service (`asta autodiscovery results <run_id> -o ...`)
-  autodiscovery/<run>/local/              the local CLI's --out_dir: mcts_node_*.json, rich_outputs/, args.json
-both git-ignored. Writes:
+local CLI) and each run's full record under .asta/autodiscovery/<run>/, either
+  results.json    from the hosted service (`asta autodiscovery results <run_id> -o ...`)
+  local/          the local CLI's --out_dir: mcts_node_*.json, rich_outputs/, args.json
+Writes:
   autodiscovery/runs.csv            status, settings, extract hash and shared link filled in
   autodiscovery/experiments.csv     the ranked list: within each run, rises in belief first, then falls
   autodiscovery/<run>/index.json    per-experiment text the pages quote (no code, output or ids)
-  autodiscovery/<run>/figures/      the experiments' figures (git-ignored), for review before use
+  .asta/autodiscovery/<run>/figures/   the experiments' figures, for review before use
 Stops before writing anything if a hypothesis or analysis looks like row-level data.
 """
 
@@ -25,6 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 AD = ROOT / "autodiscovery"
+RAW = ROOT / ".asta" / "autodiscovery"
 SHARED = "https://autodiscovery.allen.ai/runs/shared/{run_id}"
 ROW_LEVEL = re.compile(
     r"\b(caseid|hhid|\w+_id)\s*[=:]\s*\d+|\b(row|index|record)\s*#?\s*\d{2,}\b|\bdf\.(loc|iloc)\[",
@@ -82,18 +83,15 @@ def main():
         if not r["run_id"]:
             continue
         local = r["run_id"] == "local"
+        raw = RAW / r["run"]
         if local:
             out = next(
-                (
-                    AD / r["run"] / n
-                    for n in ("local", "raw")
-                    if (AD / r["run"] / n).exists()
-                ),
-                AD / r["run"] / "local",
+                (raw / n for n in ("local", "raw") if (raw / n).exists()),
+                raw / "local",
             )
             d = local_results(out)
         else:
-            d = json.loads((AD / r["run"] / "results.json").read_text())
+            d = json.loads((raw / "results.json").read_text())
         run, meta = d["run"], d["run"].get("metadata") or {}
         meta = meta.get("metadata", meta)
         r["status"] = run.get("status", r["status"])
@@ -106,7 +104,7 @@ def main():
         counts = {}
         for e in d["experiments"]:
             counts[e["id_in_run"]] = counts.get(e["id_in_run"], 0) + 1
-        figdir = AD / r["run"] / "figures"
+        figdir = raw / "figures"
         figdir.mkdir(exist_ok=True)
         index, mine = [], []
         for e in d["experiments"]:
@@ -169,6 +167,7 @@ def main():
             + "\n".join(f"  {r}-{n}: {t!r}" for r, n, t in hits)
         )
     for run, index in indexes.items():
+        (AD / run).mkdir(exist_ok=True)
         (AD / run / "index.json").write_text(
             json.dumps(index, indent=1, ensure_ascii=False) + "\n"
         )
