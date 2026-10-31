@@ -1,7 +1,7 @@
 ---
 name: autodiscovery
-description: Create, configure, and monitor AutoDiscovery runs — either via the hosted service (`asta autodiscovery`) or via the local CLI (`asta-autodiscovery`). Use when the user asks about their runs, experiments, discoveries, wants to check status, or wants to start a new discovery run.
-allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Bash(asta-autodiscovery *) Bash(uv tool *) Bash(command -v *) Read(*) Write(*.json) TaskOutput
+description: Create, configure, and monitor AutoDiscovery runs — either via the hosted service (`asta autodiscovery`) or via the local CLI (`auto-discovery`). Use when the user asks about their runs, experiments, discoveries, wants to check status, or wants to start a new discovery run.
+allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *) Read(*) Write(*.json) TaskOutput
 ---
 
 # AutoDiscovery
@@ -15,13 +15,13 @@ This skill is a **router**. Inspect the user's request, pick one workflow, then 
 | Name | Purpose                                                                                                                                     | Detailed instructions |
 |---|---------------------------------------------------------------------------------------------------------------------------------------------|---|
 | **remote** | Use the hosted AutoDiscovery service via `asta autodiscovery`. Requires Asta auth and consumes credits; runs execute on Asta infrastructure. | `workflows/remote.md` |
-| **local** | Run AutoDiscovery locally via the `asta-autodiscovery` CLI. Executes on the user's machine with user-provided API keys for making LLM calls | `workflows/local.md` |
+| **local** | Run AutoDiscovery locally via the `auto-discovery` CLI. Executes on the user's machine with user-provided API keys for making LLM calls | `workflows/local.md` |
 
 ## Routing
 
 ### 1. Honor explicit requests
 
-- "local", "on my machine", "offline", "run it myself", or any reference to the `asta-autodiscovery` CLI → **local**.
+- "local", "on my machine", "offline", "run it myself", or any reference to the `auto-discovery` CLI or the `asta-autodiscovery` package → **local**.
 - "remote", "hosted", "cloud", "Asta service", "my runs", "credits", or any reference to the `asta autodiscovery` (note the space) subcommand → **remote**.
 
 ### 2. Use signals when the request is ambiguous
