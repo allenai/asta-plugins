@@ -109,7 +109,7 @@ Every number from an experiment carries a marker that opens the experiment's own
 
 ## Review together
 
-The review is outside the workflow. The researcher and the team go through the write-up and the ranked list and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, the ranked list's `decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, an assumption the data break, a variable that leaks the outcome); and `reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what a later round starts from.
+The review is outside the workflow. The researcher and the team go through the write-up and the ranked list and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, the ranked list's `decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome); and `reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what a later round starts from.
 
 ## Follow-up rounds
 
