@@ -80,13 +80,15 @@ export VERTEXAI_LOCATION=global
 
 The `--backend` flag decides where the generated experiment code runs, and so which packages it can import. Installing a package into the CLI's own environment (`uv tool install asta-autodiscovery --with <package>`) does not reach the experiments under any backend.
 
-| Backend | Where experiment code runs | Python packages |
+| Backend | Where experiment code runs | Python packages preinstalled |
 |---|---|---|
-| `process` (default) | A fresh virtual environment the CLI builds for each run | Fixed: ipython, numpy, pandas, matplotlib, matplotlib-inline, seaborn, scikit-learn, scipy, statsmodels. The CLI has no option to add to this list. |
+| `process` (default) | A fresh virtual environment the CLI builds for each run | ipython, numpy, pandas, matplotlib, matplotlib-inline, seaborn, scikit-learn, scipy, statsmodels. The CLI has no option to add to this list. |
 | `local` | The first `python` on the user's `PATH` | Whatever that environment has installed |
-| `modal` | A Modal sandbox (needs a Modal account and a cloud bucket) | Same fixed list as `process` |
+| `modal` | A Modal sandbox (needs a Modal account and a cloud bucket) | Same list as `process` |
 
-When the analysis needs a package outside the fixed list (survey statistics with `svy` or `samplics`, for example), use the `local` backend with a virtual environment that holds the packages, activated in the shell that starts the run:
+Experiment code can also install packages itself while it runs. AutoDiscovery gives the generated code an `install(package)` helper and tells the planner that packages can be installed. Under `process`, an install lasts only for that one code execution, so the code has to install again each time, and it needs network access. In practice the models often do not use it: when an import fails they tend to write the method by hand or drop it instead.
+
+When the analysis depends on a package outside the preinstalled list (survey statistics with `svy` or `samplics`, for example), make sure it is there by using the `local` backend with a virtual environment that holds the packages, activated in the shell that starts the run:
 
 ```bash
 uv venv ~/.autodiscovery-env --python 3.13
