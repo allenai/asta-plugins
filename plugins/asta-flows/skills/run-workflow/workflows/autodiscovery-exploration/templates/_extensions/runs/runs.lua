@@ -4,9 +4,10 @@
   An empty `::: {.runs}` div becomes one collapsed callout per folder in
   runs/ that holds a run.md and an experiments.csv: the prompt as submitted,
   links to the hosted run and the experiments table, and every experiment,
-  rises in belief first, then falls, each largest surprisal first, with the
-  review's Decision. Nothing is generated or committed; the page is drawn from
-  the run folders at each render.
+  rises in belief first, then falls, each largest surprisal first. Nothing is
+  generated or committed; the page is drawn from the run folders at each render.
+  The callouts take Asta's accent (allenai/design asta/tokens.json): green on
+  the dark palette, teal on the light one.
 ]]
 
 local stringify = pandoc.utils.stringify
@@ -82,13 +83,11 @@ local function run_callout(root, name)
       plain(e["Hypothesis"] or ""),
       plain((e["Belief Before"] or "") .. " → " .. (e["Belief After"] or "")),
       plain(e["Surprisal"] or ""),
-      plain(e["Decision"] or ""),
     }
   end
-  local headers = { plain("Experiment"), plain("Hypothesis"), plain("Belief before → after"),
-                    plain("Surprisal"), plain("Decision") }
-  local aligns = { pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignRight, pandoc.AlignDefault }
-  local tbl = pandoc.utils.from_simple_table(pandoc.SimpleTable({}, aligns, { 0, 0, 0, 0, 0 }, headers, rows))
+  local headers = { plain("Experiment"), plain("Hypothesis"), plain("Belief before → after"), plain("Surprisal") }
+  local aligns = { pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignRight }
+  local tbl = pandoc.utils.from_simple_table(pandoc.SimpleTable({}, aligns, { 0, 0, 0, 0 }, headers, rows))
 
   local links = {}
   if link then
@@ -107,11 +106,22 @@ local function run_callout(root, name)
     title = "Run " .. label .. ": " .. title .. " · " .. #exps .. " experiments",
     content = content,
     collapse = true,
+    icon = false,
   })
 end
 
+local STYLE = [[
+<style>
+.runs div.callout-note.callout { border-left-color: #0fcb8c; }
+.runs div.callout-note.callout-style-default > .callout-header { background-color: rgba(15, 203, 140, 0.12); }
+body.quarto-light .runs div.callout-note.callout { border-left-color: #105257; }
+body.quarto-light .runs div.callout-note.callout-style-default > .callout-header { background-color: rgba(16, 82, 87, 0.08); }
+</style>
+]]
+
 function Div(div)
   if not div.classes:includes("runs") then return nil end
+  quarto.doc.include_text("in-header", STYLE)
   local root = quarto.project.directory or "."
   local names = {}
   for _, name in ipairs(pandoc.system.list_directory(root .. "/runs")) do
@@ -120,5 +130,6 @@ function Div(div)
   table.sort(names)
   local out = {}
   for _, name in ipairs(names) do out[#out + 1] = run_callout(root, name) end
-  return out
+  div.content = out
+  return div
 end

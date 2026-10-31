@@ -94,11 +94,11 @@ link: <the run's shared link, once shared>
 
 Optional fields: `title` (a short title for the run), `label` (the letter in the write-up's markers, such as A for A-32), `domain`, and any search setting changed from the service's default.
 
-`runs/<run>/experiments.csv` is one row per experiment in the columns and order of the web app's download of a run (`ID` to `Deliverables`), so a team using the web app saves the download here. `runlog.py` writes it once the run has finished, and leaves it alone after that. Then three columns left empty for the review: `Decision`, `Reason` and `Reviewer`.
+`runs/<run>/experiments.csv` is one row per experiment: `ID`, then two columns left empty for the review, `Decision` and `Reason`, then the rest of the web app's download of a run in its order (`Hypothesis` to `Deliverables`). A team using the web app saves the download here and adds the two review columns after `ID`. `runlog.py` writes it once the run has finished, and leaves it alone after that.
 
 ## Review together
 
-The researcher and the team go through each run's `experiments.csv` and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome); and `Reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what the next runs start from.
+The researcher and the team go through each run's `experiments.csv` and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome). A team can add any other columns that help its review. The decisions are committed and are what the next runs start from.
 
 ## The write-up
 
@@ -107,7 +107,7 @@ The researcher and the team go through each run's `experiments.csv` and decide, 
 1. **Headline.** A few sentences: what came back, and what could not be answered.
 2. **Mission.** The mission in a sentence or two; when there was a message, quote it, lightly edited and anonymised.
 3. **Data.** What the extract is, as AutoDiscovery was told, and what was not available.
-4. **Runs.** One sentence: how many runs and experiments. Then the template's `::: {.runs}` block, which `_extensions/runs/runs.lua` fills at each render: one collapsed section per run folder with the prompt, links to the hosted run and its `experiments.csv`, and every experiment ranked with rises in belief first, with the review's `Decision`. A sentence that every prompt shares is shown once under the block.
+4. **Runs.** One sentence: how many runs and experiments. Then the template's `::: {.runs}` block, which `_extensions/runs/runs.lua` fills at each render: one collapsed section per run folder with the prompt, links to the hosted run and its `experiments.csv`, and every experiment ranked with rises in belief first. The callouts take Asta's accent color.
 5. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose.
 6. **Null results.** What was tested and came back with nothing, and what could not be tested.
 7. **Next steps.** From the review: what the team marked worth a follow-up analysis or a small validation effort, then the data that would open up more. The write-up does not make those calls itself.

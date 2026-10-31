@@ -20,14 +20,12 @@ Not available: <what the mission would need that the data do not hold>.
 
 <N> runs, <M> experiments in all.
 
-Each run below opens to its prompt and every experiment, ranked with rises in belief first, with the team's review decision once it is made.
+Each run below opens to its prompt and every experiment, ranked with rises in belief first.
 
 <!-- Drawn at each render from runs/<run>/run.md and experiments.csv by _extensions/runs/runs.lua. -->
 
 ::: {.runs}
 :::
-
-<If every prompt shared a sentence, give it once here: Every prompt ended with the same sentence: "...".>
 
 ## Findings
 

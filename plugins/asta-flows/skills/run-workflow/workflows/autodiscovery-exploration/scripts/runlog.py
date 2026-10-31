@@ -6,7 +6,7 @@ For each run under .asta/autodiscovery/<run>/, reads
   results.json    from the hosted service (`asta autodiscovery results <run_id> -o ...`), or
   local/          the local CLI's --out_dir: mcts_node_*.json and rich_outputs/
 and writes
-  runs/<run>/experiments.csv           the columns of the web app's download, then Decision, Reason and Reviewer
+  runs/<run>/experiments.csv           the web app's download, with the review's Decision and Reason after ID
   .asta/autodiscovery/<run>/figures/   the experiments' figures, for review before use
 A run whose experiments.csv already exists is left alone: a finished run does not change, and the review is
 kept there. Stops before writing anything if any experiment text looks like row-level data.
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# The web app's download of a run, so a download and this file are interchangeable.
+# The web app's download of a run; the review's two columns go after ID.
 COLS = (
     "ID",
     "Hypothesis",
@@ -39,7 +39,7 @@ TEXT = (
     "Steps",
     "Deliverables",
 )
-REVIEW = ("Decision", "Reason", "Reviewer")
+REVIEW = ("Decision", "Reason")
 ROW_LEVEL = re.compile(
     r"\b(caseid|hhid|\w+_id)\s*[=:]\s*\d+|\b(row|index|record)\s*#?\s*\d{2,}\b|\bdf\.(loc|iloc)\[",
     re.I,
@@ -133,7 +133,8 @@ def main():
                 plan.get("steps") or "",
                 plan.get("deliverables") or "",
             )
-            rows.append({**dict(zip(COLS, values)), **dict.fromkeys(REVIEW, "")})
+            row = dict(zip(COLS, values))
+            rows.append({"ID": n, **dict.fromkeys(REVIEW, ""), **row})
         tables[out] = rows
     hits = [
         (out.parent.name, x["ID"], m.group(0))
