@@ -53,18 +53,18 @@ When helping the user build configuration:
 ### Credentials
 Model names need a provider prefix (`openai/`, `anthropic/`, `vertex_ai/`). Every model flag defaults to Gemini, so when using another provider, set all three.
 
-If the user has an `OPENAI_API_KEY` environment variable set, use the following flags to use GPT-family models:
+If the user has an `OPENAI_API_KEY` environment variable set, use GPT-6 Luna (about 6 to 8 minutes and $0.10 per experiment):
 ```
---model openai/gpt-4o
---belief_model openai/gpt-4o-mini
---vision_model openai/gpt-4o
+--model openai/gpt-6-luna
+--belief_model openai/gpt-6-luna
+--vision_model openai/gpt-6-luna
 ```
 
-If the user has an `ANTHROPIC_API_KEY` environment variable set, use the following flags to use Claude models:
+If the user has an `ANTHROPIC_API_KEY` environment variable set, use Claude Opus 5 (about 10 to 15 minutes and $2 per experiment). Do not use Opus 5.5 on infectious-disease data; see Known behaviours.
 ```
---model anthropic/claude-sonnet-5-5
---belief_model anthropic/claude-sonnet-5-5
---vision_model anthropic/claude-sonnet-5-5
+--model anthropic/claude-opus-5
+--belief_model anthropic/claude-opus-5
+--vision_model anthropic/claude-opus-5
 ```
 Leave `--dedupe` off with an Anthropic key only: its embeddings use an OpenAI model.
 
