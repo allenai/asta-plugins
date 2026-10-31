@@ -84,7 +84,7 @@ Before anything is created, search every prompt, the run description and each fi
 
 `autodiscovery/runs.csv`, one row per run: run, round, label, title, run id, prompt file, the sub-questions it covers, files, extract hash, experiments requested, the search settings as the service reports them, status and shared link. The first columns are filled by hand at step 2 (a short name, a one-letter label for the markers, a title) and the run id after `create`; `runlog.py` fills the rest.
 
-`autodiscovery/experiments.csv`, the ranked list: one row per experiment, ordered within each run by the change in belief with rises first, with run, number, hypothesis, AutoDiscovery's analysis of what it found, belief before and after, surprisal, the service's surprising flag, and the link, then four columns left empty for the review: decision, methods issue, reason and reviewer. `runlog.py` keeps these, and any column a team adds to either file, when it rewrites them.
+`autodiscovery/experiments.csv`, the ranked list: one row per experiment, ordered within each run by the change in belief with rises first, with run, number, hypothesis, AutoDiscovery's analysis of what it found, belief before and after, surprisal, the service's surprising flag, and the link, then three columns left empty for the review: decision, reason and reviewer. `runlog.py` keeps these, and any column a team adds to either file, when it rewrites them.
 
 ## The pages
 
@@ -109,7 +109,7 @@ Every number from an experiment carries a marker that opens the experiment's own
 
 ## Review together
 
-The review is outside the workflow. The researcher and the team go through the write-up and the ranked list and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, the ranked list's `decision` is `follow-up analysis`, `small validation` or `none`; `methods_issue` is `yes` when the analysis itself is flawed (the wrong test, an assumption the data break, a variable that leaks the outcome), whatever the decision; `reason` says why; and `reviewer` says who. The decisions are committed and are what a later round starts from.
+The review is outside the workflow. The researcher and the team go through the write-up and the ranked list and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort, and whether the page's own phrases stand. For each experiment they make a call on, the ranked list's `decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, an assumption the data break, a variable that leaks the outcome); and `reviewer` says who. A team can add any other columns that help its review. The decisions are committed and are what a later round starts from.
 
 ## Follow-up rounds
 

@@ -27,9 +27,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 AD = ROOT / "autodiscovery"
 RAW = ROOT / ".asta" / "autodiscovery"
-# The review is filled in by hand: decision (follow-up analysis, small validation or none), methods_issue
-# (yes when the analysis itself is flawed), reason and reviewer.
-REVIEW = ("decision", "methods_issue", "reason", "reviewer")
+# The review is filled in by hand: decision (follow-up analysis, small validation, none or methods issue),
+# reason and reviewer.
+REVIEW = ("decision", "reason", "reviewer")
 # The columns runlog.py writes in experiments.csv; every other column is kept as the team left it.
 GENERATED = (
     "run",

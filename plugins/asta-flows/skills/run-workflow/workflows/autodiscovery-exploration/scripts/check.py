@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS_COLS = "run,round,label,title,run_id,prompt,sub_questions,files,extract_hash,n_experiments,exploration_weight,surprisal_width,evidence_weight,status,shared_url".split(
     ","
 )
-EXP_COLS = "run,experiment,hypothesis,analysis,belief_before,belief_after,surprise,surprising,link,decision,methods_issue,reason,reviewer".split(
+EXP_COLS = "run,experiment,hypothesis,analysis,belief_before,belief_after,surprise,surprising,link,decision,reason,reviewer".split(
     ","
 )
 INDEX_HEADINGS = [
