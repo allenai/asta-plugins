@@ -76,6 +76,16 @@ export VERTEXAI_PROJECT=<user's project-id>
 export VERTEXAI_LOCATION=global
 ```
 
+### Relaxed reviewer (optional)
+
+AutoDiscovery's reviewer fails an experiment for any gap against its plan, so many sound experiments are thrown out. `scripts/run_relaxed.py` runs AutoDiscovery with a reviewer that fails an experiment only when its main result is wrong or untested. It takes the same arguments as `auto-discovery`:
+
+```bash
+"$(uv tool dir)/asta-autodiscovery/bin/python" -I scripts/run_relaxed.py <auto-discovery arguments>
+```
+
+Use it with GPT-6 Luna. In our tests it raised Luna's pass rate from about a third to nearly all experiments, and cost less per usable experiment. It prints `experiment_reviewer: relaxed system message active` when it starts. More experiments pass, so read the results rather than trusting the pass count. Tested with `asta-autodiscovery` 1.0.1.
+
 ### Known behaviours
 
 - A run whose model calls all fail (a missing or invalid key, no quota) does not stop on its own; it retries indefinitely and writes a large log. Watch the first few minutes of a new run and stop it if every call errors.

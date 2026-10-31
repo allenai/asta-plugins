@@ -6,7 +6,9 @@
   key (Claude Opus 5) and recommends GPT-6 Luna on an OpenAI key. It names the
   installed CLI `auto-discovery` throughout, fixes the model names and Vertex
   variables, and lists known behaviours: runs that never stop when every call
-  fails, and safety-filter stops that end a run with no experiments.
+  fails, and safety-filter stops that end a run with no experiments. An
+  optional `scripts/run_relaxed.py` runs it with a reviewer that fails an
+  experiment only when its main result is wrong or untested.
 
 - When the workspace skill creates a workspace's GitHub repo, or sets up one
   that exists but is empty, it proposes a private repo, a private Pages site
