@@ -21,7 +21,7 @@ This skill is a **router**. Inspect the user's request, pick one workflow, then 
 
 ### 0. Exploration belongs to run-workflow
 
-A request for the AutoDiscovery exploration workflow, or to explore a dataset with AutoDiscovery from a mission through to a team review, is the `asta-flows:run-workflow` skill's. Load that skill instead and follow its workflow; it calls back here only to create and monitor runs.
+A request for the AutoDiscovery exploration workflow, or to explore a dataset with AutoDiscovery from a mission through to a team review, is the `run-workflow` skill's, in the asta-flows plugin. When that plugin is installed, load that skill instead and follow its workflow; it calls back here only to create and monitor runs.
 
 ### 1. Honor explicit requests
 
