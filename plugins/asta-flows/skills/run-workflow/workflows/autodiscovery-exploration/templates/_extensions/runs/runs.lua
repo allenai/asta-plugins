@@ -1,13 +1,14 @@
 --[[
   runs/runs.lua — every run and its experiments, drawn into the write-up.
 
-  An empty `::: {.runs}` div becomes one outlined box per folder in runs/
-  that holds a run.md and an experiments.csv. Always in view: the prompt as
+  An empty `::: {.runs}` div becomes one subsection per folder in runs/ that
+  holds a run.md and an experiments.csv, headed by the run so it appears in
+  the page's table of contents. Always in view: the prompt as
   submitted, cut at PROMPT_MAX characters with the whole of it on hover, and
   links to the hosted run and the experiments table. In a collapsed callout: every
   experiment, rises in belief first, then falls, each largest surprisal first. Nothing is
   generated or committed; the page is drawn from the run folders at each render.
-  The outlines take Asta's accent (allenai/design asta/tokens.json): green on
+  The experiments callouts take Asta's accent (allenai/design asta/tokens.json): green on
   the dark palette, teal on the light one.
 ]]
 
@@ -122,22 +123,21 @@ local function run_callout(root, name)
     collapse = true,
     icon = false,
   })
-  return pandoc.Div({
-    pandoc.Div({ pandoc.Plain({ pandoc.Str("Run " .. label .. ": " .. title) }) }, { class = "run-title" }),
+  return {
+    pandoc.Header(3, { pandoc.Str("Run " .. label .. ": " .. title) }, { id = "run-" .. name }),
     prompt(section(doc.blocks, "Prompt")),
     pandoc.Para(links),
-    experiments_callout,
-  }, { class = "run" })
+    pandoc.Div({ experiments_callout }, { class = "run-experiments" }),
+  }
 end
 
 local STYLE = [[
 <style>
-.runs { --run-line: rgba(15, 203, 140, 0.4); --run-fill: rgba(15, 203, 140, 0.12); }
-body.quarto-light .runs { --run-line: rgba(16, 82, 87, 0.35); --run-fill: rgba(16, 82, 87, 0.08); }
-.runs .run { border: 1px solid var(--run-line); border-radius: 0.375rem; padding: 0.75rem 1rem; margin: 1rem 0; }
-.runs .run-title { font-weight: 600; margin-bottom: 0.5rem; }
-.runs .run div.callout.callout { border: 1px solid var(--run-line); border-left-width: 1px; margin-bottom: 0; }
-.runs .run div.callout-style-default > .callout-header { background-color: var(--run-fill); }
+.run-experiments { --run-line: rgba(15, 203, 140, 0.4); --run-fill: rgba(15, 203, 140, 0.12); }
+body.quarto-light .run-experiments { --run-line: rgba(16, 82, 87, 0.35); --run-fill: rgba(16, 82, 87, 0.08); }
+.run-experiments div.callout.callout { border: 1px solid var(--run-line); border-left-width: 1px; }
+.run-experiments div.callout-style-default > .callout-header { background-color: var(--run-fill); }
+#TOC #toc-runs + ul.collapse { display: block; }  /* the runs stay listed under Runs */
 </style>
 ]]
 
@@ -151,7 +151,9 @@ function Div(div)
   end
   table.sort(names)
   local out = {}
-  for _, name in ipairs(names) do out[#out + 1] = run_callout(root, name) end
-  div.content = out
-  return div
+  for _, name in ipairs(names) do
+    for _, b in ipairs(run_callout(root, name) or {}) do out[#out + 1] = b end
+  end
+  -- The div gives way to its runs, so their headings reach the table of contents.
+  return out
 end

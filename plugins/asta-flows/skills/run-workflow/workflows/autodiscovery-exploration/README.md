@@ -40,7 +40,7 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
 ## Steps
 
-1. **Nominate the dataset.** Scaffold the repository with the `workspace` skill, then copy this folder's `templates/` over it (the site config, the write-up, `mission.md`, the README and the ignore rules) and its `scripts/` into `scripts/`. Then look at the data: what the files or tables hold, how the data were collected (weights, clusters, strata, arms), and what the mission would need that is not there. Keep notes in the repository if they help; they are not a page.
+1. **Nominate the dataset.** Scaffold the repository with the `workspace` skill, then copy this folder's `templates/` over it (the site config, the write-up, `mission.md`, the README, the ignore rules and `_extensions/`, whose evidence extension replaces the scaffold's: the scaffold's older one shows no experiment markers) and its `scripts/` into `scripts/`. Then look at the data: what the files or tables hold, how the data were collected (weights, clusters, strata, arms), and what the mission would need that is not there. Keep notes in the repository if they help; they are not a page.
 
 2. **Define the mission.** Draft `mission.md` with the person: what they want to learn and what it would change, in their words, with their message quoted as sent; the data; what is not available; and the constraints, such as the data terms. It does not have to be a question. With nothing more specific, the mission is to see what the data hold.
 
@@ -118,7 +118,7 @@ The researcher and the team go through each run's `experiments.csv`, with the dr
 1. **Headline.** A few sentences: what came back, and what could not be answered.
 2. **Mission.** The mission in a sentence or two; when there was a message, quote it, lightly edited and anonymised.
 3. **Data.** What the extract is, as AutoDiscovery was told, and what was not available.
-4. **Runs.** One sentence: how many runs and experiments. Then the template's `::: {.runs}` block, which `_extensions/runs/runs.lua` fills at each render: one outlined box per run folder showing the prompt (cut at 300 characters, the whole of it on hover) and links to the hosted run and its `experiments.csv`, with every experiment in a collapsed table beneath, rises in belief first. The outlines take Asta's accent color.
+4. **Runs.** One sentence: how many runs and experiments. Then the template's `::: {.runs}` block, which `_extensions/runs/runs.lua` fills at each render: one subsection per run folder, listed under Runs in the page's contents, showing the prompt (cut at 300 characters, the whole of it on hover) and links to the hosted run and its `experiments.csv`, with every experiment in a collapsed table beneath, rises in belief first. The experiments tables take Asta's accent color.
 5. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose. In the draft, each ends with **What to check**.
 6. **Null results.** What was tested and came back with nothing, and what could not be tested.
 7. **Next steps.** From the review: what the team marked `Follow up` or `Validate`, then the data that would open up more. The write-up does not make those calls itself.
