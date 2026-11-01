@@ -8,11 +8,13 @@ Install (or upgrade) the local CLI with `uv`:
 
 ```bash
 if ! command -v auto-discovery >/dev/null 2>&1; then
-  uv tool install asta-autodiscovery
+  uv tool install --python 3.13 asta-autodiscovery
 fi
 ```
 
 **Prerequisites:** Python 3.13+ and [uv package manager](https://docs.astral.sh/uv/).
+
+`--python 3.13` is needed. Without it, uv builds on the newest Python it finds, where AutoDiscovery's `h5py` dependency has no prebuilt package and the install fails part-way through compiling it.
 
 Verify the install:
 
@@ -89,7 +91,7 @@ In our tests it raised GPT-6 Luna's pass rate from about a third to nearly all e
 ### Known behaviours
 
 - A run whose model calls all fail (a missing or invalid key, no quota) does not stop on its own; it retries indefinitely and writes a large log. Watch the first few minutes of a new run and stop it if every call errors.
-- A model's safety filter can stop a response partway through. AutoDiscovery does not retry and records no experiment, so a run can end almost immediately with exit status 0 and no experiments. If a run ends with "No new experiment generated", search the log for `content_filter`.
+- A model's safety filter can stop a response partway through. AutoDiscovery does not retry and records no experiment, so a run can end almost immediately with exit status 0 and no experiments. If a run ends with "No new experiment generated", search the log for `content_filter`. We have seen this with `anthropic/claude-opus-5-5` on infectious disease data, where `anthropic/claude-opus-5` ran the same data to the end. This is why Opus 5 is the one recommended above.
 
 ## Result Summarization
 See `assets/interpreting-results.md` for instructions on how to report a result back to the uesr
