@@ -26,7 +26,7 @@ Show the person this table with the values for their dataset. Anything not in it
 | Plan the runs | One run by default, more only for angles the person names; the prompts, the budget and the extract | one run of 50 experiments; as much of the data as can be extracted |
 | Extract and describe | Build the extract and describe it for AutoDiscovery | |
 | Run AutoDiscovery | Run, then save each run's record and its experiments table | |
-| Agent review | Read every experiment's code and output; note what would make a result not stand | on |
+| Agent review | Read every experiment's code and output; mark results that do not stand or are overstated | on |
 | Review together | The team's decisions on the experiments | |
 | Write up | Optional: the write-up, including null results | |
 
@@ -64,7 +64,7 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
    - **The run:** how many experiments, and how many raised or lowered AutoDiscovery's belief.
    - **What it looked at:** the areas the experiments covered, in a few bullets.
    - **What stood out:** what the experiments say, in their words; describe, do not conclude, and never present a flagged experiment as a result.
-   - **Agent review:** how many experiments were flagged, counted by problem, with the IDs of those whose result does not stand.
+   - **Agent review:** how many experiments were marked `Doesn't stand` and `Overstated`, with their IDs, and the caveats that apply to the whole run.
    - **Start with:** the flagged rows in each `experiments.csv`, then the rest; the team fills in `Next step` and `Human review` and says when it is done.
 
    The review is the team's ([Review together](#review-together)).
@@ -123,7 +123,12 @@ AutoDiscovery's own review, the `Validity Check` column, asks whether the code d
 - **Too few cases:** a result resting on a handful of observations.
 - **Beyond the test:** a conclusion the experiment's own numbers do not carry.
 
-An experiment with a problem gets one line in `Agent review`: the problem, the evidence, and what it does to the result, such as "Wrong variable: kr_h2, kr_h4 and kr_h6 are BCG, polio 1 and polio 2, not DPT; the waning test is about the wrong vaccines." An experiment with none stays blank. Review every experiment before the stop; if some could not be reviewed, say which. Leave `Next step` and `Human review` to the team.
+Flag only what changes what the experiment's own numbers support. A cell starts with a verdict, then one sentence of about 150 characters naming the problem and its evidence:
+
+- **`Doesn't stand`:** the code or the data handling breaks the result, such as "Doesn't stand: kr_h2, kr_h4 and kr_h6 are BCG, polio 1 and polio 2, not DPT."
+- **`Overstated`:** the numbers are right but the conclusion goes further, such as "Overstated: the specificity test is p = 0.078, reported as strong support."
+
+Everything else stays blank, including a result that holds with a caveat. Caveats that apply to the whole dataset, such as a cross-sectional design, missing weights where they barely matter, or a mechanism the data cannot measure, go once in the summary at the review stop, not on every row. The detail is in the experiment's code; explain a flag when the team asks. Review every experiment before the stop; if some could not be reviewed, say which. Leave `Next step` and `Human review` to the team.
 
 ## Review together
 
