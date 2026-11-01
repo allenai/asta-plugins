@@ -59,7 +59,15 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
 6. **Agent review.** Unless the person skipped it, review every experiment in every new run and fill its `Agent review` cell ([Agent review](#agent-review)). Commit the tables.
 
-7. **Review together.** Stop. The review is the team's ([Review together](#review-together)).
+7. **Review together.** Stop, with a summary of each new run in the message, short enough to fit on one screen (10 to 15 lines) and kept in the chat, not in a file:
+
+   - **The run:** how many experiments, and how many raised or lowered AutoDiscovery's belief.
+   - **What it looked at:** the areas the experiments covered, in a few bullets.
+   - **What stood out:** what the experiments say, in their words; describe, do not conclude, and never present a flagged experiment as a result.
+   - **Agent review:** how many experiments were flagged, counted by problem, with the IDs of those whose result does not stand.
+   - **Start with:** the flagged rows in each `experiments.csv`, then the rest; the team fills in `Next step` and `Human review` and says when it is done.
+
+   The review is the team's ([Review together](#review-together)).
 
 8. **More runs.** New runs start from the review's decisions: back to step 3, in the same repository, as a pull request whose description says why. `asta autodiscovery fork <run id>` starts a run with another run's metadata and files, to change only the prompt. Change `mission.md` only when the goal changes. Data that arrives later gets a new extract with its own hash.
 
