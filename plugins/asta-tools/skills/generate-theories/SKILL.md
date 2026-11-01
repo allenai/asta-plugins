@@ -8,6 +8,8 @@ allowed-tools: Bash(asta auth login) Bash(asta auth status) Bash(asta generate-t
 
 Uses the [Theorizer](https://github.com/allenai/asta-theorizer-internal) agent (via `asta-gateway`) to find papers, extract evidence, write theories, and score novelty. Auth: `asta auth login`.
 
+This skill is the hosted service, which runs on Asta credits. To run Theorizer on the person's own machine and their own OpenAI or Anthropic key, with no Asta account, use the `run-workflow` skill's theory generation workflow instead. Prefer it when the person says their own key, a local run, or papers of their own on disk, and when `asta auth status` shows they are not logged in.
+
 The CLI is generated from the agent card — every subcommand, flag, and default. Discover the surface yourself:
 - `asta generate-theories --help` — list subcommands.
 - `asta generate-theories card` — full agent card.

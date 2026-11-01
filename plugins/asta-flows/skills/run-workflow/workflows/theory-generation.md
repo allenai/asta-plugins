@@ -9,11 +9,13 @@ Paper Finder is the source unless the person points you at papers of their own -
 Before the plan, check that Theorizer is installed and ready:
 
 ```bash
-uv tool install --upgrade asta-theorizer
+uv tool install --upgrade --python 3.13 asta-theorizer --with "pymupdf4llm<2"
 theorize doctor
 ```
 
-`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. `doctor` exits non-zero on anything that would stop a run, and says how to fix it. A missing key is the common one, and this is the fix that needs no restart -- Theorizer reads the file on the next command:
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. Both pins matter. Without `--python`, uv builds on the newest Python it finds, where one dependency has no prebuilt package and the install fails part-way through compiling it. And `pymupdf4llm` 2.0 on PyPI is an empty package, so without that pin, PDFs are imported as metadata with no text.
+
+`doctor` exits non-zero on anything that would stop a run, and says how to fix it. A missing key is the common one, and this is the fix that needs no restart -- Theorizer reads the file on the next command:
 
 ```bash
 mkdir -p ~/.config/asta && echo '{"openai": "..."}' > ~/.config/asta/api_keys.donotcommit.json   # or "anthropic"
@@ -57,9 +59,11 @@ Shape is worth asking about: Theorizer spots laws far more readily when it is to
 1. **Plan.** Theorizer plans the run from the question: a paper search query, an extraction query and a first schema:
 
    ```bash
-   theorize -p <run>/theory init --model gpt-6-sol --extraction-model gpt-6-luna
+   theorize -p <run>/theory init
    theorize -p <run>/theory plan "<the question>"
    ```
+
+   `init` picks the models from the key it finds, and prints the pair it chose: `gpt-6-sol` with `gpt-6-luna` on an OpenAI key, `claude-opus-5-5` with `claude-sonnet-5-5` on an Anthropic one. Name that pair in the plan. Pass `--model` and `--extraction-model` only when the person asks for something else.
 
    Pass their question as they wrote it, leaving out only instructions for the run itself (how many papers, which models). Add only what they gave: a shape goes into the question ("Find IF ... THEN laws for ..."), since the plan's request is the theory query the generator reads, and a focus goes in as `--mission-statement`, so it shapes the search query and the schema. A workflow that adds a mission statement after the papers are in runs `plan` again with it before extracting.
 
@@ -90,7 +94,15 @@ Shape is worth asking about: Theorizer spots laws far more readily when it is to
    theorize -p <run>/theory show theories
    ```
 
-   `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits `gpt-6-sol`. With 200 papers or more, add `--objective attribution-batched` to every generation in the run: it reads the evidence that does not fit in further batches instead of leaving it out. Say so in the plan.
+   `--max-data-tokens` is how much evidence one generation call reads before it subsamples; 750000 fits either model pair. With 200 papers or more, add `--objective attribution-batched` to every generation in the run: it reads the evidence that does not fit in further batches instead of leaving it out. Say so in the plan.
+
+   **If a generation ends with `TypeError: 'NoneType' object does not support item assignment`,** the model's safety filter stopped the call and returned nothing. Theorizer does not report this itself and does not retry. It has been seen with `claude-opus-5-5` on subjects such as infectious disease. Generate again on `claude-opus-5`, which has passed where 5.5 did not:
+
+   ```bash
+   theorize -p <run>/theory theories generate --model claude-opus-5 --max-data-tokens 750000
+   ```
+
+   Only that call changes model, and the extraction it reads is already saved, so nothing is extracted again. Use the same flag on every later generation in the run, and say in the summary which model wrote the theories. A `plan` call stopped the same way usually passes on an unchanged retry.
 
    **Check in and wait.** Variable discovery and the schema passes cost several times the first pass, so stop here. Go straight on to 4b only if the person explicitly asked, when agreeing the plan, to run without the check-in. List the first theories, one line each, and offer the two ways on from the plan:
 

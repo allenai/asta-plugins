@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- The autodiscovery skill's local workflow now covers running on an Anthropic
+  key (Claude Opus 5) and recommends GPT-6 Luna on an OpenAI key. It names the
+  installed CLI `auto-discovery` throughout, fixes the model names and Vertex
+  variables, and lists known behaviours: runs that never stop when every call
+  fails, and safety-filter stops that end a run with no experiments. Local
+  runs now start through `scripts/run_relaxed.py`, which runs it with a
+  reviewer that fails an experiment only when its main result is wrong or
+  untested.
+
+- Theorizer and AutoDiscovery install on a pinned Python in the run-workflow
+  skill and the autodiscovery skill. On the newest Python a dependency they
+  share has no prebuilt package and the install fails while compiling it.
+  Theorizer also pins `pymupdf4llm` below 2.0, whose PyPI release is an empty
+  package that leaves imported PDFs without text.
+
+- The theory generation workflow lets Theorizer choose its models from the key
+  it finds, rather than naming OpenAI's, so a run on an Anthropic key uses
+  Claude. It says what to do when a model's safety filter stops a generation:
+  Theorizer reports it only as a `TypeError`, and generating again on
+  `claude-opus-5` has passed where `claude-opus-5-5` did not, without
+  extracting anything again.
+
+- The generate-theories skill points to the run-workflow skill's theory
+  generation workflow for people running on their own key rather than on Asta
+  credits.
+
 - When the workspace skill creates a workspace's GitHub repo, or sets up one
   that exists but is empty, it proposes a private repo, a private Pages site
   with a preview and What changed for every PR, and both default-branch
