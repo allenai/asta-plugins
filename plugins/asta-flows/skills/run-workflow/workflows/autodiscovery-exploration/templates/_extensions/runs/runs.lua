@@ -1,13 +1,13 @@
 --[[
   runs/runs.lua — every run and its experiments, drawn into the write-up.
 
-  An empty `::: {.runs}` div becomes one callout per folder in runs/ that
-  holds a run.md and an experiments.csv. Always in view: the prompt as
+  An empty `::: {.runs}` div becomes one outlined box per folder in runs/
+  that holds a run.md and an experiments.csv. Always in view: the prompt as
   submitted, cut at PROMPT_MAX characters with the whole of it on hover, and
-  links to the hosted run and the experiments table. Collapsed inside: every
+  links to the hosted run and the experiments table. In a collapsed callout: every
   experiment, rises in belief first, then falls, each largest surprisal first. Nothing is
   generated or committed; the page is drawn from the run folders at each render.
-  The callouts take Asta's accent (allenai/design asta/tokens.json): green on
+  The outlines take Asta's accent (allenai/design asta/tokens.json): green on
   the dark palette, teal on the light one.
 ]]
 
@@ -122,20 +122,22 @@ local function run_callout(root, name)
     collapse = true,
     icon = false,
   })
-  return quarto.Callout({
-    type = "note",
-    title = "Run " .. label .. ": " .. title,
-    content = { pandoc.BlockQuote({ prompt(section(doc.blocks, "Prompt")) }), pandoc.Para(links), experiments_callout },
-    icon = false,
-  })
+  return pandoc.Div({
+    pandoc.Div({ pandoc.Plain({ pandoc.Str("Run " .. label .. ": " .. title) }) }, { class = "run-title" }),
+    prompt(section(doc.blocks, "Prompt")),
+    pandoc.Para(links),
+    experiments_callout,
+  }, { class = "run" })
 end
 
 local STYLE = [[
 <style>
-.runs div.callout-note.callout { border-left-color: #0fcb8c; }
-.runs div.callout-note.callout-style-default > .callout-header { background-color: rgba(15, 203, 140, 0.12); }
-body.quarto-light .runs div.callout-note.callout { border-left-color: #105257; }
-body.quarto-light .runs div.callout-note.callout-style-default > .callout-header { background-color: rgba(16, 82, 87, 0.08); }
+.runs { --run-line: rgba(15, 203, 140, 0.4); --run-fill: rgba(15, 203, 140, 0.12); }
+body.quarto-light .runs { --run-line: rgba(16, 82, 87, 0.35); --run-fill: rgba(16, 82, 87, 0.08); }
+.runs .run { border: 1px solid var(--run-line); border-radius: 0.375rem; padding: 0.75rem 1rem; margin: 1rem 0; }
+.runs .run-title { font-weight: 600; margin-bottom: 0.5rem; }
+.runs .run div.callout.callout { border: 1px solid var(--run-line); border-left-width: 1px; margin-bottom: 0; }
+.runs .run div.callout-style-default > .callout-header { background-color: var(--run-fill); }
 </style>
 ]]
 
