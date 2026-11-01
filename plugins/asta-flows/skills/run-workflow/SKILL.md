@@ -11,7 +11,7 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(comm
 - [Theory generation](workflows/theory-generation.md): Theorizer plans a search query and schema, Paper Finder finds the papers, then Theorizer passes over the literature, one per extraction schema.
 - [Data Driven Theory Generation](workflows/data-driven-theory-generation.md): Paper Finder, Data Search, AutoDS, then Theorizer to explain experimental findings.
 - [Secondary reproduction](workflows/secondary-reproduction.md): re-test an AutoDS run's hypotheses on independent data, then build theories from the verdicts with Theorizer.
-- [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md): set a mission for a dataset, run AutoDS on it, keep each run's configuration and experiments for the team's review, and optionally write up what came back with every number linked to its experiment.
+- [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md): set a mission for a dataset, run AutoDS on it, keep each run's configuration and experiments for the team's review, draft a write-up from a pass over every experiment for the team to review from, and optionally keep it, with every number linked to its experiment.
 
 Pick one with the person and read its file.
 

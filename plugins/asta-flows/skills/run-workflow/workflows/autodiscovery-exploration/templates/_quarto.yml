@@ -22,7 +22,7 @@ filters:
 evidence-provenance: false
 
 website:
-  title: "<Title, the same as the write-up's>"
+  title: "[Title, the same as the write-up's]"
 
 format:
   html:

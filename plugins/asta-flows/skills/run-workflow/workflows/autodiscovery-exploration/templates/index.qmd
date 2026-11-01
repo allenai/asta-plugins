@@ -1,24 +1,34 @@
 ---
-title: "<Descriptive title, a noun phrase>"
-subtitle: "An AutoDiscovery exploration of <the dataset>."
+title: "[Descriptive title, a noun phrase]"
+subtitle: "An AutoDiscovery exploration of [the dataset]."
 date: today
 ---
+
+<!-- The draft callout stays until the team's review, then goes. -->
+
+::: {.callout-warning}
+## Draft for the team's review
+
+Written before the review, from a pass over every experiment. The findings are what the experiments say, not what the team concluded. Experiments to check first:
+
+- **[A-7].** [What would make it not stand, in a line.]
+:::
 
 <!-- Headline: a few sentences on what came back and what could not be answered. No section heading. -->
 
 ## Mission
 
-<The mission in a sentence or two. When there was a researcher's message, quote it, lightly edited for typos and anonymised; the message as sent stays in mission.md.>
+[The mission in a sentence or two. When there was a researcher's message, quote it, lightly edited for typos and anonymised; the message as sent stays in mission.md.]
 
 ## Data
 
-<Three sentences: what the source is; what AutoDiscovery received (one row per <unit>, the files and their sizes). Each run's `run.md` has the description it received.>
+[Three sentences: what the source is; what AutoDiscovery received (one row per unit, the files and their sizes). Each run's `run.md` has the description it received.]
 
-Not available: <what the mission would need that the data do not hold>.
+Not available: [what the mission would need that the data do not hold].
 
 ## Runs
 
-<N> runs, <M> experiments in all.
+[N] runs, [M] experiments in all.
 
 Each run below opens to its prompt and every experiment, ranked with rises in belief first.
 
@@ -29,20 +39,22 @@ Each run below opens to its prompt and every experiment, ranked with rises in be
 
 ## Findings
 
-### <A result worth calling out, as a noun phrase or a plain statement>
+### [A result worth calling out, as a noun phrase or a plain statement]
 
-<Led by the experiments that found it, in their words with markers, and their figures. Why it matters for the mission. End with a sentence on how far to trust it and why.>
+[Led by the experiments that found it, in their words with markers, and their figures. Why it matters for the mission. End with a sentence on how far to trust it and why.]
 
-![<caption>. From experiment <A-32>.](figures/<a-32>.jpg){fig-alt="<what the figure shows>"}
+**What to check.** [From the pass: what would make it not stand, or what a reviewer would need to confirm. Removed after the review.]
+
+<!-- A figure: ![Caption. From experiment A-32.](figures/a-32.jpg){fig-alt="What the figure shows"} -->
 
 ## Null results
 
-**<Topic>.** <What was tested and came back with nothing, with markers.>
+**[Topic].** [What was tested and came back with nothing, with markers.]
 
-**Not testable.** <What the data cannot answer, and what it would need.>
+**Not testable.** [What the data cannot answer, and what it would need.]
 
 ## Next steps
 
-<!-- From the review: the experiments the team marked follow-up analysis or small validation, then the data that would open up more. -->
+<!-- From the review: the experiments the team marked follow-up analysis or small validation, then the data that would open up more. Left empty in the draft. -->
 
-1. **<Step>.** <Why, in a sentence or two.>
+1. **[Step].** [Why, in a sentence or two.]

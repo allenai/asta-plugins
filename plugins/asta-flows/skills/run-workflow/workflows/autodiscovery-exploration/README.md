@@ -1,8 +1,8 @@
 # AutoDiscovery exploration
 
-A team nominates a dataset they already work with and writes down its mission: what they want to learn, and what it would change. AutoDiscovery searches the data and returns a ranked list of surfaced hypotheses. The team reviews the list together, decides what is worth a follow-up analysis or a small validation effort, and starts more runs from those decisions. A write-up of what came back, including null results, is optional. The workflow leaves the record the collaboration asks for in one version-controlled repository: the mission, the extraction script, and each run's configuration and experiments.
+A team nominates a dataset they already work with and writes down its mission: what they want to learn, and what it would change. AutoDiscovery searches the data and returns a ranked list of surfaced hypotheses. The team reviews the list together, decides what is worth a follow-up analysis or a small validation effort, and starts more runs from those decisions. Before the review, the agent passes over every experiment and drafts the write-up for the team to review from; keeping and publishing it afterwards, with null results, is optional. The workflow leaves the record the collaboration asks for in one version-controlled repository: the mission, the extraction script, and each run's configuration and experiments.
 
-The researcher's part is the mission, settling the runs, and the review. The workflow stops before any run is created and again before anything is published. Budget an hour or two of their time.
+The researcher's part is the mission, settling the runs, and the review. The workflow stops before any run is created, at the review, and before anything is published. Budget an hour or two of their time.
 
 ## Setup
 
@@ -26,8 +26,9 @@ Show the person this table with the values for their dataset. Anything not in it
 | Plan the runs | One run by default, more only for angles the person names; the prompts, the budget and the extract | one run of 50 experiments; as much of the data as can be extracted |
 | Extract and describe | Build the extract and describe it for AutoDiscovery | |
 | Run AutoDiscovery | Run, then save each run's record and its experiments table | |
+| Draft for review | A pass over every experiment, and the write-up drafted from it | |
 | Review together | The team's decisions on the experiments | |
-| Write up | Optional: the write-up, including null results | |
+| Write up | Optional: the draft rewritten from the decisions, then published | |
 
 After the table, list what they can change:
 
@@ -55,11 +56,13 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
 5. **Run AutoDiscovery.** For each run: `asta autodiscovery create`, `upload` the files, `metadata` from a JSON file made from its `run.md` (`name`, `domain`, `description`, the prompt as `intent`, `datasets` with each file's name and description, and `experiments` as `n_experiments`; keep it as `.asta/autodiscovery/<run>/metadata.json`), `metadata-get` to confirm name, prompt, files and experiment count match, then `submit`. A run of 50 takes about two hours. Poll until it finishes, then save its full record as `.asta/autodiscovery/<run>/results.json` (`asta autodiscovery results`), following the `.asta/<skill>/` convention for skill outputs. Share the run in the AutoDiscovery app, put its shared link in `run.md`, and open one experiment link in a private window to confirm it needs no sign-in. Then `python3 scripts/runlog.py` writes the run's `experiments.csv` and its figures; it stops if any experiment text looks like row-level data. Commit the run folder, the record and the figures.
 
-6. **Review together.** Stop. The review is the team's ([Review together](#review-together)).
+6. **Draft for review.** Unless the team asks to review the experiments alone, pass over every experiment and draft the write-up ([The draft](#the-draft)). Render it with `make check`, then look at the served page itself: a page whose placeholders or front matter fail can pass the check and render empty. Show the researcher the local preview; do not publish the draft.
 
-7. **More runs.** New runs start from the review's decisions: back to step 3, in the same repository, as a pull request whose description says why. `asta autodiscovery fork <run id>` starts a run with another run's metadata and files, to change only the prompt. Change `mission.md` only when the goal changes. Data that arrives later gets a new extract with its own hash.
+7. **Review together.** Stop. The review is the team's ([Review together](#review-together)).
 
-8. **Write up.** Only when the team wants one ([The write-up](#the-write-up)). Run the `check-claims` skill over it, confirm each quote is verbatim in its run's `experiments.csv`, render with `make check`, show the researcher the preview, and publish once they have seen it.
+8. **More runs.** New runs start from the review's decisions: back to step 3, in the same repository, as a pull request whose description says why. `asta autodiscovery fork <run id>` starts a run with another run's metadata and files, to change only the prompt. Change `mission.md` only when the goal changes. Data that arrives later gets a new extract with its own hash.
+
+9. **Write up.** Only when the team wants the write-up kept ([The write-up](#the-write-up)). Rewrite the draft from the review: experiments marked `methods issue` leave Findings, or move to Null results with the team's reason; Next steps lists what was marked `follow-up analysis` or `small validation`. Remove the draft callout and the **What to check** lines, keeping any caution the review confirmed in the sentence on how far to trust a finding. Run the `check-claims` skill over it, confirm each quote is verbatim in its run's `experiments.csv`, render with `make check`, show the researcher the preview, and publish once they have seen it.
 
 ## Seeding protocol
 
@@ -75,7 +78,7 @@ Before anything is created, search every prompt and description for direction an
 
 ```markdown
 ---
-name: <the run's name in AutoDiscovery>
+name: "<the run's name in AutoDiscovery>"
 experiments: 50
 files: [<file>.csv]
 link: <the run's shared link, once shared>
@@ -94,27 +97,33 @@ link: <the run's shared link, once shared>
 <the file's description>
 ```
 
-Optional fields: `title` (a short title for the run), `label` (the letter in the write-up's markers, such as A for A-32), `domain`, and any search setting changed from the service's default.
+Quote `name` and `title`: a colon in a run's name breaks the front matter. Optional fields: `title` (a short title for the run), `label` (the letter in the write-up's markers, such as A for A-32), `domain`, and any search setting changed from the service's default.
 
 `runs/<run>/experiments.csv` is one row per experiment: `ID`, then two columns left empty for the review, `Decision` and `Reason`, then the rest of the web app's download of a run in its order (`Hypothesis` to `Deliverables`). A team using the web app saves the download here and adds the two review columns after `ID`. `runlog.py` writes it once the run has finished, and leaves it alone after that.
 
+## The draft
+
+The pass reads each experiment in full from the run's record (its plan, code and printed output), not only its row in `experiments.csv`, and looks for what would make a result not stand: a sample selected on the outcome or on something it causes, a variable that leaks the outcome, the survey design ignored where it matters, the wrong test or unit, many comparisons read as one, too few cases, an explanation that goes further than the numbers, an ID used twice. It does not fill `Decision` or `Reason`; those are the team's.
+
+The draft is the write-up ([The write-up](#the-write-up)) with three differences. The template's draft callout stays at the top and lists the experiments to check first, each with its ID and a line on why. Each finding ends with a **What to check** line: the concern from the pass, or what a reviewer would need to confirm, such as an explanation the numbers alone cannot carry. A striking result with a flaw stays in, with the flaw stated; the review decides. Next steps is left for the review.
+
 ## Review together
 
-The researcher and the team go through each run's `experiments.csv` and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome). A team can add any other columns that help its review. The decisions are committed and are what the next runs start from.
+The researcher and the team go through each run's `experiments.csv`, with the draft open beside it, and decide, as a team, whether anything is worth a follow-up analysis or a small validation effort. For each experiment they make a call on, `Decision` is `follow-up analysis`, `small validation`, `none`, or `methods issue` when the experiment itself is flawed; `Reason` says why (what makes the result convincing, or what is wrong with the method: the wrong test, a bad assumption, a variable that leaks the outcome). A team can add any other columns that help its review. The decisions are committed and are what the next runs start from.
 
 ## The write-up
 
-`index.qmd`, in the Asta voice (<https://github.com/allenai/design/blob/main/asta/VOICE.md>), with headings that are nouns and are the same in every exploration:
+`index.qmd`, drafted before the review and rewritten after it (step 9), in the Asta voice (<https://github.com/allenai/design/blob/main/asta/VOICE.md>), with headings that are nouns and are the same in every exploration:
 
 1. **Headline.** A few sentences: what came back, and what could not be answered.
 2. **Mission.** The mission in a sentence or two; when there was a message, quote it, lightly edited and anonymised.
 3. **Data.** What the extract is, as AutoDiscovery was told, and what was not available.
 4. **Runs.** One sentence: how many runs and experiments. Then the template's `::: {.runs}` block, which `_extensions/runs/runs.lua` fills at each render: one collapsed section per run folder with the prompt, links to the hosted run and its `experiments.csv`, and every experiment ranked with rises in belief first. The callouts take Asta's accent color.
-5. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose.
+5. **Findings.** The results worth calling out, each led by the experiments that found it in their words and with their figures, with why it matters for the mission and how far to trust it, as prose. In the draft, each ends with **What to check**.
 6. **Null results.** What was tested and came back with nothing, and what could not be tested.
 7. **Next steps.** From the review: what the team marked worth a follow-up analysis or a small validation effort, then the data that would open up more. The write-up does not make those calls itself.
 
-Every number from an experiment carries a marker, `[text]{.ev key="..."}`, whose entry in `evidence.yml` quotes the experiment's own words verbatim from its run's `experiments.csv` (`Hypothesis`, `Findings` or `Validity Check`), names it as `AutoDiscovery run <label>, experiment <ID>`, and links the run's shared link with `?exp=<ID>`. Do not cite an ID that appears twice in a run; its link opens only one of the pair. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, from `.asta/autodiscovery/<run>/figures/`, looked at before use and copied into `figures/`, and never one mark per unit below the published level of geography. A term such as an odds ratio is defined the first time it is used.
+The template's placeholders are in square brackets; replace every one, and do not write placeholders in angle brackets, which render as nothing. Every number from an experiment carries a marker, `[text]{.ev key="..."}`, whose entry in `evidence.yml` quotes the experiment's own words verbatim from its run's `experiments.csv` (`Hypothesis`, `Findings` or `Validity Check`), names it as `AutoDiscovery run <label>, experiment <ID>`, and links the run's shared link with `?exp=<ID>`. Do not cite an ID that appears twice in a run; its link opens only one of the pair. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, from `.asta/autodiscovery/<run>/figures/`, looked at before use and copied into `figures/`, and never one mark per unit below the published level of geography. A term such as an odds ratio is defined the first time it is used.
 
 ## Records
 

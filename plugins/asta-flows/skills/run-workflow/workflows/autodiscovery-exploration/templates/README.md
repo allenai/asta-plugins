@@ -1,14 +1,14 @@
-# <Title, the same as the write-up's>
+# [Title, the same as the write-up's]
 
-An AutoDiscovery exploration of <the dataset>, by <who>, published as one Quarto site.
+An AutoDiscovery exploration of [the dataset], by [who], published as one Quarto site.
 
 ## Mission
 
-<The mission in a paragraph; the goal, the data and the constraints are in [mission.md](mission.md).>
+[The mission in a paragraph; the goal, the data and the constraints are in [mission.md](mission.md).]
 
 ## How it came out
 
-<A paragraph: the runs, what came back, what could not be answered, the next step. The write-up, `index.qmd`, has every number linked to the experiment it came from.>
+[A paragraph: the runs, what came back, what could not be answered, the next step. The write-up, `index.qmd`, has every number linked to the experiment it came from.]
 
 ## Layout
 
