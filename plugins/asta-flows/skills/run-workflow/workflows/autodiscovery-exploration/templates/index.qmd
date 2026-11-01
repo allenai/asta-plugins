@@ -4,16 +4,6 @@ subtitle: "An AutoDiscovery exploration of [the dataset]."
 date: today
 ---
 
-<!-- The draft callout stays until the team's review, then goes. -->
-
-::: {.callout-warning}
-## Draft for the team's review
-
-Written before the review, from a pass over every experiment. The findings are what the experiments say, not what the team concluded. Experiments to check first:
-
-- **[A-7].** [What would make it not stand, in a line.]
-:::
-
 <!-- Headline: a few sentences on what came back and what could not be answered. No section heading. -->
 
 ## Mission
@@ -43,8 +33,6 @@ Each run below shows its prompt and links; its experiments open beneath, ranked 
 
 [Led by the experiments that found it, in their words with markers, and their figures. Why it matters for the mission. End with a sentence on how far to trust it and why.]
 
-**What to check.** [From the pass: what would make it not stand, or what a reviewer would need to confirm. Removed after the review.]
-
 <!-- A figure: ![Caption. From experiment A-32.](figures/a-32.jpg){fig-alt="What the figure shows"} -->
 
 ## Null results
@@ -55,6 +43,6 @@ Each run below shows its prompt and links; its experiments open beneath, ranked 
 
 ## Next steps
 
-<!-- From the review: the experiments the team marked Follow up or Validate, then the data that would open up more. Left empty in the draft. -->
+<!-- From the review: the experiments the team marked Follow up or Validate, then the data that would open up more. -->
 
 1. **[Step].** [Why, in a sentence or two.]

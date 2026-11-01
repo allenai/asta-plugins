@@ -6,7 +6,8 @@
   the page's table of contents. Always in view: the prompt as
   submitted, cut at PROMPT_MAX characters with the whole of it on hover, and
   links to the hosted run and the experiments table. In a collapsed callout: every
-  experiment, rises in belief first, then falls, each largest surprisal first. Nothing is
+  experiment, rises in belief first, then falls, each largest surprisal first,
+  with its Agent review when any experiment in the run has one. Nothing is
   generated or committed; the page is drawn from the run folders at each render.
   The experiments callouts take Asta's accent (allenai/design asta/tokens.json): green on
   the dark palette, teal on the light one.
@@ -86,6 +87,9 @@ local function run_callout(root, name)
   local counts = {}
   for _, e in ipairs(exps) do counts[e["ID"]] = (counts[e["ID"]] or 0) + 1 end
 
+  local reviewed = false
+  for _, e in ipairs(exps) do reviewed = reviewed or (e["Agent review"] or "") ~= "" end
+
   local rows, repeated = {}, false
   for _, e in ipairs(exps) do
     local id = label .. "-" .. e["ID"] .. (counts[e["ID"]] > 1 and "¹" or "")
@@ -93,16 +97,22 @@ local function run_callout(root, name)
     local cell = link
       and { pandoc.Plain({ pandoc.Link(id, link .. "?exp=" .. e["ID"], "", { target = "_blank" }) }) }
       or plain(id)
-    rows[#rows + 1] = {
+    local row = {
       cell,
       plain(e["Hypothesis"] or ""),
       plain((e["Belief Before"] or "") .. " → " .. (e["Belief After"] or "")),
       plain(e["Surprisal"] or ""),
     }
+    if reviewed then row[#row + 1] = plain(e["Agent review"] or "") end
+    rows[#rows + 1] = row
   end
   local headers = { plain("Experiment"), plain("Hypothesis"), plain("Belief before → after"), plain("Surprisal") }
   local aligns = { pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignRight }
-  local tbl = pandoc.utils.from_simple_table(pandoc.SimpleTable({}, aligns, { 0, 0, 0, 0 }, headers, rows))
+  local widths = { 0, 0, 0, 0 }
+  if reviewed then
+    headers[#headers + 1], aligns[#aligns + 1], widths[#widths + 1] = plain("Agent review"), pandoc.AlignDefault, 0
+  end
+  local tbl = pandoc.utils.from_simple_table(pandoc.SimpleTable({}, aligns, widths, headers, rows))
 
   local links = {}
   if link then

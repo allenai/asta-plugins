@@ -17,7 +17,7 @@ An AutoDiscovery exploration of [the dataset], by [who], published as one Quarto
 | `mission.md` | The goal, the data and the constraints |
 | `index.qmd` | The write-up |
 | `runs/<run>/run.md` | The configuration the run was submitted with: prompt, data description, files, experiments, link |
-| `runs/<run>/experiments.csv` | The run's experiments: the web app's download, with the review's Next step and Review notes after ID |
+| `runs/<run>/experiments.csv` | The run's experiments: the web app's download, with the review's Next step, Human review and Agent review after ID |
 | `.asta/autodiscovery/<run>/` | The run's full record as saved, and its figures |
 | `evidence.yml` | Verbatim quotes behind the write-up's numbers, each copied from a run's `experiments.csv` |
 | `figures/` | The figures used on the page, each reviewed before use |
