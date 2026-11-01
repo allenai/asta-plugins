@@ -1,6 +1,6 @@
 ---
 name: run-workflow
-description: Runs an Asta research workflow for the person, from plan to report, using Paper Finder, Data Search, AutoDS and Theorizer. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
+description: Runs an Asta research workflow for the person, from plan to report, using Paper Finder, Data Search, AutoDS and Theorizer. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction, or wants to explore a dataset with AutoDiscovery (the AutoDiscovery exploration workflow).
 allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *)
 ---
 
