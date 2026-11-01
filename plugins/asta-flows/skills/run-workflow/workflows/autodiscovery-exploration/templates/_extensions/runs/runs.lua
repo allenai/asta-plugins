@@ -155,7 +155,6 @@ local STYLE = [[
 body.quarto-light .run-experiments { --run-line: rgba(16, 82, 87, 0.35); --run-fill: rgba(16, 82, 87, 0.08); }
 .run-experiments div.callout.callout { border: 1px solid var(--run-line); border-left-width: 1px; }
 .run-experiments div.callout-style-default > .callout-header { background-color: var(--run-fill); }
-#TOC #toc-runs + ul.collapse { display: block; }  /* the runs stay listed under Runs */
 </style>
 ]]
 
