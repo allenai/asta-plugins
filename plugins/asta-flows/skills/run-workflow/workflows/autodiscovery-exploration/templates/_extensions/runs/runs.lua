@@ -7,7 +7,7 @@
   submitted, cut at PROMPT_MAX characters with the whole of it on hover, and
   links to the hosted run and the experiments table. In a collapsed callout: every
   experiment, rises in belief first, then falls, each largest surprisal first,
-  with its Agent review when any experiment in the run has one. Nothing is
+  with its Agent review, Human review and Next step once any of them is filled. Nothing is
   generated or committed; the page is drawn from the run folders at each render.
   The experiments callouts take Asta's accent (allenai/design asta/tokens.json): green on
   the dark palette, teal on the light one.
@@ -87,8 +87,12 @@ local function run_callout(root, name)
   local counts = {}
   for _, e in ipairs(exps) do counts[e["ID"]] = (counts[e["ID"]] or 0) + 1 end
 
+  -- From the experiment to the decision, as experiments.csv reads from right to left.
+  local REVIEW = { "Agent review", "Human review", "Next step" }
   local reviewed = false
-  for _, e in ipairs(exps) do reviewed = reviewed or (e["Agent review"] or "") ~= "" end
+  for _, e in ipairs(exps) do
+    for _, col in ipairs(REVIEW) do reviewed = reviewed or (e[col] or "") ~= "" end
+  end
 
   local rows, repeated = {}, false
   for _, e in ipairs(exps) do
@@ -103,14 +107,18 @@ local function run_callout(root, name)
       plain((e["Belief Before"] or "") .. " → " .. (e["Belief After"] or "")),
       plain(e["Surprisal"] or ""),
     }
-    if reviewed then row[#row + 1] = plain(e["Agent review"] or "") end
+    if reviewed then
+      for _, col in ipairs(REVIEW) do row[#row + 1] = plain(e[col] or "") end
+    end
     rows[#rows + 1] = row
   end
   local headers = { plain("Experiment"), plain("Hypothesis"), plain("Belief before → after"), plain("Surprisal") }
   local aligns = { pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignDefault, pandoc.AlignRight }
   local widths = { 0, 0, 0, 0 }
   if reviewed then
-    headers[#headers + 1], aligns[#aligns + 1], widths[#widths + 1] = plain("Agent review"), pandoc.AlignDefault, 0
+    for _, col in ipairs(REVIEW) do
+      headers[#headers + 1], aligns[#aligns + 1], widths[#widths + 1] = plain(col), pandoc.AlignDefault, 0
+    end
   end
   local tbl = pandoc.utils.from_simple_table(pandoc.SimpleTable({}, aligns, widths, headers, rows))
 
