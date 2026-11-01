@@ -55,7 +55,7 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
 
    Describe each file for AutoDiscovery in its run's `run.md`: what a row is, each column's meaning, units, coding and missingness, the design, technical cautions. Say what the data are, not what they show. No thresholds, definitions or derived outcomes that belong to the mission; derived covariates are fine with their formula. Run the neutrality check over every prompt and description.
 
-5. **Run AutoDiscovery.** For each run: `asta autodiscovery create`, `upload` the files, `metadata` from a JSON file made from its `run.md` (`name`, `domain`, `description`, the prompt as `intent`, `datasets` with each file's name and description, and `experiments` as `n_experiments`; keep it as `.asta/autodiscovery/<run>/metadata.json`), `metadata-get` to confirm name, prompt, files and experiment count match, then `submit`. A run of 50 takes about two hours. Once it is submitted, send the person its link, `https://autodiscovery.allen.ai/runs/<run id>`, where they can watch the experiments come in, and put the same link in `run.md`. Poll until it finishes, then save its full record as `.asta/autodiscovery/<run>/results.json` (`asta autodiscovery results`), following the `.asta/<skill>/` convention for skill outputs. Then `python3 scripts/runlog.py` writes the run's `experiments.csv` and its figures; it stops if any experiment text looks like row-level data. Commit the run folder, the record and the figures.
+5. **Run AutoDiscovery.** For each run: `asta autodiscovery create`, `upload` the files, `metadata` from a JSON file made from its `run.md` (`name`, `domain`, `description`, the prompt as `intent`, `datasets` with each file's name and description, and `experiments` as `n_experiments`; keep it as `.asta/autodiscovery/<run>/metadata.json`), `metadata-get` to confirm name, prompt, files and experiment count match, then `submit`. A run of 50 takes about two hours. Once it is submitted, send the person its link, `https://autodiscovery.allen.ai/runs/<run id>`, where they can watch the experiments come in, and put its shared link, `https://autodiscovery.allen.ai/runs/shared/<run id>`, in `run.md` for the write-up. Links sent to the person in the chat are the `runs/<run id>` ones. Poll until it finishes, then save its full record as `.asta/autodiscovery/<run>/results.json` (`asta autodiscovery results`), following the `.asta/<skill>/` convention for skill outputs. Then `python3 scripts/runlog.py` writes the run's `experiments.csv` and its figures; it stops if any experiment text looks like row-level data. Commit the run folder, the record and the figures.
 
 6. **Agent review.** Unless the person skipped it, review every experiment in every new run and fill its `Agent review` cell ([Agent review](#agent-review)). Commit the tables.
 
@@ -66,7 +66,7 @@ The workflow is collaborative. Even when the person asks for it to run on its ow
    - **What stood out:** what the experiments say, in their words; describe, do not conclude, and never present a flagged experiment as a result.
    - **Agent review:** how many experiments were marked `Doesn't stand` and `Overstated`, with their IDs, and the caveats that apply to the whole run.
    - **Start with:** the flagged rows in each `experiments.csv`, then the rest; the team fills in `Next step` and `Human review` and says when it is done.
-   - **Links:** each run's `experiments.csv` by its full path, so it opens from the chat, and its link in the AutoDiscovery app.
+   - **Links:** each run's `experiments.csv` by its full path, so it opens from the chat, and its `runs/<run id>` link in the AutoDiscovery app.
 
    The review is the team's ([Review together](#review-together)).
 
@@ -91,7 +91,7 @@ Before anything is created, search every prompt and description for direction an
 name: "<the run's name in AutoDiscovery>"
 experiments: 50
 files: [<file>.csv]
-link: https://autodiscovery.allen.ai/runs/<run id>
+link: https://autodiscovery.allen.ai/runs/shared/<run id>
 ---
 
 ## Prompt
@@ -147,7 +147,7 @@ The researcher and the team go through each run's `experiments.csv`, starting fr
 6. **Null results.** What was tested and came back with nothing, and what could not be tested.
 7. **Next steps.** From the review: what the team marked `Follow up` or `Validate`, then the data that would open up more. The write-up does not make those calls itself.
 
-The template's placeholders are in square brackets; replace every one, and do not write placeholders in angle brackets, which render as nothing. Every number from an experiment carries a marker, `[text]{.ev key="..."}`, whose entry in `evidence.yml` quotes the experiment's own words verbatim from its run's `experiments.csv` (`Hypothesis`, `Findings` or `Validity Check`), names it as `AutoDiscovery run <label>, experiment <ID>`, and links the run's link with `?exp=<ID>`. Do not cite an ID that appears twice in a run; its link opens only one of the pair. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, from `.asta/autodiscovery/<run>/figures/`, looked at before use and copied into `figures/`, and never one mark per unit below the published level of geography. A term such as an odds ratio is defined the first time it is used.
+The template's placeholders are in square brackets; replace every one, and do not write placeholders in angle brackets, which render as nothing. Every number from an experiment carries a marker, `[text]{.ev key="..."}`, whose entry in `evidence.yml` quotes the experiment's own words verbatim from its run's `experiments.csv` (`Hypothesis`, `Findings` or `Validity Check`), names it as `AutoDiscovery run <label>, experiment <ID>`, and links the run's shared link with `?exp=<ID>`. Do not cite an ID that appears twice in a run; its link opens only one of the pair. Let the experiments speak first; literature, if a result needs context, is a targeted search quoted and linked. Figures are the experiments' own, from `.asta/autodiscovery/<run>/figures/`, looked at before use and copied into `figures/`, and never one mark per unit below the published level of geography. A term such as an odds ratio is defined the first time it is used.
 
 ## Records
 
