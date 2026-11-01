@@ -30,7 +30,7 @@ Not available: [what the mission would need that the data do not hold].
 
 [N] runs, [M] experiments in all.
 
-Each run below opens to its prompt and every experiment, ranked with rises in belief first.
+Each run below shows its prompt and links; its experiments open beneath, ranked with rises in belief first.
 
 <!-- Drawn at each render from runs/<run>/run.md and experiments.csv by _extensions/runs/runs.lua. -->
 

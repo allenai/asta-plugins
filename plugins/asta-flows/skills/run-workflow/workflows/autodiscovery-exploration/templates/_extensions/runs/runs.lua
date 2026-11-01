@@ -1,10 +1,11 @@
 --[[
   runs/runs.lua — every run and its experiments, drawn into the write-up.
 
-  An empty `::: {.runs}` div becomes one collapsed callout per folder in
-  runs/ that holds a run.md and an experiments.csv: the prompt as submitted,
-  links to the hosted run and the experiments table, and every experiment,
-  rises in belief first, then falls, each largest surprisal first. Nothing is
+  An empty `::: {.runs}` div becomes one callout per folder in runs/ that
+  holds a run.md and an experiments.csv. Always in view: the prompt as
+  submitted, cut at PROMPT_MAX characters with the whole of it on hover, and
+  links to the hosted run and the experiments table. Collapsed inside: every
+  experiment, rises in belief first, then falls, each largest surprisal first. Nothing is
   generated or committed; the page is drawn from the run folders at each render.
   The callouts take Asta's accent (allenai/design asta/tokens.json): green on
   the dark palette, teal on the light one.
@@ -52,6 +53,19 @@ end
 
 local function plain(text) return { pandoc.Plain({ pandoc.Str(text) }) } end
 
+local PROMPT_MAX = 300
+
+-- The prompt in one line, cut at a word before PROMPT_MAX characters.
+local function prompt(blocks)
+  local parts = {}
+  for _, b in ipairs(blocks) do parts[#parts + 1] = stringify(b) end
+  local text = table.concat(parts, " ")
+  if utf8.len(text) <= PROMPT_MAX then return pandoc.Para({ pandoc.Str(text) }) end
+  local short = text:sub(1, utf8.offset(text, PROMPT_MAX + 1) - 1)
+  short = (short:match("^(.*)%s") or short):gsub("[%s,;:]+$", "") .. "…"
+  return pandoc.Para({ pandoc.Span({ pandoc.Str(short) }, { title = text }) })
+end
+
 local function run_callout(root, name)
   local dir = root .. "/runs/" .. name
   local md, exps = read(dir .. "/run.md"), experiments(dir .. "/experiments.csv")
@@ -96,16 +110,22 @@ local function run_callout(root, name)
   end
   links[#links + 1] = pandoc.Link("experiments.csv", "runs/" .. name .. "/experiments.csv")
 
-  local content = { pandoc.BlockQuote(section(doc.blocks, "Prompt")), pandoc.Para(links), tbl }
+  local table_blocks = { tbl }
   if repeated then
-    content[#content + 1] = pandoc.Para({ pandoc.Str("¹ The service gave two experiments this number; "
+    table_blocks[#table_blocks + 1] = pandoc.Para({ pandoc.Str("¹ The service gave two experiments this number; "
       .. "the link opens one of them.") })
   end
+  local experiments_callout = quarto.Callout({
+    type = "note",
+    title = #exps .. " experiments",
+    content = table_blocks,
+    collapse = true,
+    icon = false,
+  })
   return quarto.Callout({
     type = "note",
-    title = "Run " .. label .. ": " .. title .. " · " .. #exps .. " experiments",
-    content = content,
-    collapse = true,
+    title = "Run " .. label .. ": " .. title,
+    content = { pandoc.BlockQuote({ prompt(section(doc.blocks, "Prompt")) }), pandoc.Para(links), experiments_callout },
     icon = false,
   })
 end
