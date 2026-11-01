@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The AutoDiscovery exploration workflow keeps each run in its own folder,
+  `runs/<run>/`, with `run.md` (what the run was given) and `experiments.csv`
+  (the web app's download, with `Next step`, `Human review` and `Agent review`
+  columns after `ID`), and each run's full record under `.asta/autodiscovery/`.
+  Before the team's review, an agent review reads every experiment's code and
+  output and marks the ones that don't stand or are overstated, which
+  AutoDiscovery's own Validity Check does not catch. The workflow stops with a
+  one-screen summary of each run, sends the run's link once it is submitted,
+  and makes the write-up optional: its Runs section is drawn from the run
+  folders at each render, one heading per run with its experiments in a
+  collapsed table. Requests to explore a dataset with AutoDiscovery now load
+  this workflow rather than the autodiscovery skill.
+
 - The autodiscovery skill's local workflow now covers running on an Anthropic
   key (Claude Opus 5) and recommends GPT-6 Luna on an OpenAI key. It names the
   installed CLI `auto-discovery` throughout, fixes the model names and Vertex
