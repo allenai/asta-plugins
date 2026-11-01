@@ -6,7 +6,7 @@ For each run under .asta/autodiscovery/<run>/, reads
   results.json    from the hosted service (`asta autodiscovery results <run_id> -o ...`), or
   local/          the local CLI's --out_dir: mcts_node_*.json and rich_outputs/
 and writes
-  runs/<run>/experiments.csv           the web app's download, with the review's Decision and Reason after ID
+  runs/<run>/experiments.csv           the web app's download, with the review's Next step and Review notes after ID
   .asta/autodiscovery/<run>/figures/   the experiments' figures, for review before use
 A run whose experiments.csv already exists is left alone: a finished run does not change, and the review is
 kept there. Stops before writing anything if any experiment text looks like row-level data.
@@ -39,7 +39,7 @@ TEXT = (
     "Steps",
     "Deliverables",
 )
-REVIEW = ("Decision", "Reason")
+REVIEW = ("Next step", "Review notes")
 ROW_LEVEL = re.compile(
     r"\b(caseid|hhid|\w+_id)\s*[=:]\s*\d+|\b(row|index|record)\s*#?\s*\d{2,}\b|\bdf\.(loc|iloc)\[",
     re.I,

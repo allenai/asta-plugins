@@ -55,6 +55,6 @@ Each run below shows its prompt and links; its experiments open beneath, ranked 
 
 ## Next steps
 
-<!-- From the review: the experiments the team marked follow-up analysis or small validation, then the data that would open up more. Left empty in the draft. -->
+<!-- From the review: the experiments the team marked Follow up or Validate, then the data that would open up more. Left empty in the draft. -->
 
 1. **[Step].** [Why, in a sentence or two.]
