@@ -90,7 +90,7 @@ def owner_repos(owner: str) -> list[tuple[str, str | None]]:
     One code search finds the candidates; the index can lag a fresh commit by a
     run, and each candidate's record is read to confirm it.
     """
-    query = f"schedule path:{ov.RECORDS} extension:json user:{owner}"
+    query = f"schedule in:file path:{ov.RECORDS} extension:json user:{owner}"
     try:
         pages = gh_json(
             "api",

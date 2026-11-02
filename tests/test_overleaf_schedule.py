@@ -188,7 +188,7 @@ def test_owner_repos_searches_once_and_confirms_each_record(monkeypatch):
     found = dict(schedule.owner_repos("o"))
     assert len(searches) == 1
     query = next(a for a in searches[0] if a.startswith("q="))
-    assert query == "q=schedule path:.asta/overleaf extension:json user:o"
+    assert query == "q=schedule in:file path:.asta/overleaf extension:json user:o"
     assert found == {"o/on": None, "o/broken": found["o/broken"]}
     assert "HTTP 502" in found["o/broken"]
 
