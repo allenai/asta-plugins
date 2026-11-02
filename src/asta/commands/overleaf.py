@@ -773,7 +773,7 @@ def load_config(paper: Path) -> dict:
         ) from None
 
 
-def save_config(paper: Path, url: str, base: str) -> None:
+def save_config(paper: Path, url: str, base: str, schedule: bool | None = None) -> None:
     path = record_path(paper)
     if path.is_symlink():
         refuse(str(path), "is a symlink")
@@ -802,11 +802,16 @@ def save_config(paper: Path, url: str, base: str) -> None:
             isinstance(current, dict)
             and (current.get("url"), current.get("base")) == (url, base)
             and current.get("format", FORMAT) == FORMAT
+            and (schedule is None or current.get("schedule", False) is schedule)
         ):
             return
         # Compatible releases may add fields this reader does not know about.
         updated = dict(current) if isinstance(current, dict) else {}
         updated.update(format_stamp(), url=url, base=base)
+        if schedule:
+            updated["schedule"] = True
+        elif schedule is False:
+            updated.pop("schedule", None)
         text = json.dumps(updated, indent=2) + "\n"
         record.seek(0)
         record.write(text)
@@ -1257,10 +1262,21 @@ def overleaf() -> None:
 @click.argument("url", required=False)
 @dir_option
 @project_option
-def pull(url: str | None, directory: str | None, project: Path) -> None:
+@click.option(
+    "--schedule/--no-schedule",
+    default=None,
+    help="Turn scheduled sync on or off in the pairing record "
+    "(sync --github-owner visits only papers with it on). "
+    "Default: on when first pairing, unchanged after.",
+)
+def pull(
+    url: str | None, directory: str | None, project: Path, schedule: bool | None = None
+) -> None:
     """Copy the Overleaf project into the paper directory and record its commit."""
     root, paper, prefix = resolve(project, paired_directory(project, directory))
     config = load_config(paper)
+    if not config and schedule is None:
+        schedule = True
     url = validate_url(url or config.get("url"))
     if config and url != config["url"]:
         raise SyncError(
@@ -1401,7 +1417,7 @@ def pull(url: str | None, directory: str | None, project: Path) -> None:
         for name in deleted:
             (paper / name).unlink(missing_ok=True)
         write_files(new, paper)
-        save_config(paper, url, head)
+        save_config(paper, url, head, schedule)
     ctx = click.get_current_context(silent=True)
     # The sync command reports its own outcome and opens the PR itself.
     if ctx is None or not ctx.meta.get("overleaf_sync"):
@@ -1721,17 +1737,32 @@ def release_check_timeout(ctx, param, value):
     "act, then print one outcome line; exit 0 complete, 4 a person must act, "
     "5 still waiting.",
 )
+@click.option(
+    "--github-owner",
+    "github_owner",
+    metavar="USER_OR_ORG",
+    help="Find the papers in this GitHub user's or org's repositories whose pairing "
+    "record sets schedule, clone each with gh's token and sync it. In a checkout, "
+    "plain sync is the runner.",
+)
 def sync(
     directory: str | None,
     project: Path,
     check_repo: str | None = None,
     check_timeout: int = 600,
     wait: int | None = None,
+    github_owner: str | None = None,
 ) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_gate import require_release_check
     from .overleaf_sync import sync_workspace
 
+    if github_owner is not None:
+        if directory is not None or wait is not None:
+            raise click.UsageError(
+                "--github-owner cannot be combined with --dir or --wait."
+            )
+        return sync_scheduled(github_owner, check_repo, check_timeout)
     if wait is not None:
         click.get_current_context().meta["overleaf_noninteractive"] = True
         return sync_and_wait(directory, project, check_repo, check_timeout, wait)
@@ -1761,6 +1792,44 @@ def sync(
             + ", ".join(failed)
             + ". All paired papers were attempted."
         )
+
+
+def sync_scheduled(owner, check_repo, check_timeout):
+    """Sync every scheduled paper found, carrying on past a failing one."""
+    from .overleaf_gate import require_release_check
+    from .overleaf_schedule import github_credentials, scheduled_papers
+    from .overleaf_sync import sync_workspace
+
+    failed = []
+    synced = 0
+    with tempfile.TemporaryDirectory() as tmp, github_credentials():
+        for label, root, directory in scheduled_papers(owner, Path(tmp)):
+            if root is None:
+                click.echo(f"{label}: {directory}", err=True)
+                failed.append(label)
+                continue
+            click.echo(f"{label}: {directory}")
+            try:
+                if check_repo is not None:
+                    require_release_check(root, directory, check_repo, check_timeout)
+                sync_workspace(root, directory)
+                synced += 1
+            except Exception as exc:
+                message = (
+                    exc.format_message()
+                    if isinstance(exc, click.ClickException)
+                    else f"unexpected {type(exc).__name__}"
+                )
+                click.echo(f"{label}: {directory}: {message}", err=True)
+                failed.append(f"{label}:{directory}")
+    if failed:
+        raise SyncError(
+            "Sync failed for: "
+            + ", ".join(failed)
+            + ". All scheduled papers were attempted."
+        )
+    if not synced:
+        click.echo("No paper with schedule turned on was found.")
 
 
 def sync_and_wait(directory, project, check_repo, check_timeout, wait):

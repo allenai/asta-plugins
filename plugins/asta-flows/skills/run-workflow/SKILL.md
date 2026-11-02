@@ -21,12 +21,14 @@ Check the environment before you propose a workflow: install what is missing and
 
 ```bash
 command -v theorize auto-discovery
-uv tool install --upgrade asta-theorizer
-uv tool install --upgrade asta-autodiscovery
+uv tool install --upgrade --python 3.13 asta-theorizer --with "pymupdf4llm<2"
+uv tool install --upgrade --python 3.13 asta-autodiscovery
 theorize doctor
 ```
 
-Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here. AutoDS has no such check: it reads the key of its model's provider, such as `OPENAI_API_KEY` for `openai/` models.
+Both tools need `--python`: on the newest Python, a dependency they share has no prebuilt package and the install fails while compiling it. Each workflow's own setup section says what else its pins are for.
+
+Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here. AutoDS has no such check: it reads the key of its model's provider, such as `ANTHROPIC_API_KEY` for `anthropic/` models.
 
 ## Plan and run
 
