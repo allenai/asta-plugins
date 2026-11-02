@@ -3,8 +3,10 @@
 ## Unreleased
 
 - A paper turns on scheduled Overleaf sync with `"schedule": true` in its
-  pairing record, set by `asta workspace overleaf pull --schedule` or in a PR.
-  `asta workspace overleaf sync --scheduled --owner <user or org>` finds the
+  pairing record. `asta workspace overleaf pull` sets it when it first pairs a
+  paper (`--no-schedule` keeps the paper manual); a later `pull --schedule` or
+  `--no-schedule`, or a PR, changes it.
+  `asta workspace overleaf sync --github-owner <user or org>` finds the
   scheduled papers in that owner's repositories with one GitHub code search,
   clones each, syncs it, and carries on past a failing one. The
   `ghcr.io/allenai/asta` image now ships `gh`.

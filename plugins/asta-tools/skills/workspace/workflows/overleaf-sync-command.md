@@ -53,12 +53,13 @@ sync behaves as scheduled runners expect, described below.
 ## Schedule sync
 
 A paper turns on scheduled sync with `"schedule": true` in its
-`.asta/overleaf/<paper dir>.json` record: pass `--schedule` to `pull` when
-pairing (`--no-schedule` turns it off), or set it in a PR. A hosted runner then
-runs one command on its own timer:
+`.asta/overleaf/<paper dir>.json` record. `pull` sets it when it first pairs a
+paper; pass `--no-schedule` to keep that paper manual. `--schedule` and
+`--no-schedule` on a later `pull`, or a PR to the record, change it. A hosted
+runner then runs one command on its own timer:
 
 ```bash
-asta workspace overleaf sync --scheduled --owner my-org
+asta workspace overleaf sync --github-owner my-org
 ```
 
 It finds that user's or org's scheduled papers with one GitHub code search,

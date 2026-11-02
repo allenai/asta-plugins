@@ -1266,7 +1266,8 @@ def overleaf() -> None:
     "--schedule/--no-schedule",
     default=None,
     help="Turn scheduled sync on or off in the pairing record "
-    "(sync --scheduled visits only papers with it on). Default: unchanged.",
+    "(sync --github-owner visits only papers with it on). "
+    "Default: on when first pairing, unchanged after.",
 )
 def pull(
     url: str | None, directory: str | None, project: Path, schedule: bool | None = None
@@ -1274,6 +1275,8 @@ def pull(
     """Copy the Overleaf project into the paper directory and record its commit."""
     root, paper, prefix = resolve(project, paired_directory(project, directory))
     config = load_config(paper)
+    if not config and schedule is None:
+        schedule = True
     url = validate_url(url or config.get("url"))
     if config and url != config["url"]:
         raise SyncError(
@@ -1735,14 +1738,12 @@ def release_check_timeout(ctx, param, value):
     "5 still waiting.",
 )
 @click.option(
-    "--scheduled",
-    is_flag=True,
-    help="With --owner: find the papers whose pairing record sets schedule, clone "
-    "each with gh's token and sync it. In a checkout, plain sync is the runner.",
-)
-@click.option(
-    "--owner",
-    help="With --scheduled: the GitHub user or org whose repositories to search.",
+    "--github-owner",
+    "github_owner",
+    metavar="USER_OR_ORG",
+    help="Find the papers in this GitHub user's or org's repositories whose pairing "
+    "record sets schedule, clone each with gh's token and sync it. In a checkout, "
+    "plain sync is the runner.",
 )
 def sync(
     directory: str | None,
@@ -1750,21 +1751,18 @@ def sync(
     check_repo: str | None = None,
     check_timeout: int = 600,
     wait: int | None = None,
-    scheduled: bool = False,
-    owner: str | None = None,
+    github_owner: str | None = None,
 ) -> None:
     """Pull through one GitHub PR, squash a quiet checked PR, then publish."""
     from .overleaf_gate import require_release_check
     from .overleaf_sync import sync_workspace
 
-    if (owner is not None) != scheduled:
-        raise click.UsageError("--scheduled and --owner go together.")
-    if scheduled:
+    if github_owner is not None:
         if directory is not None or wait is not None:
             raise click.UsageError(
-                "--scheduled cannot be combined with --dir or --wait."
+                "--github-owner cannot be combined with --dir or --wait."
             )
-        return sync_scheduled(owner, check_repo, check_timeout)
+        return sync_scheduled(github_owner, check_repo, check_timeout)
     if wait is not None:
         click.get_current_context().meta["overleaf_noninteractive"] = True
         return sync_and_wait(directory, project, check_repo, check_timeout, wait)

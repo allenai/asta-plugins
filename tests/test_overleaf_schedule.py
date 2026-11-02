@@ -1,4 +1,4 @@
-"""Scheduled sync: the record's schedule setting and `sync --scheduled --owner`."""
+"""Scheduled sync: the record's schedule setting and `sync --github-owner`."""
 
 import base64
 import importlib
@@ -26,6 +26,21 @@ def test_scheduled_reads_only_true():
         assert not schedule.scheduled(raw)
 
 
+def test_first_pull_turns_schedule_on_by_default(setup):
+    _, project = setup
+    assert run(project, "pull", URL).exit_code == 0
+    assert record(project)["schedule"] is True
+
+
+def test_first_pull_with_no_schedule_stays_manual(setup):
+    _, project = setup
+    assert run(project, "pull", URL, "--no-schedule").exit_code == 0
+    assert "schedule" not in record(project)
+    commit_all(project)
+    assert run(project, "pull").exit_code == 0
+    assert "schedule" not in record(project)
+
+
 def test_pull_sets_and_clears_schedule(setup):
     _, project = setup
     assert run(project, "pull", URL, "--schedule").exit_code == 0
@@ -49,7 +64,7 @@ def test_pull_without_flag_keeps_schedule(setup):
 
 def test_uncommitted_schedule_is_ignored(setup):
     _, project = setup
-    assert run(project, "pull", URL).exit_code == 0
+    assert run(project, "pull", URL, "--no-schedule").exit_code == 0
     commit_all(project)
     path = project / ".asta/overleaf/paper.json"
     path.write_text(json.dumps({**record(project), "schedule": True}))
@@ -95,7 +110,7 @@ def test_sync_scheduled_carries_on_past_a_failure(setup, monkeypatch, tmp_path):
     found_locally(
         monkeypatch, {"o/other": other, "o/paper": project, "o/off": unscheduled}
     )
-    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
+    result = run(tmp_path, "sync", "--github-owner", "o")
     assert sorted(visited) == ["other", project.name]
     assert result.exit_code != 0
     assert "o/other" in result.output and "All scheduled papers were attempted" in (
@@ -105,14 +120,14 @@ def test_sync_scheduled_carries_on_past_a_failure(setup, monkeypatch, tmp_path):
 
 def test_sync_scheduled_reports_none_found(tmp_path, monkeypatch):
     found_locally(monkeypatch, {})
-    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
+    result = run(tmp_path, "sync", "--github-owner", "o")
     assert result.exit_code == 0
     assert "No paper with schedule turned on" in result.output
 
 
-@pytest.mark.parametrize("args", [["--owner", "allenai"], ["--scheduled"]])
-def test_scheduled_and_owner_go_together(tmp_path, args):
-    result = run(tmp_path, "sync", *args)
+@pytest.mark.parametrize("args", [["--dir", "paper"], ["--wait", "60"]])
+def test_github_owner_refuses_dir_and_wait(tmp_path, args):
+    result = run(tmp_path, "sync", "--github-owner", "o", *args)
     assert result.exit_code == 2
 
 
@@ -181,7 +196,7 @@ def test_scheduled_uses_environment_identity_in_a_fresh_clone(
 
     monkeypatch.setattr(schedule, "clone", clone)
     # No user.* configuration: the runner supplies GIT_AUTHOR_*/GIT_COMMITTER_*.
-    result = run(project, "sync", "--scheduled", "--owner", "o")
+    result = run(project, "sync", "--github-owner", "o")
     assert result.exit_code == 0, result.output
     assert len(github["prs"]) == 1
     assert "waiting for checks" in result.output
@@ -207,7 +222,7 @@ def test_scheduled_preserves_single_pass_scheduler_outcomes(setup, monkeypatch, 
 
     monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
     found_locally(monkeypatch, {"o/paper": project})
-    result = run(project, "sync", "--scheduled", "--owner", "o")
+    result = run(project, "sync", "--github-owner", "o")
     assert result.exit_code == 0, result.output
     assert "No paper with schedule" not in result.output
 
@@ -270,7 +285,7 @@ def test_owner_discovery_failure_is_nonzero_and_other_papers_are_synced(
     monkeypatch.setattr(schedule, "clone", lambda name, dest: dest)
     monkeypatch.setattr(schedule, "scheduled_directories", lambda root: ["paper"])
     monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
-    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
+    result = run(tmp_path, "sync", "--github-owner", "o")
     assert result.exit_code == 1, result.output
     assert "o/bad" in result.output
     assert "All scheduled papers were attempted" in result.output
@@ -282,7 +297,7 @@ def test_owner_listing_failure_is_not_no_papers_found(tmp_path, monkeypatch):
         raise ov.SyncError("GitHub discovery request failed")
 
     monkeypatch.setattr(schedule, "gh_json", fake)
-    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
+    result = run(tmp_path, "sync", "--github-owner", "o")
     assert result.exit_code == 1
     assert "GitHub discovery request failed" in result.output
     assert "No paper with schedule" not in result.output
