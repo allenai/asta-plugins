@@ -117,7 +117,7 @@ def test_owner_repos_keeps_scheduled_only_and_reports_unreadable(monkeypatch):
 
     paper = {"tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]}
     responses = {
-        ("repo", "list"): [
+        "graphql": [
             {"nameWithOwner": f"o/{name}", "defaultBranchRef": {"name": "main"}}
             for name in ("on", "off", "none", "broken", "big")
         ]
@@ -129,8 +129,8 @@ def test_owner_repos_keeps_scheduled_only_and_reports_unreadable(monkeypatch):
         "repos/o/off/git/blobs/s": encoded(b"{}"),
     }
 
-    def fake(*args, not_found=schedule._RAISE):
-        key = args[:2] if args[0] == "repo" else args[1]
+    def fake(*args, not_found=schedule._RAISE, **kwargs):
+        key = args[1]
         if key in responses:
             return responses[key]
         if key == tree("none") and not_found is not schedule._RAISE:
@@ -142,3 +142,16 @@ def test_owner_repos_keeps_scheduled_only_and_reports_unreadable(monkeypatch):
     assert set(found) == {"o/on", "o/broken", "o/big"}
     assert found["o/on"] is None
     assert "HTTP 502" in found["o/broken"] and "truncated" in found["o/big"]
+
+
+def test_owner_listing_pages_past_a_thousand(monkeypatch):
+    calls = []
+
+    def fake(*args, **kwargs):
+        calls.append((args, kwargs))
+        return []
+
+    monkeypatch.setattr(schedule, "gh_json", fake)
+    assert schedule.owner_repos("o") == []
+    args, kwargs = calls[0]
+    assert args[:3] == ("api", "graphql", "--paginate") and kwargs["lines"]

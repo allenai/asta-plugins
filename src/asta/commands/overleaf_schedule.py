@@ -46,13 +46,18 @@ def local_checkouts(project: Path) -> list[Path]:
 _RAISE = object()
 
 
-def gh_json(*args: str, not_found=_RAISE):
-    """Run gh for discovery and parse its JSON; return not_found on HTTP 404."""
+def gh_json(*args: str, not_found=_RAISE, timeout=90, lines=False):
+    """Run gh for discovery and parse its JSON (one value per line with lines);
+    return not_found on HTTP 404."""
     env = ov.git_environment()
     env.update(GH_PROMPT_DISABLED="1", GH_PAGER="cat")
     try:
         result = subprocess.run(
-            ["gh", *args], env=env, capture_output=True, timeout=90, **ov.no_terminal()
+            ["gh", *args],
+            env=env,
+            capture_output=True,
+            timeout=timeout,
+            **ov.no_terminal(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ov.SyncError(f"gh {args[0]} failed: {exc}") from None
@@ -62,6 +67,8 @@ def gh_json(*args: str, not_found=_RAISE):
             return not_found
         raise ov.SyncError(f"gh {args[0]} failed: {error or result.returncode}")
     try:
+        if lines:
+            return [json.loads(line) for line in result.stdout.splitlines() if line]
         return json.loads(result.stdout)
     except ValueError:
         raise ov.SyncError(f"gh {args[0]} returned invalid JSON") from None
@@ -86,20 +93,36 @@ def repo_scheduled(name: str, branch: str) -> bool:
     return False
 
 
+# `gh repo list` caps filtered listings at 1,000 repos, so page through GraphQL.
+REPOSITORIES_QUERY = """
+query($login: String!, $endCursor: String) {
+  repositoryOwner(login: $login) {
+    repositories(first: 100, after: $endCursor, isFork: false) {
+      nodes { nameWithOwner isArchived defaultBranchRef { name } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+
 def owner_repos(owner: str) -> list[tuple[str, str | None]]:
     """(repo, None) for each unarchived source repo of a user or org that commits a
     scheduled record, and (repo, error) for each whose records could not be read."""
     try:
         listed = gh_json(
-            "repo",
-            "list",
-            owner,
-            "--source",
-            "--no-archived",
-            "--limit",
-            "100000",
-            "--json",
-            "nameWithOwner,defaultBranchRef",
+            "api",
+            "graphql",
+            "--paginate",
+            "-f",
+            f"query={REPOSITORIES_QUERY}",
+            "-F",
+            f"login={owner}",
+            "--jq",
+            ".data.repositoryOwner.repositories.nodes[] | select(.isArchived | not)",
+            lines=True,
+            # One call pages through every repo; a large org takes minutes.
+            timeout=1800,
         )
     except ov.SyncError as exc:
         raise ov.SyncError(
