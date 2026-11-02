@@ -814,13 +814,20 @@ def sync_workspace(project: Path, directory: str) -> tuple[str, str]:
         "--force",
     )
     identity = {}
-    for key in ("user.name", "user.email"):
-        try:
-            value = ov.git("config", "--get", key, cwd=root)
-        except ov.GitCommandError as exc:
-            if exc.returncode != 1:
-                raise
-            value = ""
+    for key, variable in (
+        ("user.name", "GIT_COMMITTER_NAME"),
+        ("user.email", "GIT_COMMITTER_EMAIL"),
+    ):
+        # A fresh runner's clone may have no user.* config. Respect Git's
+        # environment identity and carry it into sync's temporary clone too.
+        value = os.environ.get(variable)
+        if value is None:
+            try:
+                value = ov.git("config", "--get", key, cwd=root)
+            except ov.GitCommandError as exc:
+                if exc.returncode != 1:
+                    raise
+                value = ""
         if not value.strip():
             message = f"Configure Git {key} before scheduling sync."
             try:

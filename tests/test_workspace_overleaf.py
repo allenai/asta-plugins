@@ -437,6 +437,7 @@ def test_pull_preserves_paper_bibliography_and_workspace_root(setup):
         "requires_asta": module.FORMAT_RELEASE,
         "url": URL,
         "base": git(seed, "rev-parse", "HEAD"),
+        "schedule": True,
     }
 
 
