@@ -1,12 +1,14 @@
 """Find papers whose pairing record turns on scheduled sync, and sync each one."""
 
 import base64
+import binascii
 import json
 import os
 import subprocess
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 import click
 
@@ -59,36 +61,48 @@ def gh_json(*args: str, not_found=_RAISE, timeout=90, lines=False):
             timeout=timeout,
             **ov.no_terminal(),
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ov.SyncError(f"gh {args[0]} failed: {exc}") from None
+    except (OSError, subprocess.TimeoutExpired):
+        raise ov.SyncError(
+            "GitHub discovery request could not run; retry after checking gh and network access."
+        ) from None
     if result.returncode:
         error = result.stderr.decode(errors="replace").strip()
         if not_found is not _RAISE and "HTTP 404" in error:
             return not_found
-        raise ov.SyncError(f"gh {args[0]} failed: {error or result.returncode}")
+        # Transport diagnostics can contain credentials; report the repo separately.
+        raise ov.SyncError(
+            "GitHub discovery request failed; check gh authentication and repository access, then retry."
+        )
     try:
         if lines:
             return [json.loads(line) for line in result.stdout.splitlines() if line]
         return json.loads(result.stdout)
     except ValueError:
-        raise ov.SyncError(f"gh {args[0]} returned invalid JSON") from None
+        raise ov.SyncError(
+            "GitHub discovery returned invalid JSON; retry the request."
+        ) from None
 
 
 def repo_scheduled(name: str, branch: str) -> bool:
     """Whether a repo's default branch commits a record that turns on the schedule."""
     # Listing only the records subtree keeps the response small and complete.
-    tree = gh_json(
-        "api", f"repos/{name}/git/trees/{branch}:{ov.RECORDS}?recursive=1", not_found={}
-    )
+    treeish = quote(f"{branch}:{ov.RECORDS}", safe="")
+    tree = gh_json("api", f"repos/{name}/git/trees/{treeish}?recursive=1", not_found={})
     if tree.get("truncated"):
         raise ov.SyncError("the pairing-record listing was truncated")
     for entry in tree.get("tree", []):
         if entry.get("type") != "blob" or not entry["path"].endswith(".json"):
             continue
         blob = gh_json("api", f"repos/{name}/git/blobs/{entry['sha']}")
-        if blob.get("encoding") == "base64" and scheduled(
-            base64.b64decode(blob.get("content", ""))
-        ):
+        try:
+            if blob.get("encoding") != "base64":
+                raise ValueError
+            raw = base64.b64decode("".join(blob["content"].split()), validate=True)
+        except (KeyError, ValueError, binascii.Error):
+            raise ov.SyncError(
+                f"GitHub returned an unreadable pairing record: {entry['path']}; retry discovery."
+            ) from None
+        if scheduled(raw):
             return True
     return False
 
@@ -97,7 +111,7 @@ def repo_scheduled(name: str, branch: str) -> bool:
 REPOSITORIES_QUERY = """
 query($login: String!, $endCursor: String) {
   repositoryOwner(login: $login) {
-    repositories(first: 100, after: $endCursor, isFork: false) {
+    repositories(first: 100, after: $endCursor, isFork: false, ownerAffiliations: OWNER) {
       nodes { nameWithOwner isArchived defaultBranchRef { name } }
       pageInfo { hasNextPage endCursor }
     }

@@ -1,9 +1,14 @@
 """Scheduled sync: the record's schedule setting and `sync --scheduled`."""
 
+import base64
 import importlib
 import json
+import subprocess
 
-from tests.test_workspace_overleaf import URL, commit_all, git, run
+import pytest
+
+from tests.test_overleaf_sync import github as github  # noqa: F401
+from tests.test_workspace_overleaf import URL, commit_all, git, overleaf_edit, run
 from tests.test_workspace_overleaf import setup as setup  # noqa: F401
 
 ov = importlib.import_module("asta.commands.overleaf")
@@ -106,52 +111,221 @@ def test_owner_requires_scheduled(tmp_path):
     assert result.exit_code == 2
 
 
-def test_owner_repos_keeps_scheduled_only_and_reports_unreadable(monkeypatch):
-    import base64
-
-    def encoded(data):
-        return {"encoding": "base64", "content": base64.b64encode(data).decode()}
-
-    def tree(name):
-        return f"repos/o/{name}/git/trees/main:.asta/overleaf?recursive=1"
-
-    paper = {"tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]}
+def test_owner_repos_keeps_scheduled_only(monkeypatch):
     responses = {
         "graphql": [
-            {"nameWithOwner": f"o/{name}", "defaultBranchRef": {"name": "main"}}
-            for name in ("on", "off", "none", "broken", "big")
-        ]
-        + [{"nameWithOwner": "o/empty", "defaultBranchRef": None}],
-        tree("on"): paper,
-        tree("off"): paper,
-        tree("big"): {"truncated": True, "tree": []},
+            repo_node("on"),
+            repo_node("off"),
+            repo_node("none"),
+            repo_node("broken"),
+            repo_node("big"),
+            repo_node("empty", defaultBranchRef=None),
+        ],
+        "repos/o/on/git/trees/main%3A.asta%2Foverleaf?recursive=1": {
+            "tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]
+        },
+        "repos/o/off/git/trees/main%3A.asta%2Foverleaf?recursive=1": {
+            "tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]
+        },
+        "repos/o/big/git/trees/main%3A.asta%2Foverleaf?recursive=1": {
+            "truncated": True
+        },
         "repos/o/on/git/blobs/s": encoded(b'{"schedule": true}'),
         "repos/o/off/git/blobs/s": encoded(b"{}"),
     }
 
     def fake(*args, not_found=schedule._RAISE, **kwargs):
-        key = args[1]
-        if key in responses:
-            return responses[key]
-        if key == tree("none") and not_found is not schedule._RAISE:
+        if args[1] == "repos/o/none/git/trees/main%3A.asta%2Foverleaf?recursive=1":
+            assert not_found is not schedule._RAISE
             return not_found
-        raise ov.SyncError("gh api failed: HTTP 502")
+        if args[1] == "repos/o/broken/git/trees/main%3A.asta%2Foverleaf?recursive=1":
+            raise ov.SyncError("HTTP 502")
+        return responses[args[1]]
 
     monkeypatch.setattr(schedule, "gh_json", fake)
     found = dict(schedule.owner_repos("o"))
     assert set(found) == {"o/on", "o/broken", "o/big"}
     assert found["o/on"] is None
-    assert "HTTP 502" in found["o/broken"] and "truncated" in found["o/big"]
+    assert "HTTP 502" in found["o/broken"]
+    assert "truncated" in found["o/big"]
 
 
-def test_owner_listing_pages_past_a_thousand(monkeypatch):
-    calls = []
+def encoded(data):
+    return {"encoding": "base64", "content": base64.encodebytes(data).decode()}
+
+
+def repo_node(name, **kwargs):
+    return {
+        "nameWithOwner": f"o/{name}",
+        "defaultBranchRef": {"name": "main"},
+        "isArchived": False,
+        **kwargs,
+    }
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        sync_module.COMPLETE,
+        sync_module.WAITING,
+        sync_module.PERSON,
+        sync_module.LOCKED,
+    ],
+)
+def test_scheduled_preserves_single_pass_scheduler_outcomes(setup, monkeypatch, state):
+    _, project = setup
+    assert run(project, "pull", URL, "--schedule").exit_code == 0
+    commit_all(project)
+
+    def fake_sync(root, directory):
+        assert root == project and directory == "paper"
+        return state, "normal scheduler outcome"
+
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(project, "sync", "--scheduled")
+    assert result.exit_code == 0, result.output
+    assert "No paper with schedule" not in result.output
+
+
+@pytest.mark.parametrize("owner", [None, "o"])
+def test_scheduled_uses_environment_identity_in_a_fresh_clone(
+    setup, github, monkeypatch, owner
+):
+    seed, project = setup
+    assert run(project, "pull", URL, "--schedule").exit_code == 0
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    overleaf_edit(seed, "main.tex", "co-author edit\n")
+    if owner:
+        monkeypatch.setattr(schedule, "owner_repos", lambda name: [("o/paper", None)])
+
+        def clone(name, dest):
+            git(project, "clone", str(project.parent / "workspace.git"), str(dest))
+            return dest
+
+        monkeypatch.setattr(schedule, "clone", clone)
+    # No user.* configuration: the runner supplies GIT_AUTHOR_*/GIT_COMMITTER_*.
+    result = run(project, "sync", "--scheduled", *(["--owner", owner] if owner else []))
+    assert result.exit_code == 0, result.output
+    assert len(github["prs"]) == 1
+    assert "waiting for checks" in result.output
+
+
+@pytest.mark.parametrize("failure", ["exit", "timeout", "missing", "json"])
+def test_gh_discovery_failures_are_reported_without_transport_diagnostics(
+    monkeypatch, failure
+):
+    def fake_run(*args, **kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("gh", 90, stderr=b"private diagnostic")
+        if failure == "missing":
+            raise FileNotFoundError("private diagnostic")
+        return subprocess.CompletedProcess(
+            args[0],
+            1 if failure == "exit" else 0,
+            stdout=b"private diagnostic",
+            stderr=b"private diagnostic",
+        )
+
+    monkeypatch.setattr(schedule.subprocess, "run", fake_run)
+    with pytest.raises(ov.SyncError, match="GitHub discovery") as exc:
+        schedule.gh_json(
+            "api", "repos/o/r/git/trees/main%3A.asta%2Foverleaf?recursive=1"
+        )
+    assert "private diagnostic" not in str(exc.value)
+
+
+def test_only_an_explicitly_optional_directory_read_accepts_404(monkeypatch):
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0], 1, stdout=b"", stderr=b"gh: Not Found (HTTP 404)"
+        )
+
+    monkeypatch.setattr(schedule.subprocess, "run", fake_run)
+    assert schedule.gh_json("api", "missing-directory", not_found={}) == {}
+    with pytest.raises(ov.SyncError, match="GitHub discovery request failed"):
+        schedule.gh_json("api", "missing-blob")
+
+
+@pytest.mark.parametrize("failure", ["tree", "record", "truncated", "encoding"])
+def test_owner_discovery_failure_is_nonzero_and_other_papers_are_synced(
+    tmp_path, monkeypatch, failure
+):
+    attempted = []
 
     def fake(*args, **kwargs):
-        calls.append((args, kwargs))
-        return []
+        endpoint = args[1]
+        if endpoint == "graphql":
+            return [repo_node("bad"), repo_node("good")]
+        bad = endpoint.startswith("repos/o/bad/")
+        if "/git/trees/" in endpoint:
+            if bad and failure == "tree":
+                raise ov.SyncError("tree request failed")
+            return {
+                "tree": [{"type": "blob", "path": "paper.json", "sha": "s"}],
+                "truncated": bad and failure == "truncated",
+            }
+        assert "/git/blobs/" in endpoint
+        if bad and failure == "record":
+            raise ov.SyncError("record request failed")
+        if bad and failure == "encoding":
+            return {"encoding": "base64", "content": "not base64!"}
+        return encoded(b'{"schedule": true}')
+
+    def fake_sync(root, directory):
+        attempted.append((root.name, directory))
+        return sync_module.COMPLETE, "done"
 
     monkeypatch.setattr(schedule, "gh_json", fake)
-    assert schedule.owner_repos("o") == []
-    args, kwargs = calls[0]
-    assert args[:3] == ("api", "graphql", "--paginate") and kwargs["lines"]
+    monkeypatch.setattr(schedule, "clone", lambda name, dest: dest)
+    monkeypatch.setattr(schedule, "scheduled_directories", lambda root: ["paper"])
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
+    assert result.exit_code == 1, result.output
+    assert "o/bad" in result.output
+    assert "All scheduled papers were attempted" in result.output
+    assert attempted == [("o__good", "paper")]
+
+
+def test_owner_discovery_consumes_all_repository_pages(monkeypatch):
+    listed = [repo_node(str(i)) for i in range(1000)] + [repo_node("scheduled")]
+    visited = []
+
+    def fake(*args, **kwargs):
+        assert args[:2] == ("api", "graphql")
+        assert "--paginate" in args and "--jq" in args
+        assert "login=o" in args and kwargs["lines"]
+        return listed
+
+    def is_scheduled(name, branch):
+        visited.append(name)
+        return name == "o/scheduled"
+
+    monkeypatch.setattr(schedule, "gh_json", fake)
+    monkeypatch.setattr(schedule, "repo_scheduled", is_scheduled)
+    assert list(schedule.owner_repos("o")) == [("o/scheduled", None)]
+    assert len(visited) == 1001
+
+
+def test_owner_listing_failure_is_not_no_papers_found(tmp_path, monkeypatch):
+    def fake(*args, **kwargs):
+        raise ov.SyncError("GitHub discovery request failed")
+
+    monkeypatch.setattr(schedule, "gh_json", fake)
+    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
+    assert result.exit_code == 1
+    assert "GitHub discovery request failed" in result.output
+    assert "No paper with schedule" not in result.output
+
+
+def test_gh_json_reads_paginated_json_lines(monkeypatch):
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0], 0, stdout=b'{"name": "first"}\n{"name": "last"}\n', stderr=b""
+        )
+
+    monkeypatch.setattr(schedule.subprocess, "run", fake_run)
+    assert schedule.gh_json("api", "graphql", lines=True) == [
+        {"name": "first"},
+        {"name": "last"},
+    ]
