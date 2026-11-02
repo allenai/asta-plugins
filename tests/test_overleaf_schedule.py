@@ -135,6 +135,17 @@ def search_hit(repo, path=".asta/overleaf/paper.json"):
     return {"repo": f"o/{repo}", "path": path}
 
 
+def search_page(*hits, total_count=None, incomplete_results=False):
+    return {
+        "total_count": len(hits) if total_count is None else total_count,
+        "incomplete_results": incomplete_results,
+        "items": [
+            {"repository": {"full_name": hit["repo"]}, "path": hit["path"]}
+            for hit in hits
+        ],
+    }
+
+
 def encoded(data):
     return {"encoding": "base64", "content": base64.encodebytes(data).decode()}
 
@@ -154,14 +165,16 @@ def test_owner_repos_searches_once_and_confirms_each_record(monkeypatch):
     def fake(*args, not_found=schedule._RAISE, **kwargs):
         if "search/code" in args:
             searches.append(args)
-            assert kwargs["lines"] and "--paginate" in args
+            assert "--paginate" in args and "--slurp" in args and "--jq" not in args
             return [
-                search_hit("on"),
-                search_hit("on", ".asta/overleaf/nested/b.json"),
-                search_hit("off"),
-                search_hit("elsewhere", "docs/.asta/overleaf/paper.json"),
-                search_hit("gone"),
-                search_hit("broken"),
+                search_page(
+                    search_hit("on"),
+                    search_hit("on", ".asta/overleaf/nested/b.json"),
+                    search_hit("off"),
+                    search_hit("elsewhere", "docs/.asta/overleaf/paper.json"),
+                    search_hit("gone"),
+                    search_hit("broken"),
+                )
             ]
         endpoint = args[1]
         if endpoint == "repos/o/gone/contents/.asta/overleaf/paper.json":
@@ -315,7 +328,7 @@ def test_owner_discovery_failure_is_nonzero_and_other_papers_are_synced(
 
     def fake(*args, **kwargs):
         if "search/code" in args:
-            return [search_hit("bad"), search_hit("good")]
+            return [search_page(search_hit("bad"), search_hit("good"))]
         bad = args[1].startswith("repos/o/bad/")
         if bad and failure == "record":
             raise ov.SyncError("record request failed")
@@ -349,14 +362,132 @@ def test_owner_listing_failure_is_not_no_papers_found(tmp_path, monkeypatch):
     assert "No paper with schedule" not in result.output
 
 
-def test_gh_json_reads_paginated_json_lines(monkeypatch):
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        ({"incomplete_results": True}, "returned incomplete results"),
+        ({"total_count": 1001}, "exceeds GitHub's 1,000-result limit"),
+    ],
+)
+@pytest.mark.parametrize("bad_page", [0, 1])
+def test_incomplete_search_fails_visibly_before_sync(
+    tmp_path, monkeypatch, metadata, message, bad_page
+):
+    pages = [search_page(search_hit(repo), total_count=2) for repo in ("first", "last")]
+    pages[bad_page].update(metadata)
+    attempted = []
+
+    def fake_run(args, **kwargs):
+        if "search/code" in args:
+            if "--jq" in args:
+                # The old projection drops the metadata that signals missing papers.
+                output = "\n".join(
+                    json.dumps(search_hit(repo)) for repo in ("first", "last")
+                )
+            else:
+                assert "--paginate" in args and "--slurp" in args
+                output = json.dumps(pages)
+        else:
+            output = json.dumps(encoded(b'{"schedule": true}'))
+        return subprocess.CompletedProcess(args, 0, stdout=output.encode(), stderr=b"")
+
+    monkeypatch.setattr(schedule.subprocess, "run", fake_run)
+    monkeypatch.setattr(schedule, "clone", lambda name, dest: dest)
+    monkeypatch.setattr(schedule, "scheduled_directories", lambda root: ["paper"])
+    monkeypatch.setattr(
+        sync_module, "sync_workspace", lambda root, directory: attempted.append(root)
+    )
+    result = run(tmp_path, "sync", "--github-owner", "o")
+    assert result.exit_code == 1, result.output
+    assert message in result.output
+    assert "No paper with schedule" not in result.output
+    assert attempted == []
+
+
+@pytest.mark.parametrize("broken_first", [True, False])
+@pytest.mark.parametrize("failure", ["request", "encoding"])
+def test_unreadable_record_does_not_skip_other_papers_in_the_repo(
+    tmp_path, monkeypatch, broken_first, failure
+):
+    hits = [
+        search_hit("multi", f".asta/overleaf/{paper}.json") for paper in ("bad", "good")
+    ]
+    if not broken_first:
+        hits.reverse()
+    hits.append(search_hit("other"))
+    reads = []
+    attempted = []
+
+    def fake(*args, **kwargs):
+        if "search/code" in args:
+            return [search_page(*hits)]
+        endpoint = args[1]
+        reads.append(endpoint)
+        if endpoint.endswith("/bad.json"):
+            if failure == "request":
+                raise ov.SyncError("record request failed")
+            return {"encoding": "base64", "content": "not base64!"}
+        return encoded(b'{"schedule": true}')
+
+    def fake_sync(root, directory):
+        attempted.append((root.name, directory))
+        return sync_module.COMPLETE, "done"
+
+    monkeypatch.setattr(schedule, "gh_json", fake)
+    monkeypatch.setattr(schedule, "clone", lambda name, dest: dest)
+    monkeypatch.setattr(schedule, "scheduled_directories", lambda root: ["good"])
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(tmp_path, "sync", "--github-owner", "o")
+    assert attempted == [("o__multi", "good"), ("o__other", "good")]
+    assert len(reads) == 3
+    assert result.exit_code == 1, result.output
+    assert (
+        "o/multi: cannot read pairing record .asta/overleaf/bad.json" in result.output
+    )
+    assert "All scheduled papers were attempted" in result.output
+
+
+def test_owner_discovery_reads_every_search_page(monkeypatch):
+    hits = [search_hit("first"), search_hit("last")]
+    pages = [search_page(hit, total_count=2) for hit in hits]
+    reads = []
+
     def fake_run(*args, **kwargs):
+        argv = args[0]
+        if "search/code" in argv:
+            assert "--paginate" in argv and "--slurp" in argv
+            assert "--jq" not in argv
+            output = pages
+        else:
+            reads.append(argv[2])
+            output = encoded(b'{"schedule": true}')
         return subprocess.CompletedProcess(
-            args[0], 0, stdout=b'{"name": "first"}\n{"name": "last"}\n', stderr=b""
+            argv, 0, stdout=json.dumps(output).encode(), stderr=b""
         )
 
     monkeypatch.setattr(schedule.subprocess, "run", fake_run)
-    assert schedule.gh_json("api", "search/code", lines=True) == [
-        {"name": "first"},
-        {"name": "last"},
+    assert schedule.owner_repos("o") == [("o/first", None), ("o/last", None)]
+    assert reads == [
+        "repos/o/first/contents/.asta/overleaf/paper.json",
+        "repos/o/last/contents/.asta/overleaf/paper.json",
     ]
+
+
+@pytest.mark.parametrize("count", [0, 1000])
+def test_complete_search_accepts_zero_or_exactly_a_thousand_matches(monkeypatch, count):
+    hits = [search_hit("many", f".asta/overleaf/paper{n}.json") for n in range(count)]
+    pages = [
+        search_page(*hits[start : start + 100], total_count=count)
+        for start in range(0, max(count, 1), 100)
+    ]
+    reads = []
+
+    def fake(*args, **kwargs):
+        if "search/code" in args:
+            return pages
+        reads.append(args[1])
+        return encoded(b'{"schedule": true}')
+
+    monkeypatch.setattr(schedule, "gh_json", fake)
+    assert schedule.owner_repos("o") == ([("o/many", None)] if count else [])
+    assert len(reads) == count

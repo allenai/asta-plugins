@@ -35,9 +35,8 @@ def scheduled_directories(root: Path) -> list[str]:
 _RAISE = object()
 
 
-def gh_json(*args: str, not_found=_RAISE, timeout=90, lines=False):
-    """Run gh for discovery and parse its JSON (one value per line with lines);
-    return not_found on HTTP 404."""
+def gh_json(*args: str, not_found=_RAISE, timeout=90):
+    """Run gh for discovery and parse its JSON; return not_found on HTTP 404."""
     env = ov.git_environment()
     env.update(GH_PROMPT_DISABLED="1", GH_PAGER="cat")
     try:
@@ -61,8 +60,6 @@ def gh_json(*args: str, not_found=_RAISE, timeout=90, lines=False):
             "GitHub discovery request failed; check gh authentication and repository access, then retry."
         )
     try:
-        if lines:
-            return [json.loads(line) for line in result.stdout.splitlines() if line]
         return json.loads(result.stdout)
     except ValueError:
         raise ov.SyncError(
@@ -88,14 +85,14 @@ def record_scheduled(name: str, path: str) -> bool:
 
 def owner_repos(owner: str) -> list[tuple[str, str | None]]:
     """(repo, None) for each repo of a user or org that commits a scheduled record,
-    and (repo, error) for each whose candidate record could not be read.
+    plus (repo, error) for each candidate record that could not be read.
 
     One code search finds the candidates; the index can lag a fresh commit by a
     run, and each candidate's record is read to confirm it.
     """
     query = f"schedule path:{ov.RECORDS} extension:json user:{owner}"
     try:
-        hits = gh_json(
+        pages = gh_json(
             "api",
             "--method",
             "GET",
@@ -105,26 +102,41 @@ def owner_repos(owner: str) -> list[tuple[str, str | None]]:
             "-f",
             "per_page=100",
             "--paginate",
-            "--jq",
-            ".items[] | {repo: .repository.full_name, path}",
-            lines=True,
+            "--slurp",
         )
     except ov.SyncError as exc:
         raise ov.SyncError(
             f"Cannot search {owner}'s repositories ({exc.message}); "
             "check gh authentication and the owner name."
         ) from None
+    if any(page["incomplete_results"] for page in pages):
+        raise ov.SyncError(
+            f"GitHub code search for {owner} returned incomplete results; retry discovery."
+        )
+    if any(page["total_count"] > 1000 for page in pages):
+        raise ov.SyncError(
+            f"GitHub code search for {owner} exceeds GitHub's 1,000-result limit; "
+            "not all scheduled papers can be discovered."
+        )
     candidates: dict[str, list[str]] = {}
-    for hit in hits:
-        if hit["path"].startswith(f"{ov.RECORDS}/") and hit["path"].endswith(".json"):
-            candidates.setdefault(hit["repo"], []).append(hit["path"])
+    for page in pages:
+        for hit in page["items"]:
+            path = hit["path"]
+            if path.startswith(f"{ov.RECORDS}/") and path.endswith(".json"):
+                candidates.setdefault(hit["repository"]["full_name"], []).append(path)
     found = []
     for name, paths in sorted(candidates.items()):
-        try:
-            if any(record_scheduled(name, path) for path in paths):
-                found.append((name, None))
-        except ov.SyncError as exc:
-            found.append((name, f"cannot read pairing records: {exc.message}"))
+        enabled = False
+        for path in paths:
+            try:
+                if record_scheduled(name, path):
+                    enabled = True
+            except ov.SyncError as exc:
+                found.append(
+                    (name, f"cannot read pairing record {path}: {exc.message}")
+                )
+        if enabled:
+            found.append((name, None))
     return found
 
 
