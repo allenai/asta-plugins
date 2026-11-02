@@ -1,4 +1,4 @@
-"""Scheduled sync: the record's schedule setting and `sync --scheduled`."""
+"""Scheduled sync: the record's schedule setting and `sync --scheduled --owner`."""
 
 import base64
 import importlib
@@ -56,12 +56,12 @@ def test_uncommitted_schedule_is_ignored(setup):
     assert schedule.scheduled_directories(project) == []
 
 
-def test_local_checkouts(tmp_path):
-    for name in ("b", "a"):
-        git(tmp_path, "init", "-q", name)
-    (tmp_path / "plain").mkdir()
-    assert schedule.local_checkouts(tmp_path) == [tmp_path / "a", tmp_path / "b"]
-    assert schedule.local_checkouts(tmp_path / "a") == [tmp_path / "a"]
+def found_locally(monkeypatch, repos):
+    """Discovery finds these repos, and cloning one returns its local checkout."""
+    monkeypatch.setattr(
+        schedule, "owner_repos", lambda owner: [(n, None) for n in repos]
+    )
+    monkeypatch.setattr(schedule, "clone", lambda name, dest: repos[name])
 
 
 def test_sync_scheduled_carries_on_past_a_failure(setup, monkeypatch, tmp_path):
@@ -92,75 +92,99 @@ def test_sync_scheduled_carries_on_past_a_failure(setup, monkeypatch, tmp_path):
         return sync_module.COMPLETE, "done"
 
     monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
-    result = run(tmp_path, "sync", "--scheduled")
+    found_locally(
+        monkeypatch, {"o/other": other, "o/paper": project, "o/off": unscheduled}
+    )
+    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
     assert sorted(visited) == ["other", project.name]
     assert result.exit_code != 0
-    assert "other" in result.output and "All scheduled papers were attempted" in (
+    assert "o/other" in result.output and "All scheduled papers were attempted" in (
         result.output
     )
 
 
-def test_sync_scheduled_reports_none_found(tmp_path):
-    result = run(tmp_path, "sync", "--scheduled")
+def test_sync_scheduled_reports_none_found(tmp_path, monkeypatch):
+    found_locally(monkeypatch, {})
+    result = run(tmp_path, "sync", "--scheduled", "--owner", "o")
     assert result.exit_code == 0
     assert "No paper with schedule turned on" in result.output
 
 
-def test_owner_requires_scheduled(tmp_path):
-    result = run(tmp_path, "sync", "--owner", "allenai")
+@pytest.mark.parametrize("args", [["--owner", "allenai"], ["--scheduled"]])
+def test_scheduled_and_owner_go_together(tmp_path, args):
+    result = run(tmp_path, "sync", *args)
     assert result.exit_code == 2
 
 
-def test_owner_repos_keeps_scheduled_only(monkeypatch):
-    responses = {
-        "graphql": [
-            repo_node("on"),
-            repo_node("off"),
-            repo_node("none"),
-            repo_node("broken"),
-            repo_node("big"),
-            repo_node("empty", defaultBranchRef=None),
-        ],
-        "repos/o/on/git/trees/main%3A.asta%2Foverleaf?recursive=1": {
-            "tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]
-        },
-        "repos/o/off/git/trees/main%3A.asta%2Foverleaf?recursive=1": {
-            "tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]
-        },
-        "repos/o/big/git/trees/main%3A.asta%2Foverleaf?recursive=1": {
-            "truncated": True
-        },
-        "repos/o/on/git/blobs/s": encoded(b'{"schedule": true}'),
-        "repos/o/off/git/blobs/s": encoded(b"{}"),
-    }
-
-    def fake(*args, not_found=schedule._RAISE, **kwargs):
-        if args[1] == "repos/o/none/git/trees/main%3A.asta%2Foverleaf?recursive=1":
-            assert not_found is not schedule._RAISE
-            return not_found
-        if args[1] == "repos/o/broken/git/trees/main%3A.asta%2Foverleaf?recursive=1":
-            raise ov.SyncError("HTTP 502")
-        return responses[args[1]]
-
-    monkeypatch.setattr(schedule, "gh_json", fake)
-    found = dict(schedule.owner_repos("o"))
-    assert set(found) == {"o/on", "o/broken", "o/big"}
-    assert found["o/on"] is None
-    assert "HTTP 502" in found["o/broken"]
-    assert "truncated" in found["o/big"]
+def search_hit(repo, path=".asta/overleaf/paper.json"):
+    return {"repo": f"o/{repo}", "path": path}
 
 
 def encoded(data):
     return {"encoding": "base64", "content": base64.encodebytes(data).decode()}
 
 
-def repo_node(name, **kwargs):
-    return {
-        "nameWithOwner": f"o/{name}",
-        "defaultBranchRef": {"name": "main"},
-        "isArchived": False,
-        **kwargs,
+def test_owner_repos_searches_once_and_confirms_each_record(monkeypatch):
+    searches = []
+    contents = {
+        "repos/o/on/contents/.asta/overleaf/paper.json": encoded(b"{}"),
+        "repos/o/on/contents/.asta/overleaf/nested/b.json": encoded(
+            b'{"schedule": true}'
+        ),
+        "repos/o/off/contents/.asta/overleaf/paper.json": encoded(
+            b'{"schedule": false}'
+        ),
     }
+
+    def fake(*args, not_found=schedule._RAISE, **kwargs):
+        if "search/code" in args:
+            searches.append(args)
+            assert kwargs["lines"] and "--paginate" in args
+            return [
+                search_hit("on"),
+                search_hit("on", ".asta/overleaf/nested/b.json"),
+                search_hit("off"),
+                search_hit("elsewhere", "docs/.asta/overleaf/paper.json"),
+                search_hit("gone"),
+                search_hit("broken"),
+            ]
+        endpoint = args[1]
+        if endpoint == "repos/o/gone/contents/.asta/overleaf/paper.json":
+            assert not_found is not schedule._RAISE
+            return not_found
+        if endpoint == "repos/o/broken/contents/.asta/overleaf/paper.json":
+            raise ov.SyncError("HTTP 502")
+        return contents[endpoint]
+
+    monkeypatch.setattr(schedule, "gh_json", fake)
+    found = dict(schedule.owner_repos("o"))
+    assert len(searches) == 1
+    query = next(a for a in searches[0] if a.startswith("q="))
+    assert query == "q=schedule path:.asta/overleaf extension:json user:o"
+    assert found == {"o/on": None, "o/broken": found["o/broken"]}
+    assert "HTTP 502" in found["o/broken"]
+
+
+def test_scheduled_uses_environment_identity_in_a_fresh_clone(
+    setup, github, monkeypatch
+):
+    seed, project = setup
+    assert run(project, "pull", URL, "--schedule").exit_code == 0
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    overleaf_edit(seed, "main.tex", "co-author edit\n")
+    monkeypatch.setattr(schedule, "owner_repos", lambda name: [("o/paper", None)])
+
+    def clone(name, dest):
+        git(project, "clone", str(project.parent / "workspace.git"), str(dest))
+        return dest
+
+    monkeypatch.setattr(schedule, "clone", clone)
+    # No user.* configuration: the runner supplies GIT_AUTHOR_*/GIT_COMMITTER_*.
+    result = run(project, "sync", "--scheduled", "--owner", "o")
+    assert result.exit_code == 0, result.output
+    assert len(github["prs"]) == 1
+    assert "waiting for checks" in result.output
 
 
 @pytest.mark.parametrize(
@@ -182,33 +206,10 @@ def test_scheduled_preserves_single_pass_scheduler_outcomes(setup, monkeypatch, 
         return state, "normal scheduler outcome"
 
     monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
-    result = run(project, "sync", "--scheduled")
+    found_locally(monkeypatch, {"o/paper": project})
+    result = run(project, "sync", "--scheduled", "--owner", "o")
     assert result.exit_code == 0, result.output
     assert "No paper with schedule" not in result.output
-
-
-@pytest.mark.parametrize("owner", [None, "o"])
-def test_scheduled_uses_environment_identity_in_a_fresh_clone(
-    setup, github, monkeypatch, owner
-):
-    seed, project = setup
-    assert run(project, "pull", URL, "--schedule").exit_code == 0
-    commit_all(project)
-    git(project, "push", "origin", "main")
-    overleaf_edit(seed, "main.tex", "co-author edit\n")
-    if owner:
-        monkeypatch.setattr(schedule, "owner_repos", lambda name: [("o/paper", None)])
-
-        def clone(name, dest):
-            git(project, "clone", str(project.parent / "workspace.git"), str(dest))
-            return dest
-
-        monkeypatch.setattr(schedule, "clone", clone)
-    # No user.* configuration: the runner supplies GIT_AUTHOR_*/GIT_COMMITTER_*.
-    result = run(project, "sync", "--scheduled", *(["--owner", owner] if owner else []))
-    assert result.exit_code == 0, result.output
-    assert len(github["prs"]) == 1
-    assert "waiting for checks" in result.output
 
 
 @pytest.mark.parametrize("failure", ["exit", "timeout", "missing", "json"])
@@ -229,43 +230,32 @@ def test_gh_discovery_failures_are_reported_without_transport_diagnostics(
 
     monkeypatch.setattr(schedule.subprocess, "run", fake_run)
     with pytest.raises(ov.SyncError, match="GitHub discovery") as exc:
-        schedule.gh_json(
-            "api", "repos/o/r/git/trees/main%3A.asta%2Foverleaf?recursive=1"
-        )
+        schedule.gh_json("api", "repos/o/r/contents/.asta/overleaf/paper.json")
     assert "private diagnostic" not in str(exc.value)
 
 
-def test_only_an_explicitly_optional_directory_read_accepts_404(monkeypatch):
+def test_only_an_explicitly_optional_record_read_accepts_404(monkeypatch):
     def fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(
             args[0], 1, stdout=b"", stderr=b"gh: Not Found (HTTP 404)"
         )
 
     monkeypatch.setattr(schedule.subprocess, "run", fake_run)
-    assert schedule.gh_json("api", "missing-directory", not_found={}) == {}
+    assert schedule.gh_json("api", "missing-record", not_found={}) == {}
     with pytest.raises(ov.SyncError, match="GitHub discovery request failed"):
-        schedule.gh_json("api", "missing-blob")
+        schedule.gh_json("api", "search/code")
 
 
-@pytest.mark.parametrize("failure", ["tree", "record", "truncated", "encoding"])
+@pytest.mark.parametrize("failure", ["record", "encoding"])
 def test_owner_discovery_failure_is_nonzero_and_other_papers_are_synced(
     tmp_path, monkeypatch, failure
 ):
     attempted = []
 
     def fake(*args, **kwargs):
-        endpoint = args[1]
-        if endpoint == "graphql":
-            return [repo_node("bad"), repo_node("good")]
-        bad = endpoint.startswith("repos/o/bad/")
-        if "/git/trees/" in endpoint:
-            if bad and failure == "tree":
-                raise ov.SyncError("tree request failed")
-            return {
-                "tree": [{"type": "blob", "path": "paper.json", "sha": "s"}],
-                "truncated": bad and failure == "truncated",
-            }
-        assert "/git/blobs/" in endpoint
+        if "search/code" in args:
+            return [search_hit("bad"), search_hit("good")]
+        bad = args[1].startswith("repos/o/bad/")
         if bad and failure == "record":
             raise ov.SyncError("record request failed")
         if bad and failure == "encoding":
@@ -287,26 +277,6 @@ def test_owner_discovery_failure_is_nonzero_and_other_papers_are_synced(
     assert attempted == [("o__good", "paper")]
 
 
-def test_owner_discovery_consumes_all_repository_pages(monkeypatch):
-    listed = [repo_node(str(i)) for i in range(1000)] + [repo_node("scheduled")]
-    visited = []
-
-    def fake(*args, **kwargs):
-        assert args[:2] == ("api", "graphql")
-        assert "--paginate" in args and "--jq" in args
-        assert "login=o" in args and kwargs["lines"]
-        return listed
-
-    def is_scheduled(name, branch):
-        visited.append(name)
-        return name == "o/scheduled"
-
-    monkeypatch.setattr(schedule, "gh_json", fake)
-    monkeypatch.setattr(schedule, "repo_scheduled", is_scheduled)
-    assert list(schedule.owner_repos("o")) == [("o/scheduled", None)]
-    assert len(visited) == 1001
-
-
 def test_owner_listing_failure_is_not_no_papers_found(tmp_path, monkeypatch):
     def fake(*args, **kwargs):
         raise ov.SyncError("GitHub discovery request failed")
@@ -325,7 +295,7 @@ def test_gh_json_reads_paginated_json_lines(monkeypatch):
         )
 
     monkeypatch.setattr(schedule.subprocess, "run", fake_run)
-    assert schedule.gh_json("api", "graphql", lines=True) == [
+    assert schedule.gh_json("api", "search/code", lines=True) == [
         {"name": "first"},
         {"name": "last"},
     ]

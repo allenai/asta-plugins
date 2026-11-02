@@ -54,24 +54,26 @@ sync behaves as scheduled runners expect, described below.
 
 A paper turns on scheduled sync with `"schedule": true` in its
 `.asta/overleaf/<paper dir>.json` record: pass `--schedule` to `pull` when
-pairing (`--no-schedule` turns it off), or set it in a PR. Any runner then runs
-one command on its own timer, whether a hosted job, a laptop's scheduler or an
-agent at session start:
+pairing (`--no-schedule` turns it off), or set it in a PR. A hosted runner then
+runs one command on its own timer:
 
 ```bash
-asta workspace overleaf sync --scheduled --project ~/papers   # local checkouts
-asta workspace overleaf sync --scheduled --owner my-org       # an owner's repos
+asta workspace overleaf sync --scheduled --owner my-org
 ```
 
-With `--project`, it looks in that checkout, or in each checkout directly inside
-the directory. With `--owner`, it finds that user's or org's repositories whose
-default branch commits a scheduled record, clones each, and pushes with `gh`'s
-token. Either way it syncs every scheduled paper and carries on past a failing
+It finds that user's or org's scheduled papers with one GitHub code search,
+reads each match's record to confirm, clones each repository, and pushes with
+`gh`'s token. A record committed since the search index last updated is picked
+up a run later. It syncs every scheduled paper and carries on past a failing
 one, exiting nonzero after attempting them all. The `ghcr.io/allenai/asta`
 image ships `gh`, so a hosted runner can use it as is.
 
-Without `--scheduled`, `sync --project /path/to/checkout` visits every paper
-paired in that checkout whether scheduled or not; use `--dir` to sync only one.
+On a laptop no discovery is needed: plain `sync` in the paper's checkout is the
+runner, run by an agent at session start or by one cron line such as
+`0 * * * * asta workspace overleaf sync --project ~/papers/my-paper`.
+
+Plain `sync --project /path/to/checkout` visits every paper paired in that
+checkout whether scheduled or not; use `--dir` to sync only one.
 `pull` and `publish` require `--dir` when several papers are paired.
 
 Supply the Overleaf Git token through `OVERLEAF_TOKEN` or the Git credential

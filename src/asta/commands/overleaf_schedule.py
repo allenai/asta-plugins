@@ -32,19 +32,6 @@ def scheduled_directories(root: Path) -> list[str]:
     ]
 
 
-def is_checkout(path: Path) -> bool:
-    return (path / ".git").exists()
-
-
-def local_checkouts(project: Path) -> list[Path]:
-    """The project itself when it is a checkout, else the checkouts directly inside it."""
-    if is_checkout(project):
-        return [project]
-    return sorted(
-        child for child in project.iterdir() if child.is_dir() and is_checkout(child)
-    )
-
-
 _RAISE = object()
 
 
@@ -83,74 +70,58 @@ def gh_json(*args: str, not_found=_RAISE, timeout=90, lines=False):
         ) from None
 
 
-def repo_scheduled(name: str, branch: str) -> bool:
-    """Whether a repo's default branch commits a record that turns on the schedule."""
-    # Listing only the records subtree keeps the response small and complete.
-    treeish = quote(f"{branch}:{ov.RECORDS}", safe="")
-    tree = gh_json("api", f"repos/{name}/git/trees/{treeish}?recursive=1", not_found={})
-    if tree.get("truncated"):
-        raise ov.SyncError("the pairing-record listing was truncated")
-    for entry in tree.get("tree", []):
-        if entry.get("type") != "blob" or not entry["path"].endswith(".json"):
-            continue
-        blob = gh_json("api", f"repos/{name}/git/blobs/{entry['sha']}")
-        try:
-            if blob.get("encoding") != "base64":
-                raise ValueError
-            raw = base64.b64decode("".join(blob["content"].split()), validate=True)
-        except (KeyError, ValueError, binascii.Error):
-            raise ov.SyncError(
-                f"GitHub returned an unreadable pairing record: {entry['path']}; retry discovery."
-            ) from None
-        if scheduled(raw):
-            return True
-    return False
-
-
-# `gh repo list` caps filtered listings at 1,000 repos, so page through GraphQL.
-REPOSITORIES_QUERY = """
-query($login: String!, $endCursor: String) {
-  repositoryOwner(login: $login) {
-    repositories(first: 100, after: $endCursor, isFork: false, ownerAffiliations: OWNER) {
-      nodes { nameWithOwner isArchived defaultBranchRef { name } }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-}
-"""
+def record_scheduled(name: str, path: str) -> bool:
+    """Whether a repo's default branch commits this record with the schedule on."""
+    blob = gh_json("api", f"repos/{name}/contents/{quote(path)}", not_found={})
+    if not blob:
+        return False  # Deleted since the search index saw it.
+    try:
+        if blob.get("encoding") != "base64":
+            raise ValueError
+        raw = base64.b64decode("".join(blob["content"].split()), validate=True)
+    except (KeyError, ValueError, binascii.Error):
+        raise ov.SyncError(
+            f"GitHub returned an unreadable pairing record: {path}; retry discovery."
+        ) from None
+    return scheduled(raw)
 
 
 def owner_repos(owner: str) -> list[tuple[str, str | None]]:
-    """(repo, None) for each unarchived source repo of a user or org that commits a
-    scheduled record, and (repo, error) for each whose records could not be read."""
+    """(repo, None) for each repo of a user or org that commits a scheduled record,
+    and (repo, error) for each whose candidate record could not be read.
+
+    One code search finds the candidates; the index can lag a fresh commit by a
+    run, and each candidate's record is read to confirm it.
+    """
+    query = f"schedule path:{ov.RECORDS} extension:json user:{owner}"
     try:
-        listed = gh_json(
+        hits = gh_json(
             "api",
-            "graphql",
-            "--paginate",
+            "--method",
+            "GET",
+            "search/code",
             "-f",
-            f"query={REPOSITORIES_QUERY}",
-            "-F",
-            f"login={owner}",
+            f"q={query}",
+            "-f",
+            "per_page=100",
+            "--paginate",
             "--jq",
-            ".data.repositoryOwner.repositories.nodes[] | select(.isArchived | not)",
+            ".items[] | {repo: .repository.full_name, path}",
             lines=True,
-            # One call pages through every repo; a large org takes minutes.
-            timeout=1800,
         )
     except ov.SyncError as exc:
         raise ov.SyncError(
-            f"Cannot list {owner}'s repositories ({exc.message}); "
+            f"Cannot search {owner}'s repositories ({exc.message}); "
             "check gh authentication and the owner name."
         ) from None
+    candidates: dict[str, list[str]] = {}
+    for hit in hits:
+        if hit["path"].startswith(f"{ov.RECORDS}/") and hit["path"].endswith(".json"):
+            candidates.setdefault(hit["repo"], []).append(hit["path"])
     found = []
-    for repo in listed:
-        branch = (repo.get("defaultBranchRef") or {}).get("name")
-        if not branch:
-            continue
-        name = repo["nameWithOwner"]
+    for name, paths in sorted(candidates.items()):
         try:
-            if repo_scheduled(name, branch):
+            if any(record_scheduled(name, path) for path in paths):
                 found.append((name, None))
         except ov.SyncError as exc:
             found.append((name, f"cannot read pairing records: {exc.message}"))
@@ -185,30 +156,20 @@ def clone(name: str, dest: Path) -> Path:
     return dest
 
 
-def scheduled_papers(project: Path, owner: str | None, workdir: Path):
-    """Yield (label, checkout, paper directory) for each scheduled paper found.
+def scheduled_papers(owner: str, workdir: Path):
+    """Yield (repo, checkout, paper directory) for each scheduled paper found.
 
-    A checkout that cannot be cloned or read yields (label, None, error message).
+    A repo that cannot be cloned or read yields (repo, None, error message).
     """
-    if owner is None:
-        checkouts = [
-            (str(path), lambda path=path: path) for path in local_checkouts(project)
-        ]
-    else:
-        checkouts = []
-        for name, error in owner_repos(owner):
-            if error:
-                yield name, None, error
-                continue
-            checkouts.append(
-                (name, lambda name=name: clone(name, workdir / name.replace("/", "__")))
-            )
-    for label, get in checkouts:
+    for name, error in owner_repos(owner):
+        if error:
+            yield name, None, error
+            continue
         try:
-            root = get()
+            root = clone(name, workdir / name.replace("/", "__"))
             directories = scheduled_directories(root)
         except click.ClickException as exc:
-            yield label, None, exc.format_message()
+            yield name, None, exc.format_message()
             continue
         for directory in directories:
-            yield label, root, directory
+            yield name, root, directory

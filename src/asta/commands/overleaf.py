@@ -1737,13 +1737,12 @@ def release_check_timeout(ctx, param, value):
 @click.option(
     "--scheduled",
     is_flag=True,
-    help="Sync only papers whose pairing record sets schedule, in --project if it is "
-    "a checkout, else in each checkout directly inside it.",
+    help="With --owner: find the papers whose pairing record sets schedule, clone "
+    "each with gh's token and sync it. In a checkout, plain sync is the runner.",
 )
 @click.option(
     "--owner",
-    help="With --scheduled: find them in this GitHub user's or org's repositories "
-    "instead, and clone each with gh's token.",
+    help="With --scheduled: the GitHub user or org whose repositories to search.",
 )
 def sync(
     directory: str | None,
@@ -1758,14 +1757,14 @@ def sync(
     from .overleaf_gate import require_release_check
     from .overleaf_sync import sync_workspace
 
-    if owner is not None and not scheduled:
-        raise click.UsageError("--owner requires --scheduled.")
+    if (owner is not None) != scheduled:
+        raise click.UsageError("--scheduled and --owner go together.")
     if scheduled:
         if directory is not None or wait is not None:
             raise click.UsageError(
                 "--scheduled cannot be combined with --dir or --wait."
             )
-        return sync_scheduled(project, owner, check_repo, check_timeout)
+        return sync_scheduled(owner, check_repo, check_timeout)
     if wait is not None:
         click.get_current_context().meta["overleaf_noninteractive"] = True
         return sync_and_wait(directory, project, check_repo, check_timeout, wait)
@@ -1797,21 +1796,16 @@ def sync(
         )
 
 
-def sync_scheduled(project, owner, check_repo, check_timeout):
+def sync_scheduled(owner, check_repo, check_timeout):
     """Sync every scheduled paper found, carrying on past a failing one."""
-    from contextlib import nullcontext
-
     from .overleaf_gate import require_release_check
     from .overleaf_schedule import github_credentials, scheduled_papers
     from .overleaf_sync import sync_workspace
 
     failed = []
     synced = 0
-    with (
-        tempfile.TemporaryDirectory() as tmp,
-        github_credentials() if owner else nullcontext(),
-    ):
-        for label, root, directory in scheduled_papers(project, owner, Path(tmp)):
+    with tempfile.TemporaryDirectory() as tmp, github_credentials():
+        for label, root, directory in scheduled_papers(owner, Path(tmp)):
             if root is None:
                 click.echo(f"{label}: {directory}", err=True)
                 failed.append(label)
