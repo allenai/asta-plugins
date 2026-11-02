@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A paper turns on scheduled Overleaf sync with `"schedule": true` in its
+  pairing record, set by `asta workspace overleaf pull --schedule` or in a PR.
+  `asta workspace overleaf sync --scheduled` finds the scheduled papers in a
+  checkout or the checkouts inside a directory, or with `--owner` in a GitHub
+  user's or org's repositories, clones each, syncs it, and carries on past a
+  failing one. The `ghcr.io/allenai/asta` image now ships `gh`.
+
 - The autodiscovery skill's local workflow now covers running on an Anthropic
   key (Claude Opus 5) and recommends GPT-6 Luna on an OpenAI key. It names the
   installed CLI `auto-discovery` throughout, fixes the model names and Vertex

@@ -3,6 +3,15 @@ FROM public.ecr.aws/docker/library/node:22.23.4-slim AS asta
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates make python3 \
     && rm -rf /var/lib/apt/lists/*
 
+# gh lets a hosted runner use this image as is for `overleaf sync --scheduled --owner`.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/* \
+    && gh --version
+
 COPY image/skills-cli/package.json image/skills-cli/package-lock.json /opt/skills-cli/
 RUN npm ci --prefix /opt/skills-cli --omit=dev --engine-strict \
     && npm cache clean --force \

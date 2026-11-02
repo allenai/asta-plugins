@@ -52,17 +52,32 @@ sync behaves as scheduled runners expect, described below.
 
 ## Schedule sync
 
-Run `asta workspace overleaf sync --project /path/to/checkout` from cron or any
-scheduler. Without `--dir`, it visits every paper paired by a tracked
-`.asta/overleaf/<paper dir>.json` record, including nested paper directories.
-Use `--dir` to sync only one pairing. A failure on one paper does not stop the
-remaining papers; the command reports each failure and exits nonzero after
-attempting them all. `pull` and `publish` require `--dir` when several papers
-are paired. Supply the Overleaf
-Git token through `OVERLEAF_TOKEN` or the Git credential helper, configure Git's
-user.name/user.email, and authenticate `gh` for the workspace repository with
-contents, pull-request and issue write access. Install the GitHub CLI alongside
-Asta. No runner, service account or scheduler is prescribed here.
+A paper turns on scheduled sync with `"schedule": true` in its
+`.asta/overleaf/<paper dir>.json` record: pass `--schedule` to `pull` when
+pairing (`--no-schedule` turns it off), or set it in a PR. Any runner then runs
+one command on its own timer, whether a hosted job, a laptop's scheduler or an
+agent at session start:
+
+```bash
+asta workspace overleaf sync --scheduled --project ~/papers   # local checkouts
+asta workspace overleaf sync --scheduled --owner my-org       # an owner's repos
+```
+
+With `--project`, it looks in that checkout, or in each checkout directly inside
+the directory. With `--owner`, it finds that user's or org's repositories whose
+default branch commits a scheduled record, clones each, and pushes with `gh`'s
+token. Either way it syncs every scheduled paper and carries on past a failing
+one, exiting nonzero after attempting them all. The `ghcr.io/allenai/asta`
+image ships `gh`, so a hosted runner can use it as is.
+
+Without `--scheduled`, `sync --project /path/to/checkout` visits every paper
+paired in that checkout whether scheduled or not; use `--dir` to sync only one.
+`pull` and `publish` require `--dir` when several papers are paired.
+
+Supply the Overleaf Git token through `OVERLEAF_TOKEN` or the Git credential
+helper, set Git's identity (`user.name`/`user.email`, or `GIT_AUTHOR_*` and
+`GIT_COMMITTER_*`), and authenticate `gh` (for example `GH_TOKEN`) with
+contents, pull-request and issue write access to each paper's repository.
 
 The command uses a temporary full clone, writes only the linked paper's files
 and its own pairing record to its branch, and leaves the caller's working tree alone. A remote lock
