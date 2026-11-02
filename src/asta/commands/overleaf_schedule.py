@@ -152,14 +152,23 @@ def github_credentials():
 
 
 def clone(name: str, dest: Path) -> Path:
-    ov.git("clone", "--quiet", "--", f"https://github.com/{name}.git", str(dest))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    ov.git(
+        "clone",
+        "--quiet",
+        "--",
+        f"https://github.com/{name}.git",
+        str(dest),
+        cwd=dest.parent,
+    )
     return dest
 
 
 def scheduled_papers(owner: str, workdir: Path):
     """Yield (repo, checkout, paper directory) for each scheduled paper found.
 
-    A repo that cannot be cloned or read yields (repo, None, error message).
+    A repo that cannot be cloned or read, for any reason, yields
+    (repo, None, error message) so the run carries on to the next repo.
     """
     for name, error in owner_repos(owner):
         if error:
@@ -170,6 +179,9 @@ def scheduled_papers(owner: str, workdir: Path):
             directories = scheduled_directories(root)
         except click.ClickException as exc:
             yield name, None, exc.format_message()
+            continue
+        except Exception as exc:
+            yield name, None, f"unexpected {type(exc).__name__}"
             continue
         for directory in directories:
             yield name, root, directory

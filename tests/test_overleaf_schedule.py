@@ -180,6 +180,57 @@ def test_owner_repos_searches_once_and_confirms_each_record(monkeypatch):
     assert "HTTP 502" in found["o/broken"]
 
 
+def github_points_at(monkeypatch, base, repos):
+    """Point https://github.com/<repo>.git at local repos so the real clone runs."""
+    config = base / "github-urls.gitconfig"
+    config.write_text(
+        "".join(
+            f'[url "{(base / path).as_uri()}"]\n'
+            f"\tinsteadOf = https://github.com/{name}.git\n"
+            for name, path in repos.items()
+        )
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+
+def test_clone_failure_is_that_repos_failure(setup, monkeypatch):
+    _, project = setup
+    assert run(project, "pull", URL, "--schedule").exit_code == 0
+    commit_all(project)
+    git(project, "push", "origin", "main")
+    monkeypatch.setattr(
+        schedule,
+        "owner_repos",
+        lambda name: [("o/missing", None), ("o/crash", None), ("o/paper", None)],
+    )
+    github_points_at(
+        monkeypatch,
+        project.parent,
+        {"o/missing": "no-such.git", "o/paper": "workspace.git"},
+    )
+    real_clone = schedule.clone
+
+    def clone(name, dest):
+        if name == "o/crash":
+            raise TypeError("bug")
+        return real_clone(name, dest)
+
+    monkeypatch.setattr(schedule, "clone", clone)
+    visited = []
+
+    def fake_sync(root, directory):
+        visited.append(directory)
+        return sync_module.COMPLETE, "done"
+
+    monkeypatch.setattr(sync_module, "sync_workspace", fake_sync)
+    result = run(project, "sync", "--github-owner", "o")
+    assert visited == ["paper"]
+    assert result.exit_code != 0
+    assert "o/missing: git clone failed" in result.output
+    assert "o/crash: unexpected TypeError" in result.output
+    assert "Sync failed for: o/missing, o/crash." in result.output
+
+
 def test_scheduled_uses_environment_identity_in_a_fresh_clone(
     setup, github, monkeypatch
 ):
@@ -189,13 +240,8 @@ def test_scheduled_uses_environment_identity_in_a_fresh_clone(
     git(project, "push", "origin", "main")
     overleaf_edit(seed, "main.tex", "co-author edit\n")
     monkeypatch.setattr(schedule, "owner_repos", lambda name: [("o/paper", None)])
-
-    def clone(name, dest):
-        git(project, "clone", str(project.parent / "workspace.git"), str(dest))
-        return dest
-
-    monkeypatch.setattr(schedule, "clone", clone)
-    # No user.* configuration: the runner supplies GIT_AUTHOR_*/GIT_COMMITTER_*.
+    github_points_at(monkeypatch, project.parent, {"o/paper": "workspace.git"})
+    # The real clone runs; no user.* configuration: the runner supplies GIT_AUTHOR_*/GIT_COMMITTER_*.
     result = run(project, "sync", "--github-owner", "o")
     assert result.exit_code == 0, result.output
     assert len(github["prs"]) == 1
