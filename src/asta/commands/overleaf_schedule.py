@@ -43,63 +43,80 @@ def local_checkouts(project: Path) -> list[Path]:
     )
 
 
-def gh_json(*args: str):
-    """Run gh for discovery; None on failure, so one unreadable repo is skipped."""
+_RAISE = object()
+
+
+def gh_json(*args: str, not_found=_RAISE):
+    """Run gh for discovery and parse its JSON; return not_found on HTTP 404."""
     env = ov.git_environment()
     env.update(GH_PROMPT_DISABLED="1", GH_PAGER="cat")
     try:
         result = subprocess.run(
             ["gh", *args], env=env, capture_output=True, timeout=90, **ov.no_terminal()
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ov.SyncError(f"gh {args[0]} failed: {exc}") from None
     if result.returncode:
-        return None
+        error = result.stderr.decode(errors="replace").strip()
+        if not_found is not _RAISE and "HTTP 404" in error:
+            return not_found
+        raise ov.SyncError(f"gh {args[0]} failed: {error or result.returncode}")
     try:
         return json.loads(result.stdout)
     except ValueError:
-        return None
+        raise ov.SyncError(f"gh {args[0]} returned invalid JSON") from None
 
 
-def owner_repos(owner: str) -> list[str]:
-    """Unarchived source repos of a user or org that commit a scheduled record."""
-    listed = gh_json(
-        "repo",
-        "list",
-        owner,
-        "--source",
-        "--no-archived",
-        "--limit",
-        "1000",
-        "--json",
-        "nameWithOwner,defaultBranchRef",
+def repo_scheduled(name: str, branch: str) -> bool:
+    """Whether a repo's default branch commits a record that turns on the schedule."""
+    # Listing only the records subtree keeps the response small and complete.
+    tree = gh_json(
+        "api", f"repos/{name}/git/trees/{branch}:{ov.RECORDS}?recursive=1", not_found={}
     )
-    if listed is None:
-        raise ov.SyncError(
-            f"Cannot list {owner}'s repositories; check gh authentication and the owner name."
+    if tree.get("truncated"):
+        raise ov.SyncError("the pairing-record listing was truncated")
+    for entry in tree.get("tree", []):
+        if entry.get("type") != "blob" or not entry["path"].endswith(".json"):
+            continue
+        blob = gh_json("api", f"repos/{name}/git/blobs/{entry['sha']}")
+        if blob.get("encoding") == "base64" and scheduled(
+            base64.b64decode(blob.get("content", ""))
+        ):
+            return True
+    return False
+
+
+def owner_repos(owner: str) -> list[tuple[str, str | None]]:
+    """(repo, None) for each unarchived source repo of a user or org that commits a
+    scheduled record, and (repo, error) for each whose records could not be read."""
+    try:
+        listed = gh_json(
+            "repo",
+            "list",
+            owner,
+            "--source",
+            "--no-archived",
+            "--limit",
+            "100000",
+            "--json",
+            "nameWithOwner,defaultBranchRef",
         )
+    except ov.SyncError as exc:
+        raise ov.SyncError(
+            f"Cannot list {owner}'s repositories ({exc.message}); "
+            "check gh authentication and the owner name."
+        ) from None
     found = []
     for repo in listed:
         branch = (repo.get("defaultBranchRef") or {}).get("name")
         if not branch:
             continue
         name = repo["nameWithOwner"]
-        tree = gh_json("api", f"repos/{name}/git/trees/{branch}?recursive=1")
-        records = [
-            entry["path"]
-            for entry in (tree or {}).get("tree", [])
-            if entry.get("type") == "blob"
-            and entry["path"].startswith(f"{ov.RECORDS}/")
-            and entry["path"].endswith(".json")
-        ]
-        for path in records:
-            content = gh_json("api", f"repos/{name}/contents/{path}?ref={branch}")
-            raw = None
-            if isinstance(content, dict) and content.get("encoding") == "base64":
-                raw = base64.b64decode(content.get("content", ""))
-            if scheduled(raw):
-                found.append(name)
-                break
+        try:
+            if repo_scheduled(name, branch):
+                found.append((name, None))
+        except ov.SyncError as exc:
+            found.append((name, f"cannot read pairing records: {exc.message}"))
     return found
 
 
@@ -141,10 +158,14 @@ def scheduled_papers(project: Path, owner: str | None, workdir: Path):
             (str(path), lambda path=path: path) for path in local_checkouts(project)
         ]
     else:
-        checkouts = [
-            (name, lambda name=name: clone(name, workdir / name.replace("/", "__")))
-            for name in owner_repos(owner)
-        ]
+        checkouts = []
+        for name, error in owner_repos(owner):
+            if error:
+                yield name, None, error
+                continue
+            checkouts.append(
+                (name, lambda name=name: clone(name, workdir / name.replace("/", "__")))
+            )
     for label, get in checkouts:
         try:
             root = get()

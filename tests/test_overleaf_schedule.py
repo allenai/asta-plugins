@@ -106,34 +106,39 @@ def test_owner_requires_scheduled(tmp_path):
     assert result.exit_code == 2
 
 
-def test_owner_repos_keeps_scheduled_only(monkeypatch):
+def test_owner_repos_keeps_scheduled_only_and_reports_unreadable(monkeypatch):
     import base64
 
     def encoded(data):
         return {"encoding": "base64", "content": base64.b64encode(data).decode()}
 
+    def tree(name):
+        return f"repos/o/{name}/git/trees/main:.asta/overleaf?recursive=1"
+
+    paper = {"tree": [{"type": "blob", "path": "paper.json", "sha": "s"}]}
     responses = {
         ("repo", "list"): [
-            {"nameWithOwner": "o/on", "defaultBranchRef": {"name": "main"}},
-            {"nameWithOwner": "o/off", "defaultBranchRef": {"name": "main"}},
-            {"nameWithOwner": "o/none", "defaultBranchRef": {"name": "main"}},
-            {"nameWithOwner": "o/empty", "defaultBranchRef": None},
-        ],
-        "repos/o/on/git/trees/main?recursive=1": {
-            "tree": [{"type": "blob", "path": ".asta/overleaf/paper.json"}]
-        },
-        "repos/o/off/git/trees/main?recursive=1": {
-            "tree": [{"type": "blob", "path": ".asta/overleaf/paper.json"}]
-        },
-        "repos/o/none/git/trees/main?recursive=1": {"tree": []},
-        "repos/o/on/contents/.asta/overleaf/paper.json?ref=main": encoded(
-            b'{"schedule": true}'
-        ),
-        "repos/o/off/contents/.asta/overleaf/paper.json?ref=main": encoded(b"{}"),
+            {"nameWithOwner": f"o/{name}", "defaultBranchRef": {"name": "main"}}
+            for name in ("on", "off", "none", "broken", "big")
+        ]
+        + [{"nameWithOwner": "o/empty", "defaultBranchRef": None}],
+        tree("on"): paper,
+        tree("off"): paper,
+        tree("big"): {"truncated": True, "tree": []},
+        "repos/o/on/git/blobs/s": encoded(b'{"schedule": true}'),
+        "repos/o/off/git/blobs/s": encoded(b"{}"),
     }
 
-    def fake(*args):
-        return responses.get(args[:2]) if args[0] == "repo" else responses.get(args[1])
+    def fake(*args, not_found=schedule._RAISE):
+        key = args[:2] if args[0] == "repo" else args[1]
+        if key in responses:
+            return responses[key]
+        if key == tree("none") and not_found is not schedule._RAISE:
+            return not_found
+        raise ov.SyncError("gh api failed: HTTP 502")
 
     monkeypatch.setattr(schedule, "gh_json", fake)
-    assert schedule.owner_repos("o") == ["o/on"]
+    found = dict(schedule.owner_repos("o"))
+    assert set(found) == {"o/on", "o/broken", "o/big"}
+    assert found["o/on"] is None
+    assert "HTTP 502" in found["o/broken"] and "truncated" in found["o/big"]
