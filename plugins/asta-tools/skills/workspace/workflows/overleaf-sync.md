@@ -28,7 +28,8 @@ message, including that declining unattended merging leaves PRs for the owner:
 
 - With the rulesets on, a direct push to `main` is refused, theirs included.
   Changes reach `main` through PRs whose paper builds. Otherwise say which is
-  missing; don't schedule the unattended sync without the PR-only rule.
+  missing; without the PR-only rule, pair with `--no-schedule` so that no
+  runner syncs it unattended.
 - Co-authors keep writing in Overleaf. With unattended merging accepted,
   their edits arrive as a sync PR that merges itself once it builds.
 - Each Share setting below can be changed later (remove the invite/access or
@@ -41,7 +42,7 @@ completion before step 2's access check:
 | Default | Without it |
 |---|---|
 | The sync account invited as Editor (Share → invite by email) | The sync can't push co-authors' edits back to Overleaf. |
-| Link sharing off | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
+| Link sharing off, each co-author invited as Editor instead | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
 
 After the checks and accepted changes, confirm what is on, with a link to
 Settings → Rules, and what a refused push looks like
@@ -130,7 +131,9 @@ On a branch with a clean, committed paper, run
 `asta workspace overleaf pull https://git.overleaf.com/<project-id>` with your
 own Overleaf credential. Commit the imported paper and the `.asta/overleaf` record it
 writes together, open a PR and merge it. One Overleaf project pairs with one
-repository. Then schedule the sync as
-[Overleaf sync](overleaf-sync-command.md) describes. A scheduled GitHub workflow
-is an option only when its sync account is invited to that one project and
-`main` accepts changes only through PRs.
+repository. The record turns on scheduled sync (`--no-schedule` keeps the paper
+manual), so once the PR merges, a runner that can reach the repository syncs it
+on its next run, with no request to the runner's operator. Where none does, run
+the sync yourself as [Overleaf sync](overleaf-sync-command.md#schedule-sync)
+describes. A scheduled GitHub workflow is an option only when its sync account
+is invited to that one project and `main` accepts changes only through PRs.

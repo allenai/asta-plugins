@@ -54,9 +54,10 @@ panel or another retained clone before accepting the result.
 
 ## Recovering a skipped co-author edit
 
-`base` is trusted as committed on the default branch. A hand edit to `base` that
-moves it past an Overleaf edit, or a hand-written record, can make a pull skip a
-co-author's edit. Overleaf keeps every edit. To bring one back:
+A hand edit to `base`, or a hand-written record, moved the sync point past an
+Overleaf edit, so a pull skipped a co-author's edit. The
+[threat model](../../../../../docs/overleaf-sync.md#threat-model) explains why
+sync trusts `base` and why the edit is still in Overleaf. To bring it back:
 
 1. In a clone of the Overleaf project, find the commit that made it:
    `git log -p -- <file>` (or Overleaf's History panel).
@@ -82,8 +83,9 @@ When both sides edit an existing text source, pull merges against its last synce
 ## Workspace history is shallow
 
 A depth-one or shallow clone cannot show whether a record's workspace commit is on
-the default branch. Fetch workspace history explicitly (`git fetch --unshallow origin`,
-or deepen the clone enough to include the record's workspace commit), then retry.
+the default branch ([why sync refuses](../../../../../docs/overleaf-sync.md#failure-handling)).
+Fetch workspace history explicitly (`git fetch --unshallow origin`, or deepen
+the clone enough to include the record's workspace commit), then retry.
 Sync never deepens your clone itself; a refusal leaves the paper, remote heads, branch
 refs and `FETCH_HEAD` unchanged.
 
@@ -98,10 +100,10 @@ enforce review.
 
 ## Sync record ref
 
-A ref that names a tree or annotated tag cannot be replaced by a fast-forward commit
-push. To restore or delete the record, ask a workspace maintainer to reset the ref to
-a commit from its history, or run `git push origin :refs/asta/overleaf/<project-id>`, then retry. A damaged commit
-record can be replaced by the next successful publish without deleting it.
+Publish cannot replace a sync record ref that names a tree or annotated tag
+([why](../../../../../docs/overleaf-sync.md#failure-handling)). To restore or
+delete the record, ask a workspace maintainer to reset the ref to a commit from
+its history, or run `git push origin :refs/asta/overleaf/<project-id>`, then retry.
 
 ## Newer sync format
 
@@ -121,27 +123,28 @@ explains release compatibility and scheduled-run monitoring.
 
 ## Malformed sync format
 
-The config, publication record, sync PR header or lock commit has an invalid
-format stamp. Restore the stamp from its history and retry; do not guess a
-format number. An absent JSON `format` field is legacy state, but `null` is
-invalid. A sync PR with multiple header markers is ambiguous, including literal
-header examples in notices. Remove the example markers or restore the single
-managed header and its format stamp from history before retrying. Prose between
-the header and stamp or multiple stamps before the record-notice section also
-refuse; restore the original stamp placement and keep examples in the notice
-section after `<!-- asta-overleaf-record-not-used -->`. A publication
-record with an invalid format stops the sync instead of falling back to
-the `.asta/overleaf` record. If a lock was damaged by an interrupted run,
-confirm its owner has stopped before following the
-[interrupted-run recovery](#interrupted-runs).
+The config, publication record, sync PR header or lock commit has a format
+stamp sync cannot read, so it stopped. The
+[shared-format contract](../../../../../docs/overleaf-sync.md#shared-format-and-releases)
+says which stamps are malformed or ambiguous. Restore the stamp from its
+history and retry; do not guess a format number. For the sync PR, remove
+literal header examples or restore the single managed header and its format
+stamp from history, restore the original stamp placement, and keep stamp
+examples in the notice section after `<!-- asta-overleaf-record-not-used -->`.
+If a lock was damaged by an interrupted run, confirm its owner has stopped
+before following the [interrupted-run recovery](#interrupted-runs).
 
 ## Incomplete publication
 
-The Overleaf push succeeded but confirmation or recording the sync point failed.
-Restore origin access if needed, run `asta workspace overleaf pull`, and merge its PR
-before publishing again. That PR may change only the paper's `.asta/overleaf` record. If Overleaf history
-was reset, use [Base not in Overleaf history](#base-not-in-overleaf-history); do not
-force-push over later collaborator edits.
+The Overleaf push succeeded but confirmation or recording the sync point failed
+([why](../../../../../docs/overleaf-sync.md#failure-handling)). Restore origin
+access if needed, run `asta workspace overleaf pull`, and merge its PR before
+publishing again. While Overleaf still descends from the pairing record's `base`, pull
+imports the published files, which match the workspace, so with no further
+collaborator edits that PR changes only the paper's `.asta/overleaf` record;
+later collaborator edits come in it for review. If Overleaf history was reset,
+use [Base not in Overleaf history](#base-not-in-overleaf-history) before pulling
+or publishing again; do not force-push over later collaborator edits.
 
 ## Project URL
 

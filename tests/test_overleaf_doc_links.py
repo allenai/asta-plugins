@@ -1,5 +1,5 @@
-"""Every Overleaf recovery anchor the CLI prints and every link between the
-Overleaf docs must resolve to a heading."""
+"""Every Overleaf recovery anchor the CLI prints and every link in the Overleaf
+docs and the pages pointing into them must resolve to a heading."""
 
 import re
 from pathlib import Path
@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / "plugins/asta-tools/skills/workspace/workflows"
 RECOVERY = WORKFLOWS / "overleaf-recovery.md"
 DOCS = [
+    ROOT / "README.md",
     ROOT / "docs/overleaf-sync.md",
+    ROOT / "plugins/asta-tools/skills/workspace/SKILL.md",
     ROOT / "plugins/asta-tools/skills/workspace/assets/DEVELOPER.md",
     *sorted(WORKFLOWS.glob("overleaf-*.md")),
 ]
@@ -59,6 +61,10 @@ def doc_links():
                 path, _, frag = target.partition("#")
                 resolved = (doc.parent / path).resolve() if path else doc
             yield pytest.param(doc, resolved, frag, id=f"{doc.name}->{target}")
+
+
+def test_doc_links_found():
+    assert list(doc_links())
 
 
 @pytest.mark.parametrize(("doc", "target", "fragment"), list(doc_links()))

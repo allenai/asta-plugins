@@ -1,18 +1,39 @@
 # Overleaf sync
 
-Command details for agents and schedulers. When to sync, `--wait`, exit codes
-and pairing are in [the researcher guide](../assets/DEVELOPER.md#sync-a-paper-with-overleaf);
-access and repository settings in [setup](overleaf-sync.md); record and
-publication contracts in [the technical reference](../../../../../docs/overleaf-sync.md).
+Command details for agents and schedulers. Pairing, access and repository
+settings are in [setup](overleaf-sync.md); record and publication contracts in
+[the technical reference](../../../../../docs/overleaf-sync.md).
 
 ## Waiting
 
+One call pulls co-authors' Overleaf edits into a sync PR, waits for its checks
+and any required approvals, merges it, then publishes the default branch's
+paper back to Overleaf:
+
+```bash
+asta workspace overleaf sync --wait 1800
+```
+
 `--wait SECONDS` visits each pending paper once per round, polling every 30
-seconds between rounds; no attempt starts at or after the shared deadline, and
-`--wait 0` makes one pass. Git runs with no terminal, so an SSH key passphrase
-or unknown host key fails at once (exit 1); load the key into `ssh-agent` or use
-HTTPS first. With several paired papers and no `--dir`, each paper gets its own
-outcome line and the exit code is the most urgent one; papers not attempted
+seconds between rounds. It waits out the sync PR's checks, the quiet rerun
+before it merges, and another run's recent lock. For a positive wait, no
+further attempt starts at or after the shared deadline; an attempt already
+running finishes normally so it can release its lock. `--wait 0` makes one
+pass. It then prints one final `Sync outcome:` line per paper after any
+progress messages and exits:
+
+| Exit | Outcome | Next step |
+|------|---------|-----------|
+| 0 | complete: merged co-author edits, published | none |
+| 4 | a person must act; the line names what and, for a conflict, whose change | that person acts, then rerun |
+| 5 | still waiting when the deadline passed | rerun; it picks up where this run stopped |
+| 1 | failed; an operator must act (credentials, permissions, a refusal) | fix the cause, rerun |
+
+It never prompts, so an agent can start it in the background and act on the
+exit code. Git runs with no terminal and your SSH command and Git config are
+left as they are, so an SSH key passphrase or unknown host key fails at once
+(exit 1); load the key into `ssh-agent` or use HTTPS first. With several
+paired papers and no `--dir`, each paper gets its own outcome line and the exit code is the most urgent one; papers not attempted
 before the deadline are reported as still waiting. Exit 4 is only for what sync
 records: a conflict on the sync PR, failed or cancelled checks (the line names
 each one), or a required or rejected review. Anything inferred from GitHub's
@@ -20,6 +41,16 @@ state, such as no checks yet, a draft, or a merge blocked for no stated reason,
 keeps waiting; at the deadline, exit 5's line says what it last saw.
 
 Without `--wait`, sync behaves as scheduled runners expect, described below.
+
+## Pull and publish by hand
+
+`sync` runs two commands an agent can also run itself. On a branch,
+`asta workspace overleaf pull` brings Overleaf edits into `paper/`; once the
+paper is paired, it needs no URL. Review with `git diff`, commit, and open a
+PR. After that PR merges, run `asta workspace overleaf publish --dry-run`, then
+`asta workspace overleaf publish`. Publish refuses if Overleaf has edits not
+yet pulled, and exports only committed files: commit figures and supplied
+files, since untracked ones are not published.
 
 ## Schedule sync
 
@@ -48,9 +79,11 @@ Plain `sync --project /path/to/checkout` visits every paper paired in that
 checkout whether scheduled or not; use `--dir` to sync only one.
 `pull` and `publish` require `--dir` when several papers are paired.
 
-Configure [Overleaf authentication and Git identity](../../../../../docs/overleaf-sync.md#authentication-and-hooks),
-and authenticate `gh` (for example `GH_TOKEN`) with contents, pull-request and
-issue write access to each paper's repository.
+Supply the Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential
+helper (username `git`, password the token) and configure Git's identity, as
+[authentication and hooks](../../../../../docs/overleaf-sync.md#authentication-and-hooks)
+describes, and authenticate `gh` (for example `GH_TOKEN`) with contents,
+pull-request and issue write access to each paper's repository.
 
 The command uses a temporary full clone, writes only the linked paper's files
 and its own pairing record to its branch, and leaves the caller's working tree alone. A remote

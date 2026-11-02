@@ -26,8 +26,9 @@ will be checked into the repo and published on a `github.io` URL
 
 ### Overleaf sync
 
-To keep a workspace paper in step with an Overleaf project, ask `@gas2own` in `#s2-ai-automation` to add
-your repo to its Overleaf sync, then invite the Overleaf account it names to your Overleaf project.
+To keep a workspace paper in an `allenai` repo in step with an Overleaf project, add `gas2own` to the
+repo as above and invite `gas2own@allenai.org` to the Overleaf project as an Editor. Pairing the paper
+turns on scheduled sync, and gas2own's sync job picks it up on its next run, with no request.
 The workspace skill's [Overleaf sync guide](../asta-tools/skills/workspace/workflows/overleaf-sync.md) covers the rest.
 
 ### Example

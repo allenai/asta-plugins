@@ -32,8 +32,10 @@ Overleaf token is available (in the background is fine; act on its final
 before editing the paper and after merging a paper PR. Resolve a sync conflict on
 that PR and rerun its checks; do not bypass it by advancing the `.asta/overleaf`
 pairing record manually.
-For scheduling, invited-coauthor access, lock recovery and repository status,
-read [Overleaf sync](workflows/overleaf-sync-command.md).
+For scheduling and repository status, read
+[Overleaf sync](workflows/overleaf-sync-command.md); for invited-coauthor
+access, [setup](workflows/overleaf-sync.md); for lock recovery,
+[Interrupted runs](workflows/overleaf-recovery.md#interrupted-runs).
 
 ## Save
 
