@@ -31,6 +31,7 @@
         return [slide, names.length - 1];
       }));
       const mode = option("section-header") === "current" ? "current" : "all";
+      if (names.length) document.body.classList.add("asta-slides-with-section");
       if (enabled("section-header") && names.length) {
         const line = document.createElement("div");
         line.className = `asta-slides-section asta-slides-section-${mode}`;
@@ -41,7 +42,6 @@
           return item;
         }) : [];
         chrome.append(line);
-        document.body.classList.add("asta-slides-with-section");
         // Line up with the slide titles wherever the theme puts them, in slide units.
         const align = () => {
           const slide = deck.getCurrentSlide();
@@ -66,6 +66,7 @@
           align();
         };
         deck.on("slidechanged", update);
+        deck.on("slidetransitionend", align);
         deck.on("resize", align);
         update();
       }

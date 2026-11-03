@@ -84,7 +84,7 @@ asta-slides:
 ```
 
 `section-header` takes `all` (the default), `current` or `false`; turning it
-off also removes the top padding it reserves, so titles move up. The other three
+off preserves the space above slide titles for a deck's own content. The other three
 default to `true`; dimming still requires the optional class. Native
 Quarto options such as `controls`, `slide-number: false`, `width`,
 `height`, `embed-resources` and `self-contained-math` also remain customizable.
@@ -99,7 +99,6 @@ SIL OFL 1.1; their license files are in `fonts/`.
 ## Share the single HTML page
 
 Use the rendered `slides.html`, not the Markdown source, when sharing a
-standalone page. An agent with access to claude.ai can create an HTML artifact
-from that file and check that navigation, fonts, math and section labels work
-there. A browser's offline check does not establish compatibility with the
-claude.ai artifact sandbox; check that surface explicitly before claiming it.
+standalone page. The claude.ai artifact viewer currently refuses the `data:`
+stylesheets produced by `embed-resources`, leaving the deck unstyled there.
+Artifact-host compatibility is outside this extension's acceptance criteria.

@@ -360,7 +360,7 @@ def test_main_tex_resolves_multiple_document_classes(tmp_path, child_class):
     assert discover(tmp_path)["main_files"] == {"paper": "main.tex"}
 
 
-def test_deck_support_preserves_papers_in_clones_and_extra_named_directories(tmp_path):
+def test_papers_in_clones_and_extra_named_directories_are_preserved(tmp_path):
     git(tmp_path, "init", "-q")
     for name in ["overleaf", "venv", "paper-previews"]:
         directory = tmp_path / name

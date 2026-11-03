@@ -1,5 +1,6 @@
 function Meta(meta)
   local options = meta["asta-slides"] or {}
+  if type(options) ~= "table" then options = {} end
   local flags = {}
   for _, name in ipairs({"section-header", "slide-number", "controls", "dim-previous"}) do
     local value = options[name]

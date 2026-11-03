@@ -71,9 +71,9 @@ def test_changed_deck_diffs_leaf_slides_and_links_to_preview(tmp_path):
     assert "slides.html#/kept" in output and "slides.html#/added" in output
     assert "slides.html#/gone" not in output
     assert "<del>old</del>" in output and "<ins>new</ins>" in output
-    assert "Removed content" in output and "Added content" in output
+    assert "Removed" in output and "Added" in output and "content" in output
     assert "alert(1)" not in output and "onerror" not in output
-    assert output.count('class="slide-diff ') == 3
+    assert output.count('class="slide-diff changed"') == 2
 
 
 def test_unchanged_deck_does_not_diff_embedded_libraries(tmp_path):
@@ -206,17 +206,96 @@ def test_slide_insertions_and_removals_do_not_report_unchanged_following_slides(
     assert "Kept last" not in output
 
 
-def test_pure_slide_reordering_is_suppressed():
+def test_pure_slide_reordering_has_one_note_without_repeating_content():
     generator = load("what-changed")
-    assert (
-        generator.slide_diff(
-            deck(slide("a", "A"), slide("b", "B")),
-            deck(slide("b", "B"), slide("a", "A")),
-            "slides.html",
-            "slides.html",
-        )
-        is None
+    output, _ = generator.slide_diff(
+        deck(slide("a", "A"), slide("b", "B")),
+        deck(slide("b", "B"), slide("a", "A")),
+        "slides.html",
+        "slides.html",
     )
+    assert output.count("Slides reordered") == 1
+    assert 'class="slide-diff ' not in output
+
+
+@pytest.mark.parametrize("open_tag", ["p", "div", "em"])
+def test_unclosed_slide_content_and_stray_end_tags_do_not_swallow_later_slides(
+    open_tag,
+):
+    generator = load("what-changed")
+    doc = (
+        deck(
+            f'<section id="first"><{open_tag}>First</section></p>',
+            slide("second", "Second content"),
+        )
+        + '<div class="slides"><section>Outside Reveal</section></div>'
+    )
+    slides = generator.reveal_slides(doc)
+    assert [slide["id"] for slide in slides] == ["first", "second"]
+    assert "Second content" in slides[1]["body"]
+    output, _ = generator.slide_diff(None, doc, "slides.html", "slides.html")
+    assert 'href="slides.html#/second"' in output
+
+
+def test_retitled_slide_is_changed_even_when_quarto_changes_its_id():
+    generator = load("what-changed")
+    output, _ = generator.slide_diff(
+        deck(slide("old-title", "Same finding"), slide("kept", "Unchanged")),
+        deck(slide("new-title", "Same finding"), slide("kept", "Unchanged")),
+        "slides.html",
+        "slides.html",
+    )
+    assert output.count('class="slide-diff changed"') == 1
+    assert 'class="slide-diff new"' not in output
+    assert 'class="slide-diff removed"' not in output
+    assert 'href="slides.html#/new-title"' in output
+
+
+def test_duplicate_title_insertion_matches_unchanged_bodies_before_shifted_ids():
+    generator = load("what-changed")
+
+    def titled(ident, content):
+        return f'<section id="{ident}"><h2>Results</h2><p>{content}</p></section>'
+
+    old = deck(
+        titled("results", "First finding"), titled("results-1", "Second finding")
+    )
+    new = deck(
+        titled("results", "Inserted finding"),
+        titled("results-1", "First finding"),
+        titled("results-2", "Second finding"),
+    )
+    output, _ = generator.slide_diff(old, new, "slides.html", "slides.html")
+    assert output.count('class="slide-diff new"') == 1
+    assert 'class="slide-diff changed"' not in output
+    assert "First finding" not in output and "Second finding" not in output
+
+
+@pytest.mark.parametrize("removed", [False, True])
+def test_added_and_removed_slides_sanitize_active_html(removed):
+    generator = load("what-changed")
+    doc = deck(
+        slide(
+            "unsafe",
+            '<iframe src="https://example.org">iframe payload</iframe>'
+            '<object data="https://example.org">object payload</object>'
+            '<style>style payload</style><a href="javascript:alert(1)">Safe label</a>',
+        )
+    )
+    output, _ = generator.slide_diff(
+        doc if removed else None, None if removed else doc, "slides.html", "slides.html"
+    )
+    assert "Safe label" in output
+    for forbidden in (
+        "<iframe",
+        "<object",
+        "<style",
+        "javascript:",
+        "iframe payload",
+        "object payload",
+        "style payload",
+    ):
+        assert forbidden not in output
 
 
 def test_nested_content_sections_stay_in_the_slide_and_vertical_hashes_work():

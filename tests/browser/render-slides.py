@@ -50,6 +50,21 @@ def render(site):
                 "# Section\n\n## One\n\nText.\n\n## Two\n\nText.\n",
             ),
             (
+                "header-off",
+                "asta-slides:\n  section-header: false\n",
+                "# Section\n\n## Content\n\nText.\n",
+            ),
+            (
+                "transition",
+                "format:\n  asta-slides-revealjs:\n    transition: slide\n",
+                "# Section\n\n## Content\n\nText.\n",
+            ),
+            (
+                "scalar-options",
+                "asta-slides: false\n",
+                "# Section\n\n## Content\n\nText.\n",
+            ),
+            (
                 "custom",
                 "format:\n  asta-slides-revealjs:\n    theme: [default, _extensions/asta-slides/asta-slides.scss, custom.scss]\n    include-after-body: extra.html\n    revealjs-plugins:\n      - name: ExamplePlugin\n        path: .\n        script:\n          - path: plugin.js\n",
                 "# Custom section\n\n## Custom slide\n\nText.\n",
@@ -58,7 +73,7 @@ def render(site):
             path = project / f"{name}.qmd"
             default = (
                 ""
-                if name in {"custom", "disabled", "controls"}
+                if name in {"custom", "disabled", "controls", "transition"}
                 else "format: asta-slides-revealjs\n"
             )
             path.write_text(f"---\ntitle: {name}\n{default}{metadata}---\n\n{body}")

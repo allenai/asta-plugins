@@ -68,3 +68,4 @@
 }
 
 .reveal.overview .asta-slides-chrome { display: none; }
+.print-pdf .reveal .asta-slides-chrome { display: none; }

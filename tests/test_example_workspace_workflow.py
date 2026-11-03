@@ -19,7 +19,13 @@ TITLE = "Example workspace failed to build for v0.109.0"
 
 
 def reporter(
-    tmp_path, issues=(), *, lookup_fails=False, build="failure", deploy="skipped"
+    tmp_path,
+    issues=(),
+    *,
+    lookup_fails=False,
+    build="failure",
+    theme="success",
+    deploy="skipped",
 ):
     state = tmp_path / "issues.json"
     state.write_text(json.dumps(list(issues)))
@@ -59,7 +65,7 @@ elif args[:2] != ["issue", "comment"]:
         "TEST_ISSUES": str(state),
         "LOOKUP_FAILS": "1" if lookup_fails else "0",
         "BUILD_RESULT": build,
-        "THEME_RESULT": "success",
+        "THEME_RESULT": theme,
         "DEPLOY_RESULT": deploy,
     }
 
@@ -121,6 +127,14 @@ def test_build_failure_preserves_any_existing_site(tmp_path):
     body = calls()[-1][-1]
     assert "deployment was not attempted" in body
     assert "Any previously published demo is unchanged" in body
+
+
+def test_browser_failure_reports_that_deployment_was_not_attempted(tmp_path):
+    run, calls = reporter(tmp_path, build="success", theme="failure")
+    assert run(128).returncode == 0
+    body = calls()[-1][-1]
+    assert "browser checks failed" in body
+    assert "deployment was not attempted" in body
 
 
 def test_deployment_failure_does_not_claim_the_live_site_is_unchanged(tmp_path):

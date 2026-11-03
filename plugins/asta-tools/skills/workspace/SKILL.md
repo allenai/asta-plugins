@@ -111,7 +111,8 @@ builds. `.dim-previous` optionally dims previous fragments. The extension adds
 the Asta theme, 16:9 dimensions, a slide number (and arrows, when Quarto's
 `controls: auto` shows them) inside the slide, and a headline listing every
 section with the current one highlighted (`section-header: current` shows only
-the current name). No section headings means no section line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
+the current name). `section-header: false` hides the line while preserving the
+title spacing for a deck's own content. No section headings means no section line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
 positioning. For SCSS variables, independent opt-outs and ejection, see
 [`assets/_extensions/asta-slides/README.md`](assets/_extensions/asta-slides/README.md).
 
@@ -127,10 +128,8 @@ preview has the same path, and What changed lists slide-level differences with
 links to the changed slides.
 
 Share the rendered `slides.html` as the standalone page: fonts, scripts and math
-are embedded by default. If sharing it as a claude.ai HTML artifact, actually
-open that artifact and check navigation, fonts, math and the section line before
-saying it works there. When this environment cannot access claude.ai, provide
-the file and name that check as unverified.
+are embedded by default. The claude.ai artifact viewer currently refuses its
+`data:` stylesheets, so sharing on that host is outside this feature's scope.
 
 ### Back claims with supporting evidence
 

@@ -82,7 +82,7 @@ try {
     await page.evaluate(() => {
       const slide = Reveal.getSlides().find((slide) => slide.classList.contains("dim-previous"));
       const indices = Reveal.getIndices(slide);
-      Reveal.slide(indices.h, indices.v);
+      Reveal.slide(indices.h, indices.v, -1);
       Reveal.nextFragment(); Reveal.nextFragment();
     });
     await page.waitForTimeout(300); // let Reveal finish fragment opacity transitions
@@ -98,16 +98,16 @@ try {
     results.push({ viewport, slides });
     await context.close();
   }
-  for (const name of ["no-sections", "disabled", "custom", "rich-content", "current", "controls"]) {
+  for (const name of ["no-sections", "disabled", "custom", "rich-content", "current", "controls", "header-off", "transition", "scalar-options"]) {
     const context = await browser.newContext();
     const { page, failures } = await open(context, `${name}.html`, fixtures);
     if (name === "no-sections") assert.equal(await page.locator(".asta-slides-section").count(), 0);
     if (name === "disabled") {
       assert.equal(await page.locator(".asta-slides-section, .controls, .slide-number").count(), 0);
-      assert.equal(await page.locator("body.asta-slides-dim-enabled, body.asta-slides-with-section").count(), 0);
+      assert.equal(await page.locator("body.asta-slides-dim-enabled").count(), 0);
       await page.evaluate(() => Reveal.slide(Reveal.getTotalSlides() - 1));
       const padding = await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop);
-      assert.notEqual(padding, "64px", "A disabled section line must not reserve its space");
+      assert.equal(padding, "64px", "Hiding the section line must preserve title spacing");
       assert.equal(await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor), "rgb(255, 255, 255)");
       assert.equal(await page.locator(".reveal").evaluate((node) => getComputedStyle(node).color), "rgb(34, 34, 34)");
     }
@@ -119,6 +119,19 @@ try {
       await page.evaluate(() => Reveal.slide(Reveal.getTotalSlides() - 1));
       assert.equal(await page.locator(".asta-slides-section").textContent(), "Second section");
       assert.equal(await page.locator(".asta-slides-section > span").count(), 0);
+    }
+    if (name === "header-off" || name === "transition") {
+      await page.evaluate(() => {
+        const indices = Reveal.getIndices(Reveal.getSlides().find((slide) => slide.querySelector("h2")));
+        Reveal.slide(indices.h, indices.v);
+      });
+      await page.waitForTimeout(1000);
+      assert.equal(await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop), "64px");
+      if (name === "header-off") assert.equal(await page.locator(".asta-slides-section").count(), 0);
+      else {
+        const offset = await page.evaluate(() => Reveal.getCurrentSlide().querySelector("h2").getBoundingClientRect().left - document.querySelector(".asta-slides-section").getBoundingClientRect().left);
+        assert.ok(Math.abs(offset) <= 2, `Section line must align after a slide transition (${offset}px)`);
+      }
     }
     if (name === "controls") {
       for (const viewport of [{ width: 1024, height: 768 }, { width: 2100, height: 900 }]) {
@@ -164,6 +177,11 @@ try {
     assert.deepEqual(failures, []);
     await context.close();
   }
+  const printContext = await browser.newContext();
+  const { page: printPage, failures: printFailures } = await open(printContext, "controls.html?print-pdf", fixtures);
+  assert.equal(await printPage.locator(".asta-slides-chrome:visible").count(), 0, "Chrome must be hidden in Reveal's print-pdf mode");
+  assert.deepEqual(printFailures, []);
+  await printContext.close();
   const html = await readFile(join(site, "index.html"), "utf8");
   assert.match(html, /talks\/attention\/slides\.html/, "The site must link to the talk");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
