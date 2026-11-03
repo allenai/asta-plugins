@@ -27,7 +27,8 @@ async function geometry(page, label) {
   const metrics = await page.evaluate(() => {
     const root = Reveal.getSlidesElement().getBoundingClientRect();
     return [...document.querySelectorAll(".asta-slides-chrome, .asta-slides-chrome *")]
-      .filter((node) => { const s = getComputedStyle(node); return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) !== 0; })
+      // checkVisibility also excludes nodes under a display:none ancestor, which report a 0x0 box at the origin.
+      .filter((node) => node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
       .map((node) => {
         const box = node.getBoundingClientRect();
         return { element: node.className || node.tagName, x: box.x, y: box.y, width: box.width, height: box.height,
