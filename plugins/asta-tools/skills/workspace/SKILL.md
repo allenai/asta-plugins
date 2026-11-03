@@ -108,9 +108,10 @@ that source. Several deck folders are supported at any depth.
 
 Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
 builds. `.dim-previous` optionally dims previous fragments. The extension adds
-the Asta theme, 16:9 dimensions, controls and a slide number inside the slide,
-and the current section's name at the top. No section headings means no section
-line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
+the Asta theme, 16:9 dimensions, a slide number (and arrows, when Quarto's
+`controls: auto` shows them) inside the slide, and a headline listing every
+section with the current one highlighted (`section-header: current` shows only
+the current name). No section headings means no section line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
 positioning. For SCSS variables, independent opt-outs and ejection, see
 [`assets/_extensions/asta-slides/README.md`](assets/_extensions/asta-slides/README.md).
 

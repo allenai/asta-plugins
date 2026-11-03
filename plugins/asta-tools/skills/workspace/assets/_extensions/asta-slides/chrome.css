@@ -11,8 +11,8 @@
 .reveal .asta-slides-chrome > .asta-slides-section {
   position: absolute;
   top: 24px;
-  left: 40px;
-  right: 40px;
+  left: var(--asta-slides-title-left, 40px);
+  right: var(--asta-slides-title-left, 40px);
   height: 36px;
   line-height: 36px;
   font-size: 24px;
@@ -20,6 +20,22 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.reveal .asta-slides-chrome > .asta-slides-section-all {
+  display: flex;
+  gap: 1.5em;
+}
+.reveal .asta-slides-chrome > .asta-slides-section[hidden] { display: none; }
+.reveal .asta-slides-section-all > span {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.45;
+}
+.reveal .asta-slides-section-all > span.current {
+  opacity: 1;
+  font-weight: 700;
 }
 .reveal .asta-slides-chrome > .controls {
   position: absolute;
@@ -30,12 +46,16 @@
 }
 .reveal .asta-slides-chrome > .slide-number {
   position: absolute;
-  right: 160px;
-  bottom: 32px;
+  right: 24px;
+  bottom: 24px;
   font-family: inherit;
   font-size: 24px;
   line-height: 1.2;
   pointer-events: auto;
+}
+/* Reveal's bottom-right arrows span 10em of the 22px controls font; sit left of them. */
+.reveal .asta-slides-chrome.asta-slides-controls-shown > .slide-number {
+  right: 268px;
 }
 .asta-slides-with-section .reveal .slides section.slide.level2:not(.center) {
   padding-top: 64px;

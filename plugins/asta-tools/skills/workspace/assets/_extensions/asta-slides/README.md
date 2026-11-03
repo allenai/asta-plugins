@@ -19,11 +19,17 @@ format: asta-slides-revealjs
 ---
 ```
 
-Use `#` headings for sections and `##` headings for individual slides. The
-current section label is omitted before the first section and entirely absent
-from a deck with no sections. The label, native controls and native slide
-number are children of Reveal's scaled slide container, with dimensions in
-slide units. The default slide is 1600 × 900 (16:9). Quarto's window-edge menu and
+Use `#` headings for sections and `##` headings for individual slides. By
+default a headline across the top of each slide lists every section and
+highlights the current one, as Beamer's section headlines do, so the audience
+sees where they are and what is ahead. Set `section-header: current` to show
+only the current section's name. The headline lines up with the slide titles,
+is hidden on the title slide (and, with `current`, before the first section),
+and is absent from a deck with no sections. Arrows follow Quarto's default
+`controls: auto`: shown only when the deck is embedded or has vertical slides;
+when shown, the slide number sits to their left. The headline, native controls
+and native slide number are children of Reveal's scaled slide container, with
+dimensions in slide units. The default slide is 1600 × 900 (16:9). Quarto's window-edge menu and
 progress bar are off by default; ordinary `menu` and `progress` options can
 re-enable them.
 
@@ -77,8 +83,10 @@ asta-slides:
   dim-previous: false
 ```
 
-All four default to `true`; dimming still requires the optional class. Native
-Quarto options such as `controls: false`, `slide-number: false`, `width`,
+`section-header` takes `all` (the default), `current` or `false`; turning it
+off also removes the top padding it reserves, so titles move up. The other three
+default to `true`; dimming still requires the optional class. Native
+Quarto options such as `controls`, `slide-number: false`, `width`,
 `height`, `embed-resources` and `self-contained-math` also remain customizable.
 Do not use window units (`vw`, `vh`) for additions intended to fit the slide.
 

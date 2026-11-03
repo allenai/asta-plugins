@@ -40,6 +40,16 @@ def render(site):
                 "> Readable quotation.\n",
             ),
             (
+                "current",
+                "asta-slides:\n  section-header: current\n",
+                "# First section\n\n## One\n\nText.\n\n# Second section\n\n## Two\n\nText.\n",
+            ),
+            (
+                "controls",
+                "format:\n  asta-slides-revealjs:\n    controls: true\n",
+                "# Section\n\n## One\n\nText.\n\n## Two\n\nText.\n",
+            ),
+            (
                 "custom",
                 "format:\n  asta-slides-revealjs:\n    theme: [default, _extensions/asta-slides/asta-slides.scss, custom.scss]\n    include-after-body: extra.html\n    revealjs-plugins:\n      - name: ExamplePlugin\n        path: .\n        script:\n          - path: plugin.js\n",
                 "# Custom section\n\n## Custom slide\n\nText.\n",
@@ -48,7 +58,7 @@ def render(site):
             path = project / f"{name}.qmd"
             default = (
                 ""
-                if name in {"custom", "disabled"}
+                if name in {"custom", "disabled", "controls"}
                 else "format: asta-slides-revealjs\n"
             )
             path.write_text(f"---\ntitle: {name}\n{default}{metadata}---\n\n{body}")

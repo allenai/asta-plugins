@@ -36,7 +36,7 @@ async function geometry(page, label) {
           inside: box.left >= root.left - 1 && box.top >= root.top - 1 && box.right <= root.right + 1 && box.bottom <= root.bottom + 1 };
       });
   });
-  assert.ok(metrics.length > 3, "Geometry check must inspect the chrome and its children");
+  assert.ok(metrics.length >= 2, "Geometry check must inspect the chrome and its children");
   for (const metric of metrics) assert.ok(metric.inside, `${label}: ${JSON.stringify(metric)} must fit inside the slide`);
   return metrics;
 }
@@ -65,13 +65,20 @@ try {
           if (slide === Reveal.getCurrentSlide()) return section;
         }
       });
-      const actual = await page.locator(".asta-slides-section").textContent();
-      assert.equal(actual, expected, "Section label must follow the current heading");
+      const actual = await page.locator(".asta-slides-section .current").allTextContents();
+      assert.deepEqual(actual, expected ? [expected] : [], "Section headline must highlight the current heading");
+      if (expected) {
+        assert.equal(await page.locator(".asta-slides-section > span").count(), 3, "Section headline must list every section");
+        const offset = await page.evaluate(() => {
+          const title = Reveal.getCurrentSlide().querySelector(":scope > h2");
+          if (!title || Reveal.getCurrentSlide().classList.contains("center")) return 0;
+          return title.getBoundingClientRect().left - document.querySelector(".asta-slides-section").getBoundingClientRect().left;
+        });
+        assert.ok(Math.abs(offset) <= 2, `Section headline must line up with the slide title (off by ${offset}px)`);
+      }
       slides.push(await geometry(page, `${viewport.width}x${viewport.height} slide ${index}`));
     }
-    await page.evaluate(() => Reveal.slide(0));
-    await page.locator(".controls .navigate-right").click();
-    assert.ok(await page.evaluate(() => Reveal.getIndices().h > 0), "Moved native controls must navigate");
+    assert.equal(await page.locator(".controls:visible").count(), 0, "Quarto's default controls: auto hides arrows in a flat, unembedded deck");
     await page.evaluate(() => {
       const slide = Reveal.getSlides().find((slide) => slide.classList.contains("dim-previous"));
       const indices = Reveal.getIndices(slide);
@@ -91,19 +98,46 @@ try {
     results.push({ viewport, slides });
     await context.close();
   }
-  for (const name of ["no-sections", "disabled", "custom", "rich-content"]) {
+  for (const name of ["no-sections", "disabled", "custom", "rich-content", "current", "controls"]) {
     const context = await browser.newContext();
     const { page, failures } = await open(context, `${name}.html`, fixtures);
     if (name === "no-sections") assert.equal(await page.locator(".asta-slides-section").count(), 0);
     if (name === "disabled") {
       assert.equal(await page.locator(".asta-slides-section, .controls, .slide-number").count(), 0);
-      assert.equal(await page.locator("body.asta-slides-dim-enabled").count(), 0);
+      assert.equal(await page.locator("body.asta-slides-dim-enabled, body.asta-slides-with-section").count(), 0);
+      await page.evaluate(() => Reveal.slide(Reveal.getTotalSlides() - 1));
+      const padding = await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop);
+      assert.notEqual(padding, "64px", "A disabled section line must not reserve its space");
       assert.equal(await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor), "rgb(255, 255, 255)");
       assert.equal(await page.locator(".reveal").evaluate((node) => getComputedStyle(node).color), "rgb(34, 34, 34)");
     }
     if (name === "custom") {
       assert.ok(await page.evaluate(() => window.astaCustomScript && window.astaCustomPlugin), "Deck scripts and Reveal plugins must both run");
       assert.equal(await page.locator(".controls").evaluate((node) => getComputedStyle(node).color), "rgb(255, 163, 28)");
+    }
+    if (name === "current") {
+      await page.evaluate(() => Reveal.slide(Reveal.getTotalSlides() - 1));
+      assert.equal(await page.locator(".asta-slides-section").textContent(), "Second section");
+      assert.equal(await page.locator(".asta-slides-section > span").count(), 0);
+    }
+    if (name === "controls") {
+      for (const viewport of [{ width: 1024, height: 768 }, { width: 2100, height: 900 }]) {
+        await page.setViewportSize(viewport);
+        await page.evaluate(() => Reveal.slide(1));
+        await page.waitForTimeout(100);
+        const overlaps = await page.evaluate(() => {
+          const number = document.querySelector(".slide-number").getBoundingClientRect();
+          return [...document.querySelectorAll(".controls button")]
+            .filter((button) => button.checkVisibility({ checkOpacity: true }))
+            .map((button) => button.getBoundingClientRect())
+            .filter((box) => box.left < number.right && number.left < box.right && box.top < number.bottom && number.top < box.bottom).length;
+        });
+        assert.equal(overlaps, 0, `${viewport.width}x${viewport.height}: arrows must not cover the slide number`);
+        await geometry(page, `controls ${viewport.width}x${viewport.height}`);
+      }
+      await page.evaluate(() => Reveal.slide(0));
+      await page.locator(".controls .navigate-right").click();
+      assert.ok(await page.evaluate(() => Reveal.getIndices().h > 0), "Moved native controls must navigate");
     }
     if (name === "rich-content") {
       await page.evaluate(() => { const indices = Reveal.getIndices(Reveal.getSlides().find((slide) => slide.querySelector("table"))); Reveal.slide(indices.h, indices.v); });
@@ -133,7 +167,7 @@ try {
   const html = await readFile(join(site, "index.html"), "utf8");
   assert.match(html, /talks\/attention\/slides\.html/, "The site must link to the talk");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
-  console.log("Slide checks passed: offline fonts/math, section tracking, native controls, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
+  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
 } finally {
   await browser.close();
 }
