@@ -41,6 +41,13 @@ async function geometry(page, label) {
   return metrics;
 }
 
+async function lastSlide(page) {
+  await page.evaluate(() => {
+    const indices = Reveal.getIndices(Reveal.getSlides().at(-1));
+    Reveal.slide(indices.h, indices.v);
+  });
+}
+
 try {
   for (const viewport of [{ width: 1024, height: 768 }, { width: 1600, height: 900 }, { width: 2100, height: 900 }, { width: 600, height: 1000 }]) {
     const context = await browser.newContext({ viewport });
@@ -78,7 +85,7 @@ try {
       }
       slides.push(await geometry(page, `${viewport.width}x${viewport.height} slide ${index}`));
     }
-    assert.equal(await page.locator(".controls:visible").count(), 0, "Quarto's default controls: auto hides arrows in a flat, unembedded deck");
+    assert.equal(await page.locator(".controls:visible").count(), 0, "Quarto's default controls: auto hides arrows for this standalone talk");
     await page.evaluate(() => {
       const slide = Reveal.getSlides().find((slide) => slide.classList.contains("dim-previous"));
       const indices = Reveal.getIndices(slide);
@@ -105,7 +112,7 @@ try {
     if (name === "disabled") {
       assert.equal(await page.locator(".asta-slides-section, .controls, .slide-number").count(), 0);
       assert.equal(await page.locator("body.asta-slides-dim-enabled").count(), 0);
-      await page.evaluate(() => Reveal.slide(Reveal.getTotalSlides() - 1));
+      await lastSlide(page);
       const padding = await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop);
       assert.equal(padding, "64px", "Hiding the section line must preserve title spacing");
       assert.equal(await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor), "rgb(255, 255, 255)");
@@ -116,7 +123,7 @@ try {
       assert.equal(await page.locator(".controls").evaluate((node) => getComputedStyle(node).color), "rgb(255, 163, 28)");
     }
     if (name === "current") {
-      await page.evaluate(() => Reveal.slide(Reveal.getTotalSlides() - 1));
+      await lastSlide(page);
       assert.equal(await page.locator(".asta-slides-section").textContent(), "Second section");
       assert.equal(await page.locator(".asta-slides-section > span").count(), 0);
     }
