@@ -23,7 +23,9 @@ Use `#` headings for sections and `##` headings for individual slides. The
 current section label is omitted before the first section and entirely absent
 from a deck with no sections. The label, native controls and native slide
 number are children of Reveal's scaled slide container, with dimensions in
-slide units. The default slide is 1600 × 900 (16:9).
+slide units. The default slide is 1600 × 900 (16:9). Quarto's window-edge menu and
+progress bar are off by default; ordinary `menu` and `progress` options can
+re-enable them.
 
 For incremental builds that dim previous fragments, add `.dim-previous` to a
 slide or fragment container. Use Reveal's usual `.fragment` or Quarto's

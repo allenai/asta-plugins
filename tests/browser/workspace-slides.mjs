@@ -49,6 +49,7 @@ try {
       return faces.length && faces.every((face) => face.status === "loaded");
     });
     assert.ok(loaded, "Bundled font must load offline");
+    assert.equal(await page.locator(".slide-menu-button:visible, .progress:visible").count(), 0, "Default deck UI must stay inside the slide");
     await page.waitForFunction(() => document.querySelector(".katex, .MathJax, mjx-container"), null, { timeout: 30000 });
     const count = await page.evaluate(() => Reveal.getSlides().length);
     const slides = [];

@@ -21,7 +21,7 @@ $$
 \operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
 $$
 
-This equation is included to exercise self-contained math in the rendered talk.
+The weights combine values for each query.
 
 ## Follow the computation {.dim-previous}
 
