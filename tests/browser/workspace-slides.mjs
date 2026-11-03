@@ -76,6 +76,7 @@ try {
       Reveal.slide(indices.h, indices.v);
       Reveal.nextFragment(); Reveal.nextFragment();
     });
+    await page.waitForTimeout(300); // let Reveal finish fragment opacity transitions
     assert.equal(await page.locator(".dim-previous .fragment").first().evaluate((node) => getComputedStyle(node).opacity), "0.3");
     assert.equal(await page.locator(".dim-previous .current-fragment").evaluate((node) => getComputedStyle(node).opacity), "1");
     await page.screenshot({ path: join(output, `slides-${viewport.width}x${viewport.height}.png`) });

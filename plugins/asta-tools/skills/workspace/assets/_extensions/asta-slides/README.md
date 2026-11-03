@@ -6,7 +6,8 @@ own folder, with `slides.qmd`, images, SCSS and scripts beside one another.
 `<deck-dir>/slides.html`. The file embeds its resources, including math and
 fonts, so it can be shared independently of the site. Math uses Quarto's KaTeX
 renderer by default: Quarto 1.7's reveal.js MathJax loader still requests a remote
-library despite `self-contained-math`. A deck can override `html-math-method`
+library despite `self-contained-math`
+([upstream issue](https://github.com/quarto-dev/quarto-cli/issues/9404)). A deck can override `html-math-method`
 using ordinary Quarto options; recheck offline behavior after changing it. External video, remote
 iframes and resources deliberately loaded by a custom script still require
 network access.
