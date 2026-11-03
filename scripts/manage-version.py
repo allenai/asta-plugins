@@ -37,6 +37,7 @@ WORKSPACE_DOCS_WORKFLOW_FILE = (
     / "assets"
     / "docs.yml"
 )
+WORKSPACE_GUIDE_FILE = WORKSPACE_DOCS_WORKFLOW_FILE.with_name("DEVELOPER.md")
 
 # Matches the asta package's version line in uv.lock. The asta package is the
 # editable root, so `name = "asta"` is unique within the lockfile.
@@ -261,6 +262,16 @@ def set_version(new_version: str) -> bool:
         )
         return False
     WORKSPACE_DOCS_WORKFLOW_FILE.write_text(content)
+
+    # The scaffolded guide links to docs from the release it ships with.
+    print("Updating workspace guide links...")
+    content = WORKSPACE_GUIDE_FILE.read_text()
+    content = re.sub(
+        r"(github\.com/allenai/asta-plugins/blob/v)\d+\.\d+\.\d+/",
+        rf"\g<1>{new_version}/",
+        content,
+    )
+    WORKSPACE_GUIDE_FILE.write_text(content)
 
     print(f"{GREEN}✓ Version updated to {new_version} in all files{NC}")
     print()

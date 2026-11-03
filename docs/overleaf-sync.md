@@ -1,4 +1,10 @@
-# Overleaf sync point
+# Overleaf sync reference
+
+For the researcher workflow, read [Sync a paper with Overleaf](../plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#sync-a-paper-with-overleaf).
+The agent references cover [setup](../plugins/asta-tools/skills/workspace/workflows/overleaf-sync.md),
+[command options and scheduling](../plugins/asta-tools/skills/workspace/workflows/overleaf-sync-command.md),
+and [recovery](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md).
+This page holds the record, publication and file-format contracts.
 
 The sync uses Overleaf's Git integration, not its GitHub synchronization; see
 Overleaf's "Git integration and GitHub synchronization" documentation.
@@ -14,16 +20,19 @@ asta workspace overleaf check --project /path/to/scratch-checkout
 
 The check assumes this model; findings that assume more are out of scope:
 
-1. The pair is reserved for checks and nothing else writes to it, so its
-   contents between checks don't matter. The check only moves the pair forward
+1. The pair is reserved for checks and nothing else writes to it: do not
+   schedule normal sync against it, edit it by hand, or give it collaborators.
+   Its contents between checks don't matter. The check only moves the pair forward
    and restores nothing. A passing check leaves no open sync PR, no lock and no
    conflict markers on the default branch; commit/PR history accumulates.
 2. A check that finds a recent check in progress (its
    `refs/asta/overleaf-sync-lock/check-<project-id>` lock) stops without
-   changing anything and reports the pair as busy, not as a release failure.
-   A check lock older than sync's stale-lock threshold (one hour) is from a
-   check that died: the next check clears only that observed lock commit. If
-   another check has replaced it, the pair is busy and nothing is changed.
+   changing anything and reports the pair as busy, not as a release failure:
+   the standalone check prints a generic `FAIL` line, and its `pair busy`
+   diagnosis tells the two apart. A check lock older than sync's stale-lock
+   threshold (one hour) is from a check that died: the next check clears only
+   that observed lock commit. If another check has replaced it, the pair is
+   busy and nothing is changed.
    After claiming its own lock, the check closes any open sync PR and removes
    the sync branch and sync lock it left. On exit it releases only its own
    check-lock commit; a replacement owner's lock is preserved.
@@ -36,8 +45,7 @@ postcondition, but does not skip any exercise stage. A failed lock-creation push
 reports the pair busy even for access or network errors; it still exits nonzero
 without recording a pass or syncing the paper.
 
-Do not schedule normal sync against the pair, edit it by hand, or give it
-collaborators. The scratch default branch's committed `.asta/overleaf/paper.json` must
+The scratch default branch's committed `.asta/overleaf/paper.json` must
 match the checkout. The Git identity and existing Overleaf/GitHub authentication
 are the same as for `sync`. The scratch repository must allow the check to push
 to its default branch, open/close PRs, and merge through the normal sync path
@@ -54,13 +62,14 @@ polls GitHub while checks run. Each stage verifies that both sides hold the same
 paper with that stage's edit and the expected Overleaf base; after each
 publication it verifies the publication record.
 
-The round trip defaults to 600 seconds (`--timeout <seconds>`), including lock
-acquisition and waiting for GitHub checks. Both `--timeout` and sync's
-`--check-timeout` accept 1–3540 seconds, keeping a running check and its bounded
-lock release below the one-hour stale-lock threshold. Run on a POSIX runner's
-main thread; the command refuses `CI` or `GITHUB_ACTIONS` environments. Unit tests
-replace Overleaf/GitHub with local
-Git and fixture check results.
+The round trip defaults to 600 seconds, including lock acquisition and waiting
+for GitHub checks. Change it with `--timeout <seconds>`, or with sync's
+`--check-timeout <seconds>` for an uncached check run by the gate below. Both
+accept 1–3540 seconds, keeping a running check and its bounded lock release
+below the one-hour stale-lock threshold. Run on a POSIX runner's main thread;
+the check refuses `CI` or `GITHUB_ACTIONS` environments, and no credentials are
+added to CI. Unit tests replace Overleaf/GitHub with local Git and fixture
+check results.
 
 Exit 0 plus `Overleaf live check PASS` means every stage passed. Any failure
 exits nonzero. Output labels `pair busy`, `pair access/setup` failures (token,
@@ -75,14 +84,11 @@ while non-required checks are still running, and the pair requires none.
 GitHub merge-state snapshots can fail conservatively: `BLOCKED` or `HAS_HOOKS`
 is refused as soon as the rollup completes. Retry after GitHub's merge state settles. These
 refusals record no pass and sync no paper; failed-check leftovers are cleared by
-the next check. The standalone check also prints a generic `FAIL` line for a
-busy pair; the accompanying `pair busy` diagnosis distinguishes it from a
-release failure.
+the next check.
 
 Opt in with `asta workspace overleaf sync --check-repo owner/check` on a runner
-outside GitHub Actions. The check refuses `CI` and `GITHUB_ACTIONS` environments,
-so a scheduled workflow with the gate on refuses sync whenever its asta version
-has no recorded pass.
+outside GitHub Actions: since an uncached check refuses CI, a scheduled workflow
+with the gate on refuses sync whenever its asta version has no recorded pass.
 An explicitly empty or malformed `--check-repo` refuses sync; omitting the option
 keeps the gate disabled.
 Before syncing the requested paper, the CLI looks for a pass for its own asta
@@ -90,8 +96,7 @@ version on that reserved repository. It clones the scratch repository to
 validate pair isolation on every invocation. On a miss it runs the complete
 check synchronously, and records a pass only after the check passes. A busy pair, check
 failure or inability to read/write the pass record refuses paper sync. A subsequent invocation or rollback to an already passed version reuses
-its pass. Use `sync --check-timeout <seconds>` to change the 600-second round-trip
-limit on an uncached check. The scratch pair uses the standard `paper/` directory.
+its pass. The scratch pair uses the standard `paper/` directory.
 If another runner records the same version's pass first, this invocation can
 refuse the competing tag push; retry to reuse the recorded pass.
 
@@ -99,10 +104,7 @@ The CLI rejects the paper repository itself, including case variants and rename
 redirects, as its check repository. It also rejects a scratch pair pointing at
 the same Overleaf project, including supported URL suffix variants and project
 ID case differences, on both cached and uncached passes. Scratch clones use the paper repository's GitHub
-host and retain SSH transport when the paper's origin uses SSH. Keep the pair
-exclusively reserved; do not edit it by hand or schedule normal sync against
-it. Its successful PR checks and writable default branch must already be configured. No credentials are added to
-CI, and an uncached live check refuses CI environments.
+host and retain SSH transport when the paper's origin uses SSH.
 
 SSH transport detection recognizes `git@` and `ssh://` origins. Other scp-style
 SSH usernames select HTTPS for the scratch clone and may require HTTPS
@@ -173,35 +175,39 @@ it is not filtered from pull or publish.
 record, lock commit and managed sync PR header together. Unversioned state is
 format 1. Bump the format only when an older reader would misinterpret the state;
 additive changes that old readers can safely ignore do not need a bump.
-Config updates preserve unknown fields added by compatible releases, including
+A CLI that finds a newer format stops rather than misreading it and names the
+release to upgrade to. Config updates preserve unknown fields added by compatible releases, including
 when the URL or base changes; unchanged configs retain their original bytes.
 An additive field must remain valid when an older runner changes either the URL
 or base without updating that field. If correctness requires older runners to
 recompute or invalidate it (for example, a cached tree derived from `base`),
-introducing the field requires a format bump.
+introducing the field requires a format bump. The config's `schedule` field is
+such an additive field: an older runner ignores it, and `sync --github-owner`
+treats a code-search hit only as a candidate until it has read the record itself.
 `FORMAT_RELEASE` names the first asta release that understands that format.
 An absent JSON `format` field is legacy state; an explicit `null` is malformed.
 Empty PR/lock stamps and unterminated PR stamps are malformed, not legacy state.
 PR/lock format numbers must contain one to nine ASCII decimal digits and be positive;
 longer values are malformed regardless of Python's integer-conversion settings.
-Malformed format stamps stop the sync, including publication records that would
-otherwise use the damaged-record fallback. Restore the stamp from history first.
 The PR format stamp follows its single managed header, allowing blank lines and
 horizontal whitespace. Prose before the stamp or multiple stamps before the
-record-notice section are malformed and refuse. Multiple sync header markers
-are ambiguous and refuse, including literal header examples in notices;
-remove those examples or restore
-the header from history before retrying. Stamp examples belong only in the
-record-notice section, after `<!-- asta-overleaf-record-not-used -->`, where
-they do not change the PR's format.
+record-notice section are malformed. Multiple sync header markers are
+ambiguous, including literal header examples in notices. Stamp examples belong
+only in the record-notice section, after `<!-- asta-overleaf-record-not-used -->`,
+where they do not change the PR's format.
+Malformed or ambiguous format stamps stop the sync, including publication
+records that would otherwise use the damaged-record fallback; the repair is in
+[Malformed sync format](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#malformed-sync-format).
 
 Before releasing a new format, verify that `FORMAT_RELEASE` matches the first
 release shipping its reader. The initial format-aware release is planned as
-0.116.0; if that changes, update the constant and the workspace developer and
-recovery guides in the release PR. Older releases ignore stamps entirely, so
+0.116.0; if that changes, update the constant and this reference in the release
+PR. Older releases ignore stamps entirely, so
 every runner must adopt the first format-aware release before the format can
 increase. Keep the release hint for an existing format unchanged in later
-compatible releases.
+compatible releases. A newer-format refusal exits nonzero without updating
+GitHub status; scheduled runners must monitor failures and logs for the
+upgrade notice. See [newer-format recovery](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#newer-sync-format).
 
 ## Threat model
 
@@ -218,7 +224,11 @@ the sync refusing on every run. Overleaf keeps every edit, so a skipped edit is
 recoverable: the [recovery reference](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#recovering-a-skipped-co-author-edit)
 says how to find it in Overleaf's history and bring it back. Sync also publishes
 whatever reaches the default branch, so review of paper changes rests on the
-default branch's protection rules, not on the CLI.
+default branch's protection rules, not on the CLI. Requiring PRs alone does
+not require human approval; require approving reviews when the team wants a
+person to review every change. Sync waits for those approvals. The
+[setup reference](../plugins/asta-tools/skills/workspace/workflows/overleaf-sync.md#4-told-not-applied)
+explains the choice between automatic and human-approved merging.
 
 ## Sync point
 
@@ -235,7 +245,16 @@ can produce conflicts; preserving edits depends on the trusted base being correc
 If `base` itself is unreadable or not
 in Overleaf history, pull starts from a counting record; with none, it refuses and
 asks for `base` to be set, in a PR, to an Overleaf commit the default branch already
-has. Publish proceeds only when Overleaf's head equals the sync point.
+has.
+
+Publish exports the committed `paper/` tree, deleting files absent from it,
+once the paper matches `origin`'s default branch and Overleaf's head equals
+the sync point. It refuses an empty paper directory. The CLI
+checks merged content, not PR approvals; see [the threat model](#threat-model).
+After pushing the paper, it pushes the publication record, so no sync-record
+PR is needed. Dry-run pushes nothing and does not run commit hooks, pre-push
+hooks or signing; it warns for unmerged paper content that real publication
+would refuse.
 
 ## Failure handling
 
@@ -250,9 +269,6 @@ state could require a newer reader. Monitor scheduled job failures and logs,
 restore access and retry. Damaged records that can be read retain the documented
 fallback, whose warning is emitted only when the operation uses it.
 
-- Sync does not check how a commit reached the default branch: it publishes the paper
-  that is there. A repository that wants every paper change reviewed must require PRs
-  on its default branch.
 - After pushing, publish fetches Overleaf's head and requires it to descend from
   the prior sync point. If it also descends from the pushed commit, publish records
   that pushed commit, leaving any later collaborator edits for the next pull.
@@ -261,12 +277,8 @@ fallback, whose warning is emitted only when the operation uses it.
   same-tree replacement is refused. A translated commit followed by further edits
   cannot be confirmed by either check and still needs recovery. If confirmation
   or the record push fails, publish exits 1 after the Overleaf push without
-  advancing the record. When Overleaf still descends from `.asta/overleaf/paper.json`'s
-  base and has no further collaborator edits, pull imports the published files
-  matching the workspace, so its PR changes only `.asta/overleaf/paper.json`. Later
-  collaborator edits are also imported for review. If that history was reset,
-  use the [base recovery steps](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#base-not-in-overleaf-history)
-  before pulling or publishing again.
+  advancing the record. A pull then repairs it; see
+  [Incomplete publication](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#incomplete-publication).
 - The record push skips pre-push hooks (`--no-verify`): branch hooks do not
   apply to this metadata ref. A remote policy that rejects
   `refs/asta/overleaf/*` can still stop the record push after Overleaf has
@@ -283,15 +295,16 @@ fallback, whose warning is emitted only when the operation uses it.
   its ancestry cannot be verified, either against origin's default tip or the
   checkout's own history. A shallow boundary can hide a reviewed publication;
   treating it as unreviewed or unseen and falling back to `base` could undo a
-  workspace revert. Fetch the workspace history from `origin` explicitly and
-  retry (for example, `git fetch --unshallow origin`). Both commands refuse
-  before copying or pushing; dry-run also refuses. The CLI never deepens history
-  automatically. Shallow checkouts with verifiable ancestry still work normally,
-  as does pull when the checkout's paper already matches the trusted record.
+  workspace revert. Both commands refuse before copying or pushing; dry-run also
+  refuses. Shallow checkouts with verifiable ancestry still work normally, as
+  does pull when the checkout's paper already matches the trusted record. The fix
+  is in [Workspace history is shallow](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#workspace-history-is-shallow).
 - A damaged record (invalid JSON, short ids, a different project URL, or a ref
-  that is not a commit) makes pull start from `base` and say why. Publish refuses
-  only a ref that is not a commit, because a fast-forward push cannot replace it;
-  restore the ref from its history or delete it.
+  that is not a commit, such as a tree or annotated tag) makes pull start from
+  `base` and say why. The next successful publish replaces a damaged commit
+  record. Publish refuses only a ref that is not a commit, because a fast-forward
+  push cannot replace it; [Sync record ref](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#sync-record-ref)
+  says how to restore or delete it.
 - A record whose Overleaf commit is missing from Overleaf history produces a
   warning and falls back to `base`.
 
@@ -299,6 +312,66 @@ Fetching the record uses a temporary ref and transfers only record commits, so
 shallow workspace history and existing refs are unchanged. Publish keeps that
 ref until it has pushed the next record, protecting the previous parent from
 garbage collection, then removes it on success or failure.
+
+Scheduled publishers can pass `--expected-commit <full-id>` to bind publication
+to the commit whose checks passed. It requires the exact checkout and fetched
+default tip, then rechecks the advertised default branch immediately before
+pushing. A changed or unavailable branch refuses with nothing pushed. GitHub
+and Overleaf have no shared transaction; a merge after that final check can
+still race with the push.
+
+## Authentication and hooks
+
+Use your own Overleaf Git token through `OVERLEAF_TOKEN` or a Git credential helper (username `git`, password = token). The same commands work with a service account later. Interactive terminals can prompt for the token; unattended runs require a token or working credential helper and fail instead of waiting for a terminal prompt.
+
+The token is never written to the repo or Git config. With `OVERLEAF_TOKEN`, Git's authentication prompt reads a temporary private token file, deleted after transport. The token value is absent from Git and hook environments, but transport hooks can invoke askpass or read that file. Git configuration, credential helpers and hooks execute as your account and must be trusted, including repository files enabled through `core.hooksPath`. Review that hook code before publishing with personal or service-account credentials. This command does not sandbox hooks. Commit hooks run without the transport's askpass environment.
+
+If the temporary directory forbids executing scripts, use the Git credential helper instead.
+
+Configure Git `user.name` and `user.email` for the publishing identity. Publish uses the workspace's hooks and signing settings, including repo-local settings. Hooks run in the exported paper directory and must use appropriate paths for workspace-only configuration. Relative SSH signing-key and signing-program paths are resolved from the workspace. Shell commands such as `gpg.ssh.defaultKeyCommand` run from the export and need absolute paths or commands on `PATH`. A failing hook or signer stops publication. For repair steps, see [Git hooks and signing](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#git-hooks-and-signing); the later record push's behavior is covered under [failure handling](#failure-handling).
+
+## Project layout
+
+Pull and publish refuse uncommitted changes in `paper/`, except untracked outputs of a local LaTeX build (`.aux`, `.log`, `.bbl`, `.synctex.gz` and similar, plus a `.pdf` with a matching `.tex` filename), so LaTeX Workshop or `latexmk` previews don't block sync. Publish never exports untracked files. Workspace edits to files unchanged in Overleaf are kept. A paper already linked to one Overleaf project cannot be retargeted by passing a different URL; import the other project into a separate directory with `--dir`, relative to the workspace repository root even when `--project` points to a subdirectory.
+
+How conflicts merge and how to resolve them is in [conflict recovery](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#conflict-markers-after-pull-exit-3).
+
+Commit all paper assets before publishing, including figures, supplied `.bbl` files and files with build-output suffixes such as `.log` or `.out`. Filename suffixes cannot establish whether a file is source or generated output. Untracked files remain local and are not exported. Once committed, they are exported normally and uncommitted modifications to them block sync.
+
+Sync preserves the project's filenames, bibliography files and LaTeX source layout; it does not require `main.tex` or any particular `.bib` file. Bibliographies use the same line merging and conflict protection as other text sources. Reusing a workspace bibliography is a separate project edit: the agent should stage the chosen file under an agreed name in the paper directory and update the paper's citations/build configuration in a previewed PR. Sync does not combine separate bibliography files or choose a canonical copy. Preview setup is also separate: adapt it to the imported project's actual main document and compiler.
+
+## Unchanged runs
+
+`asta workspace overleaf sync` skips temporary clones and all but one GitHub
+metadata read when Overleaf and the default branch's paper and pairing still
+match the published sync record, with no sync branch or held lock, and Git and
+GitHub agree on the default branch. An unverified state uses the full sync
+workflow; a refused remote Git probe returns immediately, including a missing
+Overleaf login on a project with no published record. On the first unchanged
+sync without a record, the full workflow best-effort writes the sync point to
+origin so later runs can take the shortcut. A manual no-op `publish` writes
+nothing. Workspace clones reuse local objects only from complete checkouts;
+shallow, grafted, partial and alternate-backed checkouts use a regular clone.
+
+## Sync limitations
+
+Sync requires Git 2.29 or newer; the publish merge check uses `fetch --no-write-fetch-head` to preserve workspace fetch state.
+
+- Both commands refuse unsupported plain-file layouts before copying or pushing: `.gitattributes` (including case and Unicode aliases), Git LFS files, executable files, symlinks (including the selected paper directory), submodules, unsafe paths and names differing only in letter case or Unicode normalization.
+- Both commands refuse ignored sync metadata; pull also refuses ignored imports. Adjust the workspace ignore rules so sources can be committed for review. A paper file or directory named `overleaf.json` is ordinary source content now that pairing records live under `.asta/overleaf`. Pull refuses remote `.gitignore` files and publish refuses committed paper `.gitignore` files, including case and Unicode aliases; keep ignore rules in the workspace root so publication cannot make the next pull fail. Publish compares every tracked paper file with its committed contents, even if Git index flags hide local edits or deletions.
+- Publish refuses if hooks or Git conversions change exported bytes, and pushes nothing. Hook execution and signing are covered under [authentication and hooks](#authentication-and-hooks).
+- Case-only renames and reset remote history are unsupported. Pull refuses before copying if Overleaf's current history no longer descends from the recorded commit. Both commands refuse control characters, `.git` filename aliases on HFS+/NTFS, and destinations overlapping Git administrative files before making changes. `--dir <directory>` selects a literal relative directory; use the same spelling and letter case as the committed path. Pull refuses when Overleaf replaces a directory with a file; move the workspace directory aside first. Deletions can leave empty directories.
+
+## Known limits (not handled; avoid these setups)
+
+- Windows: `OVERLEAF_TOKEN` is untested there (use a Git credential helper), and, apart from Git administrative aliases, Windows-reserved names (`CON`, `NUL`, …), trailing dots or spaces and characters such as `:` or `?` are not checked.
+- Workspace Git attributes and line-ending conversion (`core.autocrlf`, `text`/`eol`, `filter`, `working-tree-encoding`) on paper files are not checked on pull, so committed bytes can differ from Overleaf's. Publish's final byte check still blocks a changed export.
+- Pull is not atomic: a disk or permission error partway through can leave `paper/` partially updated. Use [partial-pull recovery](../plugins/asta-tools/skills/workspace/workflows/overleaf-recovery.md#partial-pull).
+- Overleaf's Git integration and the sync record require SHA-1 commit IDs. Workspace repositories can use SHA-1 or SHA-256; publication messages preserve the full workspace commit ID.
+- Transport runs in a temporary Git clone: workspace-local or `includeIf gitdir:` credential helpers, proxy and CA settings are not inherited. Configure those settings globally or for `https://git.overleaf.com` to use your local credentials.
+- Filename collision checks cover case folding and NFC/NFD normalization, not every filesystem's naming rules. Normalization-only renames are unsupported. Sync reads source files into memory and is intended for ordinary paper projects, not large asset repositories.
+- Git failures report a sanitized command and exit code, with limited authentication/conflict guidance. Detailed stderr is withheld because it can contain credentials. A non-English `LC_ALL` can prevent specific error classification; transport failures still suggest checking credentials, access, network and remote state without changing the locale used by hooks. Invalid sync metadata produces an error naming the record to restore from Git.
+- Inspect imported build configuration such as `latexmkrc` before executing it or opening a preview PR. Pushing through Git can drop Overleaf comments and tracked changes in edited regions.
 
 ## Hosted evidence
 
