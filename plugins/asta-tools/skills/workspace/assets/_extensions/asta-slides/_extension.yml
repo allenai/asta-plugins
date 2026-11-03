@@ -1,0 +1,14 @@
+title: Asta slides
+author: Ai2
+version: 0.1.0
+quarto-required: ">=1.4.0"
+contributes:
+  formats:
+    revealjs:
+      # 16:9; everything this extension adds is sized in these slide units.
+      width: 1600
+      height: 900
+      # One self-contained page: shareable on its own, e.g. as an artifact.
+      embed-resources: true
+      slide-number: true
+      controls: true
