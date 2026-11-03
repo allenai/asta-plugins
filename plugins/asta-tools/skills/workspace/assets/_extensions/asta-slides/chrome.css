@@ -26,6 +26,7 @@
   gap: 1.5em;
 }
 .reveal .asta-slides-chrome > .asta-slides-section[hidden] { display: none; }
+.reveal .asta-slides-chrome > [hidden] { display: none !important; }
 .reveal .asta-slides-section-all > span {
   flex: 0 1 auto;
   min-width: 0;

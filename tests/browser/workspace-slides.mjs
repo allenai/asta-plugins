@@ -15,7 +15,7 @@ async function open(context, path, root = site) {
   const page = await context.newPage();
   const failures = [];
   const network = [];
-  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("pageerror", (error) => failures.push(error.stack || error.message));
   // Loading the one file, with every network request blocked, also checks fonts and math.
   await page.route(/^https?:/, (route) => { network.push(route.request().url()); return route.abort(); });
   await page.goto(`file://${join(root, path)}`);
@@ -110,7 +110,7 @@ try {
     const { page, failures } = await open(context, `${name}.html`, fixtures);
     if (name === "no-sections") assert.equal(await page.locator(".asta-slides-section").count(), 0);
     if (name === "disabled") {
-      assert.equal(await page.locator(".asta-slides-section, .controls, .slide-number").count(), 0);
+      assert.equal(await page.locator(".asta-slides-section, .controls:visible, .slide-number:visible").count(), 0);
       assert.equal(await page.locator("body.asta-slides-dim-enabled").count(), 0);
       await lastSlide(page);
       const padding = await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop);
@@ -181,7 +181,7 @@ try {
       for (const item of contrast) assert.ok(item.ratio >= 4.5, `Dark slide contrast: ${JSON.stringify(item)}`);
       await page.screenshot({ path: join(output, "slides-rich-content.png") });
     }
-    assert.deepEqual(failures, []);
+    assert.deepEqual(failures, [], `${name}: no script errors`);
     await context.close();
   }
   const printContext = await browser.newContext();

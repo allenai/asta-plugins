@@ -14,13 +14,16 @@
       if (enabled("dim-previous")) document.body.classList.add("asta-slides-dim-enabled");
       for (const [name, selector] of [["controls", ".controls"], ["slide-number", ".slide-number"]]) {
         const node = deck.getRevealElement().querySelector(selector);
-        if (node && enabled(name)) chrome.append(node);
-        else if (node) node.remove();
+        if (node) {
+          // Quarto still updates these nodes on slide changes, even when hidden.
+          chrome.append(node);
+          if (!enabled(name)) node.hidden = true;
+        }
       }
       // Quarto's `controls: auto` shows the arrows only when embedded or with vertical slides.
       const controls = chrome.querySelector(":scope > .controls");
       const placeNumber = () => chrome.classList.toggle("asta-slides-controls-shown",
-        !!controls && getComputedStyle(controls).display !== "none");
+        !!controls && !controls.hidden && getComputedStyle(controls).display !== "none");
       deck.on("resize", placeNumber);
       placeNumber();
 
