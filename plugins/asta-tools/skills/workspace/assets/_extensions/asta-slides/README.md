@@ -4,7 +4,10 @@ A Quarto custom reveal.js format for workspace talks. Each deck lives in its
 own folder, with `slides.qmd`, images, SCSS and scripts beside one another.
 `make render` builds every deck with the website; each becomes
 `<deck-dir>/slides.html`. The file embeds its resources, including math and
-fonts, so it can be shared independently of the site. External video, remote
+fonts, so it can be shared independently of the site. Math uses Quarto's KaTeX
+renderer by default: Quarto 1.7's reveal.js MathJax loader still requests a remote
+library despite `self-contained-math`. A deck can override `html-math-method`
+using ordinary Quarto options; recheck offline behavior after changing it. External video, remote
 iframes and resources deliberately loaded by a custom script still require
 network access.
 

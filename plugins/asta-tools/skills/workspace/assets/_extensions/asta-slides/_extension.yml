@@ -9,6 +9,7 @@ contributes:
       height: 900
       embed-resources: true
       self-contained-math: true
+      html-math-method: katex
       slide-number: true
       controls: true
       controls-layout: bottom-right

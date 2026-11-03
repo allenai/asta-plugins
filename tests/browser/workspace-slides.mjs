@@ -13,13 +13,14 @@ const results = [];
 async function open(context, path) {
   const page = await context.newPage();
   const failures = [];
+  const network = [];
   page.on("pageerror", (error) => failures.push(error.message));
   // Loading the one file, with every network request blocked, also checks fonts and math.
-  await page.route(/^https?:/, (route) => route.abort());
+  await page.route(/^https?:/, (route) => { network.push(route.request().url()); return route.abort(); });
   await page.goto(`file://${join(site, path)}`);
   await page.waitForFunction(() => window.Reveal?.isReady() && document.querySelector(".asta-slides-chrome"));
   await page.evaluate(() => document.fonts.ready);
-  return { page, failures };
+  return { page, failures, network };
 }
 
 async function geometry(page, label) {
@@ -41,13 +42,13 @@ async function geometry(page, label) {
 try {
   for (const viewport of [{ width: 1024, height: 768 }, { width: 1600, height: 900 }, { width: 2100, height: 900 }, { width: 600, height: 1000 }]) {
     const context = await browser.newContext({ viewport });
-    const { page, failures } = await open(context, "talks/attention/slides.html");
+    const { page, failures, network } = await open(context, "talks/attention/slides.html");
     const loaded = await page.evaluate(async () => {
       const faces = await document.fonts.load('24px Manrope');
       return faces.length && faces.every((face) => face.status === "loaded");
     });
     assert.ok(loaded, "Bundled font must load offline");
-    await page.waitForFunction(() => document.querySelector(".MathJax, mjx-container"), null, { timeout: 30000 });
+    await page.waitForFunction(() => document.querySelector(".katex, .MathJax, mjx-container"), null, { timeout: 30000 });
     const count = await page.evaluate(() => Reveal.getSlides().length);
     const slides = [];
     for (let index = 0; index < count; index++) {
@@ -78,6 +79,8 @@ try {
     assert.equal(await page.locator(".dim-previous .current-fragment").evaluate((node) => getComputedStyle(node).opacity), "1");
     await page.screenshot({ path: join(output, `slides-${viewport.width}x${viewport.height}.png`) });
     assert.deepEqual(failures, [], "No script errors in the standalone deck");
+    assert.deepEqual(network, [], "Standalone font/math rendering must not request a remote resource");
+    assert.equal(await page.locator(".katex-error, .MathJax_Error, .MathJax_Error_Message, mjx-merror").count(), 0, "Math must typeset without errors");
     results.push({ viewport, slides });
     await context.close();
   }
