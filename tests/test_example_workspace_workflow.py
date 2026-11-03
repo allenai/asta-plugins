@@ -59,6 +59,7 @@ elif args[:2] != ["issue", "comment"]:
         "TEST_ISSUES": str(state),
         "LOOKUP_FAILS": "1" if lookup_fails else "0",
         "BUILD_RESULT": build,
+        "THEME_RESULT": "success",
         "DEPLOY_RESULT": deploy,
     }
 

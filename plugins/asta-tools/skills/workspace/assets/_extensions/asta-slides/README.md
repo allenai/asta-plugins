@@ -64,18 +64,20 @@ $asta-heading-font: $asta-font;
 $asta-mono-font: "Roboto Mono", monospace;
 ```
 
-Each addition can be disabled independently in document metadata:
+Replace the Asta theme with Quarto's native `theme` option, for example
+`format: {asta-slides-revealjs: {theme: default}}`. This also resets the code,
+table, callout and title styling. The remaining additions can be disabled
+independently in document metadata:
 
 ```yaml
 asta-slides:
-  theme: false
   section-header: false
   slide-number: false
   controls: false
   dim-previous: false
 ```
 
-All five default to `true`; dimming still requires the optional class. Native
+All four default to `true`; dimming still requires the optional class. Native
 Quarto options such as `controls: false`, `slide-number: false`, `width`,
 `height`, `embed-resources` and `self-contained-math` also remain customizable.
 Do not use window units (`vw`, `vh`) for additions intended to fit the slide.

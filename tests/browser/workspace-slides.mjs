@@ -5,19 +5,20 @@ import { resolve, join } from "node:path";
 import { chromium } from "playwright";
 
 const site = resolve(process.argv[2] ?? "../../examples/workspace/_site");
+const fixtures = resolve(process.argv[4] ?? "fixtures");
 const output = resolve(process.argv[3] ?? "artifacts");
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const results = [];
 
-async function open(context, path) {
+async function open(context, path, root = site) {
   const page = await context.newPage();
   const failures = [];
   const network = [];
   page.on("pageerror", (error) => failures.push(error.message));
   // Loading the one file, with every network request blocked, also checks fonts and math.
   await page.route(/^https?:/, (route) => { network.push(route.request().url()); return route.abort(); });
-  await page.goto(`file://${join(site, path)}`);
+  await page.goto(`file://${join(root, path)}`);
   await page.waitForFunction(() => window.Reveal?.isReady() && document.querySelector(".asta-slides-chrome"));
   await page.evaluate(() => document.fonts.ready);
   return { page, failures, network };
@@ -80,6 +81,9 @@ try {
     await page.waitForTimeout(300); // let Reveal finish fragment opacity transitions
     assert.equal(await page.locator(".dim-previous .fragment").first().evaluate((node) => getComputedStyle(node).opacity), "0.3");
     assert.equal(await page.locator(".dim-previous .current-fragment").evaluate((node) => getComputedStyle(node).opacity), "1");
+    await page.evaluate(() => Reveal.toggleOverview(true));
+    assert.equal(await page.locator(".asta-slides-chrome:visible").count(), 0, "Chrome must be hidden in overview mode");
+    await page.evaluate(() => Reveal.toggleOverview(false));
     await page.screenshot({ path: join(output, `slides-${viewport.width}x${viewport.height}.png`) });
     assert.deepEqual(failures, [], "No script errors in the standalone deck");
     assert.deepEqual(network, [], "Standalone font/math rendering must not request a remote resource");
@@ -87,17 +91,41 @@ try {
     results.push({ viewport, slides });
     await context.close();
   }
-  for (const name of ["no-sections", "disabled", "custom"]) {
+  for (const name of ["no-sections", "disabled", "custom", "rich-content"]) {
     const context = await browser.newContext();
-    const { page, failures } = await open(context, `slide-fixtures/${name}.html`);
+    const { page, failures } = await open(context, `${name}.html`, fixtures);
     if (name === "no-sections") assert.equal(await page.locator(".asta-slides-section").count(), 0);
     if (name === "disabled") {
       assert.equal(await page.locator(".asta-slides-section, .controls, .slide-number").count(), 0);
-      assert.equal(await page.locator("body.asta-slides-theme, body.asta-slides-dim-enabled").count(), 0);
+      assert.equal(await page.locator("body.asta-slides-dim-enabled").count(), 0);
+      assert.equal(await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor), "rgb(255, 255, 255)");
+      assert.equal(await page.locator(".reveal").evaluate((node) => getComputedStyle(node).color), "rgb(34, 34, 34)");
     }
     if (name === "custom") {
       assert.ok(await page.evaluate(() => window.astaCustomScript && window.astaCustomPlugin), "Deck scripts and Reveal plugins must both run");
       assert.equal(await page.locator(".controls").evaluate((node) => getComputedStyle(node).color), "rgb(255, 163, 28)");
+    }
+    if (name === "rich-content") {
+      await page.evaluate(() => { const indices = Reveal.getIndices(Reveal.getSlides().find((slide) => slide.querySelector("table"))); Reveal.slide(indices.h, indices.v); });
+      const contrast = await page.evaluate(() => {
+        function rgb(value) { return value.match(/[\d.]+/g).map(Number); }
+        function luminance(rgb) { return rgb.slice(0, 3).map((x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }).reduce((a, x, i) => a + x * [0.2126, 0.7152, 0.0722][i], 0); }
+        return [...document.querySelectorAll(".slide pre code, .slide pre code span, .slide table th, .slide table td, .slide .callout-body p, .slide .callout-title, .slide blockquote, .author, .date")]
+          .filter((node) => node.textContent.trim())
+          .map((node) => {
+            let background = rgb(getComputedStyle(document.body).backgroundColor);
+            for (const ancestor of [...function* () { for (let p = node; p && p !== document.body; p = p.parentElement) yield p; }()].reverse()) {
+              const color = rgb(getComputedStyle(ancestor).backgroundColor);
+              const alpha = color[3] ?? 1;
+              background = color.slice(0, 3).map((x, i) => x * alpha + background[i] * (1 - alpha));
+            }
+            const a = luminance(rgb(getComputedStyle(node).color)), b = luminance(background);
+            return { element: node.className || node.tagName, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+          });
+      });
+      assert.ok(contrast.length >= 10, "Inspect code, table, callout, quote and title metadata");
+      for (const item of contrast) assert.ok(item.ratio >= 4.5, `Dark slide contrast: ${JSON.stringify(item)}`);
+      await page.screenshot({ path: join(output, "slides-rich-content.png") });
     }
     assert.deepEqual(failures, []);
     await context.close();

@@ -114,6 +114,10 @@ line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
 positioning. For SCSS variables, independent opt-outs and ejection, see
 [`assets/_extensions/asta-slides/README.md`](assets/_extensions/asta-slides/README.md).
 
+Before the first fetch in an existing workspace, append `_extensions/asta-slides/`
+to its `.gitignore` if missing (preserve existing entries). Remove that entry
+only when deliberately committing an ejected extension.
+
 `make workspace-assets` fetches the extension from the selected workspace ref;
 `make check` renders decks with the site. Preserve existing render and navigation
 lists: if either is explicit, add the deck to it. The default automatic sidebar

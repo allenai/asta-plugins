@@ -15,5 +15,5 @@ contributes:
       controls-layout: bottom-right
       menu: false
       progress: false
-      theme: [default, asta-slides.scss]
+      theme: asta-slides.scss
       filters: [asta-slides.lua]

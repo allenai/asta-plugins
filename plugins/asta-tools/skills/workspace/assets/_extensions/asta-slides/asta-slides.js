@@ -10,7 +10,6 @@
       const chrome = document.createElement("div");
       chrome.className = "asta-slides-chrome";
       slides.append(chrome);
-      if (enabled("theme")) document.body.classList.add("asta-slides-theme");
       if (enabled("dim-previous")) document.body.classList.add("asta-slides-dim-enabled");
       for (const [option, selector] of [["controls", ".controls"], ["slide-number", ".slide-number"]]) {
         const node = deck.getRevealElement().querySelector(selector);

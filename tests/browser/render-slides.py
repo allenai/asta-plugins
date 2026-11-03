@@ -27,8 +27,17 @@ def render(site):
             ("no-sections", "", "## A slide without sections\n\nText.\n"),
             (
                 "disabled",
-                "asta-slides:\n  theme: false\n  section-header: false\n  controls: false\n  slide-number: false\n  dim-previous: false\n",
+                "format:\n  asta-slides-revealjs:\n    theme: default\nasta-slides:\n  section-header: false\n  controls: false\n  slide-number: false\n  dim-previous: false\n",
                 "# Section\n\n## Content\n\nText.\n",
+            ),
+            (
+                "rich-content",
+                "author: Example speaker\ndate: 2026-01-01\n",
+                "# Section\n\n## Code, table and callout\n\n"
+                "```python\nanswer = 42\nprint(answer)\n```\n\n"
+                "| Item | Value |\n|---|---|\n| Answer | 42 |\n\n"
+                "::: {.callout-note}\nReadable note on a dark slide.\n:::\n\n"
+                "> Readable quotation.\n",
             ),
             (
                 "custom",
@@ -37,10 +46,14 @@ def render(site):
             ),
         ]:
             path = project / f"{name}.qmd"
-            default = "" if name == "custom" else "format: asta-slides-revealjs\n"
+            default = (
+                ""
+                if name in {"custom", "disabled"}
+                else "format: asta-slides-revealjs\n"
+            )
             path.write_text(f"---\ntitle: {name}\n{default}{metadata}---\n\n{body}")
             subprocess.run(["quarto", "render", path.name], cwd=project, check=True)
-            target = site / "slide-fixtures" / f"{name}.html"
+            target = site / f"{name}.html"
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path.with_suffix(".html"), target)
 

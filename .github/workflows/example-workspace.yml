@@ -52,15 +52,17 @@ jobs:
           make preview-artifact-check
           test -z "$(git status --porcelain --untracked-files=no)"
       - name: Render slide customization fixtures
-        run: python3 ../../tests/browser/render-slides.py _site
+        run: python3 ../../tests/browser/render-slides.py ../../tests/browser/fixtures
       - uses: actions/upload-artifact@v4
         with:
           name: example-workspace-site
           path: examples/workspace/_site
           retention-days: 30
-      - if: inputs.ref-name != ''
-        name: Keep browser fixtures out of the published site
-        run: rm -rf _site/slide-fixtures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workspace-slide-fixtures
+          path: tests/browser/fixtures
+          retention-days: 30
       - if: inputs.ref-name != ''
         uses: actions/upload-pages-artifact@v3
         with:
@@ -78,6 +80,10 @@ jobs:
         with:
           name: example-workspace-site
           path: examples/workspace/_site
+      - uses: actions/download-artifact@v4
+        with:
+          name: workspace-slide-fixtures
+          path: tests/browser/fixtures
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -159,7 +165,7 @@ jobs:
           title="Example workspace failed to build for $REF"
           if [ "$BUILD_RESULT" = failure ]; then
             body="The post-release example build failed; deployment was not attempted. Any previously published demo is unchanged. Run: $RUN"
-          elif [ "${THEME_RESULT:-}" = failure ]; then
+          elif [ "$THEME_RESULT" = failure ]; then
             body="The post-release browser checks failed; deployment was not attempted. Run: $RUN"
           elif [ "$DEPLOY_RESULT" = failure ]; then
             body="The post-release example deployment failed after a successful build. The live site's state is unconfirmed; inspect the deployment before retrying. Run: $RUN"

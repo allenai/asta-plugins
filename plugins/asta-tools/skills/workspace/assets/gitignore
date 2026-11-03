@@ -10,7 +10,7 @@ quarto-render.*
 # and commit the directory; a committed copy or a symlink is never refreshed.
 _extensions/evidence
 _extensions/asta-theme/
+_extensions/asta-slides/
 
 # Shared workspace rules fetched by `asta workspace sync`.
 .asta/cache/
-_extensions/asta-slides/

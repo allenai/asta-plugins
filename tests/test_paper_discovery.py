@@ -66,8 +66,6 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
     (repo / "without-rc/main.tex").write_text("not a paper")
 
     assert discover(repo, base) == {
-        "decks": [],
-        "removed_decks": [],
         "papers": ["added", "kept", "nested/sub", "paper"],
         "main_files": dict.fromkeys(
             ["added", "kept", "nested/sub", "paper"], "main.tex"
@@ -94,8 +92,6 @@ def test_discovery_skips_invalid_names_but_keeps_valid_papers(tmp_path):
 
     assert result.returncode == 0
     assert json.loads(result.stdout) == {
-        "decks": [],
-        "removed_decks": [],
         "papers": ["paper"],
         "main_files": {"paper": "main.tex"},
         "removed": [],
@@ -115,8 +111,7 @@ def test_discovery_keeps_current_papers_when_base_is_missing(tmp_path):
     assert result["papers"] == ["paper"]
     assert result["removed"] == []
     assert result["warnings"] == [
-        "Could not read paper files at base missing-base; removals were omitted",
-        "Could not read slide decks at base missing-base; removals were omitted",
+        "Could not read paper files at base missing-base; removals were omitted"
     ]
 
 
@@ -363,3 +358,28 @@ def test_main_tex_resolves_multiple_document_classes(tmp_path, child_class):
     assert "add main.tex to choose one" in result["warnings"][0]
     (paper / "article.tex").rename(paper / "main.tex")
     assert discover(tmp_path)["main_files"] == {"paper": "main.tex"}
+
+
+def test_deck_support_preserves_papers_in_clones_and_extra_named_directories(tmp_path):
+    git(tmp_path, "init", "-q")
+    for name in ["overleaf", "venv", "paper-previews"]:
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "main.tex").write_text(r"\documentclass{article}")
+        (directory / "latexmkrc").write_text("")
+        git(tmp_path, "add", name)
+    git(
+        tmp_path,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "papers",
+    )
+    base = git(tmp_path, "rev-parse", "HEAD")
+    git(tmp_path / "overleaf", "init", "-q")
+    result = discover(tmp_path, base)
+    assert result["papers"] == ["overleaf", "paper-previews", "venv"]
+    assert result["removed"] == []

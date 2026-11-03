@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find workspace papers and slide decks, including removals against a PR base."""
+"""Find LaTeX papers in a workspace and papers removed by a PR."""
 
 import json
 import os
@@ -66,75 +66,25 @@ def paired(directories: dict[str, list[str]], name: str) -> bool:
     return f"{leaf}.json" in directories.get(parent, [])
 
 
-PRUNED = {"_site", "_extensions", "build", "node_modules", "venv", "paper-previews"}
-
-
-def workspace_directories(root: Path):
+def current_papers(root: Path, warnings: list[str]) -> dict[str, str]:
+    papers = {}
     for directory, children, files in os.walk(root, followlinks=False):
         entry = Path(directory)
         children[:] = [
             name
             for name in children
-            if name not in PRUNED
+            if name not in {"_site", "_extensions", "build", "node_modules"}
             and not name.startswith(".")
             and not (entry / name).is_symlink()
-            and not (entry / name / ".git").exists()
         ]
         name = entry.relative_to(root).as_posix()
-        if name != ".":
-            yield (
-                entry,
-                name,
-                [
-                    file
-                    for file in files
-                    if not (entry / file).is_symlink() and (entry / file).is_file()
-                ],
-            )
-
-
-def current_decks(root: Path) -> set[str]:
-    return {
-        name
-        for _, name, files in workspace_directories(root)
-        if "slides.qmd" in files and all(valid_name(part) for part in name.split("/"))
-    }
-
-
-def base_decks(base: str, warnings: list[str]) -> set[str]:
-    if not base:
-        return set()
-    try:
-        records = subprocess.check_output(
-            ["git", "ls-tree", "-rz", base], stderr=subprocess.DEVNULL
-        )
-    except (OSError, subprocess.CalledProcessError):
-        warnings.append(
-            f"Could not read slide decks at base {base}; removals were omitted"
-        )
-        return set()
-    decks = set()
-    for record in records.split(b"\0"):
-        if not record:
+        if name == ".":
             continue
-        metadata, path = record.split(b"\t", 1)
-        parts = Path(os.fsdecode(path)).parts
-        if (
-            metadata.split()[0] in {b"100644", b"100755"}
-            and len(parts) > 1
-            and parts[-1] == "slides.qmd"
-            and all(
-                valid_name(part) and not part.startswith(".") and part not in PRUNED
-                for part in parts[:-1]
-            )
-        ):
-            decks.add("/".join(parts[:-1]))
-    return decks
-
-
-def current_papers(root: Path, warnings: list[str]) -> dict[str, str]:
-    papers = {}
-    for entry, name, files in workspace_directories(root):
+        files = [
+            file
+            for file in files
+            if not (entry / file).is_symlink() and (entry / file).is_file()
+        ]
         record = root / RECORDS / f"{name}.json"
         if (
             name != "paper"
@@ -199,8 +149,6 @@ def main() -> None:
     warnings: list[str] = []
     current = current_papers(Path.cwd(), warnings)
     removed = base_papers(base, warnings) - current.keys()
-    decks = current_decks(Path.cwd())
-    removed_decks = base_decks(base, warnings) - decks
     warnings = list(dict.fromkeys(warnings))
     for warning in warnings:
         escaped = warning.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
@@ -212,8 +160,6 @@ def main() -> None:
                 "main_files": current,
                 "removed": sorted(removed),
                 "warnings": warnings,
-                "decks": sorted(decks),
-                "removed_decks": sorted(removed_decks),
             }
         )
     )

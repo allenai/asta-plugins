@@ -6,16 +6,27 @@ $asta-link: #0fcb8c !default;
 $asta-font: Manrope, Arial, sans-serif !default;
 $asta-mono-font: "Roboto Mono", monospace !default;
 $asta-heading-font: $asta-font !default;
+$asta-subtle: rgba($asta-fg, 0.1) !default;
+$asta-border: rgba($asta-fg, 0.2) !default;
+
+// Let Quarto derive its code, table, callout and title styles from this palette.
+$body-bg: $asta-bg !default;
+$body-color: $asta-fg !default;
+$link-color: $asta-link !default;
+$presentation-heading-color: $asta-fg !default;
+$presentation-heading-font: $asta-heading-font !default;
+$font-family-sans-serif: $asta-font !default;
+$font-family-monospace: $asta-mono-font !default;
+$code-color: $asta-fg !default;
+$code-bg: $asta-subtle !default;
+$code-block-bg: $asta-bg !default;
+$code-block-color: $asta-fg !default;
+$code-block-border-color: $asta-border !default;
+$table-border-color: $asta-border !default;
+$border-color: $asta-border !default;
 
 /*-- scss:rules --*/
-body.asta-slides-theme {
-  background: $asta-bg;
-  .reveal {
-    color: $asta-fg;
-    font-family: $asta-font;
-    h1, h2, h3, h4, h5, h6 { color: $asta-fg; font-family: $asta-heading-font; }
-    a, .controls, .asta-slides-section { color: $asta-link; }
-    code { font-family: $asta-mono-font; }
-    .slide-number { background: transparent; color: $asta-fg; }
-  }
+.reveal {
+  .controls, .asta-slides-section { color: $asta-link; }
+  .slide-number { background: transparent; color: $asta-fg; }
 }

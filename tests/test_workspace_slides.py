@@ -1,7 +1,6 @@
-"""Deck discovery, rendered review diffs and real Quarto website integration."""
+"""Rendered deck review diffs and real Quarto website integration."""
 
 import importlib.util
-import json
 import os
 import shutil
 import subprocess
@@ -28,51 +27,6 @@ def git(project, *args):
     return subprocess.check_output(
         ["git", "-C", str(project), *args], text=True
     ).strip()
-
-
-def test_discovers_multiple_decks_and_removals_without_entering_caches(tmp_path):
-    git(tmp_path, "init", "-q")
-    for directory in [
-        "talks/old",
-        "talks/a",
-        "talks/two words",
-        "_site/cached",
-        ".asta/cache",
-        "node_modules/pkg",
-        "venv/pkg",
-        "_extensions/template",
-        "paper-previews/paper",
-    ]:
-        path = tmp_path / directory
-        path.mkdir(parents=True)
-        (path / "slides.qmd").write_text("# Talk\n")
-    git(tmp_path, "add", "talks/old", "talks/a")
-    git(
-        tmp_path,
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.invalid",
-        "commit",
-        "-qm",
-        "baseline",
-    )
-    base = git(tmp_path, "rev-parse", "HEAD")
-    (tmp_path / "talks/old/slides.qmd").unlink()
-    (tmp_path / "talks/link").symlink_to(tmp_path / "talks/a", target_is_directory=True)
-    (tmp_path / "talks/linked-file").mkdir()
-    (tmp_path / "talks/linked-file/slides.qmd").symlink_to(
-        tmp_path / "talks/a/slides.qmd"
-    )
-    git(tmp_path / "talks", "init", "-q", "nested")
-    (tmp_path / "talks/nested/slides.qmd").write_text("# Another repository\n")
-    result = subprocess.check_output(
-        ["python3", str(ASSETS / "paper-discovery.py"), base], cwd=tmp_path, text=True
-    )
-    data = json.loads(result)
-    assert data["decks"] == ["talks/a", "talks/two words"]
-    assert data["removed_decks"] == ["talks/old"]
-    assert data["papers"] == []
 
 
 def deck(*slides):
@@ -180,8 +134,9 @@ def test_quarto_builds_and_auto_links_multiple_nested_decks(tmp_path):
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires make")
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize("filename", ["slides.qmd", "custom-name.qmd"])
 def test_workspace_fetches_slides_from_selected_ref_and_preserves_ejected_copy(
-    tmp_path, rules
+    tmp_path, rules, filename
 ):
     source = tmp_path / "release/plugins/asta-tools/skills/workspace/assets/_extensions"
     for name in ["evidence", "asta-slides"]:
@@ -191,7 +146,7 @@ def test_workspace_fetches_slides_from_selected_ref_and_preserves_ejected_copy(
         bundle.add(source.parents[5], arcname="release")
     project = tmp_path / "project"
     (project / "talks/a").mkdir(parents=True)
-    (project / "talks/a/slides.qmd").write_text("format: asta-slides-revealjs\n")
+    (project / "talks/a" / filename).write_text("format: asta-slides-revealjs\n")
     git(project, "init", "-q")
 
     def install():
@@ -210,3 +165,101 @@ def test_workspace_fetches_slides_from_selected_ref_and_preserves_ejected_copy(
     git(project, "add", "_extensions/asta-slides/_extension.yml")
     install()
     assert extension.read_text().endswith("# Ejected\n")
+
+
+@pytest.mark.parametrize("classes", ["reveal-on-scroll", "quarto-reveal", "revealing"])
+def test_ordinary_page_classes_do_not_turn_sections_into_slides(tmp_path, classes):
+    generator = load("what-changed")
+    old, new = tmp_path / "old", tmp_path / "new"
+    for root, content in [(old, "Before"), (new, "After")]:
+        root.mkdir()
+        (root / "index.html").write_text(
+            f'<main><div class="{classes}"><div class="slides"><section><p>{content}</p></section></div></div></main>'
+        )
+    output = generator.build(str(old), str(new), "", "Test")
+    assert "Slides ·" not in output
+    assert "<del>Before</del>" in output and "<ins>After</ins>" in output
+
+
+@pytest.mark.parametrize("anonymous", [False, True])
+@pytest.mark.parametrize("removed", [False, True])
+def test_slide_insertions_and_removals_do_not_report_unchanged_following_slides(
+    tmp_path, anonymous, removed
+):
+    generator = load("what-changed")
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    kept = [
+        slide("" if anonymous else name, text)
+        for name, text in [("a", "Kept first"), ("b", "Kept last")]
+    ]
+    inserted = slide("" if anonymous else "inserted", "Inserted finding")
+    before, after = deck(*kept), deck(kept[0], inserted, kept[1])
+    if removed:
+        before, after = after, before
+    (old / "slides.html").write_text(before)
+    (new / "slides.html").write_text(after)
+    output = generator.build(str(old), str(new), "", "Test")
+    assert output.count('class="slide-diff ') == 1
+    assert "Inserted finding" in output
+    assert "Kept last" not in output
+
+
+def test_pure_slide_reordering_is_suppressed():
+    generator = load("what-changed")
+    assert (
+        generator.slide_diff(
+            deck(slide("a", "A"), slide("b", "B")),
+            deck(slide("b", "B"), slide("a", "A")),
+            "slides.html",
+            "slides.html",
+        )
+        is None
+    )
+
+
+def test_nested_content_sections_stay_in_the_slide_and_vertical_hashes_work():
+    generator = load("what-changed")
+    doc = deck(
+        slide("intro", "Text<section><p>Nested content</p></section>"),
+        "<section><section><p>First vertical</p></section><section><p>Second vertical</p></section></section>",
+    )
+    slides = generator.reveal_slides(doc)
+    assert len(slides) == 3
+    assert "Nested content" in slides[0]["body"]
+    output, _ = generator.slide_diff(None, doc, "slides.html", "slides.html")
+    assert 'href="slides.html#/1/0"' in output
+    assert 'href="slides.html#/1/1"' in output
+    assert "Nested content" in output
+
+
+@pytest.mark.parametrize("to_deck", [False, True])
+def test_format_transitions_retain_both_versions_in_the_page_diff(tmp_path, to_deck):
+    generator = load("what-changed")
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    before, after = (
+        "<main><p>Ordinary page</p></main>",
+        deck(slide("a", "Slide content")),
+    )
+    if not to_deck:
+        before, after = after, before
+    (old / "talk.html").write_text(before)
+    (new / "talk.html").write_text(after)
+    output = generator.build(str(old), str(new), "", "Test")
+    assert all(word in output for word in ("Ordinary", "page", "Slide", "content"))
+    assert "<ins>" in output and "<del>" in output
+    assert "Slides ·" not in output
+
+
+def test_embedded_slide_images_do_not_inflate_the_diff():
+    generator = load("what-changed")
+    image = '<img alt="A plot" src="data:image/png;base64,' + "A" * 100_000 + '">'
+    output, _ = generator.slide_diff(
+        None, deck(slide("a", image)), "slides.html", "slides.html"
+    )
+    assert "data:image" not in output
+    assert len(output) < 2000
+    assert "A plot" in output

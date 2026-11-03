@@ -37,7 +37,7 @@
   line-height: 1.2;
   pointer-events: auto;
 }
-.asta-slides-with-section .reveal .slides section.slide {
+.asta-slides-with-section .reveal .slides section.slide.level2:not(.center) {
   padding-top: 64px;
 }
 .asta-slides-dim-enabled .reveal .dim-previous .fragment.visible:not(.current-fragment) {
@@ -46,3 +46,5 @@
 @media print {
   .reveal .asta-slides-chrome { display: none; }
 }
+
+.reveal.overview .asta-slides-chrome { display: none; }

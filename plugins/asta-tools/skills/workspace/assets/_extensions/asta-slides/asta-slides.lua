@@ -1,7 +1,7 @@
 function Meta(meta)
   local options = meta["asta-slides"] or {}
   local flags = {}
-  for _, name in ipairs({"theme", "section-header", "slide-number", "controls", "dim-previous"}) do
+  for _, name in ipairs({"section-header", "slide-number", "controls", "dim-previous"}) do
     flags["asta-slides-" .. name] = tostring(options[name] ~= false)
   end
   quarto.doc.add_html_dependency({
