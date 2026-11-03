@@ -7,6 +7,7 @@ project:
     - paper/html/index.qmd
     # The theme's browser check reads this page; it isn't in the navigation.
     - appearance.qmd
+    - talks/attention/slides.qmd
   resources:
     - paper/html/paper-viewer.js
   preview:
@@ -46,6 +47,7 @@ website:
       - index.qmd
       - lit-review/index.qmd
       - paper/html/index.qmd
+      - talks/attention/slides.qmd
 
 format:
   html:

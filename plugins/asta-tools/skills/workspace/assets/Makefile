@@ -26,6 +26,9 @@ workspace-assets:
 	@set -eu; \
 	theme_files="light.scss dark.scss asta.css asta-head.html fonts/Manrope.woff2 fonts/RobotoMono.woff2 fonts/Manrope-OFL.txt fonts/RobotoMono-OFL.txt"; \
 	required_exts=evidence; \
+	if find . -type d \( -name build -o -name _site -o -name _extensions -o -name .asta -o -name .git -o -name node_modules -o -name venv -o -name .venv -o -name paper-previews \) -prune -o -type f -name slides.qmd -print -quit | grep -q .; then \
+		required_exts="$$required_exts asta-slides"; \
+	fi; \
 	if cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
 		required_exts="$$required_exts asta-theme"; \
 	fi; \

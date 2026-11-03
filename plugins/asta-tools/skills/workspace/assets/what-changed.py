@@ -1244,6 +1244,108 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     return section, status
 
 
+class SlideParser(HTMLParser):
+    """Read leaf reveal sections; vertical-stack wrappers are not slides."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.stack = []
+        self.slides = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "section":
+            if self.stack:
+                self.stack[-1]["parent"] = True
+            self.stack.append(
+                {"id": dict(attrs).get("id", ""), "body": [], "parent": False}
+            )
+        elif self.stack:
+            self.stack[-1]["body"].append(self.get_starttag_text())
+
+    def handle_startendtag(self, tag, attrs):
+        if self.stack:
+            self.stack[-1]["body"].append(self.get_starttag_text())
+
+    def handle_endtag(self, tag):
+        if tag == "section" and self.stack:
+            slide = self.stack.pop()
+            if not slide["parent"]:
+                self.slides.append((slide["id"], normalize("".join(slide["body"]))))
+        elif self.stack:
+            self.stack[-1]["body"].append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if self.stack:
+            self.stack[-1]["body"].append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name):
+        self.handle_data(f"&#{name};")
+
+
+def reveal_slides(doc):
+    if not doc or not re.search(r'<div\b[^>]*class=["\'][^"\']*\breveal\b', doc):
+        return None
+    parser = SlideParser()
+    parser.feed(doc)
+    return parser.slides
+
+
+def slide_diff(old_doc, new_doc, rel, link):
+    old = reveal_slides(old_doc) or []
+    new = reveal_slides(new_doc) or []
+    old_by_id = {
+        ident or f"@{index}": (index, body) for index, (ident, body) in enumerate(old)
+    }
+    new_by_id = {
+        ident or f"@{index}": (index, body) for index, (ident, body) in enumerate(new)
+    }
+    changes = []
+    for ident in dict.fromkeys([*new_by_id, *old_by_id]):
+        before = old_by_id.get(ident)
+        after = new_by_id.get(ident)
+        if before == after:
+            continue
+        index, content = after or before
+        caption = (
+            visible_text(content).strip().split("\n")[0][:100] or f"Slide {index + 1}"
+        )
+        heading = html.escape(f"Slide {index + 1}: {caption}")
+        if after:
+            anchor = ident if not ident.startswith("@") else str(index)
+            heading = f'<a href="{html.escape(link + "#/" + quote(anchor, safe=""), quote=True)}">{heading}</a>'
+        if before and after:
+            body, changed = diff_content(
+                strip_volatile(before[1]), strip_volatile(after[1])
+            )
+            if not changed:
+                body = '<p class="wc-note">Slide moved or its markup changed. Open the slide to inspect it.</p>'
+            state = "changed"
+        elif after:
+            body, state = strip_volatile(content), "new"
+        else:
+            body, state = strip_volatile(content), "removed"
+        changes.append(
+            f'<article class="slide-diff {state}"><h3>{heading} '
+            f'<span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
+        )
+    if not changes:
+        return None
+    state = "new" if old_doc is None else "removed" if new_doc is None else "changed"
+    label = "Slides · " + page_title(new_doc or old_doc, rel)
+    heading = html.escape(label)
+    if new_doc:
+        heading = f'<a href="{html.escape(link, quote=True)}">{heading}</a>'
+    aid = anchor_id(rel)
+    return (
+        f'<section class="page-diff {state}" id="{aid}"><h2>{heading} '
+        f'<span class="tag {state}">{state}</span></h2>{"".join(changes)}</section>',
+        f'<a href="#{aid}">{html.escape(label)} <span class="tag {state}">{state}</span></a>',
+    )
+
+
 def build(old_root, new_root, preview_url, title, out_path=None):
     sections = []
     toc = []
@@ -1267,6 +1369,30 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 f'<a href="#{section_id}">{label} <span class="tag {paper_status}">'
                 f"{paper_status}</span></a>"
             )
+    slide_sections, slide_toc = [], []
+    for rel in sorted(set(old_pages) | set(new_pages)):
+        old_doc = (
+            open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
+        )
+        new_doc = (
+            open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
+        )
+        if reveal_slides(old_doc) is None and reveal_slides(new_doc) is None:
+            continue
+        link = (
+            (preview_url.rstrip("/") + "/" + quote(rel, safe="/"))
+            if preview_url
+            else quote(rel, safe="/")
+        )
+        result = slide_diff(old_doc, new_doc, rel, link)
+        if result:
+            section, entry = result
+            slide_sections.append(section)
+            slide_toc.append(entry)
+        old_pages.pop(rel, None)
+        new_pages.pop(rel, None)
+    sections.extend(slide_sections)
+    toc.extend(slide_toc)
     for rel in sorted(set(old_pages) | set(new_pages)):
         new_doc = (
             open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None

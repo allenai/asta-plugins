@@ -66,6 +66,8 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
     (repo / "without-rc/main.tex").write_text("not a paper")
 
     assert discover(repo, base) == {
+        "decks": [],
+        "removed_decks": [],
         "papers": ["added", "kept", "nested/sub", "paper"],
         "main_files": dict.fromkeys(
             ["added", "kept", "nested/sub", "paper"], "main.tex"
@@ -92,6 +94,8 @@ def test_discovery_skips_invalid_names_but_keeps_valid_papers(tmp_path):
 
     assert result.returncode == 0
     assert json.loads(result.stdout) == {
+        "decks": [],
+        "removed_decks": [],
         "papers": ["paper"],
         "main_files": {"paper": "main.tex"},
         "removed": [],
@@ -111,7 +115,8 @@ def test_discovery_keeps_current_papers_when_base_is_missing(tmp_path):
     assert result["papers"] == ["paper"]
     assert result["removed"] == []
     assert result["warnings"] == [
-        "Could not read paper files at base missing-base; removals were omitted"
+        "Could not read paper files at base missing-base; removals were omitted",
+        "Could not read slide decks at base missing-base; removals were omitted",
     ]
 
 

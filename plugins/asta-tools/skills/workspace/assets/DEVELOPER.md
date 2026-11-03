@@ -229,3 +229,20 @@ The workflow fetches its paper scripts (`paper-discovery.py`, `paper-preview.sh`
 Treat project script overrides as executable code, just like the project's Makefile. They run only in the build job, which grants `contents: read`, has no Pages/OIDC permissions and does not declare or reference secrets. The build is skipped for privileged `pull_request_target` and `workflow_run` events. Deployment uses a separate job with write access and never executes these scripts; call this workflow from `push` or `pull_request` and do not pass secrets to the build.
 
 The workspace devcontainer uses `exec asta workspace preview` for attach startup (CLI/image 0.107.0 or newer). Before adopting that hook, select an image containing CLI 0.107.0 or newer. The default `:latest` and `:latest-tex` tags provide it. In Codespaces, run **Codespaces: Rebuild Container** from the Command Palette; locally run **Dev Containers: Rebuild Container**. Rebuilding an older pinned image alone does not upgrade it. Keep the normal skills install command; customize startup by editing `postAttachCommand`, or keep your existing hook when staying on an older image.
+
+## Slide decks
+
+Keep each talk in its own `<deck-dir>/slides.qmd`, declaring
+`format: asta-slides-revealjs`. Deck folders can be nested; `make render` and
+`make check` build them alongside the website. When `project.render` or the
+sidebar has an explicit page list, add the deck to that list; the standard
+`contents: auto` sidebar includes it by title. Each publishes as
+`<deck-dir>/slides.html` in the site and the PR preview. What changed compares
+the rendered slides and links changes to their slide anchors.
+
+The extension and the example talk are in the workspace assets and example,
+respectively. Its [extension guide](_extensions/asta-slides/README.md) explains
+sections, optional dimming builds, SCSS variables, scripts/plugins, independent
+opt-outs, ejection and standalone sharing. Its fonts and math are embedded by
+default. Verify the actual claude.ai HTML artifact before claiming compatibility
+with that host; an offline browser check alone does not verify its sandbox.

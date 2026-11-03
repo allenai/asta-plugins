@@ -51,12 +51,16 @@ jobs:
           make check
           make preview-artifact-check
           test -z "$(git status --porcelain --untracked-files=no)"
-      - if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
+      - name: Render slide customization fixtures
+        run: python3 ../../tests/browser/render-slides.py _site
+      - uses: actions/upload-artifact@v4
         with:
           name: example-workspace-site
           path: examples/workspace/_site
           retention-days: 30
+      - if: inputs.ref-name != ''
+        name: Keep browser fixtures out of the published site
+        run: rm -rf _site/slide-fixtures
       - if: inputs.ref-name != ''
         uses: actions/upload-pages-artifact@v3
         with:
@@ -64,7 +68,6 @@ jobs:
 
   theme:
     needs: build
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -85,6 +88,9 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Check slide geometry and standalone behavior
+        working-directory: tests/browser
+        run: node workspace-slides.mjs ../../examples/workspace/_site artifacts
       - name: Check both themes and evidence readability
         working-directory: tests/browser
         run: npm test -- ../../examples/workspace/_site artifacts
@@ -96,7 +102,7 @@ jobs:
           retention-days: 30
 
   deploy:
-    needs: build
+    needs: [build, theme]
     if: inputs.ref-name != ''
     runs-on: ubuntu-latest
     concurrency:
@@ -134,7 +140,7 @@ jobs:
 
   report:
     # Example failures occur after image promotion and never hold the release.
-    needs: [build, deploy]
+    needs: [build, theme, deploy]
     if: failure() && inputs.ref-name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -145,6 +151,7 @@ jobs:
           REF: ${{ inputs.ref-name }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BUILD_RESULT: ${{ needs.build.result }}
+          THEME_RESULT: ${{ needs.theme.result }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
         run: |
           set -euo pipefail
@@ -152,6 +159,8 @@ jobs:
           title="Example workspace failed to build for $REF"
           if [ "$BUILD_RESULT" = failure ]; then
             body="The post-release example build failed; deployment was not attempted. Any previously published demo is unchanged. Run: $RUN"
+          elif [ "${THEME_RESULT:-}" = failure ]; then
+            body="The post-release browser checks failed; deployment was not attempted. Run: $RUN"
           elif [ "$DEPLOY_RESULT" = failure ]; then
             body="The post-release example deployment failed after a successful build. The live site's state is unconfirmed; inspect the deployment before retrying. Run: $RUN"
           else

@@ -98,6 +98,35 @@ Add this only when the user wants to write LaTeX directly. Quarto-to-PDF remains
 5. The managed viewer is `<paper-dir>/html/index.qmd`. Add it to `project.render` only when the project has an explicit render allowlist, and link `<paper-dir>/html/index.html` from the site. Keep existing page lists/navbar entries. Shared viewer generation handles the required JavaScript resource; do not commit viewer source.
 6. Run `make paper` (with `PAPER_DIR` for a non-default directory) and `make check`. If the selected released rules do not yet provide `paper`, use `(cd paper && latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)` with the chosen directory, or LaTeX Workshop instead; do not silently change the project's ref or add a copied Make recipe. The shared CI paper preview already works on these older refs. With Pages enabled, verify the PR preview's paper PDF, its paper page and What changed. One TeX image supports multiple papers: discovery finds `main.tex` with a neighboring `latexmkrc`, including nested directories.
 
+### Slide decks (optional)
+
+When the user asks for slides, use Quarto reveal.js via the managed
+`asta-slides` extension. Copy `assets/slides/slides.qmd` into a deck's own
+folder (for example `talks/findings/slides.qmd`), fill its title and write the
+talk in Markdown. Keep images, optional SCSS, scripts and Reveal plugins beside
+that source. Several deck folders are supported at any depth.
+
+Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
+builds. `.dim-previous` optionally dims previous fragments. The extension adds
+the Asta theme, 16:9 dimensions, controls and a slide number inside the slide,
+and the current section's name at the top. No section headings means no section
+line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
+positioning. For SCSS variables, independent opt-outs and ejection, see
+[`assets/_extensions/asta-slides/README.md`](assets/_extensions/asta-slides/README.md).
+
+`make workspace-assets` fetches the extension from the selected workspace ref;
+`make check` renders decks with the site. Preserve existing render and navigation
+lists: if either is explicit, add the deck to it. The default automatic sidebar
+links decks by title. Each deck publishes as `<deck-dir>/slides.html`; its PR
+preview has the same path, and What changed lists slide-level differences with
+links to the changed slides.
+
+Share the rendered `slides.html` as the standalone page: fonts, scripts and math
+are embedded by default. If sharing it as a claude.ai HTML artifact, actually
+open that artifact and check navigation, fonts, math and the section line before
+saying it works there. When this environment cannot access claude.ai, provide
+the file and name that check as unverified.
+
 ### Back claims with supporting evidence
 
 The scaffold fetches a small Quarto extension (`_extensions/evidence/`) from `asta-plugins` before each render rather than vendoring a copy that can drift. Managed projects use the ref selected in `.github/workflows/docs.yml`; change that one ref and run `make update-workspace` to upgrade. A standalone, ejected Makefile can set `ASTA_PLUGINS_REF` separately. The extension lets a factual claim in the prose carry the evidence backing it: the claim gets a subtle dotted underline, and hovering (or keyboard-focusing) it reveals a verbatim quote plus a body-style citation. It renders with pure CSS — so it also survives onto the `what-changed` diff page, where a reviewer can check each claim's backing without leaving the diff.

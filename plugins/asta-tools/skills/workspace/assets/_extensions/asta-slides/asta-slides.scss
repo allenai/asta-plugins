@@ -1,0 +1,21 @@
+/*-- scss:defaults --*/
+// The workspace's Asta palette and open fonts; deck-local SCSS can override these.
+$asta-bg: #032629 !default;
+$asta-fg: #faf2e9 !default;
+$asta-link: #0fcb8c !default;
+$asta-font: Manrope, Arial, sans-serif !default;
+$asta-mono-font: "Roboto Mono", monospace !default;
+$asta-heading-font: $asta-font !default;
+
+/*-- scss:rules --*/
+body.asta-slides-theme {
+  background: $asta-bg;
+  .reveal {
+    color: $asta-fg;
+    font-family: $asta-font;
+    h1, h2, h3, h4, h5, h6 { color: $asta-fg; font-family: $asta-heading-font; }
+    a, .controls, .asta-slides-section { color: $asta-link; }
+    code { font-family: $asta-mono-font; }
+    .slide-number { background: transparent; color: $asta-fg; }
+  }
+}

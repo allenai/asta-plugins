@@ -1,0 +1,16 @@
+---
+title: "{{TITLE}}"
+format: asta-slides-revealjs
+---
+
+# The question
+
+## What are we investigating?
+
+State the question and why it matters.
+
+# The work
+
+## What did we learn?
+
+Present the result, with links to the project's evidence and paper.
