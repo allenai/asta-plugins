@@ -478,7 +478,12 @@ toc: false
   title="Give the slides the whole window">&#x2922;</button>
 <strong class="deck-title">{html.escape(title)}</strong>
 <span class="deck-where">Written in <code>{html.escape(source)}</code>.</span>
-<a class="deck-present" href="slides.html" target="_blank" rel="noopener">Present</a>
+<a class="deck-popout" href="slides.html" target="_blank" rel="noopener"
+  title="Open the slides on their own" aria-label="Open the slides on their own"><svg
+  aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 16 16"><path
+  d="M9.5 2H14v4.5M14 2 7.5 8.5M12 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3.5"
+  fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+  stroke-linejoin="round"/></svg></a>
 </div>
 <div class="deck-stage">
 <iframe class="deck-frame" src="slides.html" title="{html.escape(title, quote=True)}"
@@ -494,10 +499,11 @@ toc: false
 /* Inherit the bar's colours so the path reads on any Bootstrap theme, light or dark. */
 [data-deck-viewer] .deck-where code:not(.sourceCode) {{ color: inherit;
   background: transparent; padding: 0; }}
-.deck-expand {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
+.deck-expand, .deck-popout {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
   border: 1px solid var(--bs-border-color); border-radius: 6px;
   background: transparent; color: inherit; cursor: pointer; }}
-.deck-present {{ margin-left: auto; }}
+.deck-popout {{ margin-left: auto; display: inline-flex; align-items: center;
+  align-self: stretch; text-decoration: none; }}
 [data-deck-viewer].deck-full {{ position: fixed; inset: 0; z-index: 1050;
   background: var(--bs-body-bg); display: flex; flex-direction: column; }}
 .deck-full .deck-bar {{ padding: 0.35rem 0.75rem; margin: 0; }}
@@ -506,7 +512,9 @@ body.deck-page-full .quarto-secondary-nav {{ display: none !important; }}
 body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
 .deck-stage {{ display: flex; justify-content: center; }}
 .deck-full .deck-stage {{ flex: 1; align-items: center; min-height: 0; }}
-.deck-frame {{ display: block; border: 0; aspect-ratio: 16 / 9; max-width: 100%; }}
+/* The slide fills its frame in the site's own colour, so an outline marks its edge. */
+.deck-frame {{ display: block; border: 0; aspect-ratio: 16 / 9; max-width: 100%;
+  box-shadow: 0 0 0 1px var(--bs-border-color); }}
 </style>
 
 <script>
@@ -544,6 +552,32 @@ body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
   // Esc pressed while the deck has focus; reachable only when the frame is same-origin.
   frame.addEventListener('load', () => {{
     try {{ frame.contentWindow.addEventListener('keydown', escape, true); }} catch (e) {{}}
+  }});
+  // The deck's plugin reports its slide, so the pop-out opens where the viewer is.
+  const popout = host.querySelector('.deck-popout');
+  addEventListener('message', event => {{
+    const data = event.data;
+    if (event.source !== frame.contentWindow || data?.astaSlides !== 'location') return;
+    if (typeof data.hash === 'string' && data.hash.length < 512
+      && (data.hash === '' || data.hash.startsWith('#/'))) {{
+      popout.href = 'slides.html' + data.hash;
+    }}
+  }});
+  // Reveal's navigation keys move the deck without a click into it. postMessage
+  // reaches the deck's plugin even where the frame isn't same-origin (file://).
+  const keys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ',
+    'PageUp', 'PageDown', 'Home', 'End']);
+  const usesKeys = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
+    '[role="textbox"], [role="combobox"], [role="listbox"], [role="slider"], [role="spinbutton"], ' +
+    '[role="menu"], [role="menubar"], [role="tablist"], [role="tree"], [role="grid"]';
+  const activates = 'a[href], button, summary, [role="button"], [role="link"]';
+  addEventListener('keydown', event => {{
+    if (!keys.has(event.key) || event.defaultPrevented || event.isComposing
+      || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest(usesKeys) || (event.key === ' ' && target?.closest(activates))) return;
+    event.preventDefault();
+    frame.contentWindow?.postMessage({{ astaSlides: 'key', key: event.key, shiftKey: event.shiftKey }}, '*');
   }});
   addEventListener('resize', fit);
   addEventListener('scroll', fit, {{ passive: true }});

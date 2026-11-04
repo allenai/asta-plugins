@@ -86,6 +86,24 @@ window.AstaSlides = {
       // Reveal owns navigation, fragment state, keyboard and touch handling.
       deck.layout();
     }
+    // In a viewer page's frame: take navigation keys from the page and report the slide.
+    if (window.parent !== window) {
+      const codes = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, " ": 32,
+        PageUp: 33, PageDown: 34, End: 35, Home: 36 };
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (event.source !== window.parent || data?.astaSlides !== "key" || !(data.key in codes)) return;
+        // Reveal's keyboard handler reads keyCode, which KeyboardEvent's constructor can't set.
+        const key = new KeyboardEvent("keydown", { key: data.key, shiftKey: !!data.shiftKey, bubbles: true, cancelable: true });
+        Object.defineProperty(key, "keyCode", { get: () => codes[data.key] });
+        Object.defineProperty(key, "which", { get: () => codes[data.key] });
+        document.dispatchEvent(key);
+      });
+      // Reveal may write the hash after its events, so report once it has.
+      const report = () => setTimeout(() => window.parent.postMessage({ astaSlides: "location", hash: location.hash }, "*"));
+      for (const name of ["ready", "slidechanged", "fragmentshown", "fragmenthidden"]) deck.on(name, report);
+      if (deck.isReady()) report();
+    }
     if (deck.isReady()) install();
     else deck.on("ready", install);
   }

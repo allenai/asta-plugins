@@ -397,7 +397,21 @@ try {
     return {
       title: document.querySelector(".deck-title").textContent,
       where: document.querySelector(".deck-where").textContent,
-      present: document.querySelector(".deck-present").getAttribute("href"),
+      popout: (() => {
+        const link = document.querySelector(".deck-popout");
+        return link && { href: link.getAttribute("href"), title: link.title, label: link.getAttribute("aria-label"),
+          text: link.textContent.trim(), icon: Boolean(link.querySelector("svg")), target: link.target };
+      })(),
+      present: Boolean(document.querySelector(".deck-present")),
+      outline: getComputedStyle(document.querySelector(".deck-frame")).boxShadow,
+      border: (() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--bs-border-color)";
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      })(),
       src: document.querySelector(".deck-frame").getAttribute("src"),
       sidebar: Boolean(sidebar && sidebar.getBoundingClientRect().width > 0 && getComputedStyle(sidebar).display !== "none"),
       ratio: frame.width / frame.height, top: frame.top, bottom: frame.bottom, left: frame.left, right: frame.right,
@@ -406,7 +420,14 @@ try {
   });
   assert.equal(inSite.title, "Attention in sequence models", "The viewer bar names the deck");
   assert.match(inSite.where, /Written in slides\/attention\/slides\.qmd/, "The viewer bar says where the deck is written");
-  assert.equal(inSite.present, "slides.html", "Present opens the deck alone");
+  assert.equal(inSite.present, false, "The Present text link is gone");
+  assert.ok(inSite.popout, "The bar has a pop-out button");
+  assert.equal(inSite.popout.title, "Open the slides on their own", "The pop-out is titled");
+  assert.equal(inSite.popout.label, "Open the slides on their own", "The pop-out has an accessible name");
+  assert.deepEqual([inSite.popout.text, inSite.popout.icon, inSite.popout.target], ["", true, "_blank"], "The pop-out is an icon that opens a new tab");
+  assert.match(inSite.popout.href, /^slides\.html(#\/.*)?$/, "The pop-out opens the deck alone");
+  assert.ok(inSite.outline.startsWith(inSite.border) && inSite.outline.includes("0px 0px 0px 1px"),
+    `The frame has a thin outline in the theme's border colour (got ${inSite.outline}, border ${inSite.border})`);
   assert.equal(inSite.src, "slides.html", "The viewer plays the deck in place");
   assert.ok(inSite.sidebar, "The viewer page shows the site's sidebar");
   assert.ok(Math.abs(inSite.ratio - 16 / 9) < 0.01, `The deck plays at 16:9 (got ${inSite.ratio})`);
@@ -428,6 +449,19 @@ try {
   });
   assert.equal(barCode.color, barCode.barColor, "The bar's code takes the bar's text colour on any theme");
   assert.equal(barCode.background, "rgba(0, 0, 0, 0)", "The bar's code draws no box of its own");
+  // On file:// the frame isn't same-origin: keys reach the deck by message, and the
+  // pop-out follows the slide the deck reports. Focus stays on the page throughout.
+  const popoutHref = () => viewer.evaluate(() => document.querySelector(".deck-popout").getAttribute("href"));
+  await viewer.waitForFunction(() => document.querySelector(".deck-popout").getAttribute("href").startsWith("slides.html#/"));
+  await viewer.evaluate(() => document.activeElement?.blur());
+  const firstHref = await popoutHref();
+  await viewer.keyboard.press("End");
+  await viewer.waitForFunction((first) => document.querySelector(".deck-popout").getAttribute("href") !== first, firstHref);
+  const lastHref = await popoutHref();
+  await viewer.keyboard.press("Home");
+  await viewer.waitForFunction((first) => document.querySelector(".deck-popout").getAttribute("href") === first, firstHref);
+  assert.ok(await viewer.evaluate(() => document.activeElement === document.body), "Keys moved the deck with focus on the page");
+  results.push({ name: "deck-viewer-file-keys", firstHref, lastHref });
   await viewer.click(".deck-expand");
   const expanded = await viewer.evaluate(() => {
     const host = document.querySelector("[data-deck-viewer]").getBoundingClientRect();
@@ -494,6 +528,42 @@ try {
   await served.screenshot({ path: join(output, "deck-viewer-content.png") });
   results.push({ name: "deck-viewer-frame", ...frameFill });
   await framed.evaluate(() => Reveal.slide(0, 0));
+  // Reveal's navigation keys, pressed with focus on the page, never in the frame.
+  await served.evaluate(() => document.activeElement?.blur());
+  const indices = () => framed.evaluate(() => JSON.stringify(Reveal.getIndices()));
+  const keySteps = [];
+  for (const key of ["ArrowRight", "PageDown", "Space", "ArrowLeft", "PageUp", "End", "Home"]) {
+    const before = await indices();
+    await served.keyboard.press(key);
+    await framed.waitForFunction((previous) => JSON.stringify(Reveal.getIndices()) !== previous, before, { timeout: 5000 });
+    keySteps.push({ key, before, after: await indices() });
+    if (key === "End") {
+      assert.ok(await framed.evaluate(() => Reveal.isLastSlide()), "End goes to the last slide");
+      await served.waitForFunction(() => document.querySelector(".deck-popout").getAttribute("href")
+        === "slides.html" + document.querySelector(".deck-frame").contentWindow.location.hash);
+      await served.screenshot({ path: join(output, "deck-viewer-keys.png") });
+      // The pop-out opens the deck alone in a new tab, at the slide the viewer is on.
+      const atSlide = await framed.evaluate(() => JSON.stringify(Reveal.getIndices()));
+      const [tab] = await Promise.all([servedContext.waitForEvent("page"), served.click(".deck-popout")]);
+      await tab.waitForFunction(() => window.Reveal?.isReady?.());
+      const opened = { url: tab.url(), indices: await tab.evaluate(() => JSON.stringify(Reveal.getIndices())) };
+      assert.match(opened.url, /^http:\/\/deck\.test\/slides\/attention\/slides\.html#\//, "The pop-out opens slides.html alone");
+      assert.equal(opened.indices, atSlide, "The pop-out opens at the viewer's slide");
+      await tab.close();
+      results.push({ name: "deck-viewer-popout", ...opened });
+      await served.evaluate(() => document.activeElement?.blur());
+    }
+  }
+  assert.ok(await framed.evaluate(() => Reveal.getIndices().h === 0 && Reveal.getIndices().v === 0), "Home goes to the first slide");
+  assert.ok(await served.evaluate(() => !document.querySelector(".deck-frame").contains(document.activeElement) && document.activeElement !== document.querySelector(".deck-frame")), "The frame never took focus");
+  // A text field keeps its keys.
+  await served.evaluate(() => { const field = document.createElement("input"); field.id = "key-field"; document.body.append(field); field.focus(); });
+  const beforeField = await indices();
+  await served.keyboard.press("ArrowRight");
+  await served.waitForTimeout(400);
+  assert.equal(await indices(), beforeField, "Arrow keys in a text field don't move the deck");
+  await served.evaluate(() => document.getElementById("key-field").remove());
+  results.push({ name: "deck-viewer-keys", keySteps });
   await served.click(".deck-expand");
   await served.evaluate(() => document.querySelector(".deck-frame").focus());
   const deckFrame = served.frames().find((frame) => frame !== served.mainFrame());
@@ -513,7 +583,7 @@ try {
   assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
   assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
-  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections, vertical stacks, and deck CSS classes; the deck's viewer page in the site with expand and Esc.");
+  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections, vertical stacks, and deck CSS classes; the deck's viewer page in the site with expand, Esc, page keys, outline and pop-out.");
 } finally {
   await browser.close();
 }
