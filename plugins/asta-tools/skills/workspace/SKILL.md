@@ -105,6 +105,7 @@ When the user asks for slides, use Quarto reveal.js via the managed
 folder under `slides/` (for example `slides/findings/slides.qmd`), fill its title and write the
 talk in Markdown. Keep images, optional SCSS, scripts and Reveal plugins beside
 that source. Several deck folders are supported at any depth; `slides/<name>/` is the convention.
+The build generates a viewer page beside each deck (`slides/<name>/index.qmd`, uncommitted, as for papers) that plays it inside the site at 16:9, with expand, Esc and a Present link to `slides.html`; link that page from the sidebar and overview, and add `"slides/**/index.qmd"` to any explicit `render:` list. Commit a custom `index.qmd` to override it.
 
 Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
 builds. `asta-slides: {section-slides: false}` makes `#` headings name

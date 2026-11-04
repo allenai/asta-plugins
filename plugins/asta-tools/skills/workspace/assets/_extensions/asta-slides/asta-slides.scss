@@ -42,3 +42,7 @@ $border-color: $asta-border !default;
 // Keep these exclusions in sync with Reveal's custom background attributes.
 // Zero specificity lets deck CSS override the default without stronger selectors.
 :where(.reveal-scroll .scroll-page-content > section:not(.asta-slides-inherited-background):not([data-background]):not([data-background-color]):not([data-background-image]):not([data-background-gradient]):not([data-background-video]):not([data-background-iframe])) { background-color: $asta-bg; }
+
+// Phone scroll view: keep slide text off the panel's edges.
+$asta-scroll-margin: 48px !default;
+.reveal-scroll .scroll-page-content > section { padding-inline: $asta-scroll-margin; box-sizing: border-box; }

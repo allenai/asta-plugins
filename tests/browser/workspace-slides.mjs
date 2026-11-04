@@ -332,12 +332,71 @@ try {
   assert.deepEqual(classFailures, [], "Class-styled phone background: no script errors");
   assert.deepEqual(classNetwork, [], "Class-styled phone background works offline");
   await phone.close();
+  // The deck's viewer page: the deck plays at 16:9 inside the site, with expand and Esc.
+  const viewerContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const viewer = await viewerContext.newPage();
+  const viewerFailures = [];
+  viewer.on("pageerror", (error) => viewerFailures.push(error.stack || error.message));
+  await viewer.goto(`file://${join(site, "slides/attention/index.html")}`);
+  await viewer.waitForSelector("[data-deck-viewer] .deck-frame");
+  await viewer.waitForFunction(() => parseFloat(document.querySelector(".deck-frame").style.width) > 0);
+  const inSite = await viewer.evaluate(() => {
+    const frame = document.querySelector(".deck-frame").getBoundingClientRect();
+    const sidebar = document.querySelector("#quarto-sidebar");
+    return {
+      title: document.querySelector(".deck-title").textContent,
+      where: document.querySelector(".deck-where").textContent,
+      present: document.querySelector(".deck-present").getAttribute("href"),
+      src: document.querySelector(".deck-frame").getAttribute("src"),
+      sidebar: Boolean(sidebar && sidebar.getBoundingClientRect().width > 0 && getComputedStyle(sidebar).display !== "none"),
+      ratio: frame.width / frame.height, top: frame.top, bottom: frame.bottom, left: frame.left, right: frame.right,
+      viewport: [innerWidth, innerHeight]
+    };
+  });
+  assert.equal(inSite.title, "Attention in sequence models", "The viewer bar names the deck");
+  assert.match(inSite.where, /Written in slides\/attention\/slides\.qmd/, "The viewer bar says where the deck is written");
+  assert.equal(inSite.present, "slides.html", "Present opens the deck alone");
+  assert.equal(inSite.src, "slides.html", "The viewer plays the deck in place");
+  assert.ok(inSite.sidebar, "The viewer page shows the site's sidebar");
+  assert.ok(Math.abs(inSite.ratio - 16 / 9) < 0.01, `The deck plays at 16:9 (got ${inSite.ratio})`);
+  assert.ok(inSite.top >= 0 && inSite.bottom <= inSite.viewport[1] + 0.5 && inSite.right <= inSite.viewport[0] + 0.5, "A whole slide is in view");
+  await viewer.waitForFunction(() => document.querySelector(".deck-frame").contentDocument === null
+    || document.querySelector(".deck-frame").contentDocument.querySelector(".reveal .slides section"));
+  await viewer.screenshot({ path: join(output, "deck-viewer.png") });
+  results.push({ name: "deck-viewer", ...inSite });
+  await viewer.click(".deck-expand");
+  const expanded = await viewer.evaluate(() => {
+    const host = document.querySelector("[data-deck-viewer]").getBoundingClientRect();
+    const frame = document.querySelector(".deck-frame").getBoundingClientRect();
+    return {
+      pressed: document.querySelector(".deck-expand").getAttribute("aria-pressed"),
+      sidebarHidden: getComputedStyle(document.querySelector("#quarto-sidebar")).display === "none",
+      host: [host.left, host.top, host.width, host.height], frameWidth: frame.width,
+      viewport: [innerWidth, innerHeight]
+    };
+  });
+  assert.equal(expanded.pressed, "true", "Expand is pressed");
+  assert.ok(expanded.sidebarHidden, "Expanded, the site's sidebar gives way");
+  assert.deepEqual(expanded.host, [0, 0, ...expanded.viewport], "Expanded, the viewer takes the whole window");
+  assert.ok(expanded.frameWidth > inSite.right - inSite.left, "Expanded, the deck grows");
+  await viewer.screenshot({ path: join(output, "deck-viewer-expanded.png") });
+  await viewer.locator(".deck-title").click();
+  await viewer.keyboard.press("Escape");
+  const restored = await viewer.evaluate(() => ({
+    pressed: document.querySelector(".deck-expand").getAttribute("aria-pressed"),
+    sidebar: getComputedStyle(document.querySelector("#quarto-sidebar")).display !== "none"
+  }));
+  assert.deepEqual(restored, { pressed: "false", sidebar: true }, "Esc gives the site back");
+  assert.deepEqual(viewerFailures, [], "Deck viewer: no script errors");
+  results.push({ name: "deck-viewer-expand", expanded, restored });
+  await viewerContext.close();
   const html = await readFile(join(site, "index.html"), "utf8");
-  assert.match(html, /slides\/attention\/slides\.html/, "The site must link to the talk");
+  assert.match(html, /slides\/attention\/index\.html/, "The site must link to the deck's viewer page");
+  assert.doesNotMatch(html, /href="[^"]*slides\/attention\/slides\.html"/, "Site links open the viewer page, not the bare deck");
   assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
   assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
-  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections, vertical stacks, and deck CSS classes.");
+  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections, vertical stacks, and deck CSS classes; the deck's viewer page in the site with expand and Esc.");
 } finally {
   await browser.close();
 }

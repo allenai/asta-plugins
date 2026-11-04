@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create uncommitted Quarto viewer pages for discovered LaTeX papers."""
+"""Create uncommitted Quarto viewer pages for discovered papers and slide decks."""
 
 import hashlib
 import html
@@ -66,7 +66,9 @@ def managed_viewer(path: Path, tracked: set[str] | None) -> bool:
     return False
 
 
-def remove_orphan_viewers(directories: list[str], tracked: set[str] | None) -> None:
+def remove_orphan_viewers(
+    directories: list[str], tracked: set[str] | None, decks: list[str] = ()
+) -> None:
     for root, children, files in os.walk(".", followlinks=False):
         folder = Path(root)
         children[:] = [
@@ -85,12 +87,13 @@ def remove_orphan_viewers(directories: list[str], tracked: set[str] | None) -> N
             and not (folder / name).is_symlink()
             and not (folder / name / ".git").exists()
         ]
-        if folder.name != "html" or "index.qmd" not in files:
+        if "index.qmd" not in files:
             continue
         path = folder / "index.qmd"
-        if folder.parent.as_posix() not in directories and managed_viewer(
-            path, tracked
-        ):
+        name = folder.relative_to(".").as_posix()
+        paper = folder.name == "html" and folder.parent.as_posix() in directories
+        deck = name in decks and (folder / "slides.qmd").is_file()
+        if not paper and not deck and managed_viewer(path, tracked):
             path.unlink()
 
 
@@ -376,10 +379,152 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
     page.write_text(content.replace(GENERATED_MARKER, marker, 1), encoding="utf-8")
 
 
+DECK_TITLE = re.compile(r"""^title:\s*(['"]?)(?P<title>.+?)\1\s*$""", re.MULTILINE)
+
+
+def deck_title(directory: str) -> str:
+    """The deck's front-matter title, else its folder's name."""
+    try:
+        text = (Path(directory) / "slides.qmd").read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        text = ""
+    front = text.split("\n---", 1)[0] if text.startswith("---") else ""
+    match = DECK_TITLE.search(front)
+    return match["title"] if match else Path(directory).name
+
+
+def create_deck_viewer(directory: str, tracked: set[str] | None) -> None:
+    """slides/<name>/index.qmd: the deck playing in place inside the site."""
+    folder = Path(directory)
+    if any(
+        path.is_symlink() or (path != Path(".") and (path / ".git").exists())
+        for path in [*folder.parents, folder]
+    ):
+        return
+    if any(
+        (folder / f"index.{suffix}").exists()
+        or (folder / f"index.{suffix}").is_symlink()
+        for suffix in ("md", "html", "ipynb")
+    ):
+        return
+    page = folder / "index.qmd"
+    if page.is_symlink() or (page.exists() and not managed_viewer(page, tracked)):
+        return
+    title = deck_title(directory)
+    source = f"{directory}/slides.qmd"
+    content = f"""---
+title: {json.dumps(title)}
+page-layout: full
+title-block-style: none
+toc: false
+---
+
+{GENERATED_MARKER}
+
+```{{=html}}
+<div data-deck-viewer>
+<div class="deck-bar">
+<button type="button" class="deck-expand" aria-pressed="false"
+  title="Give the slides the whole window">&#x2922;</button>
+<strong class="deck-title">{html.escape(title)}</strong>
+<span class="deck-where">Written in <code>{html.escape(source)}</code>.</span>
+<a class="deck-present" href="slides.html" target="_blank" rel="noopener">Present</a>
+</div>
+<div class="deck-stage">
+<iframe class="deck-frame" src="slides.html" title="{html.escape(title, quote=True)}"
+  allow="fullscreen" allowfullscreen></iframe>
+</div>
+</div>
+
+<style>
+.deck-bar {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.9rem;
+  font-size: 0.9rem; padding: 0.35rem 0; margin: 0 0 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color); }}
+.deck-title {{ font-size: 1rem; }}
+.deck-expand {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
+  border: 1px solid var(--bs-border-color); border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer; }}
+.deck-present {{ margin-left: auto; }}
+[data-deck-viewer].deck-full {{ position: fixed; inset: 0; z-index: 1050;
+  background: var(--bs-body-bg); display: flex; flex-direction: column; }}
+.deck-full .deck-bar {{ padding: 0.35rem 0.75rem; margin: 0; }}
+body.deck-page-full #quarto-sidebar, body.deck-page-full #quarto-header,
+body.deck-page-full .quarto-secondary-nav {{ display: none !important; }}
+body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
+.deck-stage {{ display: flex; justify-content: center; }}
+.deck-full .deck-stage {{ flex: 1; align-items: center; min-height: 0; }}
+.deck-frame {{ display: block; border: 0; aspect-ratio: 16 / 9; max-width: 100%; }}
+</style>
+
+<script>
+(() => {{
+  const host = document.querySelector('[data-deck-viewer]');
+  const stage = host.querySelector('.deck-stage');
+  const frame = host.querySelector('.deck-frame');
+  const expand = host.querySelector('.deck-expand');
+  // 16:9, as wide as the page allows and short enough that a whole slide is in view.
+  const fit = () => {{
+    const full = host.classList.contains('deck-full');
+    const top = stage.getBoundingClientRect().top;
+    const height = Math.max(180, innerHeight - top - (full ? 0 : 16));
+    const width = Math.min(stage.clientWidth, height * 16 / 9);
+    frame.style.width = width + 'px';
+    frame.style.height = width * 9 / 16 + 'px';
+  }};
+  const setFull = full => {{
+    host.classList.toggle('deck-full', full);
+    document.body.classList.toggle('deck-page-full', full);
+    expand.setAttribute('aria-pressed', String(full));
+    expand.title = full ? 'Show the site again' : 'Give the slides the whole window';
+    fit();
+  }};
+  expand.addEventListener('click', () => setFull(!host.classList.contains('deck-full')));
+  const escape = event => {{
+    if (event.key === 'Escape' && host.classList.contains('deck-full')) setFull(false);
+  }};
+  addEventListener('keydown', escape);
+  // Esc pressed while the deck has focus; reachable only when the frame is same-origin.
+  frame.addEventListener('load', () => {{
+    try {{ frame.contentWindow.addEventListener('keydown', escape); }} catch (e) {{}}
+  }});
+  addEventListener('resize', fit);
+  new ResizeObserver(fit).observe(stage);
+  fit();
+}})();
+</script>
+```
+"""
+    body = content.replace(GENERATED_MARKER + "\n", "", 1)
+    marker = (
+        "<!-- Generated by asta-plugins sha256="
+        + hashlib.sha256(body.encode()).hexdigest()
+        + " -->"
+    )
+    page.write_text(content.replace(GENERATED_MARKER, marker, 1), encoding="utf-8")
+
+
+def deck_directories(data: dict) -> list[str]:
+    decks = data.get("decks", [])
+    if not isinstance(decks, list):
+        raise ValueError("Expected 'decks' to be an array of relative directory names")
+    for directory in decks:
+        if (
+            not isinstance(directory, str)
+            or any(
+                part in {"", ".", ".."} or part.startswith("-")
+                for part in directory.split("/")
+            )
+            or any(ord(char) < 32 or ord(char) == 127 for char in directory)
+        ):
+            raise ValueError(f"Invalid deck directory: {directory!r}")
+    return decks
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
         directories = paper_directories(data)
+        decks = deck_directories(data)
         main_files = data.get("main_files", {})
         if not isinstance(main_files, dict) or any(
             not isinstance(name, str) for name in main_files.values()
@@ -389,9 +534,11 @@ def main() -> None:
         print(f"paper-viewer: {error}", file=sys.stderr)
         raise SystemExit(1) from None
     tracked = tracked_files()
-    remove_orphan_viewers(directories, tracked)
+    remove_orphan_viewers(directories, tracked, decks)
     for directory in directories:
         create_viewer(directory, tracked, main_files.get(directory, "main.tex"))
+    for directory in decks:
+        create_deck_viewer(directory, tracked)
 
 
 if __name__ == "__main__":

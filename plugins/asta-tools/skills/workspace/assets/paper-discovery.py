@@ -144,6 +144,36 @@ def base_papers(base: str, warnings: list[str]) -> set[str]:
     return names
 
 
+ROOT_ONLY = {"build", "_site", "venv", "paper-previews"}
+
+
+def current_decks(root: Path) -> list[str]:
+    """Folders holding a slides.qmd deck; each gets a viewer page in the site."""
+    decks = []
+    for directory, children, files in os.walk(root, followlinks=False):
+        entry = Path(directory)
+        children[:] = [
+            name
+            for name in children
+            if name not in {"_extensions", "node_modules"}
+            and not (entry == root and name in ROOT_ONLY)
+            and not name.startswith(".")
+            and not (entry / name).is_symlink()
+            and not (entry / name / ".git").exists()
+        ]
+        name = entry.relative_to(root).as_posix()
+        deck = entry / "slides.qmd"
+        if (
+            name != "."
+            and "slides.qmd" in files
+            and deck.is_file()
+            and not deck.is_symlink()
+            and all(valid_name(part) for part in entry.relative_to(root).parts)
+        ):
+            decks.append(name)
+    return sorted(decks)
+
+
 def main() -> None:
     base = sys.argv[1] if len(sys.argv) > 1 else ""
     warnings: list[str] = []
@@ -158,6 +188,7 @@ def main() -> None:
             {
                 "papers": sorted(current),
                 "main_files": current,
+                "decks": current_decks(Path.cwd()),
                 "removed": sorted(removed),
                 "warnings": warnings,
             }
