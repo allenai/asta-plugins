@@ -37,7 +37,11 @@ when shown, the slide number sits to their left. The headline, native controls
 and native slide number are children of Reveal's scaled slide container, with
 dimensions in slide units. The slide number shows the current number only
 (`slide-number: c`). The slide is a panel in `$asta-bg` on a darker surround
-(`$asta-surround`), so its edges show when the window's shape differs. The default slide is 1600 × 900 (16:9). Quarto's window-edge menu and
+(`$asta-surround`), so its edges show when the window's shape differs. The default slide is 1600 × 900 (16:9)
+with Reveal's `margin: 0`, so it fills a 16:9 window or frame and the surround
+shows only where the window's shape differs. Every slide has inner padding,
+`$asta-slide-padding` (48px in slide units); the headline, the slide number and
+the arrows sit inside it too. Quarto's window-edge menu and
 progress bar are off by default; ordinary `menu` and `progress` options can
 re-enable them.
 
@@ -76,6 +80,7 @@ $asta-link: #105257;
 $asta-font: Manrope, Arial, sans-serif;
 $asta-heading-font: $asta-font;
 $asta-surround: #e8ddd0;
+$asta-slide-padding: 64px;
 $asta-mono-font: "Roboto Mono", monospace;
 ```
 

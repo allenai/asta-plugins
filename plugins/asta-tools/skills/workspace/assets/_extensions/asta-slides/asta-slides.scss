@@ -11,6 +11,10 @@ $asta-border: rgba($asta-fg, 0.2) !default;
 $asta-secondary: rgba($asta-fg, 0.55) !default;
 // The window around the slide, a shade darker so the slide's edges show.
 $asta-surround: darken($asta-bg, 4%) !default;
+// Every slide's inner padding, in slide units (the 1600x900 slide); the headline,
+// slide number and arrows sit inside it too.
+$asta-slide-padding: 48px !default;
+$asta-scroll-margin: $asta-slide-padding !default;
 
 // Let Quarto derive its code, table, callout and title styles from this palette.
 $body-bg: $asta-bg !default;
@@ -30,6 +34,7 @@ $border-color: $asta-border !default;
 
 /*-- scss:rules --*/
 .reveal {
+  --asta-slide-padding: #{$asta-slide-padding};
   .controls { color: $asta-link; }
   .asta-slides-section { color: $asta-secondary; }
   .asta-slides-section .current { color: $asta-link; }
@@ -44,5 +49,4 @@ $border-color: $asta-border !default;
 :where(.reveal-scroll .scroll-page-content > section:not(.asta-slides-inherited-background):not([data-background]):not([data-background-color]):not([data-background-image]):not([data-background-gradient]):not([data-background-video]):not([data-background-iframe])) { background-color: $asta-bg; }
 
 // Phone scroll view: keep slide text off the panel's edges.
-$asta-scroll-margin: 48px !default;
 .reveal-scroll .scroll-page-content > section { padding-inline: $asta-scroll-margin; box-sizing: border-box; }

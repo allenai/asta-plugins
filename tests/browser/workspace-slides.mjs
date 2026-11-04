@@ -43,6 +43,53 @@ async function geometry(page, label) {
   return metrics;
 }
 
+// Reveal's margin is 0, so the slide fills the largest 16:9 area of the window or frame.
+async function filled(page, label) {
+  const fill = await page.evaluate(() => {
+    const box = Reveal.getSlidesElement().getBoundingClientRect();
+    const scale = Math.min(innerWidth / 1600, innerHeight / 900);
+    return { margin: Reveal.getConfig().margin, box: [box.left, box.top, box.width, box.height],
+      expected: [(innerWidth - 1600 * scale) / 2, (innerHeight - 900 * scale) / 2, 1600 * scale, 900 * scale] };
+  });
+  assert.equal(fill.margin, 0, `${label}: the format sets margin: 0`);
+  fill.box.forEach((value, index) => assert.ok(Math.abs(value - fill.expected[index]) <= 1.5,
+    `${label}: the slide must fill its 16:9 area (${JSON.stringify(fill)})`));
+  return fill;
+}
+
+// Content stays inside the slide's padding on the left, right and top; the chrome on every side.
+async function padded(page, label) {
+  const result = await page.evaluate(() => {
+    const slide = Reveal.getCurrentSlide();
+    const scale = Reveal.getScale();
+    const root = Reveal.getSlidesElement().getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(slide).paddingLeft);
+    const inner = { left: root.left + pad * scale, right: root.right - pad * scale, top: root.top + pad * scale, bottom: root.bottom - pad * scale };
+    const visible = (node) => node.checkVisibility({ checkVisibilityCSS: true }) && node.getBoundingClientRect().width > 0;
+    const outside = [];
+    for (const [nodes, bottom] of [[[...slide.children], false], [[...document.querySelectorAll(".asta-slides-chrome > *")], true]]) {
+      for (const node of nodes.filter(visible)) {
+        const box = node.getBoundingClientRect();
+        if (box.left < inner.left - 2 || box.right > inner.right + 2 || box.top < inner.top - 2 || (bottom && box.bottom > inner.bottom + 2)) {
+          outside.push({ element: node.className || node.tagName, box: [box.left, box.top, box.right, box.bottom], inner });
+        }
+      }
+    }
+    return { pad, outside };
+  });
+  assert.equal(result.pad, 48, `${label}: slides have the default 48px padding`);
+  assert.deepEqual(result.outside, [], `${label}: the headline, number and content must sit inside the padding`);
+}
+
+async function contentSlide(page) {
+  await page.evaluate(() => {
+    const slide = Reveal.getSlides().find((slide) => slide.querySelector(":scope > h2") && !slide.classList.contains("center"));
+    const indices = Reveal.getIndices(slide);
+    Reveal.slide(indices.h, indices.v);
+  });
+  await page.waitForTimeout(300);
+}
+
 async function lastSlide(page) {
   await page.evaluate(() => {
     const indices = Reveal.getIndices(Reveal.getSlides().at(-1));
@@ -66,6 +113,7 @@ try {
     assert.ok(loaded, "Bundled font must load offline");
     assert.equal(await page.locator(".slide-menu-button:visible, .progress:visible").count(), 0, "Default deck UI must stay inside the slide");
     await page.waitForFunction(() => document.querySelector(".katex, .MathJax, mjx-container"), null, { timeout: 30000 });
+    const fill = await filled(page, `${viewport.width}x${viewport.height}`);
     const count = await page.evaluate(() => Reveal.getSlides().length);
     const slides = [];
     for (let index = 0; index < count; index++) {
@@ -91,7 +139,10 @@ try {
         assert.ok(Math.abs(offset) <= 2, `Section headline must line up with the slide title (off by ${offset}px)`);
       }
       slides.push(await geometry(page, `${viewport.width}x${viewport.height} slide ${index}`));
+      await padded(page, `${viewport.width}x${viewport.height} slide ${index}`);
     }
+    await contentSlide(page);
+    await page.screenshot({ path: join(output, `slides-${viewport.width}x${viewport.height}-content.png`) });
     assert.equal(await page.locator(".controls:visible").count(), 0, "Quarto's default controls: auto hides arrows for this standalone talk");
     await page.evaluate(() => {
       const slide = Reveal.getSlides().find((slide) => slide.classList.contains("dim-previous"));
@@ -109,7 +160,7 @@ try {
     assert.deepEqual(failures, [], "No script errors in the standalone deck");
     assert.deepEqual(network, [], "Standalone font/math rendering must not request a remote resource");
     assert.equal(await page.locator(".katex-error, .MathJax_Error, .MathJax_Error_Message, mjx-merror").count(), 0, "Math must typeset without errors");
-    results.push({ viewport, slides });
+    results.push({ viewport, fill, slides });
     await context.close();
   }
   for (const name of ["no-sections", "disabled", "custom", "rich-content", "current", "controls", "header-off", "transition", "scalar-options", "no-dividers"]) {
@@ -121,7 +172,7 @@ try {
       assert.equal(await page.locator("body.asta-slides-dim-enabled").count(), 0);
       await lastSlide(page);
       const padding = await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop);
-      assert.equal(padding, "64px", "Hiding the section line must preserve title spacing");
+      assert.equal(padding, "88px", "Hiding the section line must preserve title spacing");
       assert.equal(await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor), "rgb(255, 255, 255)");
       assert.equal(await page.locator(".reveal").evaluate((node) => getComputedStyle(node).color), "rgb(34, 34, 34)");
     }
@@ -165,7 +216,7 @@ try {
         Reveal.slide(indices.h, indices.v);
       });
       await page.waitForTimeout(1000);
-      assert.equal(await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop), "64px");
+      assert.equal(await page.evaluate(() => getComputedStyle(Reveal.getCurrentSlide()).paddingTop), "88px");
       if (name === "header-off") assert.equal(await page.locator(".asta-slides-section").count(), 0);
       else {
         const offset = await page.evaluate(() => Reveal.getCurrentSlide().querySelector("h2").getBoundingClientRect().left - document.querySelector(".asta-slides-section").getBoundingClientRect().left);
@@ -434,6 +485,15 @@ try {
   const served = await servedContext.newPage();
   await served.goto("http://deck.test/slides/attention/index.html");
   await served.waitForFunction(() => document.querySelector(".deck-frame").contentWindow?.Reveal?.isReady?.());
+  const framed = served.frames().find((frame) => frame !== served.mainFrame());
+  await framed.waitForFunction(() => document.querySelector(".asta-slides-chrome"));
+  const frameFill = await filled(framed, "viewer frame");
+  assert.ok(Math.abs(frameFill.box[0]) <= 1.5 && Math.abs(frameFill.box[1]) <= 1.5, "In the 16:9 viewer frame, the slide shows no surround");
+  await contentSlide(framed);
+  await padded(framed, "viewer frame");
+  await served.screenshot({ path: join(output, "deck-viewer-content.png") });
+  results.push({ name: "deck-viewer-frame", ...frameFill });
+  await framed.evaluate(() => Reveal.slide(0, 0));
   await served.click(".deck-expand");
   await served.evaluate(() => document.querySelector(".deck-frame").focus());
   const deckFrame = served.frames().find((frame) => frame !== served.mainFrame());
