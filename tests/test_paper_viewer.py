@@ -574,6 +574,11 @@ def test_deck_in_a_papers_html_folder_is_skipped_with_a_warning(tmp_path):
         ("title: Long\n  continued title", "talk"),
         ("title: &anchor Talk", "talk"),
         ("title: [a, b]", "talk"),
+        ('pagetitle: "Asta Workspace Papers"', "Asta Workspace Papers"),
+        ("pagetitle: Own title slide\nauthor: A", "Own title slide"),
+        ('title: Talk\npagetitle: "Tab name"', "Talk"),
+        ("pagetitle: Tab # draft", "talk"),
+        ("title: >\n  Folded\npagetitle: Tab name", "Tab name"),
     ],
 )
 def test_deck_title_falls_back_to_the_folder_unless_simple(tmp_path, front, title):
@@ -581,3 +586,12 @@ def test_deck_title_falls_back_to_the_folder_unless_simple(tmp_path, front, titl
     assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
     page = (tmp_path / "slides/talk/index.qmd").read_text()
     assert f"title: {json.dumps(title)}" in page
+
+
+def test_deck_bar_code_inherits_the_bars_colours(tmp_path):
+    write_deck(tmp_path, "slides/talk")
+    assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
+    page = (tmp_path / "slides/talk/index.qmd").read_text()
+    rule = page.split("[data-deck-viewer] .deck-where code:not(.sourceCode) {", 1)[1]
+    rule = rule.split("}", 1)[0]
+    assert "color: inherit" in rule and "background: transparent" in rule

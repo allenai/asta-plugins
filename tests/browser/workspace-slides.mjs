@@ -364,6 +364,19 @@ try {
     || document.querySelector(".deck-frame").contentDocument.querySelector(".reveal .slides section"));
   await viewer.screenshot({ path: join(output, "deck-viewer.png") });
   results.push({ name: "deck-viewer", ...inSite });
+  // A dark theme whose inline code is a white box: the bar's path must still read.
+  const barCode = await viewer.evaluate(() => {
+    const style = document.createElement("style");
+    style.textContent = "body { color: rgb(230, 230, 230); } body code:not(.sourceCode) { color: rgb(245, 245, 245); background-color: rgb(255, 255, 255); }";
+    document.head.append(style);
+    const code = getComputedStyle(document.querySelector(".deck-where code"));
+    const where = getComputedStyle(document.querySelector(".deck-where"));
+    const result = { color: code.color, barColor: where.color, background: code.backgroundColor };
+    style.remove();
+    return result;
+  });
+  assert.equal(barCode.color, barCode.barColor, "The bar's code takes the bar's text colour on any theme");
+  assert.equal(barCode.background, "rgba(0, 0, 0, 0)", "The bar's code draws no box of its own");
   await viewer.click(".deck-expand");
   const expanded = await viewer.evaluate(() => {
     const host = document.querySelector("[data-deck-viewer]").getBoundingClientRect();

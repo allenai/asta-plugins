@@ -242,6 +242,7 @@ toc: false
   font-size: 0.9rem; padding: 0.35rem 0; margin: 0 0 0.35rem;
   border-bottom: 1px solid var(--bs-border-color); }}
 .paper-title {{ font-size: 1rem; }}
+.paper-where code:not(.sourceCode) {{ color: inherit; background: transparent; padding: 0; }}
 .paper-expand {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
   border: 1px solid var(--bs-border-color); border-radius: 6px;
   background: transparent; color: inherit; cursor: pointer; }}
@@ -383,26 +384,28 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
 # Only a one-line scalar with nothing YAML would reinterpret: no comment, escape,
 # block scalar, alias, tag or flow collection. Anything else uses the folder name.
 DECK_TITLE = re.compile(
-    r"""^title:[ \t]*(?:"(?P<double>[^"\\\n]+)"|'(?P<single>[^'\n]+)'"""
+    r"""^(?P<key>title|pagetitle):[ \t]*(?:"(?P<double>[^"\\\n]+)"|'(?P<single>[^'\n]+)'"""
     r"""|(?P<plain>[^\s'"#|>&*!%@`{}\[\],?:-][^#'"\n]*?))[ \t]*$""",
     re.MULTILINE,
 )
 
 
 def deck_title(directory: str) -> str:
-    """The deck's front-matter title, else its folder's name."""
+    """The deck's front-matter title, else its pagetitle, else its folder's name."""
     try:
         text = (Path(directory) / "slides.qmd").read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         text = ""
     front = text.split("\n---", 1)[0] if text.startswith("---") else ""
-    match = DECK_TITLE.search(front)
-    following = front[match.end() :].split("\n", 2)[1:2] if match else []
-    continued = bool(following) and following[0][:1] in {" ", "\t"}
-    title = match and (match["double"] or match["single"] or match["plain"])
-    if not title or continued or (match["plain"] and ": " in title):
-        return Path(directory).name
-    return title.strip()
+    titles = {}
+    for match in DECK_TITLE.finditer(front):
+        following = front[match.end() :].split("\n", 2)[1:2]
+        continued = bool(following) and following[0][:1] in {" ", "\t"}
+        title = match["double"] or match["single"] or match["plain"]
+        if title and not continued and not (match["plain"] and ": " in title):
+            titles.setdefault(match["key"], title.strip())
+    # A deck that opens with its own title slide sets only pagetitle.
+    return titles.get("title") or titles.get("pagetitle") or Path(directory).name
 
 
 def ignore_deck_viewers(decks: list[str], tracked: set[str]) -> None:
@@ -488,6 +491,9 @@ toc: false
   font-size: 0.9rem; padding: 0.35rem 0; margin: 0 0 0.5rem;
   border-bottom: 1px solid var(--bs-border-color); }}
 .deck-title {{ font-size: 1rem; }}
+/* Inherit the bar's colours so the path reads on any Bootstrap theme, light or dark. */
+[data-deck-viewer] .deck-where code:not(.sourceCode) {{ color: inherit;
+  background: transparent; padding: 0; }}
 .deck-expand {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
   border: 1px solid var(--bs-border-color); border-radius: 6px;
   background: transparent; color: inherit; cursor: pointer; }}
