@@ -1,8 +1,16 @@
-(() => {
-  "use strict";
-  function start() {
-    const deck = window.Reveal;
-    if (!deck) return;
+window.AstaSlides = {
+  id: "asta-slides",
+  init(deck) {
+    "use strict";
+    // Capture inherited backgrounds before Reveal moves vertical slides into
+    // scroll pages and removes their stacks. The marker survives view changes.
+    const customBackground = ["background", "background-color", "background-image", "background-gradient", "background-video", "background-iframe"]
+      .map((attribute) => `[data-${attribute}]`).join(",");
+    for (const stack of deck.getSlidesElement().querySelectorAll(":scope > section")) {
+      if (stack.matches(customBackground)) {
+        for (const slide of stack.querySelectorAll(":scope > section")) slide.classList.add("asta-slides-inherited-background");
+      }
+    }
     const option = (name) => document.querySelector(`meta[name="asta-slides-${name}"]`)?.content;
     const enabled = (name) => option(name) !== "false";
     function install() {
@@ -81,6 +89,4 @@
     if (deck.isReady()) install();
     else deck.on("ready", install);
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
-  else start();
-})();
+};

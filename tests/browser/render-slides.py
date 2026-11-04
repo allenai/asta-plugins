@@ -17,6 +17,11 @@ def render(site):
         (project / "custom.scss").write_text(
             "/*-- scss:defaults --*/\n$asta-link: #ffa31c;\n"
         )
+        (project / "backgrounds.scss").write_text(
+            "/*-- scss:rules --*/\n"
+            ".class-background { background-color: #173e44; "
+            "background-image: linear-gradient(90deg, #173e44, #105257); }\n"
+        )
         (project / "extra.html").write_text(
             "<script>window.astaCustomScript = true;</script>"
         )
@@ -32,6 +37,22 @@ def render(site):
                 "### Nested heading\n\nNested heading content.\n\n"
                 '## Explicit background {background-color="#0a3235"}\n\nCustom slide color.\n\n'
                 "## Theme background\n\nDefault slide color.\n",
+            ),
+            (
+                "background-classes",
+                "format:\n  asta-slides-revealjs:\n    theme: [default, _extensions/asta-slides/asta-slides.scss, backgrounds.scss]\n",
+                "## CSS background {.class-background}\n\nDeck CSS supplies the color and gradient.\n",
+            ),
+            (
+                "vertical-backgrounds",
+                "",
+                '```{=html}\n<section data-background="#233e58">\n'
+                '<section id="inherited-one"><h2>Inherited background one</h2><p>Parent stack color.</p></section>\n'
+                '<section id="inherited-two"><h2>Inherited background two</h2><p>The same parent color.</p></section>\n'
+                "</section>\n<section>\n"
+                '<section id="ordinary-one"><h2>Ordinary vertical slide</h2><p>The theme panel remains.</p></section>\n'
+                '<section id="ordinary-two"><h2>Another ordinary slide</h2><p>The same theme panel.</p></section>\n'
+                "</section>\n```\n",
             ),
             (
                 "disabled",
@@ -86,7 +107,14 @@ def render(site):
             path = project / f"{name}.qmd"
             default = (
                 ""
-                if name in {"custom", "disabled", "controls", "transition"}
+                if name
+                in {
+                    "custom",
+                    "disabled",
+                    "controls",
+                    "transition",
+                    "background-classes",
+                }
                 else "format: asta-slides-revealjs\n"
             )
             path.write_text(f"---\ntitle: {name}\n{default}{metadata}---\n\n{body}")

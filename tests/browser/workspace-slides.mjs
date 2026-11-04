@@ -281,13 +281,63 @@ try {
   await backgroundPage.screenshot({ path: join(output, "slides-phone-custom-background.png") });
   assert.deepEqual(backgroundFailures, [], "Custom phone backgrounds: no script errors");
   assert.deepEqual(backgroundNetwork, [], "Custom phone backgrounds work offline");
+  const { page: verticalPage, failures: verticalFailures, network: verticalNetwork } = await open(phone, "vertical-backgrounds.html", fixtures);
+  await verticalPage.waitForFunction(() => document.querySelector(".reveal-viewport.reveal-scroll .scroll-page-content > section"));
+  async function verticalBackgrounds() {
+    return verticalPage.evaluate(() => [...document.querySelectorAll(".scroll-page-content > section")]
+      .filter((slide) => /^(inherited|ordinary)-/.test(slide.id))
+      .map((slide) => ({ id: slide.id, ownBackground: slide.hasAttribute("data-background"),
+        inherited: slide.classList.contains("asta-slides-inherited-background"),
+        panel: getComputedStyle(slide).backgroundColor,
+        page: getComputedStyle(slide.closest(".scroll-page")).backgroundColor })));
+  }
+  function checkVerticalBackgrounds(slides) {
+    assert.equal(slides.length, 4, "Fixture must render both vertical stacks as four actual slide panels");
+    for (const slide of slides) {
+      const inherited = slide.id.startsWith("inherited-");
+      assert.equal(slide.ownBackground, false, `${slide.id}: background must come from its parent stack`);
+      assert.equal(slide.inherited, inherited, `${slide.id}: only custom-background stacks opt out of the theme panel`);
+      assert.equal(slide.panel, inherited ? "rgba(0, 0, 0, 0)" : "rgb(3, 38, 41)", `${slide.id}: preserve inherited or theme background`);
+      if (inherited) assert.equal(slide.page, "rgb(35, 62, 88)", `${slide.id}: Reveal must carry the stack color to its scroll page`);
+    }
+  }
+  const verticalSlides = await verticalBackgrounds();
+  checkVerticalBackgrounds(verticalSlides);
+  results.push({ name: "phone-vertical-backgrounds", slides: verticalSlides });
+  // Reveal restores its original slide HTML when leaving scroll view. The
+  // inherited-background markers must still work when it enters scroll view again.
+  await verticalPage.setViewportSize({ width: 1024, height: 768 });
+  await verticalPage.waitForFunction(() => !Reveal.isScrollView());
+  await verticalPage.setViewportSize({ width: 390, height: 844 });
+  await verticalPage.waitForFunction(() => Reveal.isScrollView());
+  checkVerticalBackgrounds(await verticalBackgrounds());
+  const inheritedIndex = await verticalPage.evaluate(() => [...document.querySelectorAll(".scroll-page-content > section")].findIndex((slide) => slide.id === "inherited-two"));
+  await scrollToSlide(verticalPage, inheritedIndex);
+  await verticalPage.screenshot({ path: join(output, "slides-phone-vertical-background.png") });
+  assert.deepEqual(verticalFailures, [], "Vertical phone backgrounds: no script errors");
+  assert.deepEqual(verticalNetwork, [], "Vertical phone backgrounds work offline");
+  const { page: classPage, failures: classFailures, network: classNetwork } = await open(phone, "background-classes.html", fixtures);
+  await classPage.waitForFunction(() => document.querySelector(".reveal-viewport.reveal-scroll .scroll-page-content > section.class-background"));
+  const classBackground = await classPage.locator("section.class-background").evaluate((slide) => ({
+    color: getComputedStyle(slide).backgroundColor, image: getComputedStyle(slide).backgroundImage,
+    ownBackground: slide.hasAttribute("data-background") || slide.hasAttribute("data-background-color")
+  }));
+  assert.equal(classBackground.ownBackground, false, "Class fixture must use deck CSS, not Reveal background attributes");
+  assert.equal(classBackground.color, "rgb(23, 62, 68)", "A deck CSS class must override the theme panel color");
+  assert.match(classBackground.image, /linear-gradient/, "The theme must not reset a deck CSS background image");
+  results.push({ name: "phone-class-background", ...classBackground });
+  const classIndex = await classPage.evaluate(() => [...document.querySelectorAll(".scroll-page-content > section")].findIndex((slide) => slide.classList.contains("class-background")));
+  await scrollToSlide(classPage, classIndex);
+  await classPage.screenshot({ path: join(output, "slides-phone-class-background.png") });
+  assert.deepEqual(classFailures, [], "Class-styled phone background: no script errors");
+  assert.deepEqual(classNetwork, [], "Class-styled phone background works offline");
   await phone.close();
   const html = await readFile(join(site, "index.html"), "utf8");
   assert.match(html, /slides\/attention\/slides\.html/, "The site must link to the talk");
   assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
   assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
-  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections.");
+  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections, vertical stacks, and deck CSS classes.");
 } finally {
   await browser.close();
 }

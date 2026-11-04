@@ -16,7 +16,6 @@ function Meta(meta)
   quarto.doc.add_html_dependency({
     name = "asta-slides",
     version = "0.1.0",
-    scripts = {"asta-slides.js"},
     stylesheets = {"fonts.css", "chrome.css"},
     resources = {"fonts/Manrope.woff2", "fonts/RobotoMono.woff2"},
     meta = flags
