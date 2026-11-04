@@ -10,6 +10,8 @@ const output = resolve(process.argv[3] ?? "artifacts");
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const results = [];
+const customBackgroundSelector = ["background", "background-color", "background-image", "background-gradient", "background-video", "background-iframe"]
+  .map((attribute) => `[data-${attribute}]`).join(",");
 
 async function open(context, path, root = site) {
   const page = await context.newPage();
@@ -46,6 +48,11 @@ async function lastSlide(page) {
     const indices = Reveal.getIndices(Reveal.getSlides().at(-1));
     Reveal.slide(indices.h, indices.v);
   });
+}
+
+async function scrollToSlide(page, index) {
+  await page.evaluate((index) => Reveal.getSlides()[index].closest(".scroll-page").scrollIntoView({ behavior: "instant", block: "center" }), index);
+  await page.waitForFunction((index) => Reveal.getCurrentSlide() === Reveal.getSlides()[index], index);
 }
 
 try {
@@ -214,51 +221,53 @@ try {
   assert.equal(await printPage.locator(".asta-slides-chrome:visible").count(), 0, "Chrome must be hidden in Reveal's print-pdf mode");
   assert.deepEqual(printFailures, []);
   await printContext.close();
-  // Below 435px wide Reveal switches to its scroll view; every slide must still be a panel on the surround.
+  // Below Reveal's scrollActivationWidth, every ordinary slide must still be a panel on the surround.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const phonePage = await phone.newPage();
   const phoneFailures = [];
   phonePage.on("pageerror", (error) => phoneFailures.push(error.stack || error.message));
   await phonePage.goto(`file://${join(site, "slides/attention/slides.html")}`);
-  await phonePage.waitForFunction(() => window.Reveal?.isReady() && document.querySelector(".reveal-viewport.reveal-scroll .scroll-page section"));
-  const scroll = await phonePage.evaluate(() => {
+  await phonePage.waitForFunction(() => window.Reveal?.isReady() && document.querySelector(".reveal-viewport.reveal-scroll .scroll-page-content > section"));
+  const scroll = await phonePage.evaluate((customBackgroundSelector) => {
     const color = (node) => getComputedStyle(node).backgroundColor;
     return { surround: color(document.querySelector(".reveal-viewport")), slides: color(Reveal.getSlidesElement()),
-      pages: [...document.querySelectorAll(".scroll-page section")].map((node) => ({ id: node.id, background: color(node) })) };
-  });
+      pages: Reveal.getSlides().map((node) => ({ id: node.id, custom: node.matches(customBackgroundSelector), background: color(node) })) };
+  }, customBackgroundSelector);
   results.push({ name: "phone-scroll-view", ...scroll });
   assert.ok(scroll.pages.length >= 4, "Scroll view must lay out every slide");
   for (const slide of scroll.pages) {
-    assert.equal(slide.background, "rgb(3, 38, 41)", `Scroll-view slide ${slide.id} must be painted in the theme's background`);
+    assert.equal(slide.background, slide.custom ? "rgba(0, 0, 0, 0)" : "rgb(3, 38, 41)", `Scroll-view slide ${slide.id} must preserve its custom or theme background`);
   }
   assert.notEqual(scroll.surround, "rgb(3, 38, 41)", "The surround must differ from the slide");
   assert.notEqual(scroll.slides, "rgb(3, 38, 41)", "In scroll view only the slides, not their container, carry the background");
   await phonePage.screenshot({ path: join(output, "slides-phone-390x844.png") });
   await phonePage.screenshot({ path: join(output, "slides-phone-390x844-full.png"), fullPage: true });
-  await phonePage.evaluate(() => document.querySelector(".reveal-viewport").scrollTo(0, 2 * innerHeight));
-  await phonePage.waitForTimeout(300);
+  await scrollToSlide(phonePage, 2);
   await phonePage.screenshot({ path: join(output, "slides-phone-390x844-scrolled.png") });
   assert.deepEqual(phoneFailures, [], "Phone scroll view: no script errors");
   const { page: backgroundPage, failures: backgroundFailures, network: backgroundNetwork } = await open(phone, "backgrounds.html", fixtures);
-  await backgroundPage.waitForFunction(() => document.querySelector(".reveal-viewport.reveal-scroll .scroll-page section"));
-  const backgrounds = await backgroundPage.evaluate(() => {
+  await backgroundPage.waitForFunction(() => document.querySelector(".reveal-viewport.reveal-scroll .scroll-page-content > section"));
+  const backgrounds = await backgroundPage.evaluate((customBackgroundSelector) => {
     return Reveal.getSlides().map((slide) => ({ id: slide.id,
+      custom: slide.matches(customBackgroundSelector),
       shorthand: slide.getAttribute("data-background"), explicit: slide.getAttribute("data-background-color"),
       panel: getComputedStyle(slide).backgroundColor,
+      nested: [...slide.querySelectorAll("section")].map((node) => ({ id: node.id || node.className, background: getComputedStyle(node).backgroundColor })),
       background: getComputedStyle(Reveal.getSlideBackground(slide)).backgroundColor }));
-  });
+  }, customBackgroundSelector);
   assert.equal(backgrounds.find((slide) => slide.id === "shorthand-background").shorthand, "#105257", "The fixture must exercise Reveal's data-background shorthand");
+  assert.ok(backgrounds.find((slide) => slide.id === "shorthand-background").nested.length > 0, "The custom-background fixture must contain a nested section");
   for (const slide of backgrounds) {
-    if (slide.shorthand || slide.explicit) {
+    if (slide.custom) {
       assert.equal(slide.panel, "rgba(0, 0, 0, 0)", `${slide.id}: the theme must not cover a custom background`);
       assert.equal(slide.background, slide.shorthand ? "rgb(16, 82, 87)" : "rgb(10, 50, 53)", `${slide.id}: Reveal must paint the custom background`);
+      for (const nested of slide.nested) assert.equal(nested.background, "rgba(0, 0, 0, 0)", `${slide.id}: nested section ${nested.id} must not cover the custom background`);
     } else {
       assert.equal(slide.panel, "rgb(3, 38, 41)", `${slide.id}: ordinary slides must keep the theme background`);
     }
   }
   results.push({ name: "phone-custom-backgrounds", slides: backgrounds });
-  await backgroundPage.locator("#shorthand-background").evaluate((node) => node.closest(".scroll-page").scrollIntoView());
-  await backgroundPage.waitForTimeout(300);
+  await scrollToSlide(backgroundPage, 1);
   await backgroundPage.screenshot({ path: join(output, "slides-phone-custom-background.png") });
   assert.deepEqual(backgroundFailures, [], "Custom phone backgrounds: no script errors");
   assert.deepEqual(backgroundNetwork, [], "Custom phone backgrounds work offline");
@@ -268,7 +277,7 @@ try {
   assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
   assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
-  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
+  console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, chrome containment at four aspect ratios, phone scroll view, and custom backgrounds with nested sections.");
 } finally {
   await browser.close();
 }

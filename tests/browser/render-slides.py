@@ -29,6 +29,8 @@ def render(site):
                 "backgrounds",
                 "",
                 '## Shorthand background {background="#105257"}\n\nCustom slide color.\n\n'
+                "### Nested heading\n\nNested heading content.\n\n"
+                '<section class="custom-background-detail">Nested section content.</section>\n\n'
                 '## Explicit background {background-color="#0a3235"}\n\nCustom slide color.\n\n'
                 "## Theme background\n\nDefault slide color.\n",
             ),
