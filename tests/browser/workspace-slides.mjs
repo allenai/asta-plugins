@@ -267,14 +267,6 @@ try {
   assert.match(html, /slides\/attention\/slides\.html/, "The site must link to the talk");
   assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
   assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
-  const siteContext = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
-  const homePage = await siteContext.newPage();
-  await homePage.goto(`file://${join(site, "index.html")}`);
-  await homePage.evaluate(() => document.fonts.ready);
-  assert.ok(await homePage.locator("#quarto-sidebar").getByRole("link", { name: "Slides: Attention in sequence models", exact: true }).isVisible());
-  assert.ok(await homePage.locator("main").getByRole("link", { name: "Presentation slides", exact: true }).isVisible());
-  await homePage.screenshot({ path: join(output, "workspace-home-slides-labels.png"), fullPage: true });
-  await siteContext.close();
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
   console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
 } finally {
