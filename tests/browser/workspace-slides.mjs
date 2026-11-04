@@ -124,7 +124,8 @@ try {
     }
     if (name === "no-dividers") {
       assert.equal(await page.evaluate(() => Reveal.getTotalSlides()), 4, "section-slides: false must drop divider slides at build time");
-      assert.equal(await page.locator(".reveal .slides section h1").count(), 0);
+      // Quarto's own title slide keeps its `h1.title`; only `#` divider slides must be gone.
+      assert.equal(await page.locator(".reveal .slides section.level1, .reveal .slides section h1:not(.title)").count(), 0, "No divider slide survives the build");
       await page.evaluate(() => Reveal.slide(1));
       assert.equal(await page.locator(".asta-slides-section:visible").count(), 0, "Headline hidden on an opening slide before the first section");
       await page.evaluate(() => Reveal.slide(2));
