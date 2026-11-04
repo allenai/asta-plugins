@@ -1,3 +1,3 @@
 """Asta - Science literature research tools"""
 
-__version__ = "0.122.0"
+__version__ = "0.123.0"
