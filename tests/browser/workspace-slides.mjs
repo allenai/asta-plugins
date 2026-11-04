@@ -215,7 +215,7 @@ try {
   assert.deepEqual(printFailures, []);
   await printContext.close();
   const html = await readFile(join(site, "index.html"), "utf8");
-  assert.match(html, /talks\/attention\/slides\.html/, "The site must link to the talk");
+  assert.match(html, /slides\/attention\/slides\.html/, "The site must link to the talk");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
   console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
 } finally {
