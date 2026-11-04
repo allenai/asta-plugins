@@ -389,7 +389,51 @@ try {
   assert.deepEqual(restored, { pressed: "false", sidebar: true }, "Esc gives the site back");
   assert.deepEqual(viewerFailures, [], "Deck viewer: no script errors");
   results.push({ name: "deck-viewer-expand", expanded, restored });
+  // Collapsing consumes Esc: nothing after the viewer's capture listener sees it.
+  await viewer.evaluate(() => { window.leakedKeys = []; document.addEventListener("keydown", (event) => window.leakedKeys.push(event.key)); });
+  await viewer.click(".deck-expand");
+  await viewer.locator(".deck-title").click();
+  await viewer.keyboard.press("Escape");
+  const consumed = await viewer.evaluate(() => ({ leaked: window.leakedKeys, pressed: document.querySelector(".deck-expand").getAttribute("aria-pressed") }));
+  assert.deepEqual(consumed, { leaked: [], pressed: "false" }, "Collapsing the viewer consumes Esc");
+  // A scrolled page sizes the deck as an unscrolled one does.
+  const unscrolled = await viewer.evaluate(() => document.querySelector(".deck-frame").style.width);
+  const scrolled = await viewer.evaluate(async () => {
+    document.body.style.paddingBottom = "3000px";
+    scrollTo(0, 150);
+    dispatchEvent(new Event("scroll"));
+    dispatchEvent(new Event("resize"));
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    return { width: document.querySelector(".deck-frame").style.width, scrollY };
+  });
+  assert.ok(scrolled.scrollY > 0, "The page scrolled");
+  assert.equal(scrolled.width, unscrolled, "Scrolling the page doesn't resize the deck");
+  results.push({ name: "deck-viewer-esc-scroll", consumed, unscrolled, scrolled });
   await viewerContext.close();
+  // Served from one origin, Esc pressed inside the deck collapses the viewer
+  // without also opening Reveal's overview.
+  const servedContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await servedContext.route(/^https?:/, (route) => {
+    const url = new URL(route.request().url());
+    if (url.host !== "deck.test") return route.abort();
+    return route.fulfill({ path: join(site, decodeURIComponent(url.pathname)) });
+  });
+  const served = await servedContext.newPage();
+  await served.goto("http://deck.test/slides/attention/index.html");
+  await served.waitForFunction(() => document.querySelector(".deck-frame").contentWindow?.Reveal?.isReady?.());
+  await served.click(".deck-expand");
+  await served.evaluate(() => document.querySelector(".deck-frame").focus());
+  const deckFrame = served.frames().find((frame) => frame !== served.mainFrame());
+  await deckFrame.evaluate(() => { window.focus(); document.body.focus(); });
+  await served.keyboard.press("Escape");
+  const deckEsc = await served.evaluate(() => ({
+    focused: document.activeElement === document.querySelector(".deck-frame"),
+    pressed: document.querySelector(".deck-expand").getAttribute("aria-pressed"),
+    overview: document.querySelector(".deck-frame").contentWindow.Reveal.isOverview()
+  }));
+  assert.deepEqual(deckEsc, { focused: true, pressed: "false", overview: false }, "Esc in the deck collapses the viewer and doesn't open the overview");
+  results.push({ name: "deck-viewer-esc-in-deck", ...deckEsc });
+  await servedContext.close();
   const html = await readFile(join(site, "index.html"), "utf8");
   assert.match(html, /slides\/attention\/index\.html/, "The site must link to the deck's viewer page");
   assert.doesNotMatch(html, /href="[^"]*slides\/attention\/slides\.html"/, "Site links open the viewer page, not the bare deck");

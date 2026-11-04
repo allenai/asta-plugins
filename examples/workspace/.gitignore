@@ -32,4 +32,4 @@ __pycache__/
 /paper/html/index.qmd
 /paper/html/paper-viewer.js
 # Generated slide viewer pages; commit a copy only to customize it.
-/slides/**/index.qmd
+/slides/attention/index.qmd

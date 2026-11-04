@@ -9,6 +9,7 @@ import posixpath
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -67,7 +68,7 @@ def managed_viewer(path: Path, tracked: set[str] | None) -> bool:
 
 
 def remove_orphan_viewers(
-    directories: list[str], tracked: set[str] | None, decks: list[str] = ()
+    directories: list[str], tracked: set[str] | None, decks: Sequence[str] = ()
 ) -> None:
     for root, children, files in os.walk(".", followlinks=False):
         folder = Path(root)
@@ -379,7 +380,13 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
     page.write_text(content.replace(GENERATED_MARKER, marker, 1), encoding="utf-8")
 
 
-DECK_TITLE = re.compile(r"""^title:\s*(['"]?)(?P<title>.+?)\1\s*$""", re.MULTILINE)
+# Only a one-line scalar with nothing YAML would reinterpret: no comment, escape,
+# block scalar, alias, tag or flow collection. Anything else uses the folder name.
+DECK_TITLE = re.compile(
+    r"""^title:[ \t]*(?:"(?P<double>[^"\\\n]+)"|'(?P<single>[^'\n]+)'"""
+    r"""|(?P<plain>[^\s'"#|>&*!%@`{}\[\],?:-][^#'"\n]*?))[ \t]*$""",
+    re.MULTILINE,
+)
 
 
 def deck_title(directory: str) -> str:
@@ -390,7 +397,47 @@ def deck_title(directory: str) -> str:
         text = ""
     front = text.split("\n---", 1)[0] if text.startswith("---") else ""
     match = DECK_TITLE.search(front)
-    return match["title"] if match else Path(directory).name
+    following = front[match.end() :].split("\n", 2)[1:2] if match else []
+    continued = bool(following) and following[0][:1] in {" ", "\t"}
+    title = match and (match["double"] or match["single"] or match["plain"])
+    if not title or continued or (match["plain"] and ": " in title):
+        return Path(directory).name
+    return title.strip()
+
+
+def ignore_deck_viewers(decks: list[str], tracked: set[str]) -> None:
+    """Add each generated deck viewer missing from .gitignore, as the build does for papers."""
+    missing = []
+    for directory in decks:
+        page = f"{directory}/index.qmd"
+        try:
+            result = subprocess.run(
+                ["git", "check-ignore", "-q", "--no-index", page],
+                capture_output=True,
+                check=False,
+            )
+        except OSError:
+            return
+        if result.returncode == 128:
+            return
+        if result.returncode == 1 and managed_viewer(Path(page), tracked):
+            missing.append("/" + re.sub(r"([\\*?\[!# ])", r"\\\1", page))
+    if not missing:
+        return
+    ignore = Path(".gitignore")
+    try:
+        existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+        lines = ["# Generated slide viewer pages; commit a copy only to customize it."]
+        text = ("" if not existing or existing.endswith("\n") else "\n") + "\n".join(
+            lines + missing
+        )
+        with ignore.open("a", encoding="utf-8") as handle:
+            handle.write(text + "\n")
+    except OSError as error:
+        print(f"paper-viewer: could not update .gitignore: {error}", file=sys.stderr)
+        return
+    for line in missing:
+        print(f"paper-viewer: added {line} to .gitignore", file=sys.stderr)
 
 
 def create_deck_viewer(directory: str, tracked: set[str] | None) -> None:
@@ -465,7 +512,8 @@ body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
   // 16:9, as wide as the page allows and short enough that a whole slide is in view.
   const fit = () => {{
     const full = host.classList.contains('deck-full');
-    const top = stage.getBoundingClientRect().top;
+    // From the page's top, not the window's, so a scrolled page fits the same way.
+    const top = stage.getBoundingClientRect().top + (full ? 0 : scrollY);
     const height = Math.max(180, innerHeight - top - (full ? 0 : 16));
     const width = Math.min(stage.clientWidth, height * 16 / 9);
     frame.style.width = width + 'px';
@@ -479,15 +527,20 @@ body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
     fit();
   }};
   expand.addEventListener('click', () => setFull(!host.classList.contains('deck-full')));
+  // Capture phase, so collapsing consumes Esc before Reveal opens its overview.
   const escape = event => {{
-    if (event.key === 'Escape' && host.classList.contains('deck-full')) setFull(false);
+    if (event.key !== 'Escape' || !host.classList.contains('deck-full')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setFull(false);
   }};
-  addEventListener('keydown', escape);
+  addEventListener('keydown', escape, true);
   // Esc pressed while the deck has focus; reachable only when the frame is same-origin.
   frame.addEventListener('load', () => {{
-    try {{ frame.contentWindow.addEventListener('keydown', escape); }} catch (e) {{}}
+    try {{ frame.contentWindow.addEventListener('keydown', escape, true); }} catch (e) {{}}
   }});
   addEventListener('resize', fit);
+  addEventListener('scroll', fit, {{ passive: true }});
   new ResizeObserver(fit).observe(stage);
   fit();
 }})();
@@ -534,11 +587,21 @@ def main() -> None:
         print(f"paper-viewer: {error}", file=sys.stderr)
         raise SystemExit(1) from None
     tracked = tracked_files()
+    paper_html = {f"{directory}/html" for directory in directories}
+    for directory in [deck for deck in decks if deck in paper_html]:
+        print(
+            f"paper-viewer: skipping the deck in {directory}: it is the paper's"
+            " viewer folder; move the deck to keep its viewer page",
+            file=sys.stderr,
+        )
+    decks = [deck for deck in decks if deck not in paper_html]
     remove_orphan_viewers(directories, tracked, decks)
     for directory in directories:
         create_viewer(directory, tracked, main_files.get(directory, "main.tex"))
     for directory in decks:
         create_deck_viewer(directory, tracked)
+    if tracked is not None:
+        ignore_deck_viewers(decks, tracked)
 
 
 if __name__ == "__main__":

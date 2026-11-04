@@ -496,3 +496,88 @@ def test_legacy_discovery_retains_main_tex_source_link(tmp_path, metadata):
     assert (
         "<code>paper/main.tex</code>" in (tmp_path / "paper/html/index.qmd").read_text()
     )
+
+
+def generate_decks(root, decks, papers=()):
+    return subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=root,
+        input=json.dumps({"papers": list(papers), "decks": list(decks)}),
+        capture_output=True,
+        text=True,
+    )
+
+
+def write_deck(root, directory, front="title: Talk"):
+    folder = root / directory
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "slides.qmd").write_text(f"---\n{front}\n---\n\n## One\n")
+
+
+def test_build_ignores_each_deck_viewer_where_its_deck_is(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("_site/\n/slides/old/index.qmd")
+    for deck in ("slides/old", "talks/2026/kickoff", "slides/a b"):
+        write_deck(tmp_path, deck)
+    result = generate_decks(
+        tmp_path, ["slides/old", "talks/2026/kickoff", "slides/a b"]
+    )
+    assert result.returncode == 0, result.stderr
+    ignore = (tmp_path / ".gitignore").read_text()
+    assert ignore.startswith("_site/\n/slides/old/index.qmd\n")
+    assert "/talks/2026/kickoff/index.qmd\n" in ignore
+    assert ignore.count("/slides/old/index.qmd") == 1
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=tmp_path,
+        text=True,
+    )
+    assert "index.qmd" not in status, status
+    # Already ignored: a second build adds nothing.
+    assert generate_decks(tmp_path, ["talks/2026/kickoff"]).returncode == 0
+    assert (tmp_path / ".gitignore").read_text() == ignore
+
+
+def test_committed_deck_viewer_is_not_ignored(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    write_deck(tmp_path, "slides/talk")
+    (tmp_path / "slides/talk/index.qmd").write_text("custom")
+    subprocess.run(["git", "add", "slides/talk/index.qmd"], cwd=tmp_path, check=True)
+    assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
+    assert not (tmp_path / ".gitignore").exists()
+    assert (tmp_path / "slides/talk/index.qmd").read_text() == "custom"
+
+
+def test_deck_in_a_papers_html_folder_is_skipped_with_a_warning(tmp_path):
+    (tmp_path / "paper").mkdir()
+    (tmp_path / "paper/main.tex").write_text("source")
+    write_deck(tmp_path, "paper/html")
+    result = generate_decks(tmp_path, ["paper/html"], papers=["paper"])
+    assert result.returncode == 0, result.stderr
+    assert "skipping the deck in paper/html" in result.stderr
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert "paper-viewer.js" in page or "main.pdf" in page
+    assert "data-deck-viewer" not in page
+
+
+@pytest.mark.parametrize(
+    ("front", "title"),
+    [
+        ("title: Attention in sequence models", "Attention in sequence models"),
+        ('title: "Attention: a talk"', "Attention: a talk"),
+        ("title: 'Plain quoted'", "Plain quoted"),
+        ("title: Talk # draft", "talk"),
+        ("title: 'It''s a talk'", "talk"),
+        ('title: "A \\"quoted\\" talk"', "talk"),
+        ("title: >\n  Folded title", "talk"),
+        ("title: |\n  Literal title", "talk"),
+        ("title: Long\n  continued title", "talk"),
+        ("title: &anchor Talk", "talk"),
+        ("title: [a, b]", "talk"),
+    ],
+)
+def test_deck_title_falls_back_to_the_folder_unless_simple(tmp_path, front, title):
+    write_deck(tmp_path, "slides/talk", front)
+    assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
+    page = (tmp_path / "slides/talk/index.qmd").read_text()
+    assert f"title: {json.dumps(title)}" in page

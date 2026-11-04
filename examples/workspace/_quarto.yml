@@ -7,8 +7,8 @@ project:
     - paper/html/index.qmd
     # The theme's browser check reads this page; it isn't in the navigation.
     - appearance.qmd
-    - "slides/**/slides.qmd"
-    - "slides/**/index.qmd"
+    - "slides/attention/slides.qmd"
+    - "slides/attention/index.qmd"
   resources:
     - paper/html/paper-viewer.js
   preview:
