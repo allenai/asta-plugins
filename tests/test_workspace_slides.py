@@ -167,6 +167,38 @@ def test_workspace_fetches_slides_from_selected_ref_and_preserves_ejected_copy(
     assert extension.read_text().endswith("# Ejected\n")
 
 
+@pytest.mark.skipif(not shutil.which("make"), reason="requires make")
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize(
+    ("deck", "needs_slides"),
+    [("slides/build/slides.qmd", True), ("build/talk/slides.qmd", False)],
+)
+def test_workspace_skips_generated_directories_only_at_project_root(
+    tmp_path, rules, deck, needs_slides
+):
+    source = tmp_path / "release/plugins/asta-tools/skills/workspace/assets/_extensions"
+    for name in ["evidence", "asta-slides"]:
+        shutil.copytree(ASSETS / "_extensions" / name, source / name)
+    archive = tmp_path / "release.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(source.parents[5], arcname="release")
+    project = tmp_path / "project"
+    (project / deck).parent.mkdir(parents=True)
+    (project / deck).write_text("format: asta-slides-revealjs\n")
+    git(project, "init", "-q")
+
+    subprocess.run(
+        ["make", "-f", str(ASSETS / rules), "workspace-assets"],
+        cwd=project,
+        env={**os.environ, "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri()},
+        check=True,
+        capture_output=True,
+    )
+
+    assert (project / "_extensions/evidence").is_dir()
+    assert (project / "_extensions/asta-slides").is_dir() == needs_slides
+
+
 @pytest.mark.parametrize("classes", ["reveal-on-scroll", "quarto-reveal", "revealing"])
 def test_ordinary_page_classes_do_not_turn_sections_into_slides(tmp_path, classes):
     generator = load("what-changed")
