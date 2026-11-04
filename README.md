@@ -86,7 +86,9 @@ For these, the CLI will prompt you to authenticate on first use.
 ## Research project documentation
 
 The [`asta-tools:workspace`](plugins/asta-tools/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project. Reports are generated with Quarto and
-published to GitHub Pages.
+published to GitHub Pages. Projects can keep several Markdown slide decks alongside
+their papers: Quarto reveal.js talks use the Asta theme, build with the site and
+show slide-level changes in PR previews. Each is also a standalone HTML file.
 
 See it in the example workspace, rebuilt from each release: [its site](https://allenai.github.io/asta-plugins/),
 with a LaTeX paper and a saved [What changed](https://allenai.github.io/asta-plugins/demo/) demo;

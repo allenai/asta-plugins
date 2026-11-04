@@ -1,6 +1,6 @@
 ---
 name: workspace
-description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
+description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto, GitHub Pages, dev container), create Markdown slide decks alongside papers, show rendered output, and save iterations. Doesn't handle research execution (use `asta-flows`).
 allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
@@ -97,6 +97,44 @@ Add this only when the user wants to write LaTeX directly. Quarto-to-PDF remains
 4. The shared rules provide `make paper` and `make paper-clean`; `PAPER_DIR=<directory>` selects another paper. Existing projects on older refs can keep their own targets until upgrading to a ref that provides these. Projects can override a target or eject `workspace.mk`.
 5. The managed viewer is `<paper-dir>/html/index.qmd`. Add it to `project.render` only when the project has an explicit render allowlist, and link `<paper-dir>/html/index.html` from the site. Keep existing page lists/navbar entries. Shared viewer generation handles the required JavaScript resource; do not commit viewer source.
 6. Run `make paper` (with `PAPER_DIR` for a non-default directory) and `make check`. If the selected released rules do not yet provide `paper`, use `(cd paper && latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)` with the chosen directory, or LaTeX Workshop instead; do not silently change the project's ref or add a copied Make recipe. The shared CI paper preview already works on these older refs. With Pages enabled, verify the PR preview's paper PDF, its paper page and What changed. One TeX image supports multiple papers: discovery finds `main.tex` with a neighboring `latexmkrc`, including nested directories.
+
+### Slide decks (optional)
+
+When the user asks for slides, use Quarto reveal.js via the managed
+`asta-slides` extension. Copy `assets/slides/slides.qmd` into a deck's own
+folder under `slides/` (for example `slides/findings/slides.qmd`), fill its title and write the
+talk in Markdown. Keep images, optional SCSS, scripts and Reveal plugins beside
+that source. Several deck folders are supported at any depth; `slides/<name>/` is the convention.
+
+Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
+builds. `asta-slides: {section-slides: false}` makes `#` headings name
+sections for the headline only, with no divider slide (as Beamer's `\section`).
+`.dim-previous` optionally dims previous fragments. The extension adds
+the Asta theme, 16:9 dimensions, a slide number (and arrows, when Quarto's
+`controls: auto` shows them) inside the slide, and a headline listing every
+section with the current one highlighted (`section-header: current` shows only
+the current name). `section-header: false` hides the line while preserving the
+title spacing for a deck's own content. No section headings means no section line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
+positioning. For SCSS variables, independent opt-outs and ejection, see
+[`assets/_extensions/asta-slides/README.md`](assets/_extensions/asta-slides/README.md).
+
+Before the first fetch in an existing workspace, append `_extensions/asta-slides/`
+to its `.gitignore` if missing (preserve existing entries). Remove that entry
+only when deliberately committing an ejected extension.
+
+`make workspace-assets` fetches the extension from the selected workspace ref;
+`make check` renders decks with the site. Preserve existing render and navigation
+lists: if either is explicit, add the deck to it. An explicit `project.render`
+list needs the glob `"slides/**/slides.qmd"`, or a single-file
+`quarto render slides/<name>/slides.qmd` runs outside the project and cannot find
+the site-root `_extensions/asta-slides`. The default automatic sidebar
+links decks by title. Each deck publishes as `<deck-dir>/slides.html`; its PR
+preview has the same path, and What changed lists slide-level differences with
+links to the changed slides.
+
+Share the rendered `slides.html` as the standalone page: fonts, scripts and math
+are embedded by default. The claude.ai artifact viewer currently refuses its
+`data:` stylesheets, so sharing on that host is outside this feature's scope.
 
 ### Back claims with supporting evidence
 

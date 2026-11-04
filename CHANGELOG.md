@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Workspaces now support multiple Markdown slide decks in nested `slides.qmd`
+  folders. The `asta-slides` Quarto reveal.js extension uses the Asta theme and
+  bundled fonts, 16:9 slides, controls and slide numbers inside the scaled slide,
+  section labels, optional dimming builds, and standalone math. Decks build and
+  link with the site; PR previews show slide-level diffs. The workspace example
+  includes a talk, with offline and projector geometry checks in CI.
+
 - A paper turns on scheduled Overleaf sync with `"schedule": true` in its
   pairing record. `asta workspace overleaf pull` sets it when it first pairs a
   paper (`--no-schedule` keeps the paper manual); a later `pull --schedule` or

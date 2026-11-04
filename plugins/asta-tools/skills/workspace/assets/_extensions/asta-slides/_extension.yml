@@ -1,0 +1,18 @@
+title: Asta slides
+author: Ai2
+version: 0.1.0
+quarto-required: ">=1.4.0"
+contributes:
+  formats:
+    revealjs:
+      width: 1600
+      height: 900
+      embed-resources: true
+      self-contained-math: true
+      html-math-method: katex
+      slide-number: c
+      controls-layout: bottom-right
+      menu: false
+      progress: false
+      theme: asta-slides.scss
+      filters: [asta-slides.lua]

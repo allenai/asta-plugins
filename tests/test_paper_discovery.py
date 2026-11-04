@@ -358,3 +358,28 @@ def test_main_tex_resolves_multiple_document_classes(tmp_path, child_class):
     assert "add main.tex to choose one" in result["warnings"][0]
     (paper / "article.tex").rename(paper / "main.tex")
     assert discover(tmp_path)["main_files"] == {"paper": "main.tex"}
+
+
+def test_papers_in_clones_and_extra_named_directories_are_preserved(tmp_path):
+    git(tmp_path, "init", "-q")
+    for name in ["overleaf", "venv", "paper-previews"]:
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "main.tex").write_text(r"\documentclass{article}")
+        (directory / "latexmkrc").write_text("")
+        git(tmp_path, "add", name)
+    git(
+        tmp_path,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "papers",
+    )
+    base = git(tmp_path, "rev-parse", "HEAD")
+    git(tmp_path / "overleaf", "init", "-q")
+    result = discover(tmp_path, base)
+    assert result["papers"] == ["overleaf", "paper-previews", "venv"]
+    assert result["removed"] == []

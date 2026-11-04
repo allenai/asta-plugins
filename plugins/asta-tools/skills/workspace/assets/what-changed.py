@@ -1244,6 +1244,220 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     return section, status
 
 
+VOID_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+}
+
+
+class SlideParser(HTMLParser):
+    """Read Reveal's slide container without mistaking content sections for slides."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.tags = []
+        self.nodes = []
+        self.root = None
+
+    def handle_starttag(self, tag, attrs):
+        classes = (dict(attrs).get("class") or "").split()
+        in_reveal = any("reveal" in classes for _, classes in self.tags)
+        if self.root is None and tag == "div" and "slides" in classes and in_reveal:
+            self.root = {"tag": tag, "attrs": dict(attrs), "parts": [], "open": ""}
+            self.nodes.append(self.root)
+        elif self.nodes:
+            node = {
+                "tag": tag,
+                "attrs": dict(attrs),
+                "parts": [],
+                "open": self.get_starttag_text(),
+            }
+            self.nodes[-1]["parts"].append(node)
+            if tag not in VOID_TAGS:
+                self.nodes.append(node)
+        if tag not in VOID_TAGS:
+            self.tags.append((tag, classes))
+
+    def handle_startendtag(self, tag, attrs):
+        if self.nodes:
+            self.nodes[-1]["parts"].append(self.get_starttag_text())
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.nodes) - 1, -1, -1):
+            if self.nodes[index]["tag"] == tag:
+                del self.nodes[index:]
+                break
+        for index in range(len(self.tags) - 1, -1, -1):
+            if self.tags[index][0] == tag:
+                del self.tags[index:]
+                break
+
+    def handle_data(self, data):
+        if self.nodes:
+            self.nodes[-1]["parts"].append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name):
+        self.handle_data(f"&#{name};")
+
+    @staticmethod
+    def markup(node):
+        if isinstance(node, str):
+            return node
+        body = "".join(SlideParser.markup(part) for part in node["parts"])
+        closing = "" if node["tag"] in VOID_TAGS else f"</{node['tag']}>"
+        return node["open"] + body + closing
+
+    def slides(self):
+        if self.root is None:
+            return None
+        slides = []
+        horizontal = [
+            part
+            for part in self.root["parts"]
+            if isinstance(part, dict) and part["tag"] == "section"
+        ]
+        for h, section in enumerate(horizontal):
+            parts = [
+                part
+                for part in section["parts"]
+                if not isinstance(part, str) or part.strip()
+            ]
+            stack = bool(parts) and all(
+                isinstance(part, dict) and part["tag"] == "section" for part in parts
+            )
+            for v, node in enumerate(parts if stack else [section]):
+                ident = node["attrs"].get("id", "")
+                body = normalize("".join(self.markup(part) for part in node["parts"]))
+                slides.append(
+                    {
+                        "id": ident,
+                        "body": body,
+                        "anchor": quote(ident, safe="")
+                        if ident
+                        else f"{h}/{v}"
+                        if stack
+                        else str(h),
+                    }
+                )
+        return slides
+
+
+def reveal_slides(doc):
+    if not doc:
+        return None
+    parser = SlideParser()
+    parser.feed(doc)
+    return parser.slides()
+
+
+def match_slides(old, new):
+    """Anchor unchanged bodies before IDs, which Quarto derives from titles."""
+    matcher = difflib.SequenceMatcher(
+        None,
+        [slide["body"] for slide in old],
+        [slide["body"] for slide in new],
+        autojunk=False,
+    )
+    pairs = {
+        new_index: old_index
+        for a, b, size in matcher.get_matching_blocks()
+        for old_index, new_index in zip(range(a, a + size), range(b, b + size))
+    }
+    old_ids = {slide["id"]: index for index, slide in enumerate(old) if slide["id"]}
+    used = set(pairs.values())
+    pairs.update(
+        {
+            index: old_ids[slide["id"]]
+            for index, slide in enumerate(new)
+            if index not in pairs
+            and slide["id"] in old_ids
+            and old_ids[slide["id"]] not in used
+        }
+    )
+    unmatched_old = [index for index in range(len(old)) if index not in pairs.values()]
+    unmatched_new = [index for index in range(len(new)) if index not in pairs]
+    matcher = difflib.SequenceMatcher(
+        None,
+        [old[i]["body"] for i in unmatched_old],
+        [new[i]["body"] for i in unmatched_new],
+        autojunk=False,
+    )
+    for operation, a, b, c, d in matcher.get_opcodes():
+        if operation in {"equal", "replace"}:
+            pairs.update(zip(unmatched_new[c:d], unmatched_old[a:b]))
+    return pairs
+
+
+def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
+    old = (reveal_slides(old_doc) if old is None else old) or []
+    new = (reveal_slides(new_doc) if new is None else new) or []
+    pairs = match_slides(old, new)
+    entries = [(pairs.get(index), index) for index in range(len(new))]
+    entries.extend(
+        (index, None) for index in range(len(old)) if index not in pairs.values()
+    )
+    changes = []
+    for old_index, new_index in entries:
+        before = old[old_index] if old_index is not None else None
+        after = new[new_index] if new_index is not None else None
+        if before and after and before["body"] == after["body"]:
+            continue
+        index, content = (
+            (new_index, after["body"]) if after else (old_index, before["body"])
+        )
+        caption = (
+            visible_text(strip_volatile(content)).strip().split("\n")[0][:100]
+            or f"Slide {index + 1}"
+        )
+        heading = html.escape(f"Slide {index + 1}: {caption}")
+        if after:
+            heading = f'<a href="{html.escape(link + "#/" + after["anchor"], quote=True)}">{heading}</a>'
+        if before and after:
+            body, changed = diff_content(
+                strip_volatile(before["body"]), strip_volatile(after["body"])
+            )
+            if not changed:
+                body = '<p class="wc-note">Slide markup changed. Open the slide to inspect it.</p>'
+            state = "changed"
+        elif after:
+            body, state = strip_volatile(content), "new"
+        else:
+            body, state = strip_volatile(content), "removed"
+        changes.append(
+            f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
+        )
+    matched_order = [pairs[index] for index in sorted(pairs)]
+    if matched_order != sorted(matched_order):
+        changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
+    if not changes:
+        return None
+    state = "new" if old_doc is None else "removed" if new_doc is None else "changed"
+    label = "Slides · " + page_title(new_doc or old_doc, rel)
+    heading = html.escape(label)
+    if new_doc:
+        heading = f'<a href="{html.escape(link, quote=True)}">{heading}</a>'
+    aid = anchor_id(rel)
+    return (
+        f'<section class="page-diff {state}" id="{aid}"><h2>{heading} <span class="tag {state}">{state}</span></h2>{"".join(changes)}</section>',
+        f'<a href="#{aid}">{html.escape(label)} <span class="tag {state}">{state}</span></a>',
+    )
+
+
 def build(old_root, new_root, preview_url, title, out_path=None):
     sections = []
     toc = []
@@ -1267,13 +1481,38 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 f'<a href="#{section_id}">{label} <span class="tag {paper_status}">'
                 f"{paper_status}</span></a>"
             )
+    slide_sections, slide_toc = [], []
+    documents = {}
     for rel in sorted(set(old_pages) | set(new_pages)):
-        new_doc = (
-            open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
-        )
         old_doc = (
             open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
         )
+        new_doc = (
+            open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
+        )
+        documents[rel] = old_doc, new_doc
+        old_slides, new_slides = reveal_slides(old_doc), reveal_slides(new_doc)
+        # Format transitions need the ordinary page diff to retain both sides.
+        if (old_doc is not None and old_slides is None) or (
+            new_doc is not None and new_slides is None
+        ):
+            continue
+        link = (
+            (preview_url.rstrip("/") + "/" + quote(rel, safe="/"))
+            if preview_url
+            else quote(rel, safe="/")
+        )
+        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides)
+        if result:
+            section, entry = result
+            slide_sections.append(section)
+            slide_toc.append(entry)
+        old_pages.pop(rel, None)
+        new_pages.pop(rel, None)
+    sections.extend(slide_sections)
+    toc.extend(slide_toc)
+    for rel in sorted(set(old_pages) | set(new_pages)):
+        old_doc, new_doc = documents[rel]
         # The generated page lives inside the preview dir, so a bare relative
         # path deep-links to a sibling page without needing the absolute base.
         link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
