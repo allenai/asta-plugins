@@ -124,7 +124,10 @@ only when deliberately committing an ejected extension.
 
 `make workspace-assets` fetches the extension from the selected workspace ref;
 `make check` renders decks with the site. Preserve existing render and navigation
-lists: if either is explicit, add the deck to it. An explicit `project.render`
+lists: if either is explicit, add the deck to it. In an explicit sidebar, label
+the entry `text: "Slides: <title>"` with the deck as `href`, and word links from
+other pages as slides (for example "Presentation slides"), so readers know a
+link opens a deck rather than a page. An explicit `project.render`
 list needs the glob `"slides/**/slides.qmd"`, or a single-file
 `quarto render slides/<name>/slides.qmd` runs outside the project and cannot find
 the site-root `_extensions/asta-slides`. The default automatic sidebar

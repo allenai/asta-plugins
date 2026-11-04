@@ -37,4 +37,6 @@ $border-color: $asta-border !default;
 }
 
 .reveal-viewport { background: $asta-surround; }
-.reveal:not(.has-dark-background):not(.has-light-background) .slides { background: $asta-bg; }
+.reveal-viewport:not(.reveal-scroll) .reveal:not(.has-dark-background):not(.has-light-background) .slides { background: $asta-bg; }
+// Reveal's scroll view (automatic below 435px wide) moves each slide into its own page, so paint each slide.
+.reveal-scroll .scroll-page section:not([data-background-color]):not([data-background-image]):not([data-background-gradient]):not([data-background-video]):not([data-background-iframe]) { background: $asta-bg; }

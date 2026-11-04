@@ -47,7 +47,8 @@ website:
       - index.qmd
       - lit-review/index.qmd
       - paper/html/index.qmd
-      - slides/attention/slides.qmd
+      - text: "Slides: Attention in sequence models"
+        href: slides/attention/slides.qmd
 
 format:
   html:

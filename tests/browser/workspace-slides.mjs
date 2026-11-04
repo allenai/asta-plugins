@@ -214,8 +214,36 @@ try {
   assert.equal(await printPage.locator(".asta-slides-chrome:visible").count(), 0, "Chrome must be hidden in Reveal's print-pdf mode");
   assert.deepEqual(printFailures, []);
   await printContext.close();
+  // Below 435px wide Reveal switches to its scroll view; every slide must still be a panel on the surround.
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const phonePage = await phone.newPage();
+  const phoneFailures = [];
+  phonePage.on("pageerror", (error) => phoneFailures.push(error.stack || error.message));
+  await phonePage.goto(`file://${join(site, "slides/attention/slides.html")}`);
+  await phonePage.waitForFunction(() => window.Reveal?.isReady() && document.querySelector(".reveal-viewport.reveal-scroll .scroll-page section"));
+  const scroll = await phonePage.evaluate(() => {
+    const color = (node) => getComputedStyle(node).backgroundColor;
+    return { surround: color(document.querySelector(".reveal-viewport")), slides: color(Reveal.getSlidesElement()),
+      pages: [...document.querySelectorAll(".scroll-page section")].map((node) => ({ id: node.id, background: color(node) })) };
+  });
+  results.push({ name: "phone-scroll-view", ...scroll });
+  assert.ok(scroll.pages.length >= 4, "Scroll view must lay out every slide");
+  for (const slide of scroll.pages) {
+    assert.equal(slide.background, "rgb(3, 38, 41)", `Scroll-view slide ${slide.id} must be painted in the theme's background`);
+  }
+  assert.notEqual(scroll.surround, "rgb(3, 38, 41)", "The surround must differ from the slide");
+  assert.notEqual(scroll.slides, "rgb(3, 38, 41)", "In scroll view only the slides, not their container, carry the background");
+  await phonePage.screenshot({ path: join(output, "slides-phone-390x844.png") });
+  await phonePage.screenshot({ path: join(output, "slides-phone-390x844-full.png"), fullPage: true });
+  await phonePage.evaluate(() => document.querySelector(".reveal-viewport").scrollTo(0, 2 * innerHeight));
+  await phonePage.waitForTimeout(300);
+  await phonePage.screenshot({ path: join(output, "slides-phone-390x844-scrolled.png") });
+  assert.deepEqual(phoneFailures, [], "Phone scroll view: no script errors");
+  await phone.close();
   const html = await readFile(join(site, "index.html"), "utf8");
   assert.match(html, /slides\/attention\/slides\.html/, "The site must link to the talk");
+  assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
+  assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
   console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
 } finally {
