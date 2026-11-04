@@ -51,7 +51,7 @@ async function lastSlide(page) {
 try {
   for (const viewport of [{ width: 1024, height: 768 }, { width: 1600, height: 900 }, { width: 2100, height: 900 }, { width: 600, height: 1000 }]) {
     const context = await browser.newContext({ viewport });
-    const { page, failures, network } = await open(context, "talks/attention/slides.html");
+    const { page, failures, network } = await open(context, "slides/attention/slides.html");
     const loaded = await page.evaluate(async () => {
       const faces = await document.fonts.load('24px Manrope');
       return faces.length && faces.every((face) => face.status === "loaded");
@@ -105,7 +105,7 @@ try {
     results.push({ viewport, slides });
     await context.close();
   }
-  for (const name of ["no-sections", "disabled", "custom", "rich-content", "current", "controls", "header-off", "transition", "scalar-options"]) {
+  for (const name of ["no-sections", "disabled", "custom", "rich-content", "current", "controls", "header-off", "transition", "scalar-options", "no-dividers"]) {
     const context = await browser.newContext();
     const { page, failures } = await open(context, `${name}.html`, fixtures);
     if (name === "no-sections") assert.equal(await page.locator(".asta-slides-section").count(), 0);
@@ -121,6 +121,30 @@ try {
     if (name === "custom") {
       assert.ok(await page.evaluate(() => window.astaCustomScript && window.astaCustomPlugin), "Deck scripts and Reveal plugins must both run");
       assert.equal(await page.locator(".controls").evaluate((node) => getComputedStyle(node).color), "rgb(255, 163, 28)");
+    }
+    if (name === "no-dividers") {
+      assert.equal(await page.evaluate(() => Reveal.getTotalSlides()), 4, "section-slides: false must drop divider slides at build time");
+      assert.equal(await page.locator(".reveal .slides section h1").count(), 0);
+      await page.evaluate(() => Reveal.slide(1));
+      assert.equal(await page.locator(".asta-slides-section:visible").count(), 0, "Headline hidden on an opening slide before the first section");
+      await page.evaluate(() => Reveal.slide(2));
+      await page.waitForTimeout(300);
+      assert.equal(await page.locator(".asta-slides-section .current").textContent(), "First section");
+      const style = await page.evaluate(() => {
+        const [current, other] = [".asta-slides-section .current", ".asta-slides-section > span:not(.current)"].map((s) => getComputedStyle(document.querySelector(s)));
+        const number = document.querySelector(".slide-number");
+        return { size: current.fontSize, weight: current.fontWeight, current: current.color, other: other.color,
+          number: number.textContent.trim(), numberSize: getComputedStyle(number).fontSize,
+          surround: getComputedStyle(document.body).backgroundColor,
+          slide: getComputedStyle(document.querySelector(".reveal .slides")).backgroundColor };
+      });
+      assert.equal(style.size, "18px");
+      assert.equal(style.weight, "700");
+      assert.notEqual(style.current, style.other, "Current section in the accent, others secondary");
+      assert.equal(style.number, "3", "Slide number shows the number alone");
+      assert.equal(style.numberSize, "16px");
+      assert.notEqual(style.surround, style.slide, "The slide must stand out from its surround");
+      await page.screenshot({ path: join(output, "no-dividers.png") });
     }
     if (name === "current") {
       await lastSlide(page);

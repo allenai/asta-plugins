@@ -10,7 +10,7 @@ contributes:
       embed-resources: true
       self-contained-math: true
       html-math-method: katex
-      slide-number: true
+      slide-number: c
       controls-layout: bottom-right
       menu: false
       progress: false

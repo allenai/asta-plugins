@@ -27,11 +27,12 @@
       deck.on("resize", placeNumber);
       placeNumber();
 
+      // The Lua filter tags each slide with its `#` section at build time.
       const names = [];
       const sections = new Map(deck.getSlides().map((slide) => {
-        const heading = slide.querySelector("h1:not(.title)");
-        if (heading) names.push(heading.textContent.trim());
-        return [slide, names.length - 1];
+        const index = Number(slide.dataset.astaSection) - 1;
+        if (index >= 0) names[index] ??= slide.dataset.astaSectionName ?? "";
+        return [slide, index >= 0 ? index : -1];
       }));
       const mode = option("section-header") === "current" ? "current" : "all";
       if (names.length) document.body.classList.add("asta-slides-with-section");
@@ -65,7 +66,8 @@
           const current = sections.get(slide) ?? -1;
           if (mode === "current") line.textContent = names[current] ?? "";
           items.forEach((item, index) => item.classList.toggle("current", index === current));
-          line.hidden = mode === "current" ? !line.textContent : slide?.id === "title-slide";
+          // Hidden on any opening slide before the first section.
+          line.hidden = current < 0;
           align();
         };
         deck.on("slidechanged", update);

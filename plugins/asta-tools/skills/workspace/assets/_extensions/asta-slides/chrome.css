@@ -13,9 +13,9 @@
   top: 24px;
   left: var(--asta-slides-title-left, 40px);
   right: var(--asta-slides-title-left, 40px);
-  height: 36px;
-  line-height: 36px;
-  font-size: 24px;
+  height: 28px;
+  line-height: 28px;
+  font-size: 18px;
   text-align: left;
   overflow: hidden;
   white-space: nowrap;
@@ -32,7 +32,6 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0.45;
 }
 .reveal .asta-slides-section-all > span.current {
   opacity: 1;
@@ -50,7 +49,7 @@
   right: 24px;
   bottom: 24px;
   font-family: inherit;
-  font-size: 24px;
+  font-size: 16px;
   line-height: 1.2;
   pointer-events: auto;
 }

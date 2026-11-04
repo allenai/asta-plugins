@@ -19,17 +19,25 @@ format: asta-slides-revealjs
 ---
 ```
 
-Use `#` headings for sections and `##` headings for individual slides. By
+Use `#` headings for sections and `##` headings for individual slides. Each `#`
+makes Quarto's divider slide by default; with `asta-slides: {section-slides:
+false}` it only names a section for the headline, as Beamer's `\section` does.
+The Lua filter drops the divider slides at build time, so the HTML, slide
+numbers and What changed see only the slides the audience sees. By
 default a headline across the top of each slide lists every section and
 highlights the current one, as Beamer's section headlines do, so the audience
 sees where they are and what is ahead. Set `section-header: current` to show
 only the current section's name. The headline lines up with the slide titles,
-is hidden on the title slide (and, with `current`, before the first section),
+is hidden on any opening slide before the first section (Quarto's title slide or
+a deck's own), the sections you're not in are in `$asta-secondary`, the current
+one in the accent and bold,
 and is absent from a deck with no sections. Arrows follow Quarto's default
 `controls: auto`: shown only when the deck is embedded or has vertical slides;
 when shown, the slide number sits to their left. The headline, native controls
 and native slide number are children of Reveal's scaled slide container, with
-dimensions in slide units. The default slide is 1600 × 900 (16:9). Quarto's window-edge menu and
+dimensions in slide units. The slide number shows the current number only
+(`slide-number: c`). The slide is a panel in `$asta-bg` on a darker surround
+(`$asta-surround`), so its edges show when the window's shape differs. The default slide is 1600 × 900 (16:9). Quarto's window-edge menu and
 progress bar are off by default; ordinary `menu` and `progress` options can
 re-enable them.
 
@@ -67,6 +75,7 @@ $asta-fg: #0a3235;
 $asta-link: #105257;
 $asta-font: Manrope, Arial, sans-serif;
 $asta-heading-font: $asta-font;
+$asta-surround: #e8ddd0;
 $asta-mono-font: "Roboto Mono", monospace;
 ```
 

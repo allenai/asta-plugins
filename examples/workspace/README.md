@@ -6,7 +6,7 @@ A small example workspace for the [Asta workspace skill](../../plugins/asta-tool
 |------|------|-----------------------|
 | `index.qmd` | Short site home that points to both writing paths. | Yes |
 | `lit-review/index.qmd` | Editable Quarto source for the literature review. | Yes |
-| `talks/attention/slides.qmd` | A three-section reveal.js talk, built with the example. | Yes; standalone `talks/attention/slides.html` |
+| `slides/attention/slides.qmd` | A three-section reveal.js talk, built with the example. | Yes; standalone `slides/attention/slides.html` |
 | `_quarto.yml` | Quarto project config: which files render, bibliography, theme. | — |
 | `references.bib` | Workspace bibliography for the Quarto pages. | — |
 | `evidence.yml` | Verbatim quotes behind the `.ev` claim highlights. | — |

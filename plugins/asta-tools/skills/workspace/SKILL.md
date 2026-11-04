@@ -102,12 +102,14 @@ Add this only when the user wants to write LaTeX directly. Quarto-to-PDF remains
 
 When the user asks for slides, use Quarto reveal.js via the managed
 `asta-slides` extension. Copy `assets/slides/slides.qmd` into a deck's own
-folder (for example `talks/findings/slides.qmd`), fill its title and write the
+folder under `slides/` (for example `slides/findings/slides.qmd`), fill its title and write the
 talk in Markdown. Keep images, optional SCSS, scripts and Reveal plugins beside
-that source. Several deck folders are supported at any depth.
+that source. Several deck folders are supported at any depth; `slides/<name>/` is the convention.
 
 Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
-builds. `.dim-previous` optionally dims previous fragments. The extension adds
+builds. `asta-slides: {section-slides: false}` makes `#` headings name
+sections for the headline only, with no divider slide (as Beamer's `\section`).
+`.dim-previous` optionally dims previous fragments. The extension adds
 the Asta theme, 16:9 dimensions, a slide number (and arrows, when Quarto's
 `controls: auto` shows them) inside the slide, and a headline listing every
 section with the current one highlighted (`section-header: current` shows only
@@ -122,7 +124,10 @@ only when deliberately committing an ejected extension.
 
 `make workspace-assets` fetches the extension from the selected workspace ref;
 `make check` renders decks with the site. Preserve existing render and navigation
-lists: if either is explicit, add the deck to it. The default automatic sidebar
+lists: if either is explicit, add the deck to it. An explicit `project.render`
+list needs the glob `"slides/**/slides.qmd"`, or a single-file
+`quarto render slides/<name>/slides.qmd` runs outside the project and cannot find
+the site-root `_extensions/asta-slides`. The default automatic sidebar
 links decks by title. Each deck publishes as `<deck-dir>/slides.html`; its PR
 preview has the same path, and What changed lists slide-level differences with
 links to the changed slides.

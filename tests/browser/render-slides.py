@@ -50,6 +50,11 @@ def render(site):
                 "# Section\n\n## One\n\nText.\n\n## Two\n\nText.\n",
             ),
             (
+                "no-dividers",
+                "asta-slides:\n  section-slides: false\n",
+                "## Opening\n\nOwn title slide.\n\n# First section\n\n## One\n\nText.\n\n# Second section\n\n## Two\n\nText.\n",
+            ),
+            (
                 "header-off",
                 "asta-slides:\n  section-header: false\n",
                 "# Section\n\n## Content\n\nText.\n",

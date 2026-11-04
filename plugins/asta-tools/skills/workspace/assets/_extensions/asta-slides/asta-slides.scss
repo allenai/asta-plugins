@@ -8,6 +8,9 @@ $asta-mono-font: "Roboto Mono", monospace !default;
 $asta-heading-font: $asta-font !default;
 $asta-subtle: rgba($asta-fg, 0.1) !default;
 $asta-border: rgba($asta-fg, 0.2) !default;
+$asta-secondary: rgba($asta-fg, 0.55) !default;
+// The window around the slide, a shade darker so the slide's edges show.
+$asta-surround: darken($asta-bg, 4%) !default;
 
 // Let Quarto derive its code, table, callout and title styles from this palette.
 $body-bg: $asta-bg !default;
@@ -27,6 +30,11 @@ $border-color: $asta-border !default;
 
 /*-- scss:rules --*/
 .reveal {
-  .controls, .asta-slides-section { color: $asta-link; }
-  .slide-number { background: transparent; color: $asta-fg; }
+  .controls { color: $asta-link; }
+  .asta-slides-section { color: $asta-secondary; }
+  .asta-slides-section .current { color: $asta-link; }
+  .slide-number { background: transparent; color: $asta-secondary; }
 }
+
+.reveal-viewport { background: $asta-surround; }
+.reveal:not(.has-dark-background):not(.has-light-background) .slides { background: $asta-bg; }
