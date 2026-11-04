@@ -26,6 +26,13 @@ def render(site):
         for name, metadata, body in [
             ("no-sections", "", "## A slide without sections\n\nText.\n"),
             (
+                "backgrounds",
+                "",
+                '## Shorthand background {background="#105257"}\n\nCustom slide color.\n\n'
+                '## Explicit background {background-color="#0a3235"}\n\nCustom slide color.\n\n'
+                "## Theme background\n\nDefault slide color.\n",
+            ),
+            (
                 "disabled",
                 "format:\n  asta-slides-revealjs:\n    theme: default\nasta-slides:\n  section-header: false\n  controls: false\n  slide-number: false\n  dim-previous: false\n",
                 "# Section\n\n## Content\n\nText.\n",

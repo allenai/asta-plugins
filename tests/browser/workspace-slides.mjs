@@ -239,11 +239,42 @@ try {
   await phonePage.waitForTimeout(300);
   await phonePage.screenshot({ path: join(output, "slides-phone-390x844-scrolled.png") });
   assert.deepEqual(phoneFailures, [], "Phone scroll view: no script errors");
+  const { page: backgroundPage, failures: backgroundFailures, network: backgroundNetwork } = await open(phone, "backgrounds.html", fixtures);
+  await backgroundPage.waitForFunction(() => document.querySelector(".reveal-viewport.reveal-scroll .scroll-page section"));
+  const backgrounds = await backgroundPage.evaluate(() => {
+    return Reveal.getSlides().map((slide) => ({ id: slide.id,
+      shorthand: slide.getAttribute("data-background"), explicit: slide.getAttribute("data-background-color"),
+      panel: getComputedStyle(slide).backgroundColor,
+      background: getComputedStyle(Reveal.getSlideBackground(slide)).backgroundColor }));
+  });
+  assert.equal(backgrounds.find((slide) => slide.id === "shorthand-background").shorthand, "#105257", "The fixture must exercise Reveal's data-background shorthand");
+  for (const slide of backgrounds) {
+    if (slide.shorthand || slide.explicit) {
+      assert.equal(slide.panel, "rgba(0, 0, 0, 0)", `${slide.id}: the theme must not cover a custom background`);
+      assert.equal(slide.background, slide.shorthand ? "rgb(16, 82, 87)" : "rgb(10, 50, 53)", `${slide.id}: Reveal must paint the custom background`);
+    } else {
+      assert.equal(slide.panel, "rgb(3, 38, 41)", `${slide.id}: ordinary slides must keep the theme background`);
+    }
+  }
+  results.push({ name: "phone-custom-backgrounds", slides: backgrounds });
+  await backgroundPage.locator("#shorthand-background").evaluate((node) => node.closest(".scroll-page").scrollIntoView());
+  await backgroundPage.waitForTimeout(300);
+  await backgroundPage.screenshot({ path: join(output, "slides-phone-custom-background.png") });
+  assert.deepEqual(backgroundFailures, [], "Custom phone backgrounds: no script errors");
+  assert.deepEqual(backgroundNetwork, [], "Custom phone backgrounds work offline");
   await phone.close();
   const html = await readFile(join(site, "index.html"), "utf8");
   assert.match(html, /slides\/attention\/slides\.html/, "The site must link to the talk");
   assert.match(html, />Presentation slides</, "The overview must say the link opens slides");
   assert.match(html, /Slides: Attention in sequence models/, "The sidebar must label the deck as slides");
+  const siteContext = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+  const homePage = await siteContext.newPage();
+  await homePage.goto(`file://${join(site, "index.html")}`);
+  await homePage.evaluate(() => document.fonts.ready);
+  assert.ok(await homePage.locator("#quarto-sidebar").getByRole("link", { name: "Slides: Attention in sequence models", exact: true }).isVisible());
+  assert.ok(await homePage.locator("main").getByRole("link", { name: "Presentation slides", exact: true }).isVisible());
+  await homePage.screenshot({ path: join(output, "workspace-home-slides-labels.png"), fullPage: true });
+  await siteContext.close();
   await writeFile(join(output, "slide-checks.json"), JSON.stringify(results, null, 2));
   console.log("Slide checks passed: offline fonts/math, section headline and alignment, controls placement, dim builds, opt-outs, SCSS/scripts/plugins, and chrome containment at four aspect ratios.");
 } finally {
