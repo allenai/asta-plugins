@@ -16,8 +16,4 @@ contributes:
       progress: false
       theme: asta-slides.scss
       filters: [asta-slides.lua]
-      revealjs-plugins:
-        - name: AstaSlides
-          path: .
-          script:
-            - path: asta-slides.js
+      revealjs-plugins: [.]
