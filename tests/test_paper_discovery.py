@@ -70,6 +70,7 @@ def test_added_removed_and_demoted_papers_and_nested_tex(tmp_path):
         "main_files": dict.fromkeys(
             ["added", "kept", "nested/sub", "paper"], "main.tex"
         ),
+        "decks": [],
         "removed": ["demoted", "gone", "nested/removed"],
         "warnings": [],
     }
@@ -94,10 +95,34 @@ def test_discovery_skips_invalid_names_but_keeps_valid_papers(tmp_path):
     assert json.loads(result.stdout) == {
         "papers": ["paper"],
         "main_files": {"paper": "main.tex"},
+        "decks": [],
         "removed": [],
         "warnings": ["Skipped invalid paper directory name: 'bad\\nname'"],
     }
     assert "Skipped invalid paper directory" in result.stderr
+
+
+def test_discovery_lists_decks_at_any_depth_but_not_in_generated_folders(tmp_path):
+    repo = tmp_path / "repo"
+    for deck in (
+        "slides/attention",
+        "slides/build",
+        "talks/2026/kickoff",
+        "build/talk",
+        "_extensions/asta-slides",
+        "slides/node_modules/pkg",
+        ".hidden/talk",
+    ):
+        (repo / deck).mkdir(parents=True)
+        (repo / deck / "slides.qmd").write_text("---\ntitle: Talk\n---\n")
+    (repo / "slides/notes").mkdir()
+    (repo / "slides/notes/index.qmd").write_text("not a deck")
+
+    assert discover(repo)["decks"] == [
+        "slides/attention",
+        "slides/build",
+        "talks/2026/kickoff",
+    ]
 
 
 def test_discovery_keeps_current_papers_when_base_is_missing(tmp_path):
