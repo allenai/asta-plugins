@@ -346,14 +346,19 @@ def test_embedded_slide_images_do_not_inflate_the_diff():
 
 def _site_with_deck(root, render, body):
     shutil.copytree(
-        ASSETS / "_extensions/asta-slides", root / "_extensions/asta-slides", dirs_exist_ok=True
+        ASSETS / "_extensions/asta-slides",
+        root / "_extensions/asta-slides",
+        dirs_exist_ok=True,
     )
-    (root / "_quarto.yml").write_text(f"project:\n  type: website\n{render}format: html\n")
+    (root / "_quarto.yml").write_text(
+        f"project:\n  type: website\n{render}format: html\n"
+    )
     (root / "index.qmd").write_text("---\ntitle: Home\n---\n\nWorkspace.\n")
     deck = root / "slides/workspace"
     deck.mkdir(parents=True, exist_ok=True)
     (deck / "slides.qmd").write_text(
-        "---\ntitle: A talk\nformat: asta-slides-revealjs\nasta-slides:\n  section-slides: false\n---\n\n" + body
+        "---\ntitle: A talk\nformat: asta-slides-revealjs\nasta-slides:\n  section-slides: false\n---\n\n"
+        + body
     )
     return deck
 
@@ -362,12 +367,18 @@ DECK = "## Opening\n\nOwn title.\n\n# First\n\n## One\n\nText.\n\n# Second\n\n##
 
 
 @pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
-@pytest.mark.parametrize("command", [["render"], ["render", "slides/workspace/slides.qmd"]])
+@pytest.mark.parametrize(
+    "command", [["render"], ["render", "slides/workspace/slides.qmd"]]
+)
 def test_deck_two_folders_down_finds_site_extension(tmp_path, command):
     _site_with_deck(
-        tmp_path, '  render:\n    - index.qmd\n    - "slides/**/slides.qmd"\n', DECK.format("Text.")
+        tmp_path,
+        '  render:\n    - index.qmd\n    - "slides/**/slides.qmd"\n',
+        DECK.format("Text."),
     )
-    result = subprocess.run(["quarto", *command], cwd=tmp_path, capture_output=True, text=True)
+    result = subprocess.run(
+        ["quarto", *command], cwd=tmp_path, capture_output=True, text=True
+    )
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "_site/slides/workspace/slides.html").exists()
 
@@ -379,7 +390,9 @@ def test_section_slides_false_drops_dividers_and_what_changed_numbers_as_deck(tm
         _site_with_deck(tmp_path, "", DECK.format(text))
         subprocess.run(
             ["quarto", "render", "slides/workspace/slides.qmd"],
-            cwd=tmp_path, check=True, capture_output=True,
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
         )
         rendered.append((tmp_path / "_site/slides/workspace/slides.html").read_text())
     generator = load("what-changed")
