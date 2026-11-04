@@ -46,13 +46,13 @@ def render(site):
             (
                 "vertical-backgrounds",
                 "",
-                '```{=html}\n<section data-background="#233e58">\n'
+                '```{=html}\n<!-- vertical-stacks-start -->\n<section data-background="#233e58">\n'
                 '<section id="inherited-one"><h2>Inherited background one</h2><p>Parent stack color.</p></section>\n'
                 '<section id="inherited-two"><h2>Inherited background two</h2><p>The same parent color.</p></section>\n'
                 "</section>\n<section>\n"
                 '<section id="ordinary-one"><h2>Ordinary vertical slide</h2><p>The theme panel remains.</p></section>\n'
                 '<section id="ordinary-two"><h2>Another ordinary slide</h2><p>The same theme panel.</p></section>\n'
-                "</section>\n```\n",
+                "</section>\n<!-- vertical-stacks-end -->\n```\n",
             ),
             (
                 "disabled",
@@ -121,7 +121,20 @@ def render(site):
             subprocess.run(["quarto", "render", path.name], cwd=project, check=True)
             target = site / f"{name}.html"
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path.with_suffix(".html"), target)
+            if name == "vertical-backgrounds":
+                # Pandoc wraps a raw-only body in an implicit slide. Unwrap it so
+                # the fixture exercises native Reveal stacks at the top level.
+                html = path.with_suffix(".html").read_text()
+                start = html.index("<!-- vertical-stacks-start -->")
+                end = html.index("<!-- vertical-stacks-end -->") + len(
+                    "<!-- vertical-stacks-end -->"
+                )
+                wrapper = html.rfind("<section", 0, start)
+                assert html[wrapper:start].strip() == '<section class="slide level2">'
+                close = html.index("</section>", end) + len("</section>")
+                target.write_text(html[:wrapper] + html[start:end] + html[close:])
+            else:
+                shutil.copyfile(path.with_suffix(".html"), target)
 
 
 if __name__ == "__main__":
