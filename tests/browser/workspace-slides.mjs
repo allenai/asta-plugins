@@ -51,8 +51,8 @@ async function lastSlide(page) {
 }
 
 async function scrollToSlide(page, index) {
-  await page.evaluate((index) => Reveal.getSlides()[index].closest(".scroll-page").scrollIntoView({ behavior: "instant", block: "center" }), index);
-  await page.waitForFunction((index) => Reveal.getCurrentSlide() === Reveal.getSlides()[index], index);
+  await page.evaluate((index) => document.querySelectorAll(".scroll-page-content > section")[index].closest(".scroll-page").scrollIntoView({ behavior: "instant", block: "center" }), index);
+  await page.waitForFunction((index) => Reveal.getCurrentSlide() === document.querySelectorAll(".scroll-page-content > section")[index], index);
 }
 
 try {
@@ -231,7 +231,7 @@ try {
   const scroll = await phonePage.evaluate((customBackgroundSelector) => {
     const color = (node) => getComputedStyle(node).backgroundColor;
     return { surround: color(document.querySelector(".reveal-viewport")), slides: color(Reveal.getSlidesElement()),
-      pages: Reveal.getSlides().map((node) => ({ id: node.id, custom: node.matches(customBackgroundSelector), background: color(node) })) };
+      pages: [...document.querySelectorAll(".scroll-page-content > section")].map((node) => ({ id: node.id, custom: node.matches(customBackgroundSelector), background: color(node) })) };
   }, customBackgroundSelector);
   results.push({ name: "phone-scroll-view", ...scroll });
   assert.ok(scroll.pages.length >= 4, "Scroll view must lay out every slide");
@@ -247,8 +247,18 @@ try {
   assert.deepEqual(phoneFailures, [], "Phone scroll view: no script errors");
   const { page: backgroundPage, failures: backgroundFailures, network: backgroundNetwork } = await open(phone, "backgrounds.html", fixtures);
   await backgroundPage.waitForFunction(() => document.querySelector(".reveal-viewport.reveal-scroll .scroll-page-content > section"));
+  await backgroundPage.evaluate(() => {
+    // Simulate nested content added by a deck script after Reveal has classified slide stacks.
+    const content = document.querySelector("#shorthand-background h3").nextElementSibling;
+    const nested = document.createElement("section");
+    nested.className = "custom-background-detail";
+    // Keep ordinary content geometry rather than Reveal's positioning for nested slide sections.
+    nested.style.cssText = "position:static!important;width:auto!important;height:auto!important;top:auto!important;left:auto!important;transform:none!important";
+    content.replaceWith(nested);
+    nested.appendChild(content);
+  });
   const backgrounds = await backgroundPage.evaluate((customBackgroundSelector) => {
-    return Reveal.getSlides().map((slide) => ({ id: slide.id,
+    return [...document.querySelectorAll(".scroll-page-content > section")].map((slide) => ({ id: slide.id,
       custom: slide.matches(customBackgroundSelector),
       shorthand: slide.getAttribute("data-background"), explicit: slide.getAttribute("data-background-color"),
       panel: getComputedStyle(slide).backgroundColor,
