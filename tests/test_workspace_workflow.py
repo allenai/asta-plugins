@@ -1705,3 +1705,34 @@ def test_failed_paper_note_includes_log_of_non_main_tex_file(tmp_path: Path) -> 
     assert result.returncode != 0
     note = (project / "_site/paper-previews/paper/build-failed.txt").read_text()
     assert "iclr2027_conference.tex:9: Emergency stop." in note
+
+
+@pytest.mark.parametrize("separator", ["", "\n"])
+def test_preview_noindex_keeps_embedded_slide_javascript_intact(tmp_path, separator):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    publish = next(
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Publish to gh-pages"
+    )
+    start = publish.index('find "$tmp/pr-preview/pr-$PR_NUMBER"')
+    injection = "\n".join(publish[start:].splitlines()[:2])
+    # The notes plugin embeds a second HTML document in a JavaScript string.
+    script = (
+        '<script>document.write("<head><title>Speaker View</title></head>")</script>'
+    )
+    original = f"<!doctype html><html><head>{separator}{script}</head><body>Slide</body></html>"
+    target = tmp_path / "pr-preview/pr-123/slides.html"
+    target.parent.mkdir(parents=True)
+    target.write_text(original)
+    subprocess.run(
+        ["bash", "-eu", "-c", injection],
+        env={"PATH": os.environ["PATH"], "tmp": str(tmp_path), "PR_NUMBER": "123"},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    actual = target.read_text()
+    assert script in actual
+    meta = '<meta name="robots" content="noindex, nofollow">'
+    assert actual == original.replace("<head>", "<head>" + meta, 1)
