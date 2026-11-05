@@ -210,7 +210,7 @@ jobs:
             body="The post-release browser checks failed; deployment was not attempted. Run: $RUN"
           elif [ "$DEPLOY_RESULT" = failure ]; then
             body="The post-release example deployment failed after a successful build. The live site's state is unconfirmed; inspect the deployment before retrying. Run: $RUN"
-          elif [ "$GH_PAGES_RESULT" = failure ]; then
+          elif [ "${GH_PAGES_RESULT:-}" = failure ]; then
             body="The release deployed to Pages, but writing its build to the gh-pages root failed. PR previews are unaffected. Run: $RUN"
           else
             echo 'No example build or deployment failure to report'

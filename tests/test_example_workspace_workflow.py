@@ -228,3 +228,24 @@ def test_shared_asset_changes_trigger_the_example_check():
     # PyYAML's YAML 1.1 loader interprets the GitHub Actions key 'on' as True.
     paths = WORKFLOW[True]["pull_request"]["paths"]
     assert "plugins/asta-tools/skills/workspace/assets/**" in paths
+
+
+def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflow():
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    wf = yaml.safe_load((root / ".github/workflows/example-preview.yml").read_text())
+    trigger = wf[True]["pull_request"]  # PyYAML reads the `on:` key as True
+    assert trigger["types"] == ["opened", "synchronize", "reopened", "closed"]
+    paths = trigger["paths"]
+    assert "examples/workspace/**" in paths
+    assert "plugins/asta-tools/skills/workspace/assets/**" in paths
+    assert not any(p.startswith("plugins/asta-tools/skills/workspace/SKILL") for p in paths)
+    job = wf["jobs"]["docs"]
+    assert job["uses"] == "./.github/workflows/workspace-quarto-site.yml"
+    assert job["with"]["site-dir"] == "examples/workspace"
+
+    shared = yaml.safe_load((root / ".github/workflows/workspace-quarto-site.yml").read_text())
+    assert shared[True]["workflow_call"]["inputs"]["site-dir"]["default"] == "."
+    build = shared["jobs"]["build"]
+    assert build["defaults"]["run"]["working-directory"] == "${{ inputs.site-dir }}"
