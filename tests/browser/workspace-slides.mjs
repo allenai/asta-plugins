@@ -507,6 +507,31 @@ try {
   assert.ok(scrolled.scrollY > 0, "The page scrolled");
   assert.equal(scrolled.width, unscrolled, "Scrolling the page doesn't resize the deck");
   results.push({ name: "deck-viewer-esc-scroll", consumed, unscrolled, scrolled });
+  // A short window: the frame fits the height left below the bar, so a whole slide
+  // stays in view, and only below the legible size does the page scroll.
+  const shortFit = async (room) => {
+    await viewer.setViewportSize({ width: 1280, height: 800 });
+    await viewer.goto(`file://${join(site, "slides/attention/index.html")}`);
+    await viewer.waitForFunction(() => parseFloat(document.querySelector(".deck-frame").style.width) > 0);
+    const top = await viewer.evaluate(() => document.querySelector(".deck-stage").getBoundingClientRect().top + scrollY);
+    await viewer.setViewportSize({ width: 1280, height: Math.ceil(top + 16 + room) });
+    await viewer.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    return viewer.evaluate(() => {
+      const frame = document.querySelector(".deck-frame").getBoundingClientRect();
+      return { top: frame.top, bottom: frame.bottom, height: frame.height, ratio: frame.width / frame.height,
+        viewport: innerHeight, scrolls: document.documentElement.scrollHeight > innerHeight };
+    });
+  };
+  const short = await shortFit(160);
+  assert.ok(Math.abs(short.height - 160) < 1.5, `A short window fits the frame to the height left (got ${short.height})`);
+  assert.ok(Math.abs(short.ratio - 16 / 9) < 0.01, `The short frame stays 16:9 (got ${short.ratio})`);
+  assert.ok(short.top >= 0 && short.bottom <= short.viewport + 0.5, "A short window keeps the whole slide in view");
+  await viewer.screenshot({ path: join(output, "deck-viewer-short.png") });
+  const tiny = await shortFit(80);
+  assert.ok(Math.abs(tiny.height - 135) < 1.5, `Below the legible size the frame stops shrinking (got ${tiny.height})`);
+  assert.ok(tiny.scrolls, "Below the legible size the page scrolls");
+  results.push({ name: "deck-viewer-short", short, tiny });
+  assert.deepEqual(viewerFailures, [], "Deck viewer: no script errors after the short-window checks");
   await viewerContext.close();
   // Served from one origin, Esc pressed inside the deck collapses the viewer
   // without also opening Reveal's overview.

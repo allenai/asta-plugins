@@ -524,11 +524,14 @@ body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
   const frame = host.querySelector('.deck-frame');
   const expand = host.querySelector('.deck-expand');
   // 16:9, as wide as the page allows and short enough that a whole slide is in view.
+  // Below `legible` (a 240x135 slide, titles still readable) it stops shrinking and
+  // the page scrolls instead.
+  const legible = 135;
   const fit = () => {{
     const full = host.classList.contains('deck-full');
     // From the page's top, not the window's, so a scrolled page fits the same way.
     const top = stage.getBoundingClientRect().top + (full ? 0 : scrollY);
-    const height = Math.max(180, innerHeight - top - (full ? 0 : 16));
+    const height = Math.max(legible, innerHeight - top - (full ? 0 : 16));
     const width = Math.min(stage.clientWidth, height * 16 / 9);
     frame.style.width = width + 'px';
     frame.style.height = width * 9 / 16 + 'px';
@@ -570,6 +573,8 @@ body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
   const usesKeys = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
     '[role="textbox"], [role="combobox"], [role="listbox"], [role="slider"], [role="spinbutton"], ' +
     '[role="menu"], [role="menubar"], [role="tablist"], [role="tree"], [role="grid"]';
+  // Arrows, Home and End are forwarded even from a focused link or button: the page
+  // is fitted to the window, so they have no other use here. Space still activates.
   const activates = 'a[href], button, summary, [role="button"], [role="link"]';
   addEventListener('keydown', event => {{
     if (!keys.has(event.key) || event.defaultPrevented || event.isComposing
