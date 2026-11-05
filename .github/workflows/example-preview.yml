@@ -19,6 +19,7 @@ jobs:
     with:
       site-dir: examples/workspace
       paper-strict: true
+      artifact-command: make demo-build
       render-paths: |
         examples/workspace/**
         plugins/asta-tools/skills/workspace/assets/**
