@@ -268,7 +268,71 @@ def test_release_selection_runs_under_the_shared_pages_lock():
         "queue": "max",
     }
     assert deploy["steps"][0]["id"] == "release"
-    assert deploy["steps"][1]["if"] == "steps.release.outputs.current == 'true'"
+    source = next(step for step in deploy["steps"] if step.get("id") == "source")
+    deployment = next(
+        step for step in deploy["steps"] if step.get("id") == "deployment"
+    )
+    assert source["if"] == "steps.release.outputs.current == 'true'"
+    assert deployment["if"] == (
+        "steps.release.outputs.current == 'true' && steps.source.outputs.mode == 'workflow'"
+    )
+    # A skipped Actions step leaves deploy successful, so branch-mode releases
+    # still write the root and explicitly request/verify a Pages build.
+    root = WORKFLOW["jobs"]["publish-gh-pages"]
+    assert "needs.deploy.result == 'success'" in root["if"]
+    assert "needs.deploy.outputs.current == 'true'" in root["if"]
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        ({"build_type": "workflow"}, "workflow"),
+        (
+            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+            "legacy",
+        ),
+        ({"build_type": "legacy", "source": {"branch": "main", "path": "/"}}, ""),
+        (
+            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/docs"}},
+            "",
+        ),
+        ({"build_type": "unknown"}, ""),
+        ({}, ""),
+        (None, ""),  # API failure must not guess a mode or change the source.
+    ],
+)
+def test_release_uses_the_configured_pages_mode_without_changing_it(
+    tmp_path, config, expected
+):
+    source = next(
+        step
+        for step in WORKFLOW["jobs"]["deploy"]["steps"]
+        if step.get("id") == "source"
+    )
+    gh = tmp_path / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\n"
+        + "import sys\n"
+        + "assert sys.argv[1:] == ['api', 'repos/owner/project/pages']\n"
+        + ("sys.exit(1)\n" if config is None else f"print({json.dumps(config)!r})\n")
+    )
+    gh.chmod(0o755)
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-c", source["run"]],
+        env={
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "owner/project",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == (0 if expected else 1), result.stderr
+    assert (output.read_text() if output.exists() else "") == (
+        f"mode={expected}\n" if expected else ""
+    )
 
 
 def test_shared_asset_changes_trigger_the_example_check():
@@ -458,6 +522,7 @@ def test_pages_build_cannot_verify_a_descendant_when_comparison_fails(tmp_path):
     )
     assert result.returncode != 0
     assert "Pages published" not in result.stdout
+    assert "::error::Could not compare Pages build new-sha" in result.stdout
 
 
 @pytest.mark.parametrize("status", [0, 403, 404, 500])

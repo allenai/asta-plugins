@@ -20,9 +20,16 @@ let browser;
 try {
   const lines = createInterface({ input: server.stdout });
   const port = await new Promise((done, fail) => {
-    lines.once("line", done);
-    server.once("error", fail);
-    server.once("exit", code => fail(new Error(`server exited: ${code}`)));
+    const cleanup = () => {
+      server.off("error", error);
+      server.off("exit", exit);
+      lines.close();
+    };
+    const error = err => { cleanup(); fail(err); };
+    const exit = code => error(new Error(`server exited: ${code}`));
+    lines.once("line", port => { cleanup(); done(port); });
+    server.once("error", error);
+    server.once("exit", exit);
   });
   const base = `http://127.0.0.1:${port}`;
   browser = await chromium.launch({ headless: true });
@@ -32,7 +39,7 @@ try {
     ["what-changed.html", "example-preview-what-changed.png"],
     ["slides/attention/index.html", "example-preview-deck-viewer.png"],
   ]) {
-    const response = await page.goto(`${base}/${path}`, { waitUntil: "networkidle" });
+    const response = await page.goto(`${base}/${path}`, { waitUntil: "domcontentloaded" });
     assert.equal(response.status(), 200, path);
     if (path === "what-changed.html") {
       assert.match(await page.locator("body").innerText(), /What changed/i);
@@ -48,6 +55,7 @@ try {
       await frame.locator(".reveal .slides section.present").first().waitFor();
       assert.ok(await page.locator("#quarto-sidebar").isVisible());
     }
+    await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: resolve(output, screenshot), fullPage: true });
   }
 } finally {

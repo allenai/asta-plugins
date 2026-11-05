@@ -1547,7 +1547,11 @@ def test_preview_comment_reports_asta_plugins_version_change(
     assert "comment block completed" in result.stdout
     lines = comment_body.read_text().splitlines()
     assert lines[0] == "📄 Preview: https://example/pr-preview/pr-7/"
-    assert lines[1:] == ([expected] if expected else [])
+    assert lines[1:-2] == ([expected] if expected else [])
+    assert lines[-2:] == [
+        "",
+        "This preview is marked noindex; the main site stays indexable.",
+    ]
     commands = api_log.read_text().splitlines()
     if existing_comment:
         assert any("issues/comments/123 -X PATCH" in command for command in commands)

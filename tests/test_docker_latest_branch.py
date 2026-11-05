@@ -97,12 +97,12 @@ def test_refuses_a_diverged_branch(release):
 
 def test_write_access_is_confined_to_branch_publication_jobs():
     jobs = WORKFLOW["jobs"]
-    writers = [
+    writers = {
         name
         for name, job in jobs.items()
         if job["permissions"].get("contents") == "write"
-    ]
-    assert writers == ["latest-branch", "example-workspace"]
+    }
+    assert writers == {"latest-branch", "example-workspace"}
     example = jobs["example-workspace"]
     assert example["uses"] == "./.github/workflows/example-workspace.yml"
     assert example["needs"] == "latest"

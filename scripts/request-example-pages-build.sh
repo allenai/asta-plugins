@@ -31,7 +31,10 @@ for ((poll=0; poll<${PAGES_POLLS:-60}; poll++)); do
     built|errored)
       built_commit=$(jq -r '.commit // empty' <<< "$result")
       if [ -n "$built_commit" ] && [ "$built_commit" != "$commit" ]; then
-        relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$built_commit" --jq .status)
+        relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$built_commit" --jq .status) || {
+          echo "::error::Could not compare Pages build $built_commit with published commit $commit"
+          exit 1
+        }
         case "$relation" in
           ahead|identical) ;;
           *) sleep 5; continue ;;

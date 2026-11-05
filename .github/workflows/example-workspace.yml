@@ -142,11 +142,31 @@ jobs:
             echo "Skipping $REF: newest final release is $newest"
             echo 'current=false' >> "$GITHUB_OUTPUT"
           fi
-      - id: deployment
+      # The administrator changes the source only after the first release root
+      # exists. Later releases must stop using Actions deployment in branch mode.
+      - name: Read the configured Pages publication mode
+        id: source
         if: steps.release.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          config=$(gh api "repos/$GITHUB_REPOSITORY/pages") || {
+            echo '::error::Could not read the Pages publication mode'
+            exit 1
+          }
+          mode=$(jq -er 'if .build_type == "workflow" then "workflow"
+            elif .build_type == "legacy" and .source.branch == "gh-pages" and .source.path == "/" then "legacy"
+            else error("Expected Actions deployment or the gh-pages root") end' <<< "$config") || {
+            echo '::error::Unsupported Pages source; leaving its configuration unchanged'
+            exit 1
+          }
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+      - id: deployment
+        if: steps.release.outputs.current == 'true' && steps.source.outputs.mode == 'workflow'
         uses: actions/deploy-pages@v4
 
-  # Also write the release's build to the gh-pages root, keeping pr-preview/,
+  # Write the release's build to the gh-pages root, keeping pr-preview/,
   # so Pages can serve the gh-pages branch that example-preview.yml publishes
   # PR previews to. Pages keeps serving the Actions deployment until switched.
   publish-gh-pages:

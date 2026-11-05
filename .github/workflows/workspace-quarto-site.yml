@@ -514,6 +514,7 @@ jobs:
               fi
               body=$(printf '%s\n⬆️ asta-plugins version: %s → %s (%s)' "$body" "$old_label" "$new_label" "$link")
             fi
+            body=$(printf '%s\n\nThis preview is marked noindex; the main site stays indexable.' "$body")
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
