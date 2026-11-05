@@ -406,10 +406,10 @@ jobs:
 
             # Keep previews out of search indexes. A project Pages site can't use
             # a path-scoped robots.txt (only the host-root one is honored), so
-            # inject a noindex meta tag into the preview's pages (main is left
-            # indexable).
+            # inject into the document head once: embedded Reveal scripts also
+            # contain <head> strings, which must remain byte-for-byte unchanged.
             find "$tmp/pr-preview/pr-$PR_NUMBER" -name '*.html' -print0 \
-              | xargs -0 sed -i 's#<head>#<head><meta name="robots" content="noindex, nofollow">#'
+              | xargs -0 sed -i '0,/<head>/s#<head>#<head><meta name="robots" content="noindex, nofollow">#'
           fi
 
           cd "$tmp"
