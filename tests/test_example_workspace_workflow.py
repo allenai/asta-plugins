@@ -380,12 +380,8 @@ def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflo
     wf = yaml.safe_load((ROOT / ".github/workflows/example-preview.yml").read_text())
     trigger = wf[True]["pull_request"]  # PyYAML reads the `on:` key as True
     assert trigger["types"] == ["opened", "synchronize", "reopened", "closed"]
-    paths = trigger["paths"]
-    assert "examples/workspace/**" in paths
-    assert "plugins/asta-tools/skills/workspace/assets/**" in paths
-    assert not any(
-        p.startswith("plugins/asta-tools/skills/workspace/SKILL") for p in paths
-    )
+    assert "paths" not in trigger
+    assert "paths-ignore" not in trigger
     job = wf["jobs"]["docs"]
     assert job["uses"] == "./.github/workflows/workspace-quarto-site.yml"
     assert job["with"]["site-dir"] == "examples/workspace"
@@ -597,7 +593,7 @@ def test_preview_updates_cleanup_and_releases_request_pages_publication():
         (ROOT / ".github/workflows/example-preview.yml").read_text()
     )
     publish = preview["jobs"]["publish-pages"]
-    assert publish["needs"] == "docs"
+    assert publish["needs"] == ["scope", "docs"]
     assert "github.event.action == 'closed'" in publish["if"]
     assert "head.repo.full_name == github.repository" in publish["if"]
     assert publish["permissions"] == {"contents": "read", "pages": "write"}
@@ -627,7 +623,7 @@ def test_closed_preview_cleanup_publishes_even_when_other_docs_jobs_fail():
     # Assert the actual Actions expression instead of translating its semantics
     # into Python. Close bypasses the aggregate docs result, retaining guards.
     assert " ".join(workflow["jobs"]["publish-pages"]["if"].split()) == (
-        "always() && (github.event.action == 'closed' || needs.docs.result == 'success') "
+        "always() && needs.scope.outputs.run == 'true' && (github.event.action == 'closed' || needs.docs.result == 'success') "
         "&& github.event.pull_request.head.repo.full_name == github.repository "
         "&& github.actor != 'dependabot[bot]'"
     )
@@ -822,3 +818,57 @@ def test_fork_builds_stay_read_only_and_never_try_to_publish():
         "head.repo.full_name != github.repository"
         in shared["jobs"]["preview-unavailable"]["if"]
     )
+
+
+@pytest.mark.parametrize(
+    ("action", "paths", "expected"),
+    [
+        ("closed", [], "true"),
+        ("synchronize", ["plugins/asta-tools/skills/workspace/SKILL.md"], "false"),
+        ("synchronize", [], "false"),
+        ("opened", ["examples/workspace/index.qmd"], "true"),
+        (
+            "synchronize",
+            ["plugins/asta-tools/skills/workspace/assets/paper-viewer.py"],
+            "true",
+        ),
+        ("reopened", [".github/workflows/workspace-quarto-site.yml"], "true"),
+    ],
+)
+def test_preview_scope_always_cleans_up_but_only_builds_rendered_changes(
+    tmp_path, action, paths, expected
+):
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/example-preview.yml").read_text()
+    )
+    gh = tmp_path / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        + (
+            "raise AssertionError('close must not query changed files')\n"
+            if action == "closed"
+            else "assert sys.argv[1:] == ['api', '--paginate', 'repos/owner/project/pulls/275/files', '--jq', '.[].filename']\n"
+            + f"print({chr(10).join(paths)!r})\n"
+        )
+    )
+    gh.chmod(0o755)
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-c", workflow["jobs"]["scope"]["steps"][0]["run"]],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "ACTION": action,
+            "PR_NUMBER": "275",
+            "GITHUB_REPOSITORY": "owner/project",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"run={expected}\n"
+    assert workflow["jobs"]["docs"]["needs"] == "scope"
+    assert workflow["jobs"]["docs"]["if"] == "needs.scope.outputs.run == 'true'"

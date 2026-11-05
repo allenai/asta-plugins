@@ -7,12 +7,6 @@ name: Example preview
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    paths:
-      - examples/workspace/**
-      - plugins/asta-tools/skills/workspace/assets/**
-      - .github/workflows/workspace-quarto-site.yml
-      - .github/workflows/example-preview.yml
-      - scripts/request-example-pages-build.sh
 
 permissions:
   contents: write
@@ -20,7 +14,39 @@ permissions:
   pages: read
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.paths.outputs.run }}
+    steps:
+      # Close must run even after every rendered-path change was reverted.
+      # Filter builds here instead of filtering the workflow's close trigger.
+      - id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTION" = closed ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' > changed-paths
+          while IFS= read -r path; do
+            case "$path" in
+              examples/workspace/*|plugins/asta-tools/skills/workspace/assets/*|.github/workflows/workspace-quarto-site.yml|.github/workflows/example-preview.yml|scripts/request-example-pages-build.sh)
+                echo 'run=true' >> "$GITHUB_OUTPUT"
+                exit 0 ;;
+            esac
+          done < changed-paths
+          echo 'run=false' >> "$GITHUB_OUTPUT"
+
   docs:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
       site-dir: examples/workspace
@@ -29,9 +55,9 @@ jobs:
   # Cleanup can succeed even if another job in the reusable workflow fails.
   # Always publish closed-PR removals after docs finishes, regardless of result.
   publish-pages:
-    needs: docs
+    needs: [scope, docs]
     if: >-
-      always() && (github.event.action == 'closed' || needs.docs.result == 'success')
+      always() && needs.scope.outputs.run == 'true' && (github.event.action == 'closed' || needs.docs.result == 'success')
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
@@ -117,7 +143,7 @@ jobs:
         working-directory: tests/browser
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: node example-preview.mjs "../../preview-site/pr-preview/pr-$PR_NUMBER" artifacts
+        run: node example-preview.mjs ../../preview-site artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
