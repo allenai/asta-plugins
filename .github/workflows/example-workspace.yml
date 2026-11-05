@@ -119,6 +119,8 @@ jobs:
       contents: read
       pages: write
       id-token: write
+    outputs:
+      current: ${{ steps.release.outputs.current }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -149,13 +151,14 @@ jobs:
   # PR previews to. Pages keeps serving the Actions deployment until switched.
   publish-gh-pages:
     needs: [build, theme, deploy]
-    if: inputs.ref-name != '' && needs.deploy.result == 'success'
+    if: inputs.ref-name != '' && needs.deploy.result == 'success' && needs.deploy.outputs.current == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: pages-refs/heads/main
       cancel-in-progress: false
     permissions:
       contents: write
+      pages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -183,6 +186,10 @@ jobs:
             [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
             git -C "$tmp" pull --rebase origin gh-pages
           done
+      - name: Publish the release after the Pages switch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/request-example-pages-build.sh
 
   report:
     # Example failures occur after image promotion and never hold the release.

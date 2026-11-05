@@ -240,12 +240,121 @@ def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflo
     paths = trigger["paths"]
     assert "examples/workspace/**" in paths
     assert "plugins/asta-tools/skills/workspace/assets/**" in paths
-    assert not any(p.startswith("plugins/asta-tools/skills/workspace/SKILL") for p in paths)
+    assert not any(
+        p.startswith("plugins/asta-tools/skills/workspace/SKILL") for p in paths
+    )
     job = wf["jobs"]["docs"]
     assert job["uses"] == "./.github/workflows/workspace-quarto-site.yml"
     assert job["with"]["site-dir"] == "examples/workspace"
 
-    shared = yaml.safe_load((root / ".github/workflows/workspace-quarto-site.yml").read_text())
+    shared = yaml.safe_load(
+        (root / ".github/workflows/workspace-quarto-site.yml").read_text()
+    )
     assert shared[True]["workflow_call"]["inputs"]["site-dir"]["default"] == "."
     build = shared["jobs"]["build"]
     assert build["defaults"]["run"]["working-directory"] == "${{ inputs.site-dir }}"
+
+
+def pages_builder(tmp_path, config, statuses=("built",)):
+    log = tmp_path / "calls.jsonl"
+    gh = tmp_path / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\n"
+        + "import json, sys\nfrom pathlib import Path\n"
+        + f"log = Path({str(log)!r})\n"
+        + f"config = {config!r}\nstatuses = {list(statuses)!r}\n"
+        + "args = sys.argv[1:]\n"
+        + "calls = log.read_text().splitlines() if log.exists() else []\n"
+        + "with log.open('a') as out: out.write(json.dumps(args) + '\\n')\n"
+        + "if args == ['api', 'repos/owner/project/pages']: print(json.dumps(config))\n"
+        + "elif args == ['api', '--method', 'POST', 'repos/owner/project/pages/builds', '--jq', '.url']: print('https://api.github.com/build/123')\n"
+        + "elif args == ['api', 'https://api.github.com/build/123', '--jq', '.status']:\n"
+        + "    polls = sum('https://api.github.com/build/123' in json.loads(call) for call in calls)\n"
+        + "    print(statuses[min(polls, len(statuses) - 1)])\n"
+        + "else: raise AssertionError(args)\n"
+    )
+    gh.chmod(0o755)
+    sleep = tmp_path / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/request-example-pages-build.sh")],
+        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "GITHUB_REPOSITORY": "owner/project"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return result, [json.loads(line) for line in log.read_text().splitlines()]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"build_type": "workflow", "source": {"branch": "main", "path": "/"}},
+        {"build_type": "legacy", "source": {"branch": "other", "path": "/"}},
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/docs"}},
+    ],
+)
+def test_pages_build_waits_for_the_operator_source_switch(tmp_path, config):
+    result, calls = pages_builder(tmp_path, config)
+    assert result.returncode == 0, result.stderr
+    assert calls == [["api", "repos/owner/project/pages"]]
+
+
+def test_pages_build_explicitly_publishes_bot_push_and_waits(tmp_path):
+    result, calls = pages_builder(
+        tmp_path,
+        {
+            "build_type": "legacy",
+            "source": {"branch": "gh-pages", "path": "/"},
+        },
+        ("queued", "building", "built"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert sum("POST" in call for call in calls) == 1
+    assert len(calls) == 5
+
+
+@pytest.mark.parametrize("status", ["errored", "building"])
+def test_pages_build_surfaces_failure_or_timeout(tmp_path, status):
+    result, _ = pages_builder(
+        tmp_path,
+        {
+            "build_type": "legacy",
+            "source": {"branch": "gh-pages", "path": "/"},
+        },
+        (status,),
+    )
+    assert result.returncode == 1
+    assert "::error::" in result.stdout
+
+
+def test_preview_updates_cleanup_and_releases_request_pages_publication():
+    preview = yaml.safe_load(
+        (ROOT / ".github/workflows/example-preview.yml").read_text()
+    )
+    publish = preview["jobs"]["publish-pages"]
+    assert publish["needs"] == "docs"
+    assert "closed" not in publish["if"]
+    assert "head.repo.full_name == github.repository" in publish["if"]
+    assert publish["permissions"] == {"contents": "read", "pages": "write"}
+    assert publish["steps"][-1]["run"] == "bash scripts/request-example-pages-build.sh"
+    release = WORKFLOW["jobs"]["publish-gh-pages"]
+    assert "needs.deploy.outputs.current == 'true'" in release["if"]
+    assert release["steps"][-1]["run"] == "bash scripts/request-example-pages-build.sh"
+
+
+def test_fork_builds_stay_read_only_and_never_try_to_publish():
+    shared = yaml.safe_load(
+        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
+    )
+    assert shared["jobs"]["build"]["permissions"] == {"contents": "read"}
+    assert "head.repo.full_name != github.repository" in shared["jobs"]["deploy"]["if"]
+    assert (
+        "head.repo.full_name == github.repository"
+        in shared["jobs"]["cleanup-preview"]["if"]
+    )
+    assert (
+        "head.repo.full_name != github.repository"
+        in shared["jobs"]["preview-unavailable"]["if"]
+    )
