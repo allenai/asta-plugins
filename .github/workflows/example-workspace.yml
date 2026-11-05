@@ -190,8 +190,27 @@ jobs:
         with:
           name: example-workspace-site
           path: _site
+      # Recheck under this job's publication lock: a newer release may have
+      # published while this run waited after its earlier deploy job.
+      - name: Check that this is still the newest final release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref-name }}
+        run: |
+          set -euo pipefail
+          tags=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/tags?per_page=100")
+          newest=$(jq -er '[.[][] | .name | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+            | sort_by(ltrimstr("v") | split(".") | map(tonumber)) | last // empty' <<< "$tags")
+          if [ "$REF" = "$newest" ]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping $REF: newest final release is $newest"
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish the release build to the gh-pages root
         id: root
+        if: steps.release.outputs.current == 'true'
         env:
           REF: ${{ inputs.ref-name }}
         run: |
@@ -222,6 +241,7 @@ jobs:
           done
       - name: Publish the release after the Pages switch
         id: pages
+        if: steps.release.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/request-example-pages-build.sh

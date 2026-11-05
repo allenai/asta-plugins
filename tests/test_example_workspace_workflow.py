@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -15,7 +16,6 @@ WORKFLOW = yaml.safe_load(
     (ROOT / ".github/workflows/example-workspace.yml").read_text()
 )
 REPORT = WORKFLOW["jobs"]["report"]["steps"][0]["run"]
-RELEASE = WORKFLOW["jobs"]["deploy"]["steps"][0]["run"]
 TITLE = "Example workspace failed to build for v0.109.0"
 
 
@@ -200,7 +200,13 @@ def test_root_push_and_pages_build_failures_are_reported_separately(
     assert absent not in body
 
 
-def release_gate(tmp_path, ref, pages, *, lookup_fails=False):
+def release_gate(tmp_path, ref, pages, *, lookup_fails=False, phase="deploy"):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    selection = next(
+        step["run"]
+        for step in WORKFLOW["jobs"][phase]["steps"]
+        if step.get("id") == "release"
+    )
     gh = tmp_path / "gh"
     gh.write_text(
         f"#!{sys.executable}\n"
@@ -214,7 +220,7 @@ print(os.environ["TEST_TAG_PAGES"])
     gh.chmod(0o755)
     output = tmp_path / "output"
     result = subprocess.run(
-        ["bash", "-c", RELEASE],
+        ["bash", "-c", selection],
         cwd=tmp_path,
         env={
             "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
@@ -233,31 +239,61 @@ print(os.environ["TEST_TAG_PAGES"])
     return result, output.read_text() if output.exists() else ""
 
 
+@pytest.mark.parametrize("phase", ["deploy", "publish-gh-pages"])
 @pytest.mark.parametrize(
     ("ref", "expected"),
     [("v0.9.0", "false"), ("v0.10.0", "true"), ("v0.11.0-rc.1", "false")],
 )
 def test_only_the_newest_final_tag_deploys_even_when_older_build_finishes_last(
-    tmp_path, ref, expected
+    tmp_path, ref, expected, phase
 ):
     result, output = release_gate(
-        tmp_path, ref, [["v0.11.0-rc.1", "latest", "v0.9.0"], ["v0.10.0"]]
+        tmp_path, ref, [["v0.11.0-rc.1", "latest", "v0.9.0"], ["v0.10.0"]], phase=phase
     )
     assert result.returncode == 0, result.stderr
     assert output == f"current={expected}\n"
 
 
+@pytest.mark.parametrize("phase", ["deploy", "publish-gh-pages"])
 @pytest.mark.parametrize("pages", [[], [["latest", "v0.11.0-rc.1"]]])
-def test_no_final_tags_fails_closed(tmp_path, pages):
-    result, output = release_gate(tmp_path, "v0.10.0", pages)
+def test_no_final_tags_fails_closed(tmp_path, pages, phase):
+    result, output = release_gate(tmp_path, "v0.10.0", pages, phase=phase)
     assert result.returncode != 0
     assert output == ""
 
 
-def test_unreadable_tags_fail_closed(tmp_path):
-    result, output = release_gate(tmp_path, "v0.10.0", [["v0.10.0"]], lookup_fails=True)
+@pytest.mark.parametrize("phase", ["deploy", "publish-gh-pages"])
+def test_unreadable_tags_fail_closed(tmp_path, phase):
+    result, output = release_gate(
+        tmp_path, "v0.10.0", [["v0.10.0"]], lookup_fails=True, phase=phase
+    )
     assert result.returncode != 0
     assert output == ""
+
+
+def test_older_release_is_rechecked_after_waiting_for_root_publication(tmp_path):
+    # The run was newest when deploy ran, but a newer tag appeared while it
+    # waited for the separate root-publishing job's lock.
+    result, output = release_gate(tmp_path / "deploy", "v1.0.0", [["v1.0.0"]])
+    assert result.returncode == 0, result.stderr
+    assert output == "current=true\n"
+    result, output = release_gate(
+        tmp_path / "publish", "v1.0.0", [["v1.0.0", "v1.1.0"]], phase="publish-gh-pages"
+    )
+    assert result.returncode == 0, result.stderr
+    assert output == "current=false\n"
+    root = WORKFLOW["jobs"]["publish-gh-pages"]
+    selection_index = next(
+        i for i, step in enumerate(root["steps"]) if step.get("id") == "release"
+    )
+    for step_id in ("root", "pages"):
+        index = next(
+            i for i, step in enumerate(root["steps"]) if step.get("id") == step_id
+        )
+        assert index > selection_index
+        assert root["steps"][index]["if"] == "steps.release.outputs.current == 'true'"
+    assert root["concurrency"]["group"] == "example-pages-build"
+    assert root["concurrency"]["cancel-in-progress"] is False
 
 
 def test_release_selection_runs_under_the_shared_pages_lock():
@@ -563,7 +599,7 @@ def test_preview_updates_cleanup_and_releases_request_pages_publication():
     )
     publish = preview["jobs"]["publish-pages"]
     assert publish["needs"] == "docs"
-    assert "closed" not in publish["if"]
+    assert "github.event.action == 'closed'" in publish["if"]
     assert "head.repo.full_name == github.repository" in publish["if"]
     assert publish["permissions"] == {"contents": "read", "pages": "write"}
     assert publish["steps"][-1]["run"] == "bash scripts/request-example-pages-build.sh"
@@ -583,6 +619,44 @@ def test_preview_updates_cleanup_and_releases_request_pages_publication():
         "root": "${{ steps.root.outcome }}",
         "pages": "${{ steps.pages.outcome }}",
     }
+
+
+@pytest.mark.parametrize("docs_result", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("action", ["opened", "synchronize", "closed"])
+@pytest.mark.parametrize("trusted", [True, False])
+def test_closed_preview_cleanup_publishes_even_when_other_docs_jobs_fail(
+    docs_result, action, trusted
+):
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/example-preview.yml").read_text()
+    )
+    condition = workflow["jobs"]["publish-pages"]["if"]
+    context = {
+        "always": lambda: True,
+        "needs": SimpleNamespace(docs=SimpleNamespace(result=docs_result)),
+        "github": SimpleNamespace(
+            event=SimpleNamespace(
+                action=action,
+                pull_request=SimpleNamespace(
+                    head=SimpleNamespace(
+                        repo=SimpleNamespace(
+                            full_name="owner/repo" if trusted else "fork/repo"
+                        )
+                    )
+                ),
+            ),
+            repository="owner/repo",
+            actor="contributor",
+        ),
+    }
+    # Evaluate the workflow's actual boolean condition with the event and job
+    # results that Actions supplies, including failure/cancellation on close.
+    expression = " ".join(condition.replace("&&", "and").replace("||", "or").split())
+    assert eval(expression, {"__builtins__": {}}, context) == (
+        trusted and (action == "closed" or docs_result == "success")
+    )
+    context["github"].actor = "dependabot[bot]"
+    assert not eval(expression, {"__builtins__": {}}, context)
 
 
 @pytest.mark.parametrize("existing", [False, True])

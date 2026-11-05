@@ -26,10 +26,12 @@ jobs:
       site-dir: examples/workspace
       paper-strict: true
 
+  # Cleanup can succeed even if another job in the reusable workflow fails.
+  # Always publish closed-PR removals after docs finishes, regardless of result.
   publish-pages:
     needs: docs
     if: >-
-      always() && needs.docs.result == 'success'
+      always() && (github.event.action == 'closed' || needs.docs.result == 'success')
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
