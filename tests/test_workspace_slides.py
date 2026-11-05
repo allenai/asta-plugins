@@ -104,6 +104,35 @@ def test_added_and_removed_decks_have_one_review_section(tmp_path, removed):
     assert ('href="slides.html#/a"' in output) is not removed
 
 
+def test_inlined_links_are_rebased_to_the_diff_page(tmp_path):
+    # What changed sits at the site root, so links copied from a deck or page
+    # in a subfolder must resolve from there, never above the site.
+    generator = load("what-changed")
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    (new / "slides/a").mkdir(parents=True)
+    (new / "notes").mkdir()
+    (new / "slides/a/slides.html").write_text(
+        deck(
+            '<section id="s" class="slide level2"><h2>s</h2>'
+            '<p><a href="../../lit-review/index.html#top">Review</a>'
+            '<img src="figure.png" alt="f"><a href="#local">here</a>'
+            '<a href="https://example.org/x">out</a></p></section>'
+        )
+    )
+    (new / "notes/page.html").write_text(
+        '<main><p><a href="../paper/html/index.html">Paper</a>'
+        '<a href="/root.html">root</a><a href="../../outside.html">up</a></p></main>'
+    )
+    output = generator.build(str(old), str(new), "", "Test")
+    assert 'href="lit-review/index.html#top"' in output
+    assert 'src="slides/a/figure.png"' in output
+    assert 'href="#local"' in output and 'href="https://example.org/x"' in output
+    assert 'href="paper/html/index.html"' in output
+    assert 'href="/root.html"' in output and 'href="../../outside.html"' in output
+    assert 'href="../../lit-review' not in output
+
+
 @pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
 def test_quarto_builds_and_auto_links_multiple_nested_decks(tmp_path):
     shutil.copytree(
