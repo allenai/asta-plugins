@@ -25,3 +25,5 @@ skills-lock.json
 !/.asta/
 /.asta/*
 !/.asta/overleaf/
+
+.envrc
