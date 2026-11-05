@@ -144,9 +144,49 @@ jobs:
         if: steps.release.outputs.current == 'true'
         uses: actions/deploy-pages@v4
 
+  # Also write the release's build to the gh-pages root, keeping pr-preview/,
+  # so Pages can serve the gh-pages branch that example-preview.yml publishes
+  # PR previews to. Pages keeps serving the Actions deployment until switched.
+  publish-gh-pages:
+    needs: [build, theme, deploy]
+    if: inputs.ref-name != '' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages-refs/heads/main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: example-workspace-site
+          path: _site
+      - name: Publish the release build to the gh-pages root
+        env:
+          REF: ${{ inputs.ref-name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages:gh-pages 2>/dev/null \
+            || git branch gh-pages "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "Initialize gh-pages")"
+          tmp=$(mktemp -d)
+          git worktree add "$tmp" gh-pages
+          find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+          cp -r _site/. "$tmp/"
+          touch "$tmp/.nojekyll"
+          git -C "$tmp" add -A
+          git -C "$tmp" commit --allow-empty -m "Deploy example from $REF (run $GITHUB_RUN_ID)"
+          for i in 1 2 3 4 5; do
+            git -C "$tmp" push origin gh-pages && break
+            [ "$i" = 5 ] && { echo "::error::could not push gh-pages after 5 attempts"; exit 1; }
+            git -C "$tmp" pull --rebase origin gh-pages
+          done
+
   report:
     # Example failures occur after image promotion and never hold the release.
-    needs: [build, theme, deploy]
+    needs: [build, theme, deploy, publish-gh-pages]
     if: failure() && inputs.ref-name != ''
     runs-on: ubuntu-latest
     permissions:
@@ -159,6 +199,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           THEME_RESULT: ${{ needs.theme.result }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
+          GH_PAGES_RESULT: ${{ needs.publish-gh-pages.result }}
         run: |
           set -euo pipefail
           # Keep the existing per-tag title so reruns reuse older build issues.
@@ -169,6 +210,8 @@ jobs:
             body="The post-release browser checks failed; deployment was not attempted. Run: $RUN"
           elif [ "$DEPLOY_RESULT" = failure ]; then
             body="The post-release example deployment failed after a successful build. The live site's state is unconfirmed; inspect the deployment before retrying. Run: $RUN"
+          elif [ "$GH_PAGES_RESULT" = failure ]; then
+            body="The release deployed to Pages, but writing its build to the gh-pages root failed. PR previews are unaffected. Run: $RUN"
           else
             echo 'No example build or deployment failure to report'
             exit 0

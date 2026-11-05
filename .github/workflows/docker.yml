@@ -252,7 +252,7 @@ jobs:
     with:
       ref-name: ${{ github.ref_name }}
     permissions:
-      contents: read
+      contents: write  # publish-gh-pages writes the release build to gh-pages
       pages: write
       id-token: write
       issues: write

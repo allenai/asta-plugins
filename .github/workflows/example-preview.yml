@@ -1,0 +1,26 @@
+name: Example preview
+
+# Previews examples/workspace on a PR the way a workspace's docs.yml does:
+# gh-pages pr-preview/pr-<N>/, a comment with the preview and What changed
+# links, and removal on close. Only PRs that change what the site renders run
+# it. Not a required check; the live root still moves only at a release.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - examples/workspace/**
+      - plugins/asta-tools/skills/workspace/assets/**
+      - .github/workflows/workspace-quarto-site.yml
+      - .github/workflows/example-preview.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+  pages: read
+
+jobs:
+  docs:
+    uses: ./.github/workflows/workspace-quarto-site.yml
+    with:
+      site-dir: examples/workspace
+      paper-strict: true

@@ -28,6 +28,10 @@ on:
         description: Optional project command after rendering and paper previews, before publication
         type: string
         default: ""
+      site-dir:
+        description: Project directory within the repo that holds the Makefile and renders _site/ (asta-plugins' own example lives below the root)
+        type: string
+        default: "."
 
 jobs:
   # Build + quality gates (via `make check`). This is the required status
@@ -46,6 +50,9 @@ jobs:
     concurrency:
       group: pages-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: ${{ inputs.site-dir }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -307,7 +314,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: site
-          path: _site
+          path: ${{ inputs.site-dir }}/_site
           include-hidden-files: true  # keep .nojekyll
 
   # Publish: main -> gh-pages root (keeping PR previews); a PR -> a preview under
