@@ -39,6 +39,7 @@ jobs:
     concurrency:
       group: example-pages-build
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,6 +53,7 @@ jobs:
     needs: docs
     if: >-
       github.event.action != 'closed'
+      && needs.docs.result == 'success'
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
@@ -65,7 +67,12 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          set -euo pipefail
           git fetch --depth=1 origin gh-pages
+          if [ -z "$(git ls-tree FETCH_HEAD "pr-preview/pr-$PR_NUMBER")" ]; then
+            echo "::error::No published preview found at pr-preview/pr-$PR_NUMBER"
+            exit 1
+          fi
           mkdir preview-site
           git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
       - uses: actions/setup-node@v4

@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,9 @@ def reporter(
     build="failure",
     theme="success",
     deploy="skipped",
+    gh_pages="skipped",
+    root="",
+    pages="",
 ):
     state = tmp_path / "issues.json"
     state.write_text(json.dumps(list(issues)))
@@ -67,6 +71,9 @@ elif args[:2] != ["issue", "comment"]:
         "BUILD_RESULT": build,
         "THEME_RESULT": theme,
         "DEPLOY_RESULT": deploy,
+        "GH_PAGES_RESULT": gh_pages,
+        "GH_PAGES_ROOT_RESULT": root,
+        "GH_PAGES_BUILD_RESULT": pages,
     }
 
     def run(attempt):
@@ -153,6 +160,46 @@ def test_successful_or_superseded_release_does_not_open_an_issue(tmp_path):
     assert calls() == []
 
 
+@pytest.mark.parametrize(
+    ("root", "pages", "expected", "absent"),
+    [
+        (
+            "failure",
+            "skipped",
+            "writing its build to the gh-pages root failed",
+            "branch files are available",
+        ),
+        (
+            "success",
+            "failure",
+            "requesting or verifying its Pages build failed",
+            "writing its build to the gh-pages root failed",
+        ),
+        (
+            "",
+            "",
+            "failed before its outcome could be confirmed",
+            "writing its build to the gh-pages root failed",
+        ),
+    ],
+)
+def test_root_push_and_pages_build_failures_are_reported_separately(
+    tmp_path, root, pages, expected, absent
+):
+    run, calls = reporter(
+        tmp_path,
+        build="success",
+        deploy="success",
+        gh_pages="failure",
+        root=root,
+        pages=pages,
+    )
+    assert run(131).returncode == 0
+    body = calls()[-1][-1]
+    assert expected in body
+    assert absent not in body
+
+
 def release_gate(tmp_path, ref, pages, *, lookup_fails=False):
     gh = tmp_path / "gh"
     gh.write_text(
@@ -231,10 +278,7 @@ def test_shared_asset_changes_trigger_the_example_check():
 
 
 def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflow():
-    import yaml
-
-    root = Path(__file__).resolve().parents[1]
-    wf = yaml.safe_load((root / ".github/workflows/example-preview.yml").read_text())
+    wf = yaml.safe_load((ROOT / ".github/workflows/example-preview.yml").read_text())
     trigger = wf[True]["pull_request"]  # PyYAML reads the `on:` key as True
     assert trigger["types"] == ["opened", "synchronize", "reopened", "closed"]
     paths = trigger["paths"]
@@ -248,29 +292,41 @@ def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflo
     assert job["with"]["site-dir"] == "examples/workspace"
 
     shared = yaml.safe_load(
-        (root / ".github/workflows/workspace-quarto-site.yml").read_text()
+        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
     )
     assert shared[True]["workflow_call"]["inputs"]["site-dir"]["default"] == "."
     build = shared["jobs"]["build"]
     assert build["defaults"]["run"]["working-directory"] == "${{ inputs.site-dir }}"
 
 
-def pages_builder(tmp_path, config, statuses=("built",)):
+def pages_builder(
+    tmp_path, config, builds=("built",), *, config_status=200, fail_at=""
+):
     log = tmp_path / "calls.jsonl"
     gh = tmp_path / "gh"
     gh.write_text(
         f"#!{sys.executable}\n"
         + "import json, sys\nfrom pathlib import Path\n"
         + f"log = Path({str(log)!r})\n"
-        + f"config = {config!r}\nstatuses = {list(statuses)!r}\n"
+        + f"config = {config!r}\nbuilds = {list(builds)!r}\n"
+        + f"config_status = {config_status!r}\nfail_at = {fail_at!r}\n"
         + "args = sys.argv[1:]\n"
         + "calls = log.read_text().splitlines() if log.exists() else []\n"
         + "with log.open('a') as out: out.write(json.dumps(args) + '\\n')\n"
-        + "if args == ['api', 'repos/owner/project/pages']: print(json.dumps(config))\n"
-        + "elif args == ['api', '--method', 'POST', 'repos/owner/project/pages/builds', '--jq', '.url']: print('https://api.github.com/build/123')\n"
-        + "elif args == ['api', 'https://api.github.com/build/123', '--jq', '.status']:\n"
-        + "    polls = sum('https://api.github.com/build/123' in json.loads(call) for call in calls)\n"
-        + "    print(statuses[min(polls, len(statuses) - 1)])\n"
+        + "if args == ['api', '--include', 'repos/owner/project/pages']:\n"
+        + "    if config_status: print(f'HTTP/2.0 {config_status} Status\\r\\nContent-Type: application/json\\r\\n\\r\\n' + json.dumps(config))\n"
+        + "    sys.exit(0 if config_status == 200 else 1)\n"
+        + "elif args == ['api', 'repos/owner/project/git/ref/heads/gh-pages', '--jq', '.object.sha']:\n"
+        + "    if fail_at == 'branch': sys.exit(1)\n"
+        + "    print('pushed-sha')\n"
+        + "elif args == ['api', '--method', 'POST', 'repos/owner/project/pages/builds', '--jq', '.url']:\n"
+        + "    if fail_at == 'request': sys.exit(1)\n"
+        + "    print('https://api.github.com/repos/owner/project/pages/builds/latest')\n"
+        + "elif args == ['api', 'https://api.github.com/repos/owner/project/pages/builds/latest']:\n"
+        + "    if fail_at == 'poll': sys.exit(1)\n"
+        + "    polls = sum('https://api.github.com/repos/owner/project/pages/builds/latest' in json.loads(call) for call in calls)\n"
+        + "    build = builds[min(polls, len(builds) - 1)]\n"
+        + "    print(json.dumps({'commit': 'pushed-sha', 'status': build} if isinstance(build, str) else build))\n"
         + "else: raise AssertionError(args)\n"
     )
     gh.chmod(0o755)
@@ -279,7 +335,11 @@ def pages_builder(tmp_path, config, statuses=("built",)):
     sleep.chmod(0o755)
     result = subprocess.run(
         ["bash", str(ROOT / "scripts/request-example-pages-build.sh")],
-        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "GITHUB_REPOSITORY": "owner/project"},
+        env={
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "GITHUB_REPOSITORY": "owner/project",
+            "PAGES_POLLS": "3",
+        },
         capture_output=True,
         text=True,
         timeout=10,
@@ -298,7 +358,7 @@ def pages_builder(tmp_path, config, statuses=("built",)):
 def test_pages_build_waits_for_the_operator_source_switch(tmp_path, config):
     result, calls = pages_builder(tmp_path, config)
     assert result.returncode == 0, result.stderr
-    assert calls == [["api", "repos/owner/project/pages"]]
+    assert calls == [["api", "--include", "repos/owner/project/pages"]]
 
 
 def test_pages_build_explicitly_publishes_bot_push_and_waits(tmp_path):
@@ -312,7 +372,49 @@ def test_pages_build_explicitly_publishes_bot_push_and_waits(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert sum("POST" in call for call in calls) == 1
-    assert len(calls) == 5
+    assert len(calls) == 6
+    assert "pushed-sha" in result.stdout
+
+
+@pytest.mark.parametrize("old_status", ["built", "errored"])
+def test_pages_build_ignores_previous_or_concurrent_commit_results(
+    tmp_path, old_status
+):
+    result, calls = pages_builder(
+        tmp_path,
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+        ({"commit": "previous-sha", "status": old_status}, "building", "built"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 6
+
+
+def test_pages_build_never_accepts_another_commits_success(tmp_path):
+    result, _ = pages_builder(
+        tmp_path,
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+        ({"commit": "other-sha", "status": "built"},),
+    )
+    assert result.returncode == 1
+    assert "Timed out" in result.stdout
+
+
+@pytest.mark.parametrize("status", [0, 403, 404, 500])
+def test_only_an_unconfigured_pages_response_is_skipped(tmp_path, status):
+    result, calls = pages_builder(tmp_path, {}, config_status=status)
+    assert result.returncode == (0 if status == 404 else 1)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("fail_at", ["branch", "request", "poll"])
+def test_pages_build_api_failures_do_not_claim_publication(tmp_path, fail_at):
+    result, _ = pages_builder(
+        tmp_path,
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+        fail_at=fail_at,
+    )
+    assert result.returncode != 0
+    assert "Pages published" not in result.stdout
 
 
 @pytest.mark.parametrize("status", ["errored", "building"])
@@ -342,6 +444,110 @@ def test_preview_updates_cleanup_and_releases_request_pages_publication():
     release = WORKFLOW["jobs"]["publish-gh-pages"]
     assert "needs.deploy.outputs.current == 'true'" in release["if"]
     assert release["steps"][-1]["run"] == "bash scripts/request-example-pages-build.sh"
+    assert (
+        release["concurrency"]
+        == publish["concurrency"]
+        == {
+            "group": "example-pages-build",
+            "cancel-in-progress": False,
+            "queue": "max",
+        }
+    )
+    assert release["outputs"] == {
+        "root": "${{ steps.root.outcome }}",
+        "pages": "${{ steps.pages.outcome }}",
+    }
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("failure", ["", "ls-remote", "fetch"])
+def test_release_root_initializes_only_a_missing_branch_and_keeps_previews(
+    tmp_path, existing, failure
+):
+    real_git = shutil.which("git")
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+
+    def git(*args):
+        return subprocess.check_output(
+            [real_git, *args], cwd=tmp_path, env=env, text=True
+        ).strip()
+
+    origin = tmp_path / "origin.git"
+    git("init", "--bare", str(origin))
+    git("init", "-b", "main")
+    git("remote", "add", "origin", str(origin))
+    git("commit", "--allow-empty", "-m", "source")
+    if existing:
+        git("checkout", "-b", "gh-pages")
+        (tmp_path / "index.html").write_text("old release")
+        preview = tmp_path / "pr-preview/pr-123/index.html"
+        preview.parent.mkdir(parents=True)
+        preview.write_text("keep this preview")
+        git("add", "index.html", "pr-preview/pr-123/index.html")
+        git("commit", "-m", "existing site")
+        git("push", "origin", "gh-pages")
+        git("checkout", "main")
+        # A fresh Actions checkout has no local gh-pages branch.
+        git("branch", "-D", "gh-pages")
+    before = git("ls-remote", "origin", "refs/heads/gh-pages")
+    (tmp_path / "_site").mkdir()
+    (tmp_path / "_site/index.html").write_text("new release")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    wrapper = bin_dir / "git"
+    wrapper.write_text(
+        f"#!{sys.executable}\nimport os, sys\n"
+        f"if sys.argv[1] == {failure!r}: sys.exit(128)\n"
+        f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
+    )
+    wrapper.chmod(0o755)
+    script = next(
+        s["run"]
+        for s in WORKFLOW["jobs"]["publish-gh-pages"]["steps"]
+        if s.get("id") == "root"
+    )
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=tmp_path,
+        env={
+            **env,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "REF": "v1.0.0",
+            "GITHUB_RUN_ID": "123",
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    fails = failure == "ls-remote" or (existing and failure == "fetch")
+    if fails:
+        assert result.returncode != 0
+        assert git("ls-remote", "origin", "refs/heads/gh-pages") == before
+        assert "refs/heads/gh-pages" not in git(
+            "for-each-ref", "--format=%(refname)", "refs/heads"
+        )
+    else:
+        assert result.returncode == 0, result.stderr
+        assert (
+            git("--git-dir", str(origin), "show", "gh-pages:index.html")
+            == "new release"
+        )
+        if existing:
+            assert (
+                git(
+                    "--git-dir",
+                    str(origin),
+                    "show",
+                    "gh-pages:pr-preview/pr-123/index.html",
+                )
+                == "keep this preview"
+            )
 
 
 def test_fork_builds_stay_read_only_and_never_try_to_publish():

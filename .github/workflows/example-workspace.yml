@@ -154,11 +154,16 @@ jobs:
     if: inputs.ref-name != '' && needs.deploy.result == 'success' && needs.deploy.outputs.current == 'true'
     runs-on: ubuntu-latest
     concurrency:
-      group: pages-refs/heads/main
+      # Serialize explicit build requests with the example's PR publisher.
+      group: example-pages-build
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
       pages: write
+    outputs:
+      root: ${{ steps.root.outcome }}
+      pages: ${{ steps.pages.outcome }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -166,14 +171,23 @@ jobs:
           name: example-workspace-site
           path: _site
       - name: Publish the release build to the gh-pages root
+        id: root
         env:
           REF: ${{ inputs.ref-name }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages:gh-pages 2>/dev/null \
-            || git branch gh-pages "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "Initialize gh-pages")"
+          if git ls-remote --exit-code --heads origin gh-pages; then
+            git fetch origin gh-pages:gh-pages
+          else
+            status=$?
+            if [ "$status" != 2 ]; then
+              echo '::error::Could not determine whether gh-pages exists'
+              exit "$status"
+            fi
+            git branch gh-pages "$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "Initialize gh-pages")"
+          fi
           tmp=$(mktemp -d)
           git worktree add "$tmp" gh-pages
           find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
@@ -187,6 +201,7 @@ jobs:
             git -C "$tmp" pull --rebase origin gh-pages
           done
       - name: Publish the release after the Pages switch
+        id: pages
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/request-example-pages-build.sh
@@ -207,6 +222,8 @@ jobs:
           THEME_RESULT: ${{ needs.theme.result }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           GH_PAGES_RESULT: ${{ needs.publish-gh-pages.result }}
+          GH_PAGES_ROOT_RESULT: ${{ needs.publish-gh-pages.outputs.root }}
+          GH_PAGES_BUILD_RESULT: ${{ needs.publish-gh-pages.outputs.pages }}
         run: |
           set -euo pipefail
           # Keep the existing per-tag title so reruns reuse older build issues.
@@ -217,8 +234,12 @@ jobs:
             body="The post-release browser checks failed; deployment was not attempted. Run: $RUN"
           elif [ "$DEPLOY_RESULT" = failure ]; then
             body="The post-release example deployment failed after a successful build. The live site's state is unconfirmed; inspect the deployment before retrying. Run: $RUN"
-          elif [ "${GH_PAGES_RESULT:-}" = failure ]; then
+          elif [ "${GH_PAGES_ROOT_RESULT:-}" = failure ]; then
             body="The release deployed to Pages, but writing its build to the gh-pages root failed. PR previews are unaffected. Run: $RUN"
+          elif [ "${GH_PAGES_BUILD_RESULT:-}" = failure ]; then
+            body="The release build was written to the gh-pages root, but requesting or verifying its Pages build failed. The branch files are available; the live site's state is unconfirmed. Run: $RUN"
+          elif [ "${GH_PAGES_RESULT:-}" = failure ]; then
+            body="The release's gh-pages publication job failed before its outcome could be confirmed. Inspect the run before retrying. Run: $RUN"
           else
             echo 'No example build or deployment failure to report'
             exit 0
