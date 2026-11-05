@@ -943,3 +943,46 @@ def test_page_title_markup_stays_escaped_in_every_output_path(
     assert result.count(encoded_title) == 2
     assert "<img" not in result
     assert '"x"' not in result
+
+
+def test_excluded_folder_is_left_out_on_both_sides(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root, text in ((old, "Old words"), (new, "New words")):
+        (root / "demo/paper-previews/paper").mkdir(parents=True)
+        (root / "demo/demonstration-not-excluded").mkdir(parents=True)
+        (root / "index.html").write_text(f"<main><p>{text}</p></main>")
+        (root / "demo/index.html").write_text(f"<main><p>{text}</p></main>")
+        (root / "demo/paper-previews/paper/index.html").write_text(
+            f"<main><p>{text}</p></main>"
+        )
+    (new / "demonstration").mkdir()
+    (new / "demonstration/index.html").write_text("<main><p>Kept</p></main>")
+
+    result = WHAT_CHANGED.build(old, new, "", "PR preview", exclude=["demo/"])
+
+    assert 'id="p-index-html"' in result
+    assert "demo/index.html" not in result
+    assert "demo/paper-previews" not in result
+    assert "demonstration/index.html" in result
+
+
+def test_cli_accepts_repeated_exclude(tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    for root in (old, new):
+        (root / "a").mkdir(parents=True)
+        (root / "b").mkdir()
+    (new / "a/index.html").write_text("<main><p>A</p></main>")
+    (new / "b/index.html").write_text("<main><p>B</p></main>")
+    (new / "c.html").write_text("<main><p>C</p></main>")
+    out = tmp_path / "wc.html"
+
+    WHAT_CHANGED.main(
+        ["--old", str(old), "--new", str(new), "--out", str(out)]
+        + ["--exclude", "a", "--exclude", "b"]
+    )
+
+    result = out.read_text()
+    assert "c.html" in result
+    assert "a/index.html" not in result and "b/index.html" not in result

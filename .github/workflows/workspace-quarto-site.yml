@@ -42,6 +42,11 @@ on:
         type: string
         default: ""
 
+      diff-exclude:
+        description: Newline-separated site-relative folders that What changed leaves out on both sides (e.g. a second copy of the site)
+        type: string
+        default: ""
+
 jobs:
   scope:
     runs-on: ubuntu-latest
@@ -302,6 +307,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          DIFF_EXCLUDE: ${{ inputs.diff-exclude }}
         run: |
           set -o pipefail
           tmpdir=$(mktemp -d)
@@ -340,8 +346,12 @@ jobs:
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
           tmpout="$tmpdir/what-changed.html"
+          exclude_args=()
+          while IFS= read -r dir; do
+            [ -n "$dir" ] && exclude_args+=(--exclude "$dir")
+          done <<< "$DIFF_EXCLUDE"
           if python3 "$gen" \
-            --old "$baseline" --new _site \
+            --old "$baseline" --new _site "${exclude_args[@]}" \
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
               && [ -s "$tmpout" ]; then
             mv "$tmpout" _site/what-changed.html

@@ -95,3 +95,32 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     assert check["steps"][0]["run"] == 'test "$RESULT" = success'
     for step in check["steps"][1:]:
         assert "needs.docs.outputs.rendered == 'true'" in step["if"]
+
+
+def test_example_leaves_demo_copy_out_of_what_changed(tmp_path):
+    assert load("example-preview")["jobs"]["docs"]["with"]["diff-exclude"] == "demo"
+    shared = load("workspace-quarto-site")
+    assert shared["on"]["workflow_call"]["inputs"]["diff-exclude"]["default"] == ""
+    step = next(
+        s
+        for s in shared["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    assert step["env"]["DIFF_EXCLUDE"] == "${{ inputs.diff-exclude }}"
+    # The step turns each non-empty line into one --exclude argument.
+    script = step["run"]
+    start = script.index("exclude_args=()")
+    end = script.index('done <<< "$DIFF_EXCLUDE"') + len('done <<< "$DIFF_EXCLUDE"')
+    snippet = script[start:end] + '\nprintf "%s|" "${exclude_args[@]}"'
+    for value, expected in (
+        ("demo\n\nother/x\n", "--exclude|demo|--exclude|other/x|"),
+        ("", "|"),
+    ):
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", snippet],
+            env=dict(os.environ, DIFF_EXCLUDE=value),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result.stdout == expected

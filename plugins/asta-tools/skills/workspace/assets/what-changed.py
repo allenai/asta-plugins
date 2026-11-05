@@ -631,7 +631,7 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None, paper_dirs=()):
+def list_pages(root, out_path=None, paper_dirs=(), exclude=()):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
     Skips any page that is itself a "What changed" artifact — matched by output
@@ -639,8 +639,11 @@ def list_pages(root, out_path=None, paper_dirs=()):
     self-identifying marker — so the generator never diffs its own output while
     preserving a legitimate same-named page in another directory. Paper output
     stays in each paper's own section, including when the old site lacks a manifest.
+    Pages under an `exclude` folder (site-relative) are left out on both sides.
     """
     pages = {}
+    exclude = [tuple(p for p in name.split("/") if p) for name in exclude]
+    exclude = [prefix for prefix in exclude if prefix]
     excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, _dirs, files in os.walk(root):
         for f in files:
@@ -651,6 +654,8 @@ def list_pages(root, out_path=None, paper_dirs=()):
                 continue
             rel = os.path.relpath(full, root)
             parts = rel.split(os.sep)
+            if any(tuple(parts[: len(prefix)]) == prefix for prefix in exclude):
+                continue
             if parts[0] == "paper-previews" and (
                 any(
                     parts[: len(name.split("/")) + 1]
@@ -1481,7 +1486,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     )
 
 
-def build(old_root, new_root, preview_url, title, out_path=None):
+def build(old_root, new_root, preview_url, title, out_path=None, exclude=()):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1492,8 +1497,8 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 paper_dirs.append(
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
-    old_pages = list_pages(old_root, out_path, paper_dirs)
-    new_pages = list_pages(new_root, out_path, paper_dirs)
+    old_pages = list_pages(old_root, out_path, paper_dirs, exclude)
+    new_pages = list_pages(new_root, out_path, paper_dirs, exclude)
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:
@@ -1703,6 +1708,13 @@ def main(argv=None):
     ap.add_argument(
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
+    ap.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="site-relative folder to leave out of the comparison (repeatable)",
+    )
     args = ap.parse_args(argv)
     doc = build(
         args.old,
@@ -1710,6 +1722,7 @@ def main(argv=None):
         args.preview_url,
         args.title,
         out_path=args.out,
+        exclude=args.exclude,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
