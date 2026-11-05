@@ -1,12 +1,12 @@
-name: Example preview
+name: Example site
 
-# Previews examples/workspace on a PR the way a workspace's docs.yml does:
-# gh-pages pr-preview/pr-<N>/, a comment with the preview and What changed
-# links, and removal on close. Only PRs that change what the site renders run
-# it. Not a required check; the live root still moves only at a release.
+# A plain workspace in a subfolder, using this checkout's shipped workflow.
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,110 +14,35 @@ permissions:
   pages: read
 
 jobs:
-  scope:
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-    outputs:
-      run: ${{ steps.paths.outputs.run }}
-    steps:
-      # Close must run even after every rendered-path change was reverted.
-      # Filter builds here instead of filtering the workflow's close trigger.
-      - id: paths
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          ACTION: ${{ github.event.action }}
-        run: |
-          set -euo pipefail
-          if [ "$ACTION" = closed ]; then
-            echo 'run=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' > changed-paths
-          while IFS= read -r path; do
-            case "$path" in
-              examples/workspace/*|plugins/asta-tools/skills/workspace/assets/*|.github/workflows/workspace-quarto-site.yml|.github/workflows/example-preview.yml|scripts/request-example-pages-build.sh)
-                echo 'run=true' >> "$GITHUB_OUTPUT"
-                exit 0 ;;
-            esac
-          done < changed-paths
-          echo 'run=false' >> "$GITHUB_OUTPUT"
-
   docs:
-    needs: scope
-    if: needs.scope.outputs.run == 'true'
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
       site-dir: examples/workspace
       paper-strict: true
-
-  # Cleanup can succeed even if another job in the reusable workflow fails.
-  # Always publish closed-PR removals after docs finishes, regardless of result.
-  publish-pages:
-    needs: [scope, docs]
-    if: >-
-      always() && needs.scope.outputs.run == 'true' && (github.event.action == 'closed' || needs.docs.result == 'success')
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-    concurrency:
-      group: example-pages-build
-      cancel-in-progress: false
-      queue: max
-    steps:
-      # Before the switch no build is needed, and the helper may not be on
-      # main yet. Read configuration without executing any PR-controlled code.
-      - name: Check whether branch-based Pages publication is enabled
-        id: source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if response=$(gh api --include "repos/$GITHUB_REPOSITORY/pages"); then
-            config=$(sed '1,/^\r*$/d' <<< "$response")
-          else
-            case "$response" in
-              HTTP/*' 404 '*) echo 'Pages is not configured; leaving it unchanged.'; exit 0 ;;
-              *) echo '::error::Could not read the Pages configuration'; exit 1 ;;
-            esac
-          fi
-          if jq -e '.build_type == "legacy" and .source.branch == "gh-pages" and .source.path == "/"' <<< "$config" >/dev/null; then
-            echo 'enabled=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'Pages has not switched to gh-pages root; leaving its current deployment unchanged.'
-          fi
-      # Closed/conflicting PRs may have no merge ref. Only execute the helper
-      # from the trusted default branch, which contains it before the switch.
-      - uses: actions/checkout@v4
-        if: steps.source.outputs.enabled == 'true'
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - name: Publish preview updates and removals after the Pages switch
-        if: steps.source.outputs.enabled == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/request-example-pages-build.sh
+      render-paths: |
+        examples/workspace/**
+        plugins/asta-tools/skills/workspace/assets/**
+        .github/workflows/workspace-quarto-site.yml
+        .github/workflows/example-preview.yml
 
   check-preview:
+    name: Example preview browser
     needs: docs
-    if: >-
-      github.event.action != 'closed'
-      && needs.docs.result == 'success'
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && github.actor != 'dependabot[bot]'
+    if: always() && github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Require successful workspace jobs
+        env:
+          RESULT: ${{ needs.docs.result }}
+        run: test "$RESULT" = success
+      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Read the published preview from gh-pages
+      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        name: Read the published preview from gh-pages
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
@@ -129,23 +54,26 @@ jobs:
           fi
           mkdir preview-site
           git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
-      - uses: actions/setup-node@v4
+      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
-      - name: Install browser checks
+      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        name: Install browser checks
         working-directory: tests/browser
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Check the preview and What changed in a browser
+      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        name: Check the preview and What changed in a browser
         working-directory: tests/browser
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: node example-preview.mjs ../../preview-site artifacts
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        uses: actions/upload-artifact@v4
         with:
           name: example-preview-screenshots
           path: tests/browser/artifacts

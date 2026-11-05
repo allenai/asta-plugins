@@ -1,8 +1,6 @@
-"""Exercise release deployment selection and reporting without GitHub writes."""
+"""The example dogfoods workspace publication; releases only validate."""
 
-import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,864 +9,89 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = yaml.safe_load(
-    (ROOT / ".github/workflows/example-workspace.yml").read_text()
-)
-REPORT = WORKFLOW["jobs"]["report"]["steps"][0]["run"]
-TITLE = "Example workspace failed to build for v0.109.0"
 
 
-def reporter(
-    tmp_path,
-    issues=(),
-    *,
-    lookup_fails=False,
-    build="failure",
-    theme="success",
-    deploy="skipped",
-    gh_pages="skipped",
-    root="",
-    pages="",
-):
-    state = tmp_path / "issues.json"
-    state.write_text(json.dumps(list(issues)))
-    log = tmp_path / "calls.jsonl"
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\n"
-        + """import json, os, sys
-from pathlib import Path
-args = sys.argv[1:]
-with Path(os.environ["TEST_LOG"]).open("a") as output:
-    output.write(json.dumps(args) + "\\n")
-state = Path(os.environ["TEST_ISSUES"])
-issues = json.loads(state.read_text())
-if args[:2] == ["issue", "list"]:
-    if os.environ["LOOKUP_FAILS"] == "1":
-        sys.exit(22)
-    assert args[args.index("--state") + 1] == "all"
-    print(json.dumps(issues))
-elif args[:2] == ["issue", "create"]:
-    issues.append({"number": 42, "title": args[args.index("--title") + 1], "state": "OPEN"})
-    state.write_text(json.dumps(issues))
-elif args[:2] == ["issue", "reopen"]:
-    next(issue for issue in issues if str(issue["number"]) == args[2])["state"] = "OPEN"
-    state.write_text(json.dumps(issues))
-elif args[:2] != ["issue", "comment"]:
-    raise AssertionError(args)
-"""
+def load(name):
+    return yaml.load(
+        (ROOT / f".github/workflows/{name}.yml").read_text(), Loader=yaml.BaseLoader
     )
-    gh.chmod(0o755)
-    env = {
-        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "allenai/asta-plugins",
-        "REF": "v0.109.0",
-        "RUN": "https://github.com/allenai/asta-plugins/actions/runs/123",
-        "TEST_LOG": str(log),
-        "TEST_ISSUES": str(state),
-        "LOOKUP_FAILS": "1" if lookup_fails else "0",
-        "BUILD_RESULT": build,
-        "THEME_RESULT": theme,
-        "DEPLOY_RESULT": deploy,
-        "GH_PAGES_RESULT": gh_pages,
-        "GH_PAGES_ROOT_RESULT": root,
-        "GH_PAGES_BUILD_RESULT": pages,
-    }
-
-    def run(attempt):
-        env["RUN"] = f"https://github.com/allenai/asta-plugins/actions/runs/{attempt}"
-        return subprocess.run(
-            ["bash", "-c", REPORT],
-            cwd=tmp_path,
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=10,
-        )
-
-    def calls():
-        return (
-            [json.loads(line) for line in log.read_text().splitlines()]
-            if log.exists()
-            else []
-        )
-
-    return run, calls
-
-
-def test_failed_rerun_updates_the_existing_release_issue(tmp_path):
-    run, calls = reporter(tmp_path)
-    assert run(123).returncode == 0
-    assert run(124).returncode == 0
-    writes = [call for call in calls() if call[1] != "list"]
-    assert [call[1] for call in writes] == ["create", "comment"]
-    assert writes[1][2] == "42"
-    assert writes[1][-1].endswith("/actions/runs/124")
-
-
-def test_recurring_failure_reopens_the_release_issue(tmp_path):
-    run, calls = reporter(tmp_path, [{"number": 7, "title": TITLE, "state": "CLOSED"}])
-    assert run(125).returncode == 0
-    writes = [call for call in calls() if call[1] != "list"]
-    assert [call[1:3] for call in writes] == [["reopen", "7"], ["comment", "7"]]
-
-
-def test_similar_issue_title_does_not_capture_another_release(tmp_path):
-    run, calls = reporter(
-        tmp_path, [{"number": 7, "title": TITLE + "-rc.1", "state": "OPEN"}]
-    )
-    assert run(126).returncode == 0
-    assert [call[1] for call in calls()] == ["list", "create"]
-
-
-def test_failed_lookup_does_not_create_a_duplicate_issue(tmp_path):
-    run, calls = reporter(tmp_path, lookup_fails=True)
-    assert run(127).returncode != 0
-    assert [call[1] for call in calls()] == ["list"]
-
-
-def test_build_failure_preserves_any_existing_site(tmp_path):
-    run, calls = reporter(tmp_path)
-    assert run(128).returncode == 0
-    body = calls()[-1][-1]
-    assert "deployment was not attempted" in body
-    assert "Any previously published demo is unchanged" in body
-
-
-def test_browser_failure_reports_that_deployment_was_not_attempted(tmp_path):
-    run, calls = reporter(tmp_path, build="success", theme="failure")
-    assert run(128).returncode == 0
-    body = calls()[-1][-1]
-    assert "browser checks failed" in body
-    assert "deployment was not attempted" in body
-
-
-def test_deployment_failure_does_not_claim_the_live_site_is_unchanged(tmp_path):
-    run, calls = reporter(tmp_path, build="success", deploy="failure")
-    assert run(129).returncode == 0
-    body = calls()[-1][-1]
-    assert "deployment failed after a successful build" in body
-    assert "live site's state is unconfirmed" in body
-    assert "unchanged" not in body
-    assert "failed to build" not in body
-
-
-def test_successful_or_superseded_release_does_not_open_an_issue(tmp_path):
-    run, calls = reporter(tmp_path, build="success", deploy="success")
-    assert run(130).returncode == 0
-    assert calls() == []
 
 
 @pytest.mark.parametrize(
-    ("root", "pages", "expected", "absent"),
+    "paths,expected",
     [
-        (
-            "failure",
-            "skipped",
-            "writing its build to the gh-pages root failed",
-            "branch files are available",
-        ),
-        (
-            "success",
-            "failure",
-            "requesting or verifying its Pages build failed",
-            "writing its build to the gh-pages root failed",
-        ),
-        (
-            "",
-            "",
-            "failed before its outcome could be confirmed",
-            "writing its build to the gh-pages root failed",
-        ),
+        (["examples/workspace/slides/attention/slides.qmd"], "true"),
+        (["plugins/asta-tools/skills/workspace/SKILL.md"], "false"),
+        (["elsewhere.qmd", "examples/workspace/old.qmd"], "true"),
+        (["plugins/asta-tools/skills/workspace/assets/asta-slides/theme.scss"], "true"),
     ],
 )
-def test_root_push_and_pages_build_failures_are_reported_separately(
-    tmp_path, root, pages, expected, absent
-):
-    run, calls = reporter(
-        tmp_path,
-        build="success",
-        deploy="success",
-        gh_pages="failure",
-        root=root,
-        pages=pages,
+def test_shared_scope_matches_current_and_previous_paths(tmp_path, paths, expected):
+    workflow = load("workspace-quarto-site")
+    script = workflow["jobs"]["scope"]["steps"][0]["run"]
+    fake = tmp_path / "gh"
+    fake.write_text(f"#!{sys.executable}\nprint({chr(10).join(paths)!r})\n")
+    fake.chmod(0o755)
+    output = tmp_path / "out"
+    env = dict(
+        os.environ,
+        PATH=f"{tmp_path}:{os.environ['PATH']}",
+        EVENT="pull_request",
+        ACTION="synchronize",
+        SITE_DIR="examples/workspace",
+        RENDER_PATHS=load("example-preview")["jobs"]["docs"]["with"]["render-paths"],
+        GITHUB_OUTPUT=str(output),
+        GITHUB_REPOSITORY="owner/repo",
+        PR_NUMBER="1",
     )
-    assert run(131).returncode == 0
-    body = calls()[-1][-1]
-    assert expected in body
-    assert absent not in body
-
-
-def release_gate(tmp_path, ref, pages, *, lookup_fails=False, phase="deploy"):
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    selection = next(
-        step["run"]
-        for step in WORKFLOW["jobs"][phase]["steps"]
-        if step.get("id") == "release"
-    )
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\n"
-        + """import json, os, sys
-assert sys.argv[1:] == ["api", "--paginate", "--slurp", "repos/allenai/asta-plugins/tags?per_page=100"]
-if os.environ["LOOKUP_FAILS"] == "1":
-    sys.exit(22)
-print(os.environ["TEST_TAG_PAGES"])
-"""
-    )
-    gh.chmod(0o755)
-    output = tmp_path / "output"
-    result = subprocess.run(
-        ["bash", "-c", selection],
-        cwd=tmp_path,
-        env={
-            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-            "GITHUB_REPOSITORY": "allenai/asta-plugins",
-            "GITHUB_OUTPUT": str(output),
-            "REF": ref,
-            "TEST_TAG_PAGES": json.dumps(
-                [[{"name": tag} for tag in page] for page in pages]
-            ),
-            "LOOKUP_FAILS": "1" if lookup_fails else "0",
-        },
-        text=True,
-        capture_output=True,
-        timeout=10,
-    )
-    return result, output.read_text() if output.exists() else ""
-
-
-@pytest.mark.parametrize("phase", ["deploy", "publish-gh-pages"])
-@pytest.mark.parametrize(
-    ("ref", "expected"),
-    [("v0.9.0", "false"), ("v0.10.0", "true"), ("v0.11.0-rc.1", "false")],
-)
-def test_only_the_newest_final_tag_deploys_even_when_older_build_finishes_last(
-    tmp_path, ref, expected, phase
-):
-    result, output = release_gate(
-        tmp_path, ref, [["v0.11.0-rc.1", "latest", "v0.9.0"], ["v0.10.0"]], phase=phase
-    )
-    assert result.returncode == 0, result.stderr
-    assert output == f"current={expected}\n"
-
-
-@pytest.mark.parametrize("phase", ["deploy", "publish-gh-pages"])
-@pytest.mark.parametrize("pages", [[], [["latest", "v0.11.0-rc.1"]]])
-def test_no_final_tags_fails_closed(tmp_path, pages, phase):
-    result, output = release_gate(tmp_path, "v0.10.0", pages, phase=phase)
-    assert result.returncode != 0
-    assert output == ""
-
-
-@pytest.mark.parametrize("phase", ["deploy", "publish-gh-pages"])
-def test_unreadable_tags_fail_closed(tmp_path, phase):
-    result, output = release_gate(
-        tmp_path, "v0.10.0", [["v0.10.0"]], lookup_fails=True, phase=phase
-    )
-    assert result.returncode != 0
-    assert output == ""
-
-
-def test_older_release_is_rechecked_after_waiting_for_root_publication(tmp_path):
-    # The run was newest when deploy ran, but a newer tag appeared while it
-    # waited for the separate root-publishing job's lock.
-    result, output = release_gate(tmp_path / "deploy", "v1.0.0", [["v1.0.0"]])
-    assert result.returncode == 0, result.stderr
-    assert output == "current=true\n"
-    result, output = release_gate(
-        tmp_path / "publish", "v1.0.0", [["v1.0.0", "v1.1.0"]], phase="publish-gh-pages"
-    )
-    assert result.returncode == 0, result.stderr
-    assert output == "current=false\n"
-    root = WORKFLOW["jobs"]["publish-gh-pages"]
-    selection_index = next(
-        i for i, step in enumerate(root["steps"]) if step.get("id") == "release"
-    )
-    for step_id in ("root", "pages"):
-        index = next(
-            i for i, step in enumerate(root["steps"]) if step.get("id") == step_id
-        )
-        assert index > selection_index
-        assert root["steps"][index]["if"] == "steps.release.outputs.current == 'true'"
-    assert root["concurrency"]["group"] == "example-pages-build"
-    assert root["concurrency"]["cancel-in-progress"] is False
-
-
-def test_release_selection_runs_under_the_shared_pages_lock():
-    deploy = WORKFLOW["jobs"]["deploy"]
-    assert deploy["concurrency"] == {
-        "group": "pages",
-        "cancel-in-progress": False,
-        "queue": "max",
-    }
-    assert deploy["steps"][0]["id"] == "release"
-    source = next(step for step in deploy["steps"] if step.get("id") == "source")
-    deployment = next(
-        step for step in deploy["steps"] if step.get("id") == "deployment"
-    )
-    assert source["if"] == "steps.release.outputs.current == 'true'"
-    assert deployment["if"] == (
-        "steps.release.outputs.current == 'true' && steps.source.outputs.mode == 'workflow'"
-    )
-    # A skipped Actions step leaves deploy successful, so branch-mode releases
-    # still write the root and explicitly request/verify a Pages build.
-    root = WORKFLOW["jobs"]["publish-gh-pages"]
-    assert "needs.deploy.result == 'success'" in root["if"]
-    assert "needs.deploy.outputs.current == 'true'" in root["if"]
+    subprocess.run([sys.executable, "-c", script], env=env, check=True)
+    assert output.read_text() == f"render={expected}\n"
+    assert ".previous_filename // empty" in script
 
 
 @pytest.mark.parametrize(
-    ("config", "expected"),
+    "event,action,expected",
     [
-        ({"build_type": "workflow"}, "workflow"),
-        (
-            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-            "legacy",
-        ),
-        ({"build_type": "legacy", "source": {"branch": "main", "path": "/"}}, ""),
-        (
-            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/docs"}},
-            "",
-        ),
-        ({"build_type": "unknown"}, ""),
-        ({}, ""),
-        (None, ""),  # API failure must not guess a mode or change the source.
+        ("pull_request", "closed", "false"),
+        ("push", "", "true"),
     ],
 )
-def test_release_uses_the_configured_pages_mode_without_changing_it(
-    tmp_path, config, expected
+def test_close_needs_no_file_lookup_and_main_always_builds(
+    tmp_path, event, action, expected
 ):
-    source = next(
-        step
-        for step in WORKFLOW["jobs"]["deploy"]["steps"]
-        if step.get("id") == "source"
+    script = load("workspace-quarto-site")["jobs"]["scope"]["steps"][0]["run"]
+    output = tmp_path / "out"
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        env=dict(os.environ, EVENT=event, ACTION=action, GITHUB_OUTPUT=str(output)),
     )
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\n"
-        + "import sys\n"
-        + "assert sys.argv[1:] == ['api', 'repos/owner/project/pages']\n"
-        + ("sys.exit(1)\n" if config is None else f"print({json.dumps(config)!r})\n")
-    )
-    gh.chmod(0o755)
-    output = tmp_path / "output"
-    result = subprocess.run(
-        ["bash", "-c", source["run"]],
-        env={
-            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-            "GITHUB_REPOSITORY": "owner/project",
-            "GITHUB_OUTPUT": str(output),
-        },
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert result.returncode == (0 if expected else 1), result.stderr
-    assert (output.read_text() if output.exists() else "") == (
-        f"mode={expected}\n" if expected else ""
-    )
+    assert output.read_text() == f"render={expected}\n"
 
 
-def test_shared_asset_changes_trigger_the_example_check():
-    # PyYAML's YAML 1.1 loader interprets the GitHub Actions key 'on' as True.
-    paths = WORKFLOW[True]["pull_request"]["paths"]
-    assert "plugins/asta-tools/skills/workspace/assets/**" in paths
-
-
-def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflow():
-    wf = yaml.safe_load((ROOT / ".github/workflows/example-preview.yml").read_text())
-    trigger = wf[True]["pull_request"]  # PyYAML reads the `on:` key as True
-    assert trigger["types"] == ["opened", "synchronize", "reopened", "closed"]
-    assert "paths" not in trigger
-    assert "paths-ignore" not in trigger
-    job = wf["jobs"]["docs"]
-    assert job["uses"] == "./.github/workflows/workspace-quarto-site.yml"
-    assert job["with"]["site-dir"] == "examples/workspace"
-
-    shared = yaml.safe_load(
-        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
-    )
-    assert shared[True]["workflow_call"]["inputs"]["site-dir"]["default"] == "."
-    build = shared["jobs"]["build"]
-    assert build["defaults"]["run"]["working-directory"] == "${{ inputs.site-dir }}"
-
-
-def pages_builder(
-    tmp_path,
-    config,
-    builds=("built",),
-    *,
-    config_status=200,
-    fail_at="",
-    comparisons=None,
-):
-    log = tmp_path / "calls.jsonl"
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\n"
-        + "import json, sys\nfrom pathlib import Path\n"
-        + f"log = Path({str(log)!r})\n"
-        + f"config = {config!r}\nbuilds = {list(builds)!r}\n"
-        + f"config_status = {config_status!r}\nfail_at = {fail_at!r}\n"
-        + f"comparisons = {comparisons or {}!r}\n"
-        + "args = sys.argv[1:]\n"
-        + "calls = log.read_text().splitlines() if log.exists() else []\n"
-        + "with log.open('a') as out: out.write(json.dumps(args) + '\\n')\n"
-        + "if args == ['api', '--include', 'repos/owner/project/pages']:\n"
-        + "    if config_status: print(f'HTTP/2.0 {config_status} Status\\r\\nContent-Type: application/json\\r\\n\\r\\n' + json.dumps(config))\n"
-        + "    sys.exit(0 if config_status == 200 else 1)\n"
-        + "elif args == ['api', 'repos/owner/project/git/ref/heads/gh-pages', '--jq', '.object.sha']:\n"
-        + "    if fail_at == 'branch': sys.exit(1)\n"
-        + "    print('pushed-sha')\n"
-        + "elif args == ['api', '--method', 'POST', 'repos/owner/project/pages/builds', '--jq', '.url']:\n"
-        + "    if fail_at == 'request': sys.exit(1)\n"
-        + "    print('https://api.github.com/repos/owner/project/pages/builds/latest')\n"
-        + "elif args == ['api', 'https://api.github.com/repos/owner/project/pages/builds/latest']:\n"
-        + "    if fail_at == 'poll': sys.exit(1)\n"
-        + "    polls = sum('https://api.github.com/repos/owner/project/pages/builds/latest' in json.loads(call) for call in calls)\n"
-        + "    build = builds[min(polls, len(builds) - 1)]\n"
-        + "    print(json.dumps({'commit': 'pushed-sha', 'status': build} if isinstance(build, str) else build))\n"
-        + "elif args[0] == 'api' and args[1].startswith('repos/owner/project/compare/pushed-sha...'):\n"
-        + "    assert args[2:] == ['--jq', '.status']\n"
-        + "    if fail_at == 'compare': sys.exit(1)\n"
-        + "    print(comparisons.get(args[1].split('...')[-1], 'diverged'))\n"
-        + "else: raise AssertionError(args)\n"
-    )
-    gh.chmod(0o755)
-    sleep = tmp_path / "sleep"
-    sleep.write_text("#!/bin/sh\nexit 0\n")
-    sleep.chmod(0o755)
-    result = subprocess.run(
-        ["bash", str(ROOT / "scripts/request-example-pages-build.sh")],
-        env={
-            "PATH": f"{tmp_path}:/usr/bin:/bin",
-            "GITHUB_REPOSITORY": "owner/project",
-            "PAGES_POLLS": "3",
-        },
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return result, [json.loads(line) for line in log.read_text().splitlines()]
-
-
-@pytest.mark.parametrize(
-    "config",
-    [
-        {"build_type": "workflow", "source": {"branch": "main", "path": "/"}},
-        {"build_type": "legacy", "source": {"branch": "other", "path": "/"}},
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/docs"}},
-    ],
-)
-def test_pages_build_waits_for_the_operator_source_switch(tmp_path, config):
-    result, calls = pages_builder(tmp_path, config)
-    assert result.returncode == 0, result.stderr
-    assert calls == [["api", "--include", "repos/owner/project/pages"]]
-
-
-def test_pages_build_explicitly_publishes_bot_push_and_waits(tmp_path):
-    result, calls = pages_builder(
-        tmp_path,
-        {
-            "build_type": "legacy",
-            "source": {"branch": "gh-pages", "path": "/"},
-        },
-        ("queued", "building", "built"),
-    )
-    assert result.returncode == 0, result.stderr
-    assert sum("POST" in call for call in calls) == 1
-    assert len(calls) == 6
-    assert "pushed-sha" in result.stdout
-
-
-@pytest.mark.parametrize("old_status", ["built", "errored"])
-def test_pages_build_ignores_previous_or_unrelated_commit_results(tmp_path, old_status):
-    result, calls = pages_builder(
-        tmp_path,
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-        ({"commit": "previous-sha", "status": old_status}, "building", "built"),
-    )
-    assert result.returncode == 0, result.stderr
-    assert sum(len(call) == 2 for call in calls) == 3
-
-
-def test_pages_build_never_accepts_another_commits_success(tmp_path):
-    result, _ = pages_builder(
-        tmp_path,
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-        ({"commit": "other-sha", "status": "built"},),
-    )
-    assert result.returncode == 1
-    assert "Timed out" in result.stdout
-
-
-@pytest.mark.parametrize("status", ["built", "errored"])
-def test_pages_build_accepts_a_newer_descendant_selected_after_the_request(
-    tmp_path, status
-):
-    result, calls = pages_builder(
-        tmp_path,
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-        (
-            {"commit": "old-sha", "status": "built"},
-            {"commit": "new-sha", "status": "building"},
-            {"commit": "new-sha", "status": status},
-        ),
-        comparisons={"old-sha": "behind", "new-sha": "ahead"},
-    )
-    assert result.returncode == (0 if status == "built" else 1), result.stderr
-    assert "new-sha (includes pushed-sha)" in result.stdout
-    assert "Timed out" not in result.stdout
-    assert [
-        "api",
-        "repos/owner/project/compare/pushed-sha...new-sha",
-        "--jq",
-        ".status",
-    ] in calls
-
-
-@pytest.mark.parametrize("relation", ["behind", "diverged"])
-@pytest.mark.parametrize("status", ["built", "errored"])
-def test_pages_build_rejects_older_or_unrelated_terminal_results(
-    tmp_path, relation, status
-):
-    result, _ = pages_builder(
-        tmp_path,
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-        ({"commit": "other-sha", "status": status},),
-        comparisons={"other-sha": relation},
-    )
-    assert result.returncode == 1
-    assert "Timed out" in result.stdout
-    assert "Pages published" not in result.stdout
-
-
-def test_pages_build_cannot_verify_a_descendant_when_comparison_fails(tmp_path):
-    result, _ = pages_builder(
-        tmp_path,
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-        ({"commit": "new-sha", "status": "built"},),
-        fail_at="compare",
-    )
-    assert result.returncode != 0
-    assert "Pages published" not in result.stdout
-    assert "::error::Could not compare Pages build new-sha" in result.stdout
-
-
-@pytest.mark.parametrize("status", [0, 403, 404, 500])
-def test_only_an_unconfigured_pages_response_is_skipped(tmp_path, status):
-    result, calls = pages_builder(tmp_path, {}, config_status=status)
-    assert result.returncode == (0 if status == 404 else 1)
-    assert len(calls) == 1
-
-
-@pytest.mark.parametrize("fail_at", ["branch", "request", "poll"])
-def test_pages_build_api_failures_do_not_claim_publication(tmp_path, fail_at):
-    result, _ = pages_builder(
-        tmp_path,
-        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-        fail_at=fail_at,
-    )
-    assert result.returncode != 0
-    assert "Pages published" not in result.stdout
-
-
-@pytest.mark.parametrize("status", ["errored", "building"])
-def test_pages_build_surfaces_failure_or_timeout(tmp_path, status):
-    result, _ = pages_builder(
-        tmp_path,
-        {
-            "build_type": "legacy",
-            "source": {"branch": "gh-pages", "path": "/"},
-        },
-        (status,),
-    )
-    assert result.returncode == 1
-    assert "::error::" in result.stdout
-
-
-def test_preview_updates_cleanup_and_releases_request_pages_publication():
-    preview = yaml.safe_load(
-        (ROOT / ".github/workflows/example-preview.yml").read_text()
-    )
-    publish = preview["jobs"]["publish-pages"]
-    assert publish["needs"] == ["scope", "docs"]
-    assert "github.event.action == 'closed'" in publish["if"]
-    assert "head.repo.full_name == github.repository" in publish["if"]
-    assert publish["permissions"] == {"contents": "read", "pages": "write"}
-    assert publish["steps"][-1]["run"] == "bash scripts/request-example-pages-build.sh"
-    release = WORKFLOW["jobs"]["publish-gh-pages"]
-    assert "needs.deploy.outputs.current == 'true'" in release["if"]
-    assert release["steps"][-1]["run"] == "bash scripts/request-example-pages-build.sh"
+def test_example_has_one_publisher_and_unfiltered_close():
+    caller = load("example-preview")
+    assert caller["on"]["push"]["branches"] == ["main"]
+    assert "closed" in caller["on"]["pull_request"]["types"]
+    assert "paths" not in caller["on"]["pull_request"]
     assert (
-        release["concurrency"]
-        == publish["concurrency"]
-        == {
-            "group": "example-pages-build",
-            "cancel-in-progress": False,
-            "queue": "max",
-        }
+        caller["jobs"]["docs"]["uses"]
+        == "./.github/workflows/workspace-quarto-site.yml"
     )
-    assert release["outputs"] == {
-        "root": "${{ steps.root.outcome }}",
-        "pages": "${{ steps.pages.outcome }}",
-    }
+    release = load("example-workspace")
+    assert set(release["jobs"]) == {"build", "theme"}
+    assert not (ROOT / "scripts/request-example-pages-build.sh").exists()
+    shared = load("workspace-quarto-site")
+    assert "needs" not in shared["jobs"]["cleanup-preview"]
+    assert "scope.outputs.render" not in shared["jobs"]["cleanup-preview"]["if"]
+    assert "closed" in shared["jobs"]["cleanup-preview"]["if"]
 
 
-def test_closed_preview_cleanup_publishes_even_when_other_docs_jobs_fail():
-    workflow = yaml.safe_load(
-        (ROOT / ".github/workflows/example-preview.yml").read_text()
-    )
-    # Assert the actual Actions expression instead of translating its semantics
-    # into Python. Close bypasses the aggregate docs result, retaining guards.
-    assert " ".join(workflow["jobs"]["publish-pages"]["if"].split()) == (
-        "always() && needs.scope.outputs.run == 'true' && (github.event.action == 'closed' || needs.docs.result == 'success') "
-        "&& github.event.pull_request.head.repo.full_name == github.repository "
-        "&& github.actor != 'dependabot[bot]'"
-    )
-
-
-def test_pages_publication_uses_the_default_branch_without_a_pr_merge_ref():
-    workflow = yaml.safe_load(
-        (ROOT / ".github/workflows/example-preview.yml").read_text()
-    )
-    steps = workflow["jobs"]["publish-pages"]["steps"]
-    source, checkout, publish = steps
-    assert source["id"] == "source"
-    assert checkout["uses"] == "actions/checkout@v4"
-    assert checkout["with"]["ref"] == "${{ github.event.repository.default_branch }}"
-    assert checkout["with"]["persist-credentials"] is False
-    assert checkout["if"] == publish["if"] == "steps.source.outputs.enabled == 'true'"
-
-    shared = yaml.safe_load(
-        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
-    )
-    cleanup = shared["jobs"]["cleanup-preview"]["steps"][0]
-    assert cleanup["with"]["ref"] == "${{ github.event.pull_request.base.sha }}"
-
-
-@pytest.mark.parametrize(
-    ("config", "status", "enabled", "returncode"),
-    [
-        ({"build_type": "workflow"}, 200, False, 0),
-        (
-            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
-            200,
-            True,
-            0,
-        ),
-        (
-            {"build_type": "legacy", "source": {"branch": "other", "path": "/"}},
-            200,
-            False,
-            0,
-        ),
-        (
-            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/docs"}},
-            200,
-            False,
-            0,
-        ),
-        ({}, 404, False, 0),
-        ({}, 403, False, 1),
-        ({}, 500, False, 1),
-    ],
-)
-def test_preview_publication_checks_source_before_loading_default_branch(
-    tmp_path, config, status, enabled, returncode
-):
-    workflow = yaml.safe_load(
-        (ROOT / ".github/workflows/example-preview.yml").read_text()
-    )
-    source = workflow["jobs"]["publish-pages"]["steps"][0]
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\nimport sys\n"
-        "assert sys.argv[1:] == ['api', '--include', 'repos/owner/project/pages']\n"
-        f"print('HTTP/2.0 {status} Status\\r\\nContent-Type: application/json\\r\\n\\r\\n' + {json.dumps(config)!r})\n"
-        f"sys.exit({0 if status == 200 else 1})\n"
-    )
-    gh.chmod(0o755)
-    output = tmp_path / "output"
-    result = subprocess.run(
-        ["bash", "-c", source["run"]],
-        env={
-            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-            "GITHUB_REPOSITORY": "owner/project",
-            "GITHUB_OUTPUT": str(output),
-        },
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert result.returncode == returncode, result.stderr
-    assert (output.read_text() if output.exists() else "") == (
-        "enabled=true\n" if enabled else ""
-    )
-
-
-@pytest.mark.parametrize("existing", [False, True])
-@pytest.mark.parametrize("failure", ["", "ls-remote", "fetch"])
-def test_release_root_initializes_only_a_missing_branch_and_keeps_previews(
-    tmp_path, existing, failure
-):
-    real_git = shutil.which("git")
-    env = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": "test",
-        "GIT_AUTHOR_EMAIL": "test@example.com",
-        "GIT_COMMITTER_NAME": "test",
-        "GIT_COMMITTER_EMAIL": "test@example.com",
-    }
-
-    def git(*args):
-        return subprocess.check_output(
-            [real_git, *args], cwd=tmp_path, env=env, text=True
-        ).strip()
-
-    origin = tmp_path / "origin.git"
-    git("init", "--bare", str(origin))
-    git("init", "-b", "main")
-    git("remote", "add", "origin", str(origin))
-    git("commit", "--allow-empty", "-m", "source")
-    if existing:
-        git("checkout", "-b", "gh-pages")
-        (tmp_path / "index.html").write_text("old release")
-        (tmp_path / "CNAME").write_text("example.test\n")
-        preview = tmp_path / "pr-preview/pr-123/index.html"
-        preview.parent.mkdir(parents=True)
-        preview.write_text("keep this preview")
-        git("add", "index.html", "CNAME", "pr-preview/pr-123/index.html")
-        git("commit", "-m", "existing site")
-        git("push", "origin", "gh-pages")
-        git("checkout", "main")
-        # A fresh Actions checkout has no local gh-pages branch.
-        git("branch", "-D", "gh-pages")
-    before = git("ls-remote", "origin", "refs/heads/gh-pages")
-    (tmp_path / "_site").mkdir()
-    (tmp_path / "_site/index.html").write_text("new release")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    wrapper = bin_dir / "git"
-    wrapper.write_text(
-        f"#!{sys.executable}\nimport os, sys\n"
-        f"if sys.argv[1] == {failure!r}: sys.exit(128)\n"
-        f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
-    )
-    wrapper.chmod(0o755)
-    script = next(
-        s["run"]
-        for s in WORKFLOW["jobs"]["publish-gh-pages"]["steps"]
-        if s.get("id") == "root"
-    )
-    result = subprocess.run(
-        ["bash", "-c", script],
-        cwd=tmp_path,
-        env={
-            **env,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "REF": "v1.0.0",
-            "GITHUB_RUN_ID": "123",
-        },
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    fails = failure == "ls-remote" or (existing and failure == "fetch")
-    if fails:
-        assert result.returncode != 0
-        assert git("ls-remote", "origin", "refs/heads/gh-pages") == before
-        assert "refs/heads/gh-pages" not in git(
-            "for-each-ref", "--format=%(refname)", "refs/heads"
-        )
-    else:
-        assert result.returncode == 0, result.stderr
-        assert (
-            git("--git-dir", str(origin), "show", "gh-pages:index.html")
-            == "new release"
-        )
-        if existing:
-            assert (
-                git("--git-dir", str(origin), "show", "gh-pages:CNAME")
-                == "example.test"
-            )
-            assert (
-                git(
-                    "--git-dir",
-                    str(origin),
-                    "show",
-                    "gh-pages:pr-preview/pr-123/index.html",
-                )
-                == "keep this preview"
-            )
-
-
-def test_fork_builds_stay_read_only_and_never_try_to_publish():
-    shared = yaml.safe_load(
-        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
-    )
-    assert shared["jobs"]["build"]["permissions"] == {"contents": "read"}
-    assert "head.repo.full_name != github.repository" in shared["jobs"]["deploy"]["if"]
-    assert (
-        "head.repo.full_name == github.repository"
-        in shared["jobs"]["cleanup-preview"]["if"]
-    )
-    assert (
-        "head.repo.full_name != github.repository"
-        in shared["jobs"]["preview-unavailable"]["if"]
-    )
-
-
-@pytest.mark.parametrize(
-    ("action", "paths", "expected"),
-    [
-        ("closed", [], "true"),
-        ("synchronize", ["plugins/asta-tools/skills/workspace/SKILL.md"], "false"),
-        ("synchronize", [], "false"),
-        ("opened", ["examples/workspace/index.qmd"], "true"),
-        (
-            "synchronize",
-            ["plugins/asta-tools/skills/workspace/assets/paper-viewer.py"],
-            "true",
-        ),
-        ("reopened", [".github/workflows/workspace-quarto-site.yml"], "true"),
-    ],
-)
-def test_preview_scope_always_cleans_up_but_only_builds_rendered_changes(
-    tmp_path, action, paths, expected
-):
-    workflow = yaml.safe_load(
-        (ROOT / ".github/workflows/example-preview.yml").read_text()
-    )
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\nimport sys\n"
-        + (
-            "raise AssertionError('close must not query changed files')\n"
-            if action == "closed"
-            else "assert sys.argv[1:] == ['api', '--paginate', 'repos/owner/project/pulls/275/files', '--jq', '.[].filename']\n"
-            + f"print({chr(10).join(paths)!r})\n"
-        )
-    )
-    gh.chmod(0o755)
-    output = tmp_path / "output"
-    result = subprocess.run(
-        ["bash", "-c", workflow["jobs"]["scope"]["steps"][0]["run"]],
-        cwd=tmp_path,
-        env={
-            **os.environ,
-            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-            "ACTION": action,
-            "PR_NUMBER": "275",
-            "GITHUB_REPOSITORY": "owner/project",
-            "GITHUB_OUTPUT": str(output),
-        },
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert result.returncode == 0, result.stderr
-    assert output.read_text() == f"run={expected}\n"
-    assert workflow["jobs"]["docs"]["needs"] == "scope"
-    assert workflow["jobs"]["docs"]["if"] == "needs.scope.outputs.run == 'true'"
+def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
+    check = load("example-preview")["jobs"]["check-preview"]
+    assert check["name"] == "Example preview browser"
+    assert "always()" in check["if"]
+    assert "needs.docs.outputs.rendered" not in check["if"]
+    assert check["steps"][0]["run"] == 'test "$RESULT" = success'
+    for step in check["steps"][1:]:
+        assert "needs.docs.outputs.rendered == 'true'" in step["if"]

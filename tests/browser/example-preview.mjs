@@ -53,9 +53,12 @@ try {
     const response = await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded" });
     assert.equal(response.status(), 200, path);
     requirePreviewLink(page.url(), base);
-    // A root-relative link must fail even when the same file exists at root.
-    const escaped = await page.evaluate(() => new URL("/slides/attention/slides.html", location.href).href);
-    assert.throws(() => requirePreviewLink(escaped, base), /link stays in the preview/);
+    // Check actual document URLs, so a root-relative escape cannot pass just
+    // because the same file happens to exist at the server root.
+    for (const href of await page.locator('a[href], iframe[src], script[src], link[href], img[src]').evaluateAll(
+      elements => elements.map(el => el.href || el.src).filter(Boolean))) {
+      if (href.startsWith(new URL(base).origin + "/")) requirePreviewLink(href, base);
+    }
     if (path === "what-changed.html") {
       assert.match(await page.locator("body").innerText(), /What changed/i);
       const changedSlides = page.locator("article.slide-diff:not(.removed)");

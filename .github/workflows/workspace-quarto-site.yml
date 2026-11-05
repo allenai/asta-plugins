@@ -15,6 +15,10 @@ name: Quarto site
 
 on:
   workflow_call:
+    outputs:
+      rendered:
+        description: Whether this event affects the rendered site
+        value: ${{ jobs.scope.outputs.render }}
     inputs:
       quarto-version:
         description: Quarto CLI version used to render generated sources
@@ -33,13 +37,57 @@ on:
         type: string
         default: "."
 
+      render-paths:
+        description: Newline-separated repository-relative globs affecting rendered content; defaults to everything under site-dir
+        type: string
+        default: ""
+
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      render: ${{ steps.paths.outputs.render }}
+    steps:
+      - id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          SITE_DIR: ${{ inputs.site-dir }}
+          RENDER_PATHS: ${{ inputs.render-paths }}
+        shell: python
+        run: |
+          import fnmatch, json, os, subprocess
+          from pathlib import Path
+          render = False
+          if os.environ['ACTION'] != 'closed':
+              if os.environ['EVENT'] != 'pull_request':
+                  render = True
+              else:
+                  paths = subprocess.check_output([
+                      'gh', 'api', '--paginate',
+                      f"repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{os.environ['PR_NUMBER']}/files",
+                      '--jq', '.[] | .filename, (.previous_filename // empty)',
+                  ], text=True).splitlines()
+                  patterns = os.environ['RENDER_PATHS'].splitlines()
+                  patterns = [p.strip() for p in patterns if p.strip()]
+                  if not patterns:
+                      site = os.environ['SITE_DIR'].strip('./')
+                      patterns = [f'{site}/**' if site else '**']
+                  render = any(fnmatch.fnmatchcase(path, pattern) for path in paths for pattern in patterns)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write(f'render={str(render).lower()}\n')
   # Build + quality gates (via `make check`). This is the required status
   # check. Concurrency is keyed per PR (or per branch for main), so a new
   # commit supersedes its own stale build while separate PRs and main never
   # cancel each other.
   build:
+    needs: scope
     if: >-
+      needs.scope.outputs.render == 'true' &&
       github.event.action != 'closed' &&
       github.event_name != 'pull_request_target' && github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
@@ -48,7 +96,7 @@ jobs:
     permissions:
       contents: read
     concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     defaults:
       run:
@@ -346,7 +394,7 @@ jobs:
       # domain, not <owner>.github.io/<repo>). Degrades gracefully if absent.
       pages: read
     concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -514,7 +562,6 @@ jobs:
               fi
               body=$(printf '%s\n⬆️ asta-plugins version: %s → %s (%s)' "$body" "$old_label" "$new_label" "$link")
             fi
-            body=$(printf '%s\n\nThis preview is marked noindex; the main site stays indexable.' "$body")
             # Guard the read: it runs the same set of transient failure modes as
             # the writes below (a 5xx returns an HTML body that --jq can't parse),
             # so an unguarded assignment would abort the step mid-publish.
@@ -581,7 +628,7 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
       # A closed PR with conflicts may have no synthetic merge ref. Cleanup

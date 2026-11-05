@@ -1120,6 +1120,7 @@ def test_paper_overrides_stay_in_unprivileged_build() -> None:
 def test_preview_job_conditions(event, action, head_repo, actor, expected) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     context = {
+        "needs.scope.outputs.render": "true",
         "github.repository": "owner/site",
         "github.event_name": event,
         "github.event.action": action,
@@ -1161,6 +1162,7 @@ def _condition_enabled(expression, context):
 def test_workflow_dispatch_publishes_only_the_default_branch(ref, deploys) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     context = {
+        "needs.scope.outputs.render": "true",
         "github.repository": "owner/site",
         "github.event_name": "workflow_dispatch",
         "github.actor": "contributor",
@@ -1547,11 +1549,7 @@ def test_preview_comment_reports_asta_plugins_version_change(
     assert "comment block completed" in result.stdout
     lines = comment_body.read_text().splitlines()
     assert lines[0] == "📄 Preview: https://example/pr-preview/pr-7/"
-    assert lines[1:-2] == ([expected] if expected else [])
-    assert lines[-2:] == [
-        "",
-        "This preview is marked noindex; the main site stays indexable.",
-    ]
+    assert lines[1:] == ([expected] if expected else [])
     commands = api_log.read_text().splitlines()
     if existing_comment:
         assert any("issues/comments/123 -X PATCH" in command for command in commands)

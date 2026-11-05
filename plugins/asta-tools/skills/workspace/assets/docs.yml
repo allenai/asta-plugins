@@ -34,3 +34,13 @@ jobs:
     # each release tag; existing projects receive the one-line bump when their
     # workspace assets are upgraded.
     uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@v0.124.0
+    # For a site below the repository root, set site-dir. By default only
+    # changes under that directory render; list additional repository-relative
+    # globs in render-paths when shared assets outside it affect the site.
+    # Do not add pull_request.paths: closing any PR must clean up its preview,
+    # including after matching changes were reverted or renamed away.
+    # with:
+    #   site-dir: research/site
+    #   render-paths: |
+    #     research/site/**
+    #     shared-theme/**
