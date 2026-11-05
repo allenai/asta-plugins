@@ -174,3 +174,4 @@ Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`. If the pro
 
 - **Local container** (working on their machine without installs): run `make dev` to open VS Code attached to the local container.
 - **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed, with [repo setup](workflows/repo-setup.md)), then `gh codespace create` and give the user the URL. Authenticate with `asta auth login` in the codespace terminal (persisted across rebuilds) or the optional `ASTA_TOKEN` Codespaces secret. Port 4848 raises a notification (`onAutoForward: notify`) and the forwarded preview URL is printed in the attach terminal. Open either link in a separate browser tab. `localhost:4848` in Simple Browser does not reach a browser-based codespace's forwarded port, and a private forwarded URL may fail in its embedded frame. Local VS Code can use **Ports → Preview in Editor**.
+
