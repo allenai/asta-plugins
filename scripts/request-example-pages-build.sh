@@ -16,7 +16,8 @@ if ! jq -e '.build_type == "legacy" and .source.branch == "gh-pages" and .source
   exit 0
 fi
 # The request's URL names /latest, not an immutable build. Do not accept the
-# previous build (or another commit's build) as proof this push was published.
+# previous build as proof this push was published. Concurrent preview pushes
+# can advance gh-pages before Pages selects its build, so descendants count too.
 commit=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/gh-pages" --jq .object.sha)
 if [ -z "$commit" ] || [ "$commit" = null ]; then
   echo '::error::Could not identify the gh-pages commit to publish'
@@ -25,10 +26,27 @@ fi
 build=$(gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds" --jq .url)
 for ((poll=0; poll<${PAGES_POLLS:-60}; poll++)); do
   result=$(gh api "$build")
-  status=$(jq -r --arg commit "$commit" 'select(.commit == $commit) | .status' <<< "$result")
+  status=$(jq -r '.status' <<< "$result")
   case "$status" in
-    built) echo "Pages published gh-pages $commit: $build"; exit 0 ;;
-    errored) echo "::error::Pages build failed for $commit: $build"; exit 1 ;;
+    built|errored)
+      built_commit=$(jq -r '.commit // empty' <<< "$result")
+      if [ -n "$built_commit" ] && [ "$built_commit" != "$commit" ]; then
+        relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$built_commit" --jq .status)
+        case "$relation" in
+          ahead|identical) ;;
+          *) sleep 5; continue ;;
+        esac
+      elif [ -z "$built_commit" ]; then
+        sleep 5
+        continue
+      fi
+      if [ "$status" = built ]; then
+        echo "Pages published gh-pages $built_commit (includes $commit): $build"
+        exit 0
+      fi
+      echo "::error::Pages build failed for $built_commit (includes $commit): $build"
+      exit 1
+      ;;
   esac
   sleep 5
 done

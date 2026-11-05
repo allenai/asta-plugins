@@ -300,7 +300,13 @@ def test_example_preview_runs_only_for_rendered_paths_through_the_shared_workflo
 
 
 def pages_builder(
-    tmp_path, config, builds=("built",), *, config_status=200, fail_at=""
+    tmp_path,
+    config,
+    builds=("built",),
+    *,
+    config_status=200,
+    fail_at="",
+    comparisons=None,
 ):
     log = tmp_path / "calls.jsonl"
     gh = tmp_path / "gh"
@@ -310,6 +316,7 @@ def pages_builder(
         + f"log = Path({str(log)!r})\n"
         + f"config = {config!r}\nbuilds = {list(builds)!r}\n"
         + f"config_status = {config_status!r}\nfail_at = {fail_at!r}\n"
+        + f"comparisons = {comparisons or {}!r}\n"
         + "args = sys.argv[1:]\n"
         + "calls = log.read_text().splitlines() if log.exists() else []\n"
         + "with log.open('a') as out: out.write(json.dumps(args) + '\\n')\n"
@@ -327,6 +334,10 @@ def pages_builder(
         + "    polls = sum('https://api.github.com/repos/owner/project/pages/builds/latest' in json.loads(call) for call in calls)\n"
         + "    build = builds[min(polls, len(builds) - 1)]\n"
         + "    print(json.dumps({'commit': 'pushed-sha', 'status': build} if isinstance(build, str) else build))\n"
+        + "elif args[0] == 'api' and args[1].startswith('repos/owner/project/compare/pushed-sha...'):\n"
+        + "    assert args[2:] == ['--jq', '.status']\n"
+        + "    if fail_at == 'compare': sys.exit(1)\n"
+        + "    print(comparisons.get(args[1].split('...')[-1], 'diverged'))\n"
         + "else: raise AssertionError(args)\n"
     )
     gh.chmod(0o755)
@@ -377,16 +388,14 @@ def test_pages_build_explicitly_publishes_bot_push_and_waits(tmp_path):
 
 
 @pytest.mark.parametrize("old_status", ["built", "errored"])
-def test_pages_build_ignores_previous_or_concurrent_commit_results(
-    tmp_path, old_status
-):
+def test_pages_build_ignores_previous_or_unrelated_commit_results(tmp_path, old_status):
     result, calls = pages_builder(
         tmp_path,
         {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
         ({"commit": "previous-sha", "status": old_status}, "building", "built"),
     )
     assert result.returncode == 0, result.stderr
-    assert len(calls) == 6
+    assert sum(len(call) == 2 for call in calls) == 3
 
 
 def test_pages_build_never_accepts_another_commits_success(tmp_path):
@@ -397,6 +406,58 @@ def test_pages_build_never_accepts_another_commits_success(tmp_path):
     )
     assert result.returncode == 1
     assert "Timed out" in result.stdout
+
+
+@pytest.mark.parametrize("status", ["built", "errored"])
+def test_pages_build_accepts_a_newer_descendant_selected_after_the_request(
+    tmp_path, status
+):
+    result, calls = pages_builder(
+        tmp_path,
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+        (
+            {"commit": "old-sha", "status": "built"},
+            {"commit": "new-sha", "status": "building"},
+            {"commit": "new-sha", "status": status},
+        ),
+        comparisons={"old-sha": "behind", "new-sha": "ahead"},
+    )
+    assert result.returncode == (0 if status == "built" else 1), result.stderr
+    assert "new-sha (includes pushed-sha)" in result.stdout
+    assert "Timed out" not in result.stdout
+    assert [
+        "api",
+        "repos/owner/project/compare/pushed-sha...new-sha",
+        "--jq",
+        ".status",
+    ] in calls
+
+
+@pytest.mark.parametrize("relation", ["behind", "diverged"])
+@pytest.mark.parametrize("status", ["built", "errored"])
+def test_pages_build_rejects_older_or_unrelated_terminal_results(
+    tmp_path, relation, status
+):
+    result, _ = pages_builder(
+        tmp_path,
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+        ({"commit": "other-sha", "status": status},),
+        comparisons={"other-sha": relation},
+    )
+    assert result.returncode == 1
+    assert "Timed out" in result.stdout
+    assert "Pages published" not in result.stdout
+
+
+def test_pages_build_cannot_verify_a_descendant_when_comparison_fails(tmp_path):
+    result, _ = pages_builder(
+        tmp_path,
+        {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+        ({"commit": "new-sha", "status": "built"},),
+        fail_at="compare",
+    )
+    assert result.returncode != 0
+    assert "Pages published" not in result.stdout
 
 
 @pytest.mark.parametrize("status", [0, 403, 404, 500])
