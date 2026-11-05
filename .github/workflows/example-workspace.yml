@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       ref-name:
-        description: Final release tag whose -tex image and assets build the demo
+        description: Final release tag whose -tex image and assets build the example
         type: string
         required: true
   pull_request:
@@ -41,7 +41,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Build and validate the example and its edited demo
+      - name: Build and validate the example
         shell: bash
         env:
           ASTA_EXAMPLE_REF: ${{ inputs.ref-name || github.sha }}
@@ -63,10 +63,6 @@ jobs:
           name: workspace-slide-fixtures
           path: tests/browser/fixtures
           retention-days: 30
-      - if: inputs.ref-name != ''
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: examples/workspace/_site
 
   theme:
     needs: build

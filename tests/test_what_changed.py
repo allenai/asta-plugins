@@ -945,7 +945,6 @@ def test_page_title_markup_stays_escaped_in_every_output_path(
     assert '"x"' not in result
 
 
-
 @pytest.mark.parametrize(
     "href",
     [

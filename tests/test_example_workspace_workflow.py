@@ -108,3 +108,16 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     for step in check["steps"][1:]:
         assert "needs.docs.outputs.rendered == 'true'" in step["if"]
 
+
+def test_example_has_no_demo_copy_and_links_a_real_pr_preview():
+    example = ROOT / "examples/workspace"
+    for name in ("build-demo.py", "refresh-demo.py", "demo-edits.patch"):
+        assert not (example / "scripts" / name).exists()
+    assert "demo" not in (example / "Makefile").read_text()
+    assert "artifact-command" not in load("example-preview")["jobs"]["docs"]["with"]
+    build = load("example-workspace")["jobs"]["build"]
+    assert not any("upload-pages-artifact" in s.get("uses", "") for s in build["steps"])
+    for readme in (ROOT / "README.md", example / "README.md"):
+        text = readme.read_text()
+        assert "asta-plugins/demo/" not in text
+        assert "https://allenai.github.io/asta-plugins/pr-preview/pr-" in text
