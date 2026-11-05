@@ -1,4 +1,4 @@
-"""Forward citations command: patents that cite a given paper."""
+"""forward citations command."""
 
 import json
 
@@ -15,33 +15,33 @@ DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 @click.option(
     "--fields",
     default=DEFAULT_FIELDS,
-    help="Comma-separated fields to return (ucid is always included)",
+    help="comma-separated fields. ucid is always included.",
 )
 @click.option(
     "--limit",
     type=int,
     default=10,
-    help="Maximum number of results (max 100)",
+    help="max results, up to 100.",
 )
 @click.option(
     "--offset",
     type=int,
     default=0,
-    help="Starting position of the batch",
+    help="start of the batch.",
 )
 @click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="json",
-    help="Output format",
+    help="output format.",
 )
 def forward_citations(
     corpus_id: int, fields: str, limit: int, offset: int, output_format: str
 ):
-    """List patents that cite a given paper (corpus_id -> patents).
+    """list patents that cite a paper.
 
-    CORPUS_ID is the S2 corpusId of the paper.
+    CORPUS_ID is the s2 corpusId of the paper.
 
     Examples:
 

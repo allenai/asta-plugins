@@ -1,4 +1,4 @@
-"""Get patent detail command."""
+"""get patent detail command."""
 
 import json
 
@@ -6,9 +6,8 @@ import click
 
 from asta.patents.client import PatentClient
 
-# Rich default that stays readable. `claims` and `briefSummary` are available
-# from the detail endpoint but omitted here (they can be very large) — request
-# them explicitly with --fields when needed.
+# claims and briefSummary are left out by default because they can be huge.
+# request them with --fields.
 DEFAULT_FIELDS = (
     "ucid,title,abstract,assignees,inventors,"
     "publicationDate,filingDate,cpcCodes,citedPaperCorpusIds"
@@ -20,20 +19,19 @@ DEFAULT_FIELDS = (
 @click.option(
     "--fields",
     default=DEFAULT_FIELDS,
-    help="Comma-separated fields to return. Add claims,briefSummary for full text.",
+    help="comma-separated fields. add claims,briefSummary for full text.",
 )
 @click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="json",
-    help="Output format",
+    help="output format.",
 )
 def get(ucid: str, fields: str, output_format: str):
-    """Get detail metadata for a single patent by its UCID.
+    """get one patent by ucid.
 
-    UCID is the Unified Citation Identifier: office, document number, and kind
-    code concatenated with no separators, e.g. US10123456B2.
+    ucid is office + doc number + kind with no separators, e.g. US10123456B2.
 
     Examples:
 

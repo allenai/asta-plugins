@@ -1,4 +1,4 @@
-"""Tests for the patent CLI commands."""
+"""tests for the patent cli commands."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -11,29 +11,29 @@ from asta.cli import cli
 
 @pytest.fixture
 def runner():
-    """Provide a Click CLI test runner."""
+    """click cli test runner."""
     return CliRunner()
 
 
 class TestPatentBasics:
-    """Test basic patent CLI wiring."""
+    """patent cli wiring."""
 
     def test_patent_help(self, runner):
         result = runner.invoke(cli, ["patents", "--help"])
         assert result.exit_code == 0
-        assert "Patent" in result.output
+        assert "patent" in result.output
         assert "search" in result.output
         assert "get" in result.output
         assert "forward-citations" in result.output
 
 
 class TestPatentSearch:
-    """Test 'asta patents search'."""
+    """asta patents search."""
 
     def test_search_help(self, runner):
         result = runner.invoke(cli, ["patents", "search", "--help"])
         assert result.exit_code == 0
-        assert "BM25" in result.output
+        assert "bm25" in result.output
 
     def test_search_missing_query(self, runner):
         result = runner.invoke(cli, ["patents", "search"])
@@ -102,7 +102,7 @@ class TestPatentSearch:
 
 
 class TestPatentGet:
-    """Test 'asta patents get'."""
+    """asta patents get."""
 
     def test_get_help(self, runner):
         result = runner.invoke(cli, ["patents", "get", "--help"])
@@ -152,12 +152,12 @@ class TestPatentGet:
 
 
 class TestPatentForwardCitations:
-    """Test 'asta patents forward-citations'."""
+    """asta patents forward-citations."""
 
     def test_help(self, runner):
         result = runner.invoke(cli, ["patents", "forward-citations", "--help"])
         assert result.exit_code == 0
-        assert "cite a given paper" in result.output
+        assert "cite a paper" in result.output
 
     def test_requires_int_corpus_id(self, runner):
         result = runner.invoke(cli, ["patents", "forward-citations", "not-a-number"])
@@ -182,7 +182,7 @@ class TestPatentForwardCitations:
 
 
 class TestPatentClient:
-    """Test PatentClient request building."""
+    """PatentClient request building."""
 
     def _client(self):
         from asta.patents.client import PatentClient

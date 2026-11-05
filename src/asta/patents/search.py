@@ -1,4 +1,4 @@
-"""Search patents command."""
+"""search patents command."""
 
 import json
 
@@ -14,31 +14,31 @@ DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 @click.option(
     "--fields",
     default=DEFAULT_FIELDS,
-    help="Comma-separated fields to return (ucid is always included)",
+    help="comma-separated fields. ucid is always included.",
 )
 @click.option(
     "--limit",
     type=int,
     default=10,
-    help="Maximum number of results (max 100)",
+    help="max results, up to 100.",
 )
 @click.option(
     "--offset",
     type=int,
     default=0,
-    help="Starting position of the batch",
+    help="start of the batch.",
 )
 @click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="json",
-    help="Output format",
+    help="output format.",
 )
 def search(query: str, fields: str, limit: int, offset: int, output_format: str):
-    """BM25 lexical search over the patent corpus.
+    """bm25 search over the patent corpus.
 
-    Searches title, abstract, brief summary, claims, and party names.
+    matches title, abstract, brief summary, claims, and party names.
 
     Examples:
 
@@ -60,7 +60,7 @@ def search(query: str, fields: str, limit: int, offset: int, output_format: str)
 
 
 def _format_patent_results(result: dict) -> None:
-    """Format patent search / citation results as text."""
+    """print search or citation results as text."""
     patents = result.get("data", [])
     click.echo(f"Found {result.get('total', len(patents))} patents\n")
 

@@ -1,18 +1,17 @@
-"""S2 public-API patent client.
+"""s2 public api patent client.
 
-Patents are served by the same s2-public-api service as papers, under the
-``/graph/v1/patent`` path prefix (see allenai/s2-public-api). By default this
-client reuses the ``semantic_scholar`` base URL and auth token, but the
-``apis.patent.base_url`` config (overridable via ``ASTA_PATENT_URL``) lets you
-point it at a local s2-public-api, e.g. ``http://localhost:8089``.
+patents live in s2-public-api next to papers, under ``/graph/v1/patent``.
+defaults to the ``semantic_scholar`` base url and auth token.
+``ASTA_PATENT_URL`` overrides ``apis.patent.base_url``.
+point it at a local s2-public-api (``http://localhost:8089``) or production (``https://api.semanticscholar.org``).
 
-Endpoints (firs2#150 B4a/B4b):
+endpoints (firs2#150):
   - GET /graph/v1/patent/search
   - GET /graph/v1/patent/<ucid>
   - GET /graph/v1/patent/forward-citations/<corpus_id>
 
-The cluster returns 503 until it has been fed (firs2#150 B3); until then these
-calls surface that error verbatim.
+an unfed cluster returns 503.
+calls surface it verbatim.
 """
 
 import json
@@ -26,15 +25,14 @@ from asta.utils.config import get_api_config, get_config_path
 
 
 class PatentClient:
-    """Client for the S2 public-API patent endpoints."""
+    """client for the s2 public api patent endpoints."""
 
     def __init__(
         self,
         base_url: str | None = None,
         access_token: str | None = None,
     ):
-        # Patents default to the papers service (semantic_scholar base URL) but
-        # can be pointed elsewhere via the `patent` config / ASTA_PATENT_URL.
+        # fall back to semantic_scholar so patents work with no extra config.
         if base_url is None:
             for api_name in ("patent", "semantic_scholar"):
                 try:
@@ -49,7 +47,6 @@ class PatentClient:
                 f"No value for apis.patent.base_url in {get_config_path()}"
             )
 
-        # AuthenticationError will propagate with a helpful message.
         if access_token is None:
             access_token = get_access_token()
 
@@ -61,7 +58,7 @@ class PatentClient:
         }
 
     def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        """Make a GET request to the API."""
+        """get a path from the api and decode the json body."""
         url = f"{self.base_url}{path}"
         if params:
             params = {k: v for k, v in params.items() if v is not None}
@@ -82,14 +79,13 @@ class PatentClient:
         limit: int = 10,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """BM25 lexical search over title/abstract/brief-summary/claims/parties.
+        """bm25 search over title, abstract, brief summary, claims, and parties.
 
         Args:
-            query: Search query.
-            fields: Comma-separated patent fields to return (``ucid`` is always
-                included by the API).
-            limit: Max results (default 10, max 100).
-            offset: Starting position of the batch (default 0).
+            query: search query.
+            fields: comma-separated patent fields. the api always adds ``ucid``.
+            limit: max results, clamped to 100.
+            offset: start of the batch.
         """
         params = {
             "query": query,
@@ -100,13 +96,11 @@ class PatentClient:
         return self._request("/graph/v1/patent/search", params)
 
     def get_patent(self, ucid: str, fields: str | None = None) -> dict[str, Any]:
-        """Get detail metadata for a single patent by its UCID.
+        """get one patent by ucid.
 
         Args:
-            ucid: Unified Citation Identifier -- office, document number, and
-                kind code concatenated with no separators, e.g. ``US10123456B2``.
-            fields: Comma-separated patent fields to return. The detail endpoint
-                can return ``claims`` and ``briefSummary``, which search omits.
+            ucid: office + doc number + kind, no separators, e.g. ``US10123456B2``.
+            fields: comma-separated patent fields. only detail returns ``claims`` and ``briefSummary``.
         """
         params = {"fields": fields} if fields else None
         ucid_quoted = urllib.parse.quote(ucid, safe="")
@@ -119,13 +113,13 @@ class PatentClient:
         limit: int = 10,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """Patents that cite a given paper (corpus_id -> patents).
+        """list patents that cite a paper.
 
         Args:
-            corpus_id: S2 corpusId of the paper.
-            fields: Comma-separated patent fields to return.
-            limit: Max results (default 10, max 100).
-            offset: Starting position of the batch (default 0).
+            corpus_id: s2 corpusId of the paper.
+            fields: comma-separated patent fields.
+            limit: max results, clamped to 100.
+            offset: start of the batch.
         """
         params = {
             "fields": fields,

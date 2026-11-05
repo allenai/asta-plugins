@@ -47,7 +47,7 @@ def papers():
 
 @cli.group()
 def patents():
-    """Patent (USPTO) lookup, BM25 search, and forward citations"""
+    """uspto patent lookup, bm25 search, and forward citations."""
     pass
 
 
