@@ -5,7 +5,7 @@ documentclass: article
 
 This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)). This review cites the project-root `references.bib`. The separate `paper/main.tex` is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.
 
-## Example claim
+## Example claims
 
-[Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. The highlighted claim exposes its source quote on hover or keyboard focus.
+[Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. [BERT later applied the Transformer encoder to bidirectional language representation]{.ev key="bert-encoder"} [@devlin2019bert]. Each highlighted claim shows its source quote on hover or keyboard focus.
 
