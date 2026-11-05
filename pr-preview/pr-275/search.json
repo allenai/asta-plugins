@@ -34,7 +34,7 @@
     "href": "index.html",
     "title": "Attention in sequence models",
     "section": "",
-    "text": "A short project on how attention replaced recurrence in sequence models. It includes:\n\nA literature review of the work it builds on, citing the project’s bibliography.\nPresentation slides for a short talk on the same question.\nThe paper, written in LaTeX with co-authors in Overleaf.\n\nAn example workspace for the Asta workspace skill, rebuilt from each release; see its README for the demo and how to start your own.",
+    "text": "A short project on how attention replaced recurrence in sequence models. It includes:\n\nA literature review of the work it builds on, citing the project’s bibliography.\nPresentation slides for a short talk on the same question.\nThe paper, written in LaTeX with co-authors in Overleaf.\n\nAn example workspace for the Asta workspace skill, built and published from main; see its README for the demo and how to start your own.",
     "crumbs": [
       "Attention in sequence models"
     ]
