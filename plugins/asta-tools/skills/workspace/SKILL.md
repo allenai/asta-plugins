@@ -12,7 +12,7 @@ Manage the writing/docs side of a research project: scaffold infrastructure as n
 
 ## Show the user the rendered work
 
-Give the user a web URL for the rendered work. Two URL sources, pick based on your context:
+Give the user a web URL for the rendered work. There are two URL sources; pick based on your context:
 
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
