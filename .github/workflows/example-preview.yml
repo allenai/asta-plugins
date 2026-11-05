@@ -19,7 +19,12 @@ jobs:
     with:
       site-dir: examples/workspace
       paper-strict: true
-      artifact-command: make demo-build
+      # The fixed-edit demo builds the paper, so it needs the -tex image the
+      # paper previews already pulled; the runner has no LaTeX.
+      artifact-command: >-
+        docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e SITE_DIR
+        -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD"
+        ghcr.io/allenai/asta:latest-tex make demo-build
       render-paths: |
         examples/workspace/**
         plugins/asta-tools/skills/workspace/assets/**
