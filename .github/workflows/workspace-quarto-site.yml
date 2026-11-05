@@ -324,8 +324,9 @@ jobs:
           baseline_label="no deployed baseline"
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
             # Pages may have been force-pushed since checkout fetched its branch.
+            # Archive from the repo root: run in site-dir, archive keeps only that subtree.
             if ! git fetch -q origin +gh-pages:refs/remotes/origin/gh-pages \
-                || ! git archive refs/remotes/origin/gh-pages | tar -x --anchored --exclude=pr-preview -C "$baseline"; then
+                || ! (cd "$(git rev-parse --show-toplevel)" && git archive refs/remotes/origin/gh-pages) | tar -x --anchored --exclude=pr-preview -C "$baseline"; then
               echo "::warning::Could not read the deployed main site; skipping the diff page"
               exit 0
             fi

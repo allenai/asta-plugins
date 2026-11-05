@@ -1759,3 +1759,71 @@ def test_paper_container_keeps_checkout_history_for_sites_in_subdirectories(
     checkout = tmp_path / "project"
     assert f"{checkout}:{checkout}" in command
     assert command[command.index("-w") + 1] == str(project)
+
+
+def test_what_changed_reads_full_baseline_for_site_in_subfolder(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    remote = tmp_path / "remote.git"
+    project = tmp_path / "project"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(project)], check=True, capture_output=True
+    )
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
+
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    # main publishes the subfolder site's build at the gh-pages root.
+    (project / "index.html").write_text("<html><body><p>Home before.</p></body></html>")
+    (project / "about.html").write_text("<html><body><p>Unchanged.</p></body></html>")
+    (project / "pr-preview/pr-3").mkdir(parents=True)
+    (project / "pr-preview/pr-3/index.html").write_text("<p>Other preview.</p>")
+    git("add", ".")
+    git("commit", "-m", "Publish main")
+    git("remote", "add", "origin", str(remote))
+    git("push", "origin", "gh-pages")
+    git("switch", "--orphan", "main")
+    site = project / "examples/workspace"
+    (site / "scripts").mkdir(parents=True)
+    shutil.copy(
+        "plugins/asta-tools/skills/workspace/assets/what-changed.py",
+        site / "scripts/what-changed.py",
+    )
+    git("add", "examples/workspace/scripts/what-changed.py")
+    git("commit", "-m", "Site in a subfolder")
+    (site / "_site").mkdir()
+    (site / "_site/index.html").write_text(
+        "<html><body><p>Home after.</p></body></html>"
+    )
+    (site / "_site/about.html").write_text(
+        "<html><body><p>Unchanged.</p></body></html>"
+    )
+
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=site,
+        env={**os.environ, "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    page = (site / "_site/what-changed.html").read_text()
+    assert "PR #7 · Pages " in page
+    assert "new page" not in page
+    text = re.sub(r"<[^>]+>", "", page)
+    assert "before" in text and "after" in text, text[-3000:]
+    assert "about.html" not in page
+    assert "pr-preview" not in page
