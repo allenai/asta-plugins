@@ -1,5 +1,6 @@
 """The example dogfoods workspace publication; releases only validate."""
 
+import json
 import os
 import subprocess
 import sys
@@ -18,19 +19,49 @@ def load(name):
 
 
 @pytest.mark.parametrize(
-    "paths,expected",
+    "files,expected",
     [
-        (["examples/workspace/slides/attention/slides.qmd"], "true"),
-        (["plugins/asta-tools/skills/workspace/SKILL.md"], "false"),
-        (["elsewhere.qmd", "examples/workspace/old.qmd"], "true"),
-        (["plugins/asta-tools/skills/workspace/assets/asta-slides/theme.scss"], "true"),
+        ([{"filename": "examples/workspace/slides/attention/slides.qmd"}], "true"),
+        ([{"filename": "plugins/asta-tools/skills/workspace/SKILL.md"}], "false"),
+        (
+            [
+                {
+                    "filename": "elsewhere.qmd",
+                    "previous_filename": "examples/workspace/old.qmd",
+                }
+            ],
+            "true",
+        ),
+        (
+            [
+                {
+                    "filename": "plugins/asta-tools/skills/workspace/assets/asta-slides/theme.scss"
+                }
+            ],
+            "true",
+        ),
     ],
 )
-def test_shared_scope_matches_current_and_previous_paths(tmp_path, paths, expected):
+def test_shared_scope_matches_current_and_previous_paths(tmp_path, files, expected):
+    result, output = _run_shared_scope(tmp_path, files)
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"render={expected}\n"
+
+
+def _run_shared_scope(tmp_path, files):
     workflow = load("workspace-quarto-site")
     script = workflow["jobs"]["scope"]["steps"][0]["run"]
     fake = tmp_path / "gh"
-    fake.write_text(f"#!{sys.executable}\nprint({chr(10).join(paths)!r})\n")
+    # Paginated API responses are slurped into one array of pages.
+    pages = [files[i : i + 100] for i in range(0, len(files), 100)] or [[]]
+    response = tmp_path / "files.json"
+    response.write_text(json.dumps(pages))
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "assert '--paginate' in sys.argv and '--slurp' in sys.argv\n"
+        f"print(open({str(response)!r}).read())\n"
+    )
     fake.chmod(0o755)
     output = tmp_path / "out"
     env = dict(
@@ -44,9 +75,36 @@ def test_shared_scope_matches_current_and_previous_paths(tmp_path, paths, expect
         GITHUB_REPOSITORY="owner/repo",
         PR_NUMBER="1",
     )
-    subprocess.run([sys.executable, "-c", script], env=env, check=True)
-    assert output.read_text() == f"render={expected}\n"
-    assert ".previous_filename // empty" in script
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+    )
+    return result, output
+
+
+@pytest.mark.parametrize("count", [3000, 3001])
+@pytest.mark.parametrize("matches_site", [False, True])
+def test_shared_scope_refuses_potentially_truncated_file_list(
+    tmp_path, count, matches_site
+):
+    files = [{"filename": f"unrelated/{i}.txt"} for i in range(count)]
+    if matches_site:
+        files[0] = {"filename": "examples/workspace/index.qmd"}
+    result, output = _run_shared_scope(tmp_path, files)
+    assert result.returncode != 0
+    assert "3,000-file limit" in result.stderr
+    # No false output can trigger deletion; no true output can publish a
+    # partially classified PR. The required browser check reports the failure.
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("matches_site", [False, True])
+def test_shared_scope_reads_all_pages_below_file_limit(tmp_path, matches_site):
+    files = [{"filename": f"unrelated/{i}.txt"} for i in range(2999)]
+    if matches_site:
+        files[-1] = {"filename": "examples/workspace/index.qmd"}
+    result, output = _run_shared_scope(tmp_path, files)
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"render={str(matches_site).lower()}\n"
 
 
 @pytest.mark.parametrize(

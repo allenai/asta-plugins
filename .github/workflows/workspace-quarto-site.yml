@@ -67,11 +67,18 @@ jobs:
               if os.environ['EVENT'] != 'pull_request':
                   render = True
               else:
-                  paths = subprocess.check_output([
-                      'gh', 'api', '--paginate',
-                      f"repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{os.environ['PR_NUMBER']}/files",
-                      '--jq', '.[] | .filename, (.previous_filename // empty)',
-                  ], text=True).splitlines()
+                  pages = json.loads(subprocess.check_output([
+                      'gh', 'api', '--paginate', '--slurp',
+                      f"repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{os.environ['PR_NUMBER']}/files?per_page=100",
+                  ], text=True))
+                  files = [file for page in pages for file in page]
+                  # This endpoint truncates at 3,000 files even with pagination.
+                  # An incomplete list must never classify a PR as unrelated:
+                  # leave render unset so neither publication nor cleanup runs.
+                  if len(files) >= 3000:
+                      raise SystemExit('::error::PR file list reached GitHub\'s 3,000-file limit; cannot safely determine site scope.')
+                  paths = [path for file in files for path in
+                           (file['filename'], file.get('previous_filename')) if path]
                   patterns = os.environ['RENDER_PATHS'].splitlines()
                   patterns = [p.strip() for p in patterns if p.strip()]
                   if not patterns:
