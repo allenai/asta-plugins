@@ -6,7 +6,7 @@ format: asta-slides-revealjs
 
 # The question
 
-## How can a sequence model connect distant tokens?
+## How can a sequence model connect distant tokens? (preview test)
 
 Our workspace follows the shift from recurrence to attention.
 

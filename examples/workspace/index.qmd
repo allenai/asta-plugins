@@ -2,7 +2,7 @@
 title: "Attention in sequence models"
 ---
 
-A short project on how attention replaced recurrence in sequence models. It includes:
+A short project on how attention replaced recurrence in sequence models (preview test). It includes:
 
 - [A literature review](lit-review/index.qmd) of the work it builds on, citing the project's bibliography.
 - [Presentation slides](slides/attention/index.qmd) for a short talk on the same question.
