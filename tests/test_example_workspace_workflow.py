@@ -332,6 +332,48 @@ def test_cleanup_removes_only_bot_preview_comments(tmp_path, has_comments):
         assert not log.exists()
 
 
+@pytest.mark.parametrize("failure", ["lookup", "decode", "record", "delete"])
+def test_cleanup_fails_when_stale_comment_removal_cannot_be_verified(tmp_path, failure):
+    fake = tmp_path / "gh"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "failure = os.environ['FAILURE']\n"
+        "if 'DELETE' in sys.argv:\n"
+        "    with open('deletions', 'a') as log: log.write(sys.argv[-1] + '\\n')\n"
+        "    sys.exit(1 if failure == 'delete' else 0)\n"
+        "if failure == 'lookup': sys.exit(1)\n"
+        "if failure == 'decode': print('invalid JSON'); sys.exit(0)\n"
+        "comment = {'user': {'login': 'github-actions[bot]'}, 'body': '📄 Preview: old'}\n"
+        "if failure != 'record': comment['id'] = 11\n"
+        "print(json.dumps([[comment], [dict(comment, id=14)]]))\n"
+    )
+    fake.chmod(0o755)
+    step = load("workspace-quarto-site")["jobs"]["cleanup-preview"]["steps"][-1]
+    result = subprocess.run(
+        [sys.executable, "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            PATH=f"{tmp_path}:{os.environ['PATH']}",
+            GITHUB_REPOSITORY="owner/repo",
+            PR_NUMBER="1",
+            FAILURE=failure,
+        ),
+    )
+    assert result.returncode != 0
+    assert "::error::Could not remove the stale preview comment" in result.stdout
+    log = tmp_path / "deletions"
+    if failure == "delete":
+        # Stop on the first failed deletion instead of reporting success or
+        # continuing through later pages. A rerun can safely retry the cleanup.
+        assert log.read_text().splitlines() == ["repos/owner/repo/issues/comments/11"]
+    else:
+        assert not log.exists()
+
+
 def test_example_has_no_demo_copy_and_links_a_real_pr_preview():
     example = ROOT / "examples/workspace"
     for name in ("build-demo.py", "refresh-demo.py", "demo-edits.patch"):

@@ -707,4 +707,5 @@ jobs:
                               f"repos/{repo}/issues/comments/{comment['id']}",
                           ], check=True)
           except (subprocess.CalledProcessError, ValueError, KeyError) as error:
-              print(f'::warning::Could not remove the stale preview comment: {error}')
+              print(f'::error::Could not remove the stale preview comment: {error}')
+              raise SystemExit(1)
