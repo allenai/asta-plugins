@@ -95,14 +95,28 @@ def test_refuses_a_diverged_branch(release):
     assert latest(origin) == side
 
 
-def test_write_access_is_confined_to_the_branch_job():
+def test_write_access_is_confined_to_branch_publication_jobs():
     jobs = WORKFLOW["jobs"]
     writers = [
         name
         for name, job in jobs.items()
         if job["permissions"].get("contents") == "write"
     ]
-    assert writers == ["latest-branch"]
+    assert writers == ["latest-branch", "example-workspace"]
+    example = jobs["example-workspace"]
+    assert example["uses"] == "./.github/workflows/example-workspace.yml"
+    assert example["needs"] == "latest"
+    assert example["if"] == (
+        "startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')"
+    )
+    called = yaml.safe_load(
+        (ROOT / ".github/workflows/example-workspace.yml").read_text()
+    )
+    assert [
+        name
+        for name, job in called["jobs"].items()
+        if job.get("permissions", called["permissions"]).get("contents") == "write"
+    ] == ["publish-gh-pages"]
     assert JOB["permissions"] == {"contents": "write"}
     assert [step.get("uses", "").split("@")[0] for step in JOB["steps"]] == [
         "actions/checkout",

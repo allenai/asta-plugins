@@ -219,11 +219,12 @@ jobs:
             script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
             curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
           fi
+          # site-dir can be below the Git root; paper diffs need the whole checkout.
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
             if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
                 --user "$(id -u):$(id -g)" -e HOME=/tmp -e ASTA_PAPER_STRICT \
-                -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
+                -v "${GITHUB_WORKSPACE:-$PWD}:${GITHUB_WORKSPACE:-$PWD}" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
                 "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
               mkdir -p "_site/paper-previews/$d"

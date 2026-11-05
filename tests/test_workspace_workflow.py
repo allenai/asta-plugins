@@ -23,6 +23,7 @@ def _run_paper_step(
     pull_failures: int = 5,
     run_fails: bool = False,
     build_files: dict[str, str] | None = None,
+    site_subdir: str = "",
 ):
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -31,7 +32,8 @@ def _run_paper_step(
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
     script = script.replace("${{ job.workflow_sha }}", "source-commit")
     source = WORKSPACE_ASSETS / "paper-discovery.py"
-    project = tmp_path / "project"
+    checkout = tmp_path / "project"
+    project = checkout / site_subdir
     paper = project / "paper"
     paper.mkdir(parents=True)
     (paper / "main.tex").write_text("paper")
@@ -66,6 +68,7 @@ def _run_paper_step(
         "PR_BASE": "",
         "WORKFLOW_REF": workflow_ref,
         "DOCKER_LOG": str(project / "docker.log"),
+        "GITHUB_WORKSPACE": str(checkout),
         "PULL_FAILURES": str(pull_failures),
         "DISCOVERY_SOURCE": str(source.resolve()),
         "FAIL_CURL": "1" if download_fails else "0",
@@ -1736,3 +1739,21 @@ def test_preview_noindex_keeps_embedded_slide_javascript_intact(tmp_path, separa
     assert script in actual
     meta = '<meta name="robots" content="noindex, nofollow">'
     assert actual == original.replace("<head>", "<head>" + meta, 1)
+
+
+@pytest.mark.parametrize("site_subdir", ["", "examples/workspace"])
+def test_paper_container_keeps_checkout_history_for_sites_in_subdirectories(
+    tmp_path, site_subdir
+):
+    project, result = _run_paper_step(
+        tmp_path, pull_failures=0, site_subdir=site_subdir
+    )
+    assert result.returncode == 0, result.stderr
+    command = next(
+        line
+        for line in (project / "docker.log").read_text().splitlines()
+        if line.startswith("run ")
+    ).split()
+    checkout = tmp_path / "project"
+    assert f"{checkout}:{checkout}" in command
+    assert command[command.index("-w") + 1] == str(project)
