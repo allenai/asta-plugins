@@ -538,7 +538,9 @@ try {
     await framed.waitForFunction((previous) => JSON.stringify(Reveal.getIndices()) !== previous, before, { timeout: 5000 });
     keySteps.push({ key, before, after: await indices() });
     if (key === "End") {
-      assert.ok(await framed.evaluate(() => Reveal.isLastSlide()), "End goes to the last slide");
+      // Reveal's own End goes to the last section's stack, not the stack's last slide.
+      assert.ok(await framed.evaluate(() => Reveal.getIndices().h === Reveal.getHorizontalSlides().length - 1),
+        "End goes to the last section, as in the deck alone");
       await served.waitForFunction(() => document.querySelector(".deck-popout").getAttribute("href")
         === "slides.html" + document.querySelector(".deck-frame").contentWindow.location.hash);
       await served.screenshot({ path: join(output, "deck-viewer-keys.png") });
