@@ -1,4 +1,4 @@
-"""forward citations command."""
+"""outbound citations command."""
 
 import json
 
@@ -10,8 +10,8 @@ from asta.patents.search import _format_patent_results
 DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 
 
-@click.command(name="forward-citations")
-@click.argument("corpus_id", type=int)
+@click.command(name="outbound-citations")
+@click.argument("paper_id")
 @click.option(
     "--fields",
     default=DEFAULT_FIELDS,
@@ -36,23 +36,24 @@ DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
     default="json",
     help="output format.",
 )
-def forward_citations(
-    corpus_id: int, fields: str, limit: int, offset: int, output_format: str
+def outbound_citations(
+    paper_id: str, fields: str, limit: int, offset: int, output_format: str
 ):
     """list patents that cite a paper.
 
-    CORPUS_ID is the s2 corpusId of the paper.
+    PAPER_ID is any s2 paper id, e.g. CorpusId:215416146 or ARXIV:2106.15928.
+    a bare integer is treated as a corpus id.
 
     Examples:
 
-        asta patents forward-citations 215416146
+        asta patents outbound-citations CorpusId:215416146
 
-        asta patents forward-citations 215416146 --limit 20
+        asta patents outbound-citations 215416146 --limit 20
     """
     try:
         client = PatentClient()
-        result = client.forward_citations(
-            corpus_id, fields=fields, limit=limit, offset=offset
+        result = client.outbound_citations(
+            paper_id, fields=fields, limit=limit, offset=offset
         )
 
         if output_format == "json":

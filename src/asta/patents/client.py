@@ -8,7 +8,7 @@ point it at a local s2-public-api (``http://localhost:8089``) or production (``h
 endpoints (firs2#150):
   - GET /graph/v1/patent/search
   - GET /graph/v1/patent/<ucid>
-  - GET /graph/v1/patent/forward-citations/<corpus_id>
+  - GET /graph/v1/patent/outbound-citations/<paper_id>
 
 an unfed cluster returns 503.
 calls surface it verbatim.
@@ -106,9 +106,9 @@ class PatentClient:
         ucid_quoted = urllib.parse.quote(ucid, safe="")
         return self._request(f"/graph/v1/patent/{ucid_quoted}", params)
 
-    def forward_citations(
+    def outbound_citations(
         self,
-        corpus_id: int,
+        paper_id: str | int,
         fields: str | None = None,
         limit: int = 10,
         offset: int = 0,
@@ -116,16 +116,18 @@ class PatentClient:
         """list patents that cite a paper.
 
         Args:
-            corpus_id: s2 corpusId of the paper.
+            paper_id: any s2 paper id, e.g. ``CorpusId:215416146`` or ``DOI:...``.
+                a bare integer is a corpus id. the api 404s on it unprefixed.
             fields: comma-separated patent fields.
             limit: max results, clamped to 100.
             offset: start of the batch.
         """
+        paper_id = str(paper_id)
+        if paper_id.isdigit():
+            paper_id = f"CorpusId:{paper_id}"
         params = {
             "fields": fields,
             "limit": min(limit, 100),
             "offset": offset,
         }
-        return self._request(
-            f"/graph/v1/patent/forward-citations/{int(corpus_id)}", params
-        )
+        return self._request(f"/graph/v1/patent/outbound-citations/{paper_id}", params)

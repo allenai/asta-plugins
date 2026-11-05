@@ -14,7 +14,7 @@ auth and config are the same as the `semantic-scholar` skill.
 
 - a specific patent by ucid, or its claims or brief summary
 - keyword search across title, abstract, brief summary, claims, and party names
-- which patents cite a given paper (forward citations)
+- which patents cite a given paper (outbound citations)
 - patent context for a task: prior art, assignee activity, paper-to-patent impact
 
 ranking is **bm25 only**.
@@ -65,23 +65,24 @@ copy the `ucid` from a search hit instead of assembling one.
 available fields: `ucid, office, docNumber, kind, stage, docType, corpusId, filingDate, publicationDate, assignees, inventors, cpcCodes, title, abstract, claims, briefSummary, citedPaperCorpusIds`.
 unrecognized fields are a 400.
 
-### Forward citations (paper → patents)
+### Outbound citations (paper → patents)
 
-**asta patents forward-citations** lists patents that cite a paper.
+**asta patents outbound-citations** lists patents that cite a paper.
 
 ```bash
-asta patents forward-citations 215416146
+asta patents outbound-citations CorpusId:98279155
 
-asta patents forward-citations 215416146 --limit 20 --format text
+asta patents outbound-citations ARXIV:2106.15928 --limit 20 --format text
 ```
 
-the argument is the paper's integer s2 `corpusId`.
-resolve it with the `semantic-scholar` skill: `asta papers get <ID> --fields externalIds`, then read `CorpusId`.
-`asta papers get` also accepts `CorpusId:<n>` directly.
+the argument is any s2 paper id: `CorpusId:<n>`, `ARXIV:<id>`, a sha, and so on.
+a bare integer is treated as a corpus id.
+ids containing `/` (most dois) 404 on this route.
+resolve those first with `asta papers get DOI:<doi> --fields corpusId`.
 
 ## Response Shape
 
-search and forward-citations return the standard s2 envelope:
+search and outbound-citations return the standard s2 envelope:
 
 ```json
 { "total": 42, "offset": 0, "next": 10, "data": [ { "ucid": "US10123456B2", "title": "..." } ] }

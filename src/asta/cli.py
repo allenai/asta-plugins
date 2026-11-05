@@ -16,8 +16,8 @@ from asta.papers.citations import citations
 from asta.papers.get import get
 from asta.papers.search import search
 from asta.papers.snippet_search import snippet_search
-from asta.patents.forward_citations import forward_citations
 from asta.patents.get import get as patent_get
+from asta.patents.outbound_citations import outbound_citations
 from asta.patents.search import search as patent_search
 from asta.pdf_extraction import pdf_extraction
 from asta.theorizer import generate_theories
@@ -47,7 +47,7 @@ def papers():
 
 @cli.group()
 def patents():
-    """uspto patent lookup, bm25 search, and forward citations."""
+    """uspto patent lookup, bm25 search, and outbound citations."""
     pass
 
 
@@ -83,7 +83,7 @@ papers.add_command(author)
 # Register patent subcommands
 patents.add_command(patent_get, name="get")
 patents.add_command(patent_search, name="search")
-patents.add_command(forward_citations)
+patents.add_command(outbound_citations)
 
 
 if __name__ == "__main__":

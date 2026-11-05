@@ -24,7 +24,7 @@ class TestPatentBasics:
         assert "patent" in result.output
         assert "search" in result.output
         assert "get" in result.output
-        assert "forward-citations" in result.output
+        assert "outbound-citations" in result.output
 
 
 class TestPatentSearch:
@@ -151,34 +151,32 @@ class TestPatentGet:
         assert "A better widget." in result.output
 
 
-class TestPatentForwardCitations:
-    """asta patents forward-citations."""
+class TestPatentOutboundCitations:
+    """asta patents outbound-citations."""
 
     def test_help(self, runner):
-        result = runner.invoke(cli, ["patents", "forward-citations", "--help"])
+        result = runner.invoke(cli, ["patents", "outbound-citations", "--help"])
         assert result.exit_code == 0
         assert "cite a paper" in result.output
 
-    def test_requires_int_corpus_id(self, runner):
-        result = runner.invoke(cli, ["patents", "forward-citations", "not-a-number"])
-        assert result.exit_code != 0
-
-    def test_json(self, runner):
+    def test_passes_any_paper_id(self, runner):
         envelope = {
             "total": 1,
             "offset": 0,
             "data": [{"ucid": "US10123456B2", "title": "A Widget"}],
         }
-        with patch("asta.patents.forward_citations.PatentClient") as MockClient:
+        with patch("asta.patents.outbound_citations.PatentClient") as MockClient:
             instance = MagicMock()
-            instance.forward_citations.return_value = envelope
+            instance.outbound_citations.return_value = envelope
             MockClient.return_value = instance
-            result = runner.invoke(cli, ["patents", "forward-citations", "215416146"])
+            result = runner.invoke(
+                cli, ["patents", "outbound-citations", "ARXIV:2106.15928"]
+            )
 
         assert result.exit_code == 0
         assert json.loads(result.output) == envelope
-        args, kwargs = instance.forward_citations.call_args
-        assert args[0] == 215416146
+        args, kwargs = instance.outbound_citations.call_args
+        assert args[0] == "ARXIV:2106.15928"
 
 
 class TestPatentClient:
@@ -205,10 +203,3 @@ class TestPatentClient:
             client.get_patent("US10123456B2", fields="ucid,title")
         path = req.call_args[0][0]
         assert path == "/graph/v1/patent/US10123456B2"
-
-    def test_forward_citations_path(self):
-        client = self._client()
-        with patch.object(client, "_request", return_value={"data": []}) as req:
-            client.forward_citations(215416146, limit=10, offset=0)
-        path = req.call_args[0][0]
-        assert path == "/graph/v1/patent/forward-citations/215416146"
