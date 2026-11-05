@@ -48,6 +48,7 @@ import difflib
 import html
 import json
 import os
+import posixpath
 import re
 import sys
 from html.parser import HTMLParser
@@ -279,6 +280,29 @@ TAG_SAFE_ATTRS = {
 URL_ATTRS = {"cite", "href", "src"}
 
 
+def rebase_relative_url(value, source):
+    """Resolve a page-relative URL from `source`, the page's site path, to one
+    relative to the site root, where the diff page lives."""
+    parts = urlsplit(value)
+    if not source or parts.scheme or parts.netloc:
+        return value
+    if not parts.path and not parts.query:
+        return value
+    if parts.path.startswith("/"):
+        return value
+    path = posixpath.normpath(
+        posixpath.join(posixpath.dirname(source), parts.path) if parts.path else source
+    )
+    if path == ".." or path.startswith("../"):
+        return value
+    if parts.path.endswith("/") and not path.endswith("/"):
+        path += "/"
+    # A colon in the first segment would read as a scheme ("../javascript:x").
+    if ":" in path.split("/", 1)[0]:
+        path = "./" + path
+    return parts._replace(path=path).geturl()
+
+
 def safe_url(value):
     """Allow ordinary links/resources, never executable URL schemes."""
     compact = re.sub(r"[\x00-\x20\x7f]+", "", html.unescape(value))
@@ -289,10 +313,11 @@ def safe_url(value):
 class _SafeFragmentParser(HTMLParser):
     """Small strict-allowlist sanitizer for rendered page fragments."""
 
-    def __init__(self):
+    def __init__(self, base=""):
         super().__init__(convert_charrefs=False)
         self.out = []
         self.drop_stack = []
+        self.base = base
 
     def handle_starttag(self, tag, attrs):
         tag = tag.lower()
@@ -314,8 +339,12 @@ class _SafeFragmentParser(HTMLParser):
             if value is None:
                 clean.append(name)
                 continue
-            if name in URL_ATTRS and not safe_url(value):
-                continue
+            if name in URL_ATTRS:
+                if not safe_url(value):
+                    continue
+                value = rebase_relative_url(value, self.base)
+                if not safe_url(value):
+                    continue
             clean.append(f'{name}="{html.escape(value, quote=True)}"')
         suffix = (" " + " ".join(clean)) if clean else ""
         self.out.append(f"<{tag}{suffix}>")
@@ -349,22 +378,25 @@ class _SafeFragmentParser(HTMLParser):
             self.out.append(f"&#{name};")
 
 
-def sanitize_fragment(content):
-    """Return inert static HTML suitable for embedding in the diff page."""
-    parser = _SafeFragmentParser()
+def sanitize_fragment(content, rel=""):
+    """Return inert static HTML suitable for embedding in the diff page.
+
+    `rel` is the source page's site path; its relative links are rebased to
+    the site root so they resolve from the diff page."""
+    parser = _SafeFragmentParser(rel)
     parser.feed(content)
     parser.close()
     return "".join(parser.out)
 
 
-def strip_volatile(content):
+def strip_volatile(content, rel=""):
     """Sanitize an embedded body to inert, allowlisted static HTML.
 
     The diff page ships its own single script and styles. Source markup must not
     execute here through scripts, event handlers, active elements, SVG, CSS, or
     executable URLs; duplicate source ids are omitted as well.
     """
-    return sanitize_fragment(content)
+    return sanitize_fragment(content, rel)
 
 
 def is_script_heavy(content):
@@ -1421,7 +1453,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
             (new_index, after["body"]) if after else (old_index, before["body"])
         )
         caption = (
-            visible_text(strip_volatile(content)).strip().split("\n")[0][:100]
+            visible_text(strip_volatile(content, rel)).strip().split("\n")[0][:100]
             or f"Slide {index + 1}"
         )
         heading = html.escape(f"Slide {index + 1}: {caption}")
@@ -1429,15 +1461,15 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
             heading = f'<a href="{html.escape(link + "#/" + after["anchor"], quote=True)}">{heading}</a>'
         if before and after:
             body, changed = diff_content(
-                strip_volatile(before["body"]), strip_volatile(after["body"])
+                strip_volatile(before["body"], rel), strip_volatile(after["body"], rel)
             )
             if not changed:
                 body = '<p class="wc-note">Slide markup changed. Open the slide to inspect it.</p>'
             state = "changed"
         elif after:
-            body, state = strip_volatile(content), "new"
+            body, state = strip_volatile(content, rel), "new"
         else:
-            body, state = strip_volatile(content), "removed"
+            body, state = strip_volatile(content, rel), "removed"
         changes.append(
             f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
         )
@@ -1555,7 +1587,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                     title_txt = page_title(new_doc, rel)
                 else:
                     body, changed = diff_content(
-                        strip_volatile(old_c), strip_volatile(new_c)
+                        strip_volatile(old_c, rel), strip_volatile(new_c, rel)
                     )
                     if not changed:
                         continue
@@ -1573,7 +1605,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 )
             else:
                 state, label = "new", "new page"
-                body = strip_volatile(new_c)
+                body = strip_volatile(new_c, rel)
         else:
             old_c = normalize(extract_main(old_doc))
             title_txt = page_title(old_doc, rel)
@@ -1586,7 +1618,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 )
             else:
                 state, label = "removed", "removed"
-                body = strip_volatile(old_c)
+                body = strip_volatile(old_c, rel)
         aid = anchor_id(rel)
         h2 = html.escape(title_txt)
         if state != "removed":

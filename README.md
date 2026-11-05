@@ -90,10 +90,14 @@ published to GitHub Pages. Projects can keep several Markdown slide decks alongs
 their papers: Quarto reveal.js talks use the Asta theme, build with the site and
 show slide-level changes in PR previews. Each is also a standalone HTML file.
 
-See it in the example workspace, rebuilt from each release: [its site](https://allenai.github.io/asta-plugins/),
-with a LaTeX paper and a saved [What changed](https://allenai.github.io/asta-plugins/demo/) demo;
+See it in the example workspace, published from main: [its site](https://allenai.github.io/asta-plugins/),
+with a LaTeX paper and [a pull request's preview](https://allenai.github.io/asta-plugins/pr-preview/pr-281/), kept open as a demo;
 [its paper in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f)
 (view only); and [its source](examples/workspace/).
+
+The persistent PR preview becomes available after the first main publication
+and the administrator's Pages-source switch; until then the existing live site
+is unchanged. See the [publication and demo maintenance procedure](examples/workspace/README.md#site-publication).
 
 The `ghcr.io/allenai/asta` Docker image is published with the `asta` CLI, skills, and Quarto pre-installed 
 

@@ -15,6 +15,10 @@ name: Quarto site
 
 on:
   workflow_call:
+    outputs:
+      rendered:
+        description: Whether this event affects the rendered site
+        value: ${{ jobs.scope.outputs.render }}
     inputs:
       quarto-version:
         description: Quarto CLI version used to render generated sources
@@ -28,14 +32,75 @@ on:
         description: Optional project command after rendering and paper previews, before publication
         type: string
         default: ""
+      site-dir:
+        description: Project directory within the repo that holds the Makefile and renders _site/ (asta-plugins' own example lives below the root)
+        type: string
+        default: "."
+
+      render-paths:
+        description: Newline-separated Python fnmatch patterns (both * and ** cross /) affecting rendered content; defaults to everything under site-dir
+        type: string
+        default: ""
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      render: ${{ steps.paths.outputs.render }}
+    steps:
+      - id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          SITE_DIR: ${{ inputs.site-dir }}
+          RENDER_PATHS: ${{ inputs.render-paths }}
+        shell: python
+        run: |
+          import fnmatch, json, os, posixpath, subprocess
+          from pathlib import Path
+          render = False
+          if os.environ['ACTION'] != 'closed':
+              site = posixpath.normpath(os.environ.get('SITE_DIR', '.'))
+              if site.startswith('/') or site == '..' or site.startswith('../'):
+                  raise SystemExit('::error::site-dir must stay inside the repository.')
+              if os.environ['EVENT'] != 'pull_request':
+                  render = True
+              else:
+                  pages = json.loads(subprocess.check_output([
+                      'gh', 'api', '--paginate', '--slurp',
+                      f"repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{os.environ['PR_NUMBER']}/files?per_page=100",
+                  ], text=True))
+                  files = [file for page in pages for file in page]
+                  # This endpoint truncates at 3,000 files even with pagination.
+                  # An incomplete list must never classify a PR as unrelated:
+                  # leave render unset so neither publication nor cleanup runs.
+                  if len(files) >= 3000:
+                      raise SystemExit('::error::PR file list reached GitHub\'s 3,000-file limit; cannot safely determine site scope.')
+                  paths = [path for file in files for path in
+                           (file['filename'], file.get('previous_filename')) if path]
+                  patterns = os.environ['RENDER_PATHS'].splitlines()
+                  patterns = [p.strip() for p in patterns if p.strip()]
+                  if not patterns:
+                      site = '' if site == '.' else site
+                      patterns = [f'{site}/**' if site else '**']
+                  render = any(fnmatch.fnmatchcase(path, pattern) for path in paths for pattern in patterns)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write(f'render={str(render).lower()}\n')
   # Build + quality gates (via `make check`). This is the required status
   # check. Concurrency is keyed per PR (or per branch for main), so a new
   # commit supersedes its own stale build while separate PRs and main never
   # cancel each other.
+  # One site per repository owns the gh-pages root; site-dir selects where that
+  # site's sources live, not a namespace for multiple independent publishers.
   build:
+    needs: scope
     if: >-
+      needs.scope.outputs.render == 'true' &&
       github.event.action != 'closed' &&
       github.event_name != 'pull_request_target' && github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
@@ -44,8 +109,11 @@ jobs:
     permissions:
       contents: read
     concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: ${{ inputs.site-dir }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -212,11 +280,12 @@ jobs:
             script="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/paper-preview.sh"
             curl -fsSL "$script" -o /tmp/paper-preview.sh || fail_all 'Could not download the paper preview script.'
           fi
+          # site-dir can be below the Git root; paper diffs need the whole checkout.
           # Build every paper even if one fails; each failure is recorded on its own.
           for d in "${papers[@]}"; do
             if ! docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
                 --user "$(id -u):$(id -g)" -e HOME=/tmp -e ASTA_PAPER_STRICT \
-                -v "$PWD:$PWD" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
+                -v "${GITHUB_WORKSPACE:-$PWD}:${GITHUB_WORKSPACE:-$PWD}" -w "$PWD" -v /tmp/paper-preview.sh:/tmp/paper-preview.sh:ro \
                 "$tex_image" bash /tmp/paper-preview.sh "$base" "$d"; then
               status=1
               mkdir -p "_site/paper-previews/$d"
@@ -307,7 +376,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: site
-          path: _site
+          path: ${{ inputs.site-dir }}/_site
           include-hidden-files: true  # keep .nojekyll
 
   # Publish: main -> gh-pages root (keeping PR previews); a PR -> a preview under
@@ -338,7 +407,7 @@ jobs:
       # domain, not <owner>.github.io/<repo>). Degrades gracefully if absent.
       pages: read
     concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -563,26 +632,45 @@ jobs:
   # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
   # (keyed on the PR number) so it cancels any still-running build/deploy for the
   # PR first — otherwise a late deploy could recreate the preview after removal.
+  # Also runs on an open PR that no longer changes the site, so a reviewer
+  # never sees a preview of changes the PR has since reverted or moved out.
   cleanup-preview:
+    needs: scope
     if: >-
-      github.event_name == 'pull_request' && github.event.action == 'closed'
+      always() && github.event_name == 'pull_request'
+      && (github.event.action == 'closed' || needs.scope.outputs.render == 'false')
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     concurrency:
-      group: pages-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
+      # A closed PR with conflicts may have no synthetic merge ref. Cleanup
+      # only needs the repository, never code from the PR being removed.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
       - name: Remove PR preview
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages:gh-pages 2>/dev/null || exit 0
+          # Missing branch is normal before the first publication; a failed
+          # lookup/fetch is not proof that a preview has disappeared.
+          refs=$(git ls-remote --heads origin gh-pages)
+          [ -n "$refs" ] || exit 0
+          git fetch origin gh-pages:gh-pages
+          # Most unrelated PRs never had a preview. Avoid a worktree, commit or
+          # push in that case; the next step can still retire a stale comment.
+          if [ -z "$(git ls-tree gh-pages "pr-preview/pr-$PR_NUMBER")" ]; then
+            echo "no preview to remove"
+            exit 0
+          fi
           tmp=$(mktemp -d)
           git worktree add "$tmp" gh-pages
           rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
@@ -596,3 +684,28 @@ jobs:
             echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
             git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
           done
+      - name: Remove stale preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: python
+        run: |
+          import json, os, subprocess
+          repo = os.environ['GITHUB_REPOSITORY']
+          pr = os.environ['PR_NUMBER']
+          try:
+              pages = json.loads(subprocess.check_output([
+                  'gh', 'api', '--paginate', '--slurp',
+                  f'repos/{repo}/issues/{pr}/comments?per_page=100',
+              ], text=True))
+              for page in pages:
+                  for comment in page:
+                      if (comment['user']['login'] == 'github-actions[bot]'
+                              and comment['body'].startswith('📄 Preview:')):
+                          subprocess.run([
+                              'gh', 'api', '-X', 'DELETE',
+                              f"repos/{repo}/issues/comments/{comment['id']}",
+                          ], check=True)
+          except (subprocess.CalledProcessError, ValueError, KeyError) as error:
+              print(f'::error::Could not remove the stale preview comment: {error}')
+              raise SystemExit(1)

@@ -1,4 +1,4 @@
-"""Exercise release deployment selection and reporting without GitHub writes."""
+"""The example dogfoods workspace publication; releases only validate."""
 
 import json
 import os
@@ -10,221 +10,379 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = yaml.safe_load(
-    (ROOT / ".github/workflows/example-workspace.yml").read_text()
-)
-REPORT = WORKFLOW["jobs"]["report"]["steps"][0]["run"]
-RELEASE = WORKFLOW["jobs"]["deploy"]["steps"][0]["run"]
-TITLE = "Example workspace failed to build for v0.109.0"
 
 
-def reporter(
-    tmp_path,
-    issues=(),
-    *,
-    lookup_fails=False,
-    build="failure",
-    theme="success",
-    deploy="skipped",
-):
-    state = tmp_path / "issues.json"
-    state.write_text(json.dumps(list(issues)))
-    log = tmp_path / "calls.jsonl"
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\n"
-        + """import json, os, sys
-from pathlib import Path
-args = sys.argv[1:]
-with Path(os.environ["TEST_LOG"]).open("a") as output:
-    output.write(json.dumps(args) + "\\n")
-state = Path(os.environ["TEST_ISSUES"])
-issues = json.loads(state.read_text())
-if args[:2] == ["issue", "list"]:
-    if os.environ["LOOKUP_FAILS"] == "1":
-        sys.exit(22)
-    assert args[args.index("--state") + 1] == "all"
-    print(json.dumps(issues))
-elif args[:2] == ["issue", "create"]:
-    issues.append({"number": 42, "title": args[args.index("--title") + 1], "state": "OPEN"})
-    state.write_text(json.dumps(issues))
-elif args[:2] == ["issue", "reopen"]:
-    next(issue for issue in issues if str(issue["number"]) == args[2])["state"] = "OPEN"
-    state.write_text(json.dumps(issues))
-elif args[:2] != ["issue", "comment"]:
-    raise AssertionError(args)
-"""
+def load(name):
+    return yaml.load(
+        (ROOT / f".github/workflows/{name}.yml").read_text(), Loader=yaml.BaseLoader
     )
-    gh.chmod(0o755)
-    env = {
-        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "allenai/asta-plugins",
-        "REF": "v0.109.0",
-        "RUN": "https://github.com/allenai/asta-plugins/actions/runs/123",
-        "TEST_LOG": str(log),
-        "TEST_ISSUES": str(state),
-        "LOOKUP_FAILS": "1" if lookup_fails else "0",
-        "BUILD_RESULT": build,
-        "THEME_RESULT": theme,
-        "DEPLOY_RESULT": deploy,
-    }
-
-    def run(attempt):
-        env["RUN"] = f"https://github.com/allenai/asta-plugins/actions/runs/{attempt}"
-        return subprocess.run(
-            ["bash", "-c", REPORT],
-            cwd=tmp_path,
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=10,
-        )
-
-    def calls():
-        return (
-            [json.loads(line) for line in log.read_text().splitlines()]
-            if log.exists()
-            else []
-        )
-
-    return run, calls
-
-
-def test_failed_rerun_updates_the_existing_release_issue(tmp_path):
-    run, calls = reporter(tmp_path)
-    assert run(123).returncode == 0
-    assert run(124).returncode == 0
-    writes = [call for call in calls() if call[1] != "list"]
-    assert [call[1] for call in writes] == ["create", "comment"]
-    assert writes[1][2] == "42"
-    assert writes[1][-1].endswith("/actions/runs/124")
-
-
-def test_recurring_failure_reopens_the_release_issue(tmp_path):
-    run, calls = reporter(tmp_path, [{"number": 7, "title": TITLE, "state": "CLOSED"}])
-    assert run(125).returncode == 0
-    writes = [call for call in calls() if call[1] != "list"]
-    assert [call[1:3] for call in writes] == [["reopen", "7"], ["comment", "7"]]
-
-
-def test_similar_issue_title_does_not_capture_another_release(tmp_path):
-    run, calls = reporter(
-        tmp_path, [{"number": 7, "title": TITLE + "-rc.1", "state": "OPEN"}]
-    )
-    assert run(126).returncode == 0
-    assert [call[1] for call in calls()] == ["list", "create"]
-
-
-def test_failed_lookup_does_not_create_a_duplicate_issue(tmp_path):
-    run, calls = reporter(tmp_path, lookup_fails=True)
-    assert run(127).returncode != 0
-    assert [call[1] for call in calls()] == ["list"]
-
-
-def test_build_failure_preserves_any_existing_site(tmp_path):
-    run, calls = reporter(tmp_path)
-    assert run(128).returncode == 0
-    body = calls()[-1][-1]
-    assert "deployment was not attempted" in body
-    assert "Any previously published demo is unchanged" in body
-
-
-def test_browser_failure_reports_that_deployment_was_not_attempted(tmp_path):
-    run, calls = reporter(tmp_path, build="success", theme="failure")
-    assert run(128).returncode == 0
-    body = calls()[-1][-1]
-    assert "browser checks failed" in body
-    assert "deployment was not attempted" in body
-
-
-def test_deployment_failure_does_not_claim_the_live_site_is_unchanged(tmp_path):
-    run, calls = reporter(tmp_path, build="success", deploy="failure")
-    assert run(129).returncode == 0
-    body = calls()[-1][-1]
-    assert "deployment failed after a successful build" in body
-    assert "live site's state is unconfirmed" in body
-    assert "unchanged" not in body
-    assert "failed to build" not in body
-
-
-def test_successful_or_superseded_release_does_not_open_an_issue(tmp_path):
-    run, calls = reporter(tmp_path, build="success", deploy="success")
-    assert run(130).returncode == 0
-    assert calls() == []
-
-
-def release_gate(tmp_path, ref, pages, *, lookup_fails=False):
-    gh = tmp_path / "gh"
-    gh.write_text(
-        f"#!{sys.executable}\n"
-        + """import json, os, sys
-assert sys.argv[1:] == ["api", "--paginate", "--slurp", "repos/allenai/asta-plugins/tags?per_page=100"]
-if os.environ["LOOKUP_FAILS"] == "1":
-    sys.exit(22)
-print(os.environ["TEST_TAG_PAGES"])
-"""
-    )
-    gh.chmod(0o755)
-    output = tmp_path / "output"
-    result = subprocess.run(
-        ["bash", "-c", RELEASE],
-        cwd=tmp_path,
-        env={
-            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-            "GITHUB_REPOSITORY": "allenai/asta-plugins",
-            "GITHUB_OUTPUT": str(output),
-            "REF": ref,
-            "TEST_TAG_PAGES": json.dumps(
-                [[{"name": tag} for tag in page] for page in pages]
-            ),
-            "LOOKUP_FAILS": "1" if lookup_fails else "0",
-        },
-        text=True,
-        capture_output=True,
-        timeout=10,
-    )
-    return result, output.read_text() if output.exists() else ""
 
 
 @pytest.mark.parametrize(
-    ("ref", "expected"),
-    [("v0.9.0", "false"), ("v0.10.0", "true"), ("v0.11.0-rc.1", "false")],
+    "files,expected",
+    [
+        ([{"filename": "examples/workspace/slides/attention/slides.qmd"}], "true"),
+        ([{"filename": "plugins/asta-tools/skills/workspace/SKILL.md"}], "false"),
+        (
+            [
+                {
+                    "filename": "elsewhere.qmd",
+                    "previous_filename": "examples/workspace/old.qmd",
+                }
+            ],
+            "true",
+        ),
+        (
+            [
+                {
+                    "filename": "plugins/asta-tools/skills/workspace/assets/asta-slides/theme.scss"
+                }
+            ],
+            "true",
+        ),
+    ],
 )
-def test_only_the_newest_final_tag_deploys_even_when_older_build_finishes_last(
-    tmp_path, ref, expected
-):
-    result, output = release_gate(
-        tmp_path, ref, [["v0.11.0-rc.1", "latest", "v0.9.0"], ["v0.10.0"]]
+def test_shared_scope_matches_current_and_previous_paths(tmp_path, files, expected):
+    result, output = _run_shared_scope(tmp_path, files)
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"render={expected}\n"
+
+
+def _run_shared_scope(tmp_path, files, *, site_dir=None, patterns=None):
+    workflow = load("workspace-quarto-site")
+    script = workflow["jobs"]["scope"]["steps"][0]["run"]
+    fake = tmp_path / "gh"
+    # Paginated API responses are slurped into one array of pages.
+    pages = [files[i : i + 100] for i in range(0, len(files), 100)] or [[]]
+    response = tmp_path / "files.json"
+    response.write_text(json.dumps(pages))
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "assert '--paginate' in sys.argv and '--slurp' in sys.argv\n"
+        f"print(open({str(response)!r}).read())\n"
+    )
+    fake.chmod(0o755)
+    output = tmp_path / "out"
+    env = dict(
+        os.environ,
+        PATH=f"{tmp_path}:{os.environ['PATH']}",
+        EVENT="pull_request",
+        ACTION="synchronize",
+        SITE_DIR="examples/workspace",
+        RENDER_PATHS=load("example-preview")["jobs"]["docs"]["with"]["render-paths"],
+        GITHUB_OUTPUT=str(output),
+        GITHUB_REPOSITORY="owner/repo",
+        PR_NUMBER="1",
+    )
+    if site_dir is not None:
+        env["SITE_DIR"] = site_dir
+    if patterns is not None:
+        env["RENDER_PATHS"] = patterns
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+    )
+    return result, output
+
+
+@pytest.mark.parametrize(
+    "site,path,expected",
+    [
+        (".config/site", ".config/site/index.qmd", "true"),
+        (".config/site", "config/site/index.qmd", "false"),
+        ("site.", "site./index.qmd", "true"),
+        ("site.", "site/index.qmd", "false"),
+        ("./research/site/", "research/site/index.qmd", "true"),
+        ("research/../site", "site/index.qmd", "true"),
+        (".", "anywhere/index.qmd", "true"),
+    ],
+)
+def test_default_scope_preserves_real_directory_names(tmp_path, site, path, expected):
+    result, output = _run_shared_scope(
+        tmp_path, [{"filename": path}], site_dir=site, patterns=""
     )
     assert result.returncode == 0, result.stderr
-    assert output == f"current={expected}\n"
+    assert output.read_text() == f"render={expected}\n"
 
 
-@pytest.mark.parametrize("pages", [[], [["latest", "v0.11.0-rc.1"]]])
-def test_no_final_tags_fails_closed(tmp_path, pages):
-    result, output = release_gate(tmp_path, "v0.10.0", pages)
+@pytest.mark.parametrize("site", ["..", "../site", "site/../../outside", "/site"])
+@pytest.mark.parametrize("patterns", ["", "**"])
+def test_scope_rejects_site_outside_repository(tmp_path, site, patterns):
+    result, output = _run_shared_scope(tmp_path, [], site_dir=site, patterns=patterns)
     assert result.returncode != 0
-    assert output == ""
+    assert "site-dir must stay inside" in result.stderr
+    assert not output.exists()
 
 
-def test_unreadable_tags_fail_closed(tmp_path):
-    result, output = release_gate(tmp_path, "v0.10.0", [["v0.10.0"]], lookup_fails=True)
+def test_shipped_caller_grants_scope_and_comment_cleanup_permissions():
+    caller = yaml.load(
+        (ROOT / "plugins/asta-tools/skills/workspace/assets/docs.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    assert caller["permissions"]["pull-requests"] == "write"
+    shared = load("workspace-quarto-site")
+    assert shared["jobs"]["scope"]["permissions"]["pull-requests"] == "read"
+    assert shared["jobs"]["cleanup-preview"]["permissions"]["pull-requests"] == "write"
+
+
+@pytest.mark.parametrize("count", [3000, 3001])
+@pytest.mark.parametrize("matches_site", [False, True])
+def test_shared_scope_refuses_potentially_truncated_file_list(
+    tmp_path, count, matches_site
+):
+    files = [{"filename": f"unrelated/{i}.txt"} for i in range(count)]
+    if matches_site:
+        files[0] = {"filename": "examples/workspace/index.qmd"}
+    result, output = _run_shared_scope(tmp_path, files)
     assert result.returncode != 0
-    assert output == ""
+    assert "3,000-file limit" in result.stderr
+    # No false output can trigger deletion; no true output can publish a
+    # partially classified PR. The required browser check reports the failure.
+    assert not output.exists()
 
 
-def test_release_selection_runs_under_the_shared_pages_lock():
-    deploy = WORKFLOW["jobs"]["deploy"]
-    assert deploy["concurrency"] == {
-        "group": "pages",
-        "cancel-in-progress": False,
-        "queue": "max",
-    }
-    assert deploy["steps"][0]["id"] == "release"
-    assert deploy["steps"][1]["if"] == "steps.release.outputs.current == 'true'"
+@pytest.mark.parametrize("matches_site", [False, True])
+def test_shared_scope_reads_all_pages_below_file_limit(tmp_path, matches_site):
+    files = [{"filename": f"unrelated/{i}.txt"} for i in range(2999)]
+    if matches_site:
+        files[-1] = {"filename": "examples/workspace/index.qmd"}
+    result, output = _run_shared_scope(tmp_path, files)
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"render={str(matches_site).lower()}\n"
 
 
-def test_shared_asset_changes_trigger_the_example_check():
-    # PyYAML's YAML 1.1 loader interprets the GitHub Actions key 'on' as True.
-    paths = WORKFLOW[True]["pull_request"]["paths"]
-    assert "plugins/asta-tools/skills/workspace/assets/**" in paths
+@pytest.mark.parametrize(
+    "event,action,expected",
+    [
+        ("pull_request", "closed", "false"),
+        ("push", "", "true"),
+    ],
+)
+def test_close_needs_no_file_lookup_and_main_always_builds(
+    tmp_path, event, action, expected
+):
+    script = load("workspace-quarto-site")["jobs"]["scope"]["steps"][0]["run"]
+    output = tmp_path / "out"
+    subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        env=dict(os.environ, EVENT=event, ACTION=action, GITHUB_OUTPUT=str(output)),
+    )
+    assert output.read_text() == f"render={expected}\n"
+
+
+def test_example_has_one_publisher_and_unfiltered_close():
+    caller = load("example-preview")
+    assert caller["on"]["push"]["branches"] == ["main"]
+    assert "closed" in caller["on"]["pull_request"]["types"]
+    assert "paths" not in caller["on"]["pull_request"]
+    assert (
+        caller["jobs"]["docs"]["uses"]
+        == "./.github/workflows/workspace-quarto-site.yml"
+    )
+    release = load("example-workspace")
+    assert set(release["jobs"]) == {"build", "theme"}
+    assert not (ROOT / "scripts/request-example-pages-build.sh").exists()
+    shared = load("workspace-quarto-site")
+    cleanup = shared["jobs"]["cleanup-preview"]
+    # Closing always cleans up, even if scoping failed or found nothing.
+    assert cleanup["if"].startswith("always()")
+    assert "github.event.action == 'closed' ||" in cleanup["if"]
+
+
+def test_open_pr_that_stops_changing_the_site_loses_its_preview(tmp_path):
+    shared = load("workspace-quarto-site")
+    cleanup = shared["jobs"]["cleanup-preview"]
+    assert cleanup["needs"] == "scope"
+    assert "needs.scope.outputs.render == 'false'" in cleanup["if"]
+    # A scope that failed leaves render empty, which must not delete a preview.
+    assert "needs.scope.outputs.render != 'true'" not in cleanup["if"]
+    # The build/deploy path stays off for that PR, so nothing re-publishes it.
+    assert "needs.scope.outputs.render == 'true'" in shared["jobs"]["build"]["if"]
+
+
+def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
+    check = load("example-preview")["jobs"]["check-preview"]
+    assert check["name"] == "Example preview browser"
+    assert "always()" in check["if"]
+    assert "needs.docs.outputs.rendered" not in check["if"]
+    assert check["steps"][0]["run"] == 'test "$RESULT" = success'
+    gate = check["steps"][1]
+    assert gate["id"] == "browser"
+    assert "needs.docs.outputs.rendered == 'true'" in gate["env"]["RUN"]
+    assert "head.repo.full_name == github.repository" in gate["env"]["RUN"]
+    assert "github.actor != 'dependabot[bot]'" in gate["env"]["RUN"]
+    for step in check["steps"][2:]:
+        assert step["if"] == "steps.browser.outputs.run == 'true'"
+
+
+@pytest.mark.parametrize("has_preview", [False, True])
+def test_cleanup_only_publishes_when_a_preview_exists(tmp_path, has_preview):
+    def git(*args, cwd=None):
+        return subprocess.check_output(
+            ["git", *args], cwd=cwd or checkout, text=True, stderr=subprocess.PIPE
+        )
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    remote = tmp_path / "remote.git"
+    git("init", "--bare", str(remote))
+    git("init", "-b", "main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (checkout / "index.html").write_text("published main")
+    git("add", "index.html")
+    git("commit", "-m", "initial")
+    git("remote", "add", "origin", str(remote))
+    git("checkout", "-b", "gh-pages")
+    if has_preview:
+        preview = checkout / "pr-preview/pr-1"
+        preview.mkdir(parents=True)
+        (preview / "index.html").write_text("preview")
+        git("add", "pr-preview/pr-1/index.html")
+        git("commit", "-m", "preview")
+    git("push", "origin", "main", "gh-pages")
+    before = git("rev-parse", "gh-pages")
+    git("checkout", "main")
+    git("branch", "-D", "gh-pages")
+    step = next(
+        s
+        for s in load("workspace-quarto-site")["jobs"]["cleanup-preview"]["steps"]
+        if s.get("name") == "Remove PR preview"
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=checkout,
+        env=dict(os.environ, PR_NUMBER="1"),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    after = git("rev-parse", "refs/heads/gh-pages", cwd=remote)
+    assert (before != after) == has_preview
+    assert git("show", "gh-pages:index.html") == "published main"
+    assert not git("ls-tree", "gh-pages", "pr-preview/pr-1")
+    if not has_preview:
+        assert "Preparing worktree" not in result.stderr
+
+
+@pytest.mark.parametrize("has_comments", [False, True])
+def test_cleanup_removes_only_bot_preview_comments(tmp_path, has_comments):
+    comments = (
+        [
+            {
+                "id": 11,
+                "user": {"login": "github-actions[bot]"},
+                "body": "📄 Preview: old",
+            },
+            {"id": 12, "user": {"login": "human"}, "body": "📄 Preview: keep"},
+            {"id": 13, "user": {"login": "github-actions[bot]"}, "body": "Other check"},
+        ]
+        if has_comments
+        else []
+    )
+    pages = (
+        [
+            comments,
+            [
+                {
+                    "id": 14,
+                    "user": {"login": "github-actions[bot]"},
+                    "body": "📄 Preview: duplicate",
+                }
+            ],
+        ]
+        if has_comments
+        else [[]]
+    )
+    (tmp_path / "comments.json").write_text(json.dumps(pages))
+    fake = tmp_path / "gh"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys\n"
+        "if 'DELETE' in sys.argv:\n"
+        "    with open('deletions', 'a') as log: log.write(sys.argv[-1] + '\\n')\n"
+        "else:\n"
+        "    assert '--paginate' in sys.argv and '--slurp' in sys.argv\n"
+        "    print(pathlib.Path('comments.json').read_text())\n"
+    )
+    fake.chmod(0o755)
+    step = load("workspace-quarto-site")["jobs"]["cleanup-preview"]["steps"][-1]
+    assert step["name"] == "Remove stale preview comment"
+    result = subprocess.run(
+        [sys.executable, "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            PATH=f"{tmp_path}:{os.environ['PATH']}",
+            GITHUB_REPOSITORY="owner/repo",
+            PR_NUMBER="1",
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    log = tmp_path / "deletions"
+    if has_comments:
+        assert log.read_text().splitlines() == [
+            "repos/owner/repo/issues/comments/11",
+            "repos/owner/repo/issues/comments/14",
+        ]
+    else:
+        assert not log.exists()
+
+
+@pytest.mark.parametrize("failure", ["lookup", "decode", "record", "delete"])
+def test_cleanup_fails_when_stale_comment_removal_cannot_be_verified(tmp_path, failure):
+    fake = tmp_path / "gh"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "failure = os.environ['FAILURE']\n"
+        "if 'DELETE' in sys.argv:\n"
+        "    with open('deletions', 'a') as log: log.write(sys.argv[-1] + '\\n')\n"
+        "    sys.exit(1 if failure == 'delete' else 0)\n"
+        "if failure == 'lookup': sys.exit(1)\n"
+        "if failure == 'decode': print('invalid JSON'); sys.exit(0)\n"
+        "comment = {'user': {'login': 'github-actions[bot]'}, 'body': '📄 Preview: old'}\n"
+        "if failure != 'record': comment['id'] = 11\n"
+        "print(json.dumps([[comment], [dict(comment, id=14)]]))\n"
+    )
+    fake.chmod(0o755)
+    step = load("workspace-quarto-site")["jobs"]["cleanup-preview"]["steps"][-1]
+    result = subprocess.run(
+        [sys.executable, "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            PATH=f"{tmp_path}:{os.environ['PATH']}",
+            GITHUB_REPOSITORY="owner/repo",
+            PR_NUMBER="1",
+            FAILURE=failure,
+        ),
+    )
+    assert result.returncode != 0
+    assert "::error::Could not remove the stale preview comment" in result.stdout
+    log = tmp_path / "deletions"
+    if failure == "delete":
+        # Stop on the first failed deletion instead of reporting success or
+        # continuing through later pages. A rerun can safely retry the cleanup.
+        assert log.read_text().splitlines() == ["repos/owner/repo/issues/comments/11"]
+    else:
+        assert not log.exists()
+
+
+def test_example_has_no_demo_copy_and_links_a_real_pr_preview():
+    example = ROOT / "examples/workspace"
+    for name in ("build-demo.py", "refresh-demo.py", "demo-edits.patch"):
+        assert not (example / "scripts" / name).exists()
+    assert "demo" not in (example / "Makefile").read_text()
+    assert "artifact-command" not in load("example-preview")["jobs"]["docs"]["with"]
+    build = load("example-workspace")["jobs"]["build"]
+    assert not any("upload-pages-artifact" in s.get("uses", "") for s in build["steps"])
+    for readme in (ROOT / "README.md", example / "README.md"):
+        text = readme.read_text()
+        assert "asta-plugins/demo/" not in text
+        assert "https://allenai.github.io/asta-plugins/pr-preview/pr-" in text

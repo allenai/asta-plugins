@@ -943,3 +943,40 @@ def test_page_title_markup_stays_escaped_in_every_output_path(
     assert result.count(encoded_title) == 2
     assert "<img" not in result
     assert '"x"' not in result
+
+
+@pytest.mark.parametrize(
+    "href",
+    [
+        "../../javascript:alert(1)",
+        "../../JavaScript:alert(1)",
+        "../../data:text/html,x",
+        "../../vbscript:x",
+        "../../http:evil.example",
+    ],
+)
+def test_rebased_links_never_become_schemes(href):
+    result = WHAT_CHANGED.sanitize_fragment(
+        f'<p><a href="{href}">x</a><img src="{href}"></p>', "slides/deck/slides.html"
+    )
+
+    for attr in re.findall(r'(?:href|src)="([^"]*)"', result):
+        assert WHAT_CHANGED.safe_url(attr)
+        assert ":" not in attr.split("/", 1)[0]
+
+
+def test_rebased_link_keeps_ordinary_relative_targets():
+    result = WHAT_CHANGED.sanitize_fragment(
+        '<a href="../../lit-review/">x</a>', "slides/deck/slides.html"
+    )
+
+    assert 'href="lit-review/"' in result
+
+
+@pytest.mark.parametrize("source", ["notes.html", "reports/notes.html"])
+def test_query_only_links_keep_their_source_page(source):
+    result = WHAT_CHANGED.sanitize_fragment(
+        '<a href="?view=full#details">details</a><a href="#local">local</a>', source
+    )
+    assert f'href="{source}?view=full#details"' in result
+    assert 'href="#local"' in result
