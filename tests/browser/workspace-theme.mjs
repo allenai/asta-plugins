@@ -273,6 +273,14 @@ try {
       await comparison.locator("img").evaluateAll((images) => Promise.all(images.map((img) => img.decode())));
       await comparison.screenshot({ path: `${output}/workspace-${mode}-comparison.png` });
     }
+    if (mode === "dark") {
+      await page.goto(`${base}/index.html`, { waitUntil: "networkidle" });
+      await settled(page);
+      await assertBundledFonts(page);
+      assert.ok(await page.locator("#quarto-sidebar").getByRole("link", { name: "Slides: Attention in sequence models", exact: true }).isVisible());
+      assert.ok(await page.locator("main").getByRole("link", { name: "Presentation slides", exact: true }).isVisible());
+      await page.screenshot({ path: `${output}/workspace-home-slides-labels.png`, fullPage: true });
+    }
     await context.close();
   }
   results.diffModes = [];

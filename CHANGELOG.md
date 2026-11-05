@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Slide decks keep a consistent slide background in the phone scroll view,
+  while preserving each slide's custom background. The workspace example labels
+  its deck as slides in the sidebar and overview.
+
 - Workspaces now support multiple Markdown slide decks in nested `slides.qmd`
   folders. The `asta-slides` Quarto reveal.js extension uses the Asta theme and
   bundled fonts, 16:9 slides, controls and slide numbers inside the scaled slide,

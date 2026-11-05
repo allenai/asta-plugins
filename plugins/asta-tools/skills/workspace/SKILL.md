@@ -105,6 +105,7 @@ When the user asks for slides, use Quarto reveal.js via the managed
 folder under `slides/` (for example `slides/findings/slides.qmd`), fill its title and write the
 talk in Markdown. Keep images, optional SCSS, scripts and Reveal plugins beside
 that source. Several deck folders are supported at any depth; `slides/<name>/` is the convention.
+The build generates a viewer page beside each deck (`<deck-dir>/index.qmd`, uncommitted, as for papers) that plays it inside the site at 16:9, with expand, Esc, Reveal's navigation keys working without a click into the deck, and a pop-out button that opens `slides.html` on its own at the current slide; link that page from the sidebar and overview. Append `assets/slides/gitignore` to `.gitignore` with `{{DECK_DIR}}` replaced by the deck's folder (escape Git ignore pattern characters); the build also adds that line when it is missing. Commit a custom `index.qmd` to override it. A deck can't live in a paper's `html/` folder: the build skips it there with a warning.
 
 Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
 builds. `asta-slides: {section-slides: false}` makes `#` headings name
@@ -124,8 +125,12 @@ only when deliberately committing an ejected extension.
 
 `make workspace-assets` fetches the extension from the selected workspace ref;
 `make check` renders decks with the site. Preserve existing render and navigation
-lists: if either is explicit, add the deck to it. An explicit `project.render`
-list needs the glob `"slides/**/slides.qmd"`, or a single-file
+lists: if either is explicit, add the deck to it. In an explicit sidebar, label
+the entry `text: "Slides: <title>"` with the deck as `href`, and word links from
+other pages as slides (for example "Presentation slides"), so readers know a
+link opens a deck rather than a page. An explicit `project.render`
+list needs each deck's `<deck-dir>/slides.qmd` and `<deck-dir>/index.qmd` (or globs
+covering every deck folder, wherever it is), or a single-file
 `quarto render slides/<name>/slides.qmd` runs outside the project and cannot find
 the site-root `_extensions/asta-slides`. The default automatic sidebar
 links decks by title. Each deck publishes as `<deck-dir>/slides.html`; its PR

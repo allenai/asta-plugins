@@ -31,3 +31,5 @@ __pycache__/
 # Generated paper viewer; commit a copy only to customize it.
 /paper/html/index.qmd
 /paper/html/paper-viewer.js
+# Generated slide viewer pages; commit a copy only to customize it.
+/slides/attention/index.qmd

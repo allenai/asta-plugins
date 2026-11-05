@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create uncommitted Quarto viewer pages for discovered LaTeX papers."""
+"""Create uncommitted Quarto viewer pages for discovered papers and slide decks."""
 
 import hashlib
 import html
@@ -9,6 +9,7 @@ import posixpath
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -66,7 +67,9 @@ def managed_viewer(path: Path, tracked: set[str] | None) -> bool:
     return False
 
 
-def remove_orphan_viewers(directories: list[str], tracked: set[str] | None) -> None:
+def remove_orphan_viewers(
+    directories: list[str], tracked: set[str] | None, decks: Sequence[str] = ()
+) -> None:
     for root, children, files in os.walk(".", followlinks=False):
         folder = Path(root)
         children[:] = [
@@ -85,12 +88,13 @@ def remove_orphan_viewers(directories: list[str], tracked: set[str] | None) -> N
             and not (folder / name).is_symlink()
             and not (folder / name / ".git").exists()
         ]
-        if folder.name != "html" or "index.qmd" not in files:
+        if "index.qmd" not in files:
             continue
         path = folder / "index.qmd"
-        if folder.parent.as_posix() not in directories and managed_viewer(
-            path, tracked
-        ):
+        name = folder.relative_to(".").as_posix()
+        paper = folder.name == "html" and folder.parent.as_posix() in directories
+        deck = name in decks and (folder / "slides.qmd").is_file()
+        if not paper and not deck and managed_viewer(path, tracked):
             path.unlink()
 
 
@@ -238,6 +242,7 @@ toc: false
   font-size: 0.9rem; padding: 0.35rem 0; margin: 0 0 0.35rem;
   border-bottom: 1px solid var(--bs-border-color); }}
 .paper-title {{ font-size: 1rem; }}
+.paper-where code:not(.sourceCode) {{ color: inherit; background: transparent; padding: 0; }}
 .paper-expand {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
   border: 1px solid var(--bs-border-color); border-radius: 6px;
   background: transparent; color: inherit; cursor: pointer; }}
@@ -376,10 +381,248 @@ body:has([data-paper-preview]) .page-rows-contents {{ grid-template-rows:
     page.write_text(content.replace(GENERATED_MARKER, marker, 1), encoding="utf-8")
 
 
+# Only a one-line scalar with nothing YAML would reinterpret: no comment, escape,
+# block scalar, alias, tag or flow collection. Anything else uses the folder name.
+DECK_TITLE = re.compile(
+    r"""^(?P<key>title|pagetitle):[ \t]*(?:"(?P<double>[^"\\\n]+)"|'(?P<single>[^'\n]+)'"""
+    r"""|(?P<plain>[^\s'"#|>&*!%@`{}\[\],?:-][^#'"\n]*?))[ \t]*$""",
+    re.MULTILINE,
+)
+
+
+def deck_title(directory: str) -> str:
+    """The deck's front-matter title, else its pagetitle, else its folder's name."""
+    try:
+        text = (Path(directory) / "slides.qmd").read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        text = ""
+    front = text.split("\n---", 1)[0] if text.startswith("---") else ""
+    titles = {}
+    for match in DECK_TITLE.finditer(front):
+        following = front[match.end() :].split("\n", 2)[1:2]
+        continued = bool(following) and following[0][:1] in {" ", "\t"}
+        title = match["double"] or match["single"] or match["plain"]
+        if title and not continued and not (match["plain"] and ": " in title):
+            titles.setdefault(match["key"], title.strip())
+    # A deck that opens with its own title slide sets only pagetitle.
+    return titles.get("title") or titles.get("pagetitle") or Path(directory).name
+
+
+def ignore_deck_viewers(decks: list[str], tracked: set[str]) -> None:
+    """Add each generated deck viewer missing from .gitignore, as the build does for papers."""
+    missing = []
+    for directory in decks:
+        page = f"{directory}/index.qmd"
+        try:
+            result = subprocess.run(
+                ["git", "check-ignore", "-q", "--no-index", page],
+                capture_output=True,
+                check=False,
+            )
+        except OSError:
+            return
+        if result.returncode == 128:
+            return
+        if result.returncode == 1 and managed_viewer(Path(page), tracked):
+            missing.append("/" + re.sub(r"([\\*?\[!# ])", r"\\\1", page))
+    if not missing:
+        return
+    ignore = Path(".gitignore")
+    try:
+        existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
+        lines = ["# Generated slide viewer pages; commit a copy only to customize it."]
+        text = ("" if not existing or existing.endswith("\n") else "\n") + "\n".join(
+            lines + missing
+        )
+        with ignore.open("a", encoding="utf-8") as handle:
+            handle.write(text + "\n")
+    except OSError as error:
+        print(f"paper-viewer: could not update .gitignore: {error}", file=sys.stderr)
+        return
+    for line in missing:
+        print(f"paper-viewer: added {line} to .gitignore", file=sys.stderr)
+
+
+def create_deck_viewer(directory: str, tracked: set[str] | None) -> None:
+    """slides/<name>/index.qmd: the deck playing in place inside the site."""
+    folder = Path(directory)
+    if any(
+        path.is_symlink() or (path != Path(".") and (path / ".git").exists())
+        for path in [*folder.parents, folder]
+    ):
+        return
+    if any(
+        (folder / f"index.{suffix}").exists()
+        or (folder / f"index.{suffix}").is_symlink()
+        for suffix in ("md", "html", "ipynb")
+    ):
+        return
+    page = folder / "index.qmd"
+    if page.is_symlink() or (page.exists() and not managed_viewer(page, tracked)):
+        return
+    title = deck_title(directory)
+    source = f"{directory}/slides.qmd"
+    content = f"""---
+title: {json.dumps(title)}
+page-layout: full
+title-block-style: none
+toc: false
+---
+
+{GENERATED_MARKER}
+
+```{{=html}}
+<div data-deck-viewer>
+<div class="deck-bar">
+<button type="button" class="deck-expand" aria-pressed="false"
+  title="Give the slides the whole window">&#x2922;</button>
+<strong class="deck-title">{html.escape(title)}</strong>
+<span class="deck-where">Written in <code>{html.escape(source)}</code>.</span>
+<a class="deck-popout" href="slides.html" target="_blank" rel="noopener"
+  title="Open the slides on their own" aria-label="Open the slides on their own"><svg
+  aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 16 16"><path
+  d="M9.5 2H14v4.5M14 2 7.5 8.5M12 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3.5"
+  fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+  stroke-linejoin="round"/></svg></a>
+</div>
+<div class="deck-stage">
+<iframe class="deck-frame" src="slides.html" title="{html.escape(title, quote=True)}"
+  allow="fullscreen" allowfullscreen></iframe>
+</div>
+</div>
+
+<style>
+.deck-bar {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.9rem;
+  font-size: 0.9rem; padding: 0.35rem 0; margin: 0 0 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color); }}
+.deck-title {{ font-size: 1rem; }}
+/* Inherit the bar's colours so the path reads on any Bootstrap theme, light or dark. */
+[data-deck-viewer] .deck-where code:not(.sourceCode) {{ color: inherit;
+  background: transparent; padding: 0; }}
+.deck-expand, .deck-popout {{ font: inherit; line-height: 1; padding: 0.2rem 0.45rem;
+  border: 1px solid var(--bs-border-color); border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer; }}
+.deck-popout {{ margin-left: auto; display: inline-flex; align-items: center;
+  align-self: stretch; text-decoration: none; }}
+[data-deck-viewer].deck-full {{ position: fixed; inset: 0; z-index: 1050;
+  background: var(--bs-body-bg); display: flex; flex-direction: column; }}
+.deck-full .deck-bar {{ padding: 0.35rem 0.75rem; margin: 0; }}
+body.deck-page-full #quarto-sidebar, body.deck-page-full #quarto-header,
+body.deck-page-full .quarto-secondary-nav {{ display: none !important; }}
+body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
+.deck-stage {{ display: flex; justify-content: center; }}
+.deck-full .deck-stage {{ flex: 1; align-items: center; min-height: 0; }}
+/* The slide fills its frame in the site's own colour, so an outline marks its edge. */
+.deck-frame {{ display: block; border: 0; aspect-ratio: 16 / 9; max-width: 100%;
+  box-shadow: 0 0 0 1px var(--bs-border-color); }}
+</style>
+
+<script>
+(() => {{
+  const host = document.querySelector('[data-deck-viewer]');
+  const stage = host.querySelector('.deck-stage');
+  const frame = host.querySelector('.deck-frame');
+  const expand = host.querySelector('.deck-expand');
+  // 16:9, as wide as the page allows and short enough that a whole slide is in view.
+  // Below `legible` it stops shrinking and the page scrolls: Reveal's default minScale
+  // (0.2) never draws a 900 px slide shorter than 180 px, and a smaller one can't be read.
+  const legible = 180;
+  const fit = () => {{
+    const full = host.classList.contains('deck-full');
+    // From the page's top, not the window's, so a scrolled page fits the same way.
+    const top = stage.getBoundingClientRect().top + (full ? 0 : scrollY);
+    const height = Math.max(legible, innerHeight - top - (full ? 0 : 16));
+    const width = Math.min(stage.clientWidth, height * 16 / 9);
+    frame.style.width = width + 'px';
+    frame.style.height = width * 9 / 16 + 'px';
+  }};
+  const setFull = full => {{
+    host.classList.toggle('deck-full', full);
+    document.body.classList.toggle('deck-page-full', full);
+    expand.setAttribute('aria-pressed', String(full));
+    expand.title = full ? 'Show the site again' : 'Give the slides the whole window';
+    fit();
+  }};
+  expand.addEventListener('click', () => setFull(!host.classList.contains('deck-full')));
+  // Capture phase, so collapsing consumes Esc before Reveal opens its overview.
+  const escape = event => {{
+    if (event.key !== 'Escape' || !host.classList.contains('deck-full')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setFull(false);
+  }};
+  addEventListener('keydown', escape, true);
+  // Esc pressed while the deck has focus; reachable only when the frame is same-origin.
+  frame.addEventListener('load', () => {{
+    try {{ frame.contentWindow.addEventListener('keydown', escape, true); }} catch (e) {{}}
+  }});
+  // The deck's plugin reports its slide, so the pop-out opens where the viewer is.
+  const popout = host.querySelector('.deck-popout');
+  addEventListener('message', event => {{
+    const data = event.data;
+    if (event.source !== frame.contentWindow || data?.astaSlides !== 'location') return;
+    if (typeof data.hash === 'string' && data.hash.length < 512
+      && (data.hash === '' || data.hash.startsWith('#/'))) {{
+      popout.href = 'slides.html' + data.hash;
+    }}
+  }});
+  // Reveal's navigation keys move the deck without a click into it. postMessage
+  // reaches the deck's plugin even where the frame isn't same-origin (file://).
+  const keys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ',
+    'PageUp', 'PageDown', 'Home', 'End']);
+  const usesKeys = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
+    '[role="textbox"], [role="combobox"], [role="listbox"], [role="slider"], [role="spinbutton"], ' +
+    '[role="menu"], [role="menubar"], [role="tablist"], [role="tree"], [role="grid"]';
+  // Arrows, Home and End are forwarded even from a focused link or button: the page
+  // is fitted to the window, so they have no other use here. Space still activates.
+  const activates = 'a[href], button, summary, [role="button"], [role="link"]';
+  addEventListener('keydown', event => {{
+    if (!keys.has(event.key) || event.defaultPrevented || event.isComposing
+      || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest(usesKeys) || (event.key === ' ' && target?.closest(activates))) return;
+    event.preventDefault();
+    frame.contentWindow?.postMessage({{ astaSlides: 'key', key: event.key, shiftKey: event.shiftKey }}, '*');
+  }});
+  addEventListener('resize', fit);
+  addEventListener('scroll', fit, {{ passive: true }});
+  new ResizeObserver(fit).observe(stage);
+  fit();
+}})();
+</script>
+```
+"""
+    body = content.replace(GENERATED_MARKER + "\n", "", 1)
+    marker = (
+        "<!-- Generated by asta-plugins sha256="
+        + hashlib.sha256(body.encode()).hexdigest()
+        + " -->"
+    )
+    page.write_text(content.replace(GENERATED_MARKER, marker, 1), encoding="utf-8")
+
+
+def deck_directories(data: dict) -> list[str]:
+    decks = data.get("decks", [])
+    if not isinstance(decks, list):
+        raise ValueError("Expected 'decks' to be an array of relative directory names")
+    for directory in decks:
+        if (
+            not isinstance(directory, str)
+            or any(
+                part in {"", ".", ".."} or part.startswith("-")
+                for part in directory.split("/")
+            )
+            or any(ord(char) < 32 or ord(char) == 127 for char in directory)
+        ):
+            raise ValueError(f"Invalid deck directory: {directory!r}")
+    return decks
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
         directories = paper_directories(data)
+        decks = deck_directories(data)
         main_files = data.get("main_files", {})
         if not isinstance(main_files, dict) or any(
             not isinstance(name, str) for name in main_files.values()
@@ -389,9 +632,21 @@ def main() -> None:
         print(f"paper-viewer: {error}", file=sys.stderr)
         raise SystemExit(1) from None
     tracked = tracked_files()
-    remove_orphan_viewers(directories, tracked)
+    paper_html = {f"{directory}/html" for directory in directories}
+    for directory in [deck for deck in decks if deck in paper_html]:
+        print(
+            f"paper-viewer: skipping the deck in {directory}: it is the paper's"
+            " viewer folder; move the deck to keep its viewer page",
+            file=sys.stderr,
+        )
+    decks = [deck for deck in decks if deck not in paper_html]
+    remove_orphan_viewers(directories, tracked, decks)
     for directory in directories:
         create_viewer(directory, tracked, main_files.get(directory, "main.tex"))
+    for directory in decks:
+        create_deck_viewer(directory, tracked)
+    if tracked is not None:
+        ignore_deck_viewers(decks, tracked)
 
 
 if __name__ == "__main__":
