@@ -82,9 +82,21 @@ def test_example_has_one_publisher_and_unfiltered_close():
     assert set(release["jobs"]) == {"build", "theme"}
     assert not (ROOT / "scripts/request-example-pages-build.sh").exists()
     shared = load("workspace-quarto-site")
-    assert "needs" not in shared["jobs"]["cleanup-preview"]
-    assert "scope.outputs.render" not in shared["jobs"]["cleanup-preview"]["if"]
-    assert "closed" in shared["jobs"]["cleanup-preview"]["if"]
+    cleanup = shared["jobs"]["cleanup-preview"]
+    # Closing always cleans up, even if scoping failed or found nothing.
+    assert cleanup["if"].startswith("always()")
+    assert "github.event.action == 'closed' ||" in cleanup["if"]
+
+
+def test_open_pr_that_stops_changing_the_site_loses_its_preview(tmp_path):
+    shared = load("workspace-quarto-site")
+    cleanup = shared["jobs"]["cleanup-preview"]
+    assert cleanup["needs"] == "scope"
+    assert "needs.scope.outputs.render == 'false'" in cleanup["if"]
+    # A scope that failed leaves render empty, which must not delete a preview.
+    assert "needs.scope.outputs.render != 'true'" not in cleanup["if"]
+    # The build/deploy path stays off for that PR, so nothing re-publishes it.
+    assert "needs.scope.outputs.render == 'true'" in shared["jobs"]["build"]["if"]
 
 
 def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
@@ -96,31 +108,3 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     for step in check["steps"][1:]:
         assert "needs.docs.outputs.rendered == 'true'" in step["if"]
 
-
-def test_example_leaves_demo_copy_out_of_what_changed(tmp_path):
-    assert load("example-preview")["jobs"]["docs"]["with"]["diff-exclude"] == "demo"
-    shared = load("workspace-quarto-site")
-    assert shared["on"]["workflow_call"]["inputs"]["diff-exclude"]["default"] == ""
-    step = next(
-        s
-        for s in shared["jobs"]["build"]["steps"]
-        if s.get("name") == "Generate What changed"
-    )
-    assert step["env"]["DIFF_EXCLUDE"] == "${{ inputs.diff-exclude }}"
-    # The step turns each non-empty line into one --exclude argument.
-    script = step["run"]
-    start = script.index("exclude_args=()")
-    end = script.index('done <<< "$DIFF_EXCLUDE"') + len('done <<< "$DIFF_EXCLUDE"')
-    snippet = script[start:end] + '\nprintf "%s|" "${exclude_args[@]}"'
-    for value, expected in (
-        ("demo\n\nother/x\n", "--exclude|demo|--exclude|other/x|"),
-        ("", "|"),
-    ):
-        result = subprocess.run(
-            ["bash", "-euo", "pipefail", "-c", snippet],
-            env=dict(os.environ, DIFF_EXCLUDE=value),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        assert result.stdout == expected

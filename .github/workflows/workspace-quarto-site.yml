@@ -42,11 +42,6 @@ on:
         type: string
         default: ""
 
-      diff-exclude:
-        description: Newline-separated site-relative folders that What changed leaves out on both sides (e.g. a second copy of the site)
-        type: string
-        default: ""
-
 jobs:
   scope:
     runs-on: ubuntu-latest
@@ -307,7 +302,6 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          DIFF_EXCLUDE: ${{ inputs.diff-exclude }}
         run: |
           set -o pipefail
           tmpdir=$(mktemp -d)
@@ -346,12 +340,8 @@ jobs:
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
           tmpout="$tmpdir/what-changed.html"
-          exclude_args=()
-          while IFS= read -r dir; do
-            [ -n "$dir" ] && exclude_args+=(--exclude "$dir")
-          done <<< "$DIFF_EXCLUDE"
           if python3 "$gen" \
-            --old "$baseline" --new _site "${exclude_args[@]}" \
+            --old "$baseline" --new _site \
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
               && [ -s "$tmpout" ]; then
             mv "$tmpout" _site/what-changed.html
@@ -629,9 +619,13 @@ jobs:
   # Remove a PR's preview when the PR closes. Shares that PR's concurrency group
   # (keyed on the PR number) so it cancels any still-running build/deploy for the
   # PR first — otherwise a late deploy could recreate the preview after removal.
+  # Also runs on an open PR that no longer changes the site, so a reviewer
+  # never sees a preview of changes the PR has since reverted or moved out.
   cleanup-preview:
+    needs: scope
     if: >-
-      github.event_name == 'pull_request' && github.event.action == 'closed'
+      always() && github.event_name == 'pull_request'
+      && (github.event.action == 'closed' || needs.scope.outputs.render == 'false')
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest

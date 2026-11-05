@@ -25,8 +25,6 @@ jobs:
         docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e SITE_DIR
         -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD"
         ghcr.io/allenai/asta:latest-tex make demo-build
-      # /demo/ is a second copy of the site, so each edit would show twice.
-      diff-exclude: demo
       render-paths: |
         examples/workspace/**
         plugins/asta-tools/skills/workspace/assets/**
