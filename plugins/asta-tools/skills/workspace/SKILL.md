@@ -1,14 +1,14 @@
 ---
 name: workspace
-description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto today, GitHub Pages, dev container), show the rendered output, save iterations. Doesn't handle research execution (use `asta-flows`).
-allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit
+description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto, GitHub Pages, dev container), create Markdown slide decks alongside papers, show rendered output, and save iterations. Doesn't handle research execution (use `asta-flows`).
+allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
 # Workspace
 
 Manage the writing/docs side of a research project: scaffold infrastructure as needed, show the rendered work, save iterations. For managing the research task graph itself (planning, executing typed tasks), use `asta-flows`.
 
-`assets/DEVELOPER.md` is a developer-facing template scaffolded into the user's project root (where it becomes `DEVELOPER.md` for humans and agents working with the project). This SKILL.md is the agent-specific procedure.
+`assets/DEVELOPER.md` is the shared developer guide. Link to it from the project README at the selected asta-plugins ref; do not copy generic instructions into every project. This SKILL.md is the agent-specific procedure.
 
 ## Show the user the rendered work
 
@@ -17,27 +17,58 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
 
+When the user wants to see what changed since an earlier version, offer `asta workspace what-changed <ref>` (Git 2.30 or newer). It runs the project's `make render` at the named ref and in a private working-tree copy, then reuses the PR preview's diff script. It publishes only to `.asta/cache/what-changed/`; live preview can stay open. Run `asta workspace preview --what-changed` in the background and give the user its port-4849 URL (localhost or Codespaces-forwarded). A running server picks up later comparisons. No PR or Pages deploy is needed. Tracking the last-read version stays with the user; suggest `git tag -f last-read` after they read.
+
+Choose a trusted ref and keep source files stable while the copy is made. The baseline contains only committed files; do not present current ignored inputs as historical data. Run comparisons one at a time. See [the developer guide](assets/DEVELOPER.md#auto-deploy-githubworkflowsdocsyml) for build prerequisites, copying costs, cleanup and serving limits.
+
+## Before landing paper changes
+
+Before merging a paper PR or pushing paper edits directly to the default branch
+where allowed, check for an open PR labeled `asta:overleaf-sync`. Let it merge
+first so newer co-author edits conflict on your change before it lands. If it
+has not caught up, run `asta workspace overleaf sync --wait 1800` where the
+Overleaf token is available (in the background is fine; act on its final
+`Sync outcome:` line and exit code), then update your branch. Sync the same way
+before editing the paper and after merging a paper PR. Resolve a sync conflict on
+that PR and rerun its checks; do not bypass it by advancing the `.asta/overleaf`
+pairing record manually.
+For scheduling and repository status, read
+[Overleaf sync](workflows/overleaf-sync-command.md); for invited-coauthor
+access, [setup](workflows/overleaf-sync.md); for lock recovery,
+[Interrupted runs](workflows/overleaf-recovery.md#interrupted-runs).
+
 ## Save
 
 `git add` + `git commit -m "<concise message>"`. **Don't `git push` without explicit user approval.**
 
+Before opening any workspace PR, both local and headless agents run `make check`. The pin in `.github/workflows/docs.yml` works like a lockfile: outside CI and the Overleaf sync runner, `make check` moves a release pin that is behind the installed asta forward and prints `Moved the workspace pin ...`, without committing. CI and Overleaf runs keep the committed pin; a headless agent outside those runners uses the same pin update flow as a local agent.
+
+1. Commit your work, then run `make check`.
+2. If `make check` passed and moved the pin, commit only that change as its own commit: `git commit -m "Move workspace pin to asta-plugins@<release>" -- .github/workflows/docs.yml`.
+3. If `make check` failed after moving the pin, leave the move uncommitted and run it again on the old release, pinned by commit so sync leaves it alone. Resolve the old release's commit with `git ls-remote https://github.com/allenai/asta-plugins.git 'refs/tags/<old release>^{}'`; if that exact peeled ref is absent, use `git ls-remote https://github.com/allenai/asta-plugins.git 'refs/tags/<old release>'` for a lightweight tag. Require one full 40-hex SHA before replacing the ref in `docs.yml`, then run `make check`. If that passes, the new release broke the build: commit the SHA pin as its own commit and say in the PR that the pin holds the old release and why. If it fails too, the new release isn't the cause: `git checkout -- .github/workflows/docs.yml` restores the old release (no pin commit has been made); fix the build and repeat the check before opening the PR.
+
 For a headless agent (the user only sees results via deployed URL):
 
-- **Bootstrap `main` if the repo is empty.** On a repo with no commits, the first branch pushed becomes the default — leaving no `main` to open a PR against. Check with `git ls-remote --heads origin main`. If absent: prefer having the repo created with an initial commit (GitHub's **"Add a README file"**, or `gh repo create <owner>/<name> --add-readme`) so `main` exists up front; otherwise seed it with `git push -u origin HEAD:main` (legitimate — no prior state to review).
-- First save: `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
+- **Bootstrap `main` if the repo is empty.** Follow [repo setup](workflows/repo-setup.md), including its one proposal, private Pages check and initial-history reconciliation. On a repo with no commits, the first branch pushed becomes the default — establish `main` before pushing a feature or Pages branch. A README created on GitHub has its own history; fetch and merge it into an existing local workspace before pushing, preserving the workspace's files and commits. Never force-push past it.
+- First save: keep the pin current (above), then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
 
 Don't merge a PR without explicit user approval.
 
+## Overleaf sync refusals
+
+When `asta workspace overleaf pull` or `publish` refuses, or a sync PR conflicts, follow the section its message links in [`workflows/overleaf-recovery.md`](workflows/overleaf-recovery.md).
+
 ## Scaffold components as needed
 
-Add components only when needed; don't proactively offer.
+Add components only when needed; don't proactively offer them, except when you create a workspace's GitHub repo or set up one that exists but is empty (asked to share it, a Codespace, or a remote start in an empty repo). Then propose the repo defaults in one message and apply them on one yes: follow [`workflows/repo-setup.md`](workflows/repo-setup.md).
 
 | Component | When to add |
 |---|---|
 | **Quarto build tool** | Always — it's the project structure. |
-| **GitHub Pages deploy** | When you have no user-reachable port, or the user asks for a deployed URL. |
+| **Version workflow stub** | Always for managed rules; enable automatic Pages deploy only when needed. |
+| **GitHub Pages deploy** | When you have no user-reachable port, the user asks for a deployed URL, or the owner accepts the repo defaults. |
 | **Dev container** | User wants to avoid installing host dependencies, or wants browser-only access from another machine. See subsection for the two flows. |
 
 Before writing any file in the steps below, check whether the target path already exists. If it does, ask the user before overwriting, or merge the asset's contents into the existing file.
@@ -48,24 +79,98 @@ Before writing any file in the steps below, check whether the target path alread
    (use the canonical GitHub URL, e.g. `https://github.com/{owner}/{repo}`).
 2. Create `index.qmd` with `title:` frontmatter.
 3. Create empty `references.bib`.
-4. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
-5. Copy `assets/Makefile` to project root, and `assets/quarto-check.sh` to `scripts/quarto-check.sh` (vendored verbatim — the Makefile's `check` target runs it; to update it later, re-copy rather than hand-edit). CI warns when the vendored copy drifts from the canonical one; on that warning, re-copy the asset.
-6. Copy `assets/README.md`; fill `{{TITLE}}` and `{{DESCRIPTION}}` from the user.
-7. Copy `assets/DEVELOPER.md` to project root. User owns it — only update later with explicit user permission.
+4. Copy `assets/evidence.yml` to the project root (the keyed quote store — keep it even while empty). The Makefile fetches the evidence extension and Asta theme from this repository before each render; keep both managed rather than copying their extension directories. The scaffold opens in dark mode regardless of the reader's system setting and includes a persistent toggle to light. Both modes use the same typography and layout, with pinned section headings on long pages. Preserve a project's own `theme:` and CSS; see the developer guide's **Site appearance** section for customization. See **Back claims with supporting evidence** below.
+5. Append any lines from `assets/gitignore` missing from the project's `.gitignore` (create it if absent; don't overwrite existing entries).
+6. Copy `assets/Makefile.managed` as `Makefile`. Shared rules and scripts are fetched by `asta workspace sync` into ignored `.asta/cache/`; do not create `scripts/` or copy helpers unless the user wants to customize them. A project-owned `workspace.mk` or `scripts/<name>` takes precedence. Preserve existing project targets when adopting the scaffold.
+7. Add the thin `assets/docs.yml` workflow stub even for local-only projects: it selects the managed version. For local-only use, or until Pages setup verifies the agreed site visibility, remove its `on.push` and `on.pull_request` events and use `on.workflow_dispatch` so publishing requires manual activation. Keep the `jobs.docs.uses` line; sync reads it. Preserve an existing version policy (`@main` canary, `@latest` release channel, or a fixed release/commit). Do not upgrade or repin it as part of unrelated setup.
+8. Copy `assets/README.md`; fill `{{TITLE}}`, `{{DESCRIPTION}}` and `{{ASTA_PLUGINS_REF}}`. Use the ref in `.github/workflows/docs.yml` for the guide link. The upstream `latest` branch tracks the released guide; verify the link for a custom ref.
+9. Run `asta workspace sync --require-scripts`, then `make check`. Keep customized copies. Before removing old unmodified helpers, require a successful refresh and validate the project from an empty cache.
+10. To keep the paper in step with an Overleaf project, follow [`workflows/overleaf-sync.md`](workflows/overleaf-sync.md).
+
+### Separate LaTeX paper (optional)
+
+Add this only when the user wants to write LaTeX directly. Quarto-to-PDF remains an on-demand `quarto render <page>.qmd --to pdf`; do not create or commit its generated `.tex`, PDF, HTML or viewer pages.
+
+1. Copy `assets/paper/main.tex` and `assets/paper/latexmkrc` into `paper/` (or the chosen paper directory), preserving existing paper sources and engine settings. Fill `{{TITLE}}`, escaping LaTeX special characters such as `&`, `%`, `_`, `#`, `$`, braces and backslashes. When built from the paper directory, the rc searches upward for `references.bib`, stopping at the Git root; add citations as references become available and uncomment the starter's bibliography line. An empty project builds without a reference list. Keep the separate paper's writing independent from the Quarto pages. `project.md` belongs to asta-assistant's `brainstorm`, not this scaffold.
+2. Append missing entries from `assets/paper/gitignore` to `.gitignore`, replacing `{{PAPER_DIR}}` with the chosen relative directory (`paper` by default). Repeat for each paper, including nested directories; escape any Git ignore pattern characters in directory names. The source and rc are committed; build outputs and generated viewers are ignored. A committed custom viewer still wins after its ignore rule is removed.
+3. Use the `-tex` image in the dev container. It supplies TeX, LaTeX Workshop and editor defaults; do not copy `.vscode/settings.json`. Retain the project's chosen version/channel when selecting the image.
+4. The shared rules provide `make paper` and `make paper-clean`; `PAPER_DIR=<directory>` selects another paper. Existing projects on older refs can keep their own targets until upgrading to a ref that provides these. Projects can override a target or eject `workspace.mk`.
+5. The managed viewer is `<paper-dir>/html/index.qmd`. Add it to `project.render` only when the project has an explicit render allowlist, and link `<paper-dir>/html/index.html` from the site. Keep existing page lists/navbar entries. Shared viewer generation handles the required JavaScript resource; do not commit viewer source.
+6. Run `make paper` (with `PAPER_DIR` for a non-default directory) and `make check`. If the selected released rules do not yet provide `paper`, use `(cd paper && latexmk -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error -outdir=build main.tex)` with the chosen directory, or LaTeX Workshop instead; do not silently change the project's ref or add a copied Make recipe. The shared CI paper preview already works on these older refs. With Pages enabled, verify the PR preview's paper PDF, its paper page and What changed. One TeX image supports multiple papers: discovery finds `main.tex` with a neighboring `latexmkrc`, including nested directories.
+
+### Slide decks (optional)
+
+When the user asks for slides, use Quarto reveal.js via the managed
+`asta-slides` extension. Copy `assets/slides/slides.qmd` into a deck's own
+folder under `slides/` (for example `slides/findings/slides.qmd`), fill its title and write the
+talk in Markdown. Keep images, optional SCSS, scripts and Reveal plugins beside
+that source. Several deck folders are supported at any depth; `slides/<name>/` is the convention.
+The build generates a viewer page beside each deck (`<deck-dir>/index.qmd`, uncommitted, as for papers) that plays it inside the site at 16:9, with expand, Esc, Reveal's navigation keys working without a click into the deck, and a pop-out button that opens `slides.html` on its own at the current slide; link that page from the sidebar and overview. Append `assets/slides/gitignore` to `.gitignore` with `{{DECK_DIR}}` replaced by the deck's folder (escape Git ignore pattern characters); the build also adds that line when it is missing. Commit a custom `index.qmd` to override it. A deck can't live in a paper's `html/` folder: the build skips it there with a warning.
+
+Use `#` for section headings, `##` for slides, and Reveal's usual fragments for
+builds. `asta-slides: {section-slides: false}` makes `#` headings name
+sections for the headline only, with no divider slide (as Beamer's `\section`).
+`.dim-previous` optionally dims previous fragments. The extension adds
+the Asta theme, 16:9 dimensions, a slide number (and arrows, when Quarto's
+`controls: auto` shows them) inside the slide, and a headline listing every
+section with the current one highlighted (`section-header: current` shows only
+the current name). `section-header: false` hides the line while preserving the
+title spacing for a deck's own content. No section headings means no section line. Keep all deck additions in slide units, never `vw`/`vh` or window-fixed
+positioning. For SCSS variables, independent opt-outs and ejection, see
+[`assets/_extensions/asta-slides/README.md`](assets/_extensions/asta-slides/README.md).
+
+Before the first fetch in an existing workspace, append `_extensions/asta-slides/`
+to its `.gitignore` if missing (preserve existing entries). Remove that entry
+only when deliberately committing an ejected extension.
+
+`make workspace-assets` fetches the extension from the selected workspace ref;
+`make check` renders decks with the site. Preserve existing render and navigation
+lists: if either is explicit, add the deck to it. In an explicit sidebar, label
+the entry `text: "Slides: <title>"` with the deck as `href`, and word links from
+other pages as slides (for example "Presentation slides"), so readers know a
+link opens a deck rather than a page. An explicit `project.render`
+list needs each deck's `<deck-dir>/slides.qmd` and `<deck-dir>/index.qmd` (or globs
+covering every deck folder, wherever it is), or a single-file
+`quarto render slides/<name>/slides.qmd` runs outside the project and cannot find
+the site-root `_extensions/asta-slides`. The default automatic sidebar
+links decks by title. Each deck publishes as `<deck-dir>/slides.html`; its PR
+preview has the same path, and What changed lists slide-level differences with
+links to the changed slides.
+
+Share the rendered `slides.html` as the standalone page: fonts, scripts and math
+are embedded by default. The claude.ai artifact viewer currently refuses its
+`data:` stylesheets, so sharing on that host is outside this feature's scope.
+
+### Back claims with supporting evidence
+
+The scaffold fetches a small Quarto extension (`_extensions/evidence/`) from `asta-plugins` before each render rather than vendoring a copy that can drift. Managed projects use the ref selected in `.github/workflows/docs.yml`; change that one ref and run `make update-workspace` to upgrade. A standalone, ejected Makefile can set `ASTA_PLUGINS_REF` separately. The extension lets a factual claim in the prose carry the evidence backing it: the claim gets a subtle dotted underline, and hovering (or keyboard-focusing) it reveals a verbatim quote plus a body-style citation. It renders with pure CSS — so it also survives onto the `what-changed` diff page, where a reviewer can check each claim's backing without leaving the diff.
+
+When you write a claim you looked up, back it: add a keyed entry to `evidence.yml` with the **verbatim** quote, its `cite` key (add the paper to `references.bib`), an optional native citeproc `locator` (`p. 4`, `sec. 3.2`, `abstract`, …), and optional `provenance:`. Provenance must record only observed facts: use the exact CLI subcommand (for example, `asta papers snippet-search`) as `method`, use the canonical `asta://` URI returned for an indexed Asta document as `url`, and omit unknown fields rather than inferring a skill or producer name. Then mark the claim in the `.qmd`:
+
+```markdown
+NatureBench has [90 tasks]{.ev key="naturebench-count"}.
+```
+
+Only ever put a **verbatim** quotation in `quote:` — there is no paraphrase mode; state your own wording in the prose. Full field reference and design notes are in `_extensions/evidence/README.md`.
+
+Structural validation of these entries belongs in deterministic build tooling. Whether a claim needs evidence at all, and whether a quote actually supports the claim as worded, is a judgement call — load the `check-claims` skill for that, both before you open a PR and when reviewing one.
 
 ### GitHub Pages deploy
 
-1. Copy `assets/docs.yml` to `.github/workflows/docs.yml`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When updating an existing project to this stub, update its `Makefile` in the same change (the workflow requires a `check` target), and update any branch-protection required-check names to the new contexts (the build check is now reported as `docs / build`) — via `gh api` if the token has admin on the repo, otherwise ask the user.
-2. Configure Pages to serve from `gh-pages`:
-   ```bash
-   gh api repos/{owner}/{repo}/pages -X POST --input - <<'EOF'
-   {"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}
-   EOF
-   ```
+1. Use the `.github/workflows/docs.yml` stub added by **Quarto build tool**; do not copy it a second time. Keep it manual-only until the Pages visibility check below succeeds, then enable `on.push` and `on.pull_request`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When adopting an existing project, follow **Quarto build tool** to merge the stub and a `Makefile` with a `check` target; preserve its version policy and existing rules.
+2. Follow [GitHub Pages setup](workflows/github-pages.md) before pushing or enabling the workflow: the site is made private and read back before any content reaches it. If it can't be private, or the owner wants it public, stop and ask the owner how to proceed.
+3. For a repo set up outside [`workflows/repo-setup.md`](workflows/repo-setup.md): recommend repo protections (default-branch rulesets, required docs checks). Read `workflows/repo-protections.md` and follow it before proposing or applying any.
+
+On every PR the workflow publishes a full rendered preview under
+`<pages>/pr-preview/pr-<N>/` and a `what-changed.html` beside it. The latter
+highlights rendered additions and removals against the deployed base site and
+collapses unchanged sections. The single preview comment links to the changes
+first and the full preview second, so reviewers can inspect the affected
+content directly.
 
 ### Dev container
 
-Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`, then pick the flow that matches the user's intent:
+Copy `assets/devcontainer.json` to `.devcontainer/devcontainer.json`. If the project has a `paper/`, change `image` to the `-tex` variant (`ghcr.io/allenai/asta:latest-tex`, or `<version>-tex` when pinned) so LaTeX Workshop builds with the same TeX packages as the PR preview. The `-tex` image adds the LaTeX Workshop extension through its dev container metadata, so do not list it in `devcontainer.json`; one image covers any number of papers. Then pick the flow that matches the user's intent:
 
 - **Local container** (working on their machine without installs): run `make dev` to open VS Code attached to the local container.
-- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed), then `gh codespace create` and give the user the URL.
+- **Codespaces** (browser-based access from anywhere): commit, push to a GitHub remote (creating one if needed, with [repo setup](workflows/repo-setup.md)), then `gh codespace create` and give the user the URL. Authenticate with `asta auth login` in the codespace terminal (persisted across rebuilds) or the optional `ASTA_TOKEN` Codespaces secret. Port 4848 raises a notification (`onAutoForward: notify`) and the forwarded preview URL is printed in the attach terminal. Open either link in a separate browser tab. `localhost:4848` in Simple Browser does not reach a browser-based codespace's forwarded port, and a private forwarded URL may fail in its embedded frame. Local VS Code can use **Ports → Preview in Editor**.

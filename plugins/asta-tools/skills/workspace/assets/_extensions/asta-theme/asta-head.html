@@ -1,0 +1,11 @@
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const header = document.getElementById("quarto-header");
+  if (!header) return;
+  const update = () => document.documentElement.style.setProperty(
+    "--asta-header-height", `${header.getBoundingClientRect().height}px`
+  );
+  new ResizeObserver(update).observe(header);
+  update();
+});
+</script>

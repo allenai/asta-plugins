@@ -1,0 +1,305 @@
+<style>
+  /* ---- evidence: supporting quotes for claims ------------------------------
+     By default a claim stays plain text and a short marker after it
+     (`.ev.ev-marker`, such as [J-6] or a citation [1]) opens a styled popover
+     (`.ev-pop > .ev-card`) on hover, keyboard focus or tap. The popover holds
+     the supporting VERBATIM QUOTE and its REFERENCE. With
+     `evidence-marker: claim` the claim itself is the `.ev` element, with a
+     subtle dotted underline. The popover is a real DOM child of the `.ev`
+     element and is shown purely with CSS (`:hover` / `:focus-within`), so it
+     works identically on the full site and on the workspace "what-changed"
+     diff page (which strips <script> but keeps this head <style>,
+     class/role/aria/title attributes, <a href> and <img src alt loading>). No
+     JavaScript is required
+     for the popover to appear; the optional script only nudges position near
+     the viewport edge and closes a tapped popover. */
+
+  /* `evidence-marker: claim`: a light dotted underline that says "there is
+     evidence here to hover" without pulling the eye away from reading. */
+  .ev {
+    position: relative;
+    border-bottom: 1px dotted currentColor;
+    cursor: help;
+    text-decoration: none;
+  }
+  .ev:hover,
+  .ev:focus-visible {
+    border-bottom-color: var(--bs-link-color, #0d6efd);
+    background: color-mix(in srgb, var(--bs-link-color, #0d6efd) 10%, transparent);
+    outline: none;
+  }
+  /* `evidence-underline: hover` in the document metadata marks every claim
+     `.ev-quiet`: it reads as plain prose, with no underline or tint, until the
+     reader hovers or focuses it or its popover is open (a tap on a touch screen
+     focuses it). */
+  .ev.ev-quiet {
+    border-bottom-color: transparent;
+  }
+  .ev.ev-quiet:hover,
+  .ev.ev-quiet:focus,
+  .ev.ev-quiet:focus-within {
+    border-bottom-color: var(--bs-link-color, #0d6efd);
+    background: color-mix(in srgb, var(--bs-link-color, #0d6efd) 10%, transparent);
+    outline: none;
+  }
+
+  /* Markers (the default): the claim is plain text and a short marker after
+     it, such as [J-6] or a citation [1], opens the evidence. The marker reads
+     like a citation: link colour, underlined only on hover or focus, never
+     split across lines, and never a chip (no border, background or padding).
+     On touch screens an invisible hit area enlarges the tap target without
+     changing the line; it also sits over a citation link inside the marker, so
+     a tap opens the evidence instead of jumping to the reference list. */
+  .ev.ev-marker,
+  .ev.ev-marker.ev-quiet {
+    border-bottom: 0;
+    background: none;
+    color: var(--bs-link-color, #0d6efd);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ev.ev-marker:hover,
+  .ev.ev-marker:focus,
+  .ev.ev-marker:focus-within {
+    background: none;
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+    outline: none;
+  }
+  .ev.ev-marker:focus-visible {
+    outline: 2px solid var(--bs-link-color, #0d6efd);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  @media (hover: none), (max-width: 767.98px) {
+    .ev.ev-marker::after {
+      content: "";
+      position: absolute;
+      inset: -0.45rem -0.3rem;
+    }
+  }
+
+  /* The popover wrapper is transparent and positioned just below the claim. Its
+     top padding is a hover "bridge" that overlaps the claim's bottom edge, so
+     moving the pointer from the claim into the box never crosses a dead zone —
+     and because the wrapper is a DESCENDANT of `.ev`, hovering anywhere in it
+     keeps `.ev:hover` true, so the popover stays open with no timers. */
+  .ev-pop {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 1080;
+    padding-top: 0.4rem;
+    display: block;
+    width: max-content;
+    max-width: min(360px, 92vw);
+    opacity: 0;
+    visibility: hidden;
+    /* A hidden popover still takes up layout space, and one anchored to a claim
+       near the right edge would widen the page into a sideways scroll (on a
+       phone, the whole page pans). Hidden popovers therefore sit above and to
+       the left of their claim, where overflow never adds scrolling; they move
+       into place when shown and back only after fading out. */
+    transform: translate(-100%, -100%);
+    /* Hiding is DELAYED by a short grace period; showing is immediate. A claim
+       that wraps onto several lines has tiny leading gaps BETWEEN its line boxes
+       where `:hover` is momentarily false. Without the delay the popover flips
+       off and back on as the pointer brushes across those gaps (a visible
+       flash). With it, the pointer re-enters the next line well inside the grace
+       window, so the hide transition never starts and the popover holds steady.
+       Keep the grace modest so moving to a *different* claim doesn't leave two
+       popovers overlapping for long. */
+    transition: opacity 0.12s ease 0.2s, visibility 0s linear 0.32s,
+      transform 0s linear 0.32s;
+  }
+  .ev:hover > .ev-pop,
+  .ev:focus > .ev-pop,
+  .ev:focus-within > .ev-pop {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition: opacity 0.12s ease 0s, visibility 0s linear 0s, transform 0s linear 0s;
+  }
+  /* Near the right viewport edge the optional script adds `.ev-flip`, opening
+     the popover leftward instead. Base behaviour (no script) opens rightward. */
+  .ev.ev-flip > .ev-pop {
+    left: auto;
+    right: 0;
+  }
+
+  /* A popover with a figure is wider, so the figure stays legible. */
+  .ev-pop.ev-pop-figure {
+    width: min(480px, 92vw);
+    max-width: none;
+  }
+
+  /* Phones and touch screens: a popover beside the claim would open partly
+     off-screen, so it becomes a sheet along the bottom of the viewport. Tapping
+     a claim focuses it (claims are focusable), which opens the sheet; tapping
+     elsewhere closes it. A figure spans the sheet's width and the sheet
+     scrolls. */
+  @media (max-width: 767.98px), (hover: none) {
+    .ev-pop,
+    .ev.ev-flip > .ev-pop,
+    .ev-pop.ev-pop-figure {
+      position: fixed;
+      left: 0.75rem;
+      right: 0.75rem;
+      top: auto;
+      bottom: 0.75rem;
+      width: auto;
+      max-width: none;
+      max-height: 55vh;
+      padding-top: 0;
+      overflow-y: auto;
+    }
+    .ev-pop.ev-pop-figure {
+      max-height: 75vh;
+    }
+    .ev-card {
+      font-size: 0.9rem;
+      box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+    }
+    .ev-img {
+      max-height: none;
+    }
+    /* A hidden sheet still sits inside the viewport, so its lazy figure would
+       download with the page. Leaving the figure unrendered until the sheet
+       opens defers each download to the reader's first tap. On close it stays
+       until the sheet has faded (where `allow-discrete` is supported). */
+    .ev-pop .ev-img-link {
+      display: none;
+      transition: display 0s linear 0.32s;
+      transition-behavior: allow-discrete;
+    }
+    .ev:hover > .ev-pop .ev-img-link,
+    .ev:focus > .ev-pop .ev-img-link,
+    .ev:focus-within > .ev-pop .ev-img-link {
+      display: block;
+      transition-delay: 0s;
+    }
+  }
+
+  /* The visible card. */
+  .ev-card {
+    display: block;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    font-style: normal;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    color: var(--bs-body-color, #1a1a1a);
+    background: var(--bs-body-bg, #fff);
+    border: 1px solid var(--bs-border-color, rgba(0, 0, 0, 0.14));
+    border-radius: 6px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+  }
+
+  /* A figure from the source, at the top of the card and scaled to its width.
+     It links to the full-size file. Figures keep a white ground in dark mode. */
+  .ev-img-link {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .ev-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 260px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 4px;
+  }
+
+  /* The verbatim quote: real typographic quotes + italics and a thin accent
+     rule so it reads as exact wording, not a gloss. */
+  .ev-pop-text {
+    display: block;
+  }
+  .ev-pop-text.ev-quote {
+    padding-left: 0.6rem;
+    border-left: 3px solid var(--bs-link-color, #0d6efd);
+    color: inherit;
+  }
+
+  /* The reference line: the work's full reference as in the reference list
+     (`evidence-reference: full`, the default), or the short citation the body
+     text uses (`short`), rendered by citeproc either way. */
+  .ev-pop-src {
+    display: block;
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--bs-border-color, rgba(0, 0, 0, 0.08));
+    font-size: 0.78rem;
+    color: inherit;
+  }
+  .ev-pop-src a {
+    color: var(--bs-link-color, #0d6efd);
+  }
+  /* With a full reference, the locator and a Semantic Scholar link sit on a
+     line of their own under it. */
+  .ev-pop-links {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+    opacity: 0.85;
+  }
+  .ev-pop-links a {
+    color: var(--bs-link-color, #0d6efd);
+  }
+
+  /* Provenance — HOW the quote was obtained — is retained but NOT shown by
+     default: it sits behind a small "Source details" disclosure so a reader can
+     open it on demand without the popover becoming a wall of metadata
+     (`evidence-provenance: false` drops it). The
+     disclosure is built from PLAIN INLINE SPANS (no <details>/<div>) and revealed
+     with pure CSS on hover/focus. This matters: the popover lives inside the
+     claim's inline <span>, and the what-changed diff wraps inserted claims in
+     <ins>; a block element here would force a </ins> mid-nesting that ejects the
+     disclosure out of the hidden popover. Inline-only markup keeps the whole
+     popover one valid phrasing subtree, so it survives the diff intact. */
+  .ev-src {
+    display: block;
+    margin-top: 0.4rem;
+  }
+  .ev-src-label {
+    display: inline-block;
+    cursor: pointer;
+    font-size: 0.72rem;
+    color: inherit;
+    user-select: none;
+    outline: none;
+  }
+  /* A small disclosure triangle we control, so it reads the same in every theme. */
+  .ev-src-label::before {
+    content: "▸ ";
+    color: inherit;
+  }
+  .ev-src:hover .ev-src-label::before,
+  .ev-src:focus-within .ev-src-label::before {
+    content: "▾ ";
+  }
+  .ev-src-label:hover,
+  .ev-src-label:focus-visible {
+    color: var(--bs-link-color, #0d6efd);
+  }
+  /* Hidden until the disclosure is hovered or focused. Because the body is a
+     descendant of `.ev-src`, hovering it keeps `.ev-src:hover` true, so it stays
+     open with no gap. */
+  .ev-prov-body {
+    display: none;
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: inherit;
+  }
+  .ev-src:hover .ev-prov-body,
+  .ev-src:focus-within .ev-prov-body {
+    display: block;
+  }
+  .ev-prov-body a {
+    color: var(--bs-link-color, #0d6efd);
+  }
+</style>

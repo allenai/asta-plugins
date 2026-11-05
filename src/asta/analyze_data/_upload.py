@@ -21,6 +21,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from asta.utils.headers import identity_headers
+
 _MAX_BYTES = 5 * 1024 * 1024 * 1024  # 5 GiB — single-PUT limit
 _PUT_TIMEOUT = 600  # seconds, matches autodiscovery/client.py
 _GET_TIMEOUT = 30
@@ -99,7 +101,7 @@ def _get_presigned(
         }
     )
     url = f"{base_url.rstrip('/')}/upload_url?{query}"
-    headers = {"Accept": "application/json"}
+    headers = {**identity_headers(), "Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)

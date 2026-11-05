@@ -17,6 +17,7 @@ AutoDiscovery uses the shared Asta authentication. If you get an auth error, run
 
 - **`asta autodiscovery experiments <runid>`** — List all experiments in a run with status, surprise scores, priors, posteriors, and hypotheses
 - **`asta autodiscovery experiment <runid> <experiment_id>`** — Get full details for a single experiment. The experiment_id format is like `node_0_0`, `node_1_0`, etc.
+- **`asta autodiscovery results <runid> -o results.json [--cache-dir <dir>]`** — Get the whole run in one file: the run's details, metadata and stats, and every experiment, with code, output and figures for the finished ones. With `--cache-dir`, rerunning while the run executes fetches only experiments that finished since.
 
 ## Output Formats
 

@@ -1,0 +1,32 @@
+---
+title: "Data"
+---
+
+[Back to the write-up](index.qmd)
+
+## Source
+
+<What the survey or study is, who was in it, and how the data were collected and measured.>
+
+## Extract
+
+<Why AutoDiscovery received an extract rather than the source. Which parts of the source the extract used and which it did not. What it keeps and what it leaves out: unselected variables; other row units except as summary columns; value labels replaced by codes with their meanings in the table. Nothing is lost within the selected columns. How it is rebuilt (the script).>
+
+| File | Rows | Columns | SHA-256 |
+|---|---:|---:|---|
+| `<file>.csv` | <n> | <k> | `<hash>` |
+
+## Files
+
+{{< include descriptions/<file>.md >}}
+`<file>.csv` went to runs <...>.
+
+## Description
+
+The text every run received with its file:
+
+{{< include descriptions/common.md >}}
+
+## Columns
+
+{{< include descriptions/<file>.columns.md >}}

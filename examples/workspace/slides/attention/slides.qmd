@@ -1,0 +1,46 @@
+---
+title: "Attention in sequence models"
+subtitle: "An Asta workspace talk"
+format: asta-slides-revealjs
+---
+
+# The question
+
+## How can a sequence model connect distant tokens?
+
+Our workspace follows the shift from recurrence to attention.
+
+- [Read the literature review](../../lit-review/index.qmd).
+- [Open the paper](../../paper/html/index.qmd).
+
+# The mechanism
+
+## Attention weights the available context
+
+$$
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
+
+The weights combine values for each query.
+
+## Follow the computation {.dim-previous}
+
+::: {.fragment}
+Compare a query with the available keys.
+:::
+
+::: {.fragment}
+Normalize the scores into weights.
+:::
+
+::: {.fragment}
+Combine the values using those weights.
+:::
+
+# The workspace
+
+## Keep the talk beside its sources
+
+Write the talk, review and paper in the same repository.
+
+Review changes together, then share the rendered talk as a single HTML file.

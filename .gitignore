@@ -10,6 +10,7 @@ __pycache__/
 CLAUDE.local.md
 
 # Test artifacts
+tests/browser/fixtures/
 .goose/
 skills-lock.json
 .agents/
@@ -18,6 +19,11 @@ skills-lock.json
 .idea/
 *.iml
 
+# Local asta state at any depth, except the root's Overleaf pairing records,
+# which are committed.
 .asta
+!/.asta/
+/.asta/*
+!/.asta/overleaf/
 
 .envrc

@@ -1,0 +1,597 @@
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+
+ASSETS = Path("plugins/asta-tools/skills/workspace/assets").resolve()
+SCRIPT = ASSETS / "paper-viewer.py"
+
+
+def generate(root, *papers, script=SCRIPT):
+    return subprocess.run(
+        [sys.executable, str(script)],
+        cwd=root,
+        input=json.dumps({"papers": list(papers)}),
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_viewer_links_a_paired_papers_project_for_its_collaborators(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    project = tmp_path / "examples/workspace"
+    record = tmp_path / ".asta/overleaf/examples/workspace/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        json.dumps({"format": 1, "url": "https://git.overleaf.com/" + "a1" * 12})
+    )
+    project.mkdir(parents=True)
+    assert generate(project, "paper", "other").returncode == 0
+    paired = (project / "paper/html/index.qmd").read_text()
+    unpaired = (project / "other/html/index.qmd").read_text()
+    assert "paired with an Overleaf project" in paired
+    # The project opens only for its collaborators, so the page says who it's for.
+    assert (
+        f'<a class="paper-link" href="https://www.overleaf.com/project/{"a1" * 12}">'
+        "Open it in Overleaf (for its collaborators)</a>"
+    ) in paired
+    assert "paired with" not in unpaired and "overleaf.com" not in unpaired
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://git.overleaf.com/" + "a1" * 12 + "/extra",
+        "https://git.overleaf.com/" + "A1" * 12,
+        "https://git.overleaf.com/" + "a1" * 12 + "\n",
+        "https://example.com/" + "a1" * 12,
+        ["https://git.overleaf.com/" + "a1" * 12],
+        None,
+    ],
+)
+def test_an_odd_pairing_record_links_nothing(tmp_path, url):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    record = tmp_path / ".asta/overleaf/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"format": 1, "url": url}))
+    assert generate(tmp_path, "paper").returncode == 0
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert "paper-link" not in page and "paired with" not in page
+
+
+def test_a_link_the_project_names_takes_the_place_of_its_project(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    record = tmp_path / ".asta/overleaf/paper.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        json.dumps({"format": 1, "url": "https://git.overleaf.com/" + "a1" * 12})
+    )
+    (tmp_path / "_quarto.yml").write_text(
+        "overleaf-links:\n  paper: https://www.overleaf.com/read/abc\n"
+    )
+    assert generate(tmp_path, "paper").returncode == 0
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert 'href="https://www.overleaf.com/read/abc">Open it in Overleaf</a>' in page
+    assert "/project/" not in page and "collaborators" not in page
+
+
+def test_viewer_links_the_overleaf_link_the_project_names(tmp_path):
+    (tmp_path / "_quarto.yml").write_text(
+        "project:\n  type: website\n"
+        "# Links readers open\n"
+        "overleaf-links:  # by folder\n"
+        "  # the main paper\n"
+        "  paper: https://www.overleaf.com/project/abc/share#def  # its share link\n"
+        "  'papers/b': \"https://www.overleaf.com/read/ghi\"\n"
+        "  research/other paper: https://www.overleaf.com/read/jkl\n"
+        "  v1.2: https://www.overleaf.com/read/mno?x=1&y=2\n"
+        "  unsafe: javascript:alert(1)\n"
+        "  elsewhere: https://example.com/read/pqr\n"
+        "  lookalike: https://overleaf.com.example.com/read/stu\n"
+        "bibliography: references.bib\n"
+    )
+    names = ("paper", "papers/b", "research/other paper", "v1.2")
+    names += ("unsafe", "elsewhere", "lookalike", "other")
+    assert generate(tmp_path, *names).returncode == 0
+    pages = {name: (tmp_path / name / "html/index.qmd").read_text() for name in names}
+    # A URL's own # stays; a comment after a space doesn't.
+    assert (
+        '<a class="paper-link" href="https://www.overleaf.com/project/abc/share#def">'
+        "Open it in Overleaf</a>"
+    ) in pages["paper"]
+    assert 'href="https://www.overleaf.com/read/ghi"' in pages["papers/b"]
+    # Folder names with spaces or dots get their link too, escaped.
+    assert 'href="https://www.overleaf.com/read/jkl"' in pages["research/other paper"]
+    assert 'href="https://www.overleaf.com/read/mno?x=1&amp;y=2"' in pages["v1.2"]
+    # Only an https link to overleaf.com, which the page labels as Overleaf, and only
+    # for a folder the block names.
+    for name in ("unsafe", "elsewhere", "lookalike", "other"):
+        assert "paper-link" not in pages[name], name
+
+
+def test_viewer_links_nothing_without_an_overleaf_links_block(tmp_path):
+    (tmp_path / "_quarto.yml").write_text(
+        "project:\n  type: website\nwebsite:\n  paper: x\n"
+    )
+    assert generate(tmp_path, "paper").returncode == 0
+    assert "paper-link" not in (tmp_path / "paper/html/index.qmd").read_text()
+
+
+def test_multiple_and_nested_viewers_link_the_matching_artifacts(tmp_path):
+    assert generate(tmp_path, "paper", "research/other paper").returncode == 0
+    paper = (tmp_path / "paper/html/index.qmd").read_text()
+    nested = (tmp_path / "research/other paper/html/index.qmd").read_text()
+    assert 'data-paper-preview="../../paper-previews/paper"' in paper
+    assert (
+        'data-paper-preview="../../../paper-previews/research/other%20paper"' in nested
+    )
+    assert "exists('main.pdf')" in nested
+    assert "html/index.html" not in nested
+    assert "if (!clean) return" in nested
+    assert "The paper PDF appears after the preview build" in nested
+
+
+def test_viewer_displays_discovered_source_name(tmp_path):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "conference.tex").write_text(r"\documentclass{article}")
+    discovery = subprocess.run(
+        [sys.executable, str(ASSETS / "paper-discovery.py")],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=discovery.stdout,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "<code>paper/conference.tex</code>" in (paper / "html/index.qmd").read_text()
+
+
+@pytest.mark.parametrize("main_files", [[], {"paper": None}])
+def test_viewer_rejects_invalid_main_file_metadata(tmp_path, main_files):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=json.dumps({"papers": ["paper"], "main_files": main_files}),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "Expected 'main_files'" in result.stderr
+    assert not (tmp_path / "paper").exists()
+
+
+@pytest.mark.parametrize("suffix", ["qmd", "md", "html"])
+def test_project_viewer_wins(tmp_path, suffix):
+    folder = tmp_path / "paper/html"
+    folder.mkdir(parents=True)
+    custom = folder / f"index.{suffix}"
+    custom.write_text("custom")
+    assert generate(tmp_path, "paper").returncode == 0
+    assert custom.read_text() == "custom"
+    assert list(folder.iterdir()) == [custom]
+
+
+def test_symlinked_viewer_is_preserved(tmp_path):
+    folder = tmp_path / "paper/html"
+    folder.mkdir(parents=True)
+    target = tmp_path / "missing"
+    (folder / "index.qmd").symlink_to(target)
+    assert generate(tmp_path, "paper").returncode == 0
+    assert not target.exists()
+    assert (folder / "index.qmd").is_symlink()
+
+
+def test_generated_viewer_refreshes_and_is_removed_after_paper_moves(tmp_path):
+    assert generate(tmp_path, "paper").returncode == 0
+    old = tmp_path / "paper/html/index.qmd"
+    current = old.read_text()
+    prior_script = tmp_path / "old-viewer.py"
+    prior_script.write_text(
+        SCRIPT.read_text().replace("The paper PDF appears", "Old template")
+    )
+    old.unlink()
+    assert generate(tmp_path, "paper", script=prior_script).returncode == 0
+    assert old.read_text() != current
+    assert generate(tmp_path, "paper").returncode == 0
+    assert old.read_text() == current
+    assert generate(tmp_path, "papers/moved").returncode == 0
+    assert not old.exists()
+    moved = tmp_path / "papers/moved/html/index.qmd"
+    assert moved.is_file()
+    assert generate(tmp_path).returncode == 0
+    assert not moved.exists()
+
+
+@pytest.mark.parametrize("discovered", [False, True])
+def test_uncommitted_edits_survive_refresh_and_cleanup(tmp_path, discovered):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    assert generate(tmp_path, "paper").returncode == 0
+    page = tmp_path / "paper/html/index.qmd"
+    custom = page.read_text().replace("The paper PDF appears", "My viewer")
+    page.write_text(custom)
+    result = generate(tmp_path, *(("paper",) if discovered else ()))
+    assert result.returncode == 0
+    assert "preserving edited or legacy viewer" in result.stderr
+    assert page.read_text() == custom
+
+
+def test_legacy_marker_does_not_authorize_overwriting_uncommitted_edits(tmp_path):
+    page = tmp_path / "paper/html/index.qmd"
+    page.parent.mkdir(parents=True)
+    custom = "<!-- Generated by asta-plugins. Commit a custom viewer to override it. -->\nMy edits\n"
+    page.write_text(custom)
+    assert generate(tmp_path, "paper").returncode == 0
+    assert page.read_text() == custom
+    result = generate(tmp_path)
+    assert result.returncode == 0
+    assert "preserving edited or legacy viewer" in result.stderr
+    assert page.read_text() == custom
+
+
+@pytest.fixture
+def viewer_module():
+    spec = importlib.util.spec_from_file_location("paper_viewer", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_git_ownership_uses_c_locale(viewer_module, monkeypatch):
+    monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")
+
+    def git_result(*args, **kwargs):
+        assert kwargs["env"]["LC_ALL"] == "C"
+        return SimpleNamespace(
+            returncode=128, stdout=b"", stderr=b"not a git repository"
+        )
+
+    monkeypatch.setattr(viewer_module.subprocess, "run", git_result)
+    assert viewer_module.tracked_files() == set()
+
+
+@pytest.mark.parametrize("missing_git", [False, True])
+def test_unknown_git_ownership_warns_and_preserves_pages(
+    tmp_path, viewer_module, monkeypatch, capsys, missing_git
+):
+    assert generate(tmp_path, "paper").returncode == 0
+    page = tmp_path / "paper/html/index.qmd"
+    content = page.read_text()
+    monkeypatch.chdir(tmp_path)
+
+    def git_result(*args, **kwargs):
+        if missing_git:
+            raise FileNotFoundError
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"Git error")
+
+    monkeypatch.setattr(viewer_module.subprocess, "run", git_result)
+    tracked = viewer_module.tracked_files()
+    assert tracked is None
+    assert "preserving existing pages" in capsys.readouterr().err
+    viewer_module.remove_orphan_viewers([], tracked)
+    viewer_module.create_viewer("paper", tracked)
+    assert page.read_text() == content
+
+
+def test_committed_generated_viewer_becomes_user_owned(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    assert generate(tmp_path, "paper").returncode == 0
+    page = tmp_path / "paper/html/index.qmd"
+    subprocess.run(["git", "add", "paper/html/index.qmd"], cwd=tmp_path, check=True)
+    page.write_text(page.read_text() + "\nUser customization\n")
+    custom = page.read_text()
+    assert generate(tmp_path, "paper").returncode == 0
+    assert page.read_text() == custom
+    assert generate(tmp_path).returncode == 0
+    assert page.read_text() == custom
+
+
+@pytest.mark.parametrize("separate_git_dir", [False, True])
+@pytest.mark.parametrize("discovered", [False, True])
+def test_nested_repository_viewer_is_not_removed_or_refreshed(
+    tmp_path, separate_git_dir, discovered
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    nested = tmp_path / "nested"
+    command = ["git", "init", "-q"]
+    if separate_git_dir:
+        command.append(f"--separate-git-dir={tmp_path / '.nested-git'}")
+    subprocess.run([*command, str(nested)], check=True)
+    assert generate(nested, "paper").returncode == 0
+    page = nested / "paper/html/index.qmd"
+    page.write_text(page.read_text() + "\nNested project customization\n")
+    subprocess.run(["git", "add", "paper/html/index.qmd"], cwd=nested, check=True)
+    custom = page.read_text()
+
+    assert generate(tmp_path, "paper").returncode == 0
+    outer = tmp_path / "paper/html/index.qmd"
+    papers = ("nested/paper",) if discovered else ()
+    assert generate(tmp_path, *papers).returncode == 0
+    assert page.read_text() == custom
+    assert not outer.exists()
+
+
+def test_orphan_cleanup_preserves_custom_and_symlinked_pages(tmp_path):
+    assert generate(tmp_path, "paper").returncode == 0
+    folder = tmp_path / "paper/html"
+    source = folder / "index.qmd"
+    source.rename(tmp_path / "generated.qmd")
+    source.symlink_to(tmp_path / "generated.qmd")
+    custom = tmp_path / "custom/html/index.qmd"
+    custom.parent.mkdir(parents=True)
+    custom.write_text("Custom page")
+    link = tmp_path / "linked"
+    link.symlink_to(folder, target_is_directory=True)
+    assert generate(tmp_path).returncode == 0
+    assert source.is_symlink()
+    assert (tmp_path / "generated.qmd").exists()
+    assert custom.read_text() == "Custom page"
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        "../outside",
+        "/absolute",
+        "paper/../other",
+        "paper/./other",
+        "paper//other",
+        "./paper",
+        "paper/",
+        "",
+        1,
+        None,
+    ],
+)
+def test_invalid_path_is_rejected(tmp_path, directory):
+    assert generate(tmp_path, directory).returncode != 0
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        [],
+        {"papers": "paper"},
+        {"papers": None},
+        {"papers": ["paper", "../outside"]},
+    ],
+)
+def test_invalid_discovery_does_not_partially_generate(tmp_path, data):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=json.dumps(data),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "paper-viewer:" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not list(tmp_path.iterdir())
+
+
+def test_paper_titles_and_html_are_escaped(tmp_path):
+    name = 'other<>&"'
+    assert generate(tmp_path, name).returncode == 0
+    document = (tmp_path / name / "html/index.qmd").read_text()
+    metadata = yaml.safe_load(document.split("---")[1])
+    assert metadata["title"] == name + " paper"
+    assert "<code>other&lt;&gt;&amp;&quot;/main.tex</code>" in document
+    assert 'data-paper-preview="../../paper-previews/other%3C%3E%26%22"' in document
+    assert "\\u003c" in document
+
+
+@pytest.mark.skipif(not shutil.which("quarto"), reason="needs the workspace image")
+@pytest.mark.parametrize("directory", ["paper", "papers/special*[x]`other"])
+def test_quarto_renders_the_managed_viewer(tmp_path, directory):
+    assert generate(tmp_path, directory).returncode == 0
+    (tmp_path / "_quarto.yml").write_text(
+        yaml.safe_dump(
+            {
+                "project": {
+                    "type": "website",
+                    "render": ["**/*.qmd"],
+                },
+                "format": "html",
+            }
+        )
+    )
+    result = subprocess.run(
+        ["quarto", "render"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    page = (tmp_path / f"_site/{directory}/html/index.html").read_text()
+    assert "const host = document.querySelector" in page
+    assert 'href="../../paper-previews/paper/main.pdf"' not in page
+    assert "createElement('object')" in page
+    assert "#navpanes=0" in page
+    assert f"<code>{directory}/main.tex</code>" in page
+
+
+def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_path):
+    workflow = yaml.load(
+        Path(".github/workflows/workspace-quarto-site.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["build"]["steps"]
+    step = next(
+        s for s in steps if s.get("name") == "Generate managed paper viewer pages"
+    )
+    assert steps.index(step) < next(
+        i for i, s in enumerate(steps) if s.get("name") == "Run docs checks"
+    )
+    check_step = next(s for s in steps if s.get("name") == "Run docs checks")
+    assert check_step["env"]["ASTA_WORKSPACE_VIEWERS"] == "0"
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("/paper/html/index.qmd\n")
+    (tmp_path / "paper").mkdir()
+    (tmp_path / "paper/main.tex").write_text("source")
+    (tmp_path / "scripts").mkdir()
+    for name in ("paper-discovery.py", "paper-viewer.py"):
+        (tmp_path / "scripts" / name).write_text((ASSETS / name).read_text())
+    subprocess.run(
+        [
+            "git",
+            "add",
+            ".gitignore",
+            "paper/main.tex",
+            "scripts/paper-discovery.py",
+            "scripts/paper-viewer.py",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    script = step["run"].replace("${{ job.workflow_repository }}", "unused")
+    script = script.replace("${{ job.workflow_sha }}", "unused")
+    status_command = ["git", "status", "--porcelain", "--untracked-files=all"]
+    before = subprocess.check_output(status_command, cwd=tmp_path)
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TMPDIR": str(tmp_path)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "paper/html/index.qmd").exists()
+    assert subprocess.check_output(status_command, cwd=tmp_path) == before
+    assert not list(tmp_path.glob("tmp.*"))
+
+    (tmp_path / ".gitignore").write_text("")
+    subprocess.run(["git", "add", "paper/html/index.qmd"], cwd=tmp_path, check=True)
+    custom = tmp_path / "paper/html/index.qmd"
+    custom.write_text("custom")
+    assert generate(tmp_path, "paper").returncode == 0
+    assert custom.read_text() == "custom"
+
+
+@pytest.mark.parametrize("metadata", [{}, {"main_files": {}}])
+def test_legacy_discovery_retains_main_tex_source_link(tmp_path, metadata):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=tmp_path,
+        input=json.dumps({"papers": ["paper"], **metadata}),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (
+        "<code>paper/main.tex</code>" in (tmp_path / "paper/html/index.qmd").read_text()
+    )
+
+
+def generate_decks(root, decks, papers=()):
+    return subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=root,
+        input=json.dumps({"papers": list(papers), "decks": list(decks)}),
+        capture_output=True,
+        text=True,
+    )
+
+
+def write_deck(root, directory, front="title: Talk"):
+    folder = root / directory
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "slides.qmd").write_text(f"---\n{front}\n---\n\n## One\n")
+
+
+def test_build_ignores_each_deck_viewer_where_its_deck_is(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("_site/\n/slides/old/index.qmd")
+    for deck in ("slides/old", "talks/2026/kickoff", "slides/a b"):
+        write_deck(tmp_path, deck)
+    result = generate_decks(
+        tmp_path, ["slides/old", "talks/2026/kickoff", "slides/a b"]
+    )
+    assert result.returncode == 0, result.stderr
+    ignore = (tmp_path / ".gitignore").read_text()
+    assert ignore.startswith("_site/\n/slides/old/index.qmd\n")
+    assert "/talks/2026/kickoff/index.qmd\n" in ignore
+    assert ignore.count("/slides/old/index.qmd") == 1
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=tmp_path,
+        text=True,
+    )
+    assert "index.qmd" not in status, status
+    # Already ignored: a second build adds nothing.
+    assert generate_decks(tmp_path, ["talks/2026/kickoff"]).returncode == 0
+    assert (tmp_path / ".gitignore").read_text() == ignore
+
+
+def test_committed_deck_viewer_is_not_ignored(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    write_deck(tmp_path, "slides/talk")
+    (tmp_path / "slides/talk/index.qmd").write_text("custom")
+    subprocess.run(["git", "add", "slides/talk/index.qmd"], cwd=tmp_path, check=True)
+    assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
+    assert not (tmp_path / ".gitignore").exists()
+    assert (tmp_path / "slides/talk/index.qmd").read_text() == "custom"
+
+
+def test_deck_in_a_papers_html_folder_is_skipped_with_a_warning(tmp_path):
+    (tmp_path / "paper").mkdir()
+    (tmp_path / "paper/main.tex").write_text("source")
+    write_deck(tmp_path, "paper/html")
+    result = generate_decks(tmp_path, ["paper/html"], papers=["paper"])
+    assert result.returncode == 0, result.stderr
+    assert "skipping the deck in paper/html" in result.stderr
+    page = (tmp_path / "paper/html/index.qmd").read_text()
+    assert "paper-viewer.js" in page or "main.pdf" in page
+    assert "data-deck-viewer" not in page
+
+
+@pytest.mark.parametrize(
+    ("front", "title"),
+    [
+        ("title: Attention in sequence models", "Attention in sequence models"),
+        ('title: "Attention: a talk"', "Attention: a talk"),
+        ("title: 'Plain quoted'", "Plain quoted"),
+        ("title: Talk # draft", "talk"),
+        ("title: 'It''s a talk'", "talk"),
+        ('title: "A \\"quoted\\" talk"', "talk"),
+        ("title: >\n  Folded title", "talk"),
+        ("title: |\n  Literal title", "talk"),
+        ("title: Long\n  continued title", "talk"),
+        ("title: &anchor Talk", "talk"),
+        ("title: [a, b]", "talk"),
+        ('pagetitle: "Asta Workspace Papers"', "Asta Workspace Papers"),
+        ("pagetitle: Own title slide\nauthor: A", "Own title slide"),
+        ('title: Talk\npagetitle: "Tab name"', "Talk"),
+        ("pagetitle: Tab # draft", "talk"),
+        ("title: >\n  Folded\npagetitle: Tab name", "Tab name"),
+    ],
+)
+def test_deck_title_falls_back_to_the_folder_unless_simple(tmp_path, front, title):
+    write_deck(tmp_path, "slides/talk", front)
+    assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
+    page = (tmp_path / "slides/talk/index.qmd").read_text()
+    assert f"title: {json.dumps(title)}" in page
+
+
+def test_deck_bar_code_inherits_the_bars_colours(tmp_path):
+    write_deck(tmp_path, "slides/talk")
+    assert generate_decks(tmp_path, ["slides/talk"]).returncode == 0
+    page = (tmp_path / "slides/talk/index.qmd").read_text()
+    rule = page.split("[data-deck-viewer] .deck-where code:not(.sourceCode) {", 1)[1]
+    rule = rule.split("}", 1)[0]
+    assert "color: inherit" in rule and "background: transparent" in rule

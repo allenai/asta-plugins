@@ -10,6 +10,9 @@ from typing import Any
 
 from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config, get_config_path
+from asta.utils.headers import identity_headers
+
+TERMINAL_EXPERIMENT_STATUSES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
 
 class AutoDiscoveryClient:
@@ -37,6 +40,7 @@ class AutoDiscoveryClient:
         self.access_token = access_token
         self.user_id = self._extract_user_id()
         self.headers = {
+            **identity_headers(),
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
         }
@@ -90,6 +94,54 @@ class AutoDiscoveryClient:
             f"/api/runs/{self.user_id}/{run_id}/experiments/{experiment_id}"
         )
 
+    def get_results(self, run_id: str, cache_dir: str | None = None) -> dict[str, Any]:
+        """A run with every experiment, finished ones in full, as the service returns them.
+
+        Finished experiments are kept in cache_dir, so a rerun while the run executes
+        fetches only the ones that finished since.
+        """
+        run = self.get_run(run_id)
+        details = dict(run.get("run_details") or {})
+        details.update(self.get_status(run_id).get("run_details") or {})
+        metadata = (
+            run.get("run_metadata") or self.get_metadata(run_id).get("metadata") or {}
+        )
+        listed = self.list_experiments(run_id).get("experiments") or []
+        return {
+            "run": {
+                "runid": run.get("runid", run_id),
+                "name": run.get("name") or metadata.get("name"),
+                "status": details.get("status") or run.get("status"),
+                "details": details,
+                "metadata": metadata,
+                "stats": run.get("run_stats") or {},
+            },
+            "experiments": [
+                self._experiment_detail(run_id, e, cache_dir) for e in listed
+            ],
+        }
+
+    def _experiment_detail(
+        self, run_id: str, listed: dict[str, Any], cache_dir: str | None
+    ) -> dict[str, Any]:
+        if listed.get("status") not in TERMINAL_EXPERIMENT_STATUSES:
+            return listed
+        cache = (
+            os.path.join(cache_dir, f"{listed['experiment_id']}.json")
+            if cache_dir
+            else None
+        )
+        if cache and os.path.exists(cache):
+            with open(cache) as f:
+                return json.load(f)
+        data = self.get_experiment(run_id, listed["experiment_id"])
+        full = {**listed, **(data.get("experiment") or {})}
+        if cache:
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(cache, "w") as f:
+                json.dump(full, f)
+        return full
+
     def create_run(self) -> dict[str, Any]:
         return self._post("/api/runs/create")
 
@@ -131,12 +183,16 @@ class AutoDiscoveryClient:
             method="PUT",
             headers={"Content-Type": content_type},
         )
-        with urllib.request.urlopen(req, timeout=600) as resp:
-            resp.read()
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else ""
+            raise Exception(f"Upload error {e.code}: {error_body}")
 
         return {
             "filename": filename,
-            "gcs_path": url_info["gcs_path"],
+            "storage_path": url_info.get("storage_path") or url_info.get("gcs_path"),
             "file_size_bytes": file_size,
             "content_type": content_type,
         }

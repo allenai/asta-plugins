@@ -1,0 +1,17 @@
+# The source data and the extract: never committed.
+data/
+# Raw AutoDiscovery records carry code, printed output and ids; the index and the CSVs are the record.
+autodiscovery/*/results.json
+autodiscovery/*/local/
+autodiscovery/*/raw/
+autodiscovery/*/figures/
+autodiscovery/status.log
+# Build output and caches.
+_site/
+.quarto/
+quarto-render.*
+_extensions/asta-theme/
+# _extensions/evidence is committed from the template until the pinned release ships it.
+.asta/
+__pycache__/
+.DS_Store

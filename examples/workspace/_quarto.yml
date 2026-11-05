@@ -1,0 +1,71 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - lit-review/index.qmd
+    - paper/html/index.qmd
+    # The theme's browser check reads this page; it isn't in the navigation.
+    - appearance.qmd
+    - "slides/attention/slides.qmd"
+    - "slides/attention/index.qmd"
+  resources:
+    - paper/html/paper-viewer.js
+  preview:
+    port: 4848
+
+bibliography: references.bib
+
+# Where readers can open each paper in Overleaf, by its folder; the paper's
+# page links it. What the link grants is set in Overleaf's sharing.
+overleaf-links:
+  paper: https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f
+
+# Supporting-evidence store for the `.ev` hover snippets (see
+# _extensions/evidence/README.md). Merged into document metadata so a claim can
+# back itself with a verbatim quote by key: `[90 tasks]{.ev key="…"}`.
+metadata-files:
+  - evidence.yml
+
+# Hover-viewable supporting quotes use this checkout's evidence extension
+# through the committed _extensions/evidence symlink.
+# The filter is a no-op when a document has no `.ev` spans.
+filters:
+  - _extensions/evidence/snippet.lua
+
+# The workspace skill's own site layout (assets/_quarto.yml), so that the
+# example looks like a workspace the skill makes; only the page list is set
+# here.
+website:
+  title: "Asta workspace example"
+  sidebar:
+    tools:
+      - icon: github
+        href: "https://github.com/allenai/asta-plugins/tree/main/examples/workspace"
+        text: "GitHub repo"
+        target: _blank
+    contents:
+      - index.qmd
+      - lit-review/index.qmd
+      - paper/html/index.qmd
+      - text: "Slides: Attention in sequence models"
+        href: slides/attention/index.qmd
+
+format:
+  html:
+    theme:
+      dark: [cosmo, _extensions/asta-theme/dark.scss]
+      light: [cosmo, _extensions/asta-theme/light.scss]
+    # Asta's look: start dark, with a persistent toggle to light.
+    # Set your own theme here to replace it.
+    respect-user-color-scheme: false
+    css:
+      - _extensions/asta-theme/asta.css
+      - styles.css
+    toc: true
+    toc-location: left
+    include-in-header:
+      - _extensions/asta-theme/asta-head.html
+      - _extensions/evidence/evidence.head.html
+    include-after-body:
+      - _extensions/evidence/evidence.body.html

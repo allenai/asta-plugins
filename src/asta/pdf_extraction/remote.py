@@ -8,6 +8,7 @@ import httpx
 
 from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config
+from asta.utils.headers import identity_headers
 
 
 @click.command()
@@ -81,7 +82,7 @@ def remote(pdf: str, output: str | None, start_page: int, max_pages: int, images
 
     response = httpx.post(
         f"{base_url}/",
-        headers={"Authorization": f"Bearer {auth_token}"},
+        headers={**identity_headers(), "Authorization": f"Bearer {auth_token}"},
         json=request_body,
         timeout=120.0,
         follow_redirects=True,

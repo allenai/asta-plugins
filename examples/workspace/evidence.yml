@@ -1,0 +1,5 @@
+evidence:
+  transformer-attention:
+    quote: "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms"
+    cite: vaswani2017attention
+    locator: "abstract"

@@ -16,6 +16,8 @@ from uuid import uuid4
 
 import httpx
 
+from asta.utils.headers import identity_headers
+
 A2A_VERSION = "1.0"
 DEFAULT_RPC_PATH = "/api/3/a2a"
 
@@ -71,6 +73,7 @@ async def stream_a2a_message(
     Raises :class:`A2AStreamError` on HTTP non-200 or JSON-RPC error response.
     """
     headers = {
+        **identity_headers(),
         "A2A-Version": A2A_VERSION,
         "Content-Type": "application/json",
         "Accept": "text/event-stream",

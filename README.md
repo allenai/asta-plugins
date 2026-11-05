@@ -19,9 +19,12 @@ A core set of skills for individual research tasks. Core capabilities include:
 - **Theory/Hypothesis Generation** - 
   - Synthesize theoretical explanations for phenomena described in the literature
   - Example request: _What drives lung adenocarcinomas without known RTK/RAS/RAF pathway driver alterations_ 
+- **Feedback**
+  - Interview-driven narrative report on how using Asta went, submitted (with optional supporting reports) to the Asta team
+  - Example request: _Send the Asta team feedback about how this project went_
 
 ### asta-flows
-A library of multi-step workflows. The agent will select an appropriate workflow and execute a series of actions using the `asta-tools` skills and other tools in the environment 
+Research workflows the agent plans with you and carries out using local tools: `theorize`, `auto-discovery` and `s2`. Start one with `/run-workflow`.
 
 ### asta-assistant
 A long-range autonomous research assistant. Point the agent to a mission document containing background and directions to explore.
@@ -48,17 +51,49 @@ npx skills add allenai/asta-plugins -g
 > /plugin install asta-dev        # optional, for contributors
 ```
 
+`asta-flows`, `asta-assistant` and `asta-dev` require `asta-tools`. Claude Code
+installs it as a dependency. The default `npx plugins add` and `npx skills add`
+commands install all four groups. For selective npx installs, include
+`asta-tools` alongside the layer you select.
+
+The CLI requires Python 3.11+ and `uv`. Its security-patched `cryptography`
+50.0.0 dependency has no Intel macOS or 32-bit Windows wheels. On Intel macOS,
+installation falls back to a source build requiring Xcode command-line tools,
+Rust 1.83+ and OpenSSL 3+; see the [upstream build instructions](https://cryptography.io/en/50.0.0/installation/#building-cryptography-on-macos).
+Upstream [no longer supports these platforms](https://cryptography.io/en/50.0.0/changelog/#v49-0-0),
+and Asta's CI does not validate Intel macOS source builds. On Windows, use
+64-bit Python. Downgrading below 50.0.0 to regain a wheel would restore a
+security vulnerability fixed by this upgrade.
+
+## Documentation and Usage
+
+Once installed, for information about how to use the plugins simply ask the LLM (e.g., Claude), e.g.,
+* "Tell me about the asta-plugins"
+* "How do I use the asta-plugins?"
+
+For GitHub/Slack integration, see [here](https://github.com/allenai/asta-plugins/tree/main/plugins/asta-dev) (Ai2 internal users only)
+  
 ## Asta CLI
 
 The skills install an `asta` CLI tool, which has sub-commands for the various research functions.
-The CLI can be used directly from the command line or invoked by agents via Bash commands. Some commands 
+The CLI can be used directly from the command line or invoked by agents via Bash commands. Some commands
 work on the local filesystem using your own LLM provider keys. Other commands call external APIs hosted by Ai2
 For these, the CLI will prompt you to authenticate on first use.
+
+`asta workspace overleaf` syncs a workspace paper with Overleaf; see
+[Overleaf sync](docs/overleaf-sync.md).
 
 ## Research project documentation
 
 The [`asta-tools:workspace`](plugins/asta-tools/skills/workspace/SKILL.md) skill lets users see and save the agent's work on a research project. Reports are generated with Quarto and
-publised to GitHub Pages.
+published to GitHub Pages. Projects can keep several Markdown slide decks alongside
+their papers: Quarto reveal.js talks use the Asta theme, build with the site and
+show slide-level changes in PR previews. Each is also a standalone HTML file.
+
+See it in the example workspace, rebuilt from each release: [its site](https://allenai.github.io/asta-plugins/),
+with a LaTeX paper and a saved [What changed](https://allenai.github.io/asta-plugins/demo/) demo;
+[its paper in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f)
+(view only); and [its source](examples/workspace/).
 
 The `ghcr.io/allenai/asta` Docker image is published with the `asta` CLI, skills, and Quarto pre-installed 
 
@@ -79,6 +114,10 @@ claude plugin install asta-tools
 # Or install any other agent and use npx:
 npx skills add /opt/asta-plugins -g --yes
 ```
+
+## Giving feedback
+
+These plugins are publicly available, and we appreciate knowing how you use them. Tell your agent to "submit feedback to the Asta team" to let us know!
 
 ## Development
 
