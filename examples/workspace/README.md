@@ -37,3 +37,19 @@ For the initial migration, wait until the first successful main publication has
 written the root, then an administrator switches **Settings → Pages → Deploy
 from a branch**, branch **gh-pages**, folder **/ (root)**. Until then the existing
 Actions deployment stays live. Releases validate the example but never publish.
+The new PR-preview and What changed links above become available only after
+that switch and a successful preview build; their temporary unavailability does
+not mean the existing live site has been removed.
+
+### Maintaining the open demo PR
+
+Keep [the demo PR](https://github.com/allenai/asta-plugins/pull/281) in draft and
+open, with its sample edits to the paper and literature review unmerged. After
+the migration, merge main into the demo branch and push to build its first
+preview. Refresh it the same way after changes to main, so What changed compares
+with the latest published main build. If an update makes the sample edits
+identical to main, replace them with a new sample edit before pushing. The demo
+uses the same scope and cleanup rules as every workspace PR: it loses its
+preview if it stops changing rendered content or is closed. To restore it,
+reopen if needed and push a sample edit that changes the site. After every
+refresh, check its preview and What changed links before calling them ready.

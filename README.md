@@ -95,6 +95,10 @@ with a LaTeX paper and [a pull request's preview](https://allenai.github.io/asta
 [its paper in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f)
 (view only); and [its source](examples/workspace/).
 
+The persistent PR preview becomes available after the first main publication
+and the administrator's Pages-source switch; until then the existing live site
+is unchanged. See the [publication and demo maintenance procedure](examples/workspace/README.md#site-publication).
+
 The `ghcr.io/allenai/asta` Docker image is published with the `asta` CLI, skills, and Quarto pre-installed 
 
 ```bash

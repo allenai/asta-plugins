@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { chromium } from "playwright";
+import { documentUrls } from "./preview-urls.mjs";
 
 // This acceptance check follows the example's attention deck; update together
 // with the example if its deck location or overview label changes.
@@ -55,8 +56,7 @@ try {
     requirePreviewLink(page.url(), base);
     // Check actual document URLs, so a root-relative escape cannot pass just
     // because the same file happens to exist at the server root.
-    for (const href of await page.locator('a[href], iframe[src], script[src], link[href], img[src]').evaluateAll(
-      elements => elements.map(el => el.href || el.src).filter(Boolean))) {
+    for (const href of await page.locator('a[href], iframe[src], script[src], link[href], img[src]').evaluateAll(documentUrls)) {
       if (href.startsWith(new URL(base).origin + "/")) requirePreviewLink(href, base);
     }
     if (path === "what-changed.html") {

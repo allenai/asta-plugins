@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The shared workspace site workflow supports a subfolder and render-path
+  filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
+  in existing `docs.yml` callers when upgrading (as in the shipped template):
+  scope reads PR files and cleanup removes obsolete bot preview comments.
+  Unrelated PRs skip building; reverted site changes and closed PRs remove their
+  previews and preview comments. `render-paths` uses Python fnmatch, where both
+  `*` and `**` cross directory separators. One site per repository owns the
+  `gh-pages` root.
+
 - Slide decks keep a consistent slide background in the phone scroll view,
   while preserving each slide's custom background. The workspace example labels
   its deck as slides in the sidebar and overview.

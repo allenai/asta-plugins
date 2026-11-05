@@ -37,11 +37,16 @@ jobs:
         env:
           RESULT: ${{ needs.docs.result }}
         run: test "$RESULT" = success
-      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      - name: Decide whether the preview browser runs
+        id: browser
+        env:
+          RUN: ${{ needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+        run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
+      - if: steps.browser.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      - if: steps.browser.outputs.run == 'true'
         name: Read the published preview from gh-pages
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -54,25 +59,25 @@ jobs:
           fi
           mkdir preview-site
           git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
-      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      - if: steps.browser.outputs.run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
-      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      - if: steps.browser.outputs.run == 'true'
         name: Install browser checks
         working-directory: tests/browser
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      - if: steps.browser.outputs.run == 'true'
         name: Check the preview and What changed in a browser
         working-directory: tests/browser
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: node example-preview.mjs ../../preview-site artifacts
-      - if: needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+      - if: steps.browser.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: example-preview-screenshots

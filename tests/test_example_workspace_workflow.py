@@ -48,7 +48,7 @@ def test_shared_scope_matches_current_and_previous_paths(tmp_path, files, expect
     assert output.read_text() == f"render={expected}\n"
 
 
-def _run_shared_scope(tmp_path, files):
+def _run_shared_scope(tmp_path, files, *, site_dir=None, patterns=None):
     workflow = load("workspace-quarto-site")
     script = workflow["jobs"]["scope"]["steps"][0]["run"]
     fake = tmp_path / "gh"
@@ -75,10 +75,54 @@ def _run_shared_scope(tmp_path, files):
         GITHUB_REPOSITORY="owner/repo",
         PR_NUMBER="1",
     )
+    if site_dir is not None:
+        env["SITE_DIR"] = site_dir
+    if patterns is not None:
+        env["RENDER_PATHS"] = patterns
     result = subprocess.run(
         [sys.executable, "-c", script], env=env, capture_output=True, text=True
     )
     return result, output
+
+
+@pytest.mark.parametrize(
+    "site,path,expected",
+    [
+        (".config/site", ".config/site/index.qmd", "true"),
+        (".config/site", "config/site/index.qmd", "false"),
+        ("site.", "site./index.qmd", "true"),
+        ("site.", "site/index.qmd", "false"),
+        ("./research/site/", "research/site/index.qmd", "true"),
+        ("research/../site", "site/index.qmd", "true"),
+        (".", "anywhere/index.qmd", "true"),
+    ],
+)
+def test_default_scope_preserves_real_directory_names(tmp_path, site, path, expected):
+    result, output = _run_shared_scope(
+        tmp_path, [{"filename": path}], site_dir=site, patterns=""
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == f"render={expected}\n"
+
+
+@pytest.mark.parametrize("site", ["..", "../site", "site/../../outside", "/site"])
+@pytest.mark.parametrize("patterns", ["", "**"])
+def test_scope_rejects_site_outside_repository(tmp_path, site, patterns):
+    result, output = _run_shared_scope(tmp_path, [], site_dir=site, patterns=patterns)
+    assert result.returncode != 0
+    assert "site-dir must stay inside" in result.stderr
+    assert not output.exists()
+
+
+def test_shipped_caller_grants_scope_and_comment_cleanup_permissions():
+    caller = yaml.load(
+        (ROOT / "plugins/asta-tools/skills/workspace/assets/docs.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    assert caller["permissions"]["pull-requests"] == "write"
+    shared = load("workspace-quarto-site")
+    assert shared["jobs"]["scope"]["permissions"]["pull-requests"] == "read"
+    assert shared["jobs"]["cleanup-preview"]["permissions"]["pull-requests"] == "write"
 
 
 @pytest.mark.parametrize("count", [3000, 3001])
@@ -163,8 +207,129 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     assert "always()" in check["if"]
     assert "needs.docs.outputs.rendered" not in check["if"]
     assert check["steps"][0]["run"] == 'test "$RESULT" = success'
-    for step in check["steps"][1:]:
-        assert "needs.docs.outputs.rendered == 'true'" in step["if"]
+    gate = check["steps"][1]
+    assert gate["id"] == "browser"
+    assert "needs.docs.outputs.rendered == 'true'" in gate["env"]["RUN"]
+    assert "head.repo.full_name == github.repository" in gate["env"]["RUN"]
+    assert "github.actor != 'dependabot[bot]'" in gate["env"]["RUN"]
+    for step in check["steps"][2:]:
+        assert step["if"] == "steps.browser.outputs.run == 'true'"
+
+
+@pytest.mark.parametrize("has_preview", [False, True])
+def test_cleanup_only_publishes_when_a_preview_exists(tmp_path, has_preview):
+    def git(*args, cwd=None):
+        return subprocess.check_output(
+            ["git", *args], cwd=cwd or checkout, text=True, stderr=subprocess.PIPE
+        )
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    remote = tmp_path / "remote.git"
+    git("init", "--bare", str(remote))
+    git("init", "-b", "main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (checkout / "index.html").write_text("published main")
+    git("add", "index.html")
+    git("commit", "-m", "initial")
+    git("remote", "add", "origin", str(remote))
+    git("checkout", "-b", "gh-pages")
+    if has_preview:
+        preview = checkout / "pr-preview/pr-1"
+        preview.mkdir(parents=True)
+        (preview / "index.html").write_text("preview")
+        git("add", "pr-preview/pr-1/index.html")
+        git("commit", "-m", "preview")
+    git("push", "origin", "main", "gh-pages")
+    before = git("rev-parse", "gh-pages")
+    git("checkout", "main")
+    git("branch", "-D", "gh-pages")
+    step = next(
+        s
+        for s in load("workspace-quarto-site")["jobs"]["cleanup-preview"]["steps"]
+        if s.get("name") == "Remove PR preview"
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=checkout,
+        env=dict(os.environ, PR_NUMBER="1"),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    after = git("rev-parse", "refs/heads/gh-pages", cwd=remote)
+    assert (before != after) == has_preview
+    assert git("show", "gh-pages:index.html") == "published main"
+    assert not git("ls-tree", "gh-pages", "pr-preview/pr-1")
+    if not has_preview:
+        assert "Preparing worktree" not in result.stderr
+
+
+@pytest.mark.parametrize("has_comments", [False, True])
+def test_cleanup_removes_only_bot_preview_comments(tmp_path, has_comments):
+    comments = (
+        [
+            {
+                "id": 11,
+                "user": {"login": "github-actions[bot]"},
+                "body": "📄 Preview: old",
+            },
+            {"id": 12, "user": {"login": "human"}, "body": "📄 Preview: keep"},
+            {"id": 13, "user": {"login": "github-actions[bot]"}, "body": "Other check"},
+        ]
+        if has_comments
+        else []
+    )
+    pages = (
+        [
+            comments,
+            [
+                {
+                    "id": 14,
+                    "user": {"login": "github-actions[bot]"},
+                    "body": "📄 Preview: duplicate",
+                }
+            ],
+        ]
+        if has_comments
+        else [[]]
+    )
+    (tmp_path / "comments.json").write_text(json.dumps(pages))
+    fake = tmp_path / "gh"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys\n"
+        "if 'DELETE' in sys.argv:\n"
+        "    with open('deletions', 'a') as log: log.write(sys.argv[-1] + '\\n')\n"
+        "else:\n"
+        "    assert '--paginate' in sys.argv and '--slurp' in sys.argv\n"
+        "    print(pathlib.Path('comments.json').read_text())\n"
+    )
+    fake.chmod(0o755)
+    step = load("workspace-quarto-site")["jobs"]["cleanup-preview"]["steps"][-1]
+    assert step["name"] == "Remove stale preview comment"
+    result = subprocess.run(
+        [sys.executable, "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            PATH=f"{tmp_path}:{os.environ['PATH']}",
+            GITHUB_REPOSITORY="owner/repo",
+            PR_NUMBER="1",
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    log = tmp_path / "deletions"
+    if has_comments:
+        assert log.read_text().splitlines() == [
+            "repos/owner/repo/issues/comments/11",
+            "repos/owner/repo/issues/comments/14",
+        ]
+    else:
+        assert not log.exists()
 
 
 def test_example_has_no_demo_copy_and_links_a_real_pr_preview():

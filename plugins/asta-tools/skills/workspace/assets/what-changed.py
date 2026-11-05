@@ -280,15 +280,19 @@ TAG_SAFE_ATTRS = {
 URL_ATTRS = {"cite", "href", "src"}
 
 
-def rebase_relative_url(value, base):
-    """Resolve a page-relative URL from `base`, the page's directory, to one
+def rebase_relative_url(value, source):
+    """Resolve a page-relative URL from `source`, the page's site path, to one
     relative to the site root, where the diff page lives."""
     parts = urlsplit(value)
-    if not base or parts.scheme or parts.netloc or not parts.path:
+    if not source or parts.scheme or parts.netloc:
+        return value
+    if not parts.path and not parts.query:
         return value
     if parts.path.startswith("/"):
         return value
-    path = posixpath.normpath(posixpath.join(base, parts.path))
+    path = posixpath.normpath(
+        posixpath.join(posixpath.dirname(source), parts.path) if parts.path else source
+    )
     if path == ".." or path.startswith("../"):
         return value
     if parts.path.endswith("/") and not path.endswith("/"):
@@ -379,7 +383,7 @@ def sanitize_fragment(content, rel=""):
 
     `rel` is the source page's site path; its relative links are rebased to
     the site root so they resolve from the diff page."""
-    parser = _SafeFragmentParser(posixpath.dirname(rel))
+    parser = _SafeFragmentParser(rel)
     parser.feed(content)
     parser.close()
     return "".join(parser.out)

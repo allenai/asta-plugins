@@ -17,6 +17,9 @@ on:
 # the called workflow's jobs individually downscope to least privilege.
 # `pages: read` lets the deploy job resolve the real served URL for the preview
 # link (private/internal repos use an obfuscated *.pages.github.io domain).
+# Keep these grants when upgrading an existing caller: scope reads PR files,
+# publication writes gh-pages, and cleanup retires obsolete preview comments.
+# GitHub rejects a called workflow that asks for a grant its caller omits.
 permissions:
   contents: write
   pull-requests: write
@@ -37,6 +40,8 @@ jobs:
     # For a site below the repository root, set site-dir. By default only
     # changes under that directory render; list additional repository-relative
     # globs in render-paths when shared assets outside it affect the site.
+    # These are Python fnmatch patterns: both * and ** match across /.
+    # Only one site per repository may publish to the gh-pages root.
     # Do not add pull_request.paths: closing any PR must clean up its preview,
     # including after matching changes were reverted or renamed away.
     # with:

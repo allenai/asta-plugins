@@ -38,13 +38,14 @@ on:
         default: "."
 
       render-paths:
-        description: Newline-separated repository-relative globs affecting rendered content; defaults to everything under site-dir
+        description: Newline-separated Python fnmatch patterns (both * and ** cross /) affecting rendered content; defaults to everything under site-dir
         type: string
         default: ""
 
 jobs:
   scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     outputs:
@@ -60,10 +61,13 @@ jobs:
           RENDER_PATHS: ${{ inputs.render-paths }}
         shell: python
         run: |
-          import fnmatch, json, os, subprocess
+          import fnmatch, json, os, posixpath, subprocess
           from pathlib import Path
           render = False
           if os.environ['ACTION'] != 'closed':
+              site = posixpath.normpath(os.environ.get('SITE_DIR', '.'))
+              if site.startswith('/') or site == '..' or site.startswith('../'):
+                  raise SystemExit('::error::site-dir must stay inside the repository.')
               if os.environ['EVENT'] != 'pull_request':
                   render = True
               else:
@@ -82,7 +86,7 @@ jobs:
                   patterns = os.environ['RENDER_PATHS'].splitlines()
                   patterns = [p.strip() for p in patterns if p.strip()]
                   if not patterns:
-                      site = os.environ['SITE_DIR'].strip('./')
+                      site = '' if site == '.' else site
                       patterns = [f'{site}/**' if site else '**']
                   render = any(fnmatch.fnmatchcase(path, pattern) for path in paths for pattern in patterns)
           with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
@@ -91,6 +95,8 @@ jobs:
   # check. Concurrency is keyed per PR (or per branch for main), so a new
   # commit supersedes its own stale build while separate PRs and main never
   # cancel each other.
+  # One site per repository owns the gh-pages root; site-dir selects where that
+  # site's sources live, not a namespace for multiple independent publishers.
   build:
     needs: scope
     if: >-
@@ -638,6 +644,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     concurrency:
       group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -653,7 +660,17 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages:gh-pages 2>/dev/null || exit 0
+          # Missing branch is normal before the first publication; a failed
+          # lookup/fetch is not proof that a preview has disappeared.
+          refs=$(git ls-remote --heads origin gh-pages)
+          [ -n "$refs" ] || exit 0
+          git fetch origin gh-pages:gh-pages
+          # Most unrelated PRs never had a preview. Avoid a worktree, commit or
+          # push in that case; the next step can still retire a stale comment.
+          if [ -z "$(git ls-tree gh-pages "pr-preview/pr-$PR_NUMBER")" ]; then
+            echo "no preview to remove"
+            exit 0
+          fi
           tmp=$(mktemp -d)
           git worktree add "$tmp" gh-pages
           rm -rf "$tmp/pr-preview/pr-$PR_NUMBER"
@@ -667,3 +684,27 @@ jobs:
             echo "gh-pages moved underneath us — rebasing and retrying ($i/5)"
             git pull --rebase origin gh-pages || { git rebase --abort 2>/dev/null || true; echo "::error::gh-pages rebase conflict"; exit 1; }
           done
+      - name: Remove stale preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: python
+        run: |
+          import json, os, subprocess
+          repo = os.environ['GITHUB_REPOSITORY']
+          pr = os.environ['PR_NUMBER']
+          try:
+              pages = json.loads(subprocess.check_output([
+                  'gh', 'api', '--paginate', '--slurp',
+                  f'repos/{repo}/issues/{pr}/comments?per_page=100',
+              ], text=True))
+              for page in pages:
+                  for comment in page:
+                      if (comment['user']['login'] == 'github-actions[bot]'
+                              and comment['body'].startswith('📄 Preview:')):
+                          subprocess.run([
+                              'gh', 'api', '-X', 'DELETE',
+                              f"repos/{repo}/issues/comments/{comment['id']}",
+                          ], check=True)
+          except (subprocess.CalledProcessError, ValueError, KeyError) as error:
+              print(f'::warning::Could not remove the stale preview comment: {error}')

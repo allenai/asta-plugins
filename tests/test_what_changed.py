@@ -971,3 +971,12 @@ def test_rebased_link_keeps_ordinary_relative_targets():
     )
 
     assert 'href="lit-review/"' in result
+
+
+@pytest.mark.parametrize("source", ["notes.html", "reports/notes.html"])
+def test_query_only_links_keep_their_source_page(source):
+    result = WHAT_CHANGED.sanitize_fragment(
+        '<a href="?view=full#details">details</a><a href="#local">local</a>', source
+    )
+    assert f'href="{source}?view=full#details"' in result
+    assert 'href="#local"' in result
