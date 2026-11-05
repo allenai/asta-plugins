@@ -229,7 +229,7 @@ jobs:
           fi
           tmp=$(mktemp -d)
           git worktree add "$tmp" gh-pages
-          find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+          find "$tmp" -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git ! -name CNAME -exec rm -rf {} +
           cp -r _site/. "$tmp/"
           touch "$tmp/.nojekyll"
           git -C "$tmp" add -A

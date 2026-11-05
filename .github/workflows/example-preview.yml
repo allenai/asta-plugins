@@ -43,10 +43,36 @@ jobs:
       cancel-in-progress: false
       queue: max
     steps:
+      # Before the switch no build is needed, and the helper may not be on
+      # main yet. Read configuration without executing any PR-controlled code.
+      - name: Check whether branch-based Pages publication is enabled
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if response=$(gh api --include "repos/$GITHUB_REPOSITORY/pages"); then
+            config=$(sed '1,/^\r*$/d' <<< "$response")
+          else
+            case "$response" in
+              HTTP/*' 404 '*) echo 'Pages is not configured; leaving it unchanged.'; exit 0 ;;
+              *) echo '::error::Could not read the Pages configuration'; exit 1 ;;
+            esac
+          fi
+          if jq -e '.build_type == "legacy" and .source.branch == "gh-pages" and .source.path == "/"' <<< "$config" >/dev/null; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Pages has not switched to gh-pages root; leaving its current deployment unchanged.'
+          fi
+      # Closed/conflicting PRs may have no merge ref. Only execute the helper
+      # from the trusted default branch, which contains it before the switch.
       - uses: actions/checkout@v4
+        if: steps.source.outputs.enabled == 'true'
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Publish preview updates and removals after the Pages switch
+        if: steps.source.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/request-example-pages-build.sh

@@ -115,7 +115,8 @@ def test_write_access_is_confined_to_branch_publication_jobs():
     assert [
         name
         for name, job in called["jobs"].items()
-        if job.get("permissions", called["permissions"]).get("contents") == "write"
+        if job.get("permissions", called.get("permissions", {})).get("contents")
+        == "write"
     ] == ["publish-gh-pages"]
     assert JOB["permissions"] == {"contents": "write"}
     assert [step.get("uses", "").split("@")[0] for step in JOB["steps"]] == [

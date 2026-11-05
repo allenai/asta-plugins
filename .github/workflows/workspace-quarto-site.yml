@@ -584,7 +584,11 @@ jobs:
       group: pages-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     steps:
+      # A closed PR with conflicts may have no synthetic merge ref. Cleanup
+      # only needs the repository, never code from the PR being removed.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
       - name: Remove PR preview
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}

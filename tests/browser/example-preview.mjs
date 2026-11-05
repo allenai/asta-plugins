@@ -6,6 +6,12 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { chromium } from "playwright";
 
+// This acceptance check follows the example's attention deck; update together
+// with the example if its deck location or overview label changes.
+const exampleDeck = {
+  viewer: "slides/attention/index.html",
+  overviewLabel: "Presentation slides",
+};
 const site = resolve(process.argv[2]);
 const output = resolve(process.argv[3]);
 await mkdir(output, { recursive: true });
@@ -37,19 +43,24 @@ try {
   for (const [path, screenshot] of [
     ["index.html", "example-preview-home.png"],
     ["what-changed.html", "example-preview-what-changed.png"],
-    ["slides/attention/index.html", "example-preview-deck-viewer.png"],
+    [exampleDeck.viewer, "example-preview-deck-viewer.png"],
   ]) {
     const response = await page.goto(`${base}/${path}`, { waitUntil: "domcontentloaded" });
     assert.equal(response.status(), 200, path);
     if (path === "what-changed.html") {
       assert.match(await page.locator("body").innerText(), /What changed/i);
-      for (const href of await page.locator('a[href*="slides/attention/slides.html"]').evaluateAll(
-        links => links.map(link => link.href),
-      )) {
+      const changedSlides = page.locator("article.slide-diff:not(.removed)");
+      const slideLinks = changedSlides.locator("h3 a");
+      assert.equal(await slideLinks.count(), await changedSlides.count(),
+        "every new or changed slide has a preview link");
+      // A home/theme-only edit may correctly have no changed slides. When the
+      // diff lists slides, each must link into these pushed files, never live.
+      for (const href of await slideLinks.evaluateAll(links => links.map(link => link.href))) {
+        assert.ok(href.startsWith(`${base}/`), `changed slide stays in the preview: ${href}`);
         assert.equal((await page.request.get(href)).status(), 200, "changed slide link");
       }
     } else if (path === "index.html") {
-      await page.getByRole("link", { name: "Presentation slides", exact: true }).waitFor();
+      await page.getByRole("link", { name: exampleDeck.overviewLabel, exact: true }).waitFor();
     } else {
       const frame = page.frameLocator("iframe");
       await frame.locator(".reveal .slides section.present").first().waitFor();

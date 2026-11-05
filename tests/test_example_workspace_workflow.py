@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -621,42 +620,96 @@ def test_preview_updates_cleanup_and_releases_request_pages_publication():
     }
 
 
-@pytest.mark.parametrize("docs_result", ["success", "failure", "cancelled", "skipped"])
-@pytest.mark.parametrize("action", ["opened", "synchronize", "closed"])
-@pytest.mark.parametrize("trusted", [True, False])
-def test_closed_preview_cleanup_publishes_even_when_other_docs_jobs_fail(
-    docs_result, action, trusted
+def test_closed_preview_cleanup_publishes_even_when_other_docs_jobs_fail():
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/example-preview.yml").read_text()
+    )
+    # Assert the actual Actions expression instead of translating its semantics
+    # into Python. Close bypasses the aggregate docs result, retaining guards.
+    assert " ".join(workflow["jobs"]["publish-pages"]["if"].split()) == (
+        "always() && (github.event.action == 'closed' || needs.docs.result == 'success') "
+        "&& github.event.pull_request.head.repo.full_name == github.repository "
+        "&& github.actor != 'dependabot[bot]'"
+    )
+
+
+def test_pages_publication_uses_the_default_branch_without_a_pr_merge_ref():
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/example-preview.yml").read_text()
+    )
+    steps = workflow["jobs"]["publish-pages"]["steps"]
+    source, checkout, publish = steps
+    assert source["id"] == "source"
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"]["ref"] == "${{ github.event.repository.default_branch }}"
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["if"] == publish["if"] == "steps.source.outputs.enabled == 'true'"
+
+    shared = yaml.safe_load(
+        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
+    )
+    cleanup = shared["jobs"]["cleanup-preview"]["steps"][0]
+    assert cleanup["with"]["ref"] == "${{ github.event.pull_request.base.sha }}"
+
+
+@pytest.mark.parametrize(
+    ("config", "status", "enabled", "returncode"),
+    [
+        ({"build_type": "workflow"}, 200, False, 0),
+        (
+            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/"}},
+            200,
+            True,
+            0,
+        ),
+        (
+            {"build_type": "legacy", "source": {"branch": "other", "path": "/"}},
+            200,
+            False,
+            0,
+        ),
+        (
+            {"build_type": "legacy", "source": {"branch": "gh-pages", "path": "/docs"}},
+            200,
+            False,
+            0,
+        ),
+        ({}, 404, False, 0),
+        ({}, 403, False, 1),
+        ({}, 500, False, 1),
+    ],
+)
+def test_preview_publication_checks_source_before_loading_default_branch(
+    tmp_path, config, status, enabled, returncode
 ):
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/example-preview.yml").read_text()
     )
-    condition = workflow["jobs"]["publish-pages"]["if"]
-    context = {
-        "always": lambda: True,
-        "needs": SimpleNamespace(docs=SimpleNamespace(result=docs_result)),
-        "github": SimpleNamespace(
-            event=SimpleNamespace(
-                action=action,
-                pull_request=SimpleNamespace(
-                    head=SimpleNamespace(
-                        repo=SimpleNamespace(
-                            full_name="owner/repo" if trusted else "fork/repo"
-                        )
-                    )
-                ),
-            ),
-            repository="owner/repo",
-            actor="contributor",
-        ),
-    }
-    # Evaluate the workflow's actual boolean condition with the event and job
-    # results that Actions supplies, including failure/cancellation on close.
-    expression = " ".join(condition.replace("&&", "and").replace("||", "or").split())
-    assert eval(expression, {"__builtins__": {}}, context) == (
-        trusted and (action == "closed" or docs_result == "success")
+    source = workflow["jobs"]["publish-pages"]["steps"][0]
+    gh = tmp_path / "gh"
+    gh.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        "assert sys.argv[1:] == ['api', '--include', 'repos/owner/project/pages']\n"
+        f"print('HTTP/2.0 {status} Status\\r\\nContent-Type: application/json\\r\\n\\r\\n' + {json.dumps(config)!r})\n"
+        f"sys.exit({0 if status == 200 else 1})\n"
     )
-    context["github"].actor = "dependabot[bot]"
-    assert not eval(expression, {"__builtins__": {}}, context)
+    gh.chmod(0o755)
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-c", source["run"]],
+        env={
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "GITHUB_REPOSITORY": "owner/project",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == returncode, result.stderr
+    assert (output.read_text() if output.exists() else "") == (
+        "enabled=true\n" if enabled else ""
+    )
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -686,10 +739,11 @@ def test_release_root_initializes_only_a_missing_branch_and_keeps_previews(
     if existing:
         git("checkout", "-b", "gh-pages")
         (tmp_path / "index.html").write_text("old release")
+        (tmp_path / "CNAME").write_text("example.test\n")
         preview = tmp_path / "pr-preview/pr-123/index.html"
         preview.parent.mkdir(parents=True)
         preview.write_text("keep this preview")
-        git("add", "index.html", "pr-preview/pr-123/index.html")
+        git("add", "index.html", "CNAME", "pr-preview/pr-123/index.html")
         git("commit", "-m", "existing site")
         git("push", "origin", "gh-pages")
         git("checkout", "main")
@@ -739,6 +793,10 @@ def test_release_root_initializes_only_a_missing_branch_and_keeps_previews(
             == "new release"
         )
         if existing:
+            assert (
+                git("--git-dir", str(origin), "show", "gh-pages:CNAME")
+                == "example.test"
+            )
             assert (
                 git(
                     "--git-dir",
