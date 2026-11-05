@@ -508,7 +508,8 @@ try {
   assert.equal(scrolled.width, unscrolled, "Scrolling the page doesn't resize the deck");
   results.push({ name: "deck-viewer-esc-scroll", consumed, unscrolled, scrolled });
   // A short window: the frame fits the height left below the bar, so a whole slide
-  // stays in view, and only below the legible size does the page scroll.
+  // stays in view, down to the 180 px floor (Reveal's minScale of a 900 px slide);
+  // below it the frame stops shrinking and the page scrolls.
   const shortFit = async (room) => {
     await viewer.setViewportSize({ width: 1280, height: 800 });
     await viewer.goto(`file://${join(site, "slides/attention/index.html")}`);
@@ -516,20 +517,37 @@ try {
     const top = await viewer.evaluate(() => document.querySelector(".deck-stage").getBoundingClientRect().top + scrollY);
     await viewer.setViewportSize({ width: 1280, height: Math.ceil(top + 16 + room) });
     await viewer.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-    return viewer.evaluate(() => {
+    const deck = await (await viewer.$(".deck-frame")).contentFrame();
+    await deck.waitForFunction(() => window.Reveal?.isReady());
+    await deck.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    await viewer.waitForTimeout(300);
+    const content = await deck.evaluate(() => {
+      const slide = Reveal.getCurrentSlide();
+      const parts = [...slide.querySelectorAll("h1, h2, h3, p, li, img, figure, pre, table")]
+        .filter((element) => element.checkVisibility({ opacityProperty: true, visibilityProperty: true }))
+        .map((element) => ({ tag: element.tagName, text: element.textContent.trim().slice(0, 40), ...element.getBoundingClientRect().toJSON() }))
+        .filter((box) => box.width > 0 && box.height > 0);
+      const outside = parts.filter((box) => box.left < -0.5 || box.top < -0.5 || box.right > innerWidth + 0.5 || box.bottom > innerHeight + 0.5);
+      return { width: innerWidth, height: innerHeight, scale: Reveal.getScale(), scrollView: Reveal.isScrollView?.() ?? false, count: parts.length, outside };
+    });
+    const frame = await viewer.evaluate(() => {
       const frame = document.querySelector(".deck-frame").getBoundingClientRect();
       return { top: frame.top, bottom: frame.bottom, height: frame.height, ratio: frame.width / frame.height,
         viewport: innerHeight, scrolls: document.documentElement.scrollHeight > innerHeight };
     });
+    return { ...frame, content };
   };
-  const short = await shortFit(160);
-  assert.ok(Math.abs(short.height - 160) < 1.5, `A short window fits the frame to the height left (got ${short.height})`);
+  const short = await shortFit(180);
+  assert.ok(Math.abs(short.height - 180) < 1.5, `A short window fits the frame to the floor (got ${short.height})`);
   assert.ok(Math.abs(short.ratio - 16 / 9) < 0.01, `The short frame stays 16:9 (got ${short.ratio})`);
-  assert.ok(short.top >= 0 && short.bottom <= short.viewport + 0.5, "A short window keeps the whole slide in view");
+  assert.ok(short.top >= 0 && short.bottom <= short.viewport + 0.5, "At the floor the whole frame is in view");
+  assert.ok(short.content.count > 0, "The deck's first slide has content to check");
+  assert.deepEqual(short.content.outside, [], `At the floor the slide's content stays inside its frame (${JSON.stringify(short.content)})`);
   await viewer.screenshot({ path: join(output, "deck-viewer-short.png") });
   const tiny = await shortFit(80);
-  assert.ok(Math.abs(tiny.height - 135) < 1.5, `Below the legible size the frame stops shrinking (got ${tiny.height})`);
-  assert.ok(tiny.scrolls, "Below the legible size the page scrolls");
+  assert.ok(Math.abs(tiny.height - 180) < 1.5, `Below the floor the frame stops shrinking (got ${tiny.height})`);
+  assert.ok(tiny.scrolls, "Below the floor the page scrolls");
+  assert.deepEqual(tiny.content.outside, [], "Below the floor the slide's content stays inside its frame");
   results.push({ name: "deck-viewer-short", short, tiny });
   assert.deepEqual(viewerFailures, [], "Deck viewer: no script errors after the short-window checks");
   await viewerContext.close();

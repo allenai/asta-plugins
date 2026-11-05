@@ -524,9 +524,9 @@ body:has([data-deck-viewer]) #title-block-header {{ display: none; }}
   const frame = host.querySelector('.deck-frame');
   const expand = host.querySelector('.deck-expand');
   // 16:9, as wide as the page allows and short enough that a whole slide is in view.
-  // Below `legible` (a 240x135 slide, titles still readable) it stops shrinking and
-  // the page scrolls instead.
-  const legible = 135;
+  // Below `legible` it stops shrinking and the page scrolls: Reveal's default minScale
+  // (0.2) never draws a 900 px slide shorter than 180 px, and a smaller one can't be read.
+  const legible = 180;
   const fit = () => {{
     const full = host.classList.contains('deck-full');
     // From the page's top, not the window's, so a scrolled page fits the same way.
