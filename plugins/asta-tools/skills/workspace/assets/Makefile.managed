@@ -30,7 +30,9 @@ ifneq ($(ASTA_WORKSPACE_SYNC_STATE),$(shell cat $(ASTA_VERSION_STAMP) 2>/dev/nul
 endif
 endif
 include .asta/cache/workspace.mk
-.asta/cache/workspace.mk: .github/workflows/docs.yml
+# A site in a subfolder is published by the repository root's docs.yml.
+ASTA_WORKSPACE_WORKFLOWS := $(sort $(abspath $(wildcard .github/workflows/docs.yml $(shell git rev-parse --show-toplevel 2>/dev/null)/.github/workflows/docs.yml)))
+.asta/cache/workspace.mk: $(ASTA_WORKSPACE_WORKFLOWS)
 	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
 	@printf '%s\n' '$(ASTA_WORKSPACE_SYNC_STATE)' > $(ASTA_VERSION_STAMP)

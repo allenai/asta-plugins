@@ -443,3 +443,40 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
     assert "Loaded workspace.mk from asta-plugins@v0.115.0" in restored.stdout
     assert "checked-v0.115.0" in restored.stdout
     assert not _git(root, "status", "--porcelain")
+
+
+def test_subfolder_site_moves_the_root_workflow_naming_it(tmp_path, monkeypatch):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "t@example.com")
+    _git(tmp_path, "config", "user.name", "t")
+    workflow = tmp_path / workspace.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        STUB.format(ref="v0.115.0") + "    with:\n      site-dir: './research/site/'\n"
+    )
+    site = tmp_path / "research/site"
+    site.mkdir(parents=True)
+    (site / "index.qmd").write_text("x\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    assert workspace.workflow_root(site) == tmp_path.resolve()
+    assert workspace.selected_source(site)[1] == "v0.115.0"
+    result = _run(site, "0.116.0", monkeypatch)
+    assert result.exit_code == 0, result.output
+    assert "workspace-quarto-site.yml@v0.116.0  # pinned\n" in workflow.read_text()
+    assert not (site / ".github").exists()
+    assert not _git(tmp_path, "status", "--porcelain")
+
+
+def test_root_workflow_naming_another_site_is_not_used(tmp_path):
+    workflow = tmp_path / workspace.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        STUB.format(ref="v0.115.0") + "    with:\n      site-dir: other\n"
+    )
+    (tmp_path / ".git").mkdir()
+    site = tmp_path / "research/site"
+    site.mkdir(parents=True)
+    assert workspace.workflow_root(site) == site.resolve()
+    with pytest.raises(click.ClickException, match="Missing"):
+        workspace.selected_source(site)

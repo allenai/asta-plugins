@@ -7,6 +7,7 @@ import http.server
 import io
 import json
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -51,10 +52,41 @@ MAX_ASSET_BYTES = 1024 * 1024
 
 
 WORKFLOW_FILE = ".github/workflows/docs.yml"
+SITE_DIR_LINE = re.compile(
+    r"^\s*site-dir:\s*(?P<quote>['\"]?)(?P<dir>[^'\"#\s]+)(?P=quote)\s*(?:#.*)?$"
+)
+
+
+def workflow_root(project: Path) -> Path:
+    """Return the directory whose docs.yml publishes project.
+
+    GitHub runs only the repository root's workflows, so a site in a subfolder
+    uses the root docs.yml whose site-dir names it.
+    """
+    project = project.resolve()
+    if (project / ".git").exists():
+        return project
+    for parent in project.parents:
+        try:
+            text = (parent / WORKFLOW_FILE).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        site = project.relative_to(parent).as_posix()
+        for line in text.splitlines():
+            match = SITE_DIR_LINE.fullmatch(line)
+            if match and posixpath.normpath(match.group("dir")) == site:
+                return parent
+        if (parent / ".git").exists():
+            break
+    return project
+
+
+def workflow_file(project: Path) -> Path:
+    return workflow_root(project) / WORKFLOW_FILE
 
 
 def selected_source(project: Path) -> tuple[str, str]:
-    workflow = project / WORKFLOW_FILE
+    workflow = workflow_file(project)
     try:
         lines = workflow.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError as exc:
@@ -499,7 +531,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
     if ref != original_ref:
         _reject_workflow_symlinks(project)
-        original = (project / WORKFLOW_FILE).read_bytes()
+        original = workflow_file(project).read_bytes()
     try:
         archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
     except _WorkspaceFetchError:
@@ -515,7 +547,7 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         )
     if ref != original_ref:
         _reject_workflow_symlinks(project)
-        if (project / WORKFLOW_FILE).read_bytes() != original:
+        if workflow_file(project).read_bytes() != original:
             raise click.ClickException(
                 f"{WORKFLOW_FILE} changed during sync; left it unchanged. Run sync again."
             )
@@ -744,14 +776,15 @@ def _sync_workspace(
 def bump_pin(project: Path) -> None:
     """Commit an upgrade from an older release pin to the installed asta release."""
     project = project.resolve()
-    workflow = project / WORKFLOW_FILE
+    root = workflow_root(project)
+    workflow = root / WORKFLOW_FILE
     _reject_workflow_symlinks(project)
     _, ref = selected_source(project)
     target = workspace_versions.pin_target(ref, workspace_versions.installed())
     if target is None:
         click.echo(f"Pin asta-plugins@{ref} is current; nothing to do")
         return
-    status = _git(project, "status", "--porcelain", "--", WORKFLOW_FILE)
+    status = _git(root, "status", "--porcelain", "--", WORKFLOW_FILE)
     if status.returncode != 0:
         raise click.ClickException(
             f"Could not check the workflow's Git status: {status.stderr.strip()}"
@@ -769,7 +802,7 @@ def bump_pin(project: Path) -> None:
     try:
         _write_pin(project, original, target)
         commit_started = True
-        committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
+        committed = _git(root, "commit", "-m", message, "--", WORKFLOW_FILE)
         if committed.returncode != 0:
             raise click.ClickException(
                 f"Could not commit the pin move: {committed.stderr.strip()}"
@@ -816,15 +849,16 @@ def _is_unattended() -> bool:
 
 
 def _reject_workflow_symlinks(project: Path) -> None:
+    root = workflow_root(project)
     for relative in (".github", ".github/workflows", WORKFLOW_FILE):
-        if (project / relative).is_symlink():
+        if (root / relative).is_symlink():
             raise click.ClickException(
                 f"Workspace workflow path must not contain symlinks: {relative}"
             )
 
 
 def _write_pin(project: Path, original: bytes, target: str) -> None:
-    workflow = project / WORKFLOW_FILE
+    workflow = workflow_file(project)
     lines = original.decode("utf-8").splitlines(keepends=True)
     for index, line in enumerate(lines):
         if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
