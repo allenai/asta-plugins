@@ -32,6 +32,7 @@ if "--output-dir" in args:
     args = args[:index]
 pages = [arg for arg in args[1:] if arg != "--no-clean"]
 assert len(pages) <= 1, sys.argv
+assert not any(page.startswith("-") for page in pages), sys.argv
 if pages == ["."]:
     pages = []
 assert not output.is_absolute(), sys.argv
@@ -84,11 +85,19 @@ def project(tmp_path: Path) -> Path:
     shutil.copy(ASSETS / "what-changed.py", project / "scripts/what-changed.py")
     (project / ".gitignore").write_text("_site/\n_extensions/\n.asta/cache/\n")
     (project / "index.qmd").write_text("The baseline finding holds.\n")
+    (project / "_quarto.yml").write_text("project:\n  type: website\n")
     git(project, "init", "-q", "-b", "main")
     (project / "_extensions/evidence").mkdir(parents=True)
     (project / "_extensions/evidence/version.txt").write_text("Baseline extension.")
     git(
-        project, "add", "Makefile", "workspace.mk", "scripts", ".gitignore", "index.qmd"
+        project,
+        "add",
+        "Makefile",
+        "workspace.mk",
+        "scripts",
+        ".gitignore",
+        "index.qmd",
+        "_quarto.yml",
     )
     git(project, "add", "-f", "_extensions/evidence/version.txt")
     git(project, "commit", "-qm", "first")
@@ -286,11 +295,19 @@ def test_live_preview_output_is_not_rendered_over(
 
 
 @pytest.mark.parametrize("full", [False, True])
+@pytest.mark.parametrize("prints_override", [False, True])
 def test_custom_current_render_cannot_overwrite_preview(
-    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, full: bool
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    full: bool,
+    prints_override: bool,
 ) -> None:
     with (project / "Makefile").open("a") as file:
-        file.write("render:\n\tquarto render\n")
+        file.write("render:\n")
+        if prints_override:
+            file.write("\t@echo '$(ASTA_WORKSPACE_RENDER_OUTPUT)'\n")
+        file.write("\tquarto render\n")
     # The current recipe can be committed or uncommitted; only its behaviour
     # matters. Committing keeps a page-only change eligible for the fast path.
     git(project, "commit", "-qam", "custom current recipe")
@@ -306,13 +323,16 @@ def test_custom_current_render_cannot_overwrite_preview(
     result = make(project, tmp_path, *(["WHAT_CHANGED_FULL=1"] if full else []))
 
     assert result.returncode != 0
-    assert (
-        "current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT"
-        in result.stderr
-    )
+    assert "must honour ASTA_WORKSPACE_RENDER_OUTPUT" in result.stderr
     assert live.read_text() == "Live preview must stay intact."
     assert not (site / "what-changed.html").exists()
-    assert not log.exists(), "reject an unsafe recipe before either render runs"
+    if not prints_override:
+        assert not log.exists(), "reject an unsafe recipe before either render runs"
+    else:
+        assert all(
+            row["cwd"] != str(project)
+            for row in map(json.loads, log.read_text().splitlines())
+        )
     assert not list((tmp_path / "temporary").iterdir())
     assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 
@@ -381,7 +401,14 @@ def test_equivalent_site_output_paths_are_allowed(
 def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> None:
     nested = project / "research workspace/docs"
     nested.mkdir(parents=True)
-    for name in ("Makefile", "workspace.mk", "scripts", "index.qmd", "_extensions"):
+    for name in (
+        "Makefile",
+        "workspace.mk",
+        "scripts",
+        "index.qmd",
+        "_extensions",
+        "_quarto.yml",
+    ):
         git(project, "mv", name, str(nested.relative_to(project) / name))
     git(project, "commit", "-qm", "move report into a subdirectory")
     git(project, "branch", "-f", "main")
@@ -528,12 +555,15 @@ def test_render_output_override_leaves_preview_output_alone(
 
 
 def rendered_pages(log: Path) -> list[list[str]]:
-    return [json.loads(line)["pages"] for line in log.read_text().splitlines()]
+    return [
+        [str(Path(page)) for page in json.loads(line)["pages"]]
+        for line in log.read_text().splitlines()
+    ]
 
 
 def add_page(project: Path, name: str, text: str) -> None:
     (project / name).write_text(text)
-    git(project, "add", name)
+    git(project, "add", "--", name)
     git(project, "commit", "-qm", f"add {name}")
     git(project, "branch", "-f", "main")
 
@@ -681,10 +711,11 @@ def test_real_quarto_rejects_custom_output_directory(
 
 @pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
 @pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("mode", ["partial", "full", "new-stylesheet"])
 def test_real_quarto_slide_only_edit_keeps_site_theme(
-    project: Path, tmp_path: Path, legacy: bool
+    project: Path, tmp_path: Path, legacy: bool, mode: str
 ) -> None:
-    """A deck-only comparison borrows real site CSS with working asset URLs."""
+    """Local comparisons retain the actual theme without overwriting preview."""
     (project / "_quarto.yml").write_text(
         "project:\n  type: website\nformat:\n  html:\n"
         "    theme: cosmo\n    css: styles.css\n"
@@ -723,6 +754,16 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     site = project / "_site"
     preview = (site / "index.html").read_text()
     deck.write_text(deck.read_text().replace("original", "updated"))
+    original_css = (site / "styles.css").read_text()
+    if mode == "full":
+        (project / "styles.css").write_text("body { letter-spacing: 0.123em; }\n")
+    elif mode == "new-stylesheet":
+        (project / "_quarto.yml").write_text(
+            (project / "_quarto.yml")
+            .read_text()
+            .replace("css: styles.css", "css: fresh.css")
+        )
+        (project / "fresh.css").write_text("body { letter-spacing: 0.321em; }\n")
 
     result = subprocess.run(
         ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
@@ -734,13 +775,26 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     )
 
     assert result.returncode == 0, result.stderr
-    assert "only pages changed; rendering talk/deck.qmd" in result.stderr
+    if mode == "partial":
+        assert "only pages changed; rendering ./talk/deck.qmd" in result.stderr
+    else:
+        assert "only pages changed" not in result.stderr
     report = (site / "what-changed.html").read_text()
     assert "updated" in report
     assert "reveal.css" not in report
     css_links = re.findall(r'<link\b[^>]*href="([^"]+\.css)"', report)
-    assert "styles.css" in css_links
+    expected_css = "fresh.css" if mode == "new-stylesheet" else "styles.css"
+    theme_css = (
+        expected_css if mode == "partial" else "what-changed-assets/" + expected_css
+    )
+    assert theme_css in css_links
     assert any("site_libs/bootstrap/bootstrap" in href for href in css_links)
+    if mode == "full":
+        assert "0.123em" in (site / theme_css).read_text()
+    elif mode == "new-stylesheet":
+        assert "0.321em" in (site / theme_css).read_text()
+        assert not (site / "fresh.css").exists()
+    assert (site / "styles.css").read_text() == original_css
     for href in css_links:
         assert (site / href).is_file(), f"missing comparison stylesheet: {href}"
     assert (site / "index.html").read_text() == preview
@@ -871,3 +925,44 @@ def test_legacy_plain_quarto_render_gets_page_selection(
     page = (project / "_site/what-changed.html").read_text()
     assert "A new line." in page and "A brand new page." in page
     assert "An untouched page." not in page
+
+
+@pytest.mark.parametrize("at_base", [False, True])
+def test_missing_project_configuration_fails_before_rendering(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    at_base: bool,
+) -> None:
+    if at_base:
+        git(project, "rm", "_quarto.yml")
+        git(project, "commit", "-qm", "baseline without a Quarto project")
+        git(project, "branch", "-f", "main")
+        (project / "_quarto.yml").write_text("project:\n  type: website\n")
+    else:
+        (project / "_quarto.yml").unlink()
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+    result = make(project, tmp_path)
+    assert result.returncode != 0
+    assert "missing Quarto project configuration" in result.stderr
+    assert not log.exists()
+    assert not (project / "_site/what-changed.html").exists()
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+def test_page_name_starting_with_dash_is_not_a_quarto_option(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_page(project, "-draft.qmd", "A previous finding.\n")
+    (project / "-draft.qmd").write_text("A newly drafted paragraph.\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+    result = make(project, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" in result.stderr
+    assert rendered_pages(log) == [["-draft.qmd"], ["-draft.qmd"]]
+    assert "drafted" in (project / "_site/what-changed.html").read_text()

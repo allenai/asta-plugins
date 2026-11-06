@@ -9,7 +9,9 @@
   site's theme. Base discovery uses local Git
   history, with `git fetch origin` optional for a fresher base. The target
   rejects incompatible output directories and render recipes before rendering
-  and fails if the current render produces no HTML.
+  and fails if either version lacks project configuration or the current render
+  produces no HTML. It checks the current Quarto invocation's output override
+  and retains freshly rendered theme assets separately from live preview files.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`

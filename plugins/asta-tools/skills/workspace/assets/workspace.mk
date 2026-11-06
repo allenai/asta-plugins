@@ -182,7 +182,7 @@ render: workspace-assets workspace-viewers
 	fi
 
 # Compare the branch base with the working tree without rendering over the
-# preview's _site/. Only the comparison page is written there. Older plain
+# preview's _site/. Publish the comparison and its supporting render assets there. Older plain
 # Quarto render recipes keep their prerequisites and get a temporary CLI adapter
 # for page selection; custom recipes retain the full-site fallback.
 WHAT_CHANGED_BASE ?=
@@ -229,10 +229,11 @@ what-changed:
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
 	for project in . "$$dir"; do \
-		if [ -f "$$project/_quarto.yml" ] || [ -f "$$project/_quarto.yaml" ]; then \
-			quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
-			$(PYTHON) -c 'import json, pathlib, sys; site = json.load(open(sys.argv[1])).get("config", {}).get("project", {}).get("output-dir"); sys.exit(0 if isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",) else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project"; \
+		if [ ! -f "$$project/_quarto.yml" ] && [ ! -f "$$project/_quarto.yaml" ]; then \
+			echo "what-changed: missing Quarto project configuration at $$project; both versions must define a site with project.output-dir=_site" >&2; exit 1; \
 		fi; \
+		quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
+		$(PYTHON) -c 'import json, pathlib, sys; site = json.load(open(sys.argv[1])).get("config", {}).get("project", {}).get("output-dir"); sys.exit(0 if isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",) else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project"; \
 	done; \
 	files=; basefiles=; partial=; legacy=; \
 	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
@@ -244,8 +245,8 @@ what-changed:
 				case "/$$rel" in */_*|*/.*) partial=; break;; esac; \
 				case "$$rel" in *.qmd|*.md|*.ipynb|*.Rmd) ;; *) partial=; break;; esac; \
 				[ -f "$$rel" ] || { partial=; break; }; \
-				files="$$files $$rel"; \
-				[ ! -f "$$dir/$$rel" ] || basefiles="$$basefiles $$rel"; \
+				files="$$files ./$$rel"; \
+				[ ! -f "$$dir/$$rel" ] || basefiles="$$basefiles ./$$rel"; \
 			done; \
 		fi; \
 		if [ -n "$$partial" ]; then \
@@ -260,6 +261,19 @@ what-changed:
 	fi; \
 	mkdir -p .asta/cache; \
 	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
+	quarto=$$(command -v quarto); mkdir "$$tmp/current-bin"; \
+	printf '%s\n' '#!/bin/sh' 'set -eu' \
+		'if [ "$${1:-}" = render ]; then' \
+		'  found=; previous=; for argument do' \
+		'    if [ "$$previous" = --output-dir ]; then found=$$argument; fi' \
+		'    previous=$$argument' '  done' \
+		'  [ "$$found" = "$$ASTA_WHAT_CHANGED_OUTPUT" ] || { echo "what-changed: current quarto render must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }' \
+		'fi' 'exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"' > "$$tmp/current-bin/quarto"; \
+	chmod +x "$$tmp/current-bin/quarto"; \
+	current_render() { \
+		PATH="$$tmp/current-bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_OUTPUT="$$current" \
+			$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$1" >&2; \
+	}; \
 	if [ -n "$$partial" ]; then \
 		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
 		mkdir -p "$$dir/_site"; \
@@ -278,17 +292,20 @@ what-changed:
 			else $(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES="$$basefiles" >&2; fi \
 				|| { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
 		fi; \
-		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$files" >&2; \
+		current_render "$$files"; \
 	else \
 		$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
-		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES= >&2; \
+		current_render ""; \
 	fi; \
 	find "$$current" -type f -name '*.html' -print -quit | grep -q . || { \
 		echo "what-changed: current render produced no HTML in the temporary output; check the render recipe and HTML format" >&2; exit 1; }; \
 	mkdir -p _site; \
 	theme=; [ -z "$$partial" ] || theme="--theme-root=_site"; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
-		--out _site/what-changed.html --title "Changes since $$label" $$theme; \
+		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/; \
+	rm -rf _site/what-changed-assets; \
+	mv "$$current" _site/what-changed-assets; current=; \
+	mv "$$tmp/what-changed.html" _site/what-changed.html; \
 	echo "what-changed: wrote _site/what-changed.html; open /what-changed.html in make preview (rerun after edits or a preview rebuild)"
 
 # Run the same quality gates CI runs, in one place so local and CI can't

@@ -1069,3 +1069,38 @@ def test_large_repetitive_page_comparison_finishes_promptly(tmp_path, edit):
         assert "firstedit" in markup and "lastedit" in markup
     elif edit in {"replace", "insert"}:
         assert "revisedresearch" in markup or "newfinding" in markup
+
+
+def test_retained_render_theme_prefix_preserves_external_urls_and_fragments(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        '<head><link rel="stylesheet" href="site_libs/bootstrap.css?version=2&amp;x=1">'
+        '<link rel="stylesheet" href="https://example.org/remote.css">'
+        '<link rel="stylesheet" href="//example.org/remote.css">'
+        '<style>body { background: url("images/background.png"); }'
+        ".icon { mask: url(#icon); }</style></head><main>New text</main>"
+    )
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        theme_url_prefix="what-changed-assets/",
+    )
+    assert (
+        'href="what-changed-assets/site_libs/bootstrap.css?version=2&amp;x=1"' in result
+    )
+    assert 'href="https://example.org/remote.css"' in result
+    assert 'href="//example.org/remote.css"' in result
+    assert 'url("what-changed-assets/images/background.png")' in result
+    assert "url(#icon)" in result
+
+
+def test_retained_render_is_excluded_from_page_and_theme_discovery(tmp_path):
+    (tmp_path / "index.html").write_text("<main>The actual preview</main>")
+    assets = tmp_path / "what-changed-assets"
+    assets.mkdir()
+    (assets / "index.html").write_text("<main>Prior comparison render</main>")
+    assert list(WHAT_CHANGED.list_pages(tmp_path)) == ["index.html"]

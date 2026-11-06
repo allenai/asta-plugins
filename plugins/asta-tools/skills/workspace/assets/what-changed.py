@@ -678,6 +678,10 @@ def list_pages(root, out_path=None, paper_dirs=()):
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, _dirs, files in os.walk(root):
+        if os.path.abspath(dirpath) == os.path.abspath(root):
+            # Local comparisons retain their rendered assets here. They are
+            # supporting output, never another set of source pages to compare.
+            _dirs[:] = [name for name in _dirs if name != "what-changed-assets"]
         for f in files:
             if not f.endswith(".html"):
                 continue
@@ -1534,7 +1538,37 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     )
 
 
-def build(old_root, new_root, preview_url, title, out_path=None, theme_root=None):
+def prefix_theme_urls(css, prefix):
+    """Point a temporary render's theme at its retained, served asset tree."""
+
+    def prefixed(url):
+        value = html.unescape(url)
+        parsed = urlsplit(value)
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            return url
+        return html.escape(prefix.rstrip("/") + "/" + value.lstrip("/"), quote=True)
+
+    css = re.sub(
+        r"""(?i)(\bhref\s*=\s*)(["'])([^"']*)\2""",
+        lambda match: f"{match[1]}{match[2]}{prefixed(match[3])}{match[2]}",
+        css,
+    )
+    return re.sub(
+        r"""(?i)(url\(\s*)(["']?)([^"')\s]+)\2(\s*\))""",
+        lambda match: f"{match[1]}{match[2]}{prefixed(match[3])}{match[2]}{match[4]}",
+        css,
+    )
+
+
+def build(
+    old_root,
+    new_root,
+    preview_url,
+    title,
+    out_path=None,
+    theme_root=None,
+    theme_url_prefix="",
+):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1702,10 +1736,15 @@ def build(old_root, new_root, preview_url, title, out_path=None, theme_root=None
     # A partial render holds only the changed pages, so the caller can name the
     # full site this page is served from as the theme source.
     template_doc, theme_css = None, None
-    for pages in (list_pages(theme_root, out_path) if theme_root else {}, new_pages):
+    for root, pages in (
+        (theme_root, list_pages(theme_root, out_path) if theme_root else {}),
+        (new_root, new_pages),
+    ):
         template_doc, depth = pick_template(pages)
         theme_css = extract_theme_css(template_doc, depth) if template_doc else None
         if theme_css:
+            if root == new_root and theme_url_prefix:
+                theme_css = prefix_theme_urls(theme_css, theme_url_prefix)
             break
 
     inner = (
@@ -1766,6 +1805,11 @@ def main(argv=None):
         "--theme-root",
         help="rendered full site to borrow the theme from (default: --new)",
     )
+    ap.add_argument(
+        "--theme-url-prefix",
+        default="",
+        help="served asset prefix when the theme comes from --new",
+    )
     args = ap.parse_args(argv)
     doc = build(
         args.old,
@@ -1774,6 +1818,7 @@ def main(argv=None):
         args.title,
         out_path=args.out,
         theme_root=args.theme_root,
+        theme_url_prefix=args.theme_url_prefix,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
