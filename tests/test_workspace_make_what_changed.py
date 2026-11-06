@@ -1051,9 +1051,21 @@ def test_real_quarto_render_allowlist_does_not_publish_excluded_pages(
         "format:\n  html:\n    theme: none\n"
     )
     (project / excluded).write_text("An excluded finding.\n")
-    git(project, "add", "_quarto.yml", excluded)
+    # Inspection can add version-specific cache ignores. Record that setup
+    # before the baseline so an unrelated .gitignore edit cannot force full
+    # rendering and accidentally make this regression pass.
+    subprocess.run(
+        ["quarto", "inspect", "."],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    git(project, "add", "_quarto.yml", ".gitignore", excluded)
     git(project, "commit", "-qm", "site with an explicit render allowlist")
     git(project, "branch", "-f", "main")
+    assert git(project, "status", "--porcelain") == ""
     (project / excluded).write_text("A revised excluded finding.\n")
     temporary = tmp_path / "real-temporary"
     temporary.mkdir()
