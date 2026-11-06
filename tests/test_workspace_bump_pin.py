@@ -14,6 +14,7 @@ from click.testing import CliRunner
 
 from asta.cli import cli
 from asta.commands import workspace, workspace_versions
+from tests.test_workspace_sync import _archive
 
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
 
@@ -564,7 +565,7 @@ def test_non_git_site_ignores_ancestor_workflow(tmp_path):
     assert workspace.workflow_root(site) == site
 
 
-@pytest.mark.parametrize("other_job", ["site", "source", "both"])
+@pytest.mark.parametrize("other_job", ["source", "both"])
 @pytest.mark.parametrize("command", ["sync", "bump-pin"])
 def test_subfolder_rejects_ambiguous_root_without_changing_pins(
     project, monkeypatch, other_job, command
@@ -658,6 +659,130 @@ def test_root_workflow_with_unrelated_jobs_still_publishes_site(project, monkeyp
     result = _run(site, "0.116.0", monkeypatch)
     assert result.exit_code == 0, result.output
     assert "workspace-quarto-site.yml@v0.116.0" in workflow.read_text()
+    assert not (site / ".github").exists()
+
+
+@pytest.mark.parametrize(
+    "unrelated",
+    UNRELATED_SITE_INPUTS
+    + [
+        "  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n"
+        f"          uses: allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n",
+        f"env:\n  EXAMPLE: allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n",
+        "  check:\n    runs-on: ubuntu-latest\n    steps:\n"
+        f"      - uses: allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n"
+        "        with:\n          site-dir: other\n",
+    ],
+)
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_matching_root_ignores_unrelated_inputs_and_source_text(
+    project, monkeypatch, unrelated, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    text = workflow.read_text() + "    with:\n      site-dir: site\n" + unrelated
+    workflow.write_text(text)
+    _git(root, "add", workspace.WORKFLOW_FILE)
+    _git(root, "commit", "-q", "-m", "Add site and unrelated YAML")
+    site = root / "site"
+    site.mkdir()
+    (site / ".gitignore").write_text(".asta/cache/\n")
+    for name in workspace.UNATTENDED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(workspace, "load_asset", lambda *_: (b"rule\n", _archive({})))
+    assert workspace.workflow_root(site) == root
+    assert workspace.selected_source(site) == ("allenai/asta-plugins", "v0.115.0")
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code == 0, result.output
+    assert workflow.read_text() == text.replace("@v0.115.0", "@v0.116.0", 1)
+    assert not (site / ".github").exists()
+    if command == "bump-pin":
+        assert (
+            _git(root, "show", "HEAD:" + workspace.WORKFLOW_FILE)
+            == workflow.read_text()
+        )
+    else:
+        assert (site / ".asta/cache/workspace.mk").is_file()
+
+
+@pytest.mark.parametrize("style", ["", "|-", ">-"])
+@pytest.mark.parametrize("local_fallback", [False, True])
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_multiline_workspace_source_errors_instead_of_using_fallback(
+    project, monkeypatch, style, local_fallback, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    text = (
+        "jobs:\n  docs:\n"
+        f"    uses: {style}\n"
+        f"      allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n"
+        "    with:\n      site-dir: site\n"
+    )
+    workflow.write_text(text)
+    site = root / "site"
+    site.mkdir()
+    local = site / workspace.WORKFLOW_FILE
+    if local_fallback:
+        local.parent.mkdir(parents=True)
+        local.write_text(STUB.format(ref="v0.113.0"))
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("must reject before fetch")
+    )
+    head = _git(root, "rev-parse", "HEAD")
+    assert workspace.workflow_root(site) == root
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code != 0
+    assert f"Invalid asta-plugins workflow line in {workflow}" in result.output
+    assert "on one line" in result.output
+    assert workflow.read_text() == text
+    assert _git(root, "rev-parse", "HEAD") == head
+    if local_fallback:
+        assert local.read_text() == STUB.format(ref="v0.113.0")
+    else:
+        assert not (site / ".github").exists()
+
+
+@pytest.mark.parametrize(
+    "relative", [".github", ".github/workflows", workspace.WORKFLOW_FILE]
+)
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_subfolder_rejects_symlinked_root_before_reading(
+    project, monkeypatch, tmp_path_factory, relative, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(workflow.read_text() + "    with:\n      site-dir: site\n")
+    original = workflow.read_bytes()
+    site = root / "site"
+    site.mkdir()
+    linked = root / relative
+    external = tmp_path_factory.mktemp("external") / "target"
+    linked.rename(external)
+    linked.symlink_to(external, target_is_directory=external.is_dir())
+    read_text = Path.read_text
+
+    def read(path, *args, **kwargs):
+        assert path != workflow, "must reject before reading the symlink target"
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("must reject before fetch")
+    )
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code != 0
+    assert "must not contain symlinks" in result.output
+    assert workflow.read_bytes() == original
     assert not (site / ".github").exists()
 
 

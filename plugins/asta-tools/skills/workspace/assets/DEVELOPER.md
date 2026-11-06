@@ -146,13 +146,19 @@ Managed rules stay cached until the version selected in `docs.yml` changes or yo
 For a site in a subfolder, keep the single `docs.yml` at the Git repository root
 and set its `with.site-dir` to the site's relative path. Root workflow discovery
 supports the thin stub's block mappings with one `with.site-dir` and one reusable
-workspace `uses` line in the same job; a value in another job, a step, or a script
-does not select the root workflow. Ambiguous multi-site or repeated-source stubs
-are rejected before fetching rules or moving pins. Use a literal unquoted or single-quoted
+workspace call in the same job. Other reusable workflows, step inputs, environment
+values and scripts do not count as workspace calls or site inputs, and pin moves
+leave their text unchanged. Repeated workspace jobs are rejected before fetching
+rules or moving pins. Write the workspace `uses:` and its literal source on one
+line; multiline sources report an error instead of selecting a local fallback.
+Use the same letter case in the project path and `site-dir`.
+Use a literal unquoted or single-quoted
 path, or a double-quoted path with JSON-compatible escapes; YAML-specific
 double-quoted escapes, aliases, expressions and flow mappings are not resolved.
 The managed Makefile watches both existing local and root workflow candidates,
 so editing a candidate the CLI does not select can also trigger a harmless sync.
+When neither workflow exists, managed builds fail even if rules are cached;
+project-only goals and a project-owned `workspace.mk` still bypass managed rules.
 Inside a Git submodule, discovery stays within that submodule's repository.
 
 To adopt managed scripts with `Makefile.managed`, first run `asta workspace sync --refresh --require-scripts`. Only after it succeeds, delete the unmodified `scripts/quarto-check.sh` and `scripts/wait-for-preview.sh` copies and run `make check`. The check verifies every script required by the selected rules: older managed refs require the two shell scripts, while refs with `workspace-viewers` also require the discovery and viewer helpers. Check `asta workspace sync --help` for the option; keep project copies until your CLI supports it. Older plugin refs may still require project scripts even with a newer CLI. If an older CLI has not cached the viewer scripts, local generation warns and skips; keep existing viewer pages until the viewer-capable ref passes the preflight.

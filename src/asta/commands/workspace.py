@@ -54,13 +54,13 @@ MAX_ASSET_BYTES = 1024 * 1024
 
 WORKFLOW_FILE = ".github/workflows/docs.yml"
 SITE_DIR_LINE = re.compile(
-    r"^\s*site-dir:\s*(?:'(?P<single>(?:[^']|'')*)'|"
-    r'"(?P<double>(?:[^"\\]|\\.)*)"|(?P<plain>[^\'"\r\n]+))\s*(?:#.*)?$'
+    r"\s*site-dir:\s*(?:'(?P<single>(?:[^']|'')*)'|"
+    r'"(?P<double>(?:[^"\\]|\\.)*)"|(?P<plain>[^\'"\r\n]+))\s*(?:#.*)?'
 )
 
 
-def _workspace_job_lines(text: str, workflow: Path) -> set[tuple[int, int]]:
-    """Locate job-level uses and with.site-dir keys without rewriting YAML."""
+def _workspace_job_lines(text: str, workflow: Path) -> list[tuple[int, int | None]]:
+    """Locate workspace calls and their own site inputs without rewriting YAML."""
 
     def field(node, name):
         if not isinstance(node, yaml.MappingNode):
@@ -80,8 +80,8 @@ def _workspace_job_lines(text: str, workflow: Path) -> set[tuple[int, int]]:
         raise click.ClickException(f"Invalid YAML in {workflow}") from exc
     jobs = field(document, "jobs")
     if jobs is None or not isinstance(jobs[1], yaml.MappingNode):
-        return set()
-    result = set()
+        return []
+    result = []
     job_names = set()
     for name, job in jobs[1].value:
         if not isinstance(name, yaml.ScalarNode):
@@ -92,9 +92,28 @@ def _workspace_job_lines(text: str, workflow: Path) -> set[tuple[int, int]]:
         uses = field(job, "uses")
         inputs = field(job, "with")
         site_dir = field(inputs[1], "site-dir") if inputs else None
-        if uses and site_dir:
-            result.add((uses[0].start_mark.line, site_dir[0].start_mark.line))
+        if uses and isinstance(uses[1], yaml.ScalarNode) and WORKFLOW in uses[1].value:
+            result.append(
+                (
+                    uses[0].start_mark.line,
+                    site_dir[0].start_mark.line if site_dir else None,
+                )
+            )
     return result
+
+
+def _workflow_source_lines(text: str, workflow: Path) -> list[tuple[int, re.Match]]:
+    lines = text.splitlines()
+    sources = []
+    for index, _ in _workspace_job_lines(text, workflow):
+        match = WORKFLOW_LINE.fullmatch(lines[index])
+        if match is None:
+            raise click.ClickException(
+                f"Invalid asta-plugins workflow line in {workflow}; "
+                "write the workspace uses: and its literal source on one line"
+            )
+        sources.append((index, match))
+    return sources
 
 
 def workflow_root(project: Path) -> Path:
@@ -115,8 +134,10 @@ def workflow_root(project: Path) -> Path:
     )
     if root == project:
         return project
+    workflow = root / WORKFLOW_FILE
+    _reject_workflow_symlinks(workflow)
     try:
-        text = (root / WORKFLOW_FILE).read_text(encoding="utf-8")
+        text = workflow.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return project
     site = project.relative_to(root).as_posix()
@@ -126,6 +147,7 @@ def workflow_root(project: Path) -> Path:
         for index, line in enumerate(lines)
         if re.match(r"^\s*site-dir:", line)
     ]
+    matching_sites = set()
     for site_index, line in site_lines:
         match = SITE_DIR_LINE.fullmatch(line)
         if match is None:
@@ -140,19 +162,15 @@ def workflow_root(project: Path) -> Path:
         else:
             directory = re.split(r"\s+#", match.group("plain"), maxsplit=1)[0].strip()
         if posixpath.normpath(directory) == site:
-            sources = [
-                index
-                for index, line in enumerate(lines)
-                if WORKFLOW in line and not line.lstrip().startswith("#")
-            ]
-            job_lines = _workspace_job_lines(text, root / WORKFLOW_FILE)
-            if not any((index, site_index) in job_lines for index in sources):
-                continue
-            if len(site_lines) != 1 or len(sources) != 1:
+            matching_sites.add(site_index)
+    if matching_sites:
+        job_lines = _workspace_job_lines(text, workflow)
+        if any(site_index in matching_sites for _, site_index in job_lines):
+            if len(job_lines) != 1:
                 raise click.ClickException(
-                    f"Ambiguous workspace workflow: {root / WORKFLOW_FILE}; "
-                    "a subfolder site requires exactly one site-dir and one "
-                    "asta-plugins workspace uses line"
+                    f"Ambiguous workspace workflow: {workflow}; "
+                    "a subfolder site requires exactly one workspace job, "
+                    "with its own site-dir input"
                 )
             return root
     return project
@@ -167,22 +185,17 @@ def selected_source(project: Path) -> tuple[str, str]:
 
 
 def _source_from_workflow(workflow: Path) -> tuple[str, str]:
+    _reject_workflow_symlinks(workflow)
     try:
-        lines = workflow.read_text(encoding="utf-8").splitlines()
+        text = workflow.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise click.ClickException(f"Missing {workflow}") from exc
     except UnicodeDecodeError as exc:
         raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
-    refs = []
-    for line in lines:
-        if WORKFLOW not in line or line.lstrip().startswith("#"):
-            continue
-        match = WORKFLOW_LINE.fullmatch(line)
-        if match is None:
-            raise click.ClickException(
-                f"Invalid asta-plugins workflow line in {workflow}"
-            )
-        refs.append((match.group("repository"), match.group("ref")))
+    refs = [
+        (match.group("repository"), match.group("ref"))
+        for _, match in _workflow_source_lines(text, workflow)
+    ]
     if not refs or len(set(refs)) != 1:
         raise click.ClickException(
             f"Expected one asta-plugins workspace source in {workflow}"
@@ -946,11 +959,11 @@ def _reject_workflow_symlinks(workflow: Path) -> None:
 
 
 def _write_pin(workflow: Path, original: bytes, target: str) -> None:
-    lines = original.decode("utf-8").splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
-            start, end = match.span("ref")
-            lines[index] = line[:start] + target + line[end:]
+    text = original.decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    for index, match in _workflow_source_lines(text, workflow):
+        start, end = match.span("ref")
+        lines[index] = lines[index][:start] + target + lines[index][end:]
     _atomic_write(workflow, "".join(lines).encode("utf-8"))
     try:
         if _source_from_workflow(workflow)[1] != target:

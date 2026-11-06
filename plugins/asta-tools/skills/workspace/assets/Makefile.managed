@@ -33,7 +33,8 @@ include .asta/cache/workspace.mk
 # Watch both candidates conservatively: editing an unused one can also re-sync.
 # Relative paths keep checkout-directory spaces out of Make's prerequisite list.
 ASTA_WORKSPACE_WORKFLOWS := $(sort $(wildcard .github/workflows/docs.yml $(shell git rev-parse --show-cdup 2>/dev/null).github/workflows/docs.yml))
-.asta/cache/workspace.mk: $(ASTA_WORKSPACE_WORKFLOWS)
+# Keep a missing-workflow error even when managed rules are already cached.
+.asta/cache/workspace.mk: $(or $(ASTA_WORKSPACE_WORKFLOWS),.github/workflows/docs.yml)
 	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
 	@printf '%s\n' '$(ASTA_WORKSPACE_SYNC_STATE)' > $(ASTA_VERSION_STAMP)

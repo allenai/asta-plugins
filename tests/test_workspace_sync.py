@@ -265,7 +265,8 @@ def test_multiple_workflow_calls_must_select_one_source(
     project = project_with_ref(tmp_path, "main")
     workflow = project / ".github/workflows/docs.yml"
     original = workflow.read_text()
-    workflow.write_text(original + original)
+    other_job = original.removeprefix("jobs:\n").replace("  docs:", "  other:", 1)
+    workflow.write_text(original + other_job)
     monkeypatch.setattr(
         workspace_module,
         "load_asset",
@@ -274,7 +275,7 @@ def test_multiple_workflow_calls_must_select_one_source(
     args = ["workspace", "sync", "--project", str(project)]
     assert CliRunner().invoke(cli, args).exit_code == 0
 
-    workflow.write_text(original + original.replace("@main", "@latest"))
+    workflow.write_text(original + other_job.replace("@main", "@latest"))
     result = CliRunner().invoke(cli, args)
     assert result.exit_code != 0
     assert "Expected one asta-plugins workspace source" in result.output
@@ -413,6 +414,33 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "managed-preview" in result.stdout
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("site_dir", [".", "site"])
+def test_thin_makefile_requires_a_workflow_even_with_cached_rules(
+    tmp_path: Path, cached: bool, site_dir: str
+) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    project = tmp_path / site_dir
+    project.mkdir(exist_ok=True)
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
+    )
+    (project / "Makefile").write_text(source.read_text())
+    if cached:
+        rules = project / ".asta/cache/workspace.mk"
+        rules.parent.mkdir(parents=True)
+        rules.write_text("preview:\n\t@echo stale-managed-preview\n")
+    result = subprocess.run(
+        ["make", "preview"], cwd=project, text=True, capture_output=True
+    )
+    assert result.returncode != 0
+    assert "No rule to make target '.github/workflows/docs.yml'" in result.stderr
+    assert "stale-managed-preview" not in result.stdout
 
 
 @pytest.mark.parametrize("fail_once", [False, True])

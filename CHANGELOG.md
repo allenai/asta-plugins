@@ -5,8 +5,11 @@
 - A workspace site in a subfolder uses the repository root's `docs.yml` when
   its `site-dir` names the site. Sync and pin moves share that single workflow,
   including paths with spaces; workflows in intermediate folders are ignored.
-  Ambiguous multi-site root workflows are rejected before moving pins, and sync
-  preserves edits to the selected workflow made while fetching rules.
+  Root workflows with multiple workspace jobs are rejected before moving pins;
+  unrelated jobs, inputs and script text are ignored. Multiline workspace sources
+  report a format error instead of silently selecting a fallback. Sync preserves
+  edits to the selected workflow made while fetching rules, and managed builds
+  still require a workflow when rules are cached.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
