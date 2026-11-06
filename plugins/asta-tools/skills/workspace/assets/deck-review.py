@@ -130,7 +130,8 @@ MARK_WORDS_JS = (
     + TEXT_FILTER_JS
     + """
   const st = document.createElement('style'); st.textContent = css; document.head.append(st);
-  const nodes = shownText(Reveal.getCurrentSlide());
+  const slide = Reveal.getCurrentSlide(), own = visibleText(slide).length;
+  const nodes = shownText(slide);
   const b = []; nodes.forEach((nd) => nd.textContent.split(/(\\s+)/).forEach((t) => { if (t.trim()) b.push(t); }));
   const a = old, m = a.length, q = b.length;
   const L = Array.from({ length: m + 1 }, () => new Int32Array(q + 1));
@@ -154,10 +155,11 @@ MARK_WORDS_JS = (
       else { const e = document.createElement('ins'); e.className = 'dr-ins'; e.textContent = t; frag.append(e); }
       idx++;
     });
-    if (k === nodes.length - 1 && dels[q]) frag.append(' ', del(dels[q].join(' ')));
+    // Trailing deletions belong on the slide, never in the section line before it.
+    if (own && k === nodes.length - 1 && dels[q]) frag.append(' ', del(dels[q].join(' ')));
     nd.replaceWith(frag);
   });
-  if (!nodes.length && dels[q]) Reveal.getCurrentSlide().append(del(dels[q].join(' ')));
+  if (!own && dels[q]) slide.append(del(dels[q].join(' ')));
   Reveal.layout();
 }"""
 )

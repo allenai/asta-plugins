@@ -117,8 +117,18 @@ def capture_regressions(root, deck, original):
           catch { return true; }
         }"""), "External requests must be blocked"
         page.evaluate("() => Reveal.getCurrentSlide().replaceChildren()")
-        page.evaluate(review.MARK_WORDS_JS, [review.MARK_CSS, ["deleted", "words"]])
+        # Old tokens are the text as shown, so they start with the unchanged section line.
+        head = page.evaluate(
+            "() => {"
+            + review.TEXT_FILTER_JS
+            + " return shownText(Reveal.getCurrentSlide()).map(n => n.textContent)"
+            + ".join(' ').split(/\\s+/).filter(Boolean); }"
+        )
+        page.evaluate(
+            review.MARK_WORDS_JS, [review.MARK_CSS, head + ["deleted", "words"]]
+        )
         assert page.locator(".present .dr-del").inner_text() == "deleted words"
+        assert page.locator(".asta-slides-section .dr-del").count() == 0
 
     finally:
         renderer.close()
