@@ -1,5 +1,6 @@
 """`make what-changed` writes a local What changed page into `_site/` before any PR."""
 
+import html
 import json
 import os
 import re
@@ -592,9 +593,13 @@ def test_real_quarto_on_92_page_workspace(
     assert result.returncode == 0, result.stderr
     assert "only pages changed" in result.stderr
     report = (site / "what-changed.html").read_text()
-    visible = re.sub(r"<[^>]+>", "", report)
+    # Inline diffs split phrases across <ins>/<del> tags. Check the new reading
+    # with deletions removed, so replacements are tested as well as additions.
+    current_text = html.unescape(
+        re.sub(r"<[^>]+>", "", re.sub(r"(?s)<del\b[^>]*>.*?</del>", "", report))
+    )
     for text in expected:
-        assert text in visible
+        assert text in current_text
     assert "<ins" in report
     assert "An unchanged research page" not in report
     assert (site / "index.html").read_text() == "Live preview output must stay intact."
