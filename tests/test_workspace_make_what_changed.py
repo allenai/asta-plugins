@@ -545,6 +545,67 @@ def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules:
 
 
 @pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
+@pytest.mark.parametrize("legacy", [False, True])
+def test_real_quarto_slide_only_edit_keeps_site_theme(
+    project: Path, tmp_path: Path, legacy: bool
+) -> None:
+    """A deck-only comparison borrows real site CSS with working asset URLs."""
+    (project / "_quarto.yml").write_text(
+        "project:\n  type: website\nformat:\n  html:\n"
+        "    theme: cosmo\n    css: styles.css\n"
+    )
+    (project / "styles.css").write_text("body { letter-spacing: 0.01em; }\n")
+    (project / ".gitignore").write_text(
+        (project / ".gitignore").read_text() + ".quarto/\n"
+    )
+    deck = project / "talk/deck.qmd"
+    deck.parent.mkdir()
+    deck.write_text(
+        "---\ntitle: Research talk\nformat: revealjs\n---\n\n"
+        "## Finding\n\nThe original finding.\n"
+    )
+    git(project, "add", "_quarto.yml", "styles.css", ".gitignore", "talk")
+    git(project, "commit", "-qm", "themed site baseline")
+    git(project, "branch", "-f", "main")
+    if legacy:
+        use_legacy_cached_rules(project)
+    subprocess.run(
+        ["quarto", "render", "index.qmd"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    site = project / "_site"
+    preview = (site / "index.html").read_text()
+    deck.write_text(deck.read_text().replace("original", "updated"))
+
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed; rendering talk/deck.qmd" in result.stderr
+    report = (site / "what-changed.html").read_text()
+    assert "updated" in report
+    assert "reveal.css" not in report
+    css_links = re.findall(r'<link\b[^>]*href="([^"]+\.css)"', report)
+    assert "styles.css" in css_links
+    assert any("site_libs/bootstrap/bootstrap" in href for href in css_links)
+    for href in css_links:
+        assert (site / href).is_file(), f"missing comparison stylesheet: {href}"
+    assert (site / "index.html").read_text() == preview
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
 @pytest.mark.parametrize("edit", ["page", "slides", "multiple"])
 @pytest.mark.parametrize("legacy", [False, True])
 def test_real_quarto_on_92_page_workspace(
