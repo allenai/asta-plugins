@@ -37,13 +37,27 @@ TEXT_FILTER_JS = """const visibleText = (s) => {
   const nodes = []; let n;
   while ((n = w.nextNode())) if (n.textContent.trim()) nodes.push(n);
   return nodes;
+};
+// What the audience reads on the current slide: asta-slides' section line, drawn
+// outside the slide's own HTML, and then the slide.
+const shownText = (s) => {
+  const line = document.querySelector('.reveal .asta-slides-section');
+  const head = line && !line.hidden && getComputedStyle(line).display !== 'none' ? visibleText(line) : [];
+  return head.concat(visibleText(s));
 };"""
 
 LIST_JS = (
     "() => {"
     + TEXT_FILTER_JS
     + """
-  return Reveal.getSlides().map(s => visibleText(s).map(n => n.textContent).join(' ').replace(/\\s+/g, ' ').trim());
+  // Visit each slide so slide-dependent chrome (the section line) shows its own state.
+  const texts = Reveal.getSlides().map(s => {
+    const x = Reveal.getIndices(s);
+    Reveal.slide(x.h, x.v || 0, Infinity);
+    return shownText(s).map(n => n.textContent).join(' ').replace(/\\s+/g, ' ').trim();
+  });
+  Reveal.slide(0, 0, 0);
+  return texts;
 }"""
 )
 
@@ -116,7 +130,7 @@ MARK_WORDS_JS = (
     + TEXT_FILTER_JS
     + """
   const st = document.createElement('style'); st.textContent = css; document.head.append(st);
-  const nodes = visibleText(Reveal.getCurrentSlide());
+  const nodes = shownText(Reveal.getCurrentSlide());
   const b = []; nodes.forEach((nd) => nd.textContent.split(/(\\s+)/).forEach((t) => { if (t.trim()) b.push(t); }));
   const a = old, m = a.length, q = b.length;
   const L = Array.from({ length: m + 1 }, () => new Int32Array(q + 1));
@@ -266,17 +280,22 @@ class Renderer:
 def classify(old, new, pairs, same_image=None, same_text=None):
     """Rows in deck order as (kind, new_index, old_index), and removed old indices.
 
-    ``same_image(old_index, new_index)`` decides markup-equal slides; without it
-    they count as unchanged.
+    ``same_text(old_index, new_index)`` compares the text as shown, so a slide
+    whose markup is equal but whose section line changed counts as changed.
+    ``same_image`` then decides text-equal slides; without it they count as
+    unchanged.
     """
     rows = []
     for index in range(len(new)):
         before = pairs.get(index)
         if before is None:
             rows.append(("new", index, None))
-        elif old[before]["body"] != new[index]["body"] and (
-            same_text is None or not same_text(before, index)
+        elif (
+            old[before]["body"] != new[index]["body"]
+            if same_text is None
+            else not same_text(before, index)
         ):
+            # Rendered text includes chrome outside the markup, such as the section line.
             rows.append(("changed", index, before))
         elif same_image is not None and not same_image(before, index):
             rows.append(("look", index, before))

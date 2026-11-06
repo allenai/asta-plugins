@@ -440,3 +440,49 @@ def test_reorder_only_omits_invisible_text_changes():
     )
     assert "Slides reordered." in result[0]
     assert "slide-diff" not in result[0]
+
+
+def test_retitled_slide_after_inserted_slides_is_one_edit():
+    body = "<p>The example site is built by CI and deployed with every change, so readers always see the current workspace.</p>"
+    old = [
+        {"id": "intro", "body": "<h2>Intro</h2><p>Start.</p>", "anchor": "intro"},
+        {
+            "id": "a-live-example-rebuilt-from-each-release",
+            "body": "<h2>A live example, rebuilt from each release</h2>" + body,
+            "anchor": "a",
+        },
+    ]
+    added = [
+        {
+            "id": f"new-{i}",
+            "body": f"<h2>Added {i}</h2><p>Unrelated {i}.</p>",
+            "anchor": f"n{i}",
+        }
+        for i in range(4)
+    ]
+    new = [
+        old[0],
+        *added,
+        {
+            "id": "a-live-example-rebuilt-on-every-merge-and-a-live-pr",
+            "body": "<h2>A live example, rebuilt on every merge, and a live PR</h2>"
+            + body,
+            "anchor": "b",
+        },
+    ]
+    assert what_changed.match_slides(old, new) == {0: 0, 5: 1}
+
+
+def test_section_line_change_with_equal_markup_is_a_text_change():
+    old = _slides("<h2>A</h2>", "<h2>B</h2>")
+    new = _slides("<h2>A</h2>", "<h2>B</h2>")
+    shown_old = ["Part A", "Part B"]
+    shown_new = ["New part Part A", "Part B"]
+    rows, _ = deck_review.classify(
+        old,
+        new,
+        {0: 0, 1: 1},
+        lambda o, n: False,
+        lambda o, n: shown_old[o] == shown_new[n],
+    )
+    assert [kind for kind, _, _ in rows] == ["changed", "look"]

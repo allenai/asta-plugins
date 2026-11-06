@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -123,6 +124,96 @@ def capture_regressions(root, deck, original):
         renderer.close()
 
 
+def typical_edit(root, deck, original):
+    """Slides and a section inserted before others, one retitle and one text edit."""
+    assert 'data-asta-section="1"' in original, "the example deck has sections"
+    slides = changed.reveal_slides(original)
+    shifted = re.sub(
+        r'data-asta-section="(\d+)"',
+        lambda m: f'data-asta-section="{int(m.group(1)) + 1}"',
+        original,
+    )
+    first = re.search(r'<section\b[^>]*data-asta-section="2"', shifted)
+    inserted = "".join(
+        f'<section id="review-inserted-{i}" class="slide level2" data-asta-section="1" '
+        f'data-asta-section-name="Inserted"><h2>Inserted slide {i}</h2>'
+        f"<p>Brand new material {i}.</p></section>"
+        for i in range(2)
+    )
+    after = shifted[: first.start()] + inserted + shifted[first.start() :]
+    retitled = slides[-1]
+    title = re.search(r"<h2[^>]*>(.*?)</h2>", retitled["body"], re.S)
+    assert title, "the last slide has a title"
+    after = after.replace(
+        retitled["body"],
+        retitled["body"].replace(title.group(1), title.group(1) + ", now retitled", 1),
+        1,
+    ).replace('id="' + retitled["id"] + '"', 'id="review-retitled"', 1)
+    edited = next(
+        slide
+        for slide in slides[1:-1]
+        if "<p>" in slide["body"] and "data-asta-section" not in slide["body"]
+    )
+    after = after.replace(
+        edited["body"], edited["body"].replace("<p>", "<p>Freshly edited ", 1), 1
+    )
+    (root / "old" / deck).write_text(original)
+    (root / "new" / deck).write_text(after)
+    old, new = changed.reveal_slides(original), changed.reveal_slides(after)
+    pairs = changed.match_slides(old, new)
+    renderer = review.Renderer(root / "old", root / "new")
+    try:
+        rendered = review.review(
+            str(deck),
+            str(deck),
+            str(root / "typical-images"),
+            "images",
+            old,
+            new,
+            pairs,
+            renderer,
+        )
+        data = json.loads(
+            rendered.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
+        )
+        kinds = {item["n"]: item["kind"] for item in data["items"]}
+        assert "look" not in kinds.values(), kinds
+        assert list(kinds.values()).count("new") == 2, kinds
+        assert data["removed"] == [], "the retitled slide is one edit"
+        retitled_n = len(new)
+        assert kinds[retitled_n] == "changed", kinds
+        # Every changed slide has its words marked, the section line's new word included.
+        old_text, new_text = (
+            renderer.texts("old", str(deck)),
+            renderer.texts("new", str(deck)),
+        )
+        page = renderer.page("new", str(deck))
+        for n, kind in kinds.items():
+            if kind != "changed":
+                continue
+            o = pairs[n - 1]
+            assert old_text[o] != new_text[n - 1], n
+            page.reload()
+            page.wait_for_function("() => window.Reveal && Reveal.isReady()")
+            page.evaluate(review.GOTO_JS, n - 1)
+            page.evaluate(review.MARK_WORDS_JS, [review.MARK_CSS, old_text[o].split()])
+            marks = page.locator(".dr-ins, .dr-del")
+            assert marks.count() > 0, f"slide {n} has no marked words"
+            if "Inserted" in new_text[n - 1] and "Inserted" not in old_text[o]:
+                assert (
+                    "Inserted"
+                    in page.locator(".asta-slides-section .dr-ins").all_inner_texts()
+                ), n
+        section_changed = [
+            n
+            for n, k in kinds.items()
+            if k == "changed" and "Inserted" in new_text[n - 1]
+        ]
+        assert len(section_changed) >= 3, kinds
+    finally:
+        renderer.close()
+
+
 def decode_review_images(page):
     page.evaluate("""async () => {
       await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
@@ -142,6 +233,7 @@ def check(site, artifacts):
         slides = changed.reveal_slides(original)
         assert len(slides) >= 5
         capture_regressions(root, deck, original)
+        typical_edit(root, deck, original)
         # Root-relative images resolve at each site origin, including lazy-loaded images.
         image = '<img data-src="/review-image.svg" alt="Review image" width="300" height="100">'
         baseline = original.replace(slides[2]["body"], slides[2]["body"] + image, 1)

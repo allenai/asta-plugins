@@ -1424,22 +1424,45 @@ def match_slides(old, new):
     )
     unmatched_old = [index for index in range(len(old)) if index not in pairs.values()]
     unmatched_new = [index for index in range(len(new)) if index not in pairs]
-    matcher = difflib.SequenceMatcher(
-        None,
-        [old[i]["body"] for i in unmatched_old],
-        [new[i]["body"] for i in unmatched_new],
-        autojunk=False,
-    )
-    for operation, a, b, c, d in matcher.get_opcodes():
-        if operation in {"equal", "replace"}:
-            for ni, oi in zip(unmatched_new[c:d], unmatched_old[a:b]):
-                # Keep renamed slides when their text is similar; unrelated
-                # additions/removals must not become a fabricated edit.
-                before = re.sub(r"<[^>]+>", "", old[oi]["body"])
-                after = re.sub(r"<[^>]+>", "", new[ni]["body"])
-                similarity = difflib.SequenceMatcher(None, before, after)
-                if similarity.quick_ratio() >= 0.5 and similarity.ratio() >= 0.5:
-                    pairs[ni] = oi
+    pairs.update(_pair_similar(old, new, unmatched_old, unmatched_new))
+    return pairs
+
+
+def _pair_similar(old, new, olds, news):
+    """Pair unmatched slides in order by text similarity, e.g. a retitled slide.
+
+    Positional pairing let an inserted slide take a retitled slide's place, so
+    the edit showed as one removed and one new slide. Unrelated additions and
+    removals stay unpaired.
+    """
+    if not olds or not news or len(olds) * len(news) > 2500:
+        return {}
+    text = [re.sub(r"<[^>]+>", "", old[i]["body"]) for i in olds]
+    after = [re.sub(r"<[^>]+>", "", new[j]["body"]) for j in news]
+
+    def similar(a, b):
+        matcher = difflib.SequenceMatcher(None, text[a], after[b], autojunk=False)
+        if matcher.quick_ratio() < 0.5:
+            return 0.0
+        ratio = matcher.ratio()
+        return ratio if ratio >= 0.5 else 0.0
+
+    m, n = len(olds), len(news)
+    score = [[similar(a, b) for b in range(n)] for a in range(m)]
+    best = [[0.0] * (n + 1) for _ in range(m + 1)]
+    for a in range(m - 1, -1, -1):
+        for b in range(n - 1, -1, -1):
+            take = score[a][b] + best[a + 1][b + 1] if score[a][b] else 0.0
+            best[a][b] = max(best[a + 1][b], best[a][b + 1], take)
+    pairs, a, b = {}, 0, 0
+    while a < m and b < n:
+        if score[a][b] and best[a][b] == score[a][b] + best[a + 1][b + 1]:
+            pairs[news[b]] = olds[a]
+            a, b = a + 1, b + 1
+        elif best[a][b] == best[a + 1][b]:
+            a += 1
+        else:
+            b += 1
     return pairs
 
 
