@@ -14,7 +14,7 @@ from click.testing import CliRunner
 
 from asta.cli import cli
 from asta.commands import workspace, workspace_versions
-from tests.test_workspace_sync import _archive
+from tests._workspace_helpers import _archive
 
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
 
@@ -215,10 +215,10 @@ def test_failed_validation_restores_workflow(project, monkeypatch) -> None:
     original = workflow.read_bytes()
     selected_source = workspace._source_from_workflow
 
-    def validate(project):
+    def validate(workflow):
         if b"@v0.116.0" in workflow.read_bytes():
             raise click.ClickException("validation failed")
-        return selected_source(project)
+        return selected_source(workflow)
 
     monkeypatch.setattr(workspace, "_source_from_workflow", validate)
     result = _run(root, "0.116.0", monkeypatch)
@@ -460,7 +460,7 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
     if site_dir != ".":
         cached = check()
         assert cached.returncode == 0, cached.stderr
-        assert "workspace.mk already cached from asta-plugins@v0.115.0" in cached.stdout
+        assert "workspace.mk already cached" not in cached.stdout
         assert "checked-v0.115.0" in cached.stdout
     # Force a strict timestamp ordering even on coarse-resolution filesystems.
     old = time.time() - 10
@@ -588,7 +588,7 @@ def test_subfolder_rejects_ambiguous_root_without_changing_pins(
     text = workflow.read_text() + "    with:\n      site-dir: site\n  other:\n"
     if other_job in ("source", "both"):
         text += f"    uses: allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n"
-    if other_job in ("site", "both"):
+    if other_job == "both":
         text += "    with:\n      site-dir: other\n"
     workflow.write_text(text)
     site = root / "site"
@@ -865,3 +865,86 @@ def test_unrelated_malformed_root_workflow_keeps_local_fallback(project):
     local.parent.mkdir(parents=True)
     local.write_text(STUB.format(ref="v0.113.0"))
     assert workspace.selected_source(site)[1] == "v0.113.0"
+
+
+@pytest.mark.parametrize(
+    "relative", [".github", ".github/workflows", workspace.WORKFLOW_FILE]
+)
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_symlinked_root_preserves_valid_local_workflow(
+    project, monkeypatch, tmp_path_factory, relative, command
+):
+    root = project("v0.115.0")
+    root_workflow = root / workspace.WORKFLOW_FILE
+    linked = root / relative
+    external = tmp_path_factory.mktemp("external") / "target"
+    linked.rename(external)
+    linked.symlink_to(external, target_is_directory=external.is_dir())
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.115.0"))
+    (site / ".gitignore").write_text(".asta/cache/\n")
+    _git(root, "add", "site")
+    _git(root, "commit", "-q", "-m", "Local workspace")
+    original = root_workflow.read_bytes()
+    read_text = Path.read_text
+
+    def read(path, *args, **kwargs):
+        assert path != root_workflow, "root symlink must not be read"
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read)
+    for name in workspace.UNATTENDED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(workspace, "load_asset", lambda *_: (b"rules", _archive({})))
+    assert workspace.workflow_root(site) == site
+    result = CliRunner().invoke(cli, ["workspace", command, "--project", str(site)])
+    assert result.exit_code == 0, result.output
+    assert "@v0.116.0" in local.read_text()
+    assert root_workflow.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("directory", "value", "prefix"),
+    [
+        ("site's notes", "site's notes", ""),
+        ("site\tnotes", '"site\\tnotes"', ""),
+        ("site", "&path site", ""),
+        ("site", "*path", "env:\n  SITE: &path site\n"),
+        ("site notes", '"site\\x20notes"', ""),
+        ("site notes", '"site\\ notes"', ""),
+    ],
+)
+def test_subfolder_uses_yaml_decoded_site_value(
+    project, monkeypatch, directory, value, prefix
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(
+        prefix + STUB.format(ref="v0.115.0") + f"    with:\n      site-dir: {value}\n"
+    )
+    _git(root, "add", workspace.WORKFLOW_FILE)
+    _git(root, "commit", "-q", "-m", "Site scalar")
+    site = root / directory
+    site.mkdir()
+    assert workspace.workflow_root(site) == root
+    result = _run(site, "0.116.0", monkeypatch)
+    assert result.exit_code == 0, result.output
+    assert f"site-dir: {value}\n" in workflow.read_text()
+    assert "@v0.116.0" in workflow.read_text()
+
+
+@pytest.mark.parametrize("character", ["\v", "\f", "\x1c", "\x1d", "\x1e"])
+def test_yaml_rejects_extra_splitlines_characters_before_pin_edit(
+    project, monkeypatch, character
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = ("# comment" + character + "\n" + STUB.format(ref="v0.115.0")).encode()
+    workflow.write_bytes(original)
+    result = _run(root, "0.116.0", monkeypatch)
+    assert result.exit_code != 0
+    assert "Invalid YAML" in result.output
+    assert workflow.read_bytes() == original

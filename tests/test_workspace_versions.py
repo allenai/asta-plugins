@@ -10,7 +10,7 @@ from asta import __version__
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
 from asta.commands import workspace_versions
-from tests.test_workspace_sync import _archive, project_with_ref
+from tests._workspace_helpers import _archive, project_with_ref
 
 RULES = Path(__file__).parents[1] / workspace_module.ASSET
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
@@ -498,3 +498,43 @@ def test_published_rules_load_with_this_release() -> None:
     assert workspace_versions.cli_version(__version__) >= workspace_versions.Version(
         workspace_versions.format_release(needed)
     )
+
+
+@pytest.mark.parametrize("problem", ["root-duplicate", "selected-symlink"])
+def test_sync_conflict_keeps_underlying_workflow_error(tmp_path, monkeypatch, problem):
+    import subprocess
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    project = project_with_ref(root, "main")
+    (project / ".gitignore").write_text(".asta/cache/\n")
+    docs = project / workspace_module.WORKFLOW_FILE
+    original = docs.read_bytes()
+
+    def fetch(*_args):
+        if problem == "root-duplicate":
+            candidate = root / workspace_module.WORKFLOW_FILE
+            candidate.parent.mkdir(parents=True)
+            candidate.write_text(
+                original.decode()
+                + "    with:\n      site-dir: project\n      site-dir: project\n"
+            )
+        else:
+            external = tmp_path / "external.yml"
+            docs.rename(external)
+            docs.symlink_to(external)
+        return b"rule\n", _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0, result.output
+    assert "changed during sync" in result.output
+    assert (
+        "Duplicate site-dir"
+        if problem == "root-duplicate"
+        else "must not contain symlinks"
+    ) in result.output
+    assert docs.read_bytes() == original
+    assert not (project / ".asta/cache/workspace.mk").exists()
+    assert not (project / ".asta/cache/workspace.json").exists()

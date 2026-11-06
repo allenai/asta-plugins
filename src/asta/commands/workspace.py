@@ -54,13 +54,11 @@ MAX_ASSET_BYTES = 1024 * 1024
 
 
 WORKFLOW_FILE = ".github/workflows/docs.yml"
-SITE_DIR_LINE = re.compile(
-    r"\s*site-dir:\s*(?:'(?P<single>(?:[^']|'')*)'|"
-    r'"(?P<double>(?:[^"\\]|\\.)*)"|(?P<plain>[^\'"\r\n]+))\s*(?:#.*)?'
-)
 
 
-def _workspace_job_lines(text: str, workflow: Path) -> list[tuple[int, int | None]]:
+def _workspace_job_lines(
+    text: str, workflow: Path
+) -> list[tuple[int, yaml.ScalarNode | None]]:
     """Locate workspace calls and their own site inputs without rewriting YAML."""
 
     def field(node, name):
@@ -101,7 +99,9 @@ def _workspace_job_lines(text: str, workflow: Path) -> list[tuple[int, int | Non
             result.append(
                 (
                     uses[0].start_mark.line,
-                    site_dir[0].start_mark.line if site_dir else None,
+                    site_dir[1]
+                    if site_dir and isinstance(site_dir[1], yaml.ScalarNode)
+                    else None,
                 )
             )
     return result
@@ -141,44 +141,50 @@ def workflow_root(project: Path) -> Path:
     if root == project:
         return project
     workflow = root / WORKFLOW_FILE
-    _reject_workflow_symlinks(workflow)
+    try:
+        _reject_workflow_symlinks(workflow)
+    except click.ClickException:
+        local = project / WORKFLOW_FILE
+        _reject_workflow_symlinks(local)
+        if local.is_file():
+            return project
+        raise
     try:
         text = workflow.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return project
     site = project.relative_to(root).as_posix()
-    lines = text.splitlines()
-    site_lines = [
-        (index, line)
-        for index, line in enumerate(lines)
-        if re.match(r"^\s*site-dir:", line)
-    ]
-    matching_sites = set()
-    for site_index, line in site_lines:
-        match = SITE_DIR_LINE.fullmatch(line)
-        if match is None:
-            continue
-        if match.group("single") is not None:
-            directory = match.group("single").replace("''", "'")
-        elif match.group("double") is not None:
-            try:
-                directory = json.loads('"' + match.group("double") + '"')
-            except ValueError:
-                continue
-        else:
-            directory = re.split(r"\s+#", match.group("plain"), maxsplit=1)[0].strip()
-        if posixpath.normpath(directory) == site:
-            matching_sites.add(site_index)
-    if matching_sites:
+    try:
         job_lines = _workspace_job_lines(text, workflow)
-        if any(site_index in matching_sites for _, site_index in job_lines):
-            if len(job_lines) != 1:
-                raise click.ClickException(
-                    f"Ambiguous workspace workflow: {workflow}; "
-                    "a subfolder site requires exactly one workspace job, "
-                    "with its own site-dir input"
-                )
-            return root
+    except click.ClickException:
+        # Keep a malformed, unrelated root from blocking the local workflow.
+        # A matching literal site input still makes its validation error relevant.
+        for line in text.splitlines():
+            if not re.match(r"^[ \t]*site-dir:", line):
+                continue
+            try:
+                entry = yaml.compose(line.lstrip(), Loader=yaml.BaseLoader)
+            except yaml.YAMLError:
+                continue
+            if isinstance(entry, yaml.MappingNode):
+                value = entry.value[0][1]
+                if (
+                    isinstance(value, yaml.ScalarNode)
+                    and posixpath.normpath(value.value) == site
+                ):
+                    raise
+        return project
+    if any(
+        directory is not None and posixpath.normpath(directory.value) == site
+        for _, directory in job_lines
+    ):
+        if len(job_lines) != 1:
+            raise click.ClickException(
+                f"Ambiguous workspace workflow: {workflow}; "
+                "a subfolder site requires exactly one workspace job, "
+                "with its own site-dir input"
+            )
+        return root
     return project
 
 
@@ -408,8 +414,22 @@ workspace.add_command(overleaf)
     is_flag=True,
     help="Verify all scripts required by the selected rules before removing project copies.",
 )
-def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
+@click.option(
+    "--check-selection",
+    is_flag=True,
+    help="Validate the selected workflow offline, without fetching rules or moving pins.",
+)
+def sync(
+    project: Path, refresh: bool, require_scripts: bool, check_selection: bool
+) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
+    if check_selection:
+        if refresh or require_scripts:
+            raise click.UsageError(
+                "--check-selection cannot be combined with --refresh or --require-scripts"
+            )
+        selected_source(project)
+        return
     archive = sync_workspace(project, refresh, require_scripts)
     if archive is not None and archive_has_asta_theme(archive):
         makefile = project.resolve() / "Makefile"
@@ -640,14 +660,16 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
             _reject_workflow_symlinks(workflow)
             if workflow.read_bytes() == original and workflow_file(project) == workflow:
                 return
-        except (OSError, click.ClickException):
-            pass
+        except (OSError, click.ClickException) as exc:
+            cause = f": {exc}"
+        else:
+            cause = ""
         # Make can otherwise run newer cached rules after this failed sync.
         cache = project / ".asta/cache"
         for name in ("workspace.mk", "workspace.json"):
             (cache / name).unlink(missing_ok=True)
         raise click.ClickException(
-            f"{workflow} changed during sync or became unreadable; "
+            f"{workflow} changed during sync or became unreadable{cause}; "
             "left it unchanged and discarded cached rules. Run sync again."
         )
 

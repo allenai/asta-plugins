@@ -38,12 +38,17 @@ ASTA_WORKSPACE_WORKFLOWS := $(sort $(wildcard .github/workflows/docs.yml $(shell
 	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
 	@printf '%s\n' '$(ASTA_WORKSPACE_SYNC_STATE)' > $(ASTA_VERSION_STAMP)
-# A root candidate may publish another site. Let sync validate it even when
-# cached rules are newer; skip the include restart to avoid a remake loop.
+# Validate a root candidate offline, without touching the cache or moving pins.
+# Order-only validation does not force a remake of otherwise up-to-date rules.
+# The parent Make validates before recipes start; its recursive makes skip it.
+ifeq ($(MAKELEVEL),0)
 ifeq ($(MAKE_RESTARTS),)
 ifeq ($(wildcard .github/workflows/docs.yml),)
 .PHONY: asta-workspace-check-workflow
-.asta/cache/workspace.mk: asta-workspace-check-workflow
+.asta/cache/workspace.mk: | asta-workspace-check-workflow
+asta-workspace-check-workflow:
+	@asta workspace sync --check-selection
+endif
 endif
 endif
 endif

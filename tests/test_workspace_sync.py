@@ -17,21 +17,9 @@ from click.testing import CliRunner
 
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
+from tests._workspace_helpers import _archive, project_with_ref
 
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
-
-
-def project_with_ref(
-    tmp_path: Path, ref: str, repository: str = "allenai/asta-plugins"
-) -> Path:
-    project = tmp_path / "project"
-    workflow = project / ".github/workflows/docs.yml"
-    workflow.parent.mkdir(parents=True)
-    workflow.write_text(
-        "jobs:\n  docs:\n"
-        f"    uses: {repository}/.github/workflows/workspace-quarto-site.yml@{ref}\n"
-    )
-    return project
 
 
 def test_sync_uses_workflow_ref_and_refreshes_only_when_requested(
@@ -899,24 +887,6 @@ def test_archive_reader_wraps_incomplete_http_response(monkeypatch) -> None:
     monkeypatch.setattr(workspace_module, "urlopen", interrupted)
     with pytest.raises(workspace_module.click.ClickException):
         workspace_module.load_asset("allenai/asta-plugins", "a" * 40)
-
-
-def _archive(files: dict[str, bytes], *, scripts: bool = True) -> bytes:
-    if scripts:
-        files = {
-            **{
-                workspace_module.ASSET_DIR + name: b"script"
-                for name in workspace_module.SCRIPTS
-            },
-            **files,
-        }
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
-        for name, data in files.items():
-            info = tarfile.TarInfo(f"asta-plugins-abc/{name}")
-            info.size = len(data)
-            bundle.addfile(info, io.BytesIO(data))
-    return buffer.getvalue()
 
 
 def test_sync_caches_managed_scripts_from_archive(tmp_path: Path, monkeypatch) -> None:
@@ -1997,3 +1967,126 @@ def test_all_asset_installers_require_the_same_theme_files():
         match = re.search(r'theme_files="([^"]+)"', (assets / name).read_text())
         assert match is not None
         assert tuple(match[1].split()) == workspace_module.ASTA_THEME_FILES
+
+
+@pytest.mark.parametrize("ref", ["v0.115.0", "latest"])
+def test_selection_check_is_offline_and_leaves_workflow_and_cache_untouched(
+    tmp_path, monkeypatch, ref
+):
+    project = project_with_ref(tmp_path, ref)
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: (b"rule", _archive({}))
+    )
+    assert (
+        CliRunner()
+        .invoke(cli, ["workspace", "sync", "--project", str(project)])
+        .exit_code
+        == 0
+    )
+    before = {
+        p: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in project.rglob("*")
+        if p.is_file()
+    }
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: pytest.fail("check must not fetch")
+    )
+    monkeypatch.setattr(
+        workspace_module.workspace_versions,
+        "installed",
+        lambda: pytest.fail("check must not probe release"),
+    )
+    result = CliRunner().invoke(
+        cli, ["workspace", "sync", "--check-selection", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert before == {
+        p: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in project.rglob("*")
+        if p.is_file()
+    }
+
+
+@pytest.mark.parametrize("flag", ["--refresh", "--require-scripts"])
+def test_selection_check_rejects_mutating_sync_options(flag):
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--check-selection", flag])
+    assert result.exit_code == 2
+    assert "cannot be combined" in result.output
+
+
+@pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
+@pytest.mark.parametrize("ref", ["v0.115.0", "latest"])
+def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
+    tmp_path, ref
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    workflow = tmp_path / workspace_module.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}{ref}\n    with:\n      site-dir: site\n"
+    )
+    project = tmp_path / "site"
+    project.mkdir()
+    (project / ".gitignore").write_text(".asta/cache/\n")
+    repo = Path(__file__).resolve().parents[1]
+    assets = repo / "plugins/asta-tools/skills/workspace/assets"
+    (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    log = tools / "calls"
+    offline = tools / "offline"
+    helper = tools / "cli.py"
+    rules = ".PHONY: preview left right leaf\npreview: left right\nleft right:\n\t+$(MAKE) leaf\nleaf:\n\t@echo recursive-build\n"
+    helper.write_text(
+        "import sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(repo / 'src')!r})\n"
+        "if sys.argv[1:] == ['--version']: print('asta, version 0.124.0'); sys.exit(0)\n"
+        "from asta.cli import cli\nfrom asta.commands import workspace, workspace_versions\n"
+        f"offline = Path({str(offline)!r})\n"
+        "workspace_versions.installed = lambda: '0.116.0' if offline.exists() else '0.115.0'\n"
+        f"if sys.argv[1:3] == ['workspace', 'sync'] and '--help' not in sys.argv:\n    with open({str(log)!r}, 'a') as stream: stream.write('check\\n' if '--check-selection' in sys.argv else 'sync\\n')\n"
+        "def fetch(*args):\n"
+        "    if offline.exists(): raise AssertionError('offline build attempted a fetch')\n"
+        f"    return {rules.encode()!r}, b'archive'\n"
+        "workspace.load_asset = fetch\nworkspace.load_scripts = lambda _: {}\ncli()\n"
+    )
+    executable = tools / "asta"
+    executable.write_text(
+        f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(helper))} "$@"\n'
+    )
+    executable.chmod(0o755)
+    env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]}
+    for name in workspace_module.UNATTENDED_ENV:
+        env.pop(name, None)
+
+    def build():
+        result = subprocess.run(
+            ["make", "-j2", "preview"],
+            cwd=project,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=20,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.count("recursive-build") == 2
+
+    build()
+    assert log.read_text().splitlines().count("sync") == 1
+    cache = project / ".asta/cache"
+    before = {
+        p: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in cache.rglob("*")
+        if p.is_file()
+    }
+    original = workflow.read_bytes()
+    log.write_text("")
+    offline.touch()
+    build()
+    assert log.read_text() == "check\n"
+    assert workflow.read_bytes() == original
+    assert before == {
+        p: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in cache.rglob("*")
+        if p.is_file()
+    }
