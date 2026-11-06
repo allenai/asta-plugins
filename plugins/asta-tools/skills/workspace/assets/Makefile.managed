@@ -40,10 +40,12 @@ ASTA_WORKSPACE_WORKFLOWS := $(sort $(wildcard .github/workflows/docs.yml $(shell
 	@printf '%s\n' '$(ASTA_WORKSPACE_SYNC_STATE)' > $(ASTA_VERSION_STAMP)
 # Validate a root candidate offline, without touching the cache or moving pins.
 # Order-only validation does not force a remake of otherwise up-to-date rules.
-# The parent Make validates before recipes start; its recursive makes skip it.
-ifeq ($(MAKELEVEL),0)
+# A validated site's recursive makes reuse its check. MAKELEVEL alone is not
+# sufficient: the site's first Make may itself be called by an outer Makefile.
 ifeq ($(MAKE_RESTARTS),)
 ifeq ($(wildcard .github/workflows/docs.yml),)
+ifneq ($(ASTA_WORKSPACE_SELECTION_CHECKED),$(CURDIR))
+export ASTA_WORKSPACE_SELECTION_CHECKED := $(CURDIR)
 .PHONY: asta-workspace-check-workflow
 .asta/cache/workspace.mk: | asta-workspace-check-workflow
 asta-workspace-check-workflow:

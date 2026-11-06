@@ -420,7 +420,7 @@ workspace.add_command(overleaf)
     help="Validate the selected workflow offline, without fetching rules or moving pins.",
 )
 def sync(
-    project: Path, refresh: bool, require_scripts: bool, check_selection: bool
+    project: Path, refresh: bool, require_scripts: bool, check_selection: bool = False
 ) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
     if check_selection:

@@ -2016,8 +2016,9 @@ def test_selection_check_rejects_mutating_sync_options(flag):
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
 @pytest.mark.parametrize("ref", ["v0.115.0", "latest"])
+@pytest.mark.parametrize("outer_make", [False, True])
 def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
-    tmp_path, ref
+    tmp_path, ref, outer_make
 ):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     workflow = tmp_path / workspace_module.WORKFLOW_FILE
@@ -2059,10 +2060,15 @@ def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
     for name in workspace_module.UNATTENDED_ENV:
         env.pop(name, None)
 
+    driver = tmp_path / "driver.mk"
+    driver.write_text("preview:\n\t+$(MAKE) -C site preview\n")
+
     def build():
         result = subprocess.run(
-            ["make", "-j2", "preview"],
-            cwd=project,
+            ["make", "-j2", "-f", str(driver), "preview"]
+            if outer_make
+            else ["make", "-j2", "preview"],
+            cwd=tmp_path if outer_make else project,
             env=env,
             text=True,
             capture_output=True,
