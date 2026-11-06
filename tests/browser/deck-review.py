@@ -84,6 +84,11 @@ def check(site, artifacts):
                 assert len(data["removed"]) == 1, data
                 assert page.locator(".dr-more").count() > 0
                 page.locator(".deck-review").scroll_into_view_if_needed()
+                page.evaluate("""async () => {
+                  await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
+                    i.loading = 'eager'; return i.decode().catch(() => {});
+                  }));
+                }""")
                 page.screenshot(path=str(artifacts / "deck-review-marked.png"))
                 page.get_by_role("button", name="Clean", exact=True).click()
                 assert (
@@ -92,9 +97,19 @@ def check(site, artifacts):
                     )
                     == "true"
                 )
+                page.evaluate("""async () => {
+                  await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
+                    i.loading = 'eager'; return i.decode().catch(() => {});
+                  }));
+                }""")
                 page.screenshot(path=str(artifacts / "deck-review-clean.png"))
                 page.get_by_role("button", name="Before / after", exact=True).click()
                 assert page.locator(".dr-pair:visible").count() >= 2
+                page.evaluate("""async () => {
+                  await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
+                    i.loading = 'eager'; return i.decode().catch(() => {});
+                  }));
+                }""")
                 page.screenshot(path=str(artifacts / "deck-review-before-after.png"))
                 for image in page.locator(".dr-slide:visible img:visible").all():
                     image.scroll_into_view_if_needed()
