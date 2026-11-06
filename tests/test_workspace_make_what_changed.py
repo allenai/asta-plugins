@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -25,6 +26,8 @@ if "--output-dir" in args:
     args = args[:index]
 pages = [arg for arg in args[1:] if arg != "--no-clean"]
 assert len(pages) <= 1, sys.argv
+if pages == ["."]:
+    pages = []
 assert not output.is_absolute(), sys.argv
 if os.environ.get("QUARTO_LOG"):
     with open(os.environ["QUARTO_LOG"], "a") as log:
@@ -477,7 +480,9 @@ def test_base_without_page_list_support_renders_whole_site(
     # A project whose own render rule predates the page list keeps full renders.
     workspace = (project / "workspace.mk").read_text()
     (project / "workspace.mk").write_text(
-        workspace.replace("set -- $(ASTA_WORKSPACE_RENDER_FILES);", "set --;")
+        workspace.replace("set -- $(ASTA_WORKSPACE_RENDER_FILES);", "set --;").replace(
+            "quarto render $(if", "quarto render . $(if"
+        )
     )
     git(project, "commit", "-qam", "older rules")
     git(project, "branch", "-f", "main")
@@ -518,7 +523,10 @@ def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules:
 
 @pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
 @pytest.mark.parametrize("edit", ["page", "slides", "multiple"])
-def test_real_quarto_on_92_page_workspace(project: Path, tmp_path: Path, edit: str):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_real_quarto_on_92_page_workspace(
+    project: Path, tmp_path: Path, edit: str, legacy: bool
+):
     """Exercise real CLI parsing, nested outputs, and timing on a grown site."""
     (project / "_quarto.yml").write_text(
         "project:\n  type: website\nformat:\n  html:\n    theme: none\n"
@@ -541,9 +549,16 @@ def test_real_quarto_on_92_page_workspace(project: Path, tmp_path: Path, edit: s
             for number in range(100)
         )
     )
+    # workspace-assets detects slides.qmd by name; keep this fixture offline.
+    extension = project / "_extensions/asta-slides/version.txt"
+    extension.parent.mkdir()
+    extension.write_text("Committed fixture extension.")
+    git(project, "add", "-f", "_extensions/asta-slides/version.txt")
     git(project, "add", "_quarto.yml", ".gitignore", "pages", "talk")
     git(project, "commit", "-qm", "92-page baseline")
     git(project, "branch", "-f", "main")
+    if legacy:
+        use_legacy_cached_rules(project)
     if edit == "slides":
         deck.write_text(deck.read_text().replace("finding", "revisedfinding", 1))
         expected = ["revisedfinding"]
@@ -571,12 +586,15 @@ def test_real_quarto_on_92_page_workspace(project: Path, tmp_path: Path, edit: s
         timeout=90,
     )
     elapsed = time.monotonic() - started
-    print(f"real Quarto: 92-page workspace, {edit} edit: {elapsed:.2f}s")
+    print(
+        f"real Quarto: 92-page workspace, {edit} edit, legacy={legacy}: {elapsed:.2f}s"
+    )
     assert result.returncode == 0, result.stderr
     assert "only pages changed" in result.stderr
     report = (site / "what-changed.html").read_text()
+    visible = re.sub(r"<[^>]+>", "", report)
     for text in expected:
-        assert text in report
+        assert text in visible
     assert "<ins" in report
     assert "An unchanged research page" not in report
     assert (site / "index.html").read_text() == "Live preview output must stay intact."
@@ -584,3 +602,41 @@ def test_real_quarto_on_92_page_workspace(project: Path, tmp_path: Path, edit: s
     assert not list((project / ".asta/cache").glob("what-changed.*"))
     assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
     assert elapsed < 45, f"local comparison took {elapsed:.2f}s"
+
+
+def use_legacy_cached_rules(project: Path):
+    """An ignored sync refresh updates current rules, while the base keeps its own."""
+    current = (project / "workspace.mk").read_text()
+    start = current.index("\t@set -eu;", current.index("render: workspace-assets"))
+    end = current.index("\n\n", start)
+    legacy = current[:start] + "\tquarto render" + current[end:]
+    (project / "workspace.mk").write_text(legacy)
+    (project / "Makefile").write_text(
+        ".asta/cache/workspace.mk: workspace.mk\n"
+        "\t@mkdir -p .asta/cache\n"
+        "\tcp workspace.mk .asta/cache/workspace.mk\n"
+        "include .asta/cache/workspace.mk\n"
+    )
+    git(project, "add", "workspace.mk", "Makefile")
+    git(project, "commit", "-qm", "legacy managed workspace")
+    git(project, "branch", "-f", "main")
+    cache = project / ".asta/cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "workspace.mk").write_text(current)
+
+
+def test_legacy_plain_quarto_render_gets_page_selection(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    add_page(project, "other.qmd", "An untouched page.\n")
+    use_legacy_cached_rules(project)
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new line.\n")
+    (project / "draft.qmd").write_text("A brand new page.\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+    result = make(project, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert rendered_pages(log) == [["index.qmd"], ["draft.qmd"], ["index.qmd"]]
+    page = (project / "_site/what-changed.html").read_text()
+    assert "A new line." in page and "A brand new page." in page
+    assert "An untouched page." not in page

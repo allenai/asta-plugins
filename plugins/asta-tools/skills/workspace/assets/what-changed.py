@@ -51,6 +51,7 @@ import os
 import posixpath
 import re
 import sys
+from collections import Counter
 from html.parser import HTMLParser
 from urllib.parse import quote, urlsplit
 
@@ -629,8 +630,15 @@ def diff_content(old, new):
     hi = 0
     while hi < min(len(ak), len(bk)) - lo and ak[-1 - hi] == bk[-1 - hi]:
         hi += 1
+    a_middle, b_middle = ak[lo : len(ak) - hi], bk[lo : len(bk) - hi]
+    # Distant edits can still leave a long, highly repetitive middle. Estimate
+    # candidate token matches before allowing the expensive exact matcher; its
+    # popular-token heuristic keeps those cases responsive, at the cost of
+    # coarser highlighting inside that changed span.
+    a_counts, b_counts = Counter(a_middle), Counter(b_middle)
+    candidates = sum(count * b_counts[token] for token, count in a_counts.items())
     sm = difflib.SequenceMatcher(
-        None, ak[lo : len(ak) - hi], bk[lo : len(bk) - hi], autojunk=False
+        None, a_middle, b_middle, autojunk=candidates > 1_000_000
     )
     opcodes = [
         (op, i1 + lo, i2 + lo, j1 + lo, j2 + lo)

@@ -3,6 +3,8 @@
 import importlib.util
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -980,3 +982,45 @@ def test_query_only_links_keep_their_source_page(source):
     )
     assert f'href="{source}?view=full#details"' in result
     assert 'href="#local"' in result
+
+
+@pytest.mark.parametrize("edit", ["insert", "delete", "replace", "separated"])
+def test_large_repetitive_page_comparison_finishes_promptly(tmp_path, edit):
+    """A local edit must not spend minutes matching repeated prose or markup."""
+    before = "<p>" + "research finding " * 15_000 + "</p>"
+    if edit == "insert":
+        after = before.replace("finding", "newfinding", 1)
+    elif edit == "delete":
+        after = before.replace("research finding ", "", 1)
+    elif edit == "replace":
+        after = before.replace("research", "revisedresearch")
+    else:
+        after = before.replace("<p>", "<p>firstedit ").replace("</p>", " lastedit</p>")
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(f"<main>{before}</main>")
+    (new / "index.html").write_text(f"<main>{after}</main>")
+    report = tmp_path / "comparison.html"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--old",
+            str(old),
+            "--new",
+            str(new),
+            "--out",
+            str(report),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 0, result.stderr
+    markup = report.read_text()
+    assert "<ins" in markup or "<del" in markup
+    if edit == "separated":
+        assert "firstedit" in markup and "lastedit" in markup
+    elif edit in {"replace", "insert"}:
+        assert "revisedresearch" in markup or "newfinding" in markup

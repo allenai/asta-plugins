@@ -182,7 +182,9 @@ render: workspace-assets workspace-viewers
 	fi
 
 # Compare the branch base with the working tree without rendering over the
-# preview's _site/. Only the comparison page is written there.
+# preview's _site/. Only the comparison page is written there. Older plain
+# Quarto render recipes keep their prerequisites and get a temporary CLI adapter
+# for page selection; custom recipes retain the full-site fallback.
 WHAT_CHANGED_BASE ?=
 WHAT_CHANGED_FULL ?=
 what-changed:
@@ -222,7 +224,7 @@ what-changed:
 	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
-	files=; basefiles=; partial=; \
+	files=; basefiles=; partial=; legacy=; \
 	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
 		changed=$$(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u); \
 		if [ -n "$$changed" ] && ! printf '%s\n' "$$changed" | grep -q '[^A-Za-z0-9._/+@-]'; then \
@@ -236,14 +238,33 @@ what-changed:
 				[ ! -f "$$dir/$$rel" ] || basefiles="$$basefiles $$rel"; \
 			done; \
 		fi; \
-		if [ -n "$$partial" ] && ! $(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null | grep -q asta-what-changed-probe; then partial=; fi; \
+		if [ -n "$$partial" ]; then \
+			probe=$$($(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null) || probe=; \
+			if printf '%s\n' "$$probe" | grep -q asta-what-changed-probe; then :; \
+			elif printf '%s\n' "$$probe" | grep -Eq '^[[:space:]]*quarto render[[:space:]]*$$'; then legacy=1; \
+			else partial=; fi; \
+		fi; \
 	fi; \
 	mkdir -p .asta/cache; \
 	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
 	if [ -n "$$partial" ]; then \
 		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
 		mkdir -p "$$dir/_site"; \
-		[ -z "$$basefiles" ] || $(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES="$$basefiles" >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+		if [ -n "$$legacy" ]; then \
+			quarto=$$(command -v quarto); mkdir "$$tmp/bin"; \
+			printf '%s\n' '#!/bin/sh' 'set -eu' \
+				'if [ "$${1:-}" != render ]; then exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"; fi' \
+				'shift' 'for page in $$ASTA_WHAT_CHANGED_PAGES; do' \
+				'  "$$ASTA_WHAT_CHANGED_QUARTO" render "$$page" --no-clean "$$@"' 'done' > "$$tmp/bin/quarto"; \
+			chmod +x "$$tmp/bin/quarto"; \
+		fi; \
+		if [ -n "$$basefiles" ]; then \
+			if [ -n "$$legacy" ]; then \
+				PATH="$$tmp/bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_PAGES="$$basefiles" \
+					$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2; \
+			else $(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES="$$basefiles" >&2; fi \
+				|| { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+		fi; \
 		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$files" >&2; \
 	else \
 		$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
