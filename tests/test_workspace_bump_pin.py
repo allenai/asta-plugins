@@ -380,10 +380,19 @@ def test_unreadable_head_after_success_never_prints_an_empty_sha(project, monkey
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
+@pytest.mark.parametrize("site_dir", [".", "research/site"])
 def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
-    project, monkeypatch, tmp_path_factory
+    project, monkeypatch, tmp_path_factory, site_dir
 ):
-    root = project("v0.115.0")
+    repository = project("v0.115.0")
+    root = repository / site_dir
+    root.mkdir(parents=True, exist_ok=True)
+    if site_dir != ".":
+        workflow = repository / workspace.WORKFLOW_FILE
+        workflow.write_text(
+            workflow.read_text() + f"    with:\n      site-dir: {site_dir}\n"
+        )
+        _git(repository, "add", workspace.WORKFLOW_FILE)
     repo = Path(__file__).resolve().parents[1]
     assets = repo / "plugins/asta-tools/skills/workspace/assets"
     (root / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
@@ -427,7 +436,7 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
     assert "checked-v0.115.0" in before.stdout
     # Force a strict timestamp ordering even on coarse-resolution filesystems.
     old = time.time() - 10
-    os.utime(root / workspace.WORKFLOW_FILE, (old - 1, old - 1))
+    os.utime(repository / workspace.WORKFLOW_FILE, (old - 1, old - 1))
     os.utime(root / ".asta/cache/workspace.mk", (old, old))
     result = _run(root, "0.116.0", monkeypatch)
     assert result.exit_code == 0, result.output
@@ -443,21 +452,43 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
     assert "Loaded workspace.mk from asta-plugins@v0.115.0" in restored.stdout
     assert "checked-v0.115.0" in restored.stdout
     assert not _git(root, "status", "--porcelain")
+    if site_dir != ".":
+        assert not (root / ".github").exists()
 
 
-def test_subfolder_site_moves_the_root_workflow_naming_it(tmp_path, monkeypatch):
+@pytest.mark.parametrize("git_marker", ["directory", "file"])
+@pytest.mark.parametrize(
+    ("site_dir", "site_value"),
+    [
+        ("research/site", "'./research/site/'"),
+        ("research/site notes", "'./research/site notes/'"),
+        ("research/site notes", '"./research/site notes/"'),
+        ("research/site notes", "./research/site notes/"),
+        ("research/site #1", "'./research/site #1/'"),
+        ("research/site #1", '"./research/site #1/"'),
+        ("research/site's notes", "'./research/site''s notes/'"),
+    ],
+)
+def test_subfolder_site_moves_the_root_workflow_naming_it(
+    tmp_path, monkeypatch, tmp_path_factory, git_marker, site_dir, site_value
+):
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "t@example.com")
     _git(tmp_path, "config", "user.name", "t")
+    if git_marker == "file":
+        git_data = tmp_path_factory.mktemp("git-data") / "repo.git"
+        (tmp_path / ".git").rename(git_data)
+        (tmp_path / ".git").write_text(f"gitdir: {git_data}\n")
     workflow = tmp_path / workspace.WORKFLOW_FILE
     workflow.parent.mkdir(parents=True)
     workflow.write_text(
-        STUB.format(ref="v0.115.0") + "    with:\n      site-dir: './research/site/'\n"
+        STUB.format(ref="v0.115.0")
+        + f"    with:\n      site-dir: {site_value} # site path\n"
     )
-    site = tmp_path / "research/site"
+    site = tmp_path / site_dir
     site.mkdir(parents=True)
     (site / "index.qmd").write_text("x\n")
-    _git(tmp_path, "add", ".")
+    _git(tmp_path, "add", workspace.WORKFLOW_FILE, str(site.relative_to(tmp_path)))
     _git(tmp_path, "commit", "-q", "-m", "init")
     assert workspace.workflow_root(site) == tmp_path.resolve()
     assert workspace.selected_source(site)[1] == "v0.115.0"
@@ -480,3 +511,39 @@ def test_root_workflow_naming_another_site_is_not_used(tmp_path):
     assert workspace.workflow_root(site) == site.resolve()
     with pytest.raises(click.ClickException, match="Missing"):
         workspace.selected_source(site)
+
+
+@pytest.mark.parametrize("root_matches", [False, True])
+def test_intermediate_workflow_does_not_publish_site(tmp_path, root_matches):
+    (tmp_path / ".git").mkdir()
+    site = tmp_path / "research/site"
+    site.mkdir(parents=True)
+    root_workflow = tmp_path / workspace.WORKFLOW_FILE
+    root_workflow.parent.mkdir(parents=True)
+    root_workflow.write_text(
+        STUB.format(ref="v0.115.0")
+        + f"    with:\n      site-dir: {'research/site' if root_matches else 'other'}\n"
+    )
+    intermediate = tmp_path / "research" / workspace.WORKFLOW_FILE
+    intermediate.parent.mkdir(parents=True)
+    intermediate.write_text(
+        STUB.format(ref="v0.114.0") + "    with:\n      site-dir: site\n"
+    )
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.113.0"))
+    assert workspace.workflow_root(site) == (tmp_path if root_matches else site)
+    assert workspace.selected_source(site)[1] == (
+        "v0.115.0" if root_matches else "v0.113.0"
+    )
+
+
+def test_non_git_site_ignores_ancestor_workflow(tmp_path):
+    site = tmp_path / "research/site"
+    site.mkdir(parents=True)
+    workflow = tmp_path / workspace.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        STUB.format(ref="v0.115.0") + "    with:\n      site-dir: research/site\n"
+    )
+    assert workspace.workflow_root(site) == site

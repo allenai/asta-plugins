@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A workspace site in a subfolder uses the repository root's `docs.yml` when
+  its `site-dir` names the site. Sync and pin moves share that single workflow,
+  including paths with spaces; workflows in intermediate folders are ignored.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):

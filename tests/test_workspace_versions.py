@@ -200,18 +200,27 @@ def _local(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("ref", ["v0.110.0", "0.110.0"])
+@pytest.mark.parametrize("site_dir", [".", "research/site", "research/site notes"])
 def test_sync_moves_a_release_pin_behind_the_cli_without_committing(
-    tmp_path: Path, monkeypatch, ref
+    tmp_path: Path, monkeypatch, ref, site_dir
 ) -> None:
     _local(monkeypatch)
     project = project_with_ref(tmp_path, ref)
     docs = project / ".github/workflows/docs.yml"
+    if site_dir != ".":
+        (project / ".git").mkdir()
+        docs.write_text(docs.read_text() + f"    with:\n      site-dir: '{site_dir}'\n")
+        project = project / site_dir
+        project.mkdir(parents=True)
     before = docs.read_text()
     target = ("v" if ref.startswith("v") else "") + "0.113.0"
     result, calls = _sync(project, monkeypatch, "0.113.0")
     assert result.exit_code == 0, result.output
     assert calls == [target]
     assert docs.read_text() == before.replace(f"@{ref}", f"@{target}")
+    assert (project / ".asta/cache/workspace.mk").is_file()
+    if site_dir != ".":
+        assert not (project / ".github").exists()
     moved = [line for line in result.output.splitlines() if "Moved" in line]
     assert moved == [
         "Moved the workspace pin in .github/workflows/docs.yml from "

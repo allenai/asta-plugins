@@ -53,7 +53,8 @@ MAX_ASSET_BYTES = 1024 * 1024
 
 WORKFLOW_FILE = ".github/workflows/docs.yml"
 SITE_DIR_LINE = re.compile(
-    r"^\s*site-dir:\s*(?P<quote>['\"]?)(?P<dir>[^'\"#\s]+)(?P=quote)\s*(?:#.*)?$"
+    r"^\s*site-dir:\s*(?:'(?P<single>(?:[^']|'')*)'|"
+    r'"(?P<double>(?:[^"\\]|\\.)*)"|(?P<plain>[^\'"#\r\n]+?))\s*(?:#.*)?$'
 )
 
 
@@ -64,20 +65,36 @@ def workflow_root(project: Path) -> Path:
     uses the root docs.yml whose site-dir names it.
     """
     project = project.resolve()
-    if (project / ".git").exists():
+    root = next(
+        (
+            parent
+            for parent in (project, *project.parents)
+            if (parent / ".git").exists()
+        ),
+        project,
+    )
+    if root == project:
         return project
-    for parent in project.parents:
-        try:
-            text = (parent / WORKFLOW_FILE).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            text = ""
-        site = project.relative_to(parent).as_posix()
-        for line in text.splitlines():
-            match = SITE_DIR_LINE.fullmatch(line)
-            if match and posixpath.normpath(match.group("dir")) == site:
-                return parent
-        if (parent / ".git").exists():
-            break
+    try:
+        text = (root / WORKFLOW_FILE).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return project
+    site = project.relative_to(root).as_posix()
+    for line in text.splitlines():
+        match = SITE_DIR_LINE.fullmatch(line)
+        if match is None:
+            continue
+        if match.group("single") is not None:
+            directory = match.group("single").replace("''", "'")
+        elif match.group("double") is not None:
+            try:
+                directory = json.loads('"' + match.group("double") + '"')
+            except ValueError:
+                continue
+        else:
+            directory = match.group("plain")
+        if posixpath.normpath(directory) == site:
+            return root
     return project
 
 
