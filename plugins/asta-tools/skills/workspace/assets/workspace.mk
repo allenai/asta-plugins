@@ -166,28 +166,35 @@ workspace-viewers:
 preview: workspace-assets workspace-viewers
 	quarto preview --no-browser
 
+# Optional output override for callers that must leave the preview's _site alone.
+ASTA_WORKSPACE_RENDER_OUTPUT ?=
 render: workspace-assets workspace-viewers
-	quarto render
+	quarto render $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))')
 
-# What changed before any PR: render the branch's base (merge-base with the
-# default branch, or WHAT_CHANGED_BASE=<ref>) beside the working tree's _site/
-# and write _site/what-changed.html, which a running `make preview` serves.
+# Compare the branch base with the working tree without rendering over the
+# preview's _site/. Only the comparison page is written there.
 WHAT_CHANGED_BASE ?=
-what-changed: render
+what-changed:
 	@set -eu; \
-	base='$(subst ','"'"',$(WHAT_CHANGED_BASE))'; \
+	base='$(subst ','"'"',$(value WHAT_CHANGED_BASE))'; \
+	source=$$base; \
 	if [ -z "$$base" ]; then \
 		upstream=$$(git symbolic-ref -q refs/remotes/origin/HEAD || true); \
 		if [ -z "$$upstream" ] && git remote get-url origin >/dev/null 2>&1; then \
-			upstream=$$(git ls-remote --symref origin HEAD 2>/dev/null | sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$$|refs/remotes/origin/\1|p') || true; \
+			upstream=$$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="$${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o ConnectTimeout=10" \
+				git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 ls-remote --symref origin HEAD 2>/dev/null \
+				| sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$$|refs/remotes/origin/\1|p') || true; \
 		fi; \
 		if [ -n "$$upstream" ]; then \
 			base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) || base=; \
-		else \
+			source=$$upstream; \
+		fi; \
+		if [ -z "$$base" ]; then \
 			configured=$$(git config --get init.defaultBranch || true); \
-			for upstream in "$$configured" main master trunk; do \
-				[ -n "$$upstream" ] || continue; \
-				base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) && break || base=; \
+			for branch in "$$configured" main master trunk; do \
+				[ -n "$$branch" ] || continue; \
+				source=refs/heads/$$branch; \
+				base=$$(git merge-base HEAD "$$source" 2>/dev/null) && break || base=; \
 			done; \
 		fi; \
 	fi; \
@@ -195,14 +202,25 @@ what-changed: render
 	base=$$(git rev-parse --verify --end-of-options "$$base^{commit}") || { echo "what-changed: invalid base; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
 	label=$$(git rev-parse --short "$$base"); \
 	prefix=$$(git rev-parse --show-prefix); \
+	echo "what-changed: base $$source ($$base); running its make render" >&2; \
 	tmp=$$(mktemp -d); \
-	trap 'git worktree remove --force "$$tmp/base" >/dev/null 2>&1 || true; rm -rf "$$tmp"' 0; \
+	cleanup() { \
+		status=$$?; trap - 0; trap '' 1 2 15; \
+		if [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
+			echo "what-changed: cleanup failed; remove the worktree at $$tmp/base manually" >&2; exit 1; \
+		fi; \
+		rm -rf "$$tmp"; exit "$$status"; \
+	}; \
+	trap cleanup 0; \
+	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
-	$(MAKE) -C "$$dir" render >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
-	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new _site \
+	$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+	$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$tmp/current" >&2; \
+	mkdir -p _site; \
+	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$tmp/current" \
 		--out _site/what-changed.html --title "Changes since $$label"; \
-	echo "what-changed: open what-changed.html in the make preview site"
+	echo "what-changed: wrote _site/what-changed.html; open /what-changed.html in make preview (rerun after edits or a preview rebuild)"
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new

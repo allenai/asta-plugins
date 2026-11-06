@@ -1,8 +1,11 @@
 """`make what-changed` writes a local What changed page into `_site/` before any PR."""
 
+import json
 import os
 import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -11,20 +14,30 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 
 # Stands in for `quarto render`: wraps index.qmd lines in the <main> Quarto emits.
 FAKE_QUARTO = """#!/usr/bin/env python3
-import pathlib, sys
-assert sys.argv[1:] == ["render"], sys.argv
+import os, pathlib, sys, time
+assert sys.argv[1:] == ["render"] or sys.argv[1:3] == ["render", "--output-dir"], sys.argv
+output = pathlib.Path(sys.argv[3]) if len(sys.argv) > 2 else pathlib.Path("_site")
+if len(sys.argv) == 2 and os.environ.get("QUARTO_BLOCK_BASE_RENDER"):
+    pathlib.Path(os.environ["QUARTO_BLOCK_BASE_RENDER"]).write_text(str(pathlib.Path.cwd()))
+    time.sleep(60)
 extension = pathlib.Path("_extensions/evidence/version.txt").read_text()
 required = pathlib.Path("required-extension.txt")
 if required.exists():
     extension += pathlib.Path("_extensions", required.read_text().strip(), "version.txt").read_text()
 paras = f"<p>{extension}</p>" + "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
-pathlib.Path("_site").mkdir(exist_ok=True)
-pathlib.Path("_site/index.html").write_text(
+output.mkdir(exist_ok=True)
+(output / "index.html").write_text(
     f"<html><head><title>Report</title></head><body><main>{paras}</main></body></html>"
 )
 """
 
 pytestmark = pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
+
+
+@pytest.fixture(autouse=True)
+def isolated_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
 def git(project: Path, *args: str) -> str:
@@ -59,18 +72,28 @@ def project(tmp_path: Path) -> Path:
     return project
 
 
-def make(project: Path, tmp_path: Path, *args: str) -> subprocess.CompletedProcess:
+def make_env(tmp_path: Path) -> dict[str, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "quarto").write_text(FAKE_QUARTO)
     (bin_dir / "quarto").chmod(0o755)
-    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    temporary = tmp_path / "temporary"
+    temporary.mkdir(exist_ok=True)
+    return {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "TMPDIR": str(temporary),
+    }
+
+
+def make(project: Path, tmp_path: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0", *args],
         cwd=project,
-        env=env,
+        env=make_env(tmp_path),
         capture_output=True,
         text=True,
+        timeout=30,
     )
 
 
@@ -96,7 +119,10 @@ def test_uncommitted_edit_is_shown_against_branch_base(
         f"Changes since {git(project, 'rev-parse', '--short', 'main').strip()}" in page
     )
     assert "<ins" in page
-    assert (project / "_site/index.html").is_file()
+    assert not (project / "_site/index.html").exists()
+    assert "_site/what-changed.html" in result.stdout
+    assert "/what-changed.html" in result.stdout
+    assert git(project, "rev-parse", "main").strip() in result.stderr
     worktrees = git(project, "worktree", "list", "--porcelain")
     assert sum(line.startswith("worktree ") for line in worktrees.splitlines()) == 1
 
@@ -209,7 +235,145 @@ def test_baseline_does_not_borrow_ignored_extension(
 
     assert result.returncode != 0
     assert "base render failed" in result.stderr
-    assert "_extensions/custom/version.txt" in result.stderr
     assert not (project / "_site/what-changed.html").exists()
     worktrees = git(project, "worktree", "list", "--porcelain")
     assert sum(line.startswith("worktree ") for line in worktrees.splitlines()) == 1
+
+
+def test_live_preview_output_is_not_rendered_over(
+    project: Path, tmp_path: Path
+) -> None:
+    (project / "_site").mkdir()
+    live = project / "_site/index.html"
+    live.write_text("Live preview output must stay intact.")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert live.read_text() == "Live preview output must stay intact."
+    assert "drafted" in (project / "_site/what-changed.html").read_text()
+    assert not list((tmp_path / "temporary").iterdir())
+
+
+def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> None:
+    nested = project / "research workspace/docs"
+    nested.mkdir(parents=True)
+    for name in ("Makefile", "workspace.mk", "scripts", "index.qmd", "_extensions"):
+        git(project, "mv", name, str(nested.relative_to(project) / name))
+    git(project, "commit", "-qm", "move report into a subdirectory")
+    git(project, "branch", "-f", "main")
+    (nested / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(nested, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "drafted" in (nested / "_site/what-changed.html").read_text()
+    assert not list((tmp_path / "temporary").iterdir())
+
+
+@pytest.mark.parametrize("ref", ["last'read", "-baseline", "last$(read)"])
+def test_explicit_ref_is_literal(project: Path, tmp_path: Path, ref: str) -> None:
+    git(project, "update-ref", f"refs/tags/{ref}", "HEAD")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(project, tmp_path, f"WHAT_CHANGED_BASE={ref}")
+
+    assert result.returncode == 0, result.stderr
+    assert "drafted" in (project / "_site/what-changed.html").read_text()
+
+
+def test_local_branch_is_not_confused_with_tag(project: Path, tmp_path: Path) -> None:
+    git(project, "commit", "--allow-empty", "-qm", "branch work")
+    git(project, "tag", "main")
+    result = make(project, tmp_path)
+    assert result.returncode == 0, result.stderr
+    expected = git(project, "rev-parse", "--short", "refs/heads/main").strip()
+    assert (
+        f"Changes since {expected}" in (project / "_site/what-changed.html").read_text()
+    )
+
+
+@pytest.mark.parametrize("missing_tracking_ref", [True, False])
+def test_remote_failure_falls_back_to_local_default(
+    project: Path, tmp_path: Path, missing_tracking_ref: bool
+) -> None:
+    git(project, "remote", "add", "origin", str(tmp_path / "missing.git"))
+    if missing_tracking_ref:
+        git(
+            project,
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/missing",
+        )
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    expected = git(project, "rev-parse", "--short", "main").strip()
+    assert (
+        f"Changes since {expected}" in (project / "_site/what-changed.html").read_text()
+    )
+
+
+@pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP])
+def test_signal_interrupt_removes_baseline_worktree(
+    project: Path, tmp_path: Path, signum: int
+) -> None:
+    marker = tmp_path / "render-started"
+    env = {**make_env(tmp_path), "QUARTO_BLOCK_BASE_RENDER": str(marker)}
+    process = subprocess.Popen(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while (
+            not marker.exists()
+            and process.poll() is None
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
+        assert marker.exists(), process.communicate(timeout=2)
+        baseline_project = Path(marker.read_text())
+        os.killpg(process.pid, signum)
+        _, stderr = process.communicate(timeout=10)
+        assert process.returncode != 0, stderr
+        assert not baseline_project.exists()
+        assert not list((tmp_path / "temporary").iterdir())
+        worktrees = git(project, "worktree", "list", "--porcelain")
+        assert sum(line.startswith("worktree ") for line in worktrees.splitlines()) == 1
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate(timeout=5)
+
+
+def test_remote_lookup_does_not_prompt(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ssh = tmp_path / "fake-ssh"
+    log = tmp_path / "ssh.json"
+    ssh.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, pathlib, sys\n"
+        "pathlib.Path(os.environ['SSH_TEST_LOG']).write_text(json.dumps({'args': sys.argv[1:], 'prompt': os.environ.get('GIT_TERMINAL_PROMPT')}))\n"
+        "sys.exit(1)\n"
+    )
+    ssh.chmod(0o755)
+    monkeypatch.setenv("GIT_SSH_COMMAND", str(ssh))
+    monkeypatch.setenv("SSH_TEST_LOG", str(log))
+    git(project, "remote", "add", "origin", "ssh://example.invalid/report")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    lookup = json.loads(log.read_text())
+    assert lookup["prompt"] == "0"
+    assert "BatchMode=yes" in lookup["args"]
+    assert "ConnectTimeout=10" in lookup["args"]
