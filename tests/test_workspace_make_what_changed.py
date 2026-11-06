@@ -17,8 +17,13 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 # Models the single positional input and project-relative output directory from
 # Quarto's CLI contract; QUARTO_LOG records each individual invocation.
 FAKE_QUARTO = """#!/usr/bin/env python3
-import json, os, pathlib, sys, time
+import json, os, pathlib, re, sys, time
 args = sys.argv[1:]
+if args[0] == "inspect":
+    config = pathlib.Path(args[1]) / "_quarto.yml"
+    match = re.search(r"output-dir:\\s*([^\\s]+)", config.read_text())
+    print(json.dumps({"config": {"project": {"output-dir": match[1] if match else "_site"}}}))
+    sys.exit(0)
 assert args[0] == "render", sys.argv
 output = pathlib.Path("_site")
 if "--output-dir" in args:
@@ -280,6 +285,81 @@ def test_live_preview_output_is_not_rendered_over(
     assert not list((project / ".asta/cache").glob("what-changed.*"))
 
 
+@pytest.mark.parametrize("full", [False, True])
+def test_custom_current_render_cannot_overwrite_preview(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, full: bool
+) -> None:
+    with (project / "Makefile").open("a") as file:
+        file.write("render:\n\tquarto render\n")
+    # The current recipe can be committed or uncommitted; only its behaviour
+    # matters. Committing keeps a page-only change eligible for the fast path.
+    git(project, "commit", "-qam", "custom current recipe")
+    git(project, "branch", "-f", "main")
+    (project / "index.qmd").write_text("A revised finding.\n")
+    site = project / "_site"
+    site.mkdir()
+    live = site / "index.html"
+    live.write_text("Live preview must stay intact.")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path, *(["WHAT_CHANGED_FULL=1"] if full else []))
+
+    assert result.returncode != 0
+    assert (
+        "current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT"
+        in result.stderr
+    )
+    assert live.read_text() == "Live preview must stay intact."
+    assert not (site / "what-changed.html").exists()
+    assert not log.exists(), "reject an unsafe recipe before either render runs"
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+def test_empty_current_render_does_not_report_every_page_deleted(
+    project: Path, tmp_path: Path
+) -> None:
+    with (project / "Makefile").open("a") as file:
+        file.write("render:\n\t@echo '$(ASTA_WORKSPACE_RENDER_OUTPUT)'\n")
+    (project / "_site").mkdir()
+    report = project / "_site/what-changed.html"
+    report.write_text("Previous comparison.")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode != 0
+    assert "current render produced no HTML" in result.stderr
+    assert report.read_text() == "Previous comparison."
+    assert not list((tmp_path / "temporary").iterdir())
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+
+
+@pytest.mark.parametrize("custom_at_base", [False, True])
+def test_nonstandard_site_output_is_rejected_before_rendering(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, custom_at_base: bool
+) -> None:
+    config = project / "_quarto.yml"
+    config.write_text("project:\n  type: website\n  output-dir: docs\n")
+    if custom_at_base:
+        git(project, "add", "_quarto.yml")
+        git(project, "commit", "-qm", "custom baseline output")
+        git(project, "branch", "-f", "main")
+        config.write_text("project:\n  type: website\n  output-dir: _site\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode != 0
+    assert "requires project.output-dir=_site in both versions" in result.stderr
+    assert "docs" in result.stderr
+    assert not log.exists()
+    assert not (project / "_site/what-changed.html").exists()
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
 def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> None:
     nested = project / "research workspace/docs"
     nested.mkdir(parents=True)
@@ -403,10 +483,12 @@ def test_base_lookup_never_contacts_remote(
 
 
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize(
+    "destination", ["rendered output's directory", "literal$(exit 99)$name"]
+)
 def test_render_output_override_leaves_preview_output_alone(
-    project: Path, tmp_path: Path, rules: str
+    project: Path, tmp_path: Path, rules: str, destination: str
 ) -> None:
-    destination = Path("rendered output's directory")
     result = subprocess.run(
         [
             "make",
@@ -542,6 +624,39 @@ def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules:
     assert result.returncode == 0, result.stderr
     assert "baseline finding" in (project / destination / "index.html").read_text()
     assert "Second page" in (project / destination / "second.html").read_text()
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
+@pytest.mark.parametrize("use_profile", [False, True])
+def test_real_quarto_rejects_custom_output_directory(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, use_profile: bool
+) -> None:
+    """Resolved config, including active profiles, must match the served output."""
+    (project / "_quarto.yml").write_text("project:\n  type: website\n")
+    if use_profile:
+        (project / "_quarto-local.yml").write_text("project:\n  output-dir: docs\n")
+        monkeypatch.setenv("QUARTO_PROFILE", "local")
+    else:
+        (project / "_quarto.yml").write_text(
+            "project:\n  type: website\n  output-dir: docs\n"
+        )
+    (project / "docs").mkdir()
+    preview = project / "docs/index.html"
+    preview.write_text("Keep this live preview.")
+
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "requires project.output-dir=_site in both versions" in result.stderr
+    assert preview.read_text() == "Keep this live preview."
+    assert not (project / "_site/what-changed.html").exists()
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 
 
 @pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
@@ -698,7 +813,7 @@ def test_real_quarto_on_92_page_workspace(
 def use_legacy_cached_rules(project: Path):
     """An ignored sync refresh updates current rules, while the base keeps its own."""
     current = (project / "workspace.mk").read_text()
-    start = current.index("\t@set -eu;", current.index("render: workspace-assets"))
+    start = current.index("\tset -eu;", current.index("render: workspace-assets"))
     end = current.index("\n\n", start)
     legacy = current[:start] + "\tquarto render" + current[end:]
     (project / "workspace.mk").write_text(legacy)

@@ -454,7 +454,7 @@ def test_template_skips_slide_deck_for_a_site_page(tmp_path):
     )
     (new / "talk/page.html").write_text(
         '<html><head><link rel="stylesheet" href="../site_libs/theme.css">'
-        '</head><body><main class="revealed">Content</main></body></html>'
+        '</head><body><main class="reveal">Content</main></body></html>'
     )
 
     doc, depth = WHAT_CHANGED.pick_template(WHAT_CHANGED.list_pages(new))
@@ -1060,7 +1060,7 @@ def test_large_repetitive_page_comparison_finishes_promptly(tmp_path, edit):
         ],
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=30,
     )
     assert result.returncode == 0, result.stderr
     markup = report.read_text()

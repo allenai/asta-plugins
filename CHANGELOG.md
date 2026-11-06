@@ -7,7 +7,9 @@
   the changed pages when both versions support page selection; other changes
   and `WHAT_CHANGED_FULL=1` render both sites. Either way the page keeps the
   site's theme. Base discovery uses local Git
-  history, with `git fetch origin` optional for a fresher base.
+  history, with `git fetch origin` optional for a fresher base. The target
+  rejects incompatible output directories and render recipes before rendering
+  and fails if the current render produces no HTML.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`

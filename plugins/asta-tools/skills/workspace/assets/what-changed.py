@@ -1199,8 +1199,13 @@ def anchor_id(rel):
 
 
 def _is_slide_deck(doc):
+    # A site's own CSS may use a class named "reveal". Quarto reveal.js decks
+    # carry the runtime's stylesheet, which identifies the actual deck format.
     return bool(
-        re.search(r'(?i)class\s*=\s*["\'][^"\']*(?<![\w-])reveal(?![\w-])', doc)
+        re.search(
+            r'(?is)<link\b[^>]*\bhref\s*=\s*["\'](?:[^"\']*/)?reveal(?:\.min)?\.css(?:[?#][^"\']*)?["\']',
+            doc,
+        )
     )
 
 

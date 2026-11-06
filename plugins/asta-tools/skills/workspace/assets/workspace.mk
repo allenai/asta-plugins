@@ -171,13 +171,13 @@ preview: workspace-assets workspace-viewers
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
-	@set -eu; \
+	set -eu; \
 	set -- $(ASTA_WORKSPACE_RENDER_FILES); \
 	if [ "$$#" -eq 0 ]; then \
-		quarto render $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+		quarto render $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
 	else \
 		for page do \
-			quarto render "$$page" --no-clean $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+			quarto render "$$page" --no-clean $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
 		done; \
 	fi
 
@@ -211,19 +211,29 @@ what-changed:
 	label=$$(git rev-parse --short "$$base"); \
 	prefix=$$(git rev-parse --show-prefix); \
 	echo "what-changed: base $$source ($$base); running its make render" >&2; \
-	tmp=$$(mktemp -d); current=; \
+	tmp=; current=; \
 	cleanup() { \
 		status=$$?; trap - 0; trap '' 1 2 15; \
 		[ -z "$$current" ] || rm -rf "$$current"; \
-		if [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
+		if [ -n "$$tmp" ] && [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
 			echo "what-changed: cleanup failed; remove the worktree at $$tmp/base manually" >&2; exit 1; \
 		fi; \
-		rm -rf "$$tmp"; exit "$$status"; \
+		[ -z "$$tmp" ] || rm -rf "$$tmp"; exit "$$status"; \
 	}; \
 	trap cleanup 0; \
 	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
+	tmp=$$(mktemp -d); \
+	current_probe=$$($(MAKE) -n render ASTA_WORKSPACE_RENDER_OUTPUT=asta-what-changed-output-probe ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-page-probe.qmd 2>/dev/null) || current_probe=; \
+	printf '%s\n' "$$current_probe" | grep -q asta-what-changed-output-probe || { \
+		echo "what-changed: current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
+	for project in . "$$dir"; do \
+		if [ -f "$$project/_quarto.yml" ] || [ -f "$$project/_quarto.yaml" ]; then \
+			quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
+			$(PYTHON) -c 'import json, sys; site = json.load(open(sys.argv[1]))["config"]["project"].get("output-dir", "_site"); sys.exit(0 if site == "_site" else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project"; \
+		fi; \
+	done; \
 	files=; basefiles=; partial=; legacy=; \
 	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
 		changed=$$(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u); \
@@ -237,6 +247,9 @@ what-changed:
 				files="$$files $$rel"; \
 				[ ! -f "$$dir/$$rel" ] || basefiles="$$basefiles $$rel"; \
 			done; \
+		fi; \
+		if [ -n "$$partial" ]; then \
+			printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
 		fi; \
 		if [ -n "$$partial" ]; then \
 			probe=$$($(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null) || probe=; \
@@ -270,6 +283,8 @@ what-changed:
 		$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
 		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES= >&2; \
 	fi; \
+	find "$$current" -type f -name '*.html' -print -quit | grep -q . || { \
+		echo "what-changed: current render produced no HTML in the temporary output; check the render recipe and HTML format" >&2; exit 1; }; \
 	mkdir -p _site; \
 	theme=; [ -z "$$partial" ] || theme="--theme-root=_site"; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
