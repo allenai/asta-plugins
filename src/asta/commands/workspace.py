@@ -54,7 +54,7 @@ MAX_ASSET_BYTES = 1024 * 1024
 WORKFLOW_FILE = ".github/workflows/docs.yml"
 SITE_DIR_LINE = re.compile(
     r"^\s*site-dir:\s*(?:'(?P<single>(?:[^']|'')*)'|"
-    r'"(?P<double>(?:[^"\\]|\\.)*)"|(?P<plain>[^\'"#\r\n]+?))\s*(?:#.*)?$'
+    r'"(?P<double>(?:[^"\\]|\\.)*)"|(?P<plain>[^\'"\r\n]+))\s*(?:#.*)?$'
 )
 
 
@@ -65,6 +65,7 @@ def workflow_root(project: Path) -> Path:
     uses the root docs.yml whose site-dir names it.
     """
     project = project.resolve()
+    # A submodule is its own repository, just like a worktree with a .git file.
     root = next(
         (
             parent
@@ -80,7 +81,9 @@ def workflow_root(project: Path) -> Path:
     except (OSError, UnicodeDecodeError):
         return project
     site = project.relative_to(root).as_posix()
-    for line in text.splitlines():
+    lines = text.splitlines()
+    site_lines = [line for line in lines if re.match(r"^\s*site-dir:", line)]
+    for line in site_lines:
         match = SITE_DIR_LINE.fullmatch(line)
         if match is None:
             continue
@@ -92,8 +95,19 @@ def workflow_root(project: Path) -> Path:
             except ValueError:
                 continue
         else:
-            directory = match.group("plain")
+            directory = re.split(r"\s+#", match.group("plain"), maxsplit=1)[0].strip()
         if posixpath.normpath(directory) == site:
+            sources = [
+                line
+                for line in lines
+                if WORKFLOW in line and not line.lstrip().startswith("#")
+            ]
+            if len(site_lines) != 1 or len(sources) != 1:
+                raise click.ClickException(
+                    f"Ambiguous workspace workflow: {root / WORKFLOW_FILE}; "
+                    "a subfolder site requires exactly one site-dir and one "
+                    "asta-plugins workspace uses line"
+                )
             return root
     return project
 
@@ -103,7 +117,10 @@ def workflow_file(project: Path) -> Path:
 
 
 def selected_source(project: Path) -> tuple[str, str]:
-    workflow = workflow_file(project)
+    return _source_from_workflow(workflow_file(project))
+
+
+def _source_from_workflow(workflow: Path) -> tuple[str, str]:
     try:
         lines = workflow.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError as exc:
@@ -542,13 +559,14 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
             )
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
-    repository, ref = selected_source(project)
+    workflow = workflow_file(project)
+    repository, ref = _source_from_workflow(workflow)
     original_ref = ref
     if not _is_unattended():
         ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
     if ref != original_ref:
-        _reject_workflow_symlinks(project)
-        original = workflow_file(project).read_bytes()
+        _reject_workflow_symlinks(workflow)
+        original = workflow.read_bytes()
     try:
         archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
     except _WorkspaceFetchError:
@@ -563,14 +581,21 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
             project, repository, original_ref, refresh, require_scripts
         )
     if ref != original_ref:
-        _reject_workflow_symlinks(project)
-        if workflow_file(project).read_bytes() != original:
+        _reject_workflow_symlinks(workflow)
+        try:
+            current = workflow.read_bytes()
+        except OSError as exc:
             raise click.ClickException(
-                f"{WORKFLOW_FILE} changed during sync; left it unchanged. Run sync again."
+                f"{workflow} changed during sync or became unreadable; "
+                "left it unchanged. Run sync again."
+            ) from exc
+        if current != original:
+            raise click.ClickException(
+                f"{workflow} changed during sync; left it unchanged. Run sync again."
             )
-        _write_pin(project, original, ref)
+        _write_pin(workflow, original, ref)
         click.echo(
-            f"Moved the workspace pin in {WORKFLOW_FILE} from asta-plugins@{original_ref} "
+            f"Moved the workspace pin in {workflow} from asta-plugins@{original_ref} "
             f"to @{ref}, the installed asta's release (not committed)",
             err=True,
         )
@@ -795,8 +820,8 @@ def bump_pin(project: Path) -> None:
     project = project.resolve()
     root = workflow_root(project)
     workflow = root / WORKFLOW_FILE
-    _reject_workflow_symlinks(project)
-    _, ref = selected_source(project)
+    _reject_workflow_symlinks(workflow)
+    _, ref = _source_from_workflow(workflow)
     target = workspace_versions.pin_target(ref, workspace_versions.installed())
     if target is None:
         click.echo(f"Pin asta-plugins@{ref} is current; nothing to do")
@@ -817,7 +842,7 @@ def bump_pin(project: Path) -> None:
         raise click.ClickException("Could not determine the workflow's Git HEAD")
     commit_started = False
     try:
-        _write_pin(project, original, target)
+        _write_pin(workflow, original, target)
         commit_started = True
         committed = _git(root, "commit", "-m", message, "--", WORKFLOW_FILE)
         if committed.returncode != 0:
@@ -865,8 +890,8 @@ def _is_unattended() -> bool:
     )
 
 
-def _reject_workflow_symlinks(project: Path) -> None:
-    root = workflow_root(project)
+def _reject_workflow_symlinks(workflow: Path) -> None:
+    root = workflow.parents[2]
     for relative in (".github", ".github/workflows", WORKFLOW_FILE):
         if (root / relative).is_symlink():
             raise click.ClickException(
@@ -874,8 +899,7 @@ def _reject_workflow_symlinks(project: Path) -> None:
             )
 
 
-def _write_pin(project: Path, original: bytes, target: str) -> None:
-    workflow = workflow_file(project)
+def _write_pin(workflow: Path, original: bytes, target: str) -> None:
     lines = original.decode("utf-8").splitlines(keepends=True)
     for index, line in enumerate(lines):
         if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
@@ -883,7 +907,7 @@ def _write_pin(project: Path, original: bytes, target: str) -> None:
             lines[index] = line[:start] + target + line[end:]
     _atomic_write(workflow, "".join(lines).encode("utf-8"))
     try:
-        if selected_source(project)[1] != target:
+        if _source_from_workflow(workflow)[1] != target:
             raise click.ClickException(f"Could not move the pin in {workflow}")
     except BaseException:
         _atomic_write(workflow, original)

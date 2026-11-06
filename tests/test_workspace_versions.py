@@ -223,7 +223,7 @@ def test_sync_moves_a_release_pin_behind_the_cli_without_committing(
         assert not (project / ".github").exists()
     moved = [line for line in result.output.splitlines() if "Moved" in line]
     assert moved == [
-        "Moved the workspace pin in .github/workflows/docs.yml from "
+        f"Moved the workspace pin in {docs} from "
         f"asta-plugins@{ref} to @{target}, the installed asta's release (not committed)"
     ]
 
@@ -353,10 +353,62 @@ def test_pin_rewrite_restores_bytes_if_verification_raises(tmp_path, monkeypatch
     def invalid_source(_project):
         raise ClickException("invalid workflow")
 
-    monkeypatch.setattr(workspace_module, "selected_source", invalid_source)
+    monkeypatch.setattr(workspace_module, "_source_from_workflow", invalid_source)
     with pytest.raises(ClickException, match="invalid workflow"):
-        workspace_module._write_pin(project, before, "v0.113.0")
+        workspace_module._write_pin(docs, before, "v0.113.0")
     assert docs.read_bytes() == before
+
+
+@pytest.mark.parametrize("edit", ["site-dir", "delete", "unreadable"])
+@pytest.mark.parametrize("local_workflow", [False, True])
+def test_subfolder_sync_preserves_root_workflow_changes_during_fetch(
+    tmp_path, monkeypatch, edit, local_workflow
+):
+    _local(monkeypatch)
+    root = project_with_ref(tmp_path, "v0.110.0")
+    (root / ".git").mkdir()
+    docs = root / workspace_module.WORKFLOW_FILE
+    docs.write_text(docs.read_text() + "    with:\n      site-dir: site\n")
+    project = root / "site"
+    project.mkdir()
+    local = project / workspace_module.WORKFLOW_FILE
+    if local_workflow:
+        local.parent.mkdir(parents=True)
+        local.write_text(docs.read_text())
+    before = docs.read_bytes()
+    concurrent = before.replace(b"site-dir: site", b"site-dir: other")
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+    read_bytes = Path.read_bytes
+
+    def fetch(repository, ref):
+        if edit == "site-dir":
+            docs.write_bytes(concurrent)
+        elif edit == "delete":
+            docs.unlink()
+        else:
+
+            def unreadable(path):
+                if path == docs:
+                    raise PermissionError("permission changed")
+                return read_bytes(path)
+
+            monkeypatch.setattr(Path, "read_bytes", unreadable)
+        return b"rule\n", _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "changed during sync" in result.output
+    assert "Moved the workspace pin" not in result.output
+    if edit == "delete":
+        assert not docs.exists()
+    else:
+        assert read_bytes(docs) == (concurrent if edit == "site-dir" else before)
+    if local_workflow:
+        assert read_bytes(local) == before
+    else:
+        assert not (project / ".github").exists()
 
 
 @pytest.mark.parametrize(

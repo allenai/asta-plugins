@@ -143,6 +143,17 @@ For the optional `Makefile.managed` entry point, set `ASTA_WORKSPACE_LOCAL_GOALS
 
 Managed rules stay cached until the version selected in `docs.yml` changes or you run `make update-workspace`. With a moving channel such as `@latest`, refresh before comparing a local build with CI, which uses the workflow's current revision. Pin a release tag or commit in `docs.yml` if both must stay on a fixed version.
 
+For a site in a subfolder, keep the single `docs.yml` at the Git repository root
+and set its `with.site-dir` to the site's relative path. Root workflow discovery
+supports the thin stub's block mappings with one `site-dir` and one reusable
+workspace `uses` line; ambiguous multi-site or repeated-source stubs are rejected
+before fetching rules or moving pins. Use a literal unquoted or single-quoted
+path, or a double-quoted path with JSON-compatible escapes; YAML-specific
+double-quoted escapes, aliases, expressions and flow mappings are not resolved.
+The managed Makefile watches both existing local and root workflow candidates,
+so editing a candidate the CLI does not select can also trigger a harmless sync.
+Inside a Git submodule, discovery stays within that submodule's repository.
+
 To adopt managed scripts with `Makefile.managed`, first run `asta workspace sync --refresh --require-scripts`. Only after it succeeds, delete the unmodified `scripts/quarto-check.sh` and `scripts/wait-for-preview.sh` copies and run `make check`. The check verifies every script required by the selected rules: older managed refs require the two shell scripts, while refs with `workspace-viewers` also require the discovery and viewer helpers. Check `asta workspace sync --help` for the option; keep project copies until your CLI supports it. Older plugin refs may still require project scripts even with a newer CLI. If an older CLI has not cached the viewer scripts, local generation warns and skips; keep existing viewer pages until the viewer-capable ref passes the preflight.
 
 Keep any customized script in `scripts/`, which always takes precedence. CI warns when a project copy differs from the workflow's version. To eject one script, copy its cached version into `scripts/`. To eject shared rules, copy `workspace.mk` from your selected asta-plugins version into the project root and copy the selected version's `quarto-check.sh`, `wait-for-preview.sh`, `paper-discovery.py` and `paper-viewer.py` into `scripts/` too. Ejected rules alone do not locate the versioned script cache. The standalone full `Makefile` continues to use project scripts without the CLI.

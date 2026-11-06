@@ -172,11 +172,18 @@ def test_symlink_in_workflow_path_is_rejected(
     assert not _git(root, "status", "--porcelain")
 
 
+@pytest.mark.parametrize("site_dir", [".", "research/site"])
 def test_rejected_commit_restores_workflow_and_preserves_other_work(
-    project, monkeypatch
+    project, monkeypatch, site_dir
 ) -> None:
     root = project("v0.115.0")
     workflow = root / workspace.WORKFLOW_FILE
+    site = root / site_dir
+    site.mkdir(parents=True, exist_ok=True)
+    if site_dir != ".":
+        workflow.write_text(
+            workflow.read_text() + f"    with:\n      site-dir: {site_dir}\n"
+        )
     original = workflow.read_bytes().replace(b"\n", b"\r\n")
     workflow.write_bytes(original)
     _git(root, "add", workspace.WORKFLOW_FILE)
@@ -190,27 +197,29 @@ def test_rejected_commit_restores_workflow_and_preserves_other_work(
     hook = root / ".git/hooks/pre-commit"
     hook.write_text("#!/bin/sh\necho 'commit rejected' >&2\nexit 1\n")
     hook.chmod(0o755)
-    result = _run(root, "0.116.0", monkeypatch)
+    result = _run(site, "0.116.0", monkeypatch)
     assert result.exit_code != 0
     assert "commit rejected" in result.output
     assert workflow.read_bytes() == original
     assert _git(root, "rev-parse", "HEAD") == head
     assert _git(root, "diff", "--cached") == staged
     assert notes.read_text() == "unstaged work\n"
+    if site_dir != ".":
+        assert not (site / ".github").exists()
 
 
 def test_failed_validation_restores_workflow(project, monkeypatch) -> None:
     root = project("v0.115.0")
     workflow = root / workspace.WORKFLOW_FILE
     original = workflow.read_bytes()
-    selected_source = workspace.selected_source
+    selected_source = workspace._source_from_workflow
 
     def validate(project):
         if b"@v0.116.0" in workflow.read_bytes():
             raise click.ClickException("validation failed")
         return selected_source(project)
 
-    monkeypatch.setattr(workspace, "selected_source", validate)
+    monkeypatch.setattr(workspace, "_source_from_workflow", validate)
     result = _run(root, "0.116.0", monkeypatch)
     assert result.exit_code != 0
     assert "validation failed" in result.output
@@ -380,11 +389,16 @@ def test_unreadable_head_after_success_never_prints_an_empty_sha(project, monkey
 
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
-@pytest.mark.parametrize("site_dir", [".", "research/site"])
+@pytest.mark.parametrize("site_dir", [".", "research/site", "research/site notes"])
+@pytest.mark.parametrize("checkout_spaces", [False, True])
 def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
-    project, monkeypatch, tmp_path_factory, site_dir
+    project, monkeypatch, tmp_path_factory, site_dir, checkout_spaces
 ):
     repository = project("v0.115.0")
+    if checkout_spaces:
+        repository = repository.rename(
+            tmp_path_factory.mktemp("checkout") / "checkout with spaces"
+        )
     root = repository / site_dir
     root.mkdir(parents=True, exist_ok=True)
     if site_dir != ".":
@@ -466,6 +480,7 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
         ("research/site notes", "./research/site notes/"),
         ("research/site #1", "'./research/site #1/'"),
         ("research/site #1", '"./research/site #1/"'),
+        ("research/site#1", "./research/site#1/"),
         ("research/site's notes", "'./research/site''s notes/'"),
     ],
 )
@@ -547,3 +562,31 @@ def test_non_git_site_ignores_ancestor_workflow(tmp_path):
         STUB.format(ref="v0.115.0") + "    with:\n      site-dir: research/site\n"
     )
     assert workspace.workflow_root(site) == site
+
+
+@pytest.mark.parametrize("other_job", ["site", "source", "both"])
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_subfolder_rejects_ambiguous_root_without_changing_pins(
+    project, monkeypatch, other_job, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    text = workflow.read_text() + "    with:\n      site-dir: site\n  other:\n"
+    if other_job in ("source", "both"):
+        text += f"    uses: allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n"
+    if other_job in ("site", "both"):
+        text += "    with:\n      site-dir: other\n"
+    workflow.write_text(text)
+    site = root / "site"
+    site.mkdir()
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("must reject before fetch")
+    )
+    head = _git(root, "rev-parse", "HEAD")
+    result = CliRunner().invoke(cli, ["workspace", command, "--project", str(site)])
+    assert result.exit_code != 0
+    assert "Ambiguous workspace workflow" in result.output
+    assert workflow.read_text() == text
+    assert _git(root, "rev-parse", "HEAD") == head
+    assert not (site / ".github").exists()
