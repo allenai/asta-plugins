@@ -231,7 +231,7 @@ what-changed:
 	for project in . "$$dir"; do \
 		if [ -f "$$project/_quarto.yml" ] || [ -f "$$project/_quarto.yaml" ]; then \
 			quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
-			$(PYTHON) -c 'import json, sys; site = json.load(open(sys.argv[1]))["config"]["project"].get("output-dir", "_site"); sys.exit(0 if site == "_site" else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project"; \
+			$(PYTHON) -c 'import json, pathlib, sys; site = json.load(open(sys.argv[1])).get("config", {}).get("project", {}).get("output-dir"); sys.exit(0 if isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",) else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project"; \
 		fi; \
 	done; \
 	files=; basefiles=; partial=; legacy=; \

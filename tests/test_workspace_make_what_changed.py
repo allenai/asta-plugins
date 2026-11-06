@@ -360,6 +360,24 @@ def test_nonstandard_site_output_is_rejected_before_rendering(
     assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 
 
+@pytest.mark.parametrize("output", ["_site/", "./_site"])
+def test_equivalent_site_output_paths_are_allowed(
+    project: Path, tmp_path: Path, output: str
+) -> None:
+    (project / "_quarto.yml").write_text(
+        f"project:\n  type: website\n  output-dir: {output}\n"
+    )
+    git(project, "add", "_quarto.yml")
+    git(project, "commit", "-qm", "equivalent site directory")
+    git(project, "branch", "-f", "main")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "drafted" in (project / "_site/what-changed.html").read_text()
+
+
 def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> None:
     nested = project / "research workspace/docs"
     nested.mkdir(parents=True)
@@ -627,19 +645,21 @@ def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules:
 
 
 @pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
-@pytest.mark.parametrize("use_profile", [False, True])
+@pytest.mark.parametrize("configuration", ["explicit", "profile", "no-output"])
 def test_real_quarto_rejects_custom_output_directory(
-    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, use_profile: bool
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configuration: str
 ) -> None:
     """Resolved config, including active profiles, must match the served output."""
     (project / "_quarto.yml").write_text("project:\n  type: website\n")
-    if use_profile:
+    if configuration == "profile":
         (project / "_quarto-local.yml").write_text("project:\n  output-dir: docs\n")
         monkeypatch.setenv("QUARTO_PROFILE", "local")
-    else:
+    elif configuration == "explicit":
         (project / "_quarto.yml").write_text(
             "project:\n  type: website\n  output-dir: docs\n"
         )
+    else:
+        (project / "_quarto.yml").write_text("project:\n  type: default\n")
     (project / "docs").mkdir()
     preview = project / "docs/index.html"
     preview.write_text("Keep this live preview.")
