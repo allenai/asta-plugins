@@ -3,7 +3,7 @@
 import base64
 import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -70,6 +70,27 @@ class TestAuthCommands:
     def _invoke(runner, args):
         """Invoke CLI with ASTA_TOKEN cleared from env for storage-based tests."""
         return runner.invoke(cli, args, env={"ASTA_TOKEN": ""})
+
+    def _login(self, env):
+        with (
+            patch.object(TokenManager, "login", new=AsyncMock()),
+            patch.object(
+                TokenManager, "get_user_info", return_value={"email": "a@example.com"}
+            ),
+        ):
+            return CliRunner().invoke(cli, ["auth", "login", "--no-browser"], env=env)
+
+    def test_auth_login_warns_when_asta_token_is_set(self):
+        result = self._login({"ASTA_TOKEN": "env-token-value"})
+        assert result.exit_code == 0
+        assert "ASTA_TOKEN is set" in result.output
+        assert "env -u ASTA_TOKEN" in result.output
+
+    def test_auth_login_without_asta_token_does_not_warn(self):
+        result = self._login({"ASTA_TOKEN": ""})
+        assert result.exit_code == 0
+        assert "Authentication successful" in result.output
+        assert "ASTA_TOKEN" not in result.output
 
     def test_auth_status_not_authenticated(self):
         """Test auth status when not authenticated."""

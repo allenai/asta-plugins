@@ -124,3 +124,35 @@ class TestUploadFile:
 
         with pytest.raises(Exception, match="Upload error 403: SignatureDoesNotMatch"):
             _client().upload_file("run-1", str(dataset))
+
+
+class TestCallerPath:
+    def test_paths_name_the_caller_as_me(self, monkeypatch):
+        urls = []
+
+        def fake_urlopen(req, timeout=None):
+            urls.append(req.full_url)
+            return _Resp(b"{}")
+
+        monkeypatch.setattr(client_mod.urllib.request, "urlopen", fake_urlopen)
+        client = _client()
+        client.list_runs()
+        client.get_metadata("run-1")
+
+        assert urls == [
+            f"{BASE}/api/runs/me/list",
+            f"{BASE}/api/runs/me/run-1/metadata",
+        ]
+
+    def test_accepts_a_token_that_is_not_a_jwt(self, monkeypatch):
+        sent = []
+        monkeypatch.setattr(
+            client_mod.urllib.request,
+            "urlopen",
+            lambda req, timeout=None: sent.append(req) or _Resp(b"{}"),
+        )
+
+        AutoDiscoveryClient(base_url=BASE, access_token="opaque-key").list_runs()
+
+        assert sent[0].full_url == f"{BASE}/api/runs/me/list"
+        assert sent[0].headers["Authorization"] == "Bearer opaque-key"

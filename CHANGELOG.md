@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `asta autodiscovery` names the caller as `me` in API paths instead of reading
+  the user id out of the access token, so it works with any token the service
+  accepts, not only a JWT whose subject is the user id.
+
+- `asta auth login` warns after it succeeds if `ASTA_TOKEN` is set: commands
+  use that variable instead of the stored login. Unset it, or run
+  `env -u ASTA_TOKEN asta …`, to use the login.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):
