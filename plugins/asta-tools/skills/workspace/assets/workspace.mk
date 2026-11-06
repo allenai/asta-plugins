@@ -271,8 +271,9 @@ what-changed:
 		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES= >&2; \
 	fi; \
 	mkdir -p _site; \
+	theme=; [ -z "$$partial" ] || theme="--theme-root=_site"; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
-		--out _site/what-changed.html --title "Changes since $$label"; \
+		--out _site/what-changed.html --title "Changes since $$label" $$theme; \
 	echo "what-changed: wrote _site/what-changed.html; open /what-changed.html in make preview (rerun after edits or a preview rebuild)"
 
 # Run the same quality gates CI runs, in one place so local and CI can't

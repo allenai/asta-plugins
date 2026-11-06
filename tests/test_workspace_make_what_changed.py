@@ -457,6 +457,28 @@ def test_page_edit_renders_only_changed_pages(
     assert "An untouched page." not in page
 
 
+def test_page_only_render_keeps_the_preview_site_theme(
+    project: Path, tmp_path: Path
+) -> None:
+    deck = "<html><head><link href='../site_libs/revealjs/dist/reveal.css' rel='stylesheet'></head><body><div class='reveal'>Deck</div></body></html>"
+    (project / "_site/talk").mkdir(parents=True)
+    (project / "_site/talk/slides.html").write_text(deck)
+    (project / "_site/index.html").write_text(
+        '<html><head><link href="site_libs/bootstrap/bootstrap.min.css" '
+        'rel="stylesheet"></head><body><main>Live preview.</main></body></html>'
+    )
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new line.\n")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" in result.stderr
+    page = (project / "_site/what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert "reveal.css" not in page
+    assert "A new line." in page
+
+
 @pytest.mark.parametrize("full", [False, True])
 def test_non_page_change_or_opt_out_renders_whole_site(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, full: bool

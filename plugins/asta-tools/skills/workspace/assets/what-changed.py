@@ -1198,20 +1198,33 @@ def anchor_id(rel):
     return "p-" + re.sub(r"[^a-zA-Z0-9]+", "-", rel).strip("-")
 
 
-def pick_template(new_pages):
-    """Choose the shallowest rendered page to borrow the site theme from.
+def _is_slide_deck(doc):
+    return bool(
+        re.search(r'(?i)class\s*=\s*["\'][^"\']*(?<![\w-])reveal(?![\w-])', doc)
+    )
 
-    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase.
+
+def pick_template(new_pages):
+    """Choose the shallowest rendered site page to borrow the site theme from.
+
+    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase. A
+    reveal.js deck carries the deck's styling, not the site's, so it is used
+    only when no other page exists.
     Returns (doc_html, depth) or (None, 0) if nothing suitable exists.
     """
-    if not new_pages:
-        return None, 0
-    rel = min(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r))
-    depth = rel.replace(os.sep, "/").count("/")
-    try:
-        return open(new_pages[rel], encoding="utf-8").read(), depth
-    except OSError:
-        return None, 0
+    fallback = (None, 0)
+    for rel in sorted(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r)):
+        depth = rel.replace(os.sep, "/").count("/")
+        try:
+            with open(new_pages[rel], encoding="utf-8") as f:
+                doc = f.read()
+        except OSError:
+            continue
+        if not _is_slide_deck(doc):
+            return doc, depth
+        if fallback[0] is None:
+            fallback = (doc, depth)
+    return fallback
 
 
 def paper_identity(paper_dir):
@@ -1516,7 +1529,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     )
 
 
-def build(old_root, new_root, preview_url, title, out_path=None):
+def build(old_root, new_root, preview_url, title, out_path=None, theme_root=None):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1681,8 +1694,14 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     )
     escaped_title = html.escape(title)
 
-    template_doc, depth = pick_template(new_pages)
-    theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+    # A partial render holds only the changed pages, so the caller can name the
+    # full site this page is served from as the theme source.
+    template_doc, theme_css = None, None
+    for pages in (list_pages(theme_root, out_path) if theme_root else {}, new_pages):
+        template_doc, depth = pick_template(pages)
+        theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+        if theme_css:
+            break
 
     inner = (
         '<header class="diff-head"><h1>What changed</h1>'
@@ -1738,6 +1757,10 @@ def main(argv=None):
     ap.add_argument(
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
+    ap.add_argument(
+        "--theme-root",
+        help="rendered full site to borrow the theme from (default: --new)",
+    )
     args = ap.parse_args(argv)
     doc = build(
         args.old,
@@ -1745,6 +1768,7 @@ def main(argv=None):
         args.preview_url,
         args.title,
         out_path=args.out,
+        theme_root=args.theme_root,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)

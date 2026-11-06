@@ -445,6 +445,51 @@ def test_nested_template_stylesheet_is_rebased_to_preview_root(tmp_path):
     assert 'href="site_libs/theme.css"' in theme
 
 
+def test_template_skips_slide_deck_for_a_site_page(tmp_path):
+    new = tmp_path / "new"
+    (new / "talk").mkdir(parents=True)
+    (new / "a-deck.html").write_text(
+        '<html><head><link rel="stylesheet" href="site_libs/revealjs/reveal.css">'
+        '</head><body><div class="reveal slides-ready">Deck</div></body></html>'
+    )
+    (new / "talk/page.html").write_text(
+        '<html><head><link rel="stylesheet" href="../site_libs/theme.css">'
+        '</head><body><main class="revealed">Content</main></body></html>'
+    )
+
+    doc, depth = WHAT_CHANGED.pick_template(WHAT_CHANGED.list_pages(new))
+
+    assert depth == 1
+    assert "theme.css" in doc
+
+
+def test_partial_render_borrows_theme_from_full_site(tmp_path):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        (root / "talk").mkdir(parents=True)
+    deck = (
+        '<html><head><link rel="stylesheet" href="../site_libs/revealjs/reveal.css">'
+        '</head><body><div class="reveal"><section><p>{}</p></section></div></body></html>'
+    )
+    (old / "talk/slides.html").write_text(deck.format("Old finding"))
+    (new / "talk/slides.html").write_text(deck.format("New finding"))
+    (site / "index.html").write_text(
+        '<html><head><link href="site_libs/bootstrap/bootstrap.min.css" '
+        'rel="stylesheet"></head><body><main>Site</main></body></html>'
+    )
+    out = site / "what-changed.html"
+    out.write_text("<html><head><style>.stale {}</style></head></html>")
+
+    result = WHAT_CHANGED.build(old, new, "", "Local", out_path=out, theme_root=site)
+
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in result
+    assert "reveal.css" not in result
+    assert ".stale" not in result
+    # Without a themed full site, the changed pages remain the fallback source.
+    fallback = WHAT_CHANGED.build(old, new, "", "Local", theme_root=tmp_path / "none")
+    assert 'href="site_libs/revealjs/reveal.css"' in fallback
+
+
 def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"
