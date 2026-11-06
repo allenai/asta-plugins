@@ -248,7 +248,9 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     assert result.returncode == 0, result.stderr
     assert not (project / "_site/what-changed.html").exists()
     assert "what-changed page generation failed" in result.stdout
-    assert not stale_images.exists()
+    assert (
+        stale_images / "old.png"
+    ).exists()  # renderer was never enabled; project owns this folder
     assert not (project / "_site/.what-changed.tmp.html").exists()
 
 

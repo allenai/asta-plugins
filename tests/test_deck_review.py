@@ -95,7 +95,10 @@ def test_slide_diff_uses_the_rendered_view_and_falls_back_to_text():
     )
 
 
-def test_render_decks_without_playwright_still_writes_the_page(tmp_path, capsys):
+def test_render_decks_without_playwright_still_writes_the_page(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(what_changed, "load_deck_review", lambda: None)
     out = tmp_path / "what-changed.html"
     what_changed.main(
         [
@@ -385,3 +388,55 @@ def test_old_and_new_sites_have_independent_origin_roots(tmp_path, monkeypatch):
                 assert response.read().decode() == side
     finally:
         renderer.close()
+
+
+def test_site_server_does_not_follow_external_symlinks(tmp_path):
+    from urllib.error import HTTPError
+    from urllib.request import urlopen
+
+    site = tmp_path / "site"
+    site.mkdir()
+    secret = tmp_path / "outside.txt"
+    secret.write_text("must not be served")
+    (site / "leak.txt").symlink_to(secret)
+    (site / "directory").symlink_to(tmp_path, target_is_directory=True)
+    server = deck_review._serve(str(site))
+    try:
+        for path in ("leak.txt", "directory/outside.txt"):
+            with pytest.raises(HTTPError) as error:
+                urlopen(f"http://127.0.0.1:{server.server_address[1]}/{path}")
+            assert error.value.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_renderer_routes_only_local_site_origins():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    renderer = object.__new__(deck_review.Renderer)
+    renderer._bases = {"old": "http://127.0.0.1:123", "new": "http://127.0.0.1:456"}
+    for url, allowed in [
+        ("http://127.0.0.1:123/image.png", True),
+        ("http://127.0.0.1:456/deck", True),
+        ("https://example.org/beacon", False),
+        ("http://127.0.0.1:789/private", False),
+        ("http://127.0.0.1:123@evil.example/asset", False),
+    ]:
+        route = SimpleNamespace(
+            request=SimpleNamespace(url=url), continue_=Mock(), abort=Mock()
+        )
+        renderer._route(route)
+        assert route.continue_.called == allowed
+        assert route.abort.called != allowed
+
+
+def test_reorder_only_omits_invisible_text_changes():
+    old = '<div class="reveal"><div class="slides"><section id="a"><h2>A</h2><aside class="notes">old</aside></section><section id="b"><h2>B</h2></section></div></div>'
+    new = '<div class="reveal"><div class="slides"><section id="b"><h2>B</h2></section><section id="a"><h2>A</h2><aside class="notes">new</aside></section></div></div>'
+    result = what_changed.slide_diff(
+        old, new, "slides.html", "slides.html", decks=_FakeDecks(None)
+    )
+    assert "Slides reordered." in result[0]
+    assert "slide-diff" not in result[0]

@@ -95,9 +95,10 @@ jobs:
         run: node workspace-slides.mjs ../../examples/workspace/_site artifacts
       - name: Check rendered deck review
         run: |
-          python3 -m pip install playwright==1.64.1
-          python3 -m playwright install --with-deps chromium
-          python3 tests/browser/deck-review.py examples/workspace/_site tests/browser/artifacts
+          python3 -m venv "$RUNNER_TEMP/deck-review-venv"
+          "$RUNNER_TEMP/deck-review-venv/bin/python" -m pip install playwright==1.64.1
+          "$RUNNER_TEMP/deck-review-venv/bin/python" -m playwright install --with-deps chromium
+          "$RUNNER_TEMP/deck-review-venv/bin/python" tests/browser/deck-review.py examples/workspace/_site tests/browser/artifacts
       - name: Check both themes and evidence readability
         working-directory: tests/browser
         run: npm test -- ../../examples/workspace/_site artifacts

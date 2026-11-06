@@ -4,8 +4,9 @@
 Used by what-changed.py (``--render-decks DIR``): each new, changed or removed
 slide is rendered as the deck shows it, with changed words marked on the slide,
 and the deck's What changed section becomes a view with three modes: Changes
-marked, Clean, and Before / after. Unchanged slides around a change are folded
-into a count, like a code diff's context.
+marked, Clean, and Before / after. Every unchanged run is folded into an
+expandable count. Static screenshots are compared exactly; animated GIFs, canvas
+and time-dependent custom scripts may produce extra visual-change cards.
 
 A slide is changed when its markup differs or, with the same markup, when its
 rendered image differs (an image swapped, a style fix). Slides are matched by
@@ -23,7 +24,7 @@ import threading
 from contextlib import ExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 VIEWPORT = {"width": 1600, "height": 900}
 
@@ -65,14 +66,14 @@ READY_JS = r"""() => Promise.race([(async () => {
   }
   await Promise.all(roots.flatMap(root => [...root.querySelectorAll('img')]).map(async i => {
     if (i.dataset.src && !i.getAttribute('src')) i.src = i.dataset.src;
-    await i.decode();
+    await i.decode().catch(() => {});
   }));
   const urls = roots.flatMap(root => [root, ...root.querySelectorAll('*')]).flatMap(el => {
     const value = getComputedStyle(el).backgroundImage;
     return [...value.matchAll(/url\((?:["']?)(.*?)(?:["']?)\)/g)].map(m => m[1]);
   });
-  await Promise.all(urls.map(src => new Promise((resolve, reject) => {
-    const i = new Image(); i.onload = resolve; i.onerror = () => reject(new Error('Background failed: ' + src)); i.src = src;
+  await Promise.all(urls.map(src => new Promise(resolve => {
+    const i = new Image(); i.onload = resolve; i.onerror = resolve; i.src = src;
   })));
   for (const video of roots.flatMap(root => [...root.querySelectorAll('video')])) {
     video.pause();
@@ -142,13 +143,23 @@ MARK_WORDS_JS = (
     if (k === nodes.length - 1 && dels[q]) frag.append(' ', del(dels[q].join(' ')));
     nd.replaceWith(frag);
   });
+  if (!nodes.length && dels[q]) Reveal.getCurrentSlide().append(del(dels[q].join(' ')));
   Reveal.layout();
 }"""
 )
 
 
 def _serve(root):
+    root = os.path.realpath(root)
+
     class Quiet(SimpleHTTPRequestHandler):
+        def send_head(self):
+            target = os.path.realpath(self.translate_path(self.path))
+            if os.path.commonpath([root, target]) != root:
+                self.send_error(403, "Path outside site")
+                return None
+            return super().send_head()
+
         def log_message(self, *args):
             pass
 
@@ -184,24 +195,38 @@ class Renderer:
         self._resources.close()
 
     def _open(self, side, deck):
-        page = self._browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
+        page = self._browser.new_page(
+            viewport=VIEWPORT, device_scale_factor=1, service_workers="block"
+        )
         try:
+            # PR-authored documents may request only these two isolated site origins.
+            page.context.route("**/*", lambda route: self._route(route))
+            page.context.route_web_socket("**/*", lambda socket: socket.close())
             page.set_default_timeout(30000)
-            page.goto(f"{self._bases[side]}/{quote(deck)}")
+            page.goto(
+                f"{self._bases[side]}/{quote(deck)}", wait_until="domcontentloaded"
+            )
             page.wait_for_function(
                 "() => window.Reveal && Reveal.isReady && Reveal.isReady()",
                 timeout=30000,
             )
             page.evaluate(
-                "() => Reveal.configure({transition: 'none', backgroundTransition: 'none', progress: false, slideNumber: false, controls: false})"
+                "() => Reveal.configure({transition: 'none', backgroundTransition: 'none', progress: false, slideNumber: false, controls: false, autoSlide: 0})"
             )
             page.add_style_tag(content=CAPTURE_CSS)
-            page.wait_for_load_state("networkidle", timeout=10000)
             page.evaluate(READY_JS)
         except Exception:
             page.close()
             raise
         return page
+
+    def _route(self, route):
+        url = urlsplit(route.request.url)
+        origin = f"{url.scheme}://{url.netloc}"
+        if origin in self._bases.values():
+            route.continue_()
+        else:
+            route.abort()
 
     def page(self, side, deck):
         key = (side, deck)
@@ -220,12 +245,10 @@ class Renderer:
         page = self._open(side, deck) if mark else self.page(side, deck)
         try:
             page.evaluate(GOTO_JS, index)
-            page.wait_for_load_state("networkidle", timeout=10000)
             page.evaluate(READY_JS)
             # Embedded documents have their own fonts, media and animation clocks.
             for frame in page.frames:
                 if frame != page.main_frame and frame.frame_element().is_visible():
-                    frame.wait_for_load_state("networkidle", timeout=10000)
                     frame.add_style_tag(content=CAPTURE_CSS)
                     frame.evaluate(READY_JS)
             if mark:

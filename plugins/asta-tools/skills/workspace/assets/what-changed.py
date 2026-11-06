@@ -1437,7 +1437,8 @@ def match_slides(old, new):
                 # additions/removals must not become a fabricated edit.
                 before = re.sub(r"<[^>]+>", "", old[oi]["body"])
                 after = re.sub(r"<[^>]+>", "", new[ni]["body"])
-                if difflib.SequenceMatcher(None, before, after).ratio() >= 0.5:
+                similarity = difflib.SequenceMatcher(None, before, after)
+                if similarity.quick_ratio() >= 0.5 and similarity.ratio() >= 0.5:
                     pairs[ni] = oi
     return pairs
 
@@ -1548,7 +1549,9 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
         changes.append(
             f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
         )
-    if rendered:
+    if rendered is None:
+        changes = []
+    elif rendered:
         changes = [rendered]
     if reordered:
         changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
@@ -1807,15 +1810,19 @@ def main(argv=None):
             os.path.realpath(site_path),
             os.path.realpath(image_path),
         )
-        if (
-            image_root == site_root
-            or os.path.commonpath([site_root, image_root]) != site_root
-            or os.path.commonpath([site_path, image_path]) != site_path
-            or os.path.commonpath([image_root, os.path.realpath(args.out)])
-            == image_root
-            or os.path.commonpath([image_root, os.path.realpath(args.old)])
-            == image_root
-        ):
+        try:
+            unsafe = (
+                image_root == site_root
+                or os.path.commonpath([site_root, image_root]) != site_root
+                or os.path.commonpath([site_path, image_path]) != site_path
+                or os.path.commonpath([image_root, os.path.realpath(args.out)])
+                == image_root
+                or os.path.commonpath([image_root, os.path.realpath(args.old)])
+                == image_root
+            )
+        except ValueError:
+            unsafe = True
+        if unsafe:
             ap.error(
                 "--render-decks must be a separate generated directory inside the new site"
             )

@@ -102,8 +102,33 @@ def capture_regressions(root, deck, original):
             == 0
         )
         assert page.locator("svg text").text_content() == "Graph"
+        assert page.evaluate("() => Reveal.getConfig().autoSlide") == 0
+        # Missing assets must remain visible as missing assets, not force text fallback.
+        page.evaluate("""() => {
+          const slide = Reveal.getCurrentSlide();
+          const image = document.createElement('img'); image.src = '/missing-review-image.png';
+          slide.append(image); slide.style.backgroundImage = 'url(/missing-background.png)';
+        }""")
+        page.evaluate(review.READY_JS)
+        assert renderer.shoot("new", str(deck), 2).startswith(b"\x89PNG")
+        assert page.evaluate("""async () => {
+          try { await fetch('https://example.org/deck-review-egress'); return false; }
+          catch { return true; }
+        }"""), "External requests must be blocked"
+        page.evaluate("() => Reveal.getCurrentSlide().replaceChildren()")
+        page.evaluate(review.MARK_WORDS_JS, [review.MARK_CSS, ["deleted", "words"]])
+        assert page.locator(".present .dr-del").inner_text() == "deleted words"
+
     finally:
         renderer.close()
+
+
+def decode_review_images(page):
+    page.evaluate("""async () => {
+      await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
+        i.loading = 'eager'; return i.decode().catch(() => {});
+      }));
+    }""")
 
 
 def check(site, artifacts):
@@ -173,11 +198,7 @@ def check(site, artifacts):
                 )
                 assert page.locator(".dr-more").count() > 0
                 page.locator(".deck-review").scroll_into_view_if_needed()
-                page.evaluate("""async () => {
-                  await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
-                    i.loading = 'eager'; return i.decode().catch(() => {});
-                  }));
-                }""")
+                decode_review_images(page)
                 page.screenshot(path=str(artifacts / "deck-review-marked.png"))
                 page.get_by_role("button", name="Clean", exact=True).click()
                 assert (
@@ -186,19 +207,11 @@ def check(site, artifacts):
                     )
                     == "true"
                 )
-                page.evaluate("""async () => {
-                  await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
-                    i.loading = 'eager'; return i.decode().catch(() => {});
-                  }));
-                }""")
+                decode_review_images(page)
                 page.screenshot(path=str(artifacts / "deck-review-clean.png"))
                 page.get_by_role("button", name="Before / after", exact=True).click()
                 assert page.locator(".dr-pair:visible").count() >= 2
-                page.evaluate("""async () => {
-                  await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
-                    i.loading = 'eager'; return i.decode().catch(() => {});
-                  }));
-                }""")
+                decode_review_images(page)
                 page.screenshot(path=str(artifacts / "deck-review-before-after.png"))
                 for image in page.locator(".dr-slide:visible img:visible").all():
                     image.scroll_into_view_if_needed()
