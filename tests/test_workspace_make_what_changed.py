@@ -77,9 +77,13 @@ def make(project: Path, tmp_path: Path, *args: str) -> subprocess.CompletedProce
 def test_uncommitted_edit_is_shown_against_branch_base(
     project: Path, tmp_path: Path
 ) -> None:
-    git(project, "commit", "--allow-empty", "-qm", "branch work")
     (project / "index.qmd").write_text(
-        "The baseline finding holds.\nA newly drafted paragraph.\n"
+        "The baseline finding holds.\nA committed branch paragraph.\n"
+    )
+    git(project, "add", "index.qmd")
+    git(project, "commit", "-qm", "branch work")
+    (project / "index.qmd").write_text(
+        "The baseline finding holds.\nA committed branch paragraph.\nA newly drafted paragraph.\n"
     )
 
     result = make(project, tmp_path)
@@ -87,6 +91,10 @@ def test_uncommitted_edit_is_shown_against_branch_base(
     assert result.returncode == 0, result.stderr
     page = (project / "_site/what-changed.html").read_text()
     assert "newly drafted paragraph" in page
+    assert "committed branch paragraph" in page
+    assert (
+        f"Changes since {git(project, 'rev-parse', '--short', 'main').strip()}" in page
+    )
     assert "<ins" in page
     assert (project / "_site/index.html").is_file()
     worktrees = git(project, "worktree", "list", "--porcelain")
@@ -114,13 +122,17 @@ def test_local_default_branch(project: Path, tmp_path: Path, branch: str) -> Non
     if branch == "custom-default":
         git(project, "config", "init.defaultBranch", branch)
     git(project, "commit", "--allow-empty", "-qm", "branch work")
-    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    (project / "index.qmd").write_text(
+        "The baseline finding holds.\nA newly drafted paragraph.\n"
+    )
 
     result = make(project, tmp_path)
 
     assert result.returncode == 0, result.stderr
+    page = (project / "_site/what-changed.html").read_text()
+    assert "newly drafted paragraph" in page
     assert (
-        "newly drafted paragraph" in (project / "_site/what-changed.html").read_text()
+        f"Changes since {git(project, 'rev-parse', '--short', branch).strip()}" in page
     )
 
 
@@ -136,15 +148,20 @@ def test_remote_default_branch(
     git(project, "fetch", "-q", "origin")
     if cached_head:
         git(project, "remote", "set-head", "origin", "-a")
+    else:
+        git(project, "update-ref", "--no-deref", "-d", "refs/remotes/origin/HEAD")
     git(project, "branch", "-D", "published-default")
-    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    (project / "index.qmd").write_text(
+        "The baseline finding holds.\nA newly drafted paragraph.\n"
+    )
 
     result = make(project, tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert (
-        "newly drafted paragraph" in (project / "_site/what-changed.html").read_text()
-    )
+    page = (project / "_site/what-changed.html").read_text()
+    assert "newly drafted paragraph" in page
+    expected = git(project, "rev-parse", "--short", "origin/published-default").strip()
+    assert f"Changes since {expected}" in page
 
 
 def test_base_uses_its_own_render_rules(project: Path, tmp_path: Path) -> None:
