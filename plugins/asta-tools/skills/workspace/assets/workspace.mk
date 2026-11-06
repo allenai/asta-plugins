@@ -177,22 +177,29 @@ what-changed: render
 	@set -eu; \
 	base='$(subst ','"'"',$(WHAT_CHANGED_BASE))'; \
 	if [ -z "$$base" ]; then \
-		for upstream in origin/HEAD origin/main main; do \
-			base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) && break || base=; \
-		done; \
+		upstream=$$(git symbolic-ref -q refs/remotes/origin/HEAD || true); \
+		if [ -z "$$upstream" ] && git remote get-url origin >/dev/null 2>&1; then \
+			upstream=$$(git ls-remote --symref origin HEAD 2>/dev/null | sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$$|refs/remotes/origin/\1|p') || true; \
+		fi; \
+		if [ -n "$$upstream" ]; then \
+			base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) || base=; \
+		else \
+			configured=$$(git config --get init.defaultBranch || true); \
+			for upstream in "$$configured" main master trunk; do \
+				[ -n "$$upstream" ] || continue; \
+				base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) && break || base=; \
+			done; \
+		fi; \
 	fi; \
 	[ -n "$$base" ] || { echo "what-changed: no base branch found; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
-	label=$$(git rev-parse --short "$$base^{commit}"); \
+	base=$$(git rev-parse --verify --end-of-options "$$base^{commit}") || { echo "what-changed: invalid base; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+	label=$$(git rev-parse --short "$$base"); \
 	prefix=$$(git rev-parse --show-prefix); \
 	tmp=$$(mktemp -d); \
 	trap 'git worktree remove --force "$$tmp/base" >/dev/null 2>&1 || true; rm -rf "$$tmp"' 0; \
-	git worktree add -q --detach "$$tmp/base" "$$label"; \
+	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
-	for ext in _extensions/*/; do \
-		[ -d "$$ext" ] && [ ! -e "$$dir/$${ext%/}" ] || continue; \
-		mkdir -p "$$dir/_extensions"; cp -R "$${ext%/}" "$$dir/_extensions/"; \
-	done; \
-	(cd "$$dir" && quarto render) >&2; \
+	$(MAKE) -C "$$dir" render >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new _site \
 		--out _site/what-changed.html --title "Changes since $$label"; \
 	echo "what-changed: open what-changed.html in the make preview site"

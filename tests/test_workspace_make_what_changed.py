@@ -13,7 +13,11 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 FAKE_QUARTO = """#!/usr/bin/env python3
 import pathlib, sys
 assert sys.argv[1:] == ["render"], sys.argv
-paras = "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
+extension = pathlib.Path("_extensions/evidence/version.txt").read_text()
+required = pathlib.Path("required-extension.txt")
+if required.exists():
+    extension += pathlib.Path("_extensions", required.read_text().strip(), "version.txt").read_text()
+paras = f"<p>{extension}</p>" + "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
 pathlib.Path("_site").mkdir(exist_ok=True)
 pathlib.Path("_site/index.html").write_text(
     f"<html><head><title>Report</title></head><body><main>{paras}</main></body></html>"
@@ -44,12 +48,14 @@ def project(tmp_path: Path) -> Path:
     (project / ".gitignore").write_text("_site/\n_extensions/\n")
     (project / "index.qmd").write_text("The baseline finding holds.\n")
     git(project, "init", "-q", "-b", "main")
-    git(project, "add", ".")
+    (project / "_extensions/evidence").mkdir(parents=True)
+    (project / "_extensions/evidence/version.txt").write_text("Baseline extension.")
+    git(
+        project, "add", "Makefile", "workspace.mk", "scripts", ".gitignore", "index.qmd"
+    )
+    git(project, "add", "-f", "_extensions/evidence/version.txt")
     git(project, "commit", "-qm", "first")
     git(project, "checkout", "-qb", "draft")
-    # A symlinked extension is never refreshed, so the test needs no network.
-    (project / "_extensions").mkdir()
-    (project / "_extensions/evidence").symlink_to(ASSETS / "_extensions/evidence")
     return project
 
 
@@ -89,11 +95,101 @@ def test_uncommitted_edit_is_shown_against_branch_base(
 
 def test_explicit_base_and_missing_base(project: Path, tmp_path: Path) -> None:
     git(project, "tag", "last-read")
+    git(project, "branch", "-qm", "main", "unconfigured-base")
     (project / "index.qmd").write_text("A revised finding.\n")
-    assert make(project, tmp_path, "WHAT_CHANGED_BASE=last-read").returncode == 0
-    assert "revised finding" in (project / "_site/what-changed.html").read_text()
+    result = make(project, tmp_path, "WHAT_CHANGED_BASE=last-read")
+    assert result.returncode == 0, result.stderr
+    page = (project / "_site/what-changed.html").read_text()
+    # Word-level markup can separate "revised" from the unchanged "finding".
+    assert "revised" in page and "<ins" in page
 
-    git(project, "branch", "-qm", "main", "trunk")
     result = make(project, tmp_path)
     assert result.returncode != 0
     assert "WHAT_CHANGED_BASE" in result.stderr
+
+
+@pytest.mark.parametrize("branch", ["master", "trunk", "custom-default"])
+def test_local_default_branch(project: Path, tmp_path: Path, branch: str) -> None:
+    git(project, "branch", "-m", "main", branch)
+    if branch == "custom-default":
+        git(project, "config", "init.defaultBranch", branch)
+    git(project, "commit", "--allow-empty", "-qm", "branch work")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "newly drafted paragraph" in (project / "_site/what-changed.html").read_text()
+    )
+
+
+@pytest.mark.parametrize("cached_head", [True, False])
+def test_remote_default_branch(
+    project: Path, tmp_path: Path, cached_head: bool
+) -> None:
+    git(project, "branch", "-m", "main", "published-default")
+    remote = tmp_path / "remote.git"
+    git(project, "clone", "--bare", str(project), str(remote))
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/published-default")
+    git(project, "remote", "add", "origin", str(remote))
+    git(project, "fetch", "-q", "origin")
+    if cached_head:
+        git(project, "remote", "set-head", "origin", "-a")
+    git(project, "branch", "-D", "published-default")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "newly drafted paragraph" in (project / "_site/what-changed.html").read_text()
+    )
+
+
+def test_base_uses_its_own_render_rules(project: Path, tmp_path: Path) -> None:
+    with (project / "Makefile").open("a") as f:
+        f.write(
+            "render: prepare-report\nprepare-report:\n\t@test -f required-extension.txt || printf evidence > required-extension.txt\n"
+        )
+    git(project, "add", "Makefile")
+    git(project, "commit", "-qm", "prepare render inputs")
+    git(project, "branch", "-f", "main")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/what-changed.html").is_file()
+
+
+def test_baseline_keeps_its_recorded_extension(project: Path, tmp_path: Path) -> None:
+    (project / "_extensions/evidence/version.txt").write_text("Current extension.")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    page = (project / "_site/what-changed.html").read_text()
+    assert "Baseline" in page and "Current" in page
+    assert "<ins" in page and "<del" in page
+
+
+def test_baseline_does_not_borrow_ignored_extension(
+    project: Path, tmp_path: Path
+) -> None:
+    (project / "required-extension.txt").write_text("custom")
+    git(project, "add", "required-extension.txt")
+    git(project, "commit", "-qm", "require a custom extension")
+    git(project, "branch", "-f", "main")
+    (project / "_extensions/custom").mkdir()
+    (project / "_extensions/custom/version.txt").write_text(
+        "Current ignored extension."
+    )
+
+    result = make(project, tmp_path)
+
+    assert result.returncode != 0
+    assert "base render failed" in result.stderr
+    assert "_extensions/custom/version.txt" in result.stderr
+    assert not (project / "_site/what-changed.html").exists()
+    worktrees = git(project, "worktree", "list", "--porcelain")
+    assert sum(line.startswith("worktree ") for line in worktrees.splitlines()) == 1
