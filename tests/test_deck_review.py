@@ -120,3 +120,156 @@ def test_matching_does_not_pair_unrelated_added_and_removed_slides():
     ]
     new = [{"id": "added", "body": "<h2>ZZZZ</h2>", "anchor": "added"}]
     assert what_changed.match_slides(old, new) == {}
+
+
+def test_reordered_slides_survive_rendered_and_empty_views():
+    old = _slides("<h2>One</h2>", "<h2>Two</h2>")
+    new = [old[1], old[0]]
+    for body in (None, "<i>rendered changes</i>"):
+        result = what_changed.slide_diff(
+            "old",
+            "new",
+            "slides.html",
+            "slides.html",
+            old=old,
+            new=new,
+            decks=_FakeDecks(body),
+        )
+        assert "Slides reordered." in result[0]
+        if body:
+            assert body in result[0]
+
+
+def test_heavily_rewritten_slide_with_same_id_remains_paired():
+    old = _slides("<h2>AAAAAAAAAAAAAAAAAAAA</h2>")
+    new = _slides("<h2>ZZZZZZZZZZZZZZZZZZZZ</h2>")
+    assert what_changed.match_slides(old, new) == {0: 0}
+
+
+def test_json_title_cannot_enter_script_double_escape_state():
+    title = "<!--<script></script><title>still data"
+    page = deck_review.view([{"title": title}], [], 1)
+    data = page.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
+    assert "<" not in data
+    assert json.loads(data)["items"][0]["title"] == title
+
+
+class _Renderer:
+    def __init__(self, old, new):
+        self.slides = {"old": old, "new": new}
+        self.calls = []
+
+    def slide_ids(self, side, deck):
+        return [s["id"] for s in self.slides[side]]
+
+    def texts(self, side, deck):
+        return [s["body"] for s in self.slides[side]]
+
+    def shoot(self, side, deck, index, path=None, mark=None):
+        self.calls.append((side, index, mark is not None))
+        data = self.slides[side][index]["body"].encode()
+        if path:
+            Path(path).write_bytes(data)
+        return data
+
+
+def test_parser_browser_order_mismatch_fails_before_capture(tmp_path):
+    import pytest
+
+    old = _slides("One", "Two")
+    renderer = _Renderer(old, list(reversed(old)))
+    with pytest.raises(ValueError, match="slide order"):
+        deck_review.review(
+            "slides.html",
+            "slides.html",
+            str(tmp_path),
+            "imgs",
+            old,
+            old,
+            {0: 0, 1: 1},
+            renderer,
+        )
+    assert renderer.calls == []
+
+
+def test_review_reuses_captured_clean_images(tmp_path):
+    old, new = _slides("Before"), _slides("After")
+    renderer = _Renderer(old, new)
+    assert deck_review.review(
+        "slides.html", "slides.html", str(tmp_path), "imgs", old, new, {0: 0}, renderer
+    )
+    assert renderer.calls.count(("new", 0, False)) == 1
+    assert renderer.calls.count(("old", 0, False)) == 1
+
+
+def test_notes_only_change_is_not_a_visible_edit():
+    old, new = (
+        _slides("Talk<aside>old notes</aside>"),
+        _slides("Talk<aside>new notes</aside>"),
+    )
+    rows, _ = deck_review.classify(
+        old, new, {0: 0}, lambda o, n: True, lambda o, n: True
+    )
+    assert rows == [("unchanged", 0, 0)]
+
+
+def test_failed_browser_launch_is_not_retried_and_cleans_partial_images(tmp_path):
+    from types import SimpleNamespace
+
+    def fail(*args):
+        calls.append(args)
+        raise RuntimeError("no browser")
+
+    calls = []
+    partial = tmp_path / "slides.html"
+    partial.mkdir()
+    (partial / "partial.png").touch()
+    decks = what_changed.DeckRenderer(
+        SimpleNamespace(Renderer=fail), "old", "new", str(tmp_path), "imgs"
+    )
+    for _ in range(2):
+        assert (
+            decks.review("slides.html", "slides.html", [], _slides("One"), {}) is False
+        )
+    assert len(calls) == 1
+    assert not partial.exists()
+
+
+def test_output_images_are_relative_to_output_page_and_stale_files_removed(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    images = new / "assets/review"
+    images.mkdir(parents=True)
+    (images / "stale.png").touch()
+    captured = []
+
+    class Decks:
+        def __init__(self, *args):
+            captured.append(args)
+            self.used = False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(what_changed, "load_deck_review", lambda: SimpleNamespace())
+    monkeypatch.setattr(what_changed, "DeckRenderer", Decks)
+    out = new / "what-changed.html"
+    what_changed.main(
+        [
+            "--old",
+            str(old),
+            "--new",
+            str(new),
+            "--out",
+            str(out),
+            "--render-decks",
+            str(images),
+        ]
+    )
+    assert captured[0][-1] == "assets/review"
+    assert not (images / "stale.png").exists()

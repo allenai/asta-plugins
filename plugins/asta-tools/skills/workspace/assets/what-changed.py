@@ -50,6 +50,7 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import sys
 from html.parser import HTMLParser
 from urllib.parse import quote, urlsplit
@@ -1467,13 +1468,20 @@ class DeckRenderer:
         self.img_root, self.img_url = img_root, img_url.rstrip("/")
         self.renderer = None
         self.used = False
+        self.failed = False
 
     def review(self, rel, link, old, new, pairs):
-        if not new:  # a removed deck keeps the text diff of its slides
+        if (
+            self.failed or not new
+        ):  # failed launch or a removed deck keeps the text diff
             return False
         try:
             if self.renderer is None:
-                self.renderer = self.module.Renderer(self.old_root, self.new_root)
+                try:
+                    self.renderer = self.module.Renderer(self.old_root, self.new_root)
+                except Exception:
+                    self.failed = True
+                    raise
             sub = quote(rel, safe="/")
             body = self.module.review(
                 rel,
@@ -1486,6 +1494,7 @@ class DeckRenderer:
                 self.renderer,
             )
         except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(os.path.join(self.img_root, rel), ignore_errors=True)
             print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
             return False
         self.used = self.used or body is not None
@@ -1500,8 +1509,10 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
     old = (reveal_slides(old_doc) if old is None else old) or []
     new = (reveal_slides(new_doc) if new is None else new) or []
     pairs = match_slides(old, new)
+    matched_order = [pairs[index] for index in sorted(pairs)]
+    reordered = matched_order != sorted(matched_order)
     rendered = decks.review(rel, link, old, new, pairs) if decks else False
-    if rendered is None:
+    if rendered is None and not reordered:
         return None
     entries = [(pairs.get(index), index) for index in range(len(new))]
     entries.extend(
@@ -1537,12 +1548,11 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
         changes.append(
             f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
         )
-    matched_order = [pairs[index] for index in sorted(pairs)]
-    if matched_order != sorted(matched_order):
-        changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
     if rendered:
         changes = [rendered]
-    elif not changes:
+    if reordered:
+        changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
+    if not changes:
         return None
     state = "new" if old_doc is None else "removed" if new_doc is None else "changed"
     label = "Slides · " + page_title(new_doc or old_doc, rel)
@@ -1784,12 +1794,23 @@ def main(argv=None):
     ap.add_argument(
         "--render-decks",
         metavar="DIR",
-        help="render changed slides as images into DIR, which must sit beside the"
-        " published page (needs deck-review.py and Playwright; else slides as text)",
+        help="render changed slides as images into generated DIR (needs deck-review.py"
+        " and Playwright; else slides as text); existing DIR contents are replaced",
     )
     args = ap.parse_args(argv)
     decks = None
     if args.render_decks:
+        # DIR is generated output, never a site root or an ancestor of input/output.
+        image_root = os.path.realpath(args.render_decks)
+        protected = [args.old, args.new, os.path.dirname(os.path.abspath(args.out))]
+        if any(
+            os.path.commonpath([image_root, os.path.realpath(path)]) == image_root
+            for path in protected
+        ):
+            ap.error(
+                "--render-decks must be a separate generated directory below the site"
+            )
+        shutil.rmtree(image_root, ignore_errors=True)
         module = load_deck_review()
         if module:
             decks = DeckRenderer(
@@ -1797,7 +1818,12 @@ def main(argv=None):
                 args.old,
                 args.new,
                 args.render_decks,
-                os.path.basename(os.path.normpath(args.render_decks)),
+                quote(
+                    os.path.relpath(
+                        args.render_decks, os.path.dirname(os.path.abspath(args.out))
+                    ).replace(os.sep, "/"),
+                    safe="/",
+                ),
             )
     try:
         doc = build(

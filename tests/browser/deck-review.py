@@ -20,6 +20,92 @@ review = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(review)
 
 
+def capture_regressions(root, deck, original):
+    """A count-only edit must leave other slides unchanged, including vertical stacks."""
+    before = root / "old" / deck
+    after = root / "new" / deck
+    before.write_text(original)
+    addition = (
+        '<section id="review-extra"><h2>Extra slide</h2><p>Only addition.</p></section>'
+    )
+    added = original.replace(
+        '<div class="slides">', '<div class="slides">' + addition, 1
+    )
+    assert added != original
+    after.write_text(added)
+    for old_doc, new_doc, expected in [
+        (original, added, "new"),
+        (added, original, "removed"),
+    ]:
+        before.write_text(old_doc)
+        after.write_text(new_doc)
+        old, new = changed.reveal_slides(old_doc), changed.reveal_slides(new_doc)
+        renderer = review.Renderer(root / "old", root / "new")
+        try:
+            rendered = review.review(
+                str(deck),
+                str(deck),
+                str(root / "regression-images"),
+                "images",
+                old,
+                new,
+                changed.match_slides(old, new),
+                renderer,
+            )
+            data = json.loads(
+                rendered.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
+            )
+            kinds = [item["kind"] for item in data["items"]]
+            assert not {"look", "changed"}.intersection(kinds), kinds
+            assert kinds.count("new") == (1 if expected == "new" else 0), kinds
+            assert len(data["removed"]) == (1 if expected == "removed" else 0), data
+        finally:
+            renderer.close()
+    # The same text filter feeds matching and marks, and preserves SVG/MathML.
+    old_extra = '<aside class="notes">Old private note</aside><svg width="80" height="40"><text y="20">Graph</text></svg><math><mi>x</mi></math>'
+    new_extra = old_extra.replace("Old private note", "New private note")
+    slides = changed.reveal_slides(original)
+    before.write_text(
+        original.replace(slides[2]["body"], slides[2]["body"] + old_extra, 1)
+    )
+    after.write_text(
+        original.replace(slides[2]["body"], slides[2]["body"] + new_extra, 1)
+    )
+    renderer = review.Renderer(root / "old", root / "new")
+    try:
+        old, new = (
+            changed.reveal_slides(before.read_text()),
+            changed.reveal_slides(after.read_text()),
+        )
+        assert (
+            review.review(
+                str(deck),
+                str(deck),
+                str(root / "regression-images"),
+                "images",
+                old,
+                new,
+                changed.match_slides(old, new),
+                renderer,
+            )
+            is None
+        )
+        page = renderer.page("new", str(deck))
+        page.evaluate(review.GOTO_JS, 2)
+        tokens = page.evaluate(review.LIST_JS)[2]
+        assert "private note" not in tokens and "Graph" not in tokens
+        page.evaluate(review.MARK_WORDS_JS, [review.MARK_CSS, ["different"]])
+        assert (
+            page.locator(
+                "svg ins, svg del, math ins, math del, .notes ins, .notes del"
+            ).count()
+            == 0
+        )
+        assert page.locator("svg text").inner_text() == "Graph"
+    finally:
+        renderer.close()
+
+
 def check(site, artifacts):
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporary:
@@ -30,9 +116,8 @@ def check(site, artifacts):
         original = (root / "old" / deck).read_text()
         slides = changed.reveal_slides(original)
         assert len(slides) >= 5
-        image = (
-            '<img src="review-image.svg" alt="Review image" width="300" height="100">'
-        )
+        capture_regressions(root, deck, original)
+        image = '<img data-src="review-image.svg" alt="Review image" width="300" height="100">'
         baseline = original.replace(slides[2]["body"], slides[2]["body"] + image, 1)
         after = baseline.replace(
             slides[1]["body"], slides[1]["body"].replace("</h", " revised</h", 1), 1

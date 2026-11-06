@@ -363,7 +363,7 @@ jobs:
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
-          tmpout="$tmpdir/what-changed.html"
+          tmpout="_site/.what-changed.tmp.html"
           if python3 "$gen" \
             --old "$baseline" --new _site \
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
@@ -371,6 +371,8 @@ jobs:
               && [ -s "$tmpout" ]; then
             mv "$tmpout" _site/what-changed.html
           else
+            rm -f "$tmpout"
+            rm -rf _site/what-changed-decks
             echo "::warning::what-changed page generation failed; preview still published"
           fi
 

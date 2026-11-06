@@ -15,7 +15,6 @@ Needs Python Playwright with Chromium (``pip install playwright`` and
 ``python -m playwright install --with-deps chromium``).
 """
 
-import hashlib
 import html
 import json
 import os
@@ -30,12 +29,62 @@ from urllib.parse import quote
 VIEWPORT = {"width": 1600, "height": 900}
 CONTEXT = 2  # unchanged slides shown, folded, before and after each change
 
-# Reveal.getSlides() is in document order, the order reveal_slides() reads.
-LIST_JS = """() => Reveal.getSlides().map((s) => {
-  const w = document.createTreeWalker(s, NodeFilter.SHOW_TEXT); const p = []; let n;
-  while ((n = w.nextNode())) p.push(n.textContent);
-  return p.join(' ').replace(/\\s+/g, ' ').trim();
-})"""
+# Keep the token streams identical, excluding speaker-only and non-HTML content.
+TEXT_FILTER_JS = """const visibleText = (s) => {
+  const w = document.createTreeWalker(s, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('.notes, script, style, svg, math')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const nodes = []; let n;
+  while ((n = w.nextNode())) if (n.textContent.trim()) nodes.push(n);
+  return nodes;
+};"""
+
+LIST_JS = (
+    "() => {"
+    + TEXT_FILTER_JS
+    + """
+  return Reveal.getSlides().map(s => visibleText(s).map(n => n.textContent).join(' ').replace(/\\s+/g, ' ').trim());
+}"""
+)
+
+# Stable screenshots compare slide content, not index-dependent presentation chrome.
+CAPTURE_CSS = """
+*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }
+.progress, .slide-number, .controls { visibility: hidden !important; }
+"""
+
+READY_JS = r"""() => Promise.race([(async () => {
+  await document.fonts.ready;
+  if (window.MathJax && MathJax.startup && MathJax.startup.promise) await MathJax.startup.promise;
+  if (window.MathJax && MathJax.Hub) await new Promise(resolve => MathJax.Hub.Queue(resolve));
+  const slide = Reveal.getCurrentSlide(), indices = Reveal.getIndices(slide);
+  const background = Reveal.getSlideBackground(indices.h, indices.v);
+  const roots = [slide, background].filter(Boolean);
+  await Promise.all(roots.flatMap(root => [...root.querySelectorAll('img')]).map(async i => {
+    if (i.dataset.src && !i.getAttribute('src')) i.src = i.dataset.src;
+    await i.decode();
+  }));
+  const urls = roots.flatMap(root => [root, ...root.querySelectorAll('*')]).flatMap(el => {
+    const value = getComputedStyle(el).backgroundImage;
+    return [...value.matchAll(/url\((?:["']?)(.*?)(?:["']?)\)/g)].map(m => m[1]);
+  });
+  await Promise.all(urls.map(src => new Promise((resolve, reject) => {
+    const i = new Image(); i.onload = resolve; i.onerror = () => reject(new Error('Background failed: ' + src)); i.src = src;
+  })));
+  for (const video of roots.flatMap(root => [...root.querySelectorAll('video')])) {
+    video.pause();
+    if (video.readyState < 2) await new Promise((resolve, reject) => {
+      video.addEventListener('loadeddata', resolve, {once:true});
+      video.addEventListener('error', reject, {once:true}); video.load();
+    });
+    if (video.currentTime !== 0) {
+      video.currentTime = 0;
+      await new Promise(resolve => video.addEventListener('seeked', resolve, {once:true}));
+    }
+  }
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+})(), new Promise((_, reject) => setTimeout(() => reject(new Error("Slide media did not settle")), 15000))])"""
 
 GOTO_JS = """(i) => {
   const x = Reveal.getIndices(Reveal.getSlides()[i]);
@@ -59,10 +108,12 @@ FRAME_JS = """([css, color, label]) => {
 }"""
 
 # Marks, in the current slide's text nodes, the words that differ from the old slide's words.
-MARK_WORDS_JS = """([css, old]) => {
+MARK_WORDS_JS = (
+    "([css, old]) => {"
+    + TEXT_FILTER_JS
+    + """
   const st = document.createElement('style'); st.textContent = css; document.head.append(st);
-  const s = Reveal.getCurrentSlide(); const w = document.createTreeWalker(s, NodeFilter.SHOW_TEXT);
-  const nodes = []; let n; while ((n = w.nextNode())) if (n.textContent.trim()) nodes.push(n);
+  const nodes = visibleText(Reveal.getCurrentSlide());
   const b = []; nodes.forEach((nd) => nd.textContent.split(/(\\s+)/).forEach((t) => { if (t.trim()) b.push(t); }));
   const a = old, m = a.length, q = b.length;
   const L = Array.from({ length: m + 1 }, () => new Int32Array(q + 1));
@@ -91,6 +142,7 @@ MARK_WORDS_JS = """([css, old]) => {
   });
   Reveal.layout();
 }"""
+)
 
 
 def _serve(root):
@@ -110,31 +162,44 @@ class Renderer:
         from playwright.sync_api import sync_playwright
 
         self._tmp = tempfile.mkdtemp(prefix="deck-review-")
-        os.symlink(os.path.abspath(old_root), os.path.join(self._tmp, "old"))
-        os.symlink(os.path.abspath(new_root), os.path.join(self._tmp, "new"))
-        self._server = _serve(self._tmp)
-        self._base = f"http://127.0.0.1:{self._server.server_address[1]}"
-        self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch()
+        self._server = self._pw = self._browser = None
         self._pages = {}
+        try:
+            os.symlink(os.path.abspath(old_root), os.path.join(self._tmp, "old"))
+            os.symlink(os.path.abspath(new_root), os.path.join(self._tmp, "new"))
+            self._server = _serve(self._tmp)
+            self._base = f"http://127.0.0.1:{self._server.server_address[1]}"
+            self._pw = sync_playwright().start()
+            self._browser = self._pw.chromium.launch()
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         try:
-            self._browser.close()
-            self._pw.stop()
+            if self._browser is not None:
+                self._browser.close()
         finally:
-            self._server.shutdown()
-            shutil.rmtree(self._tmp, ignore_errors=True)
+            try:
+                if self._pw is not None:
+                    self._pw.stop()
+            finally:
+                if self._server is not None:
+                    self._server.shutdown()
+                    self._server.server_close()
+                shutil.rmtree(self._tmp, ignore_errors=True)
 
     def _open(self, side, deck):
         page = self._browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
+        page.set_default_timeout(30000)
         page.goto(f"{self._base}/{side}/{quote(deck)}")
         page.wait_for_function(
             "() => window.Reveal && Reveal.isReady && Reveal.isReady()", timeout=30000
         )
         page.evaluate(
-            "() => Reveal.configure({transition: 'none', backgroundTransition: 'none'})"
+            "() => Reveal.configure({transition: 'none', backgroundTransition: 'none', progress: false, slideNumber: false, controls: false})"
         )
+        page.add_style_tag(content=CAPTURE_CSS)
         page.evaluate("() => document.fonts.ready")
         return page
 
@@ -143,6 +208,9 @@ class Renderer:
         if key not in self._pages:
             self._pages[key] = self._open(side, deck)
         return self._pages[key]
+
+    def slide_ids(self, side, deck):
+        return self.page(side, deck).evaluate("() => Reveal.getSlides().map(s => s.id)")
 
     def texts(self, side, deck):
         return self.page(side, deck).evaluate(LIST_JS)
@@ -154,13 +222,8 @@ class Renderer:
             page.evaluate(GOTO_JS, index)
             if mark:
                 page.evaluate(*mark)
-            page.evaluate("""async () => {
-              const images = [...Reveal.getCurrentSlide().querySelectorAll('img')];
-              await Promise.all(images.map(i => i.decode().catch(() => {})));
-              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            }""")
-            page.wait_for_timeout(50)
-            data = page.screenshot(type="png")
+            page.evaluate(READY_JS)
+            data = page.screenshot(type="png", animations="disabled")
         finally:
             if mark:
                 page.close()
@@ -170,7 +233,7 @@ class Renderer:
         return data
 
 
-def classify(old, new, pairs, same_image=None):
+def classify(old, new, pairs, same_image=None, same_text=None):
     """Rows in deck order as (kind, new_index, old_index), and removed old indices.
 
     ``same_image(old_index, new_index)`` decides markup-equal slides; without it
@@ -181,7 +244,9 @@ def classify(old, new, pairs, same_image=None):
         before = pairs.get(index)
         if before is None:
             rows.append(("new", index, None))
-        elif old[before]["body"] != new[index]["body"]:
+        elif old[before]["body"] != new[index]["body"] and (
+            same_text is None or not same_text(before, index)
+        ):
             rows.append(("changed", index, before))
         elif same_image is not None and not same_image(before, index):
             rows.append(("look", index, before))
@@ -211,30 +276,41 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
 
     ``old`` is empty for a new deck; ``new`` is never empty here.
     """
+    # Refuse a mismatched parser/browser mapping rather than annotate the wrong slide.
+    for side, slides in (("old", old), ("new", new)):
+        if slides and renderer.slide_ids(side, deck) != [
+            slide["id"] for slide in slides
+        ]:
+            raise ValueError(f"{side} slide order differs between HTML and Reveal")
     os.makedirs(img_dir, exist_ok=True)
-    digest = {}
+    captures = {}
 
     def shot(side, index):
-        if (side, index) not in digest:
-            data = renderer.shoot(side, deck, index)
-            digest[side, index] = hashlib.sha256(data).hexdigest()
-        return digest[side, index]
+        if (side, index) not in captures:
+            captures[side, index] = renderer.shoot(side, deck, index)
+        return captures[side, index]
 
+    def save(side, index, path):
+        with open(path, "wb") as output:
+            output.write(shot(side, index))
+
+    old_text = renderer.texts("old", deck) if old else []
+    new_text = renderer.texts("new", deck)
     rows, removed = classify(
         old,
         new,
         pairs,
         (lambda o, n: shot("old", o) == shot("new", n)) if old else None,
+        lambda o, n: old_text[o] == new_text[n],
     )
     shown = context(rows)
     if not removed and all(rows[k][0] == "unchanged" for k in shown):
         return None
-    old_text = renderer.texts("old", deck) if old else []
     items = []
     for k in shown:
         kind, n, o = rows[k]
         name = f"s{n + 1}"
-        renderer.shoot("new", deck, n, os.path.join(img_dir, name + ".png"))
+        save("new", n, os.path.join(img_dir, name + ".png"))
         item = {
             "n": n + 1,
             "kind": kind,
@@ -251,7 +327,7 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
             renderer.shoot("new", deck, n, os.path.join(img_dir, name + "-m.png"), mark)
             item["marked"] = f"{img_url}/{name}-m.png"
         if kind in {"changed", "look"}:
-            renderer.shoot("old", deck, o, os.path.join(img_dir, name + "-b.png"))
+            save("old", o, os.path.join(img_dir, name + "-b.png"))
             item["before"] = f"{img_url}/{name}-b.png"
         items.append(item)
     gone = []
@@ -267,7 +343,7 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
 
 def view(items, removed, total):
     data = json.dumps({"items": items, "removed": removed, "total": total})
-    return VIEW.replace("__DATA__", data.replace("</", "<\\/"))
+    return VIEW.replace("__DATA__", data.replace("<", "\\u003c"))
 
 
 # Scoped to its own container so several decks can share one What changed page;
