@@ -377,3 +377,28 @@ def test_remote_lookup_does_not_prompt(
     assert lookup["prompt"] == "0"
     assert "BatchMode=yes" in lookup["args"]
     assert "ConnectTimeout=10" in lookup["args"]
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+def test_render_output_override_leaves_preview_output_alone(
+    project: Path, tmp_path: Path, rules: str
+) -> None:
+    destination = tmp_path / "rendered output's directory"
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str(ASSETS / rules),
+            "render",
+            "ASTA_WORKSPACE_VIEWERS=0",
+            f"ASTA_WORKSPACE_RENDER_OUTPUT={destination}",
+        ],
+        cwd=project,
+        env=make_env(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "baseline finding" in (destination / "index.html").read_text()
+    assert not (project / "_site").exists()

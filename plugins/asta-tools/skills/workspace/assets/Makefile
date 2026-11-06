@@ -129,8 +129,10 @@ workspace-assets:
 preview: workspace-assets
 	quarto preview --no-browser
 
+# Optional output override for callers that must leave the preview's _site alone.
+ASTA_WORKSPACE_RENDER_OUTPUT ?=
 render: workspace-assets
-	quarto render
+	quarto render $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))')
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new
