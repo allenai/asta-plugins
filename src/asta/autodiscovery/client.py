@@ -1,6 +1,5 @@
 """AutoDiscovery API client (stdlib only)."""
 
-import base64
 import json
 import mimetypes
 import os
@@ -38,22 +37,13 @@ class AutoDiscoveryClient:
 
         self.base_url = base_url
         self.access_token = access_token
-        self.user_id = self._extract_user_id()
+        # The service resolves "me" to the caller the token authenticates.
+        self.user_id = "me"
         self.headers = {
             **identity_headers(),
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
         }
-
-    def _extract_user_id(self) -> str:
-        """Extract user ID (sub claim) from the access token JWT."""
-        parts = self.access_token.split(".")
-        if len(parts) >= 2:
-            payload = parts[1] + "=" * (4 - len(parts[1]) % 4)
-            claims = json.loads(base64.urlsafe_b64decode(payload))
-            if "sub" in claims:
-                return claims["sub"]
-        raise ValueError("Cannot extract user ID from access token")
 
     def _get(self, path: str) -> Any:
         url = f"{self.base_url}{path}"
