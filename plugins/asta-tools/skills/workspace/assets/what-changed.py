@@ -1431,7 +1431,13 @@ def match_slides(old, new):
     )
     for operation, a, b, c, d in matcher.get_opcodes():
         if operation in {"equal", "replace"}:
-            pairs.update(zip(unmatched_new[c:d], unmatched_old[a:b]))
+            for ni, oi in zip(unmatched_new[c:d], unmatched_old[a:b]):
+                # Keep renamed slides when their text is similar; unrelated
+                # additions/removals must not become a fabricated edit.
+                before = re.sub(r"<[^>]+>", "", old[oi]["body"])
+                after = re.sub(r"<[^>]+>", "", new[ni]["body"])
+                if difflib.SequenceMatcher(None, before, after).ratio() >= 0.5:
+                    pairs[ni] = oi
     return pairs
 
 

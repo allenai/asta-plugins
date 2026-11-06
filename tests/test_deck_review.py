@@ -108,3 +108,15 @@ def test_render_decks_without_playwright_still_writes_the_page(tmp_path, capsys)
         ]
     )
     assert out.read_text().startswith("<!doctype html>")
+
+
+def test_matching_does_not_pair_unrelated_added_and_removed_slides():
+    old = [
+        {
+            "id": "removed",
+            "body": "<h2>Original experiment methodology</h2>",
+            "anchor": "removed",
+        }
+    ]
+    new = [{"id": "added", "body": "<h2>ZZZZ</h2>", "anchor": "added"}]
+    assert what_changed.match_slides(old, new) == {}

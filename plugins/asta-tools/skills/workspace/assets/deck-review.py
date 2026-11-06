@@ -154,6 +154,11 @@ class Renderer:
             page.evaluate(GOTO_JS, index)
             if mark:
                 page.evaluate(*mark)
+            page.evaluate("""async () => {
+              const images = [...Reveal.getCurrentSlide().querySelectorAll('img')];
+              await Promise.all(images.map(i => i.decode().catch(() => {})));
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }""")
             page.wait_for_timeout(50)
             data = page.screenshot(type="png")
         finally:
