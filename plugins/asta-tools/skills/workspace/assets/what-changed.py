@@ -1463,8 +1463,8 @@ class DeckRenderer:
         self.used = False
 
     def review(self, rel, link, old, new, pairs):
-        if not new:
-            return None
+        if not new:  # a removed deck keeps the text diff of its slides
+            return False
         try:
             if self.renderer is None:
                 self.renderer = self.module.Renderer(self.old_root, self.new_root)
