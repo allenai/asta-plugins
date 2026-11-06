@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import click
+import yaml
 
 from asta.commands import workspace_versions
 from asta.commands.overleaf import overleaf
@@ -58,6 +59,44 @@ SITE_DIR_LINE = re.compile(
 )
 
 
+def _workspace_job_lines(text: str, workflow: Path) -> set[tuple[int, int]]:
+    """Locate job-level uses and with.site-dir keys without rewriting YAML."""
+
+    def field(node, name):
+        if not isinstance(node, yaml.MappingNode):
+            return None
+        matches = [
+            (key, value)
+            for key, value in node.value
+            if isinstance(key, yaml.ScalarNode) and key.value == name
+        ]
+        if len(matches) > 1:
+            raise click.ClickException(f"Duplicate {name} key in {workflow}")
+        return matches[0] if matches else None
+
+    try:
+        document = yaml.compose(text, Loader=yaml.BaseLoader)
+    except yaml.YAMLError as exc:
+        raise click.ClickException(f"Invalid YAML in {workflow}") from exc
+    jobs = field(document, "jobs")
+    if jobs is None or not isinstance(jobs[1], yaml.MappingNode):
+        return set()
+    result = set()
+    job_names = set()
+    for name, job in jobs[1].value:
+        if not isinstance(name, yaml.ScalarNode):
+            continue
+        if name.value in job_names:
+            raise click.ClickException(f"Duplicate job key in {workflow}")
+        job_names.add(name.value)
+        uses = field(job, "uses")
+        inputs = field(job, "with")
+        site_dir = field(inputs[1], "site-dir") if inputs else None
+        if uses and site_dir:
+            result.add((uses[0].start_mark.line, site_dir[0].start_mark.line))
+    return result
+
+
 def workflow_root(project: Path) -> Path:
     """Return the directory whose docs.yml publishes project.
 
@@ -82,8 +121,12 @@ def workflow_root(project: Path) -> Path:
         return project
     site = project.relative_to(root).as_posix()
     lines = text.splitlines()
-    site_lines = [line for line in lines if re.match(r"^\s*site-dir:", line)]
-    for line in site_lines:
+    site_lines = [
+        (index, line)
+        for index, line in enumerate(lines)
+        if re.match(r"^\s*site-dir:", line)
+    ]
+    for site_index, line in site_lines:
         match = SITE_DIR_LINE.fullmatch(line)
         if match is None:
             continue
@@ -98,10 +141,13 @@ def workflow_root(project: Path) -> Path:
             directory = re.split(r"\s+#", match.group("plain"), maxsplit=1)[0].strip()
         if posixpath.normpath(directory) == site:
             sources = [
-                line
-                for line in lines
+                index
+                for index, line in enumerate(lines)
                 if WORKFLOW in line and not line.lstrip().startswith("#")
             ]
+            job_lines = _workspace_job_lines(text, root / WORKFLOW_FILE)
+            if not any((index, site_index) in job_lines for index in sources):
+                continue
             if len(site_lines) != 1 or len(sources) != 1:
                 raise click.ClickException(
                     f"Ambiguous workspace workflow: {root / WORKFLOW_FILE}; "

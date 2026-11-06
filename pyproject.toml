@@ -19,6 +19,7 @@ dependencies = [
     "keyring>=24.3.0",
     "packaging>=23.0",
     "platformdirs>=4.1.0",
+    "PyYAML>=6.0",
     "asta-agent[a2a-client]>=1.0.7",
     "asta-artifact>=1.0.10",
 ]
@@ -31,7 +32,6 @@ test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "requests>=2.31",
-    "PyYAML>=6.0",
 ]
 
 [tool.hatch.build.targets.wheel]

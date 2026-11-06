@@ -590,3 +590,117 @@ def test_subfolder_rejects_ambiguous_root_without_changing_pins(
     assert workflow.read_text() == text
     assert _git(root, "rev-parse", "HEAD") == head
     assert not (site / ".github").exists()
+
+
+UNRELATED_SITE_INPUTS = [
+    "  other:\n    uses: example/custom/.github/workflows/site.yml@main\n"
+    "    with:\n      site-dir: site\n",
+    "    env:\n      site-dir: site\n",
+    "    steps:\n      - uses: example/action@main\n"
+    "        with:\n          site-dir: site\n",
+    "    steps:\n      - run: |\n          site-dir: site\n",
+    "env:\n  site-dir: site\n",
+    "with:\n  site-dir: site\n",
+]
+
+
+@pytest.mark.parametrize("unrelated", UNRELATED_SITE_INPUTS)
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_unrelated_site_input_never_selects_root_workflow(
+    project, monkeypatch, unrelated, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = (workflow.read_text() + unrelated).encode()
+    workflow.write_bytes(original)
+    site = root / "site"
+    site.mkdir()
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("must not fetch root rules")
+    )
+    head = _git(root, "rev-parse", "HEAD")
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code != 0
+    assert f"Missing {site / workspace.WORKFLOW_FILE}" in result.output
+    assert workflow.read_bytes() == original
+    assert _git(root, "rev-parse", "HEAD") == head
+    assert not (site / ".github").exists()
+
+
+@pytest.mark.parametrize("unrelated", UNRELATED_SITE_INPUTS)
+def test_unrelated_site_input_preserves_local_workflow_fallback(project, unrelated):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(workflow.read_text() + unrelated)
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.113.0"))
+    assert workspace.workflow_root(site) == site
+    assert workspace.selected_source(site)[1] == "v0.113.0"
+
+
+def test_root_workflow_with_unrelated_jobs_still_publishes_site(project, monkeypatch):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(
+        workflow.read_text()
+        + "    with:\n      site-dir: site\n"
+        + "  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n"
+    )
+    _git(root, "add", workspace.WORKFLOW_FILE)
+    _git(root, "commit", "-q", "-m", "Add site and check job")
+    site = root / "site"
+    site.mkdir()
+    result = _run(site, "0.116.0", monkeypatch)
+    assert result.exit_code == 0, result.output
+    assert "workspace-quarto-site.yml@v0.116.0" in workflow.read_text()
+    assert not (site / ".github").exists()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: site\n"
+        + "  docs:\n    runs-on: ubuntu-latest\n",
+        STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: site\n"
+        + "    uses: example/custom/.github/workflows/site.yml@main\n",
+        STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: site\n    with:\n      ignored: true\n",
+        STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: site\n      site-dir: other\n",
+        STUB.format(ref="v0.115.0") + "    with:\n      site-dir: site\njobs: {}\n",
+    ],
+)
+def test_duplicate_root_workflow_keys_are_rejected(project, text):
+    root = project("v0.115.0")
+    (root / workspace.WORKFLOW_FILE).write_text(text)
+    with pytest.raises(click.ClickException, match="Duplicate"):
+        workspace.workflow_root(root / "site")
+
+
+def test_invalid_root_yaml_reports_a_click_error(project, monkeypatch):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(
+        workflow.read_text() + "    with:\n      site-dir: site\n    invalid: [\n"
+    )
+    (root / "site").mkdir()
+    result = _run(root / "site", "0.116.0", monkeypatch)
+    assert result.exit_code != 0
+    assert "Invalid YAML" in result.output
+
+
+def test_unrelated_malformed_root_workflow_keeps_local_fallback(project):
+    root = project("v0.115.0")
+    (root / workspace.WORKFLOW_FILE).write_text("unrelated: [\n")
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.113.0"))
+    assert workspace.selected_source(site)[1] == "v0.113.0"

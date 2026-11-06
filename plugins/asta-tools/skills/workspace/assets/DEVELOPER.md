@@ -145,9 +145,10 @@ Managed rules stay cached until the version selected in `docs.yml` changes or yo
 
 For a site in a subfolder, keep the single `docs.yml` at the Git repository root
 and set its `with.site-dir` to the site's relative path. Root workflow discovery
-supports the thin stub's block mappings with one `site-dir` and one reusable
-workspace `uses` line; ambiguous multi-site or repeated-source stubs are rejected
-before fetching rules or moving pins. Use a literal unquoted or single-quoted
+supports the thin stub's block mappings with one `with.site-dir` and one reusable
+workspace `uses` line in the same job; a value in another job, a step, or a script
+does not select the root workflow. Ambiguous multi-site or repeated-source stubs
+are rejected before fetching rules or moving pins. Use a literal unquoted or single-quoted
 path, or a double-quoted path with JSON-compatible escapes; YAML-specific
 double-quoted escapes, aliases, expressions and flow mappings are not resolved.
 The managed Makefile watches both existing local and root workflow candidates,
