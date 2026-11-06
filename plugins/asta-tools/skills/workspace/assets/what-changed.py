@@ -1800,16 +1800,30 @@ def main(argv=None):
     args = ap.parse_args(argv)
     decks = None
     if args.render_decks:
-        # DIR is generated output, never a site root or an ancestor of input/output.
-        image_root = os.path.realpath(args.render_decks)
-        protected = [args.old, args.new, os.path.dirname(os.path.abspath(args.out))]
-        if any(
-            os.path.commonpath([image_root, os.path.realpath(path)]) == image_root
-            for path in protected
+        # Never recursively delete outside the candidate site or through a symlink.
+        site_path = os.path.abspath(args.new)
+        image_path = os.path.abspath(args.render_decks)
+        site_root, image_root = (
+            os.path.realpath(site_path),
+            os.path.realpath(image_path),
+        )
+        if (
+            image_root == site_root
+            or os.path.commonpath([site_root, image_root]) != site_root
+            or os.path.commonpath([site_path, image_path]) != site_path
+            or os.path.commonpath([image_root, os.path.realpath(args.out)])
+            == image_root
+            or os.path.commonpath([image_root, os.path.realpath(args.old)])
+            == image_root
         ):
             ap.error(
-                "--render-decks must be a separate generated directory below the site"
+                "--render-decks must be a separate generated directory inside the new site"
             )
+        component = image_path
+        while component != site_path:
+            if os.path.islink(component):
+                ap.error("--render-decks must not contain symlinks")
+            component = os.path.dirname(component)
         shutil.rmtree(image_root, ignore_errors=True)
         module = load_deck_review()
         if module:

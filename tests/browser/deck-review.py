@@ -117,7 +117,8 @@ def check(site, artifacts):
         slides = changed.reveal_slides(original)
         assert len(slides) >= 5
         capture_regressions(root, deck, original)
-        image = '<img data-src="review-image.svg" alt="Review image" width="300" height="100">'
+        # Root-relative images resolve at each site origin, including lazy-loaded images.
+        image = '<img data-src="/review-image.svg" alt="Review image" width="300" height="100">'
         baseline = original.replace(slides[2]["body"], slides[2]["body"] + image, 1)
         after = baseline.replace(
             slides[1]["body"], slides[1]["body"].replace("</h", " revised</h", 1), 1
@@ -132,7 +133,7 @@ def check(site, artifacts):
             ("new", after, "#ffa31c"),
         ]:
             (root / side / deck).write_text(document)
-            (root / side / deck.parent / "review-image.svg").write_text(
+            (root / side / "review-image.svg").write_text(
                 f'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100"><rect width="300" height="100" fill="{color}"/></svg>'
             )
         out = root / "new/what-changed.html"
@@ -167,6 +168,9 @@ def check(site, artifacts):
                 kinds = [item["kind"] for item in data["items"]]
                 assert "changed" in kinds and "look" in kinds and "new" in kinds, kinds
                 assert len(data["removed"]) == 1, data
+                assert len(data["items"]) == len(slides), (
+                    "Every unchanged run is inspectable"
+                )
                 assert page.locator(".dr-more").count() > 0
                 page.locator(".deck-review").scroll_into_view_if_needed()
                 page.evaluate("""async () => {
@@ -202,6 +206,11 @@ def check(site, artifacts):
                     assert image.evaluate(
                         "(i) => i.complete && i.naturalWidth === 1600"
                     ), image.get_attribute("src")
+                for button in page.locator(".dr-more").all():
+                    button.click()
+                assert page.locator(".dr-unchanged:visible").count() == kinds.count(
+                    "unchanged"
+                )
                 browser.close()
         finally:
             server.shutdown()

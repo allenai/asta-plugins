@@ -19,15 +19,13 @@ import html
 import json
 import os
 import re
-import shutil
-import tempfile
 import threading
+from contextlib import ExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote
 
 VIEWPORT = {"width": 1600, "height": 900}
-CONTEXT = 2  # unchanged slides shown, folded, before and after each change
 
 # Keep the token streams identical, excluding speaker-only and non-HTML content.
 TEXT_FILTER_JS = """const visibleText = (s) => {
@@ -160,44 +158,36 @@ def _serve(root):
 
 
 class Renderer:
-    """One Chromium and one local server for both sites; a page per deck side."""
+    """One Chromium and an origin per site; root-relative assets retain their meaning."""
 
     def __init__(self, old_root, new_root):
         from playwright.sync_api import sync_playwright
 
-        self._tmp = tempfile.mkdtemp(prefix="deck-review-")
-        self._server = self._pw = self._browser = None
+        self._resources = ExitStack()
+        self._bases = {}
         self._pages = {}
         try:
-            os.symlink(os.path.abspath(old_root), os.path.join(self._tmp, "old"))
-            os.symlink(os.path.abspath(new_root), os.path.join(self._tmp, "new"))
-            self._server = _serve(self._tmp)
-            self._base = f"http://127.0.0.1:{self._server.server_address[1]}"
+            for side, root in (("old", old_root), ("new", new_root)):
+                server = _serve(os.path.abspath(root))
+                self._resources.callback(server.server_close)
+                self._resources.callback(server.shutdown)
+                self._bases[side] = f"http://127.0.0.1:{server.server_address[1]}"
             self._pw = sync_playwright().start()
+            self._resources.callback(self._pw.stop)
             self._browser = self._pw.chromium.launch()
+            self._resources.callback(self._browser.close)
         except Exception:
             self.close()
             raise
 
     def close(self):
-        try:
-            if self._browser is not None:
-                self._browser.close()
-        finally:
-            try:
-                if self._pw is not None:
-                    self._pw.stop()
-            finally:
-                if self._server is not None:
-                    self._server.shutdown()
-                    self._server.server_close()
-                shutil.rmtree(self._tmp, ignore_errors=True)
+        self._resources.close()
 
     def _open(self, side, deck):
         page = self._browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
         try:
             page.set_default_timeout(30000)
-            page.goto(f"{self._base}/{side}/{quote(deck)}")
+            page.goto(f"{self._bases[side]}/{quote(deck)}")
             page.wait_for_function(
                 "() => window.Reveal && Reveal.isReady && Reveal.isReady()",
                 timeout=30000,
@@ -273,13 +263,9 @@ def classify(old, new, pairs, same_image=None, same_text=None):
     return rows, removed
 
 
-def context(rows, width=CONTEXT):
-    """Indices of rows to show: every change and ``width`` rows on each side."""
-    show = set()
-    for k, (kind, _, _) in enumerate(rows):
-        if kind != "unchanged":
-            show.update(range(max(0, k - width), min(len(rows), k + width + 1)))
-    return sorted(show)
+def context(rows):
+    """Keep every slide; the view folds complete unchanged runs behind a count."""
+    return list(range(len(rows)))
 
 
 def slide_title(slide):

@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/assets"
 
 
@@ -40,10 +42,10 @@ def test_classify_without_images_treats_equal_markup_as_unchanged():
     assert rows == [("unchanged", 0, 0)] and removed == []
 
 
-def test_context_shows_two_unchanged_slides_around_each_change():
+def test_context_keeps_complete_unchanged_runs():
     rows = [("unchanged", i, i) for i in range(10)]
     rows[5] = ("changed", 5, 5)
-    assert deck_review.context(rows) == [3, 4, 5, 6, 7]
+    assert deck_review.context(rows) == list(range(10))
 
 
 def test_slide_title_reads_the_heading_text():
@@ -296,17 +298,11 @@ def test_failed_renderer_initialization_closes_all_started_resources(
     api.sync_playwright = lambda: SimpleNamespace(start=lambda: pw)
     monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", api)
     monkeypatch.setattr(deck_review, "_serve", lambda root: server)
-    temporary = tmp_path / "resources"
-    temporary.mkdir()
-    monkeypatch.setattr(
-        deck_review.tempfile, "mkdtemp", lambda **kwargs: str(temporary)
-    )
     with pytest.raises(RuntimeError, match="launch failed"):
         deck_review.Renderer(tmp_path, tmp_path)
-    assert not temporary.exists()
     pw.stop.assert_called_once()
-    server.shutdown.assert_called_once()
-    server.server_close.assert_called_once()
+    assert server.shutdown.call_count == 2
+    assert server.server_close.call_count == 2
 
 
 def test_generated_directory_cannot_replace_a_site_root(tmp_path):
@@ -327,3 +323,65 @@ def test_generated_directory_cannot_replace_a_site_root(tmp_path):
             ]
         )
     assert (tmp_path / "keep.html").read_text() == "keep"
+
+
+@pytest.mark.parametrize("location", ["outside", "symlink", "parent-symlink"])
+def test_image_cleanup_rejects_unsafe_locations_without_deleting(tmp_path, location):
+    old, new, outside = tmp_path / "old", tmp_path / "new", tmp_path / "outside"
+    for path in (old, new, outside):
+        path.mkdir()
+    target = outside if location == "outside" else new / "keep"
+    target.mkdir(exist_ok=True)
+    (target / "keep.txt").write_text("keep")
+    if location == "outside":
+        images = target
+    elif location == "symlink":
+        images = new / "images"
+        images.symlink_to(target, target_is_directory=True)
+    else:
+        alias = new / "alias"
+        alias.symlink_to(target, target_is_directory=True)
+        images = alias / "generated"
+        images.mkdir()
+        (images / "keep.txt").write_text("keep")
+    with pytest.raises(SystemExit):
+        what_changed.main(
+            [
+                "--old",
+                str(old),
+                "--new",
+                str(new),
+                "--out",
+                str(new / "diff.html"),
+                "--render-decks",
+                str(images),
+            ]
+        )
+    assert (target / "keep.txt").read_text() == "keep"
+    if location == "parent-symlink":
+        assert (images / "keep.txt").read_text() == "keep"
+
+
+def test_old_and_new_sites_have_independent_origin_roots(tmp_path, monkeypatch):
+    from types import ModuleType, SimpleNamespace
+    from unittest.mock import Mock
+    from urllib.request import urlopen
+
+    pw = SimpleNamespace(
+        chromium=SimpleNamespace(launch=lambda: SimpleNamespace(close=Mock())),
+        stop=Mock(),
+    )
+    api = ModuleType("playwright.sync_api")
+    api.sync_playwright = lambda: SimpleNamespace(start=lambda: pw)
+    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", api)
+    for side in ("old", "new"):
+        (tmp_path / side / "images").mkdir(parents=True)
+        (tmp_path / side / "images/chart.svg").write_text(side)
+    renderer = deck_review.Renderer(tmp_path / "old", tmp_path / "new")
+    try:
+        assert renderer._bases["old"] != renderer._bases["new"]
+        for side in ("old", "new"):
+            with urlopen(renderer._bases[side] + "/images/chart.svg") as response:
+                assert response.read().decode() == side
+    finally:
+        renderer.close()
