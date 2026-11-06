@@ -166,14 +166,17 @@ workspace-viewers:
 preview: workspace-assets workspace-viewers
 	quarto preview --no-browser
 
-# Optional output override for callers that must leave the preview's _site alone.
+# Optional output override for callers that must leave the preview's _site alone,
+# and an optional page list for callers that need only some pages rendered.
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
+ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
-	quarto render $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))')
+	quarto render $(ASTA_WORKSPACE_RENDER_FILES) $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))')
 
 # Compare the branch base with the working tree without rendering over the
 # preview's _site/. Only the comparison page is written there.
 WHAT_CHANGED_BASE ?=
+WHAT_CHANGED_FULL ?=
 what-changed:
 	@set -eu; \
 	base='$(subst ','"'"',$(value WHAT_CHANGED_BASE))'; \
@@ -215,8 +218,31 @@ what-changed:
 	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
-	$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
-	$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$tmp/current" >&2; \
+	files=; basefiles=; partial=; \
+	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
+		changed=$$(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u); \
+		if [ -n "$$changed" ] && ! printf '%s\n' "$$changed" | grep -q '[^A-Za-z0-9._/+@-]'; then \
+			partial=1; \
+			for path in $$changed; do \
+				case "$$path" in "$$prefix"*) rel=$${path#"$$prefix"};; *) partial=; break;; esac; \
+				case "/$$rel" in */_*|*/.*) partial=; break;; esac; \
+				case "$$rel" in *.qmd|*.md|*.ipynb|*.Rmd) ;; *) partial=; break;; esac; \
+				[ -f "$$rel" ] || { partial=; break; }; \
+				files="$$files $$rel"; \
+				[ ! -f "$$dir/$$rel" ] || basefiles="$$basefiles $$rel"; \
+			done; \
+		fi; \
+		if [ -n "$$partial" ] && ! $(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null | grep -q asta-what-changed-probe; then partial=; fi; \
+	fi; \
+	if [ -n "$$partial" ]; then \
+		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
+		mkdir -p "$$dir/_site" "$$tmp/current"; \
+		[ -z "$$basefiles" ] || $(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES="$$basefiles" >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$tmp/current" ASTA_WORKSPACE_RENDER_FILES="$$files" >&2; \
+	else \
+		$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$tmp/current" ASTA_WORKSPACE_RENDER_FILES= >&2; \
+	fi; \
 	mkdir -p _site; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$tmp/current" \
 		--out _site/what-changed.html --title "Changes since $$label"; \

@@ -621,10 +621,28 @@ def diff_content(old, new):
     # Align on the visible string of each token.
     ak = [t[1] for t in a]
     bk = [t[1] for t in b]
-    sm = difflib.SequenceMatcher(None, ak, bk, autojunk=False)
+    # SequenceMatcher without autojunk is quadratic; a local edit to a large
+    # page (a slide deck) only needs the span between the common ends.
+    lo = 0
+    while lo < min(len(ak), len(bk)) and ak[lo] == bk[lo]:
+        lo += 1
+    hi = 0
+    while hi < min(len(ak), len(bk)) - lo and ak[-1 - hi] == bk[-1 - hi]:
+        hi += 1
+    sm = difflib.SequenceMatcher(
+        None, ak[lo : len(ak) - hi], bk[lo : len(bk) - hi], autojunk=False
+    )
+    opcodes = [
+        (op, i1 + lo, i2 + lo, j1 + lo, j2 + lo)
+        for op, i1, i2, j1, j2 in sm.get_opcodes()
+    ]
+    if lo:
+        opcodes.insert(0, ("equal", 0, lo, 0, lo))
+    if hi:
+        opcodes.append(("equal", len(ak) - hi, len(ak), len(bk) - hi, len(bk)))
     out = []
     changed = False
-    for op, i1, i2, j1, j2 in sm.get_opcodes():
+    for op, i1, i2, j1, j2 in opcodes:
         if op == "equal":
             out.append("".join(t[1] for t in a[i1:i2]))
         elif op == "insert":

@@ -12,23 +12,34 @@ import pytest
 
 ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/assets"
 
-# Stands in for `quarto render`: wraps index.qmd lines in the <main> Quarto emits.
+# Stands in for `quarto render [pages...] [--output-dir DIR]`: wraps each page's lines
+# in the <main> Quarto emits; QUARTO_LOG records the pages each render was given.
 FAKE_QUARTO = """#!/usr/bin/env python3
-import os, pathlib, sys, time
-assert sys.argv[1:] == ["render"] or sys.argv[1:3] == ["render", "--output-dir"], sys.argv
-output = pathlib.Path(sys.argv[3]) if len(sys.argv) > 2 else pathlib.Path("_site")
-if len(sys.argv) == 2 and os.environ.get("QUARTO_BLOCK_BASE_RENDER"):
+import json, os, pathlib, sys, time
+args = sys.argv[1:]
+assert args[0] == "render", sys.argv
+output = pathlib.Path("_site")
+if "--output-dir" in args:
+    index = args.index("--output-dir")
+    output = pathlib.Path(args[index + 1])
+    args = args[:index]
+pages = args[1:]
+if os.environ.get("QUARTO_LOG"):
+    with open(os.environ["QUARTO_LOG"], "a") as log:
+        log.write(json.dumps({"cwd": os.getcwd(), "pages": pages}) + "\\n")
+if output == pathlib.Path("_site") and os.environ.get("QUARTO_BLOCK_BASE_RENDER"):
     pathlib.Path(os.environ["QUARTO_BLOCK_BASE_RENDER"]).write_text(str(pathlib.Path.cwd()))
     time.sleep(60)
 extension = pathlib.Path("_extensions/evidence/version.txt").read_text()
 required = pathlib.Path("required-extension.txt")
 if required.exists():
     extension += pathlib.Path("_extensions", required.read_text().strip(), "version.txt").read_text()
-paras = f"<p>{extension}</p>" + "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
 output.mkdir(exist_ok=True)
-(output / "index.html").write_text(
-    f"<html><head><title>Report</title></head><body><main>{paras}</main></body></html>"
-)
+for page in pages or sorted(str(p) for p in pathlib.Path().glob("*.qmd")):
+    paras = f"<p>{extension}</p>" + "".join(f"<p>{line}</p>" for line in open(page).read().splitlines())
+    (output / pathlib.Path(page).with_suffix(".html")).write_text(
+        f"<html><head><title>Report</title></head><body><main>{paras}</main></body></html>"
+    )
 """
 
 pytestmark = pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
@@ -402,3 +413,71 @@ def test_render_output_override_leaves_preview_output_alone(
     assert result.returncode == 0, result.stderr
     assert "baseline finding" in (destination / "index.html").read_text()
     assert not (project / "_site").exists()
+
+
+def rendered_pages(log: Path) -> list[list[str]]:
+    return [json.loads(line)["pages"] for line in log.read_text().splitlines()]
+
+
+def add_page(project: Path, name: str, text: str) -> None:
+    (project / name).write_text(text)
+    git(project, "add", name)
+    git(project, "commit", "-qm", f"add {name}")
+    git(project, "branch", "-f", "main")
+
+
+def test_page_edit_renders_only_changed_pages(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_page(project, "other.qmd", "An untouched page.\n")
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new line.\n")
+    (project / "draft.qmd").write_text("A brand new page.\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert rendered_pages(log) == [["index.qmd"], ["draft.qmd", "index.qmd"]]
+    page = (project / "_site/what-changed.html").read_text()
+    assert "A new line." in page
+    assert "A brand new page." in page
+    assert "An untouched page." not in page
+
+
+@pytest.mark.parametrize("full", [False, True])
+def test_non_page_change_or_opt_out_renders_whole_site(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, full: bool
+) -> None:
+    add_page(project, "other.qmd", "An untouched page.\n")
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new line.\n")
+    if not full:
+        (project / "styles.css").write_text("p { color: red; }\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path, *(["WHAT_CHANGED_FULL=1"] if full else []))
+
+    assert result.returncode == 0, result.stderr
+    assert rendered_pages(log) == [[], []]
+    assert "A new line." in (project / "_site/what-changed.html").read_text()
+
+
+def test_base_without_page_list_support_renders_whole_site(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A project whose own render rule predates the page list keeps full renders.
+    workspace = (project / "workspace.mk").read_text()
+    (project / "workspace.mk").write_text(
+        workspace.replace("$(ASTA_WORKSPACE_RENDER_FILES) ", "")
+    )
+    git(project, "commit", "-qam", "older rules")
+    git(project, "branch", "-f", "main")
+    (project / "index.qmd").write_text("The baseline finding holds.\nA new line.\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert rendered_pages(log) == [[], []]
