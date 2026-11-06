@@ -556,7 +556,7 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     )
     (project / "styles.css").write_text("body { letter-spacing: 0.01em; }\n")
     (project / ".gitignore").write_text(
-        (project / ".gitignore").read_text() + ".quarto/\n"
+        (project / ".gitignore").read_text() + "/.quarto/\n"
     )
     deck = project / "talk/deck.qmd"
     deck.parent.mkdir()
@@ -577,6 +577,9 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
         check=True,
         timeout=60,
     )
+    # Quarto adds /.quarto/ on its first render if absent. Keep that setup
+    # out of the comparison so this regression exercises the page-only path.
+    assert git(project, "status", "--porcelain") == ""
     site = project / "_site"
     preview = (site / "index.html").read_text()
     deck.write_text(deck.read_text().replace("original", "updated"))
