@@ -101,7 +101,7 @@ def capture_regressions(root, deck, original):
             ).count()
             == 0
         )
-        assert page.locator("svg text").inner_text() == "Graph"
+        assert page.locator("svg text").text_content() == "Graph"
     finally:
         renderer.close()
 
