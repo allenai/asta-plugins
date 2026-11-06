@@ -273,3 +273,57 @@ def test_output_images_are_relative_to_output_page_and_stale_files_removed(
     )
     assert captured[0][-1] == "assets/review"
     assert not (images / "stale.png").exists()
+
+
+def test_failed_renderer_initialization_closes_all_started_resources(
+    tmp_path, monkeypatch
+):
+    from types import ModuleType, SimpleNamespace
+    from unittest.mock import Mock
+
+    import pytest
+
+    server = SimpleNamespace(
+        server_address=("127.0.0.1", 12345), shutdown=Mock(), server_close=Mock()
+    )
+    pw = SimpleNamespace(
+        chromium=SimpleNamespace(
+            launch=Mock(side_effect=RuntimeError("launch failed"))
+        ),
+        stop=Mock(),
+    )
+    api = ModuleType("playwright.sync_api")
+    api.sync_playwright = lambda: SimpleNamespace(start=lambda: pw)
+    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", api)
+    monkeypatch.setattr(deck_review, "_serve", lambda root: server)
+    temporary = tmp_path / "resources"
+    temporary.mkdir()
+    monkeypatch.setattr(
+        deck_review.tempfile, "mkdtemp", lambda **kwargs: str(temporary)
+    )
+    with pytest.raises(RuntimeError, match="launch failed"):
+        deck_review.Renderer(tmp_path, tmp_path)
+    assert not temporary.exists()
+    pw.stop.assert_called_once()
+    server.shutdown.assert_called_once()
+    server.server_close.assert_called_once()
+
+
+def test_generated_directory_cannot_replace_a_site_root(tmp_path):
+    import pytest
+
+    (tmp_path / "keep.html").write_text("keep")
+    with pytest.raises(SystemExit):
+        what_changed.main(
+            [
+                "--old",
+                str(tmp_path),
+                "--new",
+                str(tmp_path),
+                "--out",
+                str(tmp_path / "diff.html"),
+                "--render-decks",
+                str(tmp_path),
+            ]
+        )
+    assert (tmp_path / "keep.html").read_text() == "keep"

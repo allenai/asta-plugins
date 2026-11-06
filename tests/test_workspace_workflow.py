@@ -225,6 +225,9 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     assert "Using project-owned" in result.stdout
 
     (project / "_site/what-changed.html").unlink()
+    stale_images = project / "_site/what-changed-decks"
+    stale_images.mkdir()
+    (stale_images / "old.png").touch()
     (project / "scripts/what-changed.py").write_text(
         "import argparse\n"
         "from pathlib import Path\n"
@@ -245,6 +248,8 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     assert result.returncode == 0, result.stderr
     assert not (project / "_site/what-changed.html").exists()
     assert "what-changed page generation failed" in result.stdout
+    assert not stale_images.exists()
+    assert not (project / "_site/.what-changed.tmp.html").exists()
 
 
 def test_what_changed_uses_managed_generator_without_project_copy(

@@ -58,9 +58,13 @@ READY_JS = r"""() => Promise.race([(async () => {
   await document.fonts.ready;
   if (window.MathJax && MathJax.startup && MathJax.startup.promise) await MathJax.startup.promise;
   if (window.MathJax && MathJax.Hub) await new Promise(resolve => MathJax.Hub.Queue(resolve));
-  const slide = Reveal.getCurrentSlide(), indices = Reveal.getIndices(slide);
-  const background = Reveal.getSlideBackground(indices.h, indices.v);
+  const slide = window.Reveal && Reveal.isReady() ? Reveal.getCurrentSlide() : document.body;
+  const indices = window.Reveal && Reveal.isReady() ? Reveal.getIndices(slide) : null;
+  const background = indices ? Reveal.getSlideBackground(indices.h, indices.v) : null;
   const roots = [slide, background].filter(Boolean);
+  for (const svg of roots.flatMap(root => [...root.querySelectorAll('svg')])) {
+    if (svg.pauseAnimations) { svg.pauseAnimations(); svg.setCurrentTime(0); }
+  }
   await Promise.all(roots.flatMap(root => [...root.querySelectorAll('img')]).map(async i => {
     if (i.dataset.src && !i.getAttribute('src')) i.src = i.dataset.src;
     await i.decode();
@@ -191,16 +195,22 @@ class Renderer:
 
     def _open(self, side, deck):
         page = self._browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
-        page.set_default_timeout(30000)
-        page.goto(f"{self._base}/{side}/{quote(deck)}")
-        page.wait_for_function(
-            "() => window.Reveal && Reveal.isReady && Reveal.isReady()", timeout=30000
-        )
-        page.evaluate(
-            "() => Reveal.configure({transition: 'none', backgroundTransition: 'none', progress: false, slideNumber: false, controls: false})"
-        )
-        page.add_style_tag(content=CAPTURE_CSS)
-        page.evaluate("() => document.fonts.ready")
+        try:
+            page.set_default_timeout(30000)
+            page.goto(f"{self._base}/{side}/{quote(deck)}")
+            page.wait_for_function(
+                "() => window.Reveal && Reveal.isReady && Reveal.isReady()",
+                timeout=30000,
+            )
+            page.evaluate(
+                "() => Reveal.configure({transition: 'none', backgroundTransition: 'none', progress: false, slideNumber: false, controls: false})"
+            )
+            page.add_style_tag(content=CAPTURE_CSS)
+            page.wait_for_load_state("networkidle", timeout=10000)
+            page.evaluate(READY_JS)
+        except Exception:
+            page.close()
+            raise
         return page
 
     def page(self, side, deck):
@@ -220,9 +230,16 @@ class Renderer:
         page = self._open(side, deck) if mark else self.page(side, deck)
         try:
             page.evaluate(GOTO_JS, index)
+            page.wait_for_load_state("networkidle", timeout=10000)
+            page.evaluate(READY_JS)
+            # Embedded documents have their own fonts, media and animation clocks.
+            for frame in page.frames:
+                if frame != page.main_frame and frame.frame_element().is_visible():
+                    frame.wait_for_load_state("networkidle", timeout=10000)
+                    frame.add_style_tag(content=CAPTURE_CSS)
+                    frame.evaluate(READY_JS)
             if mark:
                 page.evaluate(*mark)
-            page.evaluate(READY_JS)
             data = page.screenshot(type="png", animations="disabled")
         finally:
             if mark:
