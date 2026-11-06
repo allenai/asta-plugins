@@ -249,23 +249,31 @@ def test_atomic_pin_write_failure_leaves_workflow_unchanged(
 
 
 @pytest.mark.parametrize("quote", ["", "'", '"'])
+@pytest.mark.parametrize("reuse_job", [False, True])
 def test_all_matching_workflow_refs_move_without_changing_other_text(
-    project, monkeypatch, quote
+    project, monkeypatch, quote, reuse_job
 ) -> None:
     root = project("v0.115.0")
     workflow = root / workspace.WORKFLOW_FILE
     source = f"allenai/asta-plugins{workspace.WORKFLOW}v0.115.0"
+    first = "  first: &publishing\r\n" if reuse_job else "  first:\r\n"
+    second = (
+        "  second: *publishing\r\n"
+        if reuse_job
+        else f"  second:\r\n    uses: {quote}{source}{quote} # second\r\n"
+    )
     original = (
-        f"jobs:\r\n  first:\r\n    uses: {quote}{source}{quote} # first\r\n"
-        f"  second:\r\n    uses: {quote}{source}{quote} # second\r\n"
-        f"# uses: {source}0\r\n"
+        f"jobs:\r\n{first}    uses: {quote}{source}{quote} # first\r\n"
+        f"{second}# uses: {source}0\r\n"
     ).encode()
     workflow.write_bytes(original)
     _git(root, "add", workspace.WORKFLOW_FILE)
     _git(root, "commit", "-q", "-m", "Repeat workflow source")
-    result = _run(root, "0.116.0", monkeypatch)
+    result = _run(root, "0.116.10", monkeypatch)
     assert result.exit_code == 0, result.output
-    assert workflow.read_bytes() == original.replace(b"v0.115.0", b"v0.116.0", 2)
+    assert workflow.read_bytes() == original.replace(
+        b"v0.115.0", b"v0.116.10", 1 if reuse_job else 2
+    )
     assert not _git(root, "status", "--porcelain")
 
 

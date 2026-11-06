@@ -105,7 +105,8 @@ def _workspace_job_lines(text: str, workflow: Path) -> list[tuple[int, int | Non
 def _workflow_source_lines(text: str, workflow: Path) -> list[tuple[int, re.Match]]:
     lines = text.splitlines()
     sources = []
-    for index, _ in _workspace_job_lines(text, workflow):
+    # A YAML job alias can refer to the same source line more than once.
+    for index in sorted({index for index, _ in _workspace_job_lines(text, workflow)}):
         match = WORKFLOW_LINE.fullmatch(lines[index])
         if match is None:
             raise click.ClickException(
