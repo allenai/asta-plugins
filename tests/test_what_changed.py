@@ -490,6 +490,41 @@ def test_partial_render_borrows_theme_from_full_site(tmp_path):
     assert 'href="site_libs/revealjs/reveal.css"' in fallback
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_previous_comparison_cannot_supply_the_partial_render_theme(tmp_path, legacy):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        root.mkdir()
+    (new / "index.html").write_text(
+        "<head><style>.stale-comparison { color: red; }/*"
+        + "old theme " * 1000
+        + "*/</style></head>"
+        "<main>A changed finding</main>"
+    )
+    previous = WHAT_CHANGED.build(old, new, "", "Previous comparison")
+    if legacy:
+        previous = previous.replace(WHAT_CHANGED.WHAT_CHANGED_META, "")
+        # Legacy output has no marker, and its wrapper lies beyond the prefix
+        # read during page discovery. The reserved root name must exclude it.
+        assert not WHAT_CHANGED.is_what_changed_artifact(previous[:4096])
+    (site / "what-changed.html").write_text(previous)
+    # No index page: the prior report sorts before the real theme source.
+    (site / "z-page.html").write_text(
+        '<head><link href="site_libs/site-theme.css" rel="stylesheet"></head>'
+        "<main>The real site</main>"
+    )
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        out_path=tmp_path / "temporary/what-changed.html",
+        theme_root=site,
+    )
+    assert 'href="site_libs/site-theme.css"' in result
+    assert ".stale-comparison" not in result
+
+
 def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
     old = tmp_path / "old"
     new = tmp_path / "new"

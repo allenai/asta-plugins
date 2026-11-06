@@ -172,11 +172,13 @@ ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
 	set -eu; \
-	set -- $(ASTA_WORKSPACE_RENDER_FILES); \
+	set -f; \
+	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
 	if [ "$$#" -eq 0 ]; then \
 		quarto render $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
 	else \
 		for page do \
+			case "$$page" in /*|./*|../*) ;; *) page=./$$page;; esac; \
 			quarto render "$$page" --no-clean $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
 		done; \
 	fi
@@ -189,6 +191,7 @@ WHAT_CHANGED_BASE ?=
 WHAT_CHANGED_FULL ?=
 what-changed:
 	@set -eu; \
+	case "$${MAKEFLAGS%% *}" in --*) ;; *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac; \
 	base='$(subst ','"'"',$(value WHAT_CHANGED_BASE))'; \
 	source=$$base; \
 	if [ -z "$$base" ]; then \
@@ -228,26 +231,32 @@ what-changed:
 		echo "what-changed: current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
-	for project in . "$$dir"; do \
+	for version in current base; do \
+		project=.; [ "$$version" != base ] || project=$$dir; \
 		if [ ! -f "$$project/_quarto.yml" ] && [ ! -f "$$project/_quarto.yaml" ]; then \
 			echo "what-changed: missing Quarto project configuration at $$project; both versions must define a site with project.output-dir=_site" >&2; exit 1; \
 		fi; \
 		quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
-		$(PYTHON) -c 'import json, pathlib, sys; site = json.load(open(sys.argv[1])).get("config", {}).get("project", {}).get("output-dir"); sys.exit(0 if isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",) else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project"; \
+		$(PYTHON) -c 'import json, pathlib, sys; data = json.load(open(sys.argv[1])); site = data.get("config", {}).get("project", {}).get("output-dir"); site_ok = isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",); root = pathlib.Path(sys.argv[2]).resolve(); inputs = data.get("files", {}).get("input", []); paths = [(root / p).resolve() for p in inputs]; print("\n".join(str(p.relative_to(root)) for p in paths if p.is_relative_to(root))); sys.exit(0 if site_ok else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project" > "$$tmp/$$version-inputs"; \
 	done; \
 	files=; basefiles=; partial=; legacy=; \
 	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
-		changed=$$(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u); \
-		if [ -n "$$changed" ] && ! printf '%s\n' "$$changed" | grep -q '[^A-Za-z0-9._/+@-]'; then \
+		(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u) > "$$tmp/changed"; \
+		if [ -s "$$tmp/changed" ]; then \
 			partial=1; \
-			for path in $$changed; do \
+			while IFS= read -r path; do \
 				case "$$path" in "$$prefix"*) rel=$${path#"$$prefix"};; *) partial=; break;; esac; \
+				if printf '%s\n' "$$rel" | grep -q '[^A-Za-z0-9._/+@-]'; then partial=; break; fi; \
 				case "/$$rel" in */_*|*/.*) partial=; break;; esac; \
 				case "$$rel" in *.qmd|*.md|*.ipynb|*.Rmd) ;; *) partial=; break;; esac; \
 				[ -f "$$rel" ] || { partial=; break; }; \
+				grep -Fxq -- "$$rel" "$$tmp/current-inputs" || { partial=; break; }; \
 				files="$$files ./$$rel"; \
-				[ ! -f "$$dir/$$rel" ] || basefiles="$$basefiles ./$$rel"; \
-			done; \
+				if [ -f "$$dir/$$rel" ]; then \
+					grep -Fxq -- "$$rel" "$$tmp/base-inputs" || { partial=; break; }; \
+					basefiles="$$basefiles ./$$rel"; \
+				fi; \
+			done < "$$tmp/changed"; \
 		fi; \
 		if [ -n "$$partial" ]; then \
 			printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
@@ -278,7 +287,7 @@ what-changed:
 		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
 		mkdir -p "$$dir/_site"; \
 		if [ -n "$$legacy" ]; then \
-			quarto=$$(command -v quarto); mkdir "$$tmp/bin"; \
+			mkdir "$$tmp/bin"; \
 			printf '%s\n' '#!/bin/sh' 'set -eu' \
 				'if [ "$${1:-}" != render ]; then exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"; fi' \
 				'shift' 'for page in $$ASTA_WHAT_CHANGED_PAGES; do' \

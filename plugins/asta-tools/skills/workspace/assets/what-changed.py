@@ -670,18 +670,19 @@ def list_pages(root, out_path=None, paper_dirs=()):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
     Skips any page that is itself a "What changed" artifact — matched by output
-    exact output path (when it falls under this input root) or by the generator's
+    reserved root filename, exact output path, or the generator's
     self-identifying marker — so the generator never diffs its own output while
     preserving a legitimate same-named page in another directory. Paper output
     stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
-    for dirpath, _dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
         if os.path.abspath(dirpath) == os.path.abspath(root):
             # Local comparisons retain their rendered assets here. They are
             # supporting output, never another set of source pages to compare.
-            _dirs[:] = [name for name in _dirs if name != "what-changed-assets"]
+            dirs[:] = [name for name in dirs if name != "what-changed-assets"]
+            files = [name for name in files if name != "what-changed.html"]
         for f in files:
             if not f.endswith(".html"):
                 continue
@@ -1539,7 +1540,11 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
 
 
 def prefix_theme_urls(css, prefix):
-    """Point a temporary render's theme at its retained, served asset tree."""
+    """Rebase theme href attributes and CSS url() into the retained asset tree.
+
+    Only stylesheet links and inline styles are copied from the template;
+    src attributes and bare-string @import rules are not rewritten.
+    """
 
     def prefixed(url):
         value = html.unescape(url)

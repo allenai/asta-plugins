@@ -135,11 +135,13 @@ ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets
 	set -eu; \
-	set -- $(ASTA_WORKSPACE_RENDER_FILES); \
+	set -f; \
+	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
 	if [ "$$#" -eq 0 ]; then \
 		quarto render $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
 	else \
 		for page do \
+			case "$$page" in /*|./*|../*) ;; *) page=./$$page;; esac; \
 			quarto render "$$page" --no-clean $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
 		done; \
 	fi

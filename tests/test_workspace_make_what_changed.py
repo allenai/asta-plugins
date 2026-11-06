@@ -18,11 +18,21 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 # Quarto's CLI contract; QUARTO_LOG records each individual invocation.
 FAKE_QUARTO = """#!/usr/bin/env python3
 import json, os, pathlib, re, sys, time
+def input_pages(root):
+    root = root.resolve()
+    excluded = json.loads(os.environ.get("QUARTO_EXCLUDED_INPUTS", "{}"))
+    excluded = excluded.get(str(root), excluded.get(root.name, []))
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*")
+        if p.is_file() and p.suffix in {".qmd", ".md", ".ipynb", ".Rmd"}
+        and not any(part.startswith(("_", ".")) for part in p.relative_to(root).parts)
+        and str(p.relative_to(root)) not in excluded)
 args = sys.argv[1:]
 if args[0] == "inspect":
-    config = pathlib.Path(args[1]) / "_quarto.yml"
+    root = pathlib.Path(args[1])
+    config = root / "_quarto.yml"
     match = re.search(r"output-dir:\\s*([^\\s]+)", config.read_text())
-    print(json.dumps({"config": {"project": {"output-dir": match[1] if match else "_site"}}}))
+    print(json.dumps({"config": {"project": {"output-dir": match[1] if match else "_site"}},
+        "files": {"input": [str((root / p).resolve()) for p in input_pages(root)]}}))
     sys.exit(0)
 assert args[0] == "render", sys.argv
 output = pathlib.Path("_site")
@@ -47,7 +57,7 @@ required = pathlib.Path("required-extension.txt")
 if required.exists():
     extension += pathlib.Path("_extensions", required.read_text().strip(), "version.txt").read_text()
 output.mkdir(parents=True, exist_ok=True)
-for page in pages or sorted(str(p) for p in pathlib.Path().glob("*.qmd")):
+for page in pages or input_pages(pathlib.Path()):
     paras = f"<p>{extension}</p>" + "".join(f"<p>{line}</p>" for line in open(page).read().splitlines())
     destination = output / pathlib.Path(page).with_suffix(".html")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -417,6 +427,7 @@ def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> No
     result = make(nested, tmp_path)
 
     assert result.returncode == 0, result.stderr
+    assert "only pages changed" in result.stderr
     assert "drafted" in (nested / "_site/what-changed.html").read_text()
     assert not list((tmp_path / "temporary").iterdir())
     assert not list((project / ".asta/cache").glob("what-changed.*"))
@@ -633,7 +644,7 @@ def test_base_without_page_list_support_renders_whole_site(
     # A project whose own render rule predates the page list keeps full renders.
     workspace = (project / "workspace.mk").read_text()
     (project / "workspace.mk").write_text(
-        workspace.replace("set -- $(ASTA_WORKSPACE_RENDER_FILES);", "set --;").replace(
+        workspace.replace("$(value ASTA_WORKSPACE_RENDER_FILES)", "").replace(
             "quarto render $(if", "quarto render . $(if"
         )
     )
@@ -966,3 +977,99 @@ def test_page_name_starting_with_dash_is_not_a_quarto_option(
     assert "only pages changed" in result.stderr
     assert rendered_pages(log) == [["-draft.qmd"], ["-draft.qmd"]]
     assert "drafted" in (project / "_site/what-changed.html").read_text()
+
+
+@pytest.mark.parametrize("version", ["current", "base"])
+def test_page_excluded_by_either_inspected_project_uses_full_render(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
+    add_page(project, "notes.qmd", "An excluded research note.\n")
+    (project / "notes.qmd").write_text("A revised research note.\n")
+    scope = str(project) if version == "current" else "base"
+    monkeypatch.setenv("QUARTO_EXCLUDED_INPUTS", json.dumps({scope: ["notes.qmd"]}))
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" not in result.stderr
+    assert rendered_pages(log) == [[], []]
+
+
+@pytest.mark.parametrize("flags", [["-n"], ["--just-print"], ["-kn"]])
+def test_dry_run_creates_no_worktrees_or_output(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: list[str]
+) -> None:
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+    result = make(project, tmp_path, *flags)
+    assert result.returncode == 0, result.stderr
+    assert "dry run; no renders or worktrees created" in result.stdout
+    assert not log.exists()
+    assert not (project / "_site").exists()
+    assert not (project / ".asta/cache").exists()
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+def test_direct_render_page_list_does_not_glob_or_parse_names_as_options(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rules: str
+) -> None:
+    for name in ("star*.qmd", "star-other.qmd", "-draft.qmd"):
+        (project / name).write_text("A research page.\n")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str(ASSETS / rules),
+            "render",
+            "ASTA_WORKSPACE_VIEWERS=0",
+            "ASTA_WORKSPACE_RENDER_FILES=star*.qmd -draft.qmd",
+            "ASTA_WORKSPACE_RENDER_OUTPUT=render-output",
+        ],
+        cwd=project,
+        env=make_env(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert rendered_pages(log) == [["star*.qmd"], ["-draft.qmd"]]
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
+@pytest.mark.parametrize("excluded", ["README.md", "notes.qmd"])
+def test_real_quarto_render_allowlist_does_not_publish_excluded_pages(
+    project: Path, tmp_path: Path, excluded: str
+) -> None:
+    (project / "_quarto.yml").write_text(
+        "project:\n  type: website\n  render:\n    - index.qmd\n"
+        "format:\n  html:\n    theme: none\n"
+    )
+    (project / excluded).write_text("An excluded finding.\n")
+    git(project, "add", "_quarto.yml", excluded)
+    git(project, "commit", "-qm", "site with an explicit render allowlist")
+    git(project, "branch", "-f", "main")
+    (project / excluded).write_text("A revised excluded finding.\n")
+    temporary = tmp_path / "real-temporary"
+    temporary.mkdir()
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env={**os.environ, "TMPDIR": str(temporary)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" not in result.stderr
+    report = (project / "_site/what-changed.html").read_text()
+    assert "No rendered content changed" in report
+    assert "excluded finding" not in report
+    assert not (project / "_site" / Path(excluded).with_suffix(".html")).exists()
+    assert not list(temporary.iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
