@@ -176,7 +176,10 @@ def test_base_uses_its_own_render_rules(project: Path, tmp_path: Path) -> None:
     result = make(project, tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert (project / "_site/what-changed.html").is_file()
+    assert (
+        "No rendered content changed"
+        in (project / "_site/what-changed.html").read_text()
+    )
 
 
 def test_baseline_keeps_its_recorded_extension(project: Path, tmp_path: Path) -> None:
