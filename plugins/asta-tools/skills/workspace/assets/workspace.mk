@@ -7,7 +7,7 @@ PYTHON ?= python3
 ASTA_WORKSPACE_VIEWERS ?= 1
 workspace_script = $(or $(firstword $(wildcard scripts/$(1) $(ASTA_WORKSPACE_SCRIPTS)/$(1))),$(error Missing $(1): update the Asta CLI and run 'asta workspace sync --refresh' or add scripts/$(1) to customize it))
 
-.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready workspace-viewers
+.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready workspace-viewers what-changed
 
 # The project Makefile passes its selected workflow ref to the evidence fetch.
 # Standalone use can set ASTA_PLUGINS_REF or resolve the latest release tag.
@@ -168,6 +168,34 @@ preview: workspace-assets workspace-viewers
 
 render: workspace-assets workspace-viewers
 	quarto render
+
+# What changed before any PR: render the branch's base (merge-base with the
+# default branch, or WHAT_CHANGED_BASE=<ref>) beside the working tree's _site/
+# and write _site/what-changed.html, which a running `make preview` serves.
+WHAT_CHANGED_BASE ?=
+what-changed: render
+	@set -eu; \
+	base='$(subst ','"'"',$(WHAT_CHANGED_BASE))'; \
+	if [ -z "$$base" ]; then \
+		for upstream in origin/HEAD origin/main main; do \
+			base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) && break || base=; \
+		done; \
+	fi; \
+	[ -n "$$base" ] || { echo "what-changed: no base branch found; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+	label=$$(git rev-parse --short "$$base^{commit}"); \
+	prefix=$$(git rev-parse --show-prefix); \
+	tmp=$$(mktemp -d); \
+	trap 'git worktree remove --force "$$tmp/base" >/dev/null 2>&1 || true; rm -rf "$$tmp"' 0; \
+	git worktree add -q --detach "$$tmp/base" "$$label"; \
+	dir="$$tmp/base/$$prefix"; \
+	for ext in _extensions/*/; do \
+		[ -d "$$ext" ] && [ ! -e "$$dir/$${ext%/}" ] || continue; \
+		mkdir -p "$$dir/_extensions"; cp -R "$${ext%/}" "$$dir/_extensions/"; \
+	done; \
+	(cd "$$dir" && quarto render) >&2; \
+	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new _site \
+		--out _site/what-changed.html --title "Changes since $$label"; \
+	echo "what-changed: open what-changed.html in the make preview site"
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new
