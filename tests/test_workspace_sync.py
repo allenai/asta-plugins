@@ -443,6 +443,63 @@ def test_thin_makefile_requires_a_workflow_even_with_cached_rules(
     assert "stale-managed-preview" not in result.stdout
 
 
+@pytest.mark.parametrize("site_dir", ["site", "research/site notes"])
+@pytest.mark.parametrize("source", ["other-site", "other-repository", "missing-input"])
+def test_thin_makefile_rejects_unrelated_root_with_newer_cached_rules(
+    tmp_path: Path, site_dir: str, source: str
+) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("make not installed")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    project = tmp_path / site_dir
+    project.mkdir(parents=True)
+    workflow = tmp_path / workspace_module.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True)
+    repository = (
+        "example/custom" if source == "other-repository" else "allenai/asta-plugins"
+    )
+    selected_site = site_dir if source == "other-repository" else "other"
+    workflow.write_text(
+        f"jobs:\n  docs:\n    uses: {repository}{workspace_module.WORKFLOW}main\n"
+        + (
+            ""
+            if source == "missing-input"
+            else f"    with:\n      site-dir: {selected_site}\n"
+        )
+    )
+    assets = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/asta-tools/skills/workspace/assets"
+    )
+    (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
+    rules = project / ".asta/cache/workspace.mk"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("preview:\n\t@echo stale-managed-preview\n")
+    # Avoid the independent CLI-version guard: only workflow selection may force sync.
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    executable = tools / "asta"
+    executable.write_text(
+        '#!/bin/sh\nif [ "$1" = --version ]; then exit 0; fi\n'
+        f"exec {shlex.quote(sys.executable)} -c 'from asta.cli import cli; cli()' \"$@\"\n"
+    )
+    executable.chmod(0o755)
+    old = time.time() - 10
+    os.utime(workflow, (old, old))
+    os.utime(rules, (old + 1, old + 1))
+    result = subprocess.run(
+        ["make", "preview"],
+        cwd=project,
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert f"Missing {project / workspace_module.WORKFLOW_FILE}" in result.stderr
+    assert "stale-managed-preview" not in result.stdout
+
+
 @pytest.mark.parametrize("fail_once", [False, True])
 @pytest.mark.parametrize(
     "guard", ["CI", "GITHUB_ACTIONS", "ASTA_WORKSPACE_RESOLVED_SHA"]

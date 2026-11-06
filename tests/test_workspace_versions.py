@@ -321,7 +321,11 @@ def test_sync_falls_back_when_fork_lacks_the_new_release(
 
 
 @pytest.mark.parametrize("edit", ["comment", "pin"])
-def test_sync_preserves_workflow_edits_during_fetch(tmp_path, monkeypatch, edit):
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("upgrade", [False, True])
+def test_sync_preserves_workflow_edits_during_fetch(
+    tmp_path, monkeypatch, edit, cached, upgrade
+):
     _local(monkeypatch)
     project = project_with_ref(tmp_path, "v0.110.0")
     docs = project / workspace_module.WORKFLOW_FILE
@@ -331,18 +335,27 @@ def test_sync_preserves_workflow_edits_during_fetch(tmp_path, monkeypatch, edit)
         if edit == "comment"
         else before.replace(b"@v0.110.0", b"@main")
     )
-    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+    if cached:
+        result, _ = _sync(project, monkeypatch, "0.110.0")
+        assert result.exit_code == 0, result.output
+    monkeypatch.setattr(
+        workspace_versions, "installed", lambda: "0.113.0" if upgrade else "0.110.0"
+    )
 
     def fetch(repository, ref):
         docs.write_bytes(concurrent)
         return b"rule\n", _archive({})
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
-    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    result = CliRunner().invoke(
+        cli, ["workspace", "sync", "--refresh", "--project", str(project)]
+    )
     assert result.exit_code != 0, result.output
     assert "changed during sync" in result.output
     assert docs.read_bytes() == concurrent
     assert "Moved the workspace pin" not in result.output
+    assert not (project / ".asta/cache/workspace.mk").exists()
+    assert not (project / ".asta/cache/workspace.json").exists()
 
 
 def test_pin_rewrite_restores_bytes_if_verification_raises(tmp_path, monkeypatch):
@@ -401,6 +414,8 @@ def test_subfolder_sync_preserves_root_workflow_changes_during_fetch(
     assert isinstance(result.exception, SystemExit)
     assert "changed during sync" in result.output
     assert "Moved the workspace pin" not in result.output
+    assert not (project / ".asta/cache/workspace.mk").exists()
+    assert not (project / ".asta/cache/workspace.json").exists()
     if edit == "delete":
         assert not docs.exists()
     else:

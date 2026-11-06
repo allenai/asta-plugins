@@ -8,8 +8,10 @@
   Root workflows with multiple workspace jobs are rejected before moving pins;
   unrelated jobs, inputs and script text are ignored. Multiline workspace sources
   report a format error instead of silently selecting a fallback. Sync preserves
-  edits to the selected workflow made while fetching rules, and managed builds
-  still require a workflow when rules are cached.
+  edits to the selected workflow made while fetching rules and invalidates the
+  cache on conflicts. Managed subfolder builds validate the root workflow even
+  when rules are cached; unrelated repositories with the same workflow path
+  do not select the site.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`

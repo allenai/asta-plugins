@@ -457,6 +457,11 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
     before = check()
     assert before.returncode == 0, before.stderr
     assert "checked-v0.115.0" in before.stdout
+    if site_dir != ".":
+        cached = check()
+        assert cached.returncode == 0, cached.stderr
+        assert "workspace.mk already cached from asta-plugins@v0.115.0" in cached.stdout
+        assert "checked-v0.115.0" in cached.stdout
     # Force a strict timestamp ordering even on coarse-resolution filesystems.
     old = time.time() - 10
     os.utime(repository / workspace.WORKFLOW_FILE, (old - 1, old - 1))
@@ -604,6 +609,8 @@ def test_subfolder_rejects_ambiguous_root_without_changing_pins(
 UNRELATED_SITE_INPUTS = [
     "  other:\n    uses: example/custom/.github/workflows/site.yml@main\n"
     "    with:\n      site-dir: site\n",
+    "  other:\n    uses: example/custom/.github/workflows/workspace-quarto-site.yml@main\n"
+    "    with:\n      site-dir: site\n",
     "    env:\n      site-dir: site\n",
     "    steps:\n      - uses: example/action@main\n"
     "        with:\n          site-dir: site\n",
@@ -611,6 +618,26 @@ UNRELATED_SITE_INPUTS = [
     "env:\n  site-dir: site\n",
     "with:\n  site-dir: site\n",
 ]
+
+
+@pytest.mark.parametrize("repository", ["example/asta-plugins", "Example/Asta-Plugins"])
+def test_subfolder_accepts_a_fork_workflow(project, monkeypatch, repository):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(
+        workflow.read_text().replace("allenai/asta-plugins", repository)
+        + "    with:\n      site-dir: site\n"
+    )
+    _git(root, "add", workspace.WORKFLOW_FILE)
+    _git(root, "commit", "-q", "-m", "Use a fork for the subfolder site")
+    site = root / "site"
+    site.mkdir()
+    assert workspace.workflow_root(site) == root
+    assert workspace.selected_source(site) == (repository, "v0.115.0")
+    result = _run(site, "0.116.0", monkeypatch)
+    assert result.exit_code == 0, result.output
+    assert workspace.selected_source(site) == (repository, "v0.116.0")
+    assert not (site / ".github").exists()
 
 
 @pytest.mark.parametrize("unrelated", UNRELATED_SITE_INPUTS)
@@ -717,17 +744,18 @@ def test_matching_root_ignores_unrelated_inputs_and_source_text(
 
 
 @pytest.mark.parametrize("style", ["", "|-", ">-"])
+@pytest.mark.parametrize("ref", ["v0.115.0", "${{ inputs.ref }}"])
 @pytest.mark.parametrize("local_fallback", [False, True])
 @pytest.mark.parametrize("command", ["sync", "bump-pin"])
 def test_multiline_workspace_source_errors_instead_of_using_fallback(
-    project, monkeypatch, style, local_fallback, command
+    project, monkeypatch, style, ref, local_fallback, command
 ):
     root = project("v0.115.0")
     workflow = root / workspace.WORKFLOW_FILE
     text = (
         "jobs:\n  docs:\n"
         f"    uses: {style}\n"
-        f"      allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n"
+        f"      allenai/asta-plugins{workspace.WORKFLOW}{ref}\n"
         "    with:\n      site-dir: site\n"
     )
     workflow.write_text(text)

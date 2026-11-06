@@ -32,6 +32,7 @@ from asta.commands import workspace_versions
 from asta.commands.overleaf import overleaf
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
+WORKFLOW_SOURCE = re.compile(r"[A-Za-z0-9_.-]+/(?i:asta-plugins)" + re.escape(WORKFLOW))
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
@@ -92,7 +93,11 @@ def _workspace_job_lines(text: str, workflow: Path) -> list[tuple[int, int | Non
         uses = field(job, "uses")
         inputs = field(job, "with")
         site_dir = field(inputs[1], "site-dir") if inputs else None
-        if uses and isinstance(uses[1], yaml.ScalarNode) and WORKFLOW in uses[1].value:
+        if (
+            uses
+            and isinstance(uses[1], yaml.ScalarNode)
+            and WORKFLOW_SOURCE.match(uses[1].value.strip())
+        ):
             result.append(
                 (
                     uses[0].start_mark.line,
@@ -620,15 +625,42 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
     workflow = workflow_file(project)
+    _reject_workflow_symlinks(workflow)
+    try:
+        original = workflow.read_bytes()
+    except FileNotFoundError as exc:
+        raise click.ClickException(f"Missing {workflow}") from exc
     repository, ref = _source_from_workflow(workflow)
     original_ref = ref
     if not _is_unattended():
         ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
-    if ref != original_ref:
-        _reject_workflow_symlinks(workflow)
-        original = workflow.read_bytes()
+
+    def validate_workflow() -> None:
+        try:
+            _reject_workflow_symlinks(workflow)
+            if workflow.read_bytes() == original and workflow_file(project) == workflow:
+                return
+        except (OSError, click.ClickException):
+            pass
+        # Make can otherwise run newer cached rules after this failed sync.
+        cache = project / ".asta/cache"
+        for name in ("workspace.mk", "workspace.json"):
+            (cache / name).unlink(missing_ok=True)
+        raise click.ClickException(
+            f"{workflow} changed during sync or became unreadable; "
+            "left it unchanged and discarded cached rules. Run sync again."
+        )
+
+    def sync_ref(selected_ref: str) -> bytes:
+        validate_workflow()
+        archive = _sync_workspace(
+            project, repository, selected_ref, refresh, require_scripts
+        )
+        validate_workflow()
+        return archive
+
     try:
-        archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
+        archive = sync_ref(ref)
     except _WorkspaceFetchError:
         if ref == original_ref:
             raise
@@ -637,22 +669,8 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
             f"@{original_ref} and trying its rules",
             err=True,
         )
-        return _sync_workspace(
-            project, repository, original_ref, refresh, require_scripts
-        )
+        return sync_ref(original_ref)
     if ref != original_ref:
-        _reject_workflow_symlinks(workflow)
-        try:
-            current = workflow.read_bytes()
-        except OSError as exc:
-            raise click.ClickException(
-                f"{workflow} changed during sync or became unreadable; "
-                "left it unchanged. Run sync again."
-            ) from exc
-        if current != original:
-            raise click.ClickException(
-                f"{workflow} changed during sync; left it unchanged. Run sync again."
-            )
         _write_pin(workflow, original, ref)
         click.echo(
             f"Moved the workspace pin in {workflow} from asta-plugins@{original_ref} "
