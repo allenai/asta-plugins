@@ -712,8 +712,13 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
         check=True,
         timeout=60,
     )
-    # Quarto adds /.quarto/ on its first render if absent. Keep that setup
-    # out of the comparison so this regression exercises the page-only path.
+    # Quarto versions add different cache exclusions on first render (1.11
+    # also adds **/*.quarto_ipynb). Record only that setup in the baseline,
+    # keeping the comparison page-only without hiding any other source edits.
+    if git(project, "diff", "--name-only", "--", ".gitignore").strip():
+        git(project, "add", ".gitignore")
+        git(project, "commit", "-qm", "record Quarto preview cache exclusions")
+        git(project, "branch", "-f", "main")
     assert git(project, "status", "--porcelain") == ""
     site = project / "_site"
     preview = (site / "index.html").read_text()
