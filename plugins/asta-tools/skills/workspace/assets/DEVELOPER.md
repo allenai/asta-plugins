@@ -63,7 +63,7 @@ Ask your agent to pair the paper with your Overleaf project. Pairing turns on sc
 - If the sync runs on your machine, create an Overleaf Git token for it, in Overleaf's account settings under Git integration.
 - When your agent shows you a conflict between Overleaf and the repo, decide which text stays.
 
-For the details your agent follows, see the workspace skill's [Overleaf sync setup](https://github.com/allenai/asta-plugins/blob/v0.124.0/plugins/asta-tools/skills/workspace/workflows/overleaf-sync.md).
+For the details your agent follows, see the workspace skill's [Overleaf sync setup](https://github.com/allenai/asta-plugins/blob/v0.125.0/plugins/asta-tools/skills/workspace/workflows/overleaf-sync.md).
 
 ## Back a claim with supporting evidence
 
@@ -161,7 +161,7 @@ Every push to `main` and every PR triggers CI checks + deploy. Main: `https://<o
 - **Pinned plus a Dependabot config**, for projects only people work on. Add a `.github/dependabot.yml` with a weekly `github-actions` update; Dependabot then opens a PR per release. A person must merge it: GitHub never lets the workflow token merge or auto-merge a PR that edits a workflow file, and every bump edits `docs.yml`.
 - **`@latest`**, for throwaway projects. No upkeep, but rebuilding an old commit uses today's tooling, and the live site picks up a new release only at the next push or a manual redeploy.
 
-`docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/v0.124.0/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying; see **Upgrading asta-plugins** above for how the pinned ref moves.
+`docs.yml` is a thin stub: the build/deploy/preview machinery is a shared [reusable workflow](https://github.com/allenai/asta-plugins/blob/v0.125.0/.github/workflows/workspace-quarto-site.yml) maintained centrally, so fixes flow to this repo without re-copying; see **Upgrading asta-plugins** above for how the pinned ref moves.
 
 The PR's “What changed” page uses the version of `what-changed.py` shipped with the reusable workflow. To customize it, commit `scripts/what-changed.py` in your project; that copy takes precedence and runs in the read-only build job. The write-enabled deploy job only publishes its rendered output. A PR that changes the project script runs its changed copy for its own preview, so treat that page as a review aid rather than a trusted check.
 
