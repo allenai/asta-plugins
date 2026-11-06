@@ -1435,10 +1435,68 @@ def match_slides(old, new):
     return pairs
 
 
-def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
+def load_deck_review():
+    """deck-review.py beside this script, or None if it or Playwright is missing."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deck-review.py")
+    if not os.path.exists(path):
+        return None
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("deck_review", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        import playwright.sync_api  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - any failure falls back to the text diff
+        print(f"what-changed: slides as text ({exc})", file=sys.stderr)
+        return None
+    return module
+
+
+class DeckRenderer:
+    """Lazily starts one browser for every deck on the page."""
+
+    def __init__(self, module, old_root, new_root, img_root, img_url):
+        self.module, self.old_root, self.new_root = module, old_root, new_root
+        self.img_root, self.img_url = img_root, img_url.rstrip("/")
+        self.renderer = None
+        self.used = False
+
+    def review(self, rel, link, old, new, pairs):
+        if not new:
+            return None
+        try:
+            if self.renderer is None:
+                self.renderer = self.module.Renderer(self.old_root, self.new_root)
+            sub = quote(rel, safe="/")
+            body = self.module.review(
+                rel,
+                link,
+                os.path.join(self.img_root, rel),
+                f"{self.img_url}/{sub}",
+                old,
+                new,
+                pairs,
+                self.renderer,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
+            return False
+        self.used = self.used or body is not None
+        return body
+
+    def close(self):
+        if self.renderer is not None:
+            self.renderer.close()
+
+
+def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
     old = (reveal_slides(old_doc) if old is None else old) or []
     new = (reveal_slides(new_doc) if new is None else new) or []
     pairs = match_slides(old, new)
+    rendered = decks.review(rel, link, old, new, pairs) if decks else False
+    if rendered is None:
+        return None
     entries = [(pairs.get(index), index) for index in range(len(new))]
     entries.extend(
         (index, None) for index in range(len(old)) if index not in pairs.values()
@@ -1476,7 +1534,9 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     matched_order = [pairs[index] for index in sorted(pairs)]
     if matched_order != sorted(matched_order):
         changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
-    if not changes:
+    if rendered:
+        changes = [rendered]
+    elif not changes:
         return None
     state = "new" if old_doc is None else "removed" if new_doc is None else "changed"
     label = "Slides · " + page_title(new_doc or old_doc, rel)
@@ -1490,7 +1550,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     )
 
 
-def build(old_root, new_root, preview_url, title, out_path=None):
+def build(old_root, new_root, preview_url, title, out_path=None, decks=None):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1534,7 +1594,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
             if preview_url
             else quote(rel, safe="/")
         )
-        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides)
+        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides, decks)
         if result:
             section, entry = result
             slide_sections.append(section)
@@ -1686,6 +1746,9 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         body = f'<div class="wc-scope wc-standalone">{inner}</div>'
         html_attrs = body_attrs = mode_js = ""
 
+    deck_assets = (
+        decks.module.STYLE + decks.module.SCRIPT if decks and decks.used else ""
+    )
     return (
         "<!doctype html>"
         f'<html lang="en"{html_attrs}><head><meta charset="utf-8">'
@@ -1693,7 +1756,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body{body_attrs}>{mode_js}{body}"
-        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script></body></html>"
+        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script>{deck_assets}</body></html>"
     )
 
 
@@ -1712,14 +1775,36 @@ def main(argv=None):
     ap.add_argument(
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
-    args = ap.parse_args(argv)
-    doc = build(
-        args.old,
-        args.new,
-        args.preview_url,
-        args.title,
-        out_path=args.out,
+    ap.add_argument(
+        "--render-decks",
+        metavar="DIR",
+        help="render changed slides as images into DIR, which must sit beside the"
+        " published page (needs deck-review.py and Playwright; else slides as text)",
     )
+    args = ap.parse_args(argv)
+    decks = None
+    if args.render_decks:
+        module = load_deck_review()
+        if module:
+            decks = DeckRenderer(
+                module,
+                args.old,
+                args.new,
+                args.render_decks,
+                os.path.basename(os.path.normpath(args.render_decks)),
+            )
+    try:
+        doc = build(
+            args.old,
+            args.new,
+            args.preview_url,
+            args.title,
+            out_path=args.out,
+            decks=decks,
+        )
+    finally:
+        if decks:
+            decks.close()
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
     print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)

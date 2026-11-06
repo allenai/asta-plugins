@@ -216,7 +216,10 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
         return digest[side, index]
 
     rows, removed = classify(
-        old, new, pairs, (lambda o, n: shot("old", o) == shot("new", n)) if old else None
+        old,
+        new,
+        pairs,
+        (lambda o, n: shot("old", o) == shot("new", n)) if old else None,
     )
     shown = context(rows)
     if not removed and all(rows[k][0] == "unchanged" for k in shown):
