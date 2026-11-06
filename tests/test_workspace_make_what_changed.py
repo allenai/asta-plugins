@@ -12,8 +12,8 @@ import pytest
 
 ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/assets"
 
-# Stands in for `quarto render [pages...] [--output-dir DIR]`: wraps each page's lines
-# in the <main> Quarto emits; QUARTO_LOG records the pages each render was given.
+# Models the single positional input and project-relative output directory from
+# Quarto's CLI contract; QUARTO_LOG records each individual invocation.
 FAKE_QUARTO = """#!/usr/bin/env python3
 import json, os, pathlib, sys, time
 args = sys.argv[1:]
@@ -23,7 +23,9 @@ if "--output-dir" in args:
     index = args.index("--output-dir")
     output = pathlib.Path(args[index + 1])
     args = args[:index]
-pages = args[1:]
+pages = [arg for arg in args[1:] if arg != "--no-clean"]
+assert len(pages) <= 1, sys.argv
+assert not output.is_absolute(), sys.argv
 if os.environ.get("QUARTO_LOG"):
     with open(os.environ["QUARTO_LOG"], "a") as log:
         log.write(json.dumps({"cwd": os.getcwd(), "pages": pages}) + "\\n")
@@ -34,10 +36,12 @@ extension = pathlib.Path("_extensions/evidence/version.txt").read_text()
 required = pathlib.Path("required-extension.txt")
 if required.exists():
     extension += pathlib.Path("_extensions", required.read_text().strip(), "version.txt").read_text()
-output.mkdir(exist_ok=True)
+output.mkdir(parents=True, exist_ok=True)
 for page in pages or sorted(str(p) for p in pathlib.Path().glob("*.qmd")):
     paras = f"<p>{extension}</p>" + "".join(f"<p>{line}</p>" for line in open(page).read().splitlines())
-    (output / pathlib.Path(page).with_suffix(".html")).write_text(
+    destination = output / pathlib.Path(page).with_suffix(".html")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
         f"<html><head><title>Report</title></head><body><main>{paras}</main></body></html>"
     )
 """
@@ -69,7 +73,7 @@ def project(tmp_path: Path) -> Path:
     (project / "Makefile").write_text("include workspace.mk\n")
     (project / "scripts").mkdir()
     shutil.copy(ASSETS / "what-changed.py", project / "scripts/what-changed.py")
-    (project / ".gitignore").write_text("_site/\n_extensions/\n")
+    (project / ".gitignore").write_text("_site/\n_extensions/\n.asta/cache/\n")
     (project / "index.qmd").write_text("The baseline finding holds.\n")
     git(project, "init", "-q", "-b", "main")
     (project / "_extensions/evidence").mkdir(parents=True)
@@ -194,6 +198,10 @@ def test_remote_default_branch(
 
     result = make(project, tmp_path)
 
+    if not cached_head:
+        assert result.returncode != 0
+        assert "WHAT_CHANGED_BASE" in result.stderr
+        result = make(project, tmp_path, "WHAT_CHANGED_BASE=origin/published-default")
     assert result.returncode == 0, result.stderr
     page = (project / "_site/what-changed.html").read_text()
     assert "newly drafted paragraph" in page
@@ -265,6 +273,7 @@ def test_live_preview_output_is_not_rendered_over(
     assert live.read_text() == "Live preview output must stay intact."
     assert "drafted" in (project / "_site/what-changed.html").read_text()
     assert not list((tmp_path / "temporary").iterdir())
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
 
 
 def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> None:
@@ -281,6 +290,7 @@ def test_project_in_repository_subdirectory(project: Path, tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr
     assert "drafted" in (nested / "_site/what-changed.html").read_text()
     assert not list((tmp_path / "temporary").iterdir())
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
 
 
 @pytest.mark.parametrize("ref", ["last'read", "-baseline", "last$(read)"])
@@ -357,6 +367,7 @@ def test_signal_interrupt_removes_baseline_worktree(
         assert process.returncode != 0, stderr
         assert not baseline_project.exists()
         assert not list((tmp_path / "temporary").iterdir())
+        assert not list((project / ".asta/cache").glob("what-changed.*"))
         worktrees = git(project, "worktree", "list", "--porcelain")
         assert sum(line.startswith("worktree ") for line in worktrees.splitlines()) == 1
     finally:
@@ -365,7 +376,7 @@ def test_signal_interrupt_removes_baseline_worktree(
             process.communicate(timeout=5)
 
 
-def test_remote_lookup_does_not_prompt(
+def test_base_lookup_never_contacts_remote(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ssh = tmp_path / "fake-ssh"
@@ -384,17 +395,14 @@ def test_remote_lookup_does_not_prompt(
     result = make(project, tmp_path)
 
     assert result.returncode == 0, result.stderr
-    lookup = json.loads(log.read_text())
-    assert lookup["prompt"] == "0"
-    assert "BatchMode=yes" in lookup["args"]
-    assert "ConnectTimeout=10" in lookup["args"]
+    assert not log.exists(), "base discovery must use only local Git refs"
 
 
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
 def test_render_output_override_leaves_preview_output_alone(
     project: Path, tmp_path: Path, rules: str
 ) -> None:
-    destination = tmp_path / "rendered output's directory"
+    destination = Path("rendered output's directory")
     result = subprocess.run(
         [
             "make",
@@ -411,7 +419,7 @@ def test_render_output_override_leaves_preview_output_alone(
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "baseline finding" in (destination / "index.html").read_text()
+    assert "baseline finding" in (project / destination / "index.html").read_text()
     assert not (project / "_site").exists()
 
 
@@ -438,7 +446,7 @@ def test_page_edit_renders_only_changed_pages(
     result = make(project, tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert rendered_pages(log) == [["index.qmd"], ["draft.qmd", "index.qmd"]]
+    assert rendered_pages(log) == [["index.qmd"], ["draft.qmd"], ["index.qmd"]]
     page = (project / "_site/what-changed.html").read_text()
     assert "A new line." in page
     assert "A brand new page." in page
@@ -469,7 +477,7 @@ def test_base_without_page_list_support_renders_whole_site(
     # A project whose own render rule predates the page list keeps full renders.
     workspace = (project / "workspace.mk").read_text()
     (project / "workspace.mk").write_text(
-        workspace.replace("$(ASTA_WORKSPACE_RENDER_FILES) ", "")
+        workspace.replace("set -- $(ASTA_WORKSPACE_RENDER_FILES);", "set --;")
     )
     git(project, "commit", "-qam", "older rules")
     git(project, "branch", "-f", "main")
@@ -481,3 +489,98 @@ def test_base_without_page_list_support_renders_whole_site(
 
     assert result.returncode == 0, result.stderr
     assert rendered_pages(log) == [[], []]
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules: str):
+    (project / "second.qmd").write_text("Second page text.\n")
+    destination = Path("rendered output")
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str(ASSETS / rules),
+            "render",
+            "ASTA_WORKSPACE_VIEWERS=0",
+            "ASTA_WORKSPACE_RENDER_FILES=index.qmd second.qmd",
+            f"ASTA_WORKSPACE_RENDER_OUTPUT={destination}",
+        ],
+        cwd=project,
+        env=make_env(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "baseline finding" in (project / destination / "index.html").read_text()
+    assert "Second page" in (project / destination / "second.html").read_text()
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
+@pytest.mark.parametrize("edit", ["page", "slides", "multiple"])
+def test_real_quarto_on_92_page_workspace(project: Path, tmp_path: Path, edit: str):
+    """Exercise real CLI parsing, nested outputs, and timing on a grown site."""
+    (project / "_quarto.yml").write_text(
+        "project:\n  type: website\nformat:\n  html:\n    theme: none\n"
+    )
+    (project / ".gitignore").write_text(
+        (project / ".gitignore").read_text() + ".quarto/\n"
+    )
+    pages = project / "pages"
+    pages.mkdir()
+    for number in range(90):
+        (pages / f"page-{number}.qmd").write_text(
+            f"---\ntitle: Page {number}\n---\n\nAn unchanged research page.\n"
+        )
+    deck = project / "talk/slides.qmd"
+    deck.parent.mkdir()
+    deck.write_text(
+        "---\ntitle: Research talk\nformat: revealjs\n---\n\n"
+        + "\n\n".join(
+            f"## Slide {number}\n\n" + "Repeated research finding. " * 80
+            for number in range(100)
+        )
+    )
+    git(project, "add", "_quarto.yml", ".gitignore", "pages", "talk")
+    git(project, "commit", "-qm", "92-page baseline")
+    git(project, "branch", "-f", "main")
+    if edit == "slides":
+        deck.write_text(deck.read_text().replace("finding", "revisedfinding", 1))
+        expected = ["revisedfinding"]
+    else:
+        (project / "index.qmd").write_text(
+            "The baseline finding holds.\n\nA newly drafted paragraph.\n"
+        )
+        expected = ["newly drafted paragraph"]
+        if edit == "multiple":
+            (pages / "page-1.qmd").write_text("A separately revised page.\n")
+            (project / "draft.qmd").write_text("A brand new draft page.\n")
+            expected += ["separately revised page", "brand new draft page"]
+    site = project / "_site"
+    site.mkdir()
+    (site / "index.html").write_text("Live preview output must stay intact.")
+    temporary = tmp_path / "real-temporary"
+    temporary.mkdir()
+    started = time.monotonic()
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env={**os.environ, "TMPDIR": str(temporary)},
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    elapsed = time.monotonic() - started
+    print(f"real Quarto: 92-page workspace, {edit} edit: {elapsed:.2f}s")
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" in result.stderr
+    report = (site / "what-changed.html").read_text()
+    for text in expected:
+        assert text in report
+    assert "<ins" in report
+    assert "An unchanged research page" not in report
+    assert (site / "index.html").read_text() == "Live preview output must stay intact."
+    assert not list(temporary.iterdir())
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+    assert elapsed < 45, f"local comparison took {elapsed:.2f}s"

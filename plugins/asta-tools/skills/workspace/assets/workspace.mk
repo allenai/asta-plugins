@@ -171,7 +171,15 @@ preview: workspace-assets workspace-viewers
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
-	quarto render $(ASTA_WORKSPACE_RENDER_FILES) $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))')
+	@set -eu; \
+	set -- $(ASTA_WORKSPACE_RENDER_FILES); \
+	if [ "$$#" -eq 0 ]; then \
+		quarto render $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+	else \
+		for page do \
+			quarto render "$$page" --no-clean $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+		done; \
+	fi
 
 # Compare the branch base with the working tree without rendering over the
 # preview's _site/. Only the comparison page is written there.
@@ -183,11 +191,6 @@ what-changed:
 	source=$$base; \
 	if [ -z "$$base" ]; then \
 		upstream=$$(git symbolic-ref -q refs/remotes/origin/HEAD || true); \
-		if [ -z "$$upstream" ] && git remote get-url origin >/dev/null 2>&1; then \
-			upstream=$$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="$${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o ConnectTimeout=10" \
-				git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 ls-remote --symref origin HEAD 2>/dev/null \
-				| sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$$|refs/remotes/origin/\1|p') || true; \
-		fi; \
 		if [ -n "$$upstream" ]; then \
 			base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) || base=; \
 			source=$$upstream; \
@@ -206,9 +209,10 @@ what-changed:
 	label=$$(git rev-parse --short "$$base"); \
 	prefix=$$(git rev-parse --show-prefix); \
 	echo "what-changed: base $$source ($$base); running its make render" >&2; \
-	tmp=$$(mktemp -d); \
+	tmp=$$(mktemp -d); current=; \
 	cleanup() { \
 		status=$$?; trap - 0; trap '' 1 2 15; \
+		[ -z "$$current" ] || rm -rf "$$current"; \
 		if [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
 			echo "what-changed: cleanup failed; remove the worktree at $$tmp/base manually" >&2; exit 1; \
 		fi; \
@@ -234,17 +238,19 @@ what-changed:
 		fi; \
 		if [ -n "$$partial" ] && ! $(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null | grep -q asta-what-changed-probe; then partial=; fi; \
 	fi; \
+	mkdir -p .asta/cache; \
+	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
 	if [ -n "$$partial" ]; then \
 		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
-		mkdir -p "$$dir/_site" "$$tmp/current"; \
+		mkdir -p "$$dir/_site"; \
 		[ -z "$$basefiles" ] || $(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES="$$basefiles" >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
-		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$tmp/current" ASTA_WORKSPACE_RENDER_FILES="$$files" >&2; \
+		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$files" >&2; \
 	else \
 		$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
-		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$tmp/current" ASTA_WORKSPACE_RENDER_FILES= >&2; \
+		$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES= >&2; \
 	fi; \
 	mkdir -p _site; \
-	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$tmp/current" \
+	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
 		--out _site/what-changed.html --title "Changes since $$label"; \
 	echo "what-changed: wrote _site/what-changed.html; open /what-changed.html in make preview (rerun after edits or a preview rebuild)"
 

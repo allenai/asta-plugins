@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Managed workspaces provide `make what-changed` for local branch comparisons
+  at `/what-changed.html` in the existing preview. Page-only edits render just
+  the changed pages when both versions support page selection; other changes
+  and `WHAT_CHANGED_FULL=1` render both sites. Base discovery uses local Git
+  history, with `git fetch origin` optional for a fresher base.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):

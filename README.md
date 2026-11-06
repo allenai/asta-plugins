@@ -90,6 +90,10 @@ published to GitHub Pages. Projects can keep several Markdown slide decks alongs
 their papers: Quarto reveal.js talks use the Asta theme, build with the site and
 show slide-level changes in PR previews. Each is also a standalone HTML file.
 
+In a managed workspace, run `make what-changed` while `make preview` is running
+to review local branch edits at `/what-changed.html` before pushing. Run
+`git fetch origin` first if you want a fresher comparison base.
+
 See it in the example workspace, published from main: [its site](https://allenai.github.io/asta-plugins/),
 with a LaTeX paper and [a pull request's preview](https://allenai.github.io/asta-plugins/pr-preview/pr-281/), kept open as a demo;
 [its paper in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f)

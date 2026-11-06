@@ -134,7 +134,15 @@ preview: workspace-assets
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets
-	quarto render $(ASTA_WORKSPACE_RENDER_FILES) $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))')
+	@set -eu; \
+	set -- $(ASTA_WORKSPACE_RENDER_FILES); \
+	if [ "$$#" -eq 0 ]; then \
+		quarto render $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+	else \
+		for page do \
+			quarto render "$$page" --no-clean $(if $(ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+		done; \
+	fi
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new
