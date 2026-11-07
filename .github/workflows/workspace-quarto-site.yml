@@ -318,7 +318,9 @@ jobs:
         run: |
           set -o pipefail
           tmpdir=$(mktemp -d)
-          trap 'rm -rf "$tmpdir"' EXIT
+          deckstage=
+          tmpout=
+          trap 'rm -rf "$tmpdir"; if [ -n "$deckstage" ]; then rm -rf "$deckstage"; fi; if [ -n "$tmpout" ]; then rm -f "$tmpout"; fi' EXIT
           baseline="$tmpdir/baseline"
           mkdir "$baseline"
           baseline_label="no deployed baseline"
@@ -361,10 +363,10 @@ jobs:
               && "$tmpdir/deck-venv/bin/python" -m pip install -q playwright==1.64.1 \
               && "$tmpdir/deck-venv/bin/python" -m playwright install --with-deps chromium >/dev/null; then
             diff_python="$tmpdir/deck-venv/bin/python"
-            if [ -e _site/what-changed-decks ]; then
-              echo "::warning::Replacing generated deck-review images in what-changed-decks"
-            fi
-            render_decks=(--render-decks _site/what-changed-decks)
+            # Render into a fresh site-local directory. A failed generator must
+            # not delete a project's existing images or an earlier diff's assets.
+            deckstage=$(mktemp -d _site/.what-changed-decks.XXXXXX)
+            render_decks=(--render-decks "$deckstage" --render-decks-url what-changed-decks)
           fi
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
@@ -377,12 +379,15 @@ jobs:
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
             "${render_decks[@]}" \
               && [ -s "$tmpout" ]; then
+            if [ -n "$deckstage" ]; then
+              if [ -e _site/what-changed-decks ] || [ -L _site/what-changed-decks ]; then
+                echo "::warning::Replacing generated deck-review images in what-changed-decks"
+              fi
+              rm -rf _site/what-changed-decks
+              mv "$deckstage" _site/what-changed-decks
+            fi
             mv "$tmpout" _site/what-changed.html
           else
-            rm -f "$tmpout"
-            if [ ${#render_decks[@]} -gt 0 ] && [ ! -L _site/what-changed-decks ]; then
-              rm -rf _site/what-changed-decks
-            fi
             echo "::warning::what-changed page generation failed; preview still published"
           fi
 

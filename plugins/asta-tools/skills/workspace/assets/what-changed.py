@@ -1538,43 +1538,41 @@ def _pair_similar(old, new, olds, news):
 
     m, n = len(olds), len(news)
     if m * n > 2500:
-        # Keep matching large rewritten decks rather than turning every slide
-        # into a removal/addition. Bound comparisons to a 50-slide window near
-        # each slide's relative position; exact-body and ID anchors ran first.
-        # A sparse maximum-weight increasing chain keeps matches one-to-one and
-        # ordered, using O(50*n*log(m)) work and O(m + 50*n) memory, not an m*n table.
-        tree = [(0.0, -1)] * (m + 1)
-        nodes = []
+        # Hirschberg alignment considers every shift, including insertions longer
+        # than a positional window. Rolling score rows keep auxiliary memory
+        # linear; splitting the old range bounds similarity work to O(m*n).
+        def scores(a0, a1, b0, b1, reverse=False):
+            row = [0.0] * (b1 - b0 + 1)
+            arange = range(a1 - 1, a0 - 1, -1) if reverse else range(a0, a1)
+            brange = range(b1 - 1, b0 - 1, -1) if reverse else range(b0, b1)
+            for a in arange:
+                diagonal = 0.0
+                for j, b in enumerate(brange, 1):
+                    above = row[j]
+                    row[j] = max(above, row[j - 1], diagonal + similar(a, b))
+                    diagonal = above
+            return row
 
-        def prefix(end):
-            best = (0.0, -1)
-            while end:
-                best = max(best, tree[end])
-                end -= end & -end
-            return best
-
-        for b in range(n):
-            center = round(b * (m - 1) / max(n - 1, 1))
-            start = max(0, min(center - 25, m - 50))
-            pending = []
-            for a in range(start, min(m, start + 50)):
-                weight = similar(a, b)
-                if not weight:
-                    continue
-                previous, parent = prefix(a)
-                node = len(nodes)
-                nodes.append((a, b, parent))
-                pending.append((a + 1, (previous + weight, node)))
-            # Update only after the row, so one new slide cannot pair twice.
-            for end, value in pending:
-                while end <= m:
-                    tree[end] = max(tree[end], value)
-                    end += end & -end
         result = {}
-        _, node = prefix(m)
-        while node != -1:
-            a, b, node = nodes[node]
-            result[news[b]] = olds[a]
+
+        def align(a0, a1, b0, b1):
+            if a0 == a1 or b0 == b1:
+                return
+            if a1 - a0 == 1:
+                b = max(range(b0, b1), key=lambda b: similar(a0, b))
+                if similar(a0, b):
+                    result[news[b]] = olds[a0]
+                return
+            mid = (a0 + a1) // 2
+            left = scores(a0, mid, b0, b1)
+            right = scores(mid, a1, b0, b1, reverse=True)
+            cut = max(range(b1 - b0 + 1), key=lambda j: left[j] + right[-1 - j])
+            del left, right  # do not retain rows on the recursion stack
+            split = b0 + cut
+            align(a0, mid, b0, split)
+            align(mid, a1, split, b1)
+
+        align(0, m, 0, n)
         return result
     score = [[similar(a, b) for b in range(n)] for a in range(m)]
     best = [[0.0] * (n + 1) for _ in range(m + 1)]

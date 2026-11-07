@@ -533,7 +533,7 @@ def test_link_destination_change_with_equal_text_and_image_is_retained(tmp_path)
     assert item["interactions"]["after"][0]["attributes"] == {"href": "new.html"}
 
 
-def test_large_rewritten_deck_keeps_edits_paired_with_bounded_comparisons(monkeypatch):
+def test_large_rewritten_deck_keeps_edits_paired_with_quadratic_work(monkeypatch):
     old = _slides(
         *(
             f"<h2>Experiment {i:03d}</h2><p>Measurements for run {i:03d}, old version.</p>"
@@ -562,7 +562,33 @@ def test_large_rewritten_deck_keeps_edits_paired_with_bounded_comparisons(monkey
     monkeypatch.setattr(what_changed.difflib.SequenceMatcher, "ratio", ratio)
     pairs = what_changed.match_slides(old, new)
     assert pairs == {i + (i >= 35): i for i in range(80)}
-    assert calls <= 50 * len(new)
+    assert calls <= 2 * len(old) * len(new) + 2 * len(new)
+
+
+@pytest.mark.parametrize("insert_at", [0, 40, 80])
+def test_large_insertion_keeps_every_rewritten_original_slide_paired(insert_at):
+    old = _slides(
+        *(
+            f"<h2>Experiment {i:03d}</h2><p>Measurements for run {i:03d}, old version.</p>"
+            for i in range(80)
+        )
+    )
+    new = [
+        {
+            **s,
+            "id": "regenerated-" + s["id"],
+            "body": s["body"].replace("old version", "new version"),
+        }
+        for s in old
+    ]
+    inserted = [
+        {"id": f"added-{i}", "body": "<h2>ZZZZZZZZZZZZZZZZZZZZ</h2>", "anchor": str(i)}
+        for i in range(60)
+    ]
+    new[insert_at:insert_at] = inserted
+    assert what_changed.match_slides(old, new) == {
+        i + (60 if i >= insert_at else 0): i for i in range(80)
+    }
 
 
 def test_large_unrelated_decks_remain_additions_and_removals():
