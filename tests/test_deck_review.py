@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -758,3 +760,16 @@ def test_view_carries_each_images_selectable_words():
     data = page.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
     assert json.loads(data)["text"] == text
     assert ".dr-text span" in deck_review.STYLE and "paint(" in deck_review.SCRIPT
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_view_script_parses(tmp_path):
+    """A Python escape such as an unescaped ``\\n`` must not break the view's JS."""
+    script = tmp_path / "view.js"
+    script.write_text(
+        deck_review.SCRIPT.removeprefix("<script>").removesuffix("</script>")
+    )
+    result = subprocess.run(
+        ["node", "--check", str(script)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

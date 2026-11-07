@@ -565,7 +565,7 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     const words = (D.text || {})[src] || [];
     words.forEach(([t, x, y, ww, h], k) => {
       const next = words[k + 1];
-      const s = el('span', null, t + (!next || next[2] > y + h / 2 ? '\n' : ' '));
+      const s = el('span', null, t + (!next || next[2] > y + h / 2 ? '\\n' : ' '));
       const size = h * 56.25 * 0.85;
       const natural = ctx.measureText(t).width || 1;
       Object.assign(s.style, { left: x * 100 + '%', top: (y + h * 0.075) * 100 + '%', fontSize: size + 'cqw',
