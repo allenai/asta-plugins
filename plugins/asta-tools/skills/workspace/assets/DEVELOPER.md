@@ -143,6 +143,46 @@ For the optional `Makefile.managed` entry point, set `ASTA_WORKSPACE_LOCAL_GOALS
 
 Managed rules stay cached until the version selected in `docs.yml` changes or you run `make update-workspace`. With a moving channel such as `@latest`, refresh before comparing a local build with CI, which uses the workflow's current revision. Pin a release tag or commit in `docs.yml` if both must stay on a fixed version.
 
+For a site in a subfolder, keep the single `docs.yml` at the Git repository root
+and set its `with.site-dir` to the site's relative path, using matching letter
+case. Use block mappings with exactly one workspace job calling
+`allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@<ref>` (or a fork
+named `asta-plugins`). Write the literal `uses:` source on one line. The job's
+`site-dir` is decoded as a YAML scalar, including quotes, escapes and aliases;
+expressions are not evaluated. Unrelated jobs and inputs are ignored. An
+applicable root takes precedence over an existing local `docs.yml`. YAML
+`<<:` merge keys are not expanded: write the job's literal `uses` source and
+its `with.site-dir` input directly, or use aliases for the site input, input
+mapping or whole job. An
+unrelated root workflow, including a symlinked root path, leaves the site's own
+workflow as the fallback. Selected workflow paths must not contain symlinks.
+An absent root workflow also permits the local fallback; other read errors and
+non-UTF-8 content report errors. A malformed root permits fallback only when its
+complete parsed prefix proves it unrelated, including resolved aliases and job
+context. If parsing stops before the end of the file or selection is uncertain,
+fix the reported root YAML error before syncing or moving a pin.
+Discovery stops at the nearest `.git` directory or file, including submodules;
+Git environment overrides such as `GIT_DIR` and `GIT_WORK_TREE` are unsupported.
+
+The managed Makefile watches local and root workflow candidates. For subfolder
+sites with a root workflow candidate, it checks selection offline before starting
+the build, even when a local workflow also exists; recursive makes reuse that
+check. `asta workspace sync --check-selection`
+validates the workflow without fetching, changing cached rules or moving pins.
+CLI 0.105.0 supports managed rules with a local workflow and project scripts;
+subfolder sites with root workflow candidates require the root-workflow
+discovery and `--check-selection` support introduced together after CLI 0.125.0.
+Install a CLI release containing this support, or install an unreleased build
+from an asta-plugins Git ref containing it with
+`uv tool install --force git+https://github.com/allenai/asta-plugins.git@<ref>`.
+An older workflow ref does not imply that its CLI supports root discovery.
+The Makefile checks for the flag and reports installation guidance if it is
+unavailable. Missing or
+unrelated workflows fail even with cached rules; project-only goals and a local
+`workspace.mk` bypass managed rules. If the workflow changes during a full sync,
+its cached rules and manifest are discarded; fix any reported workflow error
+and run sync again.
+
 To adopt managed scripts with `Makefile.managed`, first run `asta workspace sync --refresh --require-scripts`. Only after it succeeds, delete the unmodified `scripts/quarto-check.sh` and `scripts/wait-for-preview.sh` copies and run `make check`. The check verifies every script required by the selected rules: older managed refs require the two shell scripts, while refs with `workspace-viewers` also require the discovery and viewer helpers. Check `asta workspace sync --help` for the option; keep project copies until your CLI supports it. Older plugin refs may still require project scripts even with a newer CLI. If an older CLI has not cached the viewer scripts, local generation warns and skips; keep existing viewer pages until the viewer-capable ref passes the preflight.
 
 Keep any customized script in `scripts/`, which always takes precedence. CI warns when a project copy differs from the workflow's version. To eject one script, copy its cached version into `scripts/`. To eject shared rules, copy `workspace.mk` from your selected asta-plugins version into the project root and copy the selected version's `quarto-check.sh`, `wait-for-preview.sh`, `paper-discovery.py` and `paper-viewer.py` into `scripts/` too. Ejected rules alone do not locate the versioned script cache. The standalone full `Makefile` continues to use project scripts without the CLI.
