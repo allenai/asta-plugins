@@ -17,9 +17,8 @@ Give the user a web URL for the rendered work. Two URL sources, pick based on yo
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
 
-When the user wants to see what changed since an earlier version, offer `asta workspace what-changed <ref>` (Git 2.30 or newer). It runs the project's `make render` at the named ref and in a private working-tree copy, then reuses the PR preview's diff script. It publishes only to `.asta/cache/what-changed/`; live preview can stay open. Run `asta workspace preview --what-changed` in the background and give the user its port-4849 URL (localhost or Codespaces-forwarded). A running server picks up later comparisons. No PR or Pages deploy is needed. Tracking the last-read version stays with the user; suggest `git tag -f last-read` after they read.
 
-Choose a trusted ref and keep source files stable while the copy is made. The baseline contains only committed files; do not present current ignored inputs as historical data. Run comparisons one at a time. See [the developer guide](assets/DEVELOPER.md#auto-deploy-githubworkflowsdocsyml) for build prerequisites, copying costs, cleanup and serving limits.
+Run `asta workspace what-changed [ref]` and share the page.
 
 ## Before landing paper changes
 
@@ -157,7 +156,7 @@ Structural validation of these entries belongs in deterministic build tooling. W
 
 ### GitHub Pages deploy
 
-1. Use the `.github/workflows/docs.yml` stub added by **Quarto build tool**; do not copy it a second time. Keep it manual-only until the Pages visibility check below succeeds, then enable `on.push` and `on.pull_request`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When adopting an existing project, follow **Quarto build tool** to merge the stub and a `Makefile` with a `check` target; preserve its version policy and existing rules.
+1. Use the `.github/workflows/docs.yml` stub added by **Quarto build tool**; do not copy it a second time. For a site in a subfolder, keep the one stub at the repository root with `site-dir` naming the subfolder; GitHub runs only root workflows, and `asta workspace sync` and the pin move use that root stub, so add no `docs.yml` under the subfolder. Keep it manual-only until the Pages visibility check below succeeds, then enable `on.push` and `on.pull_request`. It's a thin stub — the build/deploy/preview machinery lives in this repo's reusable workflow (`.github/workflows/workspace-quarto-site.yml`), so scaffolded projects pick up fixes without re-copying. Project-specific quality gates go in the project's `make check` target, which the reusable workflow calls. When adopting an existing project, follow **Quarto build tool** to merge the stub and a `Makefile` with a `check` target; preserve its version policy and existing rules.
 2. Follow [GitHub Pages setup](workflows/github-pages.md) before pushing or enabling the workflow: the site is made private and read back before any content reaches it. If it can't be private, or the owner wants it public, stop and ask the owner how to proceed.
 3. For a repo set up outside [`workflows/repo-setup.md`](workflows/repo-setup.md): recommend repo protections (default-branch rulesets, required docs checks). Read `workflows/repo-protections.md` and follow it before proposing or applying any.
 

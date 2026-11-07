@@ -3,6 +3,8 @@
 import importlib.util
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -441,6 +443,120 @@ def test_nested_template_stylesheet_is_rebased_to_preview_root(tmp_path):
 
     assert depth == 1
     assert 'href="site_libs/theme.css"' in theme
+
+
+def test_template_skips_slide_deck_for_a_site_page(tmp_path):
+    new = tmp_path / "new"
+    (new / "talk").mkdir(parents=True)
+    (new / "a-deck.html").write_text(
+        '<html><head><link rel="stylesheet" href="site_libs/revealjs/reveal.css">'
+        '</head><body><div class="reveal slides-ready">Deck</div></body></html>'
+    )
+    (new / "talk/page.html").write_text(
+        '<html><head><link rel="stylesheet" href="../site_libs/theme.css">'
+        '</head><body><main class="reveal">Content</main></body></html>'
+    )
+
+    doc, depth = WHAT_CHANGED.pick_template(WHAT_CHANGED.list_pages(new))
+
+    assert depth == 1
+    assert "theme.css" in doc
+
+
+def test_partial_render_borrows_theme_from_full_site(tmp_path):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        (root / "talk").mkdir(parents=True)
+    deck = (
+        '<html><head><link rel="stylesheet" href="../site_libs/revealjs/reveal.css">'
+        '</head><body><div class="reveal"><section><p>{}</p></section></div></body></html>'
+    )
+    (old / "talk/slides.html").write_text(deck.format("Old finding"))
+    (new / "talk/slides.html").write_text(deck.format("New finding"))
+    (site / "index.html").write_text(
+        '<html><head><link href="site_libs/bootstrap/bootstrap.min.css" '
+        'rel="stylesheet"></head><body><main>Site</main></body></html>'
+    )
+    out = site / "what-changed.html"
+    out.write_text("<html><head><style>.stale {}</style></head></html>")
+
+    result = WHAT_CHANGED.build(old, new, "", "Local", out_path=out, theme_root=site)
+
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in result
+    assert "reveal.css" not in result
+    assert ".stale" not in result
+    # Without a themed full site, the changed pages remain the fallback source.
+    fallback = WHAT_CHANGED.build(old, new, "", "Local", theme_root=tmp_path / "none")
+    assert 'href="site_libs/revealjs/reveal.css"' in fallback
+
+
+@pytest.mark.parametrize("separate_theme_root", [False, True])
+def test_template_search_continues_after_unstyled_pages(tmp_path, separate_theme_root):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        root.mkdir()
+    (new / "deck.html").write_text(
+        '<head><link rel="stylesheet" href="site_libs/revealjs/reveal.css"></head>'
+        '<body><div class="reveal"><section>New finding</section></div></body>'
+    )
+    theme_root = site if separate_theme_root else new
+    (theme_root / "index.html").write_text("<head></head><main>Unstyled index</main>")
+    (theme_root / "guide").mkdir()
+    (theme_root / "guide/themed.html").write_text(
+        '<head><link rel="stylesheet" href="../site_libs/site.css" '
+        'id="quarto-bootstrap" data-mode="dark"></head>'
+        '<body class="quarto-dark"><main>Styled site page</main></body>'
+    )
+
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        theme_root=site if separate_theme_root else None,
+        theme_url_prefix="what-changed-assets/",
+    )
+
+    prefix = "" if separate_theme_root else "what-changed-assets/"
+    assert f'href="{prefix}site_libs/site.css"' in result
+    assert "reveal.css" not in result
+    assert 'data-wc-mode="dark"' in result
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_previous_comparison_cannot_supply_the_partial_render_theme(tmp_path, legacy):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        root.mkdir()
+    (new / "index.html").write_text(
+        "<head><style>.stale-comparison { color: red; }/*"
+        + "old theme " * 1000
+        + "*/</style></head>"
+        "<main>A changed finding</main>"
+    )
+    previous = WHAT_CHANGED.build(old, new, "", "Previous comparison")
+    if legacy:
+        previous = previous.replace(WHAT_CHANGED.WHAT_CHANGED_META, "")
+        # Legacy output has no marker, and its wrapper lies beyond the prefix
+        # read during page discovery. The reserved root name must exclude it.
+        assert not WHAT_CHANGED.is_what_changed_artifact(previous[:4096])
+    (site / "what-changed.html").write_text(previous)
+    # No index page: the prior report sorts before the real theme source.
+    (site / "z-page.html").write_text(
+        '<head><link href="site_libs/site-theme.css" rel="stylesheet"></head>'
+        "<main>The real site</main>"
+    )
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        out_path=tmp_path / "temporary/what-changed.html",
+        theme_root=site,
+        reserved_local_output=True,
+    )
+    assert 'href="site_libs/site-theme.css"' in result
+    assert ".stale-comparison" not in result
 
 
 def test_dark_quarto_theme_selects_dark_diff_palette(tmp_path):
@@ -980,3 +1096,331 @@ def test_query_only_links_keep_their_source_page(source):
     )
     assert f'href="{source}?view=full#details"' in result
     assert 'href="#local"' in result
+
+
+@pytest.mark.parametrize("edit", ["insert", "delete", "replace", "separated"])
+def test_large_repetitive_page_comparison_finishes_promptly(tmp_path, edit):
+    """A local edit must not spend minutes matching repeated prose or markup."""
+    before = "<p>" + "research finding " * 15_000 + "</p>"
+    if edit == "insert":
+        after = before.replace("finding", "newfinding", 1)
+    elif edit == "delete":
+        after = before.replace("research finding ", "", 1)
+    elif edit == "replace":
+        after = before.replace("research", "revisedresearch")
+    else:
+        after = before.replace("<p>", "<p>firstedit ").replace("</p>", " lastedit</p>")
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(f"<main>{before}</main>")
+    (new / "index.html").write_text(f"<main>{after}</main>")
+    report = tmp_path / "comparison.html"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--old",
+            str(old),
+            "--new",
+            str(new),
+            "--out",
+            str(report),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    markup = report.read_text()
+    assert "<ins" in markup or "<del" in markup
+    if edit == "separated":
+        assert "firstedit" in markup and "lastedit" in markup
+    elif edit in {"replace", "insert"}:
+        assert "revisedresearch" in markup or "newfinding" in markup
+
+
+def test_retained_render_theme_prefix_preserves_external_urls_and_fragments(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        '<head><link rel="stylesheet" href="site_libs/bootstrap.css?version=2&amp;x=1">'
+        '<link rel="stylesheet" href="https://example.org/remote.css">'
+        '<link rel="stylesheet" href="//example.org/remote.css">'
+        '<style>body { background: url("images/background.png"); }'
+        ".icon { mask: url(#icon); }</style></head><main>New text</main>"
+    )
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        theme_url_prefix="what-changed-assets/",
+    )
+    assert (
+        'href="what-changed-assets/site_libs/bootstrap.css?version=2&amp;x=1"' in result
+    )
+    assert 'href="https://example.org/remote.css"' in result
+    assert 'href="//example.org/remote.css"' in result
+    assert 'url("what-changed-assets/images/background.png")' in result
+    assert "url(#icon)" in result
+
+
+def test_retained_render_is_excluded_from_page_and_theme_discovery(tmp_path):
+    (tmp_path / "index.html").write_text("<main>The actual preview</main>")
+    assets = tmp_path / "what-changed-assets"
+    assets.mkdir()
+    (assets / "index.html").write_text("<main>Prior comparison render</main>")
+    assert list(WHAT_CHANGED.list_pages(tmp_path, reserved_local_output=True)) == [
+        "index.html"
+    ]
+
+
+def test_nonlocal_comparison_preserves_pages_with_local_reserved_names(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    (new / "what-changed-assets").mkdir(parents=True)
+    (new / "what-changed.html").write_text("<main>A legitimate site page.</main>")
+    (new / "what-changed-assets/details.html").write_text(
+        "<main>Legitimate project details.</main>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR comparison")
+
+    assert "A legitimate site page" in result
+    assert "Legitimate project details" in result
+
+
+@pytest.mark.parametrize("url", ["image.png?x=1&y=2", "image.png?x=1&amp;y=2"])
+def test_retained_inline_css_preserves_raw_url_ampersands(tmp_path, url):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        f'<head><style>body {{ background: url("{url}"); }}</style></head>'
+        "<main>A new finding.</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix="what-changed-assets/"
+    )
+
+    assert f'url("what-changed-assets/{url}")' in result
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_retained_theme_rebases_quoted_css_urls_and_imports(tmp_path, nested):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    page = new / "chapters/index.html" if nested else new / "index.html"
+    page.parent.mkdir(parents=True)
+    source_prefix = "../" if nested else ""
+    page.write_text(
+        "<head><style>\n"
+        f'@import "{source_prefix}themes/my theme.css" screen;\n'
+        f"@import '{source_prefix}themes/print.css' print;\n"
+        f'@import url("{source_prefix}themes/another theme.css");\n'
+        f"body {{ background: URL( '{source_prefix}images/picture (dark).png' ); }}\n"
+        f".icon {{ mask: url({source_prefix}images/icon.svg); }}\n"
+        f'.quoted {{ background: url("{source_prefix}images/a\\"b.png"); }}\n'
+        '@import "https://example.org/remote theme.css";\n'
+        '@import "//example.org/remote.css";\n'
+        '.remote { background: url("https://example.org/bg image.png"); }\n'
+        '.inline { background: url("data:image/svg+xml;utf8,(svg)"); }\n'
+        '.fragment { mask: url("#icon"); }\n'
+        '/* @import "ignored.css"; url("ignored image.png") */\n'
+        ".content { content: 'url(\"literal text.png\")'; }\n"
+        "</style></head><main>A new finding.</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix="what-changed-assets/"
+    )
+
+    assert '@import "what-changed-assets/themes/my theme.css" screen;' in result
+    assert "@import 'what-changed-assets/themes/print.css' print;" in result
+    assert '@import url("what-changed-assets/themes/another theme.css");' in result
+    assert "URL( 'what-changed-assets/images/picture (dark).png' )" in result
+    assert "url(what-changed-assets/images/icon.svg)" in result
+    assert 'url("what-changed-assets/images/a\\"b.png")' in result
+    assert '@import "https://example.org/remote theme.css";' in result
+    assert '@import "//example.org/remote.css";' in result
+    assert 'url("https://example.org/bg image.png")' in result
+    assert 'url("data:image/svg+xml;utf8,(svg)")' in result
+    assert 'url("#icon")' in result
+    assert '/* @import "ignored.css"; url("ignored image.png") */' in result
+    assert "content: 'url(\"literal text.png\")'" in result
+
+
+def _ev_popover_parents(doc):
+    """(tag, class) of the direct parent of every `.ev-pop` in `doc`."""
+    from html.parser import HTMLParser
+
+    void = {"br", "img", "meta", "link", "hr", "input", "wbr", "source", "col"}
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack = []
+            self.parents = []
+
+        def handle_starttag(self, tag, attrs):
+            cls = dict(attrs).get("class", "")
+            if "ev-pop" in cls.split():
+                self.parents.append(self.stack[-1] if self.stack else (None, None))
+            if tag not in void:
+                self.stack.append((tag, cls))
+
+        def handle_endtag(self, tag):
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i][0] == tag:
+                    del self.stack[i:]
+                    break
+
+    p = P()
+    p.feed(doc)
+    return p.parents
+
+
+def _ev_page(claim, popover=""):
+    pop = (
+        f'<span class="ev-pop" role="note"><span class="ev-card">'
+        f'<span class="ev-pop-text ev-quote">“<em>{popover}</em>”</span>'
+        f"</span></span>"
+        if popover
+        else ""
+    )
+    return (
+        "<html><head></head><body><main><p>Kosmos averages "
+        f'<span class="ev" role="note">{claim}{pop}</span> per run.</p>'
+        "</main></body></html>"
+    )
+
+
+def test_added_evidence_is_chipped_and_its_popover_stays_a_direct_child(tmp_path):
+    """An added quote must be visible and must still hover.
+
+    Both halves failed on a real PR: the inserted popover was word-diffed into
+    the `<ins>` wrapper, which breaks `.ev:hover > .ev-pop` so nothing appeared,
+    and the only marker of the addition lived inside that hidden popover.
+    """
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(_ev_page("42,000 lines of code"))
+    (new / "index.html").write_text(
+        _ev_page("42,000 lines of code", "executing an average of 42,000 lines")
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #9")
+
+    assert "wc-ev-add" in result
+    assert "evidence added" in result
+    assert ".wc-scope .wc-ev-chip.wc-ev-add { background: var(--wc-new); }" in result
+    # The popover is restored outside the <ins> wrapper, as a child of `.ev`.
+    assert _ev_popover_parents(result) == [("span", "ev")]
+    # Its quote is not word-diffed into hidden <ins>/<del> runs.
+    quote = re.search(r'<span class="ev-pop".*?</em>', result, re.S).group(0)
+    assert "<ins>" not in quote and "<del>" not in quote
+
+
+def test_single_quoted_evidence_popover_is_extracted():
+    content = (
+        "<span class='ev-pop extra' role='note'>"
+        "<span class='ev-card'>quote</span></span>"
+    )
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted.startswith('<wc-evpop data-k="')
+    assert list(store.values()) == [content]
+
+
+def test_similar_class_name_is_not_extracted_as_evidence_popover():
+    content = '<span class="ev-pop-text">quote</span>'
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted == content
+    assert store == {}
+
+
+def test_data_class_is_not_extracted_as_evidence_popover():
+    content = '<span data-class="ev-pop">quote</span>'
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted == content
+    assert store == {}
+
+
+def test_custom_span_element_does_not_affect_popover_depth():
+    content = (
+        '<span class="ev-pop"><span-foo />quote</span>'
+        '<span-foo class="ev-pop">not evidence</span-foo>'
+    )
+
+    extracted, store = WHAT_CHANGED.extract_ev_popovers(content)
+
+    assert extracted.startswith('<wc-evpop data-k="')
+    assert extracted.endswith('<span-foo class="ev-pop">not evidence</span-foo>')
+    assert list(store.values()) == [content.split("<span-foo class", 1)[0]]
+
+
+def test_unchanged_evidence_is_not_rediffed_when_prose_changes(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
+    (new / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
+    (new / "about.html").write_text(
+        "<html><head></head><body><main><p>New page.</p></main></body></html>"
+    )
+    (old / "about.html").write_text(
+        "<html><head></head><body><main><p>Old page.</p></main></body></html>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #10")
+
+    assert "wc-ev-chip" not in result.split("DIFF_STYLE")[-1].split("<body")[-1]
+    assert "evidence added" not in result
+    assert "evidence removed" not in result
+
+
+def test_removed_evidence_is_reported_on_the_claim(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
+    (new / "index.html").write_text(_ev_page("42,000 lines"))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #11")
+
+    assert "evidence removed" in result
+    # The stale quote is not carried into the new state.
+    assert "an average of 42,000" not in result
+    assert _ev_popover_parents(result) == []
+
+
+def test_citation_links_point_at_the_full_page_bibliography(tmp_path):
+    # Quarto renders citations as `#ref-<key>` links to the page's own
+    # bibliography, which the excerpt lacks; they must deep-link the full page.
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    (old / "sub").mkdir(parents=True)
+    (new / "sub").mkdir(parents=True)
+    shell = (
+        "<html><head></head><body><main><p>{text} "
+        '<a href="#ref-he2026" role="doc-biblioref">He et al. 2026</a></p>'
+        "</main></body></html>"
+    )
+    (old / "sub" / "page.html").write_text(shell.format(text="Old claim."))
+    (new / "sub" / "page.html").write_text(shell.format(text="New claim."))
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+    assert 'href="sub/page.html#ref-he2026"' in result
+    assert 'href="#ref-he2026"' not in result
+
+    result = WHAT_CHANGED.build(old, new, "https://example.org/pr-1/", "PR #1")
+    assert 'href="https://example.org/pr-1/sub/page.html#ref-he2026"' in result

@@ -44,3 +44,5 @@ Combine the values using those weights.
 Write the talk, review and paper in the same repository.
 
 Review changes together, then share the rendered talk as a single HTML file.
+
+Review local changes with `asta workspace what-changed`; PR previews use the same comparison.

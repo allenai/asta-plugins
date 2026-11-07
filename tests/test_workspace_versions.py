@@ -10,7 +10,7 @@ from asta import __version__
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
 from asta.commands import workspace_versions
-from tests.test_workspace_sync import _archive, project_with_ref
+from tests._workspace_helpers import _archive, project_with_ref
 
 RULES = Path(__file__).parents[1] / workspace_module.ASSET
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
@@ -200,21 +200,30 @@ def _local(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("ref", ["v0.110.0", "0.110.0"])
+@pytest.mark.parametrize("site_dir", [".", "research/site", "research/site notes"])
 def test_sync_moves_a_release_pin_behind_the_cli_without_committing(
-    tmp_path: Path, monkeypatch, ref
+    tmp_path: Path, monkeypatch, ref, site_dir
 ) -> None:
     _local(monkeypatch)
     project = project_with_ref(tmp_path, ref)
     docs = project / ".github/workflows/docs.yml"
+    if site_dir != ".":
+        (project / ".git").mkdir()
+        docs.write_text(docs.read_text() + f"    with:\n      site-dir: '{site_dir}'\n")
+        project = project / site_dir
+        project.mkdir(parents=True)
     before = docs.read_text()
     target = ("v" if ref.startswith("v") else "") + "0.113.0"
     result, calls = _sync(project, monkeypatch, "0.113.0")
     assert result.exit_code == 0, result.output
     assert calls == [target]
     assert docs.read_text() == before.replace(f"@{ref}", f"@{target}")
+    assert (project / ".asta/cache/workspace.mk").is_file()
+    if site_dir != ".":
+        assert not (project / ".github").exists()
     moved = [line for line in result.output.splitlines() if "Moved" in line]
     assert moved == [
-        "Moved the workspace pin in .github/workflows/docs.yml from "
+        f"Moved the workspace pin in {docs} from "
         f"asta-plugins@{ref} to @{target}, the installed asta's release (not committed)"
     ]
 
@@ -312,7 +321,11 @@ def test_sync_falls_back_when_fork_lacks_the_new_release(
 
 
 @pytest.mark.parametrize("edit", ["comment", "pin"])
-def test_sync_preserves_workflow_edits_during_fetch(tmp_path, monkeypatch, edit):
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("upgrade", [False, True])
+def test_sync_preserves_workflow_edits_during_fetch(
+    tmp_path, monkeypatch, edit, cached, upgrade
+):
     _local(monkeypatch)
     project = project_with_ref(tmp_path, "v0.110.0")
     docs = project / workspace_module.WORKFLOW_FILE
@@ -322,18 +335,27 @@ def test_sync_preserves_workflow_edits_during_fetch(tmp_path, monkeypatch, edit)
         if edit == "comment"
         else before.replace(b"@v0.110.0", b"@main")
     )
-    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+    if cached:
+        result, _ = _sync(project, monkeypatch, "0.110.0")
+        assert result.exit_code == 0, result.output
+    monkeypatch.setattr(
+        workspace_versions, "installed", lambda: "0.113.0" if upgrade else "0.110.0"
+    )
 
     def fetch(repository, ref):
         docs.write_bytes(concurrent)
         return b"rule\n", _archive({})
 
     monkeypatch.setattr(workspace_module, "load_asset", fetch)
-    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    result = CliRunner().invoke(
+        cli, ["workspace", "sync", "--refresh", "--project", str(project)]
+    )
     assert result.exit_code != 0, result.output
     assert "changed during sync" in result.output
     assert docs.read_bytes() == concurrent
     assert "Moved the workspace pin" not in result.output
+    assert not (project / ".asta/cache/workspace.mk").exists()
+    assert not (project / ".asta/cache/workspace.json").exists()
 
 
 def test_pin_rewrite_restores_bytes_if_verification_raises(tmp_path, monkeypatch):
@@ -344,10 +366,64 @@ def test_pin_rewrite_restores_bytes_if_verification_raises(tmp_path, monkeypatch
     def invalid_source(_project):
         raise ClickException("invalid workflow")
 
-    monkeypatch.setattr(workspace_module, "selected_source", invalid_source)
+    monkeypatch.setattr(workspace_module, "_source_from_workflow", invalid_source)
     with pytest.raises(ClickException, match="invalid workflow"):
-        workspace_module._write_pin(project, before, "v0.113.0")
+        workspace_module._write_pin(docs, before, "v0.113.0")
     assert docs.read_bytes() == before
+
+
+@pytest.mark.parametrize("edit", ["site-dir", "delete", "unreadable"])
+@pytest.mark.parametrize("local_workflow", [False, True])
+def test_subfolder_sync_preserves_root_workflow_changes_during_fetch(
+    tmp_path, monkeypatch, edit, local_workflow
+):
+    _local(monkeypatch)
+    root = project_with_ref(tmp_path, "v0.110.0")
+    (root / ".git").mkdir()
+    docs = root / workspace_module.WORKFLOW_FILE
+    docs.write_text(docs.read_text() + "    with:\n      site-dir: site\n")
+    project = root / "site"
+    project.mkdir()
+    local = project / workspace_module.WORKFLOW_FILE
+    if local_workflow:
+        local.parent.mkdir(parents=True)
+        local.write_text(docs.read_text())
+    before = docs.read_bytes()
+    concurrent = before.replace(b"site-dir: site", b"site-dir: other")
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.113.0")
+    read_bytes = Path.read_bytes
+
+    def fetch(repository, ref):
+        if edit == "site-dir":
+            docs.write_bytes(concurrent)
+        elif edit == "delete":
+            docs.unlink()
+        else:
+
+            def unreadable(path):
+                if path == docs:
+                    raise PermissionError("permission changed")
+                return read_bytes(path)
+
+            monkeypatch.setattr(Path, "read_bytes", unreadable)
+        return b"rule\n", _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "changed during sync" in result.output
+    assert "Moved the workspace pin" not in result.output
+    assert not (project / ".asta/cache/workspace.mk").exists()
+    assert not (project / ".asta/cache/workspace.json").exists()
+    if edit == "delete":
+        assert not docs.exists()
+    else:
+        assert read_bytes(docs) == (concurrent if edit == "site-dir" else before)
+    if local_workflow:
+        assert read_bytes(local) == before
+    else:
+        assert not (project / ".github").exists()
 
 
 @pytest.mark.parametrize(
@@ -422,3 +498,43 @@ def test_published_rules_load_with_this_release() -> None:
     assert workspace_versions.cli_version(__version__) >= workspace_versions.Version(
         workspace_versions.format_release(needed)
     )
+
+
+@pytest.mark.parametrize("problem", ["root-duplicate", "selected-symlink"])
+def test_sync_conflict_keeps_underlying_workflow_error(tmp_path, monkeypatch, problem):
+    import subprocess
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    project = project_with_ref(root, "main")
+    (project / ".gitignore").write_text(".asta/cache/\n")
+    docs = project / workspace_module.WORKFLOW_FILE
+    original = docs.read_bytes()
+
+    def fetch(*_args):
+        if problem == "root-duplicate":
+            candidate = root / workspace_module.WORKFLOW_FILE
+            candidate.parent.mkdir(parents=True)
+            candidate.write_text(
+                original.decode()
+                + "    with:\n      site-dir: project\n      site-dir: project\n"
+            )
+        else:
+            external = tmp_path / "external.yml"
+            docs.rename(external)
+            docs.symlink_to(external)
+        return b"rule\n", _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code != 0, result.output
+    assert "changed during sync" in result.output
+    assert (
+        "Duplicate site-dir"
+        if problem == "root-duplicate"
+        else "must not contain symlinks"
+    ) in result.output
+    assert docs.read_bytes() == original
+    assert not (project / ".asta/cache/workspace.mk").exists()
+    assert not (project / ".asta/cache/workspace.json").exists()

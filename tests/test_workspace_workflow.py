@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import textwrap
 import tomllib
@@ -13,6 +14,40 @@ import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
+
+
+@pytest.fixture
+def checkout_asta(tmp_path: Path, monkeypatch):
+    # These workflow blocks run from temporary projects, outside `uv run`'s
+    # environment. Never resolve a stale CLI preinstalled in the CI image.
+    bin_dir = tmp_path / "checkout-bin"
+    bin_dir.mkdir()
+    launcher = bin_dir / "asta"
+    launcher.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(Path('src').resolve())!r})\n"
+        "from asta.cli import cli\n"
+        "cli()\n"
+    )
+    launcher.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+
+def test_site_artifacts_keep_runner_builds_separate():
+    jobs = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)["jobs"]
+    upload = next(
+        step
+        for step in jobs["build"]["steps"]
+        if step.get("name") == "Upload rendered site"
+    )
+    download = next(
+        step
+        for step in jobs["deploy"]["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    )
+    assert upload["with"]["name"] == "site-${{ inputs.build-runner }}"
+    assert download["with"]["name"] == upload["with"]["name"]
 
 
 def _run_paper_step(
@@ -162,93 +197,9 @@ def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
     )
 
 
-def test_what_changed_project_override_runs_before_write_enabled_deploy(
-    tmp_path: Path,
-) -> None:
-    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    build = workflow["jobs"]["build"]
-    deploy = workflow["jobs"]["deploy"]
-    assert build["permissions"]["contents"] == "read"
-    assert deploy["permissions"]["contents"] == "write"
-    step = next(s for s in build["steps"] if s.get("name") == "Generate What changed")
-    assert not any("what-changed.py" in s.get("run", "") for s in deploy["steps"])
-
-    remote = tmp_path / "remote.git"
-    project = tmp_path / "project"
-    subprocess.run(
-        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "init", "-b", "gh-pages", str(project)], check=True, capture_output=True
-    )
-
-    def git(*args: str) -> None:
-        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
-
-    git("config", "user.name", "Test")
-    git("config", "user.email", "test@example.invalid")
-    (project / "index.html").write_text("deployed main")
-    git("add", "index.html")
-    git("commit", "-m", "Baseline")
-    git("remote", "add", "origin", str(remote))
-    git("push", "origin", "gh-pages")
-    git("switch", "-c", "main")
-    (project / "scripts").mkdir()
-    (project / "scripts/what-changed.py").write_text(
-        "import argparse\n"
-        "from pathlib import Path\n"
-        "p = argparse.ArgumentParser()\n"
-        "for arg in ('old', 'new', 'out', 'title'):\n"
-        "    p.add_argument('--' + arg)\n"
-        "a = p.parse_args()\n"
-        "Path(a.out).write_text('custom: ' + Path(a.old, 'index.html').read_text() + '\\n' + a.title)\n"
-    )
-    git("add", "scripts/what-changed.py")
-    git("commit", "-m", "Customize diff")
-    git("update-ref", "refs/remotes/origin/gh-pages", "HEAD")
-    (project / "_site").mkdir()
-    (project / "_site/index.html").write_text("PR content")
-
-    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script],
-        cwd=project,
-        env={**os.environ, "PR_NUMBER": "7"},
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    page = (project / "_site/what-changed.html").read_text()
-    assert page.startswith("custom: deployed main\nPR #7 · Pages ")
-    assert re.search(r"Pages [0-9a-f]{12}$", page)
-    assert "Using project-owned" in result.stdout
-
-    (project / "_site/what-changed.html").unlink()
-    (project / "scripts/what-changed.py").write_text(
-        "import argparse\n"
-        "from pathlib import Path\n"
-        "p = argparse.ArgumentParser()\n"
-        "for arg in ('old', 'new', 'out', 'title'):\n"
-        "    p.add_argument('--' + arg)\n"
-        "a = p.parse_args()\n"
-        "Path(a.out).write_text('partial')\n"
-        "raise RuntimeError('failed after writing')\n"
-    )
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script],
-        cwd=project,
-        env={**os.environ, "PR_NUMBER": "7"},
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert not (project / "_site/what-changed.html").exists()
-    assert "what-changed page generation failed" in result.stdout
-
-
 def test_what_changed_uses_managed_generator_without_project_copy(
     tmp_path: Path,
+    checkout_asta,
 ) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -274,16 +225,6 @@ def test_what_changed_uses_managed_generator_without_project_copy(
         check=True,
         capture_output=True,
     )
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    curl = bin_dir / "curl"
-    curl.write_text(
-        "#!/bin/sh\n"
-        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
-        '[ "$#" -ge 2 ] || exit 2\n'
-        'cp "$MANAGED_SOURCE" "$2"\n'
-    )
-    curl.chmod(0o755)
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
     script = script.replace("${{ job.workflow_sha }}", "source-commit")
     result = subprocess.run(
@@ -291,8 +232,6 @@ def test_what_changed_uses_managed_generator_without_project_copy(
         cwd=project,
         env={
             **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "MANAGED_SOURCE": str((WORKSPACE_ASSETS / "what-changed.py").resolve()),
             "PR_NUMBER": "8",
         },
         capture_output=True,
@@ -445,8 +384,8 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 8
-    assert workflow.count("${{ job.workflow_sha }}") == 8
+    assert workflow.count("${{ job.workflow_repository }}") == 7
+    assert workflow.count("${{ job.workflow_sha }}") == 7
     assert "github.job_workflow" not in workflow
 
 
@@ -1743,6 +1682,31 @@ def test_preview_noindex_keeps_embedded_slide_javascript_intact(tmp_path, separa
     assert actual == original.replace("<head>", "<head>" + meta, 1)
 
 
+def test_preview_noindex_skips_directories_named_like_html(tmp_path):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    publish = next(
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Publish to gh-pages"
+    )
+    start = publish.index('find "$tmp/pr-preview/pr-$PR_NUMBER"')
+    injection = "\n".join(publish[start:].splitlines()[:2])
+    preview = tmp_path / "pr-preview/pr-7"
+    images = preview / "what-changed-decks/slides/x/slides.html"
+    images.mkdir(parents=True)
+    (images / "s1.png").write_bytes(b"PNG")
+    (preview / "what-changed.html").write_text("<html><head></head></html>")
+    result = subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", injection],
+        env={"PATH": os.environ["PATH"], "tmp": str(tmp_path), "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "noindex" in (preview / "what-changed.html").read_text()
+    assert (images / "s1.png").read_bytes() == b"PNG"
+
+
 @pytest.mark.parametrize("site_subdir", ["", "examples/workspace"])
 def test_paper_container_keeps_checkout_history_for_sites_in_subdirectories(
     tmp_path, site_subdir
@@ -1763,6 +1727,7 @@ def test_paper_container_keeps_checkout_history_for_sites_in_subdirectories(
 
 def test_what_changed_reads_full_baseline_for_site_in_subfolder(
     tmp_path: Path,
+    checkout_asta,
 ) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -1821,9 +1786,77 @@ def test_what_changed_reads_full_baseline_for_site_in_subfolder(
     )
     assert result.returncode == 0, result.stderr
     page = (site / "_site/what-changed.html").read_text()
-    assert "PR #7 · Pages " in page
+    assert "PR 7 · Pages " in page
     assert "new page" not in page
     text = re.sub(r"<[^>]+>", "", page)
     assert "before" in text and "after" in text, text[-3000:]
     assert "about.html" not in page
     assert "pr-preview" not in page
+
+
+@pytest.mark.parametrize("rules", ["Makefile", "workspace.mk"])
+@pytest.mark.parametrize("tmpdir", ["sandbox temp", "", None])
+def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
+    """Deny implicit mktemp paths, as on macOS in an agent sandbox."""
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", str(project)], check=True, capture_output=True)
+    scripts = project / "scripts"
+    scripts.mkdir()
+    shutil.copy(WORKSPACE_ASSETS / "quarto-check.sh", scripts)
+    (scripts / "paper-discovery.py").write_text("print('[]')\n")
+    (scripts / "paper-viewer.py").write_text(
+        "import sys\nassert sys.stdin.read().strip() == '[]'\n"
+    )
+    archive = tmp_path / "source.tar.gz"
+    _make_evidence_archive(archive)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    real_mktemp = shutil.which("mktemp")
+    assert real_mktemp is not None, "Required test executable is missing: mktemp"
+    wrapper = bin_dir / "mktemp"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> "$TEMP_LOG"\n'
+        'mode=; if [ "$1" = -d ]; then mode=-d; shift; fi\n'
+        # Reject an omitted template even if the platform's mktemp honors TMPDIR.
+        '[ "$#" -eq 1 ] || exit 99\n'
+        'case "$1" in "${TMPDIR:-/tmp}"/asta-*) ;; *) exit 98 ;; esac\n'
+        'created=$("$REAL_MKTEMP" $mode "$@") || exit $?\n'
+        'printf "%s\\n" "$created" >> "$TEMP_PATH_LOG"\n'
+        'printf "%s\\n" "$created"\n'
+    )
+    wrapper.chmod(0o755)
+    quarto = bin_dir / "quarto"
+    quarto.write_text("#!/bin/sh\nmkdir -p _site\necho OK > _site/index.html\n")
+    quarto.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home),
+        "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        "REAL_MKTEMP": real_mktemp,
+        "TEMP_LOG": str(tmp_path / "temps.log"),
+        "TEMP_PATH_LOG": str(tmp_path / "temp-paths.log"),
+    }
+    if tmpdir is not None:
+        env["TMPDIR"] = str(tmp_path / tmpdir) if tmpdir else ""
+        if tmpdir:
+            Path(env["TMPDIR"]).mkdir()
+    result = subprocess.run(
+        ["make", "-f", str((WORKSPACE_ASSETS / rules).resolve()), "check"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    temps = (tmp_path / "temps.log").read_text().splitlines()
+    assert len(temps) == (2 if rules == "workspace.mk" else 1)
+    assert (project / "_extensions/evidence/snippet.lua").is_file()
+    created = (tmp_path / "temp-paths.log").read_text().splitlines()
+    assert len(created) == len(temps)
+    assert all(not Path(path).exists() for path in created), (
+        "temporary files were not cleaned up"
+    )

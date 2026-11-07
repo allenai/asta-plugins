@@ -82,7 +82,7 @@ workspace-assets:
 			url="$$repo/archive/$$ref.tar.gz"; \
 		fi; \
 	fi; \
-	tmp=$$(mktemp -d); \
+	tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/asta-workspace.XXXXXXXX"); \
 	lock=_extensions/.evidence-install.lock; \
 	backup="$$tmp/previous"; \
 	lock_held=0; \
@@ -159,15 +159,32 @@ workspace-viewers:
 	if ! command -v "$$python" >/dev/null 2>&1; then \
 		echo "workspace-viewers: $$python is unavailable; keeping existing viewer pages" >&2; exit 0; \
 	fi; \
-	tmp=$$(mktemp); trap 'rm -f "$$tmp"' 0; \
+	tmp=$$(mktemp "$${TMPDIR:-/tmp}/asta-viewers.XXXXXXXX"); trap 'rm -f "$$tmp"' 0; \
 	"$$python" "$$discovery" > "$$tmp"; \
 	"$$python" "$$viewer" < "$$tmp"
 
 preview: workspace-assets workspace-viewers
 	quarto preview --no-browser
 
+# Optional output override for callers that must leave the preview's _site alone,
+# and an optional whitespace-separated page list (no spaces within filenames).
+# The recipe marker declares page-list support. Keep it only in recipes that
+# implement that contract; prerequisite output cannot declare this capability.
+ASTA_WORKSPACE_RENDER_OUTPUT ?=
+ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
-	quarto render
+	set -eu; \
+	: asta-workspace-render-page-selection-v1; \
+	set -f; \
+	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
+	if [ "$$#" -eq 0 ]; then \
+		quarto render $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+	else \
+		for page do \
+			case "$$page" in /*|./*|../*) ;; *) page=./$$page;; esac; \
+			quarto render "$$page" --no-clean $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+		done; \
+	fi
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new

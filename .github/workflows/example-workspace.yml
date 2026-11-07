@@ -29,7 +29,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
     timeout-minutes: 30
     container:
       image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
@@ -55,13 +58,34 @@ jobs:
         run: python3 ../../tests/browser/render-slides.py ../../tests/browser/fixtures
       - uses: actions/upload-artifact@v4
         with:
-          name: example-workspace-site
+          name: example-workspace-site-${{ matrix.runner }}
           path: examples/workspace/_site
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: workspace-slide-fixtures
+          name: workspace-slide-fixtures-${{ matrix.runner }}
           path: tests/browser/fixtures
+          retention-days: 30
+      # After the uploads: this adds what-changed output to the example's _site.
+      - name: Check local What changed renders a deck edit
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
+          uv tool install --force ../..
+          # The image ships a released asta; run the one just built from this checkout.
+          export PATH="$(uv tool dir --bin):$PATH"
+          test "$(command -v asta)" = "$(uv tool dir --bin)/asta"
+          # The CLI installs only the browser; this container also lacks Chromium's system libraries.
+          uv run --no-project --with playwright==1.64.1 python -m playwright install --with-deps chromium >/dev/null
+          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-what-changed-screenshot-${{ matrix.runner }}
+          path: tests/browser/artifacts/local-what-changed-deck.png
+          if-no-files-found: ignore
           retention-days: 30
 
   theme:
@@ -74,11 +98,11 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: example-workspace-site
+          name: example-workspace-site-ubuntu-latest
           path: examples/workspace/_site
       - uses: actions/download-artifact@v4
         with:
-          name: workspace-slide-fixtures
+          name: workspace-slide-fixtures-ubuntu-latest
           path: tests/browser/fixtures
       - uses: actions/setup-node@v4
         with:
@@ -93,6 +117,12 @@ jobs:
       - name: Check slide geometry and standalone behavior
         working-directory: tests/browser
         run: node workspace-slides.mjs ../../examples/workspace/_site artifacts
+      - name: Check rendered deck review
+        run: |
+          python3 -m venv "$RUNNER_TEMP/deck-review-venv"
+          "$RUNNER_TEMP/deck-review-venv/bin/python" -m pip install playwright==1.64.1
+          "$RUNNER_TEMP/deck-review-venv/bin/python" -m playwright install --with-deps chromium
+          "$RUNNER_TEMP/deck-review-venv/bin/python" tests/browser/deck-review.py examples/workspace/_site tests/browser/artifacts
       - name: Check both themes and evidence readability
         working-directory: tests/browser
         run: npm test -- ../../examples/workspace/_site artifacts

@@ -20,6 +20,10 @@ on:
         description: Whether this event affects the rendered site
         value: ${{ jobs.scope.outputs.render }}
     inputs:
+      build-runner:
+        description: Runner for the site build
+        type: string
+        default: ubuntu-latest
       quarto-version:
         description: Quarto CLI version used to render generated sources
         type: string
@@ -103,7 +107,7 @@ jobs:
       needs.scope.outputs.render == 'true' &&
       github.event.action != 'closed' &&
       github.event_name != 'pull_request_target' && github.event_name != 'workflow_run'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner }}
     outputs:
       paper: ${{ steps.paper.outcome }}
     permissions:
@@ -128,13 +132,14 @@ jobs:
         with:
           version: ${{ inputs.quarto-version }}
 
-      # The managed entry point needs the CLI from this workflow's own revision.
-      - name: Install Asta CLI for managed workspace rules
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Asta CLI at the workflow revision
         run: |
-          if [ ! -f workspace.mk ] && grep -Eq '^[[:space:]]*(-?include|sinclude)[[:space:]]+\.asta/cache/workspace\.mk([[:space:]]|$)' Makefile; then
-            python3 -m venv "$RUNNER_TEMP/asta-cli"
-            "$RUNNER_TEMP/asta-cli/bin/pip" install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
-            echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
+          # Only What changed needs the CLI; a failed install must not block the deploy.
+          if uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"; then
+            uv tool dir --bin >> "$GITHUB_PATH"
+          else
+            echo "::warning::Could not install the asta CLI; the PR preview will have no What changed page"
           fi
 
       # Project script overrides are optional. Warn on drift without rejecting
@@ -318,7 +323,9 @@ jobs:
         run: |
           set -o pipefail
           tmpdir=$(mktemp -d)
-          trap 'rm -rf "$tmpdir"' EXIT
+          deckstage=
+          tmpout=
+          trap 'rm -rf "$tmpdir"; if [ -n "$deckstage" ]; then rm -rf "$deckstage"; fi; if [ -n "$tmpout" ]; then rm -f "$tmpout"; fi' EXIT
           baseline="$tmpdir/baseline"
           mkdir "$baseline"
           baseline_label="no deployed baseline"
@@ -339,28 +346,15 @@ jobs:
               exit 0
             fi
           fi
-          if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
-            gen=scripts/what-changed.py
-            echo "Using project-owned scripts/what-changed.py"
-          else
-            gen="$tmpdir/what-changed.py"
-            url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
-            if ! curl -fsSL "$url" -o "$gen"; then
-              echo "::warning::could not fetch what-changed.py; skipping the diff page"
-              exit 0
-            fi
-          fi
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
-          tmpout="$tmpdir/what-changed.html"
-          if python3 "$gen" \
-            --old "$baseline" --new _site \
-            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
-              && [ -s "$tmpout" ]; then
-            mv "$tmpout" _site/what-changed.html
-          else
-            echo "::warning::what-changed page generation failed; preview still published"
+          if ! asta workspace what-changed --before-site "$baseline" --after-site _site \
+              --title "PR $PR_NUMBER · $baseline_label" 2> >(tee "$tmpdir/stderr" >&2); then
+            echo "::warning::What changed page generation failed; preview still published"
+          fi
+          if grep -qi 'slides shown as text' "$tmpdir/stderr" 2>/dev/null; then
+            echo "::warning::What changed shows slides as text: Chromium could not start on this runner; see this step's log"
           fi
 
       - name: Check project preview artifacts
@@ -376,7 +370,7 @@ jobs:
       - name: Upload rendered site
         uses: actions/upload-artifact@v4
         with:
-          name: site
+          name: site-${{ inputs.build-runner }}
           path: ${{ inputs.site-dir }}/_site
           include-hidden-files: true  # keep .nojekyll
 
@@ -414,7 +408,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: site
+          name: site-${{ inputs.build-runner }}
           path: _site
 
       - name: Publish to gh-pages
@@ -471,7 +465,7 @@ jobs:
             # a path-scoped robots.txt (only the host-root one is honored), so
             # inject into the document head once: embedded Reveal scripts also
             # contain <head> strings, which must remain byte-for-byte unchanged.
-            find "$tmp/pr-preview/pr-$PR_NUMBER" -name '*.html' -print0 \
+            find "$tmp/pr-preview/pr-$PR_NUMBER" -type f -name '*.html' -print0 \
               | xargs -0 sed -i '0,/<head>/s#<head>#<head><meta name="robots" content="noindex, nofollow">#'
           fi
 
