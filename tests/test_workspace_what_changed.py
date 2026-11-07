@@ -1491,12 +1491,27 @@ THEMED = (
 )
 
 
-@pytest.mark.parametrize("preview", [None, "deck-only", "site"])
+REDIRECT = (
+    "<html><head><title>Redirect to {0}</title>"
+    '<meta http-equiv="refresh" content="0;url={0}"></head></html>'
+)
+
+
+@pytest.mark.parametrize("home_redirects", [False, True])
+@pytest.mark.parametrize("preview", [None, "deck-only", "redirect", "unstyled", "site"])
 def test_partial_render_keeps_site_theme_without_a_site_page(
-    project: Path, monkeypatch: pytest.MonkeyPatch, preview: str | None
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    preview: str | None,
+    home_redirects: bool,
 ) -> None:
     """A slide-only edit must still read like the site (no browser-default page)."""
     (project / "slides.qmd").write_text("Slide one.\n")
+    if home_redirects:
+        # The home page only redirects, so the theme must come from another page.
+        (project / "index.qmd").write_text("REDIRECT to about.html\n")
+        (project / "about.qmd").write_text("About.\n")
+        git(project, "add", "index.qmd", "about.qmd")
     git(project, "add", "slides.qmd")
     git(project, "commit", "-qm", "deck")
     git(project, "tag", "-f", "last-read")
@@ -1508,6 +1523,14 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
         (site / "slides.html").write_text('<div class="reveal">Slide one.</div>')
         if preview == "site":
             (site / "index.html").write_text(THEMED.format("Home"))
+        elif preview == "redirect":
+            # A preview of only the deck: Quarto's redirect home, no stylesheets.
+            (site / "index.html").write_text(REDIRECT.format("slides.html"))
+        elif preview == "unstyled":
+            # A page linking stylesheets this partial preview never built.
+            (site / "notes.html").write_text(
+                THEMED.format("Notes").replace("bootstrap.min", "missing")
+            )
     rendered = []
 
     def render(directory, label, pages=None):
@@ -1516,10 +1539,15 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
         site.mkdir()
         for name in pages or []:
             text = (directory / name).read_text()
-            if name == "index.qmd":
-                (site / "site_libs/bootstrap").mkdir(parents=True)
+            if text.startswith("REDIRECT"):
+                (site / "index.html").write_text(REDIRECT.format("about.html"))
+            elif name in ("index.qmd", "about.qmd"):
+                (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
                 (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
-                (site / "index.html").write_text(THEMED.format(text))
+                html = Path(name).with_suffix(".html")
+                (site / html).write_text(
+                    THEMED.format("Home" if "dex" in name else text)
+                )
             else:
                 (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
         if not (site / "index.html").exists():
@@ -1545,9 +1573,12 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "<ins" in page and "edited" in page
     # The home page only supplies the theme; it is never reported as new.
     assert "Home" not in page and ">index.html<" not in page
+    assert "About" not in page and ">about.html<" not in page
     assert "Redirect" not in page and "removed</span>" not in page
+    assert "unstyled" not in result.stderr
     after = dict(rendered)["the working tree"]
-    expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", "index.qmd"]
+    candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
+    expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", *candidates]
     assert after == expected
 
 

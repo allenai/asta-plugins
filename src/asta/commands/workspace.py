@@ -1137,18 +1137,65 @@ DECK_IMAGES = "what-changed-decks"
 
 # Rendered beside a deck-only edit when no preview supplies the site's theme.
 THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
+# Further candidates when the home page is missing or only redirects.
+THEME_SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd")
+THEME_CANDIDATES = 3
+_STYLESHEET = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_HREF = re.compile(r"""\bhref\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+
+
+def _is_themed_page(page: Path, site: Path) -> bool:
+    """Whether a built page is an ordinary site page whose stylesheets are present.
+
+    A Quarto redirect home page, a deck, or a page whose site_libs a partial
+    render left out cannot supply the site's theme.
+    """
+    if page.name.startswith("what-changed") or page.is_symlink() or not page.is_file():
+        return False
+    html = page.read_text(encoding="utf-8", errors="ignore")
+    if 'class="reveal' in html:
+        return False
+    sheets = []
+    for tag in _STYLESHEET.findall(html):
+        href = _HREF.search(tag)
+        if "stylesheet" in tag.lower() and href:
+            sheets.append(href.group(1).split("?")[0].split("#")[0])
+    local = [h for h in sheets if not re.match(r"(?i)^(?:[a-z]+:|//|/)", h)]
+    if not local:
+        return False
+    root = site.resolve()
+    for href in local:
+        target = (page.parent / href).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            return False
+    return True
 
 
 def _has_site_page(site: Path) -> bool:
-    """Whether a built site has a root-level ordinary page to take the theme from."""
-    for page in site.glob("*.html"):
-        if page.name.startswith("what-changed") or page.is_symlink():
-            continue
-        if page.is_file() and 'class="reveal' not in page.read_text(
-            encoding="utf-8", errors="ignore"
+    """Whether a built site has an ordinary page that carries the site's theme."""
+    return any(
+        _is_themed_page(page, site)
+        for page in site.rglob("*.html")
+        if DECK_IMAGES not in page.relative_to(site).parts
+    )
+
+
+def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
+    """Source pages to render beside a deck-only edit to take the theme from."""
+    names = [name for name in THEME_PAGES if (project / name).is_file()]
+    for source in sorted(project.iterdir()):
+        name = source.name
+        if (
+            source.suffix in THEME_SOURCE_SUFFIXES
+            and source.is_file()
+            and not source.is_symlink()
+            and name not in names
+            and not name.startswith(("_", "."))
+            and not name.upper().startswith(("README", "LICENSE", "CHANGELOG"))
+            and "revealjs" not in source.read_text(encoding="utf-8", errors="ignore")
         ):
-            return True
-    return False
+            names.append(name)
+    return [name for name in names if name not in pages][:THEME_CANDIDATES]
 
 
 def _has_deck(site: Path) -> bool:
@@ -1626,29 +1673,40 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             )
             # Without a running preview, a deck-only render has no site page, so
             # render the home page too and take the theme from it.
-            theme_page = None
-            if pages and theme is None and not set(THEME_PAGES) & set(pages):
-                theme_page = next(
-                    (name for name in THEME_PAGES if (copied_project / name).is_file()),
-                    None,
-                )
+            # A home page that only redirects carries no theme, so a few
+            # ordinary pages are rendered as candidates.
+            theme_pages = (
+                _theme_candidates(copied_project, pages)
+                if pages and theme is None
+                else []
+            )
             new_site = (
-                render_site(
-                    copied_project,
-                    "the working tree",
-                    [*pages, theme_page] if theme_page else pages,
-                )
+                render_site(copied_project, "the working tree", [*pages, *theme_pages])
                 if pages
                 else render_site(copied_project, "the working tree")
             )
-            if theme_page and (new_site / "index.html").is_file():
-                # Out of the comparison, so it is not reported as a new page.
+            if theme_pages:
+                # Out of the comparison, so they are not reported as new pages.
                 theme = tmp / "theme"
                 theme.mkdir()
-                shutil.move(new_site / "index.html", theme / "index.html")
-                # The home page is not compared, so drop the redirect Quarto writes
-                # into a partial render without one, or it is reported as removed.
-                (old_site / "index.html").unlink(missing_ok=True)
+                themed = False
+                for name in theme_pages:
+                    built = new_site / Path(name).with_suffix(".html")
+                    if built.is_file() and not built.is_symlink():
+                        themed = themed or _is_themed_page(built, new_site)
+                        shutil.move(built, theme / built.name)
+                if not themed:
+                    click.echo(
+                        "Warning: no rendered page carries the site's theme "
+                        "(a redirect home page or missing stylesheets), so "
+                        "What changed may look unstyled.",
+                        err=True,
+                    )
+                if any(Path(name).stem == "index" for name in theme_pages):
+                    # The home page is not compared, so drop the redirect Quarto
+                    # writes into a partial render without one, or it is
+                    # reported as removed.
+                    (old_site / "index.html").unlink(missing_ok=True)
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():

@@ -158,13 +158,24 @@ THEMED_JS = (
 )
 
 
-def check_themed_without_preview(project, artifacts):
-    """A slide-only edit with no running preview must still read like the site."""
+def check_themed_without_preview(project, artifacts, redirect_preview=False):
+    """A slide-only edit with no themed preview must still read like the site.
+
+    With redirect_preview, the running preview is a partial one whose home page
+    is only Quarto's redirect, so it carries no stylesheets to borrow.
+    """
     deck = project / "slides/attention/slides.qmd"
     original = deck.read_text()
     preview = project / "_site"
     parked = project.with_name(project.name + "-site-parked")
     preview.rename(parked)
+    if redirect_preview:
+        preview.mkdir()
+        (preview / "index.html").write_text(
+            "<html><head><title>Redirect to slides/attention/slides.html</title>"
+            '<meta http-equiv="refresh" content="0;url=slides/attention/slides.html">'
+            "</head></html>"
+        )
     edited = original.replace(
         "## Keep the talk beside its sources\n",
         "## Keep the talk beside its sources and data\n",
@@ -196,7 +207,8 @@ def check_themed_without_preview(project, artifacts):
             assert page.evaluate(THEMED_JS), "What changed page is unstyled"
             # The home page rendered for the theme is not itself compared.
             assert "Redirect" not in page.content(), "home page reported as changed"
-            page.screenshot(path=str(artifacts / "local-what-changed-no-preview.png"))
+            name = "redirect-preview" if redirect_preview else "no-preview"
+            page.screenshot(path=str(artifacts / f"local-what-changed-{name}.png"))
             browser.close()
     finally:
         server.shutdown()
@@ -205,6 +217,7 @@ def check_themed_without_preview(project, artifacts):
 
 if __name__ == "__main__":
     check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
-    check_themed_without_preview(
-        Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
-    )
+    for redirect_preview in (False, True):
+        check_themed_without_preview(
+            Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), redirect_preview
+        )
