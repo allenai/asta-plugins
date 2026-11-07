@@ -114,6 +114,35 @@ def test_release_ref_does_not_merge_newer_main(demo):
     )
 
 
+def test_release_ref_rejects_newer_main_already_in_demo(demo, tmp_path):
+    origin, work, _ = demo
+    release = commit_file(work, "release.txt", "Tagged release\n")
+    newer = commit_file(work, "unreleased.txt", "Not in the release\n")
+    git(work, "push", "-q", "origin", "main")
+    manual = refresh(work)
+    assert manual.returncode == 0, manual.stderr
+    before = git(origin, "rev-parse", "example-demo-pr")
+    temp = tmp_path / "temps"
+    temp.mkdir()
+
+    result = refresh(work, release, env={"TMPDIR": str(temp)})
+
+    assert result.returncode != 0
+    assert "already contains main commits outside" in result.stderr
+    assert "restore the demo branch" in result.stderr
+    assert "sample edits" in result.stderr
+    assert git(origin, "rev-parse", "example-demo-pr") == before
+    assert list(temp.iterdir()) == []
+    assert "Refreshed" not in result.stdout
+
+    # Once those commits are released, a refresh can rebuild without losing
+    # either the newer main content or the example's sample edit.
+    result = refresh(work, newer)
+    assert result.returncode == 0, result.stderr
+    assert git(origin, "show", "example-demo-pr:unreleased.txt") == "Not in the release"
+    assert git(origin, "show", "example-demo-pr:slide.md") == "Sample slide edit"
+
+
 def test_merges_new_main_and_preserves_sample_edit(demo):
     origin, work, sample = demo
     main = commit_file(work, "release.txt", "Next release\n")

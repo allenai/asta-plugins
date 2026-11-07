@@ -126,8 +126,12 @@ The version lives in three places:
    merges that exact commit into the example's demo PR (`example-demo-pr`) and
    pushes, so the preview the READMEs link to rebuilds without merging newer,
    unreleased `main` commits. If the branch already contains the release, it
-   pushes an empty commit to trigger the rebuild anyway. Without an argument,
-   the script uses freshly fetched `origin/main` for a manual refresh.
+   pushes an empty commit to trigger the rebuild anyway. If it already contains
+   `main` commits outside that release (for example, from a manual refresh),
+   the script refuses to push: wait for a release that includes them, or restore
+   the demo branch to the intended release plus its sample edits and retry.
+   Without an argument, the script uses freshly fetched `origin/main` for a
+   manual refresh, which can include unreleased changes.
    Any refresh failure only warns and leaves the pushed tag intact; fix the
    cause and retry with the release commit shown in the warning.
 6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for

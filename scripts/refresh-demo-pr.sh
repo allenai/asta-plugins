@@ -10,6 +10,17 @@ git fetch -q origin \
   "+refs/heads/$branch:refs/remotes/origin/$branch"
 ref=${1:-refs/remotes/origin/main}
 target=$(git rev-parse --verify --end-of-options "$ref^{commit}")
+# A previous manual refresh may already have brought in main commits beyond
+# this release. Merging an older target cannot remove them; refuse to claim
+# that the resulting preview represents that release. Check every common base
+# so histories with multiple merge bases cannot hide an extra main ancestor.
+main_bases=$(git merge-base --all refs/remotes/origin/main "refs/remotes/origin/$branch")
+for base in $main_bases; do
+  if ! git merge-base --is-ancestor "$base" "$target"; then
+    echo "$branch already contains main commits outside $ref ($target); refusing to refresh. Wait for a release that includes them, or restore the demo branch to the intended release plus its sample edits, then retry scripts/refresh-demo-pr.sh $target" >&2
+    exit 1
+  fi
+done
 dir=$(mktemp -d "${TMPDIR:-/tmp}/demo-pr.XXXXXX")
 cleanup() {
   git worktree remove --force "$dir" >/dev/null 2>&1 || true
