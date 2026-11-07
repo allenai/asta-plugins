@@ -150,6 +150,10 @@ case. Use block mappings with exactly one workspace job calling
 named `asta-plugins`). Write the literal `uses:` source on one line. The job's
 `site-dir` is decoded as a YAML scalar, including quotes, escapes and aliases;
 expressions are not evaluated. Unrelated jobs and inputs are ignored. An
+applicable root takes precedence over an existing local `docs.yml`. YAML
+`<<:` merge keys are not expanded: write the job's literal `uses` source and
+its `with.site-dir` input directly, or use aliases for the site input, input
+mapping or whole job. An
 unrelated root workflow, including a symlinked root path, leaves the site's own
 workflow as the fallback. Selected workflow paths must not contain symlinks.
 An absent root workflow also permits the local fallback; other read errors and
@@ -164,7 +168,15 @@ The managed Makefile watches local and root workflow candidates. For subfolder
 sites without a local workflow, it checks selection offline before starting the
 build; recursive makes reuse that check. `asta workspace sync --check-selection`
 validates the workflow without fetching, changing cached rules or moving pins.
-Use a CLI supporting this flag with the current managed Makefile. Missing or
+CLI 0.105.0 supports managed rules with a local workflow and project scripts;
+it does not support root-only subfolder sites. Those require the root-workflow
+discovery and `--check-selection` support introduced together after CLI 0.125.0.
+Install a CLI release containing this support, or install an unreleased build
+from an asta-plugins Git ref containing it with
+`uv tool install --force git+https://github.com/allenai/asta-plugins.git@<ref>`.
+An older workflow ref does not imply that its CLI supports root discovery.
+The Makefile checks for the flag and reports installation guidance if it is
+unavailable. Missing or
 unrelated workflows fail even with cached rules; project-only goals and a local
 `workspace.mk` bypass managed rules. If the workflow changes during a full sync,
 its cached rules and manifest are discarded; fix any reported workflow error

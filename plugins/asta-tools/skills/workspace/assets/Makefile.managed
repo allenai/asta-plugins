@@ -1,4 +1,5 @@
-# Optional compact entry point; CLI 0.105.0 supports rules with project scripts.
+# Optional compact entry point; CLI 0.105.0 supports a local workflow and project scripts.
+# Root-only subfolder sites also require `sync --check-selection` support.
 # Before removing scripts, require a CLI supporting `sync --require-scripts`.
 # A local workspace.mk takes precedence when a project customizes shared rules.
 # Shared scripts are cached by `asta workspace sync`; commit scripts/<name> to customize one.
@@ -42,13 +43,15 @@ ASTA_WORKSPACE_WORKFLOWS := $(sort $(wildcard .github/workflows/docs.yml $(shell
 # Order-only validation does not force a remake of otherwise up-to-date rules.
 # A validated site's recursive makes reuse its check. MAKELEVEL alone is not
 # sufficient: the site's first Make may itself be called by an outer Makefile.
-ifeq ($(MAKE_RESTARTS),)
 ifeq ($(wildcard .github/workflows/docs.yml),)
 ifneq ($(ASTA_WORKSPACE_SELECTION_CHECKED),$(CURDIR))
+# Re-export after an include restart so children retain the initial validation.
 export ASTA_WORKSPACE_SELECTION_CHECKED := $(CURDIR)
+ifeq ($(MAKE_RESTARTS),)
 .PHONY: asta-workspace-check-workflow
 .asta/cache/workspace.mk: | asta-workspace-check-workflow
 asta-workspace-check-workflow:
+	@command -v asta >/dev/null && asta workspace sync --help 2>/dev/null | grep -q -- --check-selection || { echo "Install an Asta CLI with 'workspace sync --check-selection' support from an asta-plugins ref containing root-workflow support, or add a local workspace.mk" >&2; exit 1; }
 	@asta workspace sync --check-selection
 endif
 endif

@@ -650,6 +650,150 @@ def test_thin_makefile_explains_older_cli(tmp_path: Path) -> None:
     assert not (project / ".asta").exists()
 
 
+@pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("cli_support", ["missing", "no-workspace", "old-sync"])
+def test_subfolder_make_explains_missing_selection_support(
+    tmp_path, cached, cli_support
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    workflow = tmp_path / workspace_module.WORKFLOW_FILE
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}main\n"
+        "    with:\n      site-dir: site\n"
+    )
+    project = tmp_path / "site"
+    project.mkdir()
+    assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
+    (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
+    if cached:
+        rules = project / ".asta/cache/workspace.mk"
+        rules.parent.mkdir(parents=True)
+        rules.write_text("preview:\n\t@echo stale-preview\n")
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    if cli_support != "missing":
+        executable = tools / "asta"
+        executable.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = --version ]; then exit 0; fi\n'
+            + (
+                "echo 'No such command: workspace' >&2\nexit 2\n"
+                if cli_support == "no-workspace"
+                else 'if [ "$3" = --help ]; then echo "Usage: asta workspace sync [OPTIONS]"; exit 0; fi\n'
+                'echo "No such option: --check-selection" >&2\nexit 2\n'
+            )
+        )
+        executable.chmod(0o755)
+    before = {p: p.read_bytes() for p in project.rglob("*") if p.is_file()}
+    result = subprocess.run(
+        [shutil.which("make"), "preview"],
+        cwd=project,
+        env={"PATH": str(tools) + ":/usr/bin:/bin"},
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert (
+        "Install an Asta CLI with 'workspace sync --check-selection' support"
+        in result.stderr
+    )
+    assert "ref containing root-workflow support" in result.stderr
+    assert "No such command" not in result.stderr
+    assert "No such option" not in result.stderr
+    assert "not found" not in result.stderr
+    assert "stale-preview" not in result.stdout
+    assert {p: p.read_bytes() for p in project.rglob("*") if p.is_file()} == before
+
+
+def test_sync_parses_the_saved_workflow_snapshot(tmp_path, monkeypatch):
+    project = project_with_ref(tmp_path, "main")
+    workflow = project / workspace_module.WORKFLOW_FILE
+    original = workflow.read_bytes()
+    read_text = Path.read_text
+
+    def concurrent_read(path, *args, **kwargs):
+        if path == workflow:
+            # An edit/revert between separate reads must not select different
+            # rules from those named by the saved workflow snapshot.
+            return original.decode().replace("@main", "@other")
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", concurrent_read)
+    calls = []
+
+    def fetch(repository, ref):
+        calls.append((repository, ref))
+        return b"rules", _archive({})
+
+    monkeypatch.setattr(workspace_module, "load_asset", fetch)
+    result = CliRunner().invoke(cli, ["workspace", "sync", "--project", str(project)])
+    assert result.exit_code == 0, result.output
+    assert calls == [("allenai/asta-plugins", "main")]
+    assert workflow.read_bytes() == original
+    assert (
+        json.loads((project / ".asta/cache/workspace.json").read_text())["ref"]
+        == "main"
+    )
+
+
+@pytest.mark.parametrize("site_dir", [".", "site"])
+@pytest.mark.parametrize(
+    "command", [["sync"], ["sync", "--check-selection"], ["bump-pin"]]
+)
+def test_deeply_nested_workflow_reports_validation_error(
+    tmp_path, monkeypatch, site_dir, command
+):
+    root = project_with_ref(tmp_path, "main")
+    (root / ".git").mkdir()
+    workflow = root / workspace_module.WORKFLOW_FILE
+    workflow.write_text(
+        workflow.read_text()
+        + "    with:\n      site-dir: site\nignored: "
+        + "[" * 1500
+        + "value"
+        + "]" * 1500
+        + "\n"
+    )
+    project = root / site_dir
+    project.mkdir(exist_ok=True)
+    original = workflow.read_bytes()
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: pytest.fail("must not fetch")
+    )
+    result = CliRunner().invoke(cli, ["workspace", *command, "--project", str(project)])
+    assert result.exit_code == 1
+    assert "Invalid YAML" in result.output
+    assert workflow.read_bytes() == original
+    assert not (project / ".asta").exists()
+
+
+@pytest.mark.parametrize("root_source", ["absent", "unrelated"])
+@pytest.mark.parametrize(
+    "command", [["sync"], ["sync", "--check-selection"], ["bump-pin"]]
+)
+def test_missing_subfolder_workflow_explains_root_site_input(
+    tmp_path, monkeypatch, root_source, command
+):
+    root = project_with_ref(tmp_path, "main")
+    (root / ".git").mkdir()
+    if root_source == "absent":
+        (root / workspace_module.WORKFLOW_FILE).unlink()
+    project = root / "site"
+    project.mkdir()
+    monkeypatch.setattr(
+        workspace_module, "load_asset", lambda *_: pytest.fail("must not fetch")
+    )
+    result = CliRunner().invoke(cli, ["workspace", *command, "--project", str(project)])
+    assert result.exit_code == 1
+    assert f"Missing {project / workspace_module.WORKFLOW_FILE}" in result.output
+    assert "repository root" in result.output
+    assert "with.site-dir" in result.output
+    assert not (project / ".asta").exists()
+
+
 @pytest.mark.parametrize(
     "goals", [("catalogue",), ("pull",), ("catalogue", "pull"), ("dev", "catalogue")]
 )
@@ -2079,6 +2223,7 @@ def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
 
     build()
     assert log.read_text().splitlines().count("sync") == 1
+    assert log.read_text().splitlines().count("check") == 1
     cache = project / ".asta/cache"
     before = {
         p: (p.read_bytes(), p.stat().st_mtime_ns)

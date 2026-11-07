@@ -4,23 +4,16 @@
 
 - A workspace site in a subfolder uses the repository root's `docs.yml` when
   its `site-dir` names the site. Sync and pin moves share that single workflow,
-  including paths with spaces; workflows in intermediate folders are ignored.
-  Root workflows with multiple workspace jobs are rejected before moving pins;
-  unrelated jobs, inputs and script text are ignored. Multiline workspace sources
-  report a format error instead of silently selecting a fallback. Sync preserves
-  edits to the selected workflow made while fetching rules and invalidates the
-  cache on conflicts. Managed subfolder builds validate the root workflow even
-  when rules are cached; unrelated repositories with the same workflow path
-  do not select the site. Cached subfolder builds check selection offline without
-  syncing or moving pins, and recursive builds reuse that check. A symlinked root
-  candidate leaves a valid local workflow as the fallback. Site inputs use their
-  YAML-decoded scalar values, including aliases and YAML escapes.
+  including paths with spaces. Cached builds validate selection offline without
+  moving pins and explain how to upgrade a missing or older CLI. Sync preserves
+  concurrent workflow edits and discards conflicting cached rules.
   **Validation compatibility:** all selected workflows, including root-level
   sites, must now be valid single-document YAML with unique relevant mapping
-  keys. Previously tolerated duplicate keys or malformed YAML now report errors.
-  Root discovery reports read and encoding errors rather than choosing a local
-  workflow. Malformed-root fallback uses parsed job context and aliases, and
-  refuses fallback when the unparsed content leaves selection uncertain.
+  keys and a literal workspace source on one line. Subfolder roots require
+  exactly one workspace job with an explicit `site-dir` input; YAML merge keys
+  are not expanded. Root read errors and uncertain selection report errors
+  instead of silently using a local workflow. See the workspace developer guide
+  for supported YAML forms and CLI installation guidance.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`

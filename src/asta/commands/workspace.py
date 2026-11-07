@@ -75,7 +75,7 @@ def _workspace_job_lines(
 
     try:
         document = yaml.compose(text, Loader=yaml.BaseLoader)
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, RecursionError) as exc:
         raise click.ClickException(f"Invalid YAML in {workflow}") from exc
     jobs = field(document, "jobs")
     if jobs is None or not isinstance(jobs[1], yaml.MappingNode):
@@ -228,12 +228,18 @@ def selected_source(project: Path) -> tuple[str, str]:
     return _source_from_workflow(workflow_file(project))
 
 
-def _source_from_workflow(workflow: Path) -> tuple[str, str]:
+def _source_from_workflow(
+    workflow: Path, *, original: bytes | None = None
+) -> tuple[str, str]:
     _reject_workflow_symlinks(workflow)
     try:
-        text = workflow.read_text(encoding="utf-8")
+        text = (workflow.read_bytes() if original is None else original).decode("utf-8")
     except FileNotFoundError as exc:
-        raise click.ClickException(f"Missing {workflow}") from exc
+        raise click.ClickException(
+            f"Missing {workflow}; for a subfolder site, keep docs.yml at the "
+            "repository root in .github/workflows and set its workspace job's "
+            "with.site-dir to the site's relative path"
+        ) from exc
     except UnicodeDecodeError as exc:
         raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
     refs = [
@@ -681,8 +687,12 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
     try:
         original = workflow.read_bytes()
     except FileNotFoundError as exc:
-        raise click.ClickException(f"Missing {workflow}") from exc
-    repository, ref = _source_from_workflow(workflow)
+        raise click.ClickException(
+            f"Missing {workflow}; for a subfolder site, keep docs.yml at the "
+            "repository root in .github/workflows and set its workspace job's "
+            "with.site-dir to the site's relative path"
+        ) from exc
+    repository, ref = _source_from_workflow(workflow, original=original)
     original_ref = ref
     if not _is_unattended():
         ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
