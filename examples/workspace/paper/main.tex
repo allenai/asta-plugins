@@ -13,14 +13,14 @@
 \maketitle
 
 \section{A paper paired with Overleaf}
-This paper is paired with an Overleaf project, so co-authors can edit it there while the workspace reviews every change in a pull request. Overleaf sees only this \texttt{paper} directory, so the paper keeps its own \texttt{references.bib} here, which co-authors can edit too. Vaswani and colleagues proposed the Transformer architecture based on attention mechanisms~\cite{vaswani2017attention}. That entry was copied from the workspace's \texttt{references.bib}, which the companion Quarto page cites.
+This paper is paired with an Overleaf project, so co-authors can edit it there while the workspace reviews every change in a pull request. Overleaf sees only this \texttt{paper} directory, so the paper keeps its own \texttt{references.bib} here, which co-authors can edit too. Vaswani and colleagues proposed the Transformer, an architecture based solely on attention~\cite{vaswani2017attention}. Its core operation is scaled dot-product attention, $\mathrm{softmax}(QK^\top/\sqrt{d_k})V$. BERT later pre-trained a bidirectional Transformer encoder~\cite{devlin2019bert}. Both entries were copied from the workspace's \texttt{references.bib}, which the companion Quarto page cites.
 
 \section{A compact figure}
 Figure~\ref{fig:workspace} shows where each writing format gets its citations.
 \begin{figure}[htbp]
   \centering
   \fcolorbox{astateal}{astagreen!15}{\parbox{0.72\linewidth}{\centering\vspace{0.7em}Quarto page \quad $\longleftarrow$ \quad \textbf{references.bib}\\[0.5em]copied entries \quad $\longrightarrow$ \quad \textbf{paper/references.bib} \quad $\longleftrightarrow$ \quad Overleaf\vspace{0.7em}}}
-  \caption{The workspace bibliography feeds the Quarto page directly and the paired paper through copied entries.}
+  \caption{The Quarto page cites the workspace bibliography; the paired paper cites its own copies.}
   \label{fig:workspace}
 \end{figure}
 
