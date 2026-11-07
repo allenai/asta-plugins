@@ -70,7 +70,7 @@ workspace-assets:
 		fi; \
 		url="$$repo/archive/$$ref.tar.gz"; \
 	fi; \
-	tmp=$$(mktemp -d); \
+	tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/asta-workspace.XXXXXXXX"); \
 	lock=_extensions/.evidence-install.lock; \
 	backup="$$tmp/previous"; \
 	lock_held=0; \

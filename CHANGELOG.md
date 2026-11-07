@@ -19,6 +19,9 @@
   instead of silently using a local workflow. See the workspace developer guide
   for supported YAML forms and CLI installation guidance.
 
+- Workspace `make check` creates temporary files under `${TMPDIR:-/tmp}` so it
+  works in agent sandboxes.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):
