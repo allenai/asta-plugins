@@ -263,7 +263,9 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     assert not list((project / "_site").glob(".what-changed.*"))
 
 
-@pytest.mark.parametrize("failure", ["before-images", "after-images", "none"])
+@pytest.mark.parametrize(
+    "failure", ["before-images", "after-images", "none", "text-fallback"]
+)
 @pytest.mark.parametrize("existing_symlink", [False, True])
 def test_deck_images_publish_only_after_page_generation_succeeds(
     tmp_path: Path, failure: str, existing_symlink: bool
@@ -304,6 +306,7 @@ def test_deck_images_publish_only_after_page_generation_succeeds(
         textwrap.dedent("""\
         import argparse
         import os
+        import shutil
         from pathlib import Path
         p = argparse.ArgumentParser()
         for arg in ('old', 'new', 'out', 'title', 'render-decks', 'render-decks-url'):
@@ -317,6 +320,10 @@ def test_deck_images_publish_only_after_page_generation_succeeds(
         assert Path(a.new, 'what-changed-decks/old.png').read_bytes() == b'previous image'
         if os.environ['GENERATOR_FAILURE'] == 'before-images':
             raise RuntimeError('before capture')
+        if os.environ['GENERATOR_FAILURE'] == 'text-fallback':
+            shutil.rmtree(stage)
+            Path(a.out).write_text('slides as text')
+            raise SystemExit(0)
         (stage / 'new.png').write_bytes(b'new image')
         Path(a.out).write_text('<img src="what-changed-decks/new.png">')
         if os.environ['GENERATOR_FAILURE'] == 'after-images':
@@ -370,11 +377,15 @@ def test_deck_images_publish_only_after_page_generation_succeeds(
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    if failure == "none":
-        assert (
-            site / "what-changed.html"
-        ).read_text() == '<img src="what-changed-decks/new.png">'
-        assert (site / "what-changed-decks/new.png").read_bytes() == b"new image"
+    if failure in {"none", "text-fallback"}:
+        if failure == "none":
+            assert (
+                site / "what-changed.html"
+            ).read_text() == '<img src="what-changed-decks/new.png">'
+            assert (site / "what-changed-decks/new.png").read_bytes() == b"new image"
+        else:
+            assert (site / "what-changed.html").read_text() == "slides as text"
+            assert not list((site / "what-changed-decks").iterdir())
         assert not (site / "what-changed-decks/old.png").exists()
         assert "Replacing generated deck-review images" in result.stdout
         if existing_symlink:

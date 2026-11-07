@@ -380,6 +380,8 @@ jobs:
             "${render_decks[@]}" \
               && [ -s "$tmpout" ]; then
             if [ -n "$deckstage" ]; then
+              # Text fallback may succeed without writing an image directory.
+              mkdir -p "$deckstage"
               if [ -e _site/what-changed-decks ] || [ -L _site/what-changed-decks ]; then
                 echo "::warning::Replacing generated deck-review images in what-changed-decks"
               fi
