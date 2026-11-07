@@ -1099,7 +1099,12 @@ def test_real_quarto_render_allowlist_does_not_publish_excluded_pages(
         "format:\n  html:\n    theme: none\n"
     )
     (project / excluded).write_text("An excluded finding.\n")
-    # Inspection can add version-specific cache ignores. Record that setup
+    # Quarto 1.7 creates this cache without adding an ignore entry. Keep it
+    # out of source selection on every supported version.
+    (project / ".gitignore").write_text(
+        (project / ".gitignore").read_text() + "/.quarto/\n"
+    )
+    # Inspection can add other version-specific cache ignores. Record that setup
     # before the baseline so an unrelated .gitignore edit cannot force full
     # rendering and accidentally make this regression pass.
     subprocess.run(
