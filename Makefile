@@ -114,8 +114,7 @@ push-version-tag:
 	scripts/wait-for-main-image.sh $$SHA && \
 	git tag v$$VERSION && \
 	git push origin v$$VERSION && \
-	echo "Pushed tag v$$VERSION" && \
-	{ scripts/refresh-demo-pr.sh || echo "warning: the demo PR was not refreshed; run scripts/refresh-demo-pr.sh" >&2; }
+	echo "Pushed tag v$$VERSION"
 
 # Show current version
 version:

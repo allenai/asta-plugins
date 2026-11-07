@@ -122,10 +122,6 @@ The version lives in three places:
    `:<tag>-tex`, and a final `vX.Y.Z` tag (not `-rc.N`) then moves `:latest` /
    `:latest-tex` to the highest final release. Promotion reads the candidate
    run's artifacts, so tag within the repository's artifact-retention window.
-   After tagging it runs `scripts/refresh-demo-pr.sh`, which merges `main` into
-   the example's demo PR (`example-demo-pr`) and pushes, so the preview the
-   READMEs link to rebuilds with the release. A merge conflict there only warns;
-   resolve it on that branch.
 6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
