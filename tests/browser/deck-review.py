@@ -347,7 +347,7 @@ def check_selectable_text(page):
           selection.addRange(range); const text = selection.toString();
           selection.removeAllRanges(); return text;
         }""")
-        assert selected == text
+        assert selected == text, f"selected={selected!r}; expected={text!r}"
 
 
 def check(site, artifacts):
