@@ -383,14 +383,19 @@ def test_deck_images_publish_only_after_page_generation_succeeds(
                 site / "what-changed.html"
             ).read_text() == '<img src="what-changed-decks/new.png">'
             assert (site / "what-changed-decks/new.png").read_bytes() == b"new image"
+            assert not (site / "what-changed-decks/old.png").exists()
+            assert "Replacing generated deck-review images" in result.stdout
+            if existing_symlink:
+                assert not (site / "what-changed-decks").is_symlink()
+                assert (original_images / "old.png").read_bytes() == b"previous image"
         else:
+            # A text-only result wrote no images, so the site's folder stays.
             assert (site / "what-changed.html").read_text() == "slides as text"
-            assert not list((site / "what-changed-decks").iterdir())
-        assert not (site / "what-changed-decks/old.png").exists()
-        assert "Replacing generated deck-review images" in result.stdout
-        if existing_symlink:
-            assert not (site / "what-changed-decks").is_symlink()
-            assert (original_images / "old.png").read_bytes() == b"previous image"
+            assert (
+                site / "what-changed-decks/old.png"
+            ).read_bytes() == b"previous image"
+            assert (site / "what-changed-decks").is_symlink() == existing_symlink
+            assert "Replacing generated deck-review images" not in result.stdout
     else:
         assert (site / "what-changed.html").read_text() == "previous page"
         assert (site / "what-changed-decks/old.png").read_bytes() == b"previous image"
@@ -1894,6 +1899,31 @@ def test_preview_noindex_keeps_embedded_slide_javascript_intact(tmp_path, separa
     assert script in actual
     meta = '<meta name="robots" content="noindex, nofollow">'
     assert actual == original.replace("<head>", "<head>" + meta, 1)
+
+
+def test_preview_noindex_skips_directories_named_like_html(tmp_path):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    publish = next(
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Publish to gh-pages"
+    )
+    start = publish.index('find "$tmp/pr-preview/pr-$PR_NUMBER"')
+    injection = "\n".join(publish[start:].splitlines()[:2])
+    preview = tmp_path / "pr-preview/pr-7"
+    images = preview / "what-changed-decks/slides/x/slides.html"
+    images.mkdir(parents=True)
+    (images / "s1.png").write_bytes(b"PNG")
+    (preview / "what-changed.html").write_text("<html><head></head></html>")
+    result = subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", injection],
+        env={"PATH": os.environ["PATH"], "tmp": str(tmp_path), "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "noindex" in (preview / "what-changed.html").read_text()
+    assert (images / "s1.png").read_bytes() == b"PNG"
 
 
 @pytest.mark.parametrize("site_subdir", ["", "examples/workspace"])

@@ -379,14 +379,15 @@ jobs:
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
             "${render_decks[@]}" \
               && [ -s "$tmpout" ]; then
-            if [ -n "$deckstage" ]; then
-              # Text fallback may succeed without writing an image directory.
-              mkdir -p "$deckstage"
+            if [ -n "$deckstage" ] && [ -n "$(find "$deckstage" -type f -print -quit 2>/dev/null)" ]; then
               if [ -e _site/what-changed-decks ] || [ -L _site/what-changed-decks ]; then
                 echo "::warning::Replacing generated deck-review images in what-changed-decks"
               fi
               rm -rf _site/what-changed-decks
               mv "$deckstage" _site/what-changed-decks
+            elif [ -n "$deckstage" ]; then
+              # A text-only result wrote no images: leave the site's own folder alone.
+              rm -rf "$deckstage"
             fi
             mv "$tmpout" _site/what-changed.html
           else
@@ -501,7 +502,7 @@ jobs:
             # a path-scoped robots.txt (only the host-root one is honored), so
             # inject into the document head once: embedded Reveal scripts also
             # contain <head> strings, which must remain byte-for-byte unchanged.
-            find "$tmp/pr-preview/pr-$PR_NUMBER" -name '*.html' -print0 \
+            find "$tmp/pr-preview/pr-$PR_NUMBER" -type f -name '*.html' -print0 \
               | xargs -0 sed -i '0,/<head>/s#<head>#<head><meta name="robots" content="noindex, nofollow">#'
           fi
 

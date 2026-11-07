@@ -1610,6 +1610,14 @@ def load_deck_review():
     return module
 
 
+def deck_image_dir(rel):
+    """Image folder for a deck page: `slides/x/slides.html` -> `slides/x/slides`.
+
+    A folder named `*.html` breaks tools that treat such paths as files
+    (e.g. the preview deploy's noindex `sed`)."""
+    return rel[: -len(".html")] if rel.endswith(".html") else rel + "-images"
+
+
 class DeckRenderer:
     """Lazily starts one browser for every deck on the page."""
 
@@ -1625,6 +1633,7 @@ class DeckRenderer:
             self.failed or not new
         ):  # failed launch or a removed deck keeps the text diff
             return False
+        img_rel = deck_image_dir(rel)
         try:
             if self.renderer is None:
                 try:
@@ -1632,11 +1641,11 @@ class DeckRenderer:
                 except Exception:
                     self.failed = True
                     raise
-            sub = quote(rel, safe="/")
+            sub = quote(img_rel, safe="/")
             body = self.module.review(
                 rel,
                 link,
-                os.path.join(self.img_root, rel),
+                os.path.join(self.img_root, img_rel),
                 f"{self.img_url}/{sub}",
                 old,
                 new,
@@ -1644,7 +1653,7 @@ class DeckRenderer:
                 self.renderer,
             )
         except Exception as exc:  # noqa: BLE001
-            shutil.rmtree(os.path.join(self.img_root, rel), ignore_errors=True)
+            shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
             print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
             return False
         finally:

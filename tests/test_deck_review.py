@@ -232,7 +232,7 @@ def test_failed_browser_launch_is_not_retried_and_cleans_partial_images(tmp_path
         raise RuntimeError("no browser")
 
     calls = []
-    partial = tmp_path / "slides.html"
+    partial = tmp_path / "slides"
     partial.mkdir()
     (partial / "partial.png").touch()
     decks = what_changed.DeckRenderer(
@@ -615,6 +615,36 @@ def test_release_deck_closes_only_its_cached_documents():
     after.close.assert_called_once()
     other.close.assert_not_called()
     assert renderer._pages == {("new", "two.html"): other}
+
+
+def test_deck_image_folders_are_not_named_like_html_pages(tmp_path):
+    """The preview deploy hands every `*.html` path to `sed`; image folders must not match."""
+    from types import SimpleNamespace
+
+    seen = []
+
+    def capture(rel, link, img_dir, img_url, *args):
+        seen.append((img_dir, img_url))
+        return "<div></div>"
+
+    decks = what_changed.DeckRenderer(
+        SimpleNamespace(
+            Renderer=lambda *a: SimpleNamespace(release_deck=print), review=capture
+        ),
+        "old",
+        "new",
+        str(tmp_path),
+        "what-changed-decks",
+    )
+    decks.review("slides/attention/slides.html", "x", [], _slides("One"), {})
+    assert seen == [
+        (
+            str(tmp_path / "slides/attention/slides"),
+            "what-changed-decks/slides/attention/slides",
+        )
+    ]
+    assert what_changed.deck_image_dir("talk.html") == "talk"
+    assert not what_changed.deck_image_dir("odd").endswith(".html")
 
 
 @pytest.mark.parametrize("failed", [False, True])

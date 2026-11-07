@@ -2,8 +2,11 @@
 
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -14,6 +17,30 @@ spec = importlib.util.spec_from_file_location(
 )
 review = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(review)
+
+
+def deploy_preview(site):
+    """Run the shared workflow's PR-preview noindex step over a built site."""
+    lines = (
+        (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text().splitlines()
+    )
+    start = next(
+        i
+        for i, line in enumerate(lines)
+        if 'find "$tmp/pr-preview/pr-$PR_NUMBER"' in line
+    )
+    injection = "\n".join(line.strip() for line in lines[start : start + 2])
+    with tempfile.TemporaryDirectory() as tmp:
+        preview = Path(tmp, "pr-preview/pr-1")
+        shutil.copytree(site, preview, symlinks=True)
+        result = subprocess.run(
+            ["bash", "-eu", "-o", "pipefail", "-c", injection],
+            env={"PATH": os.environ["PATH"], "tmp": tmp, "PR_NUMBER": "1"},
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "noindex" in (preview / "what-changed.html").read_text()
 
 
 def check(project, artifacts):
@@ -49,7 +76,11 @@ def check(project, artifacts):
     assert "slides as text" not in result.stderr, result.stderr
     site = project / "_site"
     assert 'class="deck-review"' in (site / "what-changed.html").read_text()
-    assert list((site / "what-changed-assets/what-changed-decks").rglob("*.png"))
+    images = site / "what-changed-assets/what-changed-decks"
+    assert list(images.rglob("*.png"))
+    # A folder named *.html is handed to the deploy's noindex sed as a file.
+    assert not [p for p in images.rglob("*.html") if p.is_dir()]
+    deploy_preview(site)
     server = review._serve(str(site))
     try:
         with sync_playwright() as pw:
