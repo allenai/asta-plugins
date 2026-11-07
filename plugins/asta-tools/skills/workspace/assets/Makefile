@@ -129,8 +129,22 @@ workspace-assets:
 preview: workspace-assets
 	quarto preview --no-browser
 
+# Optional output override for callers that must leave the preview's _site alone,
+# and an optional page list for callers that need only some pages rendered.
+ASTA_WORKSPACE_RENDER_OUTPUT ?=
+ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets
-	quarto render
+	set -eu; \
+	set -f; \
+	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
+	if [ "$$#" -eq 0 ]; then \
+		quarto render $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+	else \
+		for page do \
+			case "$$page" in /*|./*|../*) ;; *) page=./$$page;; esac; \
+			quarto render "$$page" --no-clean $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+		done; \
+	fi
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new

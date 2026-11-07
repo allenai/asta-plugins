@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Managed workspaces provide `make what-changed` for local branch comparisons
+  at `/what-changed.html` in the existing preview. Page-only edits render just
+  the changed pages when both versions support page selection and Quarto lists
+  them as project inputs; excluded files and other changes
+  and `WHAT_CHANGED_FULL=1` render both sites. Either way the page keeps the
+  site's theme. Base discovery uses local Git
+  history, with `git fetch origin` optional for a fresher base. The target
+  rejects incompatible output directories and render recipes before rendering
+  and fails if either version lacks project configuration or the current render
+  produces no HTML. It checks the current Quarto invocation's output override
+  and retains freshly rendered theme assets separately from live preview files.
+  Previous comparison pages are excluded from theme selection even without a
+  generator marker, and dry runs create no output or worktrees.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):

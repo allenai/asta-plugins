@@ -7,7 +7,7 @@ PYTHON ?= python3
 ASTA_WORKSPACE_VIEWERS ?= 1
 workspace_script = $(or $(firstword $(wildcard scripts/$(1) $(ASTA_WORKSPACE_SCRIPTS)/$(1))),$(error Missing $(1): update the Asta CLI and run 'asta workspace sync --refresh' or add scripts/$(1) to customize it))
 
-.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready workspace-viewers
+.PHONY: preview render clean dev deployed-url check workspace-shared-check workspace-assets preview-baseline preview-ready workspace-viewers what-changed
 
 # The project Makefile passes its selected workflow ref to the evidence fetch.
 # Standalone use can set ASTA_PLUGINS_REF or resolve the latest release tag.
@@ -166,8 +166,156 @@ workspace-viewers:
 preview: workspace-assets workspace-viewers
 	quarto preview --no-browser
 
+# Optional output override for callers that must leave the preview's _site alone,
+# and an optional page list for callers that need only some pages rendered.
+ASTA_WORKSPACE_RENDER_OUTPUT ?=
+ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
-	quarto render
+	set -eu; \
+	set -f; \
+	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
+	if [ "$$#" -eq 0 ]; then \
+		quarto render $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+	else \
+		for page do \
+			case "$$page" in /*|./*|../*) ;; *) page=./$$page;; esac; \
+			quarto render "$$page" --no-clean $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),--output-dir '$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_OUTPUT))'); \
+		done; \
+	fi
+
+# Compare the branch base with the working tree without rendering over the
+# preview's _site/. Publish the comparison and its supporting render assets there. Older plain
+# Quarto render recipes keep their prerequisites and get a temporary CLI adapter
+# for page selection; custom recipes retain the full-site fallback.
+WHAT_CHANGED_BASE ?=
+WHAT_CHANGED_FULL ?=
+what-changed:
+	@set -eu; \
+	case "$${MAKEFLAGS%% *}" in --*) ;; *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac; \
+	base='$(subst ','"'"',$(value WHAT_CHANGED_BASE))'; \
+	source=$$base; \
+	if [ -z "$$base" ]; then \
+		upstream=$$(git symbolic-ref -q refs/remotes/origin/HEAD || true); \
+		if [ -n "$$upstream" ]; then \
+			base=$$(git merge-base HEAD "$$upstream" 2>/dev/null) || base=; \
+			source=$$upstream; \
+		fi; \
+		if [ -z "$$base" ]; then \
+			configured=$$(git config --get init.defaultBranch || true); \
+			for branch in "$$configured" main master trunk; do \
+				[ -n "$$branch" ] || continue; \
+				source=refs/heads/$$branch; \
+				base=$$(git merge-base HEAD "$$source" 2>/dev/null) && break || base=; \
+			done; \
+		fi; \
+	fi; \
+	[ -n "$$base" ] || { echo "what-changed: no base branch found; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+	base=$$(git rev-parse --verify --end-of-options "$$base^{commit}") || { echo "what-changed: invalid base; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+	label=$$(git rev-parse --short "$$base"); \
+	prefix=$$(git rev-parse --show-prefix); \
+	echo "what-changed: base $$source ($$base); running its make render" >&2; \
+	tmp=; current=; \
+	cleanup() { \
+		status=$$?; trap - 0; trap '' 1 2 15; \
+		[ -z "$$current" ] || rm -rf "$$current"; \
+		if [ -n "$$tmp" ] && [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
+			echo "what-changed: cleanup failed; remove the worktree at $$tmp/base manually" >&2; exit 1; \
+		fi; \
+		[ -z "$$tmp" ] || rm -rf "$$tmp"; exit "$$status"; \
+	}; \
+	trap cleanup 0; \
+	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
+	tmp=$$(mktemp -d); \
+	current_probe=$$($(MAKE) -n render ASTA_WORKSPACE_RENDER_OUTPUT=asta-what-changed-output-probe ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-page-probe.qmd 2>/dev/null) || current_probe=; \
+	printf '%s\n' "$$current_probe" | grep -q asta-what-changed-output-probe || { \
+		echo "what-changed: current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }; \
+	git worktree add -q --detach "$$tmp/base" "$$base"; \
+	dir="$$tmp/base/$$prefix"; \
+	for version in current base; do \
+		project=.; [ "$$version" != base ] || project=$$dir; \
+		if [ ! -f "$$project/_quarto.yml" ] && [ ! -f "$$project/_quarto.yaml" ]; then \
+			echo "what-changed: missing Quarto project configuration at $$project; both versions must define a site with project.output-dir=_site" >&2; exit 1; \
+		fi; \
+		quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
+		$(PYTHON) -c 'import json, pathlib, sys; data = json.load(open(sys.argv[1])); site = data.get("config", {}).get("project", {}).get("output-dir"); site_ok = isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",); root = pathlib.Path(sys.argv[2]).resolve(); inputs = data.get("files", {}).get("input", []); paths = [(root / p).resolve() for p in inputs]; print("\n".join(str(p.relative_to(root)) for p in paths if p.is_relative_to(root))); sys.exit(0 if site_ok else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project" > "$$tmp/$$version-inputs"; \
+	done; \
+	files=; basefiles=; partial=; legacy=; \
+	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
+		(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u) > "$$tmp/changed"; \
+		if [ -s "$$tmp/changed" ]; then \
+			partial=1; \
+			while IFS= read -r path; do \
+				case "$$path" in "$$prefix"*) rel=$${path#"$$prefix"};; *) partial=; break;; esac; \
+				if printf '%s\n' "$$rel" | grep -q '[^A-Za-z0-9._/+@-]'; then partial=; break; fi; \
+				case "/$$rel" in */_*|*/.*) partial=; break;; esac; \
+				case "$$rel" in *.qmd|*.md|*.ipynb|*.Rmd) ;; *) partial=; break;; esac; \
+				[ -f "$$rel" ] || { partial=; break; }; \
+				grep -Fxq -- "$$rel" "$$tmp/current-inputs" || { partial=; break; }; \
+				files="$$files ./$$rel"; \
+				if [ -f "$$dir/$$rel" ]; then \
+					grep -Fxq -- "$$rel" "$$tmp/base-inputs" || { partial=; break; }; \
+					basefiles="$$basefiles ./$$rel"; \
+				fi; \
+			done < "$$tmp/changed"; \
+		fi; \
+		if [ -n "$$partial" ]; then \
+			printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
+		fi; \
+		if [ -n "$$partial" ]; then \
+			probe=$$($(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null) || probe=; \
+			if printf '%s\n' "$$probe" | grep -q asta-what-changed-probe; then :; \
+			elif printf '%s\n' "$$probe" | grep -Eq '^[[:space:]]*quarto render[[:space:]]*$$'; then legacy=1; \
+			else partial=; fi; \
+		fi; \
+	fi; \
+	mkdir -p .asta/cache; \
+	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
+	quarto=$$(command -v quarto); mkdir "$$tmp/current-bin"; \
+	printf '%s\n' '#!/bin/sh' 'set -eu' \
+		'if [ "$${1:-}" = render ]; then' \
+		'  found=; previous=; for argument do' \
+		'    if [ "$$previous" = --output-dir ]; then found=$$argument; fi' \
+		'    previous=$$argument' '  done' \
+		'  [ "$$found" = "$$ASTA_WHAT_CHANGED_OUTPUT" ] || { echo "what-changed: current quarto render must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }' \
+		'fi' 'exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"' > "$$tmp/current-bin/quarto"; \
+	chmod +x "$$tmp/current-bin/quarto"; \
+	current_render() { \
+		PATH="$$tmp/current-bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_OUTPUT="$$current" \
+			$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$1" >&2; \
+	}; \
+	if [ -n "$$partial" ]; then \
+		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
+		mkdir -p "$$dir/_site"; \
+		if [ -n "$$legacy" ]; then \
+			mkdir "$$tmp/bin"; \
+			printf '%s\n' '#!/bin/sh' 'set -eu' \
+				'if [ "$${1:-}" != render ]; then exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"; fi' \
+				'shift' 'for page in $$ASTA_WHAT_CHANGED_PAGES; do' \
+				'  "$$ASTA_WHAT_CHANGED_QUARTO" render "$$page" --no-clean "$$@"' 'done' > "$$tmp/bin/quarto"; \
+			chmod +x "$$tmp/bin/quarto"; \
+		fi; \
+		if [ -n "$$basefiles" ]; then \
+			if [ -n "$$legacy" ]; then \
+				PATH="$$tmp/bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_PAGES="$$basefiles" \
+					$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2; \
+			else $(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES="$$basefiles" >&2; fi \
+				|| { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+		fi; \
+		current_render "$$files"; \
+	else \
+		$(MAKE) -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES= >&2 || { echo "what-changed: base render failed; restore its required inputs or choose WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
+		current_render ""; \
+	fi; \
+	find "$$current" -type f -name '*.html' -print -quit | grep -q . || { \
+		echo "what-changed: current render produced no HTML in the temporary output; check the render recipe and HTML format" >&2; exit 1; }; \
+	mkdir -p _site; \
+	theme=; [ -z "$$partial" ] || theme="--theme-root=_site"; \
+	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
+		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/; \
+	rm -rf _site/what-changed-assets; \
+	mv "$$current" _site/what-changed-assets; current=; \
+	mv "$$tmp/what-changed.html" _site/what-changed.html; \
+	echo "what-changed: wrote _site/what-changed.html; open /what-changed.html in make preview (rerun after edits or a preview rebuild)"
 
 # Run the same quality gates CI runs, in one place so local and CI can't
 # drift. CI's docs workflow calls this target — when a project grows a new
