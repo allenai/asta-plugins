@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- A workspace site in a subfolder uses the repository root's `docs.yml` when
+  its `site-dir` names the site. Sync and pin moves share that single workflow,
+  including paths with spaces. Cached builds validate selection offline without
+  moving pins and explain how to upgrade a missing or older CLI. Sync preserves
+  concurrent workflow edits and discards conflicting cached rules.
+  **Validation compatibility:** all selected workflows, including root-level
+  sites, must now be valid single-document YAML with unique relevant mapping
+  keys and a literal workspace source on one line. Subfolder roots require
+  exactly one workspace job with an explicit `site-dir` input; YAML merge keys
+  are not expanded. Root read errors and uncertain selection report errors
+  instead of silently using a local workflow. See the workspace developer guide
+  for supported YAML forms and CLI installation guidance.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):
