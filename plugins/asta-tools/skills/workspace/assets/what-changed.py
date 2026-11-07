@@ -666,19 +666,19 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None, paper_dirs=()):
+def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
-    Skips any page that is itself a "What changed" artifact — matched by output
-    reserved root filename, exact output path, or the generator's
-    self-identifying marker — so the generator never diffs its own output while
-    preserving a legitimate same-named page in another directory. Paper output
+    Skips generated "What changed" artifacts by exact output path or the
+    generator's self-identifying marker. Local callers also reserve the root
+    comparison filename and asset directory; other callers preserve legitimate
+    pages with those names. Paper output
     stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, dirs, files in os.walk(root):
-        if os.path.abspath(dirpath) == os.path.abspath(root):
+        if reserved_local_output and os.path.abspath(dirpath) == os.path.abspath(root):
             # Local comparisons retain their rendered assets here. They are
             # supporting output, never another set of source pages to compare.
             dirs[:] = [name for name in dirs if name != "what-changed-assets"]
@@ -1549,16 +1549,21 @@ def prefix_theme_urls(css, prefix):
     src attributes and bare-string @import rules are not rewritten.
     """
 
-    def prefixed(url):
-        value = html.unescape(url)
+    def prefixed(url, attribute=False):
+        # HTML attributes decode entities; <style> is raw text. Preserve CSS
+        # ampersands (including literal entity-looking strings) byte for byte.
+        value = html.unescape(url) if attribute else url
         parsed = urlsplit(value)
         if parsed.scheme or parsed.netloc or not parsed.path:
             return url
-        return html.escape(prefix.rstrip("/") + "/" + value.lstrip("/"), quote=True)
+        value = prefix.rstrip("/") + "/" + value.lstrip("/")
+        return html.escape(value, quote=True) if attribute else value
 
     css = re.sub(
         r"""(?i)(\bhref\s*=\s*)(["'])([^"']*)\2""",
-        lambda match: f"{match[1]}{match[2]}{prefixed(match[3])}{match[2]}",
+        lambda match: (
+            f"{match[1]}{match[2]}{prefixed(match[3], attribute=True)}{match[2]}"
+        ),
         css,
     )
     return re.sub(
@@ -1576,6 +1581,7 @@ def build(
     out_path=None,
     theme_root=None,
     theme_url_prefix="",
+    reserved_local_output=False,
 ):
     sections = []
     toc = []
@@ -1587,8 +1593,8 @@ def build(
                 paper_dirs.append(
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
-    old_pages = list_pages(old_root, out_path, paper_dirs)
-    new_pages = list_pages(new_root, out_path, paper_dirs)
+    old_pages = list_pages(old_root, out_path, paper_dirs, reserved_local_output)
+    new_pages = list_pages(new_root, out_path, paper_dirs, reserved_local_output)
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:
@@ -1745,7 +1751,14 @@ def build(
     # full site this page is served from as the theme source.
     template_doc, theme_css = None, None
     for root, pages in (
-        (theme_root, list_pages(theme_root, out_path) if theme_root else {}),
+        (
+            theme_root,
+            list_pages(
+                theme_root, out_path, reserved_local_output=reserved_local_output
+            )
+            if theme_root
+            else {},
+        ),
         (new_root, new_pages),
     ):
         template_doc, depth = pick_template(pages)
@@ -1818,6 +1831,11 @@ def main(argv=None):
         default="",
         help="served asset prefix when the theme comes from --new",
     )
+    ap.add_argument(
+        "--reserved-local-output",
+        action="store_true",
+        help="exclude root what-changed.html and what-changed-assets/ (local Make target)",
+    )
     args = ap.parse_args(argv)
     doc = build(
         args.old,
@@ -1827,6 +1845,7 @@ def main(argv=None):
         out_path=args.out,
         theme_root=args.theme_root,
         theme_url_prefix=args.theme_url_prefix,
+        reserved_local_output=args.reserved_local_output,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)

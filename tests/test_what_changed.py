@@ -553,6 +553,7 @@ def test_previous_comparison_cannot_supply_the_partial_render_theme(tmp_path, le
         "Local comparison",
         out_path=tmp_path / "temporary/what-changed.html",
         theme_root=site,
+        reserved_local_output=True,
     )
     assert 'href="site_libs/site-theme.css"' in result
     assert ".stale-comparison" not in result
@@ -1171,4 +1172,38 @@ def test_retained_render_is_excluded_from_page_and_theme_discovery(tmp_path):
     assets = tmp_path / "what-changed-assets"
     assets.mkdir()
     (assets / "index.html").write_text("<main>Prior comparison render</main>")
-    assert list(WHAT_CHANGED.list_pages(tmp_path)) == ["index.html"]
+    assert list(WHAT_CHANGED.list_pages(tmp_path, reserved_local_output=True)) == [
+        "index.html"
+    ]
+
+
+def test_nonlocal_comparison_preserves_pages_with_local_reserved_names(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    (new / "what-changed-assets").mkdir(parents=True)
+    (new / "what-changed.html").write_text("<main>A legitimate site page.</main>")
+    (new / "what-changed-assets/details.html").write_text(
+        "<main>Legitimate project details.</main>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR comparison")
+
+    assert "A legitimate site page" in result
+    assert "Legitimate project details" in result
+
+
+@pytest.mark.parametrize("url", ["image.png?x=1&y=2", "image.png?x=1&amp;y=2"])
+def test_retained_inline_css_preserves_raw_url_ampersands(tmp_path, url):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        f'<head><style>body {{ background: url("{url}"); }}</style></head>'
+        "<main>A new finding.</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix="what-changed-assets/"
+    )
+
+    assert f'url("what-changed-assets/{url}")' in result

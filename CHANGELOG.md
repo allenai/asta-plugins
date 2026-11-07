@@ -5,8 +5,8 @@
 - Managed workspaces provide `make what-changed` for local branch comparisons
   at `/what-changed.html` in the existing preview. Page-only edits render just
   the changed pages when both versions support page selection and Quarto lists
-  them as project inputs; excluded files and other changes
-  and `WHAT_CHANGED_FULL=1` render both sites. Either way the page keeps the
+  them as project inputs. Other changes, excluded inputs, or
+  `WHAT_CHANGED_FULL=1` render both full sites. Either way the page keeps the
   site's theme. Base discovery uses local Git
   history, with `git fetch origin` optional for a fresher base. The target
   rejects incompatible output directories and render recipes before rendering
