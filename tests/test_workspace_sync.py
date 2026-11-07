@@ -1012,10 +1012,20 @@ def test_shared_workflow_installs_cli_from_its_own_commit_for_all_projects() -> 
     assert len(installs) == 1
     install = installs[0]
     assert "if" not in install
-    assert install["run"].splitlines() == [
-        'uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"',
-        'uv tool dir --bin >> "$GITHUB_PATH"',
+    # A failed install warns instead of failing the job, so the deploy still runs.
+    lines = [
+        line.strip()
+        for line in install["run"].splitlines()
+        if line.strip() and not line.strip().startswith("#")
     ]
+    assert lines[0] == (
+        'if uv tool install "git+https://github.com/${{ job.workflow_repository }}'
+        '.git@${{ job.workflow_sha }}"; then'
+    )
+    assert lines[1] == 'uv tool dir --bin >> "$GITHUB_PATH"'
+    assert lines[2] == "else"
+    assert lines[3].startswith('echo "::warning::')
+    assert lines[4:] == ["fi"]
     assert "job.workflow_sha" in workflow
     assert "ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}" in workflow
     assert (
