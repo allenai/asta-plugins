@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import textwrap
 import tomllib
@@ -13,6 +14,24 @@ import yaml
 
 WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
+
+
+@pytest.fixture
+def checkout_asta(tmp_path: Path, monkeypatch):
+    # These workflow blocks run from temporary projects, outside `uv run`'s
+    # environment. Never resolve a stale CLI preinstalled in the CI image.
+    bin_dir = tmp_path / "checkout-bin"
+    bin_dir.mkdir()
+    launcher = bin_dir / "asta"
+    launcher.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(Path('src').resolve())!r})\n"
+        "from asta.cli import cli\n"
+        "cli()\n"
+    )
+    launcher.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
 
 
 def test_site_artifacts_keep_runner_builds_separate():
@@ -180,6 +199,7 @@ def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
 
 def test_what_changed_uses_managed_generator_without_project_copy(
     tmp_path: Path,
+    checkout_asta,
 ) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
@@ -205,16 +225,6 @@ def test_what_changed_uses_managed_generator_without_project_copy(
         check=True,
         capture_output=True,
     )
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    curl = bin_dir / "curl"
-    curl.write_text(
-        "#!/bin/sh\n"
-        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
-        '[ "$#" -ge 2 ] || exit 2\n'
-        'cp "$MANAGED_SOURCE" "$2"\n'
-    )
-    curl.chmod(0o755)
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
     script = script.replace("${{ job.workflow_sha }}", "source-commit")
     result = subprocess.run(
@@ -222,8 +232,6 @@ def test_what_changed_uses_managed_generator_without_project_copy(
         cwd=project,
         env={
             **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "MANAGED_SOURCE": str((WORKSPACE_ASSETS / "what-changed.py").resolve()),
             "PR_NUMBER": "8",
         },
         capture_output=True,
@@ -1719,6 +1727,7 @@ def test_paper_container_keeps_checkout_history_for_sites_in_subdirectories(
 
 def test_what_changed_reads_full_baseline_for_site_in_subfolder(
     tmp_path: Path,
+    checkout_asta,
 ) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
