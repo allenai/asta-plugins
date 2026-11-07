@@ -135,8 +135,12 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Install Asta CLI at the workflow revision
         run: |
-          uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
-          uv tool dir --bin >> "$GITHUB_PATH"
+          # Only What changed needs the CLI; a failed install must not block the deploy.
+          if uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"; then
+            uv tool dir --bin >> "$GITHUB_PATH"
+          else
+            echo "::warning::Could not install the asta CLI; the PR preview will have no What changed page"
+          fi
 
       # Project script overrides are optional. Warn on drift without rejecting
       # intentional customizations.
@@ -342,8 +346,16 @@ jobs:
               exit 0
             fi
           fi
-          asta workspace what-changed --before-site "$baseline" --after-site _site \
-            --title "PR $PR_NUMBER · $baseline_label"
+          if [ -e _site/what-changed.html ]; then
+            echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
+          fi
+          if ! asta workspace what-changed --before-site "$baseline" --after-site _site \
+              --title "PR $PR_NUMBER · $baseline_label" 2> >(tee "$tmpdir/stderr" >&2); then
+            echo "::warning::What changed page generation failed; preview still published"
+          fi
+          if grep -qi 'slides shown as text' "$tmpdir/stderr" 2>/dev/null; then
+            echo "::warning::What changed shows slides as text: Chromium could not start on this runner; see this step's log"
+          fi
 
       - name: Check project preview artifacts
         if: inputs.artifact-command != ''

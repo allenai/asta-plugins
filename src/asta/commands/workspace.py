@@ -1495,10 +1495,12 @@ def what_changed(
 ) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
-    Renders REF and a private working-tree copy with the project's own 'make render' and
-    compares them with the what-changed.py the PR preview uses. The page is
-    written to a copy of the rendered site under .asta/cache/what-changed/,
-    which this command owns and replaces on each run. A running preview links to this snapshot.
+    Renders REF and a private working-tree copy with the project's own 'make
+    render' (only changed pages when possible, themed from a running preview's
+    _site/) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    .asta/cache/what-changed/, which this command owns and replaces on each run.
+    A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
+    replacing any project page of that name until the next render.
     Requires Git 2.30 or newer. Choose a trusted REF: its
     build code runs locally. The baseline contains only committed files.
     """
