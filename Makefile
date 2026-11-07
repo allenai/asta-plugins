@@ -115,7 +115,7 @@ push-version-tag:
 	git tag v$$VERSION && \
 	git push origin v$$VERSION && \
 	echo "Pushed tag v$$VERSION" && \
-	{ scripts/refresh-demo-pr.sh || echo "warning: the demo PR was not refreshed; run scripts/refresh-demo-pr.sh" >&2; }
+	{ scripts/refresh-demo-pr.sh "$$SHA" || echo "warning: the demo PR was not refreshed; run scripts/refresh-demo-pr.sh $$SHA" >&2; }
 
 # Show current version
 version:
