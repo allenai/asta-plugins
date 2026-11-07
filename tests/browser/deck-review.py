@@ -347,7 +347,11 @@ def check_selectable_text(page):
           selection.addRange(range); const text = selection.toString();
           selection.removeAllRanges(); return text;
         }""")
-        assert selected == text, f"selected={selected!r}; expected={text!r}"
+        # Chromium omits the selection's terminal line break. Internal spaces
+        # and line breaks must still match the captured word stream exactly.
+        assert selected.removesuffix("\n") == text.removesuffix("\n"), (
+            f"selected={selected!r}; expected={text!r}"
+        )
 
 
 def check(site, artifacts):
