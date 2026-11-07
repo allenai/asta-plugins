@@ -281,7 +281,9 @@ def test_macos_sandbox_launch_failure_keeps_text_diff(tmp_path, monkeypatch, cap
     assert "<ins" in page and "<del" in page
     assert "Old" in page and "New" in page
     assert 'class="deck-review"' not in page
-    assert "slides as text (Mach port permission denied)" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "the browser couldn't start here, possibly a sandbox" in err
+    assert "run outside it to see rendered slides" in err
 
 
 def test_output_images_are_relative_to_output_page_and_stale_files_removed(

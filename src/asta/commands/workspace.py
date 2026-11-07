@@ -1299,16 +1299,28 @@ def _comparison_python(decks):
     if not decks:
         return [sys.executable], env
     command = ["uv", "run", "--no-project", "--with", "playwright==1.64.1", "python"]
+    relative = env.get("UV_CACHE_DIR") and not Path(env["UV_CACHE_DIR"]).is_absolute()
+    if relative:
+        # Resolved once, so every uv call below shares one cache.
+        env["UV_CACHE_DIR"] = str(Path(env["UV_CACHE_DIR"]).resolve())
     try:
-        cache = subprocess.run(
-            ["uv", "cache", "dir"], capture_output=True, text=True, check=True
-        ).stdout.strip()
+        if relative:
+            # A relative cache is per project; keep one Chromium for all of them.
+            cache = tempfile.gettempdir()
+        else:
+            cache = subprocess.run(
+                ["uv", "cache", "dir"], capture_output=True, text=True, check=True
+            ).stdout.strip()
         env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path(cache) / "asta-chromium"))
         subprocess.run(
             [*command, "-m", "playwright", "install", "chromium"], env=env, check=True
         )
     except (OSError, subprocess.CalledProcessError) as exc:
-        click.echo(f"Slide images unavailable; showing the text diff: {exc}", err=True)
+        click.echo(
+            "Slides shown as text: the browser couldn't be set up here, possibly a"
+            f" sandbox; run outside it to see rendered slides ({exc})",
+            err=True,
+        )
         return [sys.executable], env
     return command, env
 
@@ -1676,7 +1688,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             project / "_site/what-changed.html",
             b'<meta http-equiv="refresh" content="0;url=what-changed-snapshot/what-changed.html"><a href="what-changed-snapshot/what-changed.html">What changed</a>',
         )
-        click.echo(f"Live preview: {preview_url(os.environ)}what-changed.html")
+        if recorded_preview(project):
+            click.echo(f"Live preview: {preview_url(os.environ)}what-changed.html")
     if (project / "_site").is_dir():
         # The independent snapshot remains available after a preview rebuild.
         click.echo(

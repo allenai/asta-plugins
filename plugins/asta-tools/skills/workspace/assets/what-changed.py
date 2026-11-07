@@ -1713,6 +1713,12 @@ def deck_image_dir(rel):
     return rel[: -len(".html")] if rel.endswith(".html") else rel + "-images"
 
 
+BROWSER_UNAVAILABLE = (
+    "slides shown as text: the browser couldn't start here, possibly a sandbox;"
+    " run outside it to see rendered slides"
+)
+
+
 class DeckRenderer:
     """Lazily starts one browser for every deck on the page."""
 
@@ -1729,13 +1735,15 @@ class DeckRenderer:
         ):  # failed launch or a removed deck keeps the text diff
             return False
         img_rel = deck_image_dir(rel)
+        if self.renderer is None:
+            try:
+                self.renderer = self.module.Renderer(self.old_root, self.new_root)
+            except Exception as exc:  # noqa: BLE001
+                self.failed = True
+                shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
+                print(f"what-changed: {BROWSER_UNAVAILABLE} ({exc})", file=sys.stderr)
+                return False
         try:
-            if self.renderer is None:
-                try:
-                    self.renderer = self.module.Renderer(self.old_root, self.new_root)
-                except Exception:
-                    self.failed = True
-                    raise
             sub = quote(img_rel, safe="/")
             body = self.module.review(
                 rel,

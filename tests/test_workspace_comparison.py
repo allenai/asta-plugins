@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,27 @@ def test_deck_browser_is_pinned_and_cached(tmp_path, monkeypatch):
     assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "asta-chromium")
 
 
+def test_relative_uv_cache_is_resolved_once_and_browser_shared(tmp_path, monkeypatch):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("UV_CACHE_DIR", ".uv-cache")
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr(subprocess, "run", run)
+    _, env = module._comparison_python(True)
+    assert env["UV_CACHE_DIR"] == str(tmp_path / ".uv-cache")
+    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(
+        Path(tempfile.gettempdir()) / "asta-chromium"
+    )
+    assert all(
+        kwargs["env"]["UV_CACHE_DIR"] == env["UV_CACHE_DIR"] for _, kwargs in calls
+    )
+
+
 def test_unavailable_browser_dependencies_fall_back(monkeypatch, capsys):
     def fail(*args, **kwargs):
         raise OSError("cache unavailable")
@@ -77,7 +99,7 @@ def test_unavailable_browser_dependencies_fall_back(monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", fail)
     command, _ = module._comparison_python(True)
     assert command == [sys.executable]
-    assert "showing the text diff" in capsys.readouterr().err
+    assert "run outside it to see rendered slides" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
