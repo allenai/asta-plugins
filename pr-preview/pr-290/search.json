@@ -1,0 +1,80 @@
+[
+  {
+    "objectID": "slides/attention/index.html",
+    "href": "slides/attention/index.html",
+    "title": "Attention in sequence models",
+    "section": "",
+    "text": "⤢\nAttention in sequence models\nWritten in slides/attention/slides.qmd.",
+    "crumbs": [
+      "Slides: Attention in sequence models"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html",
+    "href": "lit-review/index.html",
+    "title": "A small literature review",
+    "section": "",
+    "text": "This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the workspace guide). This review cites the project-root references.bib. The separate paper/main.tex is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#example-claim",
+    "href": "lit-review/index.html#example-claim",
+    "title": "A small literature review",
+    "section": "Example claim",
+    "text": "Example claim\nVaswani and colleagues proposed a Transformer architecture based on attention mechanisms“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms”— (Vaswani et al. 2017, abstract) (Vaswani et al. 2017). The highlighted claim exposes its source quote on hover or keyboard focus.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Attention in sequence models",
+    "section": "",
+    "text": "A short project on how attention replaced recurrence in sequence models. It includes:\n\nA literature review of the work it builds on, citing the project’s bibliography.\nPresentation slides for a short talk on the same question.\nThe paper, written in LaTeX with co-authors in Overleaf.\n\nAn example workspace for the Asta workspace skill, built and published from main; see its README for the demo and how to start your own.",
+    "crumbs": [
+      "Attention in sequence models"
+    ]
+  },
+  {
+    "objectID": "paper/html/index.html",
+    "href": "paper/html/index.html",
+    "title": "Paper",
+    "section": "",
+    "text": "⤢\nPaper\nWritten in paper/main.tex, paired with an Overleaf project. Open it in Overleaf\n\nThis PR's changes marked\nClean\n\n\n\n\nThe paper PDF appears after the preview build.",
+    "crumbs": [
+      "Paper"
+    ]
+  },
+  {
+    "objectID": "slides/attention/slides.html#how-can-a-sequence-model-connect-distant-tokens",
+    "href": "slides/attention/slides.html#how-can-a-sequence-model-connect-distant-tokens",
+    "title": "Attention in sequence models",
+    "section": "How can a sequence model connect distant tokens?",
+    "text": "How can a sequence model connect distant tokens?\nOur workspace follows the shift from recurrence to attention.\n\nRead the literature review.\nOpen the paper."
+  },
+  {
+    "objectID": "slides/attention/slides.html#attention-weights-the-available-context",
+    "href": "slides/attention/slides.html#attention-weights-the-available-context",
+    "title": "Attention in sequence models",
+    "section": "Attention weights the available context",
+    "text": "Attention weights the available context\n\n\\operatorname{Attention}(Q,K,V) = \\operatorname{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n\nThe weights combine values for each query."
+  },
+  {
+    "objectID": "slides/attention/slides.html#follow-the-computation",
+    "href": "slides/attention/slides.html#follow-the-computation",
+    "title": "Attention in sequence models",
+    "section": "Follow the computation",
+    "text": "Follow the computation\n\nCompare a query with the available keys.\n\n\nNormalize the scores into weights.\n\n\nCombine the values using those weights."
+  },
+  {
+    "objectID": "slides/attention/slides.html#keep-the-talk-beside-its-sources",
+    "href": "slides/attention/slides.html#keep-the-talk-beside-its-sources",
+    "title": "Attention in sequence models",
+    "section": "Keep the talk beside its sources",
+    "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file.\nReview local changes with asta workspace what-changed; PR previews use the same comparison."
+  }
+]
