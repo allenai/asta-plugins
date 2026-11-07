@@ -152,6 +152,11 @@ named `asta-plugins`). Write the literal `uses:` source on one line. The job's
 expressions are not evaluated. Unrelated jobs and inputs are ignored. An
 unrelated root workflow, including a symlinked root path, leaves the site's own
 workflow as the fallback. Selected workflow paths must not contain symlinks.
+An absent root workflow also permits the local fallback; other read errors and
+non-UTF-8 content report errors. A malformed root permits fallback only when its
+complete parsed prefix proves it unrelated, including resolved aliases and job
+context. If parsing stops before the end of the file or selection is uncertain,
+fix the reported root YAML error before syncing or moving a pin.
 Discovery stops at the nearest `.git` directory or file, including submodules;
 Git environment overrides such as `GIT_DIR` and `GIT_WORK_TREE` are unsupported.
 

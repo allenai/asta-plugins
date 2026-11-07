@@ -122,6 +122,48 @@ def _workflow_source_lines(text: str, workflow: Path) -> list[tuple[int, re.Matc
     return sources
 
 
+def _unrelated_workflow_prefix(text: str, workflow: Path, site: str) -> bool:
+    """Prove an EOF-truncated root unrelated using only parsed YAML events.
+
+    Closing open collections lets the normal job parser inspect the prefix,
+    including aliases and block scalars. Never use this synthetic document to
+    select a source or edit a pin. If parsing stopped before EOF, later content
+    could still select this site, so the original validation error must stand.
+    """
+    events = []
+    endings = []
+    try:
+        for event in yaml.parse(text, Loader=yaml.BaseLoader):
+            events.append(event)
+            if isinstance(event, yaml.DocumentStartEvent):
+                endings.append(yaml.DocumentEndEvent())
+            elif isinstance(event, yaml.MappingStartEvent):
+                endings.append(yaml.MappingEndEvent())
+            elif isinstance(event, yaml.SequenceStartEvent):
+                endings.append(yaml.SequenceEndEvent())
+            elif isinstance(
+                event,
+                (yaml.DocumentEndEvent, yaml.MappingEndEvent, yaml.SequenceEndEvent),
+            ):
+                endings.pop()
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        if mark is None or mark.index != len(text):
+            return False
+        try:
+            prefix = yaml.emit([*events, *reversed(endings), yaml.StreamEndEvent()])
+            jobs = _workspace_job_lines(prefix, workflow)
+        except (yaml.YAMLError, click.ClickException):
+            return False
+        return not any(
+            directory is not None and posixpath.normpath(directory.value) == site
+            for _, directory in jobs
+        )
+    # Parsing succeeded: the validation error concerned structure (for example
+    # duplicate keys or an undefined alias), which a prefix cannot disambiguate.
+    return False
+
+
 def workflow_root(project: Path) -> Path:
     """Return the directory whose docs.yml publishes project.
 
@@ -151,29 +193,19 @@ def workflow_root(project: Path) -> Path:
         raise
     try:
         text = workflow.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except FileNotFoundError:
         return project
+    except UnicodeDecodeError as exc:
+        raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
+    except OSError as exc:
+        raise click.ClickException(f"Could not read {workflow}: {exc}") from exc
     site = project.relative_to(root).as_posix()
     try:
         job_lines = _workspace_job_lines(text, workflow)
     except click.ClickException:
-        # Keep a malformed, unrelated root from blocking the local workflow.
-        # A matching literal site input still makes its validation error relevant.
-        for line in text.splitlines():
-            if not re.match(r"^[ \t]*site-dir:", line):
-                continue
-            try:
-                entry = yaml.compose(line.lstrip(), Loader=yaml.BaseLoader)
-            except yaml.YAMLError:
-                continue
-            if isinstance(entry, yaml.MappingNode):
-                value = entry.value[0][1]
-                if (
-                    isinstance(value, yaml.ScalarNode)
-                    and posixpath.normpath(value.value) == site
-                ):
-                    raise
-        return project
+        if _unrelated_workflow_prefix(text, workflow, site):
+            return project
+        raise
     if any(
         directory is not None and posixpath.normpath(directory.value) == site
         for _, directory in job_lines

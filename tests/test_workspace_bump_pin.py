@@ -867,6 +867,218 @@ def test_unrelated_malformed_root_workflow_keeps_local_fallback(project):
     assert workspace.selected_source(site)[1] == "v0.113.0"
 
 
+@pytest.mark.parametrize("unrelated", UNRELATED_SITE_INPUTS)
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_truncated_root_uses_job_context_for_local_fallback(
+    project, monkeypatch, unrelated, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = STUB.format(ref="v0.115.0") + unrelated + "broken: [\n"
+    workflow.write_text(original)
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.115.0"))
+    (site / ".gitignore").write_text(".asta/cache/\n")
+    _git(root, "add", workspace.WORKFLOW_FILE, "site")
+    _git(root, "commit", "-q", "-m", "Local site with unrelated truncated root")
+    for name in workspace.UNATTENDED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(workspace, "load_asset", lambda *_: (b"rules", _archive({})))
+    assert workspace.selected_source(site) == ("allenai/asta-plugins", "v0.115.0")
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code == 0, result.output
+    assert "@v0.116.0" in local.read_text()
+    assert workflow.read_text() == original
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "env:\n  SITE: &path site\n"
+        + STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: *path\nbroken: [\n",
+        "env:\n  INPUTS: &inputs {site-dir: site}\n"
+        + STUB.format(ref="v0.115.0")
+        + "    with: *inputs\nbroken: [\n",
+        "env:\n  JOB: &job\n"
+        f"    uses: allenai/asta-plugins{workspace.WORKFLOW}v0.115.0\n"
+        "    with: {site-dir: site}\njobs:\n  docs: *job\nbroken: [\n",
+        # An error before a matching job leaves its meaning unknown. Do not
+        # silently choose the local workflow just because no job was parsed.
+        "broken: [\n"
+        + STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: site\n",
+        STUB.format(ref="v0.115.0") + "    with: {site-dir: site}\nbroken: [\n",
+    ],
+    ids=["site-alias", "inputs-alias", "job-alias", "unparsed-job", "flow-input"],
+)
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_malformed_root_cannot_hide_selection_behind_local_fallback(
+    project, monkeypatch, text, command
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(text)
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local_original = STUB.format(ref="v0.115.0")
+    local.write_text(local_original)
+    _git(root, "add", workspace.WORKFLOW_FILE, "site")
+    _git(root, "commit", "-q", "-m", "Malformed root with local fallback")
+    head = _git(root, "rev-parse", "HEAD")
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("must reject before fetch")
+    )
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code != 0
+    assert f"Invalid YAML in {workflow}" in result.output
+    assert workflow.read_text() == text
+    assert local.read_text() == local_original
+    assert _git(root, "rev-parse", "HEAD") == head
+    assert not (site / ".asta").exists()
+
+
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+@pytest.mark.parametrize("local_fallback", [False, True])
+@pytest.mark.parametrize("error", [PermissionError("denied"), OSError("read failed")])
+def test_root_read_errors_never_select_local_workflow(
+    project, monkeypatch, command, local_fallback, error
+):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(workflow.read_text() + "    with:\n      site-dir: site\n")
+    site = root / "site"
+    site.mkdir()
+    local = site / workspace.WORKFLOW_FILE
+    if local_fallback:
+        local.parent.mkdir(parents=True)
+        local.write_text(STUB.format(ref="v0.115.0"))
+    _git(root, "add", workspace.WORKFLOW_FILE, "site")
+    _git(root, "commit", "-q", "-m", "Root publishes subfolder site")
+    head = _git(root, "rev-parse", "HEAD")
+    original = workflow.read_bytes()
+    read_text = Path.read_text
+
+    def read(path, *args, **kwargs):
+        if path == workflow:
+            raise error
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("must reject before fetch")
+    )
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code != 0
+    assert f"Could not read {workflow}: {error}" in result.output
+    assert workflow.read_bytes() == original
+    assert _git(root, "rev-parse", "HEAD") == head
+    if local_fallback:
+        assert local.read_text() == STUB.format(ref="v0.115.0")
+    else:
+        assert not (site / ".github").exists()
+    assert not (site / ".asta").exists()
+
+
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_non_utf8_root_never_selects_local_workflow(project, monkeypatch, command):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    original = workflow.read_bytes() + b"    with:\n      site-dir: site\n# \xff\n"
+    workflow.write_bytes(original)
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.115.0"))
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code != 0
+    assert f"Workflow must be UTF-8: {workflow}" in result.output
+    assert workflow.read_bytes() == original
+    assert local.read_text() == STUB.format(ref="v0.115.0")
+    assert not (site / ".asta").exists()
+
+
+@pytest.mark.parametrize("failure", ["permission", "invalid-yaml"])
+def test_offline_selection_error_preserves_local_cache(project, monkeypatch, failure):
+    root = project("v0.115.0")
+    workflow = root / workspace.WORKFLOW_FILE
+    workflow.write_text(
+        "env:\n  SITE: &path site\n"
+        + STUB.format(ref="v0.115.0")
+        + "    with:\n      site-dir: *path\n"
+        + ("broken: [\n" if failure == "invalid-yaml" else "")
+    )
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.115.0"))
+    cache = site / ".asta/cache"
+    cache.mkdir(parents=True)
+    originals = {workflow: workflow.read_bytes(), local: local.read_bytes()}
+    for name in ("workspace.mk", "workspace.json"):
+        path = cache / name
+        path.write_text(f"cached {name}\n")
+        originals[path] = path.read_bytes()
+    read_text = Path.read_text
+
+    def read(path, *args, **kwargs):
+        if failure == "permission" and path == workflow:
+            raise PermissionError("denied")
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(
+        workspace, "load_asset", lambda *_: pytest.fail("offline check must not fetch")
+    )
+    result = CliRunner().invoke(
+        cli,
+        ["workspace", "sync", "--check-selection", "--project", str(site)],
+        catch_exceptions=False,
+    )
+    assert result.exit_code != 0
+    expected = "Could not read" if failure == "permission" else "Invalid YAML in"
+    assert f"{expected} {workflow}" in result.output
+    assert {path: path.read_bytes() for path in originals} == originals
+
+
+@pytest.mark.parametrize("command", ["sync", "bump-pin"])
+def test_missing_root_workflow_preserves_local_fallback(project, monkeypatch, command):
+    root = project("v0.115.0")
+    (root / workspace.WORKFLOW_FILE).unlink()
+    site = root / "site"
+    local = site / workspace.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(STUB.format(ref="v0.115.0"))
+    (site / ".gitignore").write_text(".asta/cache/\n")
+    _git(root, "add", workspace.WORKFLOW_FILE, "site")
+    _git(root, "commit", "-q", "-m", "Use only a local site workflow")
+    for name in workspace.UNATTENDED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(workspace_versions, "installed", lambda: "0.116.0")
+    monkeypatch.setattr(workspace, "load_asset", lambda *_: (b"rules", _archive({})))
+    assert workspace.workflow_root(site) == site
+    result = CliRunner().invoke(
+        cli, ["workspace", command, "--project", str(site)], catch_exceptions=False
+    )
+    assert result.exit_code == 0, result.output
+    assert "@v0.116.0" in local.read_text()
+    assert not (root / workspace.WORKFLOW_FILE).exists()
+
+
 @pytest.mark.parametrize(
     "relative", [".github", ".github/workflows", workspace.WORKFLOW_FILE]
 )

@@ -18,6 +18,9 @@
   **Validation compatibility:** all selected workflows, including root-level
   sites, must now be valid single-document YAML with unique relevant mapping
   keys. Previously tolerated duplicate keys or malformed YAML now report errors.
+  Root discovery reports read and encoding errors rather than choosing a local
+  workflow. Malformed-root fallback uses parsed job context and aliases, and
+  refuses fallback when the unparsed content leaves selection uncertain.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
