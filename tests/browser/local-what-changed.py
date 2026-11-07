@@ -71,7 +71,9 @@ def deploy_main(site):
         assert preview.read_text() == "keep existing preview"
         assert not (published / "stale.html").exists()
         assert 'class="deck-review"' in (published / "what-changed.html").read_text()
-        for image in site.glob("what-changed-assets/**/*.png"):
+        images = list(site.glob("what-changed-decks/**/*.png"))
+        assert images
+        for image in images:
             assert (
                 published / image.relative_to(site)
             ).read_bytes() == image.read_bytes()
@@ -112,7 +114,7 @@ def check(project, artifacts):
     assert "slides as text" not in result.stderr, result.stderr
     site = project / ".asta/cache/what-changed"
     assert 'class="deck-review"' in (site / "what-changed.html").read_text()
-    images = site / "what-changed-assets/what-changed-decks"
+    images = site / "what-changed-decks"
     assert list(images.rglob("*.png"))
     # A folder named *.html is handed to the deploy's noindex sed as a file.
     assert not [p for p in images.rglob("*.html") if p.is_dir()]
