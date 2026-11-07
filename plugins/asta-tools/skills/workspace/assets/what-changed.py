@@ -50,7 +50,9 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import sys
+from collections import Counter
 from html.parser import HTMLParser
 from urllib.parse import quote, urlsplit
 
@@ -621,10 +623,35 @@ def diff_content(old, new):
     # Align on the visible string of each token.
     ak = [t[1] for t in a]
     bk = [t[1] for t in b]
-    sm = difflib.SequenceMatcher(None, ak, bk, autojunk=False)
+    # SequenceMatcher without autojunk is quadratic; a local edit to a large
+    # page (a slide deck) only needs the span between the common ends.
+    lo = 0
+    while lo < min(len(ak), len(bk)) and ak[lo] == bk[lo]:
+        lo += 1
+    hi = 0
+    while hi < min(len(ak), len(bk)) - lo and ak[-1 - hi] == bk[-1 - hi]:
+        hi += 1
+    a_middle, b_middle = ak[lo : len(ak) - hi], bk[lo : len(bk) - hi]
+    # Distant edits can still leave a long, highly repetitive middle. Estimate
+    # candidate token matches before allowing the expensive exact matcher; its
+    # popular-token heuristic keeps those cases responsive, at the cost of
+    # coarser highlighting inside that changed span.
+    a_counts, b_counts = Counter(a_middle), Counter(b_middle)
+    candidates = sum(count * b_counts[token] for token, count in a_counts.items())
+    sm = difflib.SequenceMatcher(
+        None, a_middle, b_middle, autojunk=candidates > 1_000_000
+    )
+    opcodes = [
+        (op, i1 + lo, i2 + lo, j1 + lo, j2 + lo)
+        for op, i1, i2, j1, j2 in sm.get_opcodes()
+    ]
+    if lo:
+        opcodes.insert(0, ("equal", 0, lo, 0, lo))
+    if hi:
+        opcodes.append(("equal", len(ak) - hi, len(ak), len(bk) - hi, len(bk)))
     out = []
     changed = False
-    for op, i1, i2, j1, j2 in sm.get_opcodes():
+    for op, i1, i2, j1, j2 in opcodes:
         if op == "equal":
             out.append("".join(t[1] for t in a[i1:i2]))
         elif op == "insert":
@@ -640,18 +667,23 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None, paper_dirs=()):
+def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
-    Skips any page that is itself a "What changed" artifact — matched by output
-    exact output path (when it falls under this input root) or by the generator's
-    self-identifying marker — so the generator never diffs its own output while
-    preserving a legitimate same-named page in another directory. Paper output
+    Skips generated "What changed" artifacts by exact output path or the
+    generator's self-identifying marker. Local callers also reserve the root
+    comparison filename and asset directory; other callers preserve legitimate
+    pages with those names. Paper output
     stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
-    for dirpath, _dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
+        if reserved_local_output and os.path.abspath(dirpath) == os.path.abspath(root):
+            # Local comparisons retain their rendered assets here. They are
+            # supporting output, never another set of source pages to compare.
+            dirs[:] = [name for name in dirs if name != "what-changed-assets"]
+            files = [name for name in files if name != "what-changed.html"]
         for f in files:
             if not f.endswith(".html"):
                 continue
@@ -1154,7 +1186,44 @@ def rebase_urls(text, depth):
         return f"{attr}={quote}{url}{quote}"
 
     text = re.sub(r'(href|src)\s*=\s*(["\'])([^"\']*)\2', fix, text, flags=re.I)
-    return text
+    return rewrite_style_urls(
+        text, lambda url: url[len(prefix) :] if url.startswith(prefix) else url
+    )
+
+
+def rewrite_style_urls(text, rewrite):
+    """Rewrite CSS URLs in inline styles, preserving quoting and raw CSS text.
+
+    Tokenize comments and strings as well as url() and string-form @import so
+    apparent URLs inside comments or content strings are left alone. Quoted
+    paths can contain whitespace, parentheses, and backslash-escaped quotes.
+    """
+    string = r"""(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')"""
+    tokens = re.compile(
+        rf"(?P<comment>/\*[\s\S]*?\*/)"
+        rf"|\burl\(\s*(?P<url>{string}|(?:\\[\s\S]|[^\\\s\"'()])*)\s*\)"
+        rf"|@import\s+(?P<import>{string})"
+        rf"|{string}",
+        re.I,
+    )
+
+    def token(match):
+        group = "url" if match.group("url") is not None else "import"
+        value = match.group(group)
+        if value is None:
+            return match[0]
+        quote = value[:1] if value.startswith(('"', "'")) else ""
+        url = value[1:-1] if quote else value
+        start, end = match.span(group)
+        start -= match.start()
+        end -= match.start()
+        return match[0][:start] + quote + rewrite(url) + quote + match[0][end:]
+
+    return re.sub(
+        r"(?is)(<style\b[^>]*>)(.*?)(</style>)",
+        lambda match: match[1] + tokens.sub(token, match[2]) + match[3],
+        text,
+    )
 
 
 def page_title(doc, rel):
@@ -1172,20 +1241,41 @@ def anchor_id(rel):
     return "p-" + re.sub(r"[^a-zA-Z0-9]+", "-", rel).strip("-")
 
 
+def _is_slide_deck(doc):
+    # A site's own CSS may use a class named "reveal". Quarto reveal.js decks
+    # carry the runtime's stylesheet, which identifies the actual deck format.
+    return bool(
+        re.search(
+            r'(?is)<link\b[^>]*\bhref\s*=\s*["\'](?:[^"\']*/)?reveal(?:\.min)?\.css(?:[?#][^"\']*)?["\']',
+            doc,
+        )
+    )
+
+
 def pick_template(new_pages):
-    """Choose the shallowest rendered page to borrow the site theme from.
+    """Choose the shallowest styled site page to borrow the site theme from.
 
     A root-level page (e.g. index.html) keeps asset URLs simplest to rebase.
+    Pages without CSS cannot supply a theme and are skipped. A reveal.js deck
+    carries the deck's styling, not the site's, so it is used only when no styled
+    ordinary page exists.
     Returns (doc_html, depth) or (None, 0) if nothing suitable exists.
     """
-    if not new_pages:
-        return None, 0
-    rel = min(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r))
-    depth = rel.replace(os.sep, "/").count("/")
-    try:
-        return open(new_pages[rel], encoding="utf-8").read(), depth
-    except OSError:
-        return None, 0
+    fallback = (None, 0)
+    for rel in sorted(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r)):
+        depth = rel.replace(os.sep, "/").count("/")
+        try:
+            with open(new_pages[rel], encoding="utf-8") as f:
+                doc = f.read()
+        except OSError:
+            continue
+        if not extract_theme_css(doc, depth):
+            continue
+        if not _is_slide_deck(doc):
+            return doc, depth
+        if fallback[0] is None:
+            fallback = (doc, depth)
+    return fallback
 
 
 def paper_identity(paper_dir):
@@ -1423,22 +1513,169 @@ def match_slides(old, new):
     )
     unmatched_old = [index for index in range(len(old)) if index not in pairs.values()]
     unmatched_new = [index for index in range(len(new)) if index not in pairs]
-    matcher = difflib.SequenceMatcher(
-        None,
-        [old[i]["body"] for i in unmatched_old],
-        [new[i]["body"] for i in unmatched_new],
-        autojunk=False,
-    )
-    for operation, a, b, c, d in matcher.get_opcodes():
-        if operation in {"equal", "replace"}:
-            pairs.update(zip(unmatched_new[c:d], unmatched_old[a:b]))
+    pairs.update(_pair_similar(old, new, unmatched_old, unmatched_new))
     return pairs
 
 
-def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
+def _pair_similar(old, new, olds, news):
+    """Pair unmatched slides in order by text similarity, e.g. a retitled slide.
+
+    Positional pairing let an inserted slide take a retitled slide's place, so
+    the edit showed as one removed and one new slide. Unrelated additions and
+    removals stay unpaired.
+    """
+    if not olds or not news:
+        return {}
+    text = [re.sub(r"<[^>]+>", "", old[i]["body"]) for i in olds]
+    after = [re.sub(r"<[^>]+>", "", new[j]["body"]) for j in news]
+
+    def similar(a, b):
+        matcher = difflib.SequenceMatcher(None, text[a], after[b], autojunk=False)
+        if matcher.quick_ratio() < 0.5:
+            return 0.0
+        ratio = matcher.ratio()
+        return ratio if ratio >= 0.5 else 0.0
+
+    m, n = len(olds), len(news)
+    if m * n > 2500:
+        # Hirschberg alignment considers every shift, including insertions longer
+        # than a positional window. Rolling score rows keep auxiliary memory
+        # linear; splitting the old range bounds similarity work to O(m*n).
+        def scores(a0, a1, b0, b1, reverse=False):
+            row = [0.0] * (b1 - b0 + 1)
+            arange = range(a1 - 1, a0 - 1, -1) if reverse else range(a0, a1)
+            brange = range(b1 - 1, b0 - 1, -1) if reverse else range(b0, b1)
+            for a in arange:
+                diagonal = 0.0
+                for j, b in enumerate(brange, 1):
+                    above = row[j]
+                    row[j] = max(above, row[j - 1], diagonal + similar(a, b))
+                    diagonal = above
+            return row
+
+        result = {}
+
+        def align(a0, a1, b0, b1):
+            if a0 == a1 or b0 == b1:
+                return
+            if a1 - a0 == 1:
+                b = max(range(b0, b1), key=lambda b: similar(a0, b))
+                if similar(a0, b):
+                    result[news[b]] = olds[a0]
+                return
+            mid = (a0 + a1) // 2
+            left = scores(a0, mid, b0, b1)
+            right = scores(mid, a1, b0, b1, reverse=True)
+            cut = max(range(b1 - b0 + 1), key=lambda j: left[j] + right[-1 - j])
+            del left, right  # do not retain rows on the recursion stack
+            split = b0 + cut
+            align(a0, mid, b0, split)
+            align(mid, a1, split, b1)
+
+        align(0, m, 0, n)
+        return result
+    score = [[similar(a, b) for b in range(n)] for a in range(m)]
+    best = [[0.0] * (n + 1) for _ in range(m + 1)]
+    for a in range(m - 1, -1, -1):
+        for b in range(n - 1, -1, -1):
+            take = score[a][b] + best[a + 1][b + 1] if score[a][b] else 0.0
+            best[a][b] = max(best[a + 1][b], best[a][b + 1], take)
+    pairs, a, b = {}, 0, 0
+    while a < m and b < n:
+        if score[a][b] and best[a][b] == score[a][b] + best[a + 1][b + 1]:
+            pairs[news[b]] = olds[a]
+            a, b = a + 1, b + 1
+        elif best[a][b] == best[a + 1][b]:
+            a += 1
+        else:
+            b += 1
+    return pairs
+
+
+def load_deck_review():
+    """deck-review.py beside this script, or None if it or Playwright is missing."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deck-review.py")
+    if not os.path.exists(path):
+        return None
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("deck_review", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        import playwright.sync_api  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - any failure falls back to the text diff
+        print(f"what-changed: slides as text ({exc})", file=sys.stderr)
+        return None
+    return module
+
+
+def deck_image_dir(rel):
+    """Image folder for a deck page: `slides/x/slides.html` -> `slides/x/slides`.
+
+    A folder named `*.html` breaks tools that treat such paths as files
+    (e.g. the preview deploy's noindex `sed`)."""
+    return rel[: -len(".html")] if rel.endswith(".html") else rel + "-images"
+
+
+class DeckRenderer:
+    """Lazily starts one browser for every deck on the page."""
+
+    def __init__(self, module, old_root, new_root, img_root, img_url):
+        self.module, self.old_root, self.new_root = module, old_root, new_root
+        self.img_root, self.img_url = img_root, img_url.rstrip("/")
+        self.renderer = None
+        self.used = False
+        self.failed = False
+
+    def review(self, rel, link, old, new, pairs):
+        if (
+            self.failed or not new
+        ):  # failed launch or a removed deck keeps the text diff
+            return False
+        img_rel = deck_image_dir(rel)
+        try:
+            if self.renderer is None:
+                try:
+                    self.renderer = self.module.Renderer(self.old_root, self.new_root)
+                except Exception:
+                    self.failed = True
+                    raise
+            sub = quote(img_rel, safe="/")
+            body = self.module.review(
+                rel,
+                link,
+                os.path.join(self.img_root, img_rel),
+                f"{self.img_url}/{sub}",
+                old,
+                new,
+                pairs,
+                self.renderer,
+            )
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
+            print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
+            return False
+        finally:
+            if self.renderer is not None:
+                self.renderer.release_deck(rel)
+        self.used = self.used or body is not None
+        return body
+
+    def close(self):
+        if self.renderer is not None:
+            self.renderer.close()
+
+
+def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
     old = (reveal_slides(old_doc) if old is None else old) or []
     new = (reveal_slides(new_doc) if new is None else new) or []
     pairs = match_slides(old, new)
+    matched_order = [pairs[index] for index in sorted(pairs)]
+    reordered = matched_order != sorted(matched_order)
+    rendered = decks.review(rel, link, old, new, pairs) if decks else False
+    if rendered is None and not reordered:
+        return None
     entries = [(pairs.get(index), index) for index in range(len(new))]
     entries.extend(
         (index, None) for index in range(len(old)) if index not in pairs.values()
@@ -1473,8 +1710,11 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
         changes.append(
             f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
         )
-    matched_order = [pairs[index] for index in sorted(pairs)]
-    if matched_order != sorted(matched_order):
+    if rendered is None:
+        changes = []
+    elif rendered:
+        changes = [rendered]
+    if reordered:
         changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
     if not changes:
         return None
@@ -1490,7 +1730,40 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     )
 
 
-def build(old_root, new_root, preview_url, title, out_path=None):
+def prefix_theme_urls(css, prefix):
+    """Rebase theme links, CSS url(), and @import into the retained asset tree."""
+
+    def prefixed(url, attribute=False):
+        # HTML attributes decode entities; <style> is raw text. Preserve CSS
+        # ampersands (including literal entity-looking strings) byte for byte.
+        value = html.unescape(url) if attribute else url
+        parsed = urlsplit(value)
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            return url
+        value = prefix.rstrip("/") + "/" + value.lstrip("/")
+        return html.escape(value, quote=True) if attribute else value
+
+    css = re.sub(
+        r"""(?i)(\bhref\s*=\s*)(["'])([^"']*)\2""",
+        lambda match: (
+            f"{match[1]}{match[2]}{prefixed(match[3], attribute=True)}{match[2]}"
+        ),
+        css,
+    )
+    return rewrite_style_urls(css, prefixed)
+
+
+def build(
+    old_root,
+    new_root,
+    preview_url,
+    title,
+    out_path=None,
+    theme_root=None,
+    theme_url_prefix="",
+    decks=None,
+    reserved_local_output=False,
+):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1501,8 +1774,8 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 paper_dirs.append(
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
-    old_pages = list_pages(old_root, out_path, paper_dirs)
-    new_pages = list_pages(new_root, out_path, paper_dirs)
+    old_pages = list_pages(old_root, out_path, paper_dirs, reserved_local_output)
+    new_pages = list_pages(new_root, out_path, paper_dirs, reserved_local_output)
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:
@@ -1534,7 +1807,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
             if preview_url
             else quote(rel, safe="/")
         )
-        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides)
+        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides, decks)
         if result:
             section, entry = result
             slide_sections.append(section)
@@ -1655,8 +1928,26 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     )
     escaped_title = html.escape(title)
 
-    template_doc, depth = pick_template(new_pages)
-    theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+    # A partial render holds only the changed pages, so the caller can name the
+    # full site this page is served from as the theme source.
+    template_doc, theme_css = None, None
+    for root, pages in (
+        (
+            theme_root,
+            list_pages(
+                theme_root, out_path, reserved_local_output=reserved_local_output
+            )
+            if theme_root
+            else {},
+        ),
+        (new_root, new_pages),
+    ):
+        template_doc, depth = pick_template(pages)
+        theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+        if theme_css:
+            if root == new_root and theme_url_prefix:
+                theme_css = prefix_theme_urls(theme_css, theme_url_prefix)
+            break
 
     inner = (
         '<header class="diff-head"><h1>What changed</h1>'
@@ -1686,6 +1977,9 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         body = f'<div class="wc-scope wc-standalone">{inner}</div>'
         html_attrs = body_attrs = mode_js = ""
 
+    deck_assets = (
+        decks.module.STYLE + decks.module.SCRIPT if decks and decks.used else ""
+    )
     return (
         "<!doctype html>"
         f'<html lang="en"{html_attrs}><head><meta charset="utf-8">'
@@ -1693,7 +1987,7 @@ def build(old_root, new_root, preview_url, title, out_path=None):
         f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body{body_attrs}>{mode_js}{body}"
-        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script></body></html>"
+        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script>{deck_assets}</body></html>"
     )
 
 
@@ -1712,14 +2006,93 @@ def main(argv=None):
     ap.add_argument(
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
-    args = ap.parse_args(argv)
-    doc = build(
-        args.old,
-        args.new,
-        args.preview_url,
-        args.title,
-        out_path=args.out,
+    ap.add_argument(
+        "--theme-root",
+        help="rendered full site to borrow the theme from (default: --new)",
     )
+    ap.add_argument(
+        "--theme-url-prefix",
+        default="",
+        help="served asset prefix when the theme comes from --new",
+    )
+    ap.add_argument(
+        "--render-decks",
+        metavar="DIR",
+        help="render changed slides as images into generated DIR (needs deck-review.py"
+        " and Playwright; else slides as text); existing DIR contents are replaced",
+    )
+    ap.add_argument(
+        "--reserved-local-output",
+        action="store_true",
+        help="exclude root what-changed.html and what-changed-assets/ (local Make target)",
+    )
+    ap.add_argument(
+        "--render-decks-url",
+        metavar="URL",
+        help="URL of --render-decks as served beside --out (default: its path relative to --out)",
+    )
+    args = ap.parse_args(argv)
+    decks = None
+    if args.render_decks:
+        # Never recursively delete outside the candidate site or through a symlink.
+        site_path = os.path.abspath(args.new)
+        image_path = os.path.abspath(args.render_decks)
+        site_root, image_root = (
+            os.path.realpath(site_path),
+            os.path.realpath(image_path),
+        )
+        try:
+            unsafe = (
+                image_root == site_root
+                or os.path.commonpath([site_root, image_root]) != site_root
+                or os.path.commonpath([site_path, image_path]) != site_path
+                or os.path.commonpath([image_root, os.path.realpath(args.out)])
+                == image_root
+                or os.path.commonpath([image_root, os.path.realpath(args.old)])
+                == image_root
+            )
+        except ValueError:
+            unsafe = True
+        if unsafe:
+            ap.error(
+                "--render-decks must be a separate generated directory inside the new site"
+            )
+        component = image_path
+        while component != site_path:
+            if os.path.islink(component):
+                ap.error("--render-decks must not contain symlinks")
+            component = os.path.dirname(component)
+        shutil.rmtree(image_root, ignore_errors=True)
+        module = load_deck_review()
+        if module:
+            decks = DeckRenderer(
+                module,
+                args.old,
+                args.new,
+                args.render_decks,
+                args.render_decks_url
+                or quote(
+                    os.path.relpath(
+                        args.render_decks, os.path.dirname(os.path.abspath(args.out))
+                    ).replace(os.sep, "/"),
+                    safe="/",
+                ),
+            )
+    try:
+        doc = build(
+            args.old,
+            args.new,
+            args.preview_url,
+            args.title,
+            out_path=args.out,
+            theme_root=args.theme_root,
+            theme_url_prefix=args.theme_url_prefix,
+            decks=decks,
+            reserved_local_output=args.reserved_local_output,
+        )
+    finally:
+        if decks:
+            decks.close()
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
     print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)

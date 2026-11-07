@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- Managed workspaces provide `make what-changed` for local branch comparisons
+  at `/what-changed.html` in the existing preview. Page-only edits render just
+  the changed pages when both versions support page selection and Quarto lists
+  them as project inputs. Other changes, excluded inputs, or
+  `WHAT_CHANGED_FULL=1` render both full sites. Either way the page keeps the
+  site's theme. Base discovery uses local Git
+  history, with `git fetch origin` optional for a fresher base. The target
+  rejects incompatible output directories and render recipes before rendering
+  and fails if either version lacks project configuration or the current render
+  produces no HTML. It checks the current Quarto invocation's output override
+  and retains freshly rendered theme assets separately from live preview files.
+  Previous comparison pages are excluded from theme selection even without a
+  generator marker, and theme lookup skips unstyled pages to find the site's CSS.
+  Partial rendering requires an explicit recipe capability marker (or the
+  supported legacy adapter), so prerequisite logging cannot enable it by mistake.
+  The output guard also covers forced/recursive dry-run Quarto calls without
+  rendering. A project lock prevents overlapping comparisons from replacing
+  each other's report assets. Retained theme URLs handle quoted paths with spaces
+  and string-form CSS imports, including in nested pages.
+  Dry runs create no output or worktrees.
+
+- A workspace site in a subfolder uses the repository root's `docs.yml` when
+  its `site-dir` names the site. Sync and pin moves share that single workflow,
+  including paths with spaces. Cached builds validate selection offline without
+  moving pins and explain how to upgrade a missing or older CLI. Sync preserves
+  concurrent workflow edits and discards conflicting cached rules.
+  **Validation compatibility:** all selected workflows, including root-level
+  sites, must now be valid single-document YAML with unique relevant mapping
+  keys and a literal workspace source on one line. Subfolder roots require
+  exactly one workspace job with an explicit `site-dir` input; YAML merge keys
+  are not expanded. Root read errors and uncertain selection report errors
+  instead of silently using a local workflow. See the workspace developer guide
+  for supported YAML forms and CLI installation guidance.
+
 - Workspace `make check` creates temporary files under `${TMPDIR:-/tmp}` so it
   works in agent sandboxes. SessionStart preserves a healthy newer shared Asta
   CLI across projects, installs missing or older versions, and repairs a CLI

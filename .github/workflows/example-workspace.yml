@@ -63,6 +63,24 @@ jobs:
           name: workspace-slide-fixtures
           path: tests/browser/fixtures
           retention-days: 30
+      # After the uploads: this adds what-changed output to the example's _site.
+      - name: Check local What changed renders a deck edit
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The -tex image's python3 has no ensurepip; uv ships in that image.
+          uv venv -q --python python3 "$RUNNER_TEMP/local-what-changed-venv"
+          uv pip install -q --python "$RUNNER_TEMP/local-what-changed-venv/bin/python" playwright==1.64.1
+          "$RUNNER_TEMP/local-what-changed-venv/bin/python" -m playwright install --with-deps chromium >/dev/null
+          "$RUNNER_TEMP/local-what-changed-venv/bin/python" ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-what-changed-screenshot
+          path: tests/browser/artifacts/local-what-changed-deck.png
+          if-no-files-found: ignore
+          retention-days: 30
 
   theme:
     needs: build
@@ -93,6 +111,12 @@ jobs:
       - name: Check slide geometry and standalone behavior
         working-directory: tests/browser
         run: node workspace-slides.mjs ../../examples/workspace/_site artifacts
+      - name: Check rendered deck review
+        run: |
+          python3 -m venv "$RUNNER_TEMP/deck-review-venv"
+          "$RUNNER_TEMP/deck-review-venv/bin/python" -m pip install playwright==1.64.1
+          "$RUNNER_TEMP/deck-review-venv/bin/python" -m playwright install --with-deps chromium
+          "$RUNNER_TEMP/deck-review-venv/bin/python" tests/browser/deck-review.py examples/workspace/_site tests/browser/artifacts
       - name: Check both themes and evidence readability
         working-directory: tests/browser
         run: npm test -- ../../examples/workspace/_site artifacts

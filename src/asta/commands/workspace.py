@@ -7,6 +7,7 @@ import http.server
 import io
 import json
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -25,11 +26,13 @@ from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import click
+import yaml
 
 from asta.commands import workspace_versions
 from asta.commands.overleaf import overleaf
 
 WORKFLOW = "/.github/workflows/workspace-quarto-site.yml@"
+WORKFLOW_SOURCE = re.compile(r"[A-Za-z0-9_.-]+/(?i:asta-plugins)" + re.escape(WORKFLOW))
 ASSET = "plugins/asta-tools/skills/workspace/assets/workspace.mk"
 ASSET_DIR = "plugins/asta-tools/skills/workspace/assets/"
 # Scripts workspace.mk runs; a committed scripts/<name> takes precedence.
@@ -37,7 +40,9 @@ CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
 # Cached when the selected ref ships it; `asta workspace what-changed` runs it.
 DIFF_SCRIPT = "what-changed.py"
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT,)
+# Optional beside DIFF_SCRIPT: renders a changed deck's slides when Playwright is installed.
+DECK_SCRIPT = "deck-review.py"
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, DECK_SCRIPT)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -53,24 +58,196 @@ MAX_ASSET_BYTES = 1024 * 1024
 WORKFLOW_FILE = ".github/workflows/docs.yml"
 
 
-def selected_source(project: Path) -> tuple[str, str]:
-    workflow = project / WORKFLOW_FILE
+def _workspace_job_lines(
+    text: str, workflow: Path
+) -> list[tuple[int, yaml.ScalarNode | None]]:
+    """Locate workspace calls and their own site inputs without rewriting YAML."""
+
+    def field(node, name):
+        if not isinstance(node, yaml.MappingNode):
+            return None
+        matches = [
+            (key, value)
+            for key, value in node.value
+            if isinstance(key, yaml.ScalarNode) and key.value == name
+        ]
+        if len(matches) > 1:
+            raise click.ClickException(f"Duplicate {name} key in {workflow}")
+        return matches[0] if matches else None
+
     try:
-        lines = workflow.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError as exc:
-        raise click.ClickException(f"Missing {workflow}") from exc
-    except UnicodeDecodeError as exc:
-        raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
-    refs = []
-    for line in lines:
-        if WORKFLOW not in line or line.lstrip().startswith("#"):
+        document = yaml.compose(text, Loader=yaml.BaseLoader)
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise click.ClickException(f"Invalid YAML in {workflow}") from exc
+    jobs = field(document, "jobs")
+    if jobs is None or not isinstance(jobs[1], yaml.MappingNode):
+        return []
+    result = []
+    job_names = set()
+    for name, job in jobs[1].value:
+        if not isinstance(name, yaml.ScalarNode):
             continue
-        match = WORKFLOW_LINE.fullmatch(line)
+        if name.value in job_names:
+            raise click.ClickException(f"Duplicate job key in {workflow}")
+        job_names.add(name.value)
+        uses = field(job, "uses")
+        inputs = field(job, "with")
+        site_dir = field(inputs[1], "site-dir") if inputs else None
+        if (
+            uses
+            and isinstance(uses[1], yaml.ScalarNode)
+            and WORKFLOW_SOURCE.match(uses[1].value.strip())
+        ):
+            result.append(
+                (
+                    uses[0].start_mark.line,
+                    site_dir[1]
+                    if site_dir and isinstance(site_dir[1], yaml.ScalarNode)
+                    else None,
+                )
+            )
+    return result
+
+
+def _workflow_source_lines(text: str, workflow: Path) -> list[tuple[int, re.Match]]:
+    lines = text.splitlines()
+    sources = []
+    # A YAML job alias can refer to the same source line more than once.
+    for index in sorted({index for index, _ in _workspace_job_lines(text, workflow)}):
+        match = WORKFLOW_LINE.fullmatch(lines[index])
         if match is None:
             raise click.ClickException(
-                f"Invalid asta-plugins workflow line in {workflow}"
+                f"Invalid asta-plugins workflow line in {workflow}; "
+                "write the workspace uses: and its literal source on one line"
             )
-        refs.append((match.group("repository"), match.group("ref")))
+        sources.append((index, match))
+    return sources
+
+
+def _unrelated_workflow_prefix(text: str, workflow: Path, site: str) -> bool:
+    """Prove an EOF-truncated root unrelated using only parsed YAML events.
+
+    Closing open collections lets the normal job parser inspect the prefix,
+    including aliases and block scalars. Never use this synthetic document to
+    select a source or edit a pin. If parsing stopped before EOF, later content
+    could still select this site, so the original validation error must stand.
+    """
+    events = []
+    endings = []
+    try:
+        for event in yaml.parse(text, Loader=yaml.BaseLoader):
+            events.append(event)
+            if isinstance(event, yaml.DocumentStartEvent):
+                endings.append(yaml.DocumentEndEvent())
+            elif isinstance(event, yaml.MappingStartEvent):
+                endings.append(yaml.MappingEndEvent())
+            elif isinstance(event, yaml.SequenceStartEvent):
+                endings.append(yaml.SequenceEndEvent())
+            elif isinstance(
+                event,
+                (yaml.DocumentEndEvent, yaml.MappingEndEvent, yaml.SequenceEndEvent),
+            ):
+                endings.pop()
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        if mark is None or mark.index != len(text):
+            return False
+        try:
+            prefix = yaml.emit([*events, *reversed(endings), yaml.StreamEndEvent()])
+            jobs = _workspace_job_lines(prefix, workflow)
+        except (yaml.YAMLError, click.ClickException):
+            return False
+        return not any(
+            directory is not None and posixpath.normpath(directory.value) == site
+            for _, directory in jobs
+        )
+    # Parsing succeeded: the validation error concerned structure (for example
+    # duplicate keys or an undefined alias), which a prefix cannot disambiguate.
+    return False
+
+
+def workflow_root(project: Path) -> Path:
+    """Return the directory whose docs.yml publishes project.
+
+    GitHub runs only the repository root's workflows, so a site in a subfolder
+    uses the root docs.yml whose site-dir names it.
+    """
+    project = project.resolve()
+    # A submodule is its own repository, just like a worktree with a .git file.
+    root = next(
+        (
+            parent
+            for parent in (project, *project.parents)
+            if (parent / ".git").exists()
+        ),
+        project,
+    )
+    if root == project:
+        return project
+    workflow = root / WORKFLOW_FILE
+    try:
+        _reject_workflow_symlinks(workflow)
+    except click.ClickException:
+        local = project / WORKFLOW_FILE
+        _reject_workflow_symlinks(local)
+        if local.is_file():
+            return project
+        raise
+    try:
+        text = workflow.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return project
+    except UnicodeDecodeError as exc:
+        raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
+    except OSError as exc:
+        raise click.ClickException(f"Could not read {workflow}: {exc}") from exc
+    site = project.relative_to(root).as_posix()
+    try:
+        job_lines = _workspace_job_lines(text, workflow)
+    except click.ClickException:
+        if _unrelated_workflow_prefix(text, workflow, site):
+            return project
+        raise
+    if any(
+        directory is not None and posixpath.normpath(directory.value) == site
+        for _, directory in job_lines
+    ):
+        if len(job_lines) != 1:
+            raise click.ClickException(
+                f"Ambiguous workspace workflow: {workflow}; "
+                "a subfolder site requires exactly one workspace job, "
+                "with its own site-dir input"
+            )
+        return root
+    return project
+
+
+def workflow_file(project: Path) -> Path:
+    return workflow_root(project) / WORKFLOW_FILE
+
+
+def selected_source(project: Path) -> tuple[str, str]:
+    return _source_from_workflow(workflow_file(project))
+
+
+def _source_from_workflow(
+    workflow: Path, *, original: bytes | None = None
+) -> tuple[str, str]:
+    _reject_workflow_symlinks(workflow)
+    try:
+        text = (workflow.read_bytes() if original is None else original).decode("utf-8")
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            f"Missing {workflow}; for a subfolder site, keep docs.yml at the "
+            "repository root in .github/workflows and set its workspace job's "
+            "with.site-dir to the site's relative path"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise click.ClickException(f"Workflow must be UTF-8: {workflow}") from exc
+    refs = [
+        (match.group("repository"), match.group("ref"))
+        for _, match in _workflow_source_lines(text, workflow)
+    ]
     if not refs or len(set(refs)) != 1:
         raise click.ClickException(
             f"Expected one asta-plugins workspace source in {workflow}"
@@ -277,8 +454,22 @@ workspace.add_command(overleaf)
     is_flag=True,
     help="Verify all scripts required by the selected rules before removing project copies.",
 )
-def sync(project: Path, refresh: bool, require_scripts: bool) -> None:
+@click.option(
+    "--check-selection",
+    is_flag=True,
+    help="Validate the selected workflow offline, without fetching rules or moving pins.",
+)
+def sync(
+    project: Path, refresh: bool, require_scripts: bool, check_selection: bool = False
+) -> None:
     """Load shared Makefile rules at the version selected in docs.yml."""
+    if check_selection:
+        if refresh or require_scripts:
+            raise click.UsageError(
+                "--check-selection cannot be combined with --refresh or --require-scripts"
+            )
+        selected_source(project)
+        return
     archive = sync_workspace(project, refresh, require_scripts)
     if archive is not None and archive_has_asta_theme(archive):
         makefile = project.resolve() / "Makefile"
@@ -493,15 +684,49 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
             )
         click.echo("workspace.mk exists in the project; keeping its local override")
         return
-    repository, ref = selected_source(project)
+    workflow = workflow_file(project)
+    _reject_workflow_symlinks(workflow)
+    try:
+        original = workflow.read_bytes()
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            f"Missing {workflow}; for a subfolder site, keep docs.yml at the "
+            "repository root in .github/workflows and set its workspace job's "
+            "with.site-dir to the site's relative path"
+        ) from exc
+    repository, ref = _source_from_workflow(workflow, original=original)
     original_ref = ref
     if not _is_unattended():
         ref = workspace_versions.pin_target(ref, workspace_versions.installed()) or ref
-    if ref != original_ref:
-        _reject_workflow_symlinks(project)
-        original = (project / WORKFLOW_FILE).read_bytes()
+
+    def validate_workflow() -> None:
+        try:
+            _reject_workflow_symlinks(workflow)
+            if workflow.read_bytes() == original and workflow_file(project) == workflow:
+                return
+        except (OSError, click.ClickException) as exc:
+            cause = f": {exc}"
+        else:
+            cause = ""
+        # Make can otherwise run newer cached rules after this failed sync.
+        cache = project / ".asta/cache"
+        for name in ("workspace.mk", "workspace.json"):
+            (cache / name).unlink(missing_ok=True)
+        raise click.ClickException(
+            f"{workflow} changed during sync or became unreadable{cause}; "
+            "left it unchanged and discarded cached rules. Run sync again."
+        )
+
+    def sync_ref(selected_ref: str) -> bytes:
+        validate_workflow()
+        archive = _sync_workspace(
+            project, repository, selected_ref, refresh, require_scripts
+        )
+        validate_workflow()
+        return archive
+
     try:
-        archive = _sync_workspace(project, repository, ref, refresh, require_scripts)
+        archive = sync_ref(ref)
     except _WorkspaceFetchError:
         if ref == original_ref:
             raise
@@ -510,18 +735,11 @@ def sync_workspace(project: Path, refresh: bool, require_scripts: bool) -> bytes
             f"@{original_ref} and trying its rules",
             err=True,
         )
-        return _sync_workspace(
-            project, repository, original_ref, refresh, require_scripts
-        )
+        return sync_ref(original_ref)
     if ref != original_ref:
-        _reject_workflow_symlinks(project)
-        if (project / WORKFLOW_FILE).read_bytes() != original:
-            raise click.ClickException(
-                f"{WORKFLOW_FILE} changed during sync; left it unchanged. Run sync again."
-            )
-        _write_pin(project, original, ref)
+        _write_pin(workflow, original, ref)
         click.echo(
-            f"Moved the workspace pin in {WORKFLOW_FILE} from asta-plugins@{original_ref} "
+            f"Moved the workspace pin in {workflow} from asta-plugins@{original_ref} "
             f"to @{ref}, the installed asta's release (not committed)",
             err=True,
         )
@@ -744,14 +962,15 @@ def _sync_workspace(
 def bump_pin(project: Path) -> None:
     """Commit an upgrade from an older release pin to the installed asta release."""
     project = project.resolve()
-    workflow = project / WORKFLOW_FILE
-    _reject_workflow_symlinks(project)
-    _, ref = selected_source(project)
+    root = workflow_root(project)
+    workflow = root / WORKFLOW_FILE
+    _reject_workflow_symlinks(workflow)
+    _, ref = _source_from_workflow(workflow)
     target = workspace_versions.pin_target(ref, workspace_versions.installed())
     if target is None:
         click.echo(f"Pin asta-plugins@{ref} is current; nothing to do")
         return
-    status = _git(project, "status", "--porcelain", "--", WORKFLOW_FILE)
+    status = _git(root, "status", "--porcelain", "--", WORKFLOW_FILE)
     if status.returncode != 0:
         raise click.ClickException(
             f"Could not check the workflow's Git status: {status.stderr.strip()}"
@@ -767,9 +986,9 @@ def bump_pin(project: Path) -> None:
         raise click.ClickException("Could not determine the workflow's Git HEAD")
     commit_started = False
     try:
-        _write_pin(project, original, target)
+        _write_pin(workflow, original, target)
         commit_started = True
-        committed = _git(project, "commit", "-m", message, "--", WORKFLOW_FILE)
+        committed = _git(root, "commit", "-m", message, "--", WORKFLOW_FILE)
         if committed.returncode != 0:
             raise click.ClickException(
                 f"Could not commit the pin move: {committed.stderr.strip()}"
@@ -815,24 +1034,24 @@ def _is_unattended() -> bool:
     )
 
 
-def _reject_workflow_symlinks(project: Path) -> None:
+def _reject_workflow_symlinks(workflow: Path) -> None:
+    root = workflow.parents[2]
     for relative in (".github", ".github/workflows", WORKFLOW_FILE):
-        if (project / relative).is_symlink():
+        if (root / relative).is_symlink():
             raise click.ClickException(
                 f"Workspace workflow path must not contain symlinks: {relative}"
             )
 
 
-def _write_pin(project: Path, original: bytes, target: str) -> None:
-    workflow = project / WORKFLOW_FILE
-    lines = original.decode("utf-8").splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        if match := WORKFLOW_LINE.fullmatch(line.rstrip("\r\n")):
-            start, end = match.span("ref")
-            lines[index] = line[:start] + target + line[end:]
+def _write_pin(workflow: Path, original: bytes, target: str) -> None:
+    text = original.decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    for index, match in _workflow_source_lines(text, workflow):
+        start, end = match.span("ref")
+        lines[index] = lines[index][:start] + target + lines[index][end:]
     _atomic_write(workflow, "".join(lines).encode("utf-8"))
     try:
-        if selected_source(project)[1] != target:
+        if _source_from_workflow(workflow)[1] != target:
             raise click.ClickException(f"Could not move the pin in {workflow}")
     except BaseException:
         _atomic_write(workflow, original)
@@ -906,6 +1125,17 @@ def render_site(directory: Path, label: str) -> Path:
 
 
 COMPARISON_DIR = Path(".asta/cache/what-changed")
+# Rendered slide images, beside the comparison page in its site copy.
+DECK_IMAGES = "what-changed-decks"
+
+
+def _has_deck(site: Path) -> bool:
+    """Whether the rendered site holds a reveal.js deck, as the PR preview checks."""
+    for page in site.rglob("*.html"):
+        if page.is_file() and not page.is_symlink():
+            if 'class="reveal' in page.read_text(encoding="utf-8", errors="ignore"):
+                return True
+    return False
 
 
 def _ls_files(repository: Path, *args: str) -> list[str]:
@@ -1156,6 +1386,15 @@ def compare_workspace(ref: str, project: Path) -> None:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
+                deck_images = new_site / DECK_IMAGES
+                deck_args = (
+                    [
+                        f"--render-decks={deck_images}",
+                        f"--render-decks-url={DECK_IMAGES}",
+                    ]
+                    if _has_deck(new_site)
+                    else []
+                )
                 with preview_process(
                     [
                         sys.executable,
@@ -1168,6 +1407,7 @@ def compare_workspace(ref: str, project: Path) -> None:
                         str(report),
                         "--title",
                         f"Changes since {ref}",
+                        *deck_args,
                     ],
                     project,
                     stdout=subprocess.PIPE,
@@ -1189,6 +1429,9 @@ def compare_workspace(ref: str, project: Path) -> None:
                     raise click.ClickException(
                         f"{DIFF_SCRIPT} did not write nonempty HTML"
                     )
+                if deck_args and deck_images.is_dir() and not deck_images.is_symlink():
+                    shutil.rmtree(staged / DECK_IMAGES, ignore_errors=True)
+                    shutil.copytree(deck_images, staged / DECK_IMAGES, symlinks=True)
                 try:
                     _publish(staged, owned)
                 except OSError as exc:
