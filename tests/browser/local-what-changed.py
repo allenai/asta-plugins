@@ -1,4 +1,4 @@
-"""Run the local `make what-changed` on an edit to the example deck; its slides must render."""
+"""Run the local `asta workspace what-changed` on an edit to the example deck; its slides must render."""
 
 import importlib.util
 import json
@@ -61,10 +61,10 @@ def check(project, artifacts):
     try:
         result = subprocess.run(
             [
-                "make",
+                "asta",
+                "workspace",
                 "what-changed",
-                f"PYTHON={sys.executable}",
-                "WHAT_CHANGED_BASE=HEAD",
+                "HEAD",
             ],
             cwd=project,
             capture_output=True,
@@ -74,7 +74,7 @@ def check(project, artifacts):
         deck.write_text(original)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "slides as text" not in result.stderr, result.stderr
-    site = project / "_site"
+    site = project / ".asta/cache/what-changed"
     assert 'class="deck-review"' in (site / "what-changed.html").read_text()
     images = site / "what-changed-assets/what-changed-decks"
     assert list(images.rglob("*.png"))

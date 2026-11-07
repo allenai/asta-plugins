@@ -3,7 +3,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tarfile
 import textwrap
 import tomllib
@@ -161,248 +160,6 @@ def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
     assert (project / "_site/paper-previews/build-failed.txt").read_text().strip() == (
         "Could not download the paper discovery script."
     )
-
-
-def test_what_changed_project_override_runs_before_write_enabled_deploy(
-    tmp_path: Path,
-) -> None:
-    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    build = workflow["jobs"]["build"]
-    deploy = workflow["jobs"]["deploy"]
-    assert build["permissions"]["contents"] == "read"
-    assert deploy["permissions"]["contents"] == "write"
-    step = next(s for s in build["steps"] if s.get("name") == "Generate What changed")
-    assert not any("what-changed.py" in s.get("run", "") for s in deploy["steps"])
-
-    remote = tmp_path / "remote.git"
-    project = tmp_path / "project"
-    subprocess.run(
-        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "init", "-b", "gh-pages", str(project)], check=True, capture_output=True
-    )
-
-    def git(*args: str) -> None:
-        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
-
-    git("config", "user.name", "Test")
-    git("config", "user.email", "test@example.invalid")
-    (project / "index.html").write_text("deployed main")
-    git("add", "index.html")
-    git("commit", "-m", "Baseline")
-    git("remote", "add", "origin", str(remote))
-    git("push", "origin", "gh-pages")
-    git("switch", "-c", "main")
-    (project / "scripts").mkdir()
-    (project / "scripts/what-changed.py").write_text(
-        "import argparse\n"
-        "from pathlib import Path\n"
-        "p = argparse.ArgumentParser()\n"
-        "for arg in ('old', 'new', 'out', 'title'):\n"
-        "    p.add_argument('--' + arg)\n"
-        "a = p.parse_args()\n"
-        "Path(a.out).write_text('custom: ' + Path(a.old, 'index.html').read_text() + '\\n' + a.title)\n"
-    )
-    git("add", "scripts/what-changed.py")
-    git("commit", "-m", "Customize diff")
-    git("update-ref", "refs/remotes/origin/gh-pages", "HEAD")
-    (project / "_site").mkdir()
-    (project / "_site/index.html").write_text("PR content")
-    outside = project / "keep.txt"
-    outside.write_text("must not be overwritten")
-    # An untrusted site can plant the old predictable output before generation.
-    (project / "_site/.what-changed.tmp.html").symlink_to(outside)
-
-    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script],
-        cwd=project,
-        env={**os.environ, "PR_NUMBER": "7"},
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    page = (project / "_site/what-changed.html").read_text()
-    assert page.startswith("custom: deployed main\nPR #7 · Pages ")
-    assert re.search(r"Pages [0-9a-f]{12}$", page)
-    assert "Using project-owned" in result.stdout
-    assert outside.read_text() == "must not be overwritten"
-    (project / "_site/.what-changed.tmp.html").unlink()
-    assert not list((project / "_site").glob(".what-changed.*"))
-
-    (project / "_site/what-changed.html").unlink()
-    stale_images = project / "_site/what-changed-decks"
-    stale_images.mkdir()
-    (stale_images / "old.png").touch()
-    (project / "scripts/what-changed.py").write_text(
-        "import argparse\n"
-        "from pathlib import Path\n"
-        "p = argparse.ArgumentParser()\n"
-        "for arg in ('old', 'new', 'out', 'title'):\n"
-        "    p.add_argument('--' + arg)\n"
-        "a = p.parse_args()\n"
-        "Path(a.out).write_text('partial')\n"
-        "raise RuntimeError('failed after writing')\n"
-    )
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script],
-        cwd=project,
-        env={**os.environ, "PR_NUMBER": "7"},
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert not (project / "_site/what-changed.html").exists()
-    assert "what-changed page generation failed" in result.stdout
-    assert (
-        stale_images / "old.png"
-    ).exists()  # renderer was never enabled; project owns this folder
-    assert not (project / "_site/.what-changed.tmp.html").exists()
-    assert not list((project / "_site").glob(".what-changed.*"))
-
-
-@pytest.mark.parametrize(
-    "failure", ["before-images", "after-images", "none", "text-fallback"]
-)
-@pytest.mark.parametrize("existing_symlink", [False, True])
-def test_deck_images_publish_only_after_page_generation_succeeds(
-    tmp_path: Path, failure: str, existing_symlink: bool
-) -> None:
-    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    step = next(
-        s
-        for s in workflow["jobs"]["build"]["steps"]
-        if s.get("name") == "Generate What changed"
-    )
-    project = tmp_path / "project"
-    site = project / "_site"
-    site.mkdir(parents=True)
-    (site / "slides.html").write_text('<div class="reveal">Deck</div>')
-    (site / "what-changed.html").write_text("previous page")
-    original_images = (
-        tmp_path / "project-images" if existing_symlink else site / "what-changed-decks"
-    )
-    original_images.mkdir()
-    (original_images / "old.png").write_bytes(b"previous image")
-    if existing_symlink:
-        (site / "what-changed-decks").symlink_to(
-            original_images, target_is_directory=True
-        )
-    remote = tmp_path / "remote.git"
-    for args in (
-        ["init", "--bare", str(remote)],
-        ["init", "-b", "main", str(project)],
-        ["-C", str(project), "config", "user.name", "Test"],
-        ["-C", str(project), "config", "user.email", "test@example.invalid"],
-        ["-C", str(project), "remote", "add", "origin", str(remote)],
-    ):
-        subprocess.run(["git", *args], check=True, capture_output=True)
-    scripts = project / "scripts"
-    scripts.mkdir()
-    (scripts / "deck-review.py").touch()
-    (scripts / "what-changed.py").write_text(
-        textwrap.dedent("""\
-        import argparse
-        import os
-        import shutil
-        from pathlib import Path
-        p = argparse.ArgumentParser()
-        for arg in ('old', 'new', 'out', 'title', 'render-decks', 'render-decks-url'):
-            p.add_argument('--' + arg)
-        a = p.parse_args()
-        assert a.render_decks_url == 'what-changed-decks'
-        stage = Path(a.render_decks)
-        assert stage.is_dir() and not stage.is_symlink()
-        assert not list(stage.iterdir())
-        assert stage != Path(a.new) / 'what-changed-decks'
-        assert Path(a.new, 'what-changed-decks/old.png').read_bytes() == b'previous image'
-        if os.environ['GENERATOR_FAILURE'] == 'before-images':
-            raise RuntimeError('before capture')
-        if os.environ['GENERATOR_FAILURE'] == 'text-fallback':
-            shutil.rmtree(stage)
-            Path(a.out).write_text('slides as text')
-            raise SystemExit(0)
-        (stage / 'new.png').write_bytes(b'new image')
-        Path(a.out).write_text('<img src="what-changed-decks/new.png">')
-        if os.environ['GENERATOR_FAILURE'] == 'after-images':
-            raise RuntimeError('after capture')
-    """)
-    )
-    subprocess.run(
-        ["git", "add", "scripts"], cwd=project, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "Custom generator"],
-        cwd=project,
-        check=True,
-        capture_output=True,
-    )
-    # Exercise the real workflow branch without installing a browser: the fake
-    # venv accepts installation commands, then runs the custom generator above.
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    python = bin_dir / "python3"
-    python.write_text(
-        textwrap.dedent("""\
-        #!/bin/bash
-        if [ "$1" = -m ] && [ "$2" = venv ]; then
-          mkdir -p "$3/bin"
-          cat > "$3/bin/python" <<'STUB'
-        #!/bin/bash
-        if [ "$1" = -m ]; then exit 0; fi
-        exec "$REAL_PYTHON" "$@"
-        STUB
-          chmod +x "$3/bin/python"
-          exit 0
-        fi
-        exec "$REAL_PYTHON" "$@"
-    """)
-    )
-    python.chmod(0o755)
-    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script],
-        cwd=project,
-        env={
-            **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "REAL_PYTHON": sys.executable,
-            "GENERATOR_FAILURE": failure,
-            "PR_NUMBER": "9",
-        },
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    if failure in {"none", "text-fallback"}:
-        if failure == "none":
-            assert (
-                site / "what-changed.html"
-            ).read_text() == '<img src="what-changed-decks/new.png">'
-            assert (site / "what-changed-decks/new.png").read_bytes() == b"new image"
-            assert not (site / "what-changed-decks/old.png").exists()
-            assert "Replacing generated deck-review images" in result.stdout
-            if existing_symlink:
-                assert not (site / "what-changed-decks").is_symlink()
-                assert (original_images / "old.png").read_bytes() == b"previous image"
-        else:
-            # A text-only result wrote no images, so the site's folder stays.
-            assert (site / "what-changed.html").read_text() == "slides as text"
-            assert (
-                site / "what-changed-decks/old.png"
-            ).read_bytes() == b"previous image"
-            assert (site / "what-changed-decks").is_symlink() == existing_symlink
-            assert "Replacing generated deck-review images" not in result.stdout
-    else:
-        assert (site / "what-changed.html").read_text() == "previous page"
-        assert (site / "what-changed-decks/old.png").read_bytes() == b"previous image"
-        assert not (site / "what-changed-decks/new.png").exists()
-        assert "what-changed page generation failed" in result.stdout
-        assert "Replacing generated deck-review images" not in result.stdout
-    assert not list(site.glob(".what-changed*"))
 
 
 def test_what_changed_uses_managed_generator_without_project_copy(
@@ -603,8 +360,8 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
 
-    assert workflow.count("${{ job.workflow_repository }}") == 8
-    assert workflow.count("${{ job.workflow_sha }}") == 8
+    assert workflow.count("${{ job.workflow_repository }}") == 7
+    assert workflow.count("${{ job.workflow_sha }}") == 7
     assert "github.job_workflow" not in workflow
 
 
@@ -2004,7 +1761,7 @@ def test_what_changed_reads_full_baseline_for_site_in_subfolder(
     )
     assert result.returncode == 0, result.stderr
     page = (site / "_site/what-changed.html").read_text()
-    assert "PR #7 · Pages " in page
+    assert "PR 7 · Pages " in page
     assert "new page" not in page
     text = re.sub(r"<[^>]+>", "", page)
     assert "before" in text and "after" in text, text[-3000:]

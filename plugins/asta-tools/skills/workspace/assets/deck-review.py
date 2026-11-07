@@ -12,8 +12,7 @@ A slide is changed when its markup differs or, with the same markup, when its
 rendered image differs (an image swapped, a style fix). Slides are matched by
 what-changed.py's ``match_slides``, so "Slide N" is the number the deck shows.
 
-Needs Python Playwright with Chromium (``pip install playwright`` and
-``python -m playwright install --with-deps chromium``).
+The workspace CLI provisions pinned Playwright and Chromium lazily through uv.
 """
 
 import html

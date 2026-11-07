@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Use `asta workspace what-changed [ref]` locally and in PR previews, including built-site baselines and lazy, pinned browser provisioning for deck comparisons. Shared Make rules retain only the render contract.
+- Preserve evidence popovers and resolve inline citation links in comparison pages.
+
+
+## Unreleased
+
 - Managed workspaces provide `make what-changed` for local branch comparisons
   at `/what-changed.html` in the existing preview. Page-only edits render just
   the changed pages when both versions support page selection and Quarto lists

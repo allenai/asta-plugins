@@ -20,6 +20,10 @@ on:
         description: Whether this event affects the rendered site
         value: ${{ jobs.scope.outputs.render }}
     inputs:
+      build-runner:
+        description: Runner for the site build
+        type: string
+        default: ubuntu-latest
       quarto-version:
         description: Quarto CLI version used to render generated sources
         type: string
@@ -103,7 +107,7 @@ jobs:
       needs.scope.outputs.render == 'true' &&
       github.event.action != 'closed' &&
       github.event_name != 'pull_request_target' && github.event_name != 'workflow_run'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner }}
     outputs:
       paper: ${{ steps.paper.outcome }}
     permissions:
@@ -128,14 +132,9 @@ jobs:
         with:
           version: ${{ inputs.quarto-version }}
 
-      # The managed entry point needs the CLI from this workflow's own revision.
-      - name: Install Asta CLI for managed workspace rules
-        run: |
-          if [ ! -f workspace.mk ] && grep -Eq '^[[:space:]]*(-?include|sinclude)[[:space:]]+\.asta/cache/workspace\.mk([[:space:]]|$)' Makefile; then
-            python3 -m venv "$RUNNER_TEMP/asta-cli"
-            "$RUNNER_TEMP/asta-cli/bin/pip" install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
-            echo "$RUNNER_TEMP/asta-cli/bin" >> "$GITHUB_PATH"
-          fi
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Asta CLI at the workflow revision
+        run: uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
 
       # Project script overrides are optional. Warn on drift without rejecting
       # intentional customizations.
@@ -341,58 +340,8 @@ jobs:
               exit 0
             fi
           fi
-          if git ls-files --error-unmatch scripts/what-changed.py >/dev/null 2>&1; then
-            gen=scripts/what-changed.py
-            echo "Using project-owned scripts/what-changed.py"
-          else
-            gen="$tmpdir/what-changed.py"
-            url="https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ job.workflow_sha }}/plugins/asta-tools/skills/workspace/assets/what-changed.py"
-            if ! curl -fsSL "$url" -o "$gen"; then
-              echo "::warning::could not fetch what-changed.py; skipping the diff page"
-              exit 0
-            fi
-            curl -fsSL "${url%/what-changed.py}/deck-review.py" -o "$tmpdir/deck-review.py" \
-              || echo "::warning::could not fetch deck-review.py; decks diff as text"
-          fi
-          # A deck's slides are diffed as images when the site has one and a browser installs.
-          render_decks=()
-          diff_python=python3
-          if grep -rlq --include='*.html' 'class="reveal' _site \
-              && [ -e "$(dirname "$gen")/deck-review.py" ] \
-              && python3 -m venv "$tmpdir/deck-venv" \
-              && "$tmpdir/deck-venv/bin/python" -m pip install -q playwright==1.64.1 \
-              && "$tmpdir/deck-venv/bin/python" -m playwright install --with-deps chromium >/dev/null; then
-            diff_python="$tmpdir/deck-venv/bin/python"
-            # Render into a fresh site-local directory. A failed generator must
-            # not delete a project's existing images or an earlier diff's assets.
-            deckstage=$(mktemp -d _site/.what-changed-decks.XXXXXX)
-            render_decks=(--render-decks "$deckstage" --render-decks-url what-changed-decks)
-          fi
-          if [ -e _site/what-changed.html ]; then
-            echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
-          fi
-          # Exclusive creation avoids PR-planted symlinks; no .html suffix keeps
-          # this empty output out of the input page discovery.
-          tmpout=$(mktemp _site/.what-changed.XXXXXX)
-          if "$diff_python" "$gen" \
-            --old "$baseline" --new _site \
-            --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \
-            "${render_decks[@]}" \
-              && [ -s "$tmpout" ]; then
-            if [ -n "$deckstage" ] && [ -n "$(find "$deckstage" -type f -print -quit 2>/dev/null)" ]; then
-              if [ -e _site/what-changed-decks ] || [ -L _site/what-changed-decks ]; then
-                echo "::warning::Replacing generated deck-review images in what-changed-decks"
-              fi
-              rm -rf _site/what-changed-decks
-              mv "$deckstage" _site/what-changed-decks
-            elif [ -n "$deckstage" ]; then
-              # A text-only result wrote no images: leave the site's own folder alone.
-              rm -rf "$deckstage"
-            fi
-            mv "$tmpout" _site/what-changed.html
-          else
-            echo "::warning::what-changed page generation failed; preview still published"
-          fi
+          asta workspace what-changed --before-site "$baseline" --after-site _site \
+            --title "PR $PR_NUMBER · $baseline_label"
 
       - name: Check project preview artifacts
         if: inputs.artifact-command != ''
