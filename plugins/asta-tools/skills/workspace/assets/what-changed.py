@@ -1524,7 +1524,7 @@ def _pair_similar(old, new, olds, news):
     the edit showed as one removed and one new slide. Unrelated additions and
     removals stay unpaired.
     """
-    if not olds or not news or len(olds) * len(news) > 2500:
+    if not olds or not news:
         return {}
     text = [re.sub(r"<[^>]+>", "", old[i]["body"]) for i in olds]
     after = [re.sub(r"<[^>]+>", "", new[j]["body"]) for j in news]
@@ -1537,6 +1537,45 @@ def _pair_similar(old, new, olds, news):
         return ratio if ratio >= 0.5 else 0.0
 
     m, n = len(olds), len(news)
+    if m * n > 2500:
+        # Keep matching large rewritten decks rather than turning every slide
+        # into a removal/addition. Bound comparisons to a 50-slide window near
+        # each slide's relative position; exact-body and ID anchors ran first.
+        # A sparse maximum-weight increasing chain keeps matches one-to-one and
+        # ordered, using O(50*n*log(m)) work and O(m + 50*n) memory, not an m*n table.
+        tree = [(0.0, -1)] * (m + 1)
+        nodes = []
+
+        def prefix(end):
+            best = (0.0, -1)
+            while end:
+                best = max(best, tree[end])
+                end -= end & -end
+            return best
+
+        for b in range(n):
+            center = round(b * (m - 1) / max(n - 1, 1))
+            start = max(0, min(center - 25, m - 50))
+            pending = []
+            for a in range(start, min(m, start + 50)):
+                weight = similar(a, b)
+                if not weight:
+                    continue
+                previous, parent = prefix(a)
+                node = len(nodes)
+                nodes.append((a, b, parent))
+                pending.append((a + 1, (previous + weight, node)))
+            # Update only after the row, so one new slide cannot pair twice.
+            for end, value in pending:
+                while end <= m:
+                    tree[end] = max(tree[end], value)
+                    end += end & -end
+        result = {}
+        _, node = prefix(m)
+        while node != -1:
+            a, b, node = nodes[node]
+            result[news[b]] = olds[a]
+        return result
     score = [[similar(a, b) for b in range(n)] for a in range(m)]
     best = [[0.0] * (n + 1) for _ in range(m + 1)]
     for a in range(m - 1, -1, -1):

@@ -61,6 +61,21 @@ LIST_JS = (
 }"""
 )
 
+# Compare the audience-facing destinations and controls, not only their pixels.
+# Keep raw attributes (not resolved URLs, whose local origins differ by side).
+INTERACTIONS_JS = r"""() => Reveal.getSlides().map(s => {
+  const x = Reveal.getIndices(s); Reveal.slide(x.h, x.v || 0, Infinity);
+  return [...s.querySelectorAll('a, area, button, input, select, textarea, form, details, summary, [role], [tabindex], [onclick]')]
+    .filter(el => !el.closest('.notes') && el.checkVisibility({visibilityProperty: true}))
+    .map(el => ({
+      element: el.tagName.toLowerCase(),
+      label: (el.getAttribute('aria-label') || el.textContent).replace(/\s+/g, ' ').trim(),
+      attributes: Object.fromEntries([...el.attributes]
+        .filter(a => /^(href|target|download|rel|action|method|type|name|value|disabled|checked|selected|multiple|required|readonly|open|title|role|tabindex|on\w+|aria-[\w-]+|data-[\w-]+)$/.test(a.name))
+        .sort((a, b) => a.name.localeCompare(b.name)).map(a => [a.name, a.value]))
+    }));
+})"""
+
 # Stable screenshots compare slide content, not index-dependent presentation chrome.
 CAPTURE_CSS = """
 *, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }
@@ -269,6 +284,9 @@ class Renderer:
     def texts(self, side, deck):
         return self.page(side, deck).evaluate(LIST_JS)
 
+    def interactions(self, side, deck):
+        return self.page(side, deck).evaluate(INTERACTIONS_JS)
+
     def shoot(self, side, deck, index, path=None, mark=None, number=False):
         """Screenshot slide ``index``; ``mark`` is (js, arg) applied on a fresh page.
 
@@ -299,13 +317,14 @@ class Renderer:
         return data
 
 
-def classify(old, new, pairs, same_image=None, same_text=None):
+def classify(old, new, pairs, same_image=None, same_text=None, same_interactions=None):
     """Rows in deck order as (kind, new_index, old_index), and removed old indices.
 
     ``same_text(old_index, new_index)`` compares the text as shown, so a slide
     whose markup is equal but whose section line changed counts as changed.
     ``same_image`` then decides text-equal slides; without it they count as
-    unchanged.
+    unchanged. ``same_interactions`` also retains edits to links and controls
+    whose visible words and pixels stay the same.
     """
     rows = []
     for index in range(len(new)):
@@ -316,7 +335,7 @@ def classify(old, new, pairs, same_image=None, same_text=None):
             old[before]["body"] != new[index]["body"]
             if same_text is None
             else not same_text(before, index)
-        ):
+        ) or (same_interactions is not None and not same_interactions(before, index)):
             # Rendered text includes chrome outside the markup, such as the section line.
             rows.append(("changed", index, before))
         elif same_image is not None and not same_image(before, index):
@@ -363,12 +382,15 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
 
     old_text = renderer.texts("old", deck) if old else []
     new_text = renderer.texts("new", deck)
+    old_interactions = renderer.interactions("old", deck) if old else []
+    new_interactions = renderer.interactions("new", deck)
     rows, removed = classify(
         old,
         new,
         pairs,
         (lambda o, n: shot("old", o) == shot("new", n)) if old else None,
         lambda o, n: old_text[o] == new_text[n],
+        lambda o, n: old_interactions[o] == new_interactions[n],
     )
     shown = context(rows)
     if not removed and all(rows[k][0] == "unchanged" for k in shown):
@@ -387,6 +409,11 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
             "clean": f"{img_url}/{name}.png",
             "link": link + "#/" + new[n]["anchor"],
         }
+        if o is not None and old_interactions[o] != new_interactions[n]:
+            item["interactions"] = {
+                "before": old_interactions[o],
+                "after": new_interactions[n],
+            }
         mark = None
         if kind == "new":
             mark = (FRAME_JS, [MARK_CSS, "#2fbf71", "New slide"])
@@ -466,6 +493,17 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     a.setAttribute('aria-label', 'Slide ' + i.n + (i.title ? ': ' + i.title : '') + ', ' + word); h.append(a);
     const one = img(i.marked || i.clean); one.dataset.clean = i.clean; one.dataset.marked = i.marked || i.clean;
     s.append(h, one);
+    if (i.interactions) {
+      const note = el('div', 'dr-interactions');
+      note.append(el('strong', null, 'Links or controls changed'));
+      for (const [key, label] of [['before', 'Before'], ['after', 'After']]) {
+        const p = el('p'); p.append(el('b', null, label + ': '));
+        p.append(el('code', null, i.interactions[key].map(x =>
+          x.element + (x.label ? ' “' + x.label + '”' : '') + ' ' + JSON.stringify(x.attributes)
+        ).join('; ') || '(none)')); note.append(p);
+      }
+      s.append(note);
+    }
     if (i.before) {
       const p = el('div', 'dr-pair'); p.hidden = true;
       [['Before', i.before], ['After', i.clean]].forEach(([c, src]) => { const f = el('figure'); f.append(el('figcaption', null, c), img(src)); p.append(f); });

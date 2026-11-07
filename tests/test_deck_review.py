@@ -170,6 +170,9 @@ class _Renderer:
     def texts(self, side, deck):
         return [s["body"] for s in self.slides[side]]
 
+    def interactions(self, side, deck):
+        return [[] for _ in self.slides[side]]
+
     def shoot(self, side, deck, index, path=None, mark=None, number=False):
         self.calls.append((side, index, mark is not None) + ((True,) if number else ()))
         data = self.slides[side][index]["body"].encode()
@@ -490,3 +493,83 @@ def test_section_line_change_with_equal_markup_is_a_text_change():
         lambda o, n: shown_old[o] == shown_new[n],
     )
     assert [kind for kind, _, _ in rows] == ["changed", "look"]
+
+
+def test_link_destination_change_with_equal_text_and_image_is_retained(tmp_path):
+    old = _slides('<h2>Resources</h2><a href="before.html">Read more</a>')
+    new = _slides('<h2>Resources</h2><a href="after.html">Read more</a>')
+
+    class LinkRenderer(_Renderer):
+        def texts(self, side, deck):
+            return ["Resources Read more"]
+
+        def interactions(self, side, deck):
+            return [
+                [
+                    {
+                        "element": "a",
+                        "label": "Read more",
+                        "attributes": {"href": side + ".html"},
+                    }
+                ]
+            ]
+
+        def shoot(self, side, deck, index, path=None, mark=None, number=False):
+            return b"same pixels"
+
+    rendered = deck_review.review(
+        "slides.html",
+        "slides.html",
+        str(tmp_path),
+        "imgs",
+        old,
+        new,
+        {0: 0},
+        LinkRenderer(old, new),
+    )
+    data = json.loads(rendered.split('class="dr-data">', 1)[1].split("</script>", 1)[0])
+    item = data["items"][0]
+    assert item["kind"] == "changed"
+    assert item["interactions"]["before"][0]["attributes"] == {"href": "old.html"}
+    assert item["interactions"]["after"][0]["attributes"] == {"href": "new.html"}
+
+
+def test_large_rewritten_deck_keeps_edits_paired_with_bounded_comparisons(monkeypatch):
+    old = _slides(
+        *(
+            f"<h2>Experiment {i:03d}</h2><p>Measurements for run {i:03d}, old version.</p>"
+            for i in range(80)
+        )
+    )
+    new = [
+        {
+            **s,
+            "id": "regenerated-" + s["id"],
+            "body": s["body"].replace("old version", "new version"),
+        }
+        for s in old
+    ]
+    new.insert(
+        35, {"id": "added", "body": "<h2>ZZZZZZZZZZZZZZZZZZZZ</h2>", "anchor": "added"}
+    )
+    calls = 0
+    original = what_changed.difflib.SequenceMatcher.ratio
+
+    def ratio(self):
+        nonlocal calls
+        calls += 1
+        return original(self)
+
+    monkeypatch.setattr(what_changed.difflib.SequenceMatcher, "ratio", ratio)
+    pairs = what_changed.match_slides(old, new)
+    assert pairs == {i + (i >= 35): i for i in range(80)}
+    assert calls <= 50 * len(new)
+
+
+def test_large_unrelated_decks_remain_additions_and_removals():
+    old = _slides(*("<h2>AAAAAAAAAAAAAAAAAAAA</h2>" for _ in range(60)))
+    new = [
+        {**s, "id": "new-" + s["id"], "body": "<h2>ZZZZZZZZZZZZZZZZZZZZ</h2>"}
+        for s in old
+    ]
+    assert what_changed.match_slides(old, new) == {}

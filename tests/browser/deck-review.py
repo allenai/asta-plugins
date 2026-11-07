@@ -229,6 +229,78 @@ def typical_edit(root, deck, original):
         renderer.close()
 
 
+def interaction_edit(root, deck, original, artifacts):
+    """An unchanged picture must not hide a changed link or control."""
+    slides = changed.reveal_slides(original)
+    link = '<p><a href="before.html">Read more</a></p>'
+    notes = '<aside class="notes"><a href="old-notes.html">Speaker only</a></aside>'
+    baseline = original.replace(slides[2]["body"], slides[2]["body"] + link, 1)
+    baseline = baseline.replace(slides[3]["body"], slides[3]["body"] + notes, 1)
+    after = baseline.replace('href="before.html"', 'href="after.html"').replace(
+        'href="old-notes.html"', 'href="new-notes.html"'
+    )
+    (root / "old" / deck).write_text(baseline)
+    (root / "new" / deck).write_text(after)
+    old, new = changed.reveal_slides(baseline), changed.reveal_slides(after)
+    renderer = review.Renderer(root / "old", root / "new")
+    try:
+        assert renderer.shoot("old", str(deck), 2) == renderer.shoot(
+            "new", str(deck), 2
+        )
+        rendered = review.review(
+            str(deck),
+            str(deck),
+            str(root / "new/interaction-images"),
+            "interaction-images",
+            old,
+            new,
+            changed.match_slides(old, new),
+            renderer,
+        )
+        data = json.loads(
+            rendered.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
+        )
+        assert [i["n"] for i in data["items"] if i["kind"] == "changed"] == [3], data
+        assert data["items"][3]["kind"] == "unchanged", "notes-only links are omitted"
+        # Other declarative control changes are retained too, even without pixel changes.
+        page = renderer.page("new", str(deck))
+        page.evaluate(
+            "() => Reveal.getSlides()[2].querySelector('a').target = '_blank'"
+        )
+        assert (
+            renderer.interactions("new", str(deck))[2][0]["attributes"]["target"]
+            == "_blank"
+        )
+    finally:
+        renderer.close()
+    (root / "new/interaction-review.html").write_text(
+        "<!doctype html><meta charset='utf-8'>"
+        + review.STYLE
+        + rendered
+        + review.SCRIPT
+    )
+    server = review._serve(str(root / "new"))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.goto(
+                f"http://127.0.0.1:{server.server_address[1]}/interaction-review.html"
+            )
+            note = page.locator(".dr-interactions")
+            assert note.count() == 1
+            assert (
+                "before.html" in note.inner_text() and "after.html" in note.inner_text()
+            )
+            assert note.locator("a").count() == 0, "destinations are inert text"
+            decode_review_images(page)
+            page.screenshot(path=str(artifacts / "deck-review-link-edit.png"))
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def decode_review_images(page):
     page.evaluate("""async () => {
       await Promise.all([...document.querySelectorAll('.dr-slide img')].map(i => {
@@ -249,6 +321,7 @@ def check(site, artifacts):
         assert len(slides) >= 5
         capture_regressions(root, deck, original)
         typical_edit(root, deck, original)
+        interaction_edit(root, deck, original, artifacts)
         # Root-relative images resolve at each site origin, including lazy-loaded images.
         image = '<img data-src="/review-image.svg" alt="Review image" width="300" height="100">'
         baseline = original.replace(slides[2]["body"], slides[2]["body"] + image, 1)
