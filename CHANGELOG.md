@@ -17,6 +17,10 @@
   generator marker, and theme lookup skips unstyled pages to find the site's CSS.
   Partial rendering requires an explicit recipe capability marker (or the
   supported legacy adapter), so prerequisite logging cannot enable it by mistake.
+  The output guard also covers forced/recursive dry-run Quarto calls without
+  rendering. A project lock prevents overlapping comparisons from replacing
+  each other's report assets. Retained theme URLs handle quoted paths with spaces
+  and string-form CSS imports, including in nested pages.
   Dry runs create no output or worktrees.
 
 - The shared workspace site workflow supports a subfolder and render-path

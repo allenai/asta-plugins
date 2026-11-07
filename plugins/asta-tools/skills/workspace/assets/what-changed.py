@@ -1185,7 +1185,44 @@ def rebase_urls(text, depth):
         return f"{attr}={quote}{url}{quote}"
 
     text = re.sub(r'(href|src)\s*=\s*(["\'])([^"\']*)\2', fix, text, flags=re.I)
-    return text
+    return rewrite_style_urls(
+        text, lambda url: url[len(prefix) :] if url.startswith(prefix) else url
+    )
+
+
+def rewrite_style_urls(text, rewrite):
+    """Rewrite CSS URLs in inline styles, preserving quoting and raw CSS text.
+
+    Tokenize comments and strings as well as url() and string-form @import so
+    apparent URLs inside comments or content strings are left alone. Quoted
+    paths can contain whitespace, parentheses, and backslash-escaped quotes.
+    """
+    string = r"""(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')"""
+    tokens = re.compile(
+        rf"(?P<comment>/\*[\s\S]*?\*/)"
+        rf"|\burl\(\s*(?P<url>{string}|(?:\\[\s\S]|[^\\\s\"'()])*)\s*\)"
+        rf"|@import\s+(?P<import>{string})"
+        rf"|{string}",
+        re.I,
+    )
+
+    def token(match):
+        group = "url" if match.group("url") is not None else "import"
+        value = match.group(group)
+        if value is None:
+            return match[0]
+        quote = value[:1] if value.startswith(('"', "'")) else ""
+        url = value[1:-1] if quote else value
+        start, end = match.span(group)
+        start -= match.start()
+        end -= match.start()
+        return match[0][:start] + quote + rewrite(url) + quote + match[0][end:]
+
+    return re.sub(
+        r"(?is)(<style\b[^>]*>)(.*?)(</style>)",
+        lambda match: match[1] + tokens.sub(token, match[2]) + match[3],
+        text,
+    )
 
 
 def page_title(doc, rel):
@@ -1543,11 +1580,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
 
 
 def prefix_theme_urls(css, prefix):
-    """Rebase theme href attributes and CSS url() into the retained asset tree.
-
-    Only stylesheet links and inline styles are copied from the template;
-    src attributes and bare-string @import rules are not rewritten.
-    """
+    """Rebase theme links, CSS url(), and @import into the retained asset tree."""
 
     def prefixed(url, attribute=False):
         # HTML attributes decode entities; <style> is raw text. Preserve CSS
@@ -1566,11 +1599,7 @@ def prefix_theme_urls(css, prefix):
         ),
         css,
     )
-    return re.sub(
-        r"""(?i)(url\(\s*)(["']?)([^"')\s]+)\2(\s*\))""",
-        lambda match: f"{match[1]}{match[2]}{prefixed(match[3])}{match[2]}{match[4]}",
-        css,
-    )
+    return rewrite_style_urls(css, prefixed)
 
 
 def build(

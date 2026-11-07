@@ -1207,3 +1207,47 @@ def test_retained_inline_css_preserves_raw_url_ampersands(tmp_path, url):
     )
 
     assert f'url("what-changed-assets/{url}")' in result
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_retained_theme_rebases_quoted_css_urls_and_imports(tmp_path, nested):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    page = new / "chapters/index.html" if nested else new / "index.html"
+    page.parent.mkdir(parents=True)
+    source_prefix = "../" if nested else ""
+    page.write_text(
+        "<head><style>\n"
+        f'@import "{source_prefix}themes/my theme.css" screen;\n'
+        f"@import '{source_prefix}themes/print.css' print;\n"
+        f'@import url("{source_prefix}themes/another theme.css");\n'
+        f"body {{ background: URL( '{source_prefix}images/picture (dark).png' ); }}\n"
+        f".icon {{ mask: url({source_prefix}images/icon.svg); }}\n"
+        f'.quoted {{ background: url("{source_prefix}images/a\\"b.png"); }}\n'
+        '@import "https://example.org/remote theme.css";\n'
+        '@import "//example.org/remote.css";\n'
+        '.remote { background: url("https://example.org/bg image.png"); }\n'
+        '.inline { background: url("data:image/svg+xml;utf8,(svg)"); }\n'
+        '.fragment { mask: url("#icon"); }\n'
+        '/* @import "ignored.css"; url("ignored image.png") */\n'
+        ".content { content: 'url(\"literal text.png\")'; }\n"
+        "</style></head><main>A new finding.</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix="what-changed-assets/"
+    )
+
+    assert '@import "what-changed-assets/themes/my theme.css" screen;' in result
+    assert "@import 'what-changed-assets/themes/print.css' print;" in result
+    assert '@import url("what-changed-assets/themes/another theme.css");' in result
+    assert "URL( 'what-changed-assets/images/picture (dark).png' )" in result
+    assert "url(what-changed-assets/images/icon.svg)" in result
+    assert 'url("what-changed-assets/images/a\\"b.png")' in result
+    assert '@import "https://example.org/remote theme.css";' in result
+    assert '@import "//example.org/remote.css";' in result
+    assert 'url("https://example.org/bg image.png")' in result
+    assert 'url("data:image/svg+xml;utf8,(svg)")' in result
+    assert 'url("#icon")' in result
+    assert '/* @import "ignored.css"; url("ignored image.png") */' in result
+    assert "content: 'url(\"literal text.png\")'" in result

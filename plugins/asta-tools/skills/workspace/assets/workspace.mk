@@ -220,7 +220,7 @@ what-changed:
 	makefile='$(subst ','"'"',$(firstword $(MAKEFILE_LIST)))'; \
 	ignore_before=$$(git hash-object .gitignore 2>/dev/null || printf missing); \
 	echo "what-changed: base $$source ($$base); running its make render" >&2; \
-	tmp=; current=; publication=; assets_installed=; \
+	tmp=; current=; publication=; assets_installed=; lock_held=; \
 	cleanup() { \
 		status=$$?; trap - 0; trap '' 1 2 15; \
 		ignore_after=$$(git hash-object .gitignore 2>/dev/null || printf missing); \
@@ -238,15 +238,32 @@ what-changed:
 		if [ -n "$$tmp" ] && [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
 			echo "what-changed: cleanup failed; remove the worktree at $$tmp/base manually" >&2; exit 1; \
 		fi; \
-		[ -z "$$tmp" ] || rm -rf "$$tmp"; exit "$$status"; \
+		[ -z "$$tmp" ] || rm -rf "$$tmp"; \
+		[ -z "$$lock_held" ] || rmdir .asta/cache/what-changed.lock; exit "$$status"; \
 	}; \
 	trap cleanup 0; \
 	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
+	mkdir -p .asta/cache; \
+	mkdir .asta/cache/what-changed.lock 2>/dev/null || { echo 'what-changed: another comparison is in progress; after an uncatchable interruption, remove .asta/cache/what-changed.lock before retrying' >&2; exit 1; }; \
+	lock_held=1; \
 	tmp=$$(mktemp -d); \
 	(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u) > "$$tmp/changed"; \
-	: 'Recursive dry runs may refresh included makefiles or execute recursive/+ recipe lines'; \
-	current_probe=$$($(MAKE) -f "$$makefile" -n render ASTA_WORKSPACE_RENDER_OUTPUT=asta-what-changed-output-probe ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-page-probe.qmd 2>/dev/null) || current_probe=; \
-	printf '%s\n' "$$current_probe" | grep -q asta-what-changed-output-probe || { \
+	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
+	mkdir "$$tmp/current-bin"; \
+	printf '%s\n' '#!/bin/sh' 'set -eu' \
+		'if [ "$${1:-}" = render ]; then' \
+		'  found=; previous=; for argument do' \
+		'    if [ "$$previous" = --output-dir ]; then found=$$argument; fi' \
+		'    previous=$$argument' '  done' \
+		'  [ "$$found" = "$$ASTA_WHAT_CHANGED_OUTPUT" ] || { echo "what-changed: current quarto render must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }' \
+		'fi' \
+		'[ "$${ASTA_WHAT_CHANGED_PROBE:-}" != 1 ] || exit 0' \
+		'exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"' > "$$tmp/current-bin/quarto"; \
+	chmod +x "$$tmp/current-bin/quarto"; \
+	: 'Recursive dry runs may execute recursive/+ lines; guard Quarto before probing and never render during the probe'; \
+	current_probe=$$(PATH="$$tmp/current-bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_OUTPUT="$$current" ASTA_WHAT_CHANGED_PROBE=1 \
+		$(MAKE) -f "$$makefile" -n render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-page-probe.qmd 2>/dev/null) || current_probe=; \
+	printf '%s\n' "$$current_probe" | grep -Fq -- "$$current" || { \
 		echo "what-changed: current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
@@ -296,17 +313,6 @@ what-changed:
 			else partial=; fi; \
 		fi; \
 	fi; \
-	mkdir -p .asta/cache; \
-	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
-	mkdir "$$tmp/current-bin"; \
-	printf '%s\n' '#!/bin/sh' 'set -eu' \
-		'if [ "$${1:-}" = render ]; then' \
-		'  found=; previous=; for argument do' \
-		'    if [ "$$previous" = --output-dir ]; then found=$$argument; fi' \
-		'    previous=$$argument' '  done' \
-		'  [ "$$found" = "$$ASTA_WHAT_CHANGED_OUTPUT" ] || { echo "what-changed: current quarto render must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }' \
-		'fi' 'exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"' > "$$tmp/current-bin/quarto"; \
-	chmod +x "$$tmp/current-bin/quarto"; \
 	current_render() { \
 		PATH="$$tmp/current-bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_OUTPUT="$$current" \
 			$(MAKE) -f "$$makefile" render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$1" >&2; \

@@ -446,6 +446,112 @@ def test_empty_current_render_does_not_report_every_page_deleted(
     assert not list((project / ".asta/cache").glob("what-changed.*"))
 
 
+@pytest.mark.parametrize("recursive", [False, True])
+@pytest.mark.parametrize("honours_output", [False, True])
+def test_forced_dry_run_recipes_cannot_render_over_preview(
+    project: Path, tmp_path: Path, recursive: bool, honours_output: bool
+) -> None:
+    """GNU Make executes + and recursive lines even with -n; guard those too."""
+    output = " --output-dir '$(ASTA_WORKSPACE_RENDER_OUTPUT)'" if honours_output else ""
+    with (project / "Makefile").open("a") as file:
+        file.write("render:\n\t@echo '$(ASTA_WORKSPACE_RENDER_OUTPUT)'\n")
+        if recursive:
+            file.write("\t$(MAKE) forced-render\nforced-render:\n\t+")
+        else:
+            file.write("\t+")
+        file.write(f"quarto render{output}\n")
+    site = project / "_site"
+    site.mkdir()
+    live = site / "index.html"
+    live.write_text("Live preview must stay intact.")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    log = tmp_path / "quarto.log"
+    env = {**make_env(tmp_path), "QUARTO_LOG": str(log)}
+
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert live.read_text() == "Live preview must stay intact."
+    if honours_output:
+        assert result.returncode == 0, result.stderr
+        assert "drafted" in (site / "what-changed.html").read_text()
+        # Exactly one real current render: the forced probe must be a no-op.
+        assert (
+            sum(
+                row["cwd"] == str(project)
+                for row in map(json.loads, log.read_text().splitlines())
+            )
+            == 1
+        )
+    else:
+        assert result.returncode != 0
+        assert "must honour ASTA_WORKSPACE_RENDER_OUTPUT" in result.stderr
+        assert not log.exists(), "even a forced probe must not call real Quarto"
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+def test_concurrent_comparison_is_rejected_without_disturbing_first(
+    project: Path, tmp_path: Path
+) -> None:
+    site = project / "_site"
+    assets = site / "what-changed-assets"
+    assets.mkdir(parents=True)
+    (assets / "previous.css").write_text("Previous theme.")
+    (site / "what-changed.html").write_text("Previous comparison.")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    marker = tmp_path / "render-started"
+    env = {**make_env(tmp_path), "QUARTO_BLOCK_BASE_RENDER": str(marker)}
+    first = subprocess.Popen(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while (
+            not marker.exists() and first.poll() is None and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
+        assert marker.exists(), first.communicate(timeout=2)
+
+        second = make(project, tmp_path)
+
+        assert second.returncode != 0
+        assert "another comparison is in progress" in second.stderr
+        assert (project / ".asta/cache/what-changed.lock").is_dir()
+        assert (assets / "previous.css").read_text() == "Previous theme."
+        assert (site / "what-changed.html").read_text() == "Previous comparison."
+        assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 2
+        os.killpg(first.pid, signal.SIGTERM)
+        first.communicate(timeout=10)
+    finally:
+        if first.poll() is None:
+            os.killpg(first.pid, signal.SIGKILL)
+            first.communicate(timeout=5)
+
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+    retry = make(project, tmp_path)
+    assert retry.returncode == 0, retry.stderr
+    assert "drafted" in (site / "what-changed.html").read_text()
+    assert not (assets / "previous.css").exists()
+    assert not (assets / "new").exists()
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+
+
 @pytest.mark.parametrize("failure", ["assets", "report"])
 def test_failed_publication_restores_previous_assets_and_report(
     project: Path, tmp_path: Path, failure: str
