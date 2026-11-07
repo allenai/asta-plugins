@@ -28,6 +28,11 @@ def _dry_run_check():
         ("n -- WHAT_CHANGED_BASE=main", True),
         # GNU Make 3.81 (macOS /usr/bin/make) puts command-line variables first.
         ("WHAT_CHANGED_BASE=main -n", True),
+        ("WHAT_CHANGED_BASE=x origin", False),
+        ("WHAT_CHANGED_BASE=x origin -n", True),
+        ("w -- WHAT_CHANGED_BASE=x origin", False),
+        ("n -- WHAT_CHANGED_BASE=x origin", True),
+        ("WHAT_CHANGED_BASE=x origin --no-print-directory", False),
         ("WHAT_CHANGED_BASE=main", False),
         ("WHAT_CHANGED_BASE=main --", False),
         ("-- WHAT_CHANGED_BASE=main", False),

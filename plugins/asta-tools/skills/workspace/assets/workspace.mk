@@ -195,7 +195,7 @@ WHAT_CHANGED_BASE ?=
 WHAT_CHANGED_FULL ?=
 what-changed:
 	@set -eu; \
-	set -f; for flag in $$MAKEFLAGS; do case "$$flag" in *=*|--*|*[!A-Za-z-]*) ;; *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac; done; set +f; \
+	set -f; variables=; for flag in $$MAKEFLAGS; do case "$$flag" in --) break;; *=*) variables=1;; --*|*[!A-Za-z-]*) ;; -*) case "$$flag" in *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac;; *) if [ -z "$$variables" ]; then case "$$flag" in *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac; fi;; esac; done; set +f; \
 	base='$(subst ','"'"',$(value WHAT_CHANGED_BASE))'; \
 	source=$$base; \
 	if [ -z "$$base" ]; then \
@@ -348,6 +348,9 @@ what-changed:
 	decks=; ! grep -rlq --include='*.html' 'class="reveal' "$$current" || decks="--render-decks=$$current/what-changed-decks"; \
 	if [ -n "$$decks" ] && [ ! -f '$(dir $(call workspace_script,what-changed.py))deck-review.py' ]; then \
 		echo "what-changed: showing slides as text: deck-review.py is missing beside $(call workspace_script,what-changed.py); upgrade the Asta CLI and run 'asta workspace sync --refresh'" >&2; \
+	fi; \
+	if [ -n "$$decks" ] && { [ -e "$$current/what-changed-decks" ] || [ -L "$$current/what-changed-decks" ]; }; then \
+		echo "what-changed: replacing generated deck-review images in what-changed-decks" >&2; \
 	fi; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
 		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/ --reserved-local-output \

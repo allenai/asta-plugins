@@ -208,6 +208,10 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     git("update-ref", "refs/remotes/origin/gh-pages", "HEAD")
     (project / "_site").mkdir()
     (project / "_site/index.html").write_text("PR content")
+    outside = project / "keep.txt"
+    outside.write_text("must not be overwritten")
+    # An untrusted site can plant the old predictable output before generation.
+    (project / "_site/.what-changed.tmp.html").symlink_to(outside)
 
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
     script = script.replace("${{ job.workflow_sha }}", "source-commit")
@@ -223,6 +227,9 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
     assert page.startswith("custom: deployed main\nPR #7 · Pages ")
     assert re.search(r"Pages [0-9a-f]{12}$", page)
     assert "Using project-owned" in result.stdout
+    assert outside.read_text() == "must not be overwritten"
+    (project / "_site/.what-changed.tmp.html").unlink()
+    assert not list((project / "_site").glob(".what-changed.*"))
 
     (project / "_site/what-changed.html").unlink()
     stale_images = project / "_site/what-changed-decks"
@@ -252,6 +259,7 @@ def test_what_changed_project_override_runs_before_write_enabled_deploy(
         stale_images / "old.png"
     ).exists()  # renderer was never enabled; project owns this folder
     assert not (project / "_site/.what-changed.tmp.html").exists()
+    assert not list((project / "_site").glob(".what-changed.*"))
 
 
 def test_what_changed_uses_managed_generator_without_project_copy(

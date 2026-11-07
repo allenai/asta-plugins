@@ -369,7 +369,9 @@ jobs:
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
-          tmpout="_site/.what-changed.tmp.html"
+          # Exclusive creation avoids PR-planted symlinks; no .html suffix keeps
+          # this empty output out of the input page discovery.
+          tmpout=$(mktemp _site/.what-changed.XXXXXX)
           if "$diff_python" "$gen" \
             --old "$baseline" --new _site \
             --out "$tmpout" --title "PR #$PR_NUMBER · $baseline_label" \

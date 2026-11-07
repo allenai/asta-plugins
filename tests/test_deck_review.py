@@ -207,11 +207,10 @@ def test_review_reuses_comparison_captures_and_numbers_display_shots(tmp_path):
         "slides.html", "slides.html", str(tmp_path), "imgs", old, new, {0: 0}, renderer
     )
     assert renderer.calls.count(("new", 0, False)) <= 1
-    assert renderer.calls.count(("old", 0, False)) == 1
-    # The new deck's clean and marked images show its slide number; the old one's don't.
+    # Before and after both show their deck's own number, while comparison shots omit it.
     assert ("new", 0, False, True) in renderer.calls
     assert ("new", 0, True, True) in renderer.calls
-    assert not [c for c in renderer.calls if c[0] == "old" and len(c) == 4]
+    assert ("old", 0, False, True) in renderer.calls
 
 
 def test_notes_only_change_is_not_a_visible_edit():
@@ -378,7 +377,7 @@ def test_old_and_new_sites_have_independent_origin_roots(tmp_path, monkeypatch):
     from urllib.request import urlopen
 
     pw = SimpleNamespace(
-        chromium=SimpleNamespace(launch=lambda: SimpleNamespace(close=Mock())),
+        chromium=SimpleNamespace(launch=lambda **kw: SimpleNamespace(close=Mock())),
         stop=Mock(),
     )
     api = ModuleType("playwright.sync_api")
@@ -573,3 +572,62 @@ def test_large_unrelated_decks_remain_additions_and_removals():
         for s in old
     ]
     assert what_changed.match_slides(old, new) == {}
+
+
+def test_release_deck_closes_only_its_cached_documents():
+    from unittest.mock import Mock
+
+    renderer = object.__new__(deck_review.Renderer)
+    before, after, other = Mock(), Mock(), Mock()
+    renderer._pages = {
+        ("old", "one.html"): before,
+        ("new", "one.html"): after,
+        ("new", "two.html"): other,
+    }
+    renderer.release_deck("one.html")
+    before.close.assert_called_once()
+    after.close.assert_called_once()
+    other.close.assert_not_called()
+    assert renderer._pages == {("new", "two.html"): other}
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_each_deck_releases_documents_even_after_capture_failure(tmp_path, failed):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    renderer = Mock()
+    capture = (
+        Mock(side_effect=RuntimeError("bad deck"))
+        if failed
+        else Mock(return_value=None)
+    )
+    decks = what_changed.DeckRenderer(
+        SimpleNamespace(Renderer=lambda *args: renderer, review=capture),
+        "old",
+        "new",
+        str(tmp_path),
+        "imgs",
+    )
+    assert decks.review("deck.html", "deck.html", [], _slides("Slide"), {}) is (
+        False if failed else None
+    )
+    renderer.release_deck.assert_called_once_with("deck.html")
+    renderer.close.assert_not_called()  # the browser remains reusable
+
+
+def test_a_failed_child_frame_does_not_discard_the_slide():
+    from unittest.mock import Mock
+
+    failed_frame = Mock()
+    failed_frame.add_style_tag.side_effect = RuntimeError("frame detached")
+    good_frame = Mock()
+    page = Mock()
+    page.main_frame = object()
+    page.frames = [page.main_frame, failed_frame, good_frame]
+    page.screenshot.return_value = b"PNG"
+    renderer = object.__new__(deck_review.Renderer)
+    renderer.page = lambda *args: page
+    assert renderer.shoot("new", "deck.html", 0) == b"PNG"
+    good_frame.evaluate.assert_called_once_with(deck_review.READY_JS)
+    page.close.assert_not_called()

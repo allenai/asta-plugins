@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -117,6 +118,26 @@ def capture_regressions(root, deck, original):
         }""")
         page.evaluate(review.READY_JS)
         assert renderer.shoot("new", str(deck), 2).startswith(b"\x89PNG")
+        # Broken/undecodable video, a load that never finishes, a seek that
+        # never finishes, and a blocked external embed do not drop the deck.
+        page.evaluate("""() => {
+          const slide = Reveal.getCurrentSlide();
+          const broken = document.createElement('video'); broken.src = '/missing-video.mp4';
+          slide.append(broken);
+          for (const state of [0, 2]) {
+            const stalled = document.createElement('video');
+            Object.defineProperty(stalled, 'readyState', {get: () => state});
+            Object.defineProperty(stalled, 'currentTime', {get: () => 1, set: () => {}});
+            stalled.load = () => {}; slide.append(stalled);
+          }
+          const frame = document.createElement('iframe');
+          frame.src = 'https://example.org/unavailable-embed'; slide.append(frame);
+        }""")
+        started = time.monotonic()
+        assert renderer.shoot("new", str(deck), 2).startswith(b"\x89PNG")
+        assert time.monotonic() - started < 6, (
+            "media waits have short individual timeouts"
+        )
         assert page.evaluate("""async () => {
           try { await fetch('https://example.org/deck-review-egress'); return false; }
           catch { return true; }
@@ -373,6 +394,7 @@ def check(site, artifacts):
                 kinds = [item["kind"] for item in data["items"]]
                 assert "changed" in kinds and "look" in kinds and "new" in kinds, kinds
                 assert len(data["removed"]) == 1, data
+                assert "new deck has" in page.locator(".dr-count").inner_text()
                 assert len(data["items"]) == len(slides), (
                     "Every unchanged run is inspectable"
                 )
@@ -397,6 +419,10 @@ def check(site, artifacts):
                 )
                 page.locator(".deck-review").scroll_into_view_if_needed()
                 decode_review_images(page)
+                assert all(
+                    image.get_attribute("alt").startswith("Slide ")
+                    for image in page.locator(".dr-slide img").all()
+                )
                 page.screenshot(path=str(artifacts / "deck-review-marked.png"))
                 page.get_by_role("button", name="Clean", exact=True).click()
                 assert (
@@ -406,6 +432,11 @@ def check(site, artifacts):
                     == "true"
                 )
                 decode_review_images(page)
+                assert (
+                    page.locator("img[data-clean]")
+                    .first.get_attribute("alt")
+                    .endswith("(clean)")
+                )
                 page.screenshot(path=str(artifacts / "deck-review-clean.png"))
                 page.get_by_role("button", name="Before / after", exact=True).click()
                 assert page.locator(".dr-pair:visible").count() >= 2

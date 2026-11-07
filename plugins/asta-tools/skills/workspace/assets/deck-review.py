@@ -116,15 +116,23 @@ READY_JS = r"""() => Promise.race([(async () => {
   })));
   for (const video of roots.flatMap(root => [...root.querySelectorAll('video')])) {
     video.pause();
-    if (video.readyState < 2) await new Promise((resolve, reject) => {
-      video.addEventListener('loadeddata', resolve, {once:true});
-      video.addEventListener('error', reject, {once:true}); video.load();
-    });
-    if (video.currentTime !== 0) {
-      video.currentTime = 0;
-      await new Promise(resolve => video.addEventListener('seeked', resolve, {once:true}));
-    }
   }
+  // Missing or stalled media stays visible as missing media, not a deck-wide failure.
+  const mediaWait = (video, event, start) => new Promise(resolve => {
+    const done = () => {
+      clearTimeout(timer); video.removeEventListener(event, done);
+      video.removeEventListener('error', done); resolve();
+    };
+    const timer = setTimeout(done, 1000);
+    video.addEventListener(event, done, {once:true});
+    video.addEventListener('error', done, {once:true});
+    try { start(); } catch { done(); }
+  });
+  await Promise.all(roots.flatMap(root => [...root.querySelectorAll('video')]).map(async video => {
+    if (video.readyState < 2 && !video.error) await mediaWait(video, 'loadeddata', () => video.load());
+    if (video.readyState >= 2 && video.currentTime !== 0)
+      await mediaWait(video, 'seeked', () => { video.currentTime = 0; });
+  }));
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 })(), new Promise((_, reject) => setTimeout(() => reject(new Error("Slide media did not settle")), 15000))])"""
 
@@ -226,7 +234,12 @@ class Renderer:
                 self._bases[side] = f"http://127.0.0.1:{server.server_address[1]}"
             self._pw = sync_playwright().start()
             self._resources.callback(self._pw.stop)
-            self._browser = self._pw.chromium.launch()
+            self._browser = self._pw.chromium.launch(
+                args=[
+                    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                    "--dns-prefetch-disable",
+                ]
+            )
             self._resources.callback(self._browser.close)
         except Exception:
             self.close()
@@ -278,6 +291,13 @@ class Renderer:
             self._pages[key] = self._open(side, deck)
         return self._pages[key]
 
+    def release_deck(self, deck):
+        """Keep Chromium, but release both documents before reviewing another deck."""
+        for side in ("old", "new"):
+            page = self._pages.pop((side, deck), None)
+            if page is not None:
+                page.close()
+
     def slide_ids(self, side, deck):
         return self.page(side, deck).evaluate("() => Reveal.getSlides().map(s => s.id)")
 
@@ -298,9 +318,16 @@ class Renderer:
             page.evaluate(READY_JS)
             # Embedded documents have their own fonts, media and animation clocks.
             for frame in page.frames:
-                if frame != page.main_frame and frame.frame_element().is_visible():
-                    frame.add_style_tag(content=CAPTURE_CSS)
-                    frame.evaluate(READY_JS)
+                if frame == page.main_frame:
+                    continue
+                try:
+                    if frame.frame_element().is_visible():
+                        frame.add_style_tag(content=CAPTURE_CSS)
+                        frame.evaluate(READY_JS)
+                except Exception:
+                    # Blocked external embeds and detached frames stay missing in
+                    # the picture; they must not discard the rest of the deck.
+                    continue
             if number:
                 page.evaluate(NUMBER_JS, True)
             if mark:
@@ -376,10 +403,6 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
             captures[side, index] = renderer.shoot(side, deck, index)
         return captures[side, index]
 
-    def save(side, index, path):
-        with open(path, "wb") as output:
-            output.write(shot(side, index))
-
     old_text = renderer.texts("old", deck) if old else []
     new_text = renderer.texts("new", deck)
     old_interactions = renderer.interactions("old", deck) if old else []
@@ -430,7 +453,9 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
             )
             item["marked"] = f"{img_url}/{name}-m.png"
         if kind in {"changed", "look"}:
-            save("old", o, os.path.join(img_dir, name + "-b.png"))
+            renderer.shoot(
+                "old", deck, o, os.path.join(img_dir, name + "-b.png"), number=True
+            )
             item["before"] = f"{img_url}/{name}-b.png"
         items.append(item)
     gone = []
@@ -481,9 +506,12 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   const n = (k) => D.items.filter((i) => i.kind === k).length;
   const parts = [[n('changed') + n('look'), 'changed'], [n('new'), 'new'], [D.removed.length, 'removed']]
     .filter(([c]) => c).map(([c, w]) => c + ' ' + w);
-  root.querySelector('.dr-count').textContent = parts.join(', ') + ', of ' + D.total + ' slides';
+  root.querySelector('.dr-count').textContent = parts.join(', ') + ' — new deck has ' + D.total + ' slides';
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const img = (src) => { const i = el('img'); i.src = src; i.alt = ''; i.loading = 'lazy'; return i; };
+  const imageLabel = (slide, mode) => 'Slide ' + slide.n + (slide.title ? ': ' + slide.title : '') + ' (' + mode + ')';
+  const img = (src, slide, mode) => { const i = el('img'); i.src = src;
+    i.alt = imageLabel(slide, mode);
+    i.loading = 'lazy'; return i; };
   const label = { new: 'new', changed: 'changed', look: 'changed look', removed: 'removed' };
   const card = (i) => {
     const s = el('section', 'dr-slide dr-' + i.kind);
@@ -491,7 +519,9 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     const word = label[i.kind] || 'unchanged';
     const h = el('h3'); const a = el('a', 'tag ' + (i.kind === 'look' ? 'changed' : i.kind), word + ' \u2197'); a.href = i.link;
     a.setAttribute('aria-label', 'Slide ' + i.n + (i.title ? ': ' + i.title : '') + ', ' + word); h.append(a);
-    const one = img(i.marked || i.clean); one.dataset.clean = i.clean; one.dataset.marked = i.marked || i.clean;
+    const one = img(i.marked || i.clean, i, i.marked ? 'marked' : 'clean');
+    one.dataset.clean = i.clean; one.dataset.marked = i.marked || i.clean;
+    one.dataset.cleanAlt = imageLabel(i, 'clean'); one.dataset.markedAlt = one.alt;
     s.append(h, one);
     if (i.interactions) {
       const note = el('div', 'dr-interactions');
@@ -506,7 +536,7 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     }
     if (i.before) {
       const p = el('div', 'dr-pair'); p.hidden = true;
-      [['Before', i.before], ['After', i.clean]].forEach(([c, src]) => { const f = el('figure'); f.append(el('figcaption', null, c), img(src)); p.append(f); });
+      [['Before', i.before], ['After', i.clean]].forEach(([c, src]) => { const f = el('figure'); f.append(el('figcaption', null, c), img(src, i, c.toLowerCase())); p.append(f); });
       s.append(p);
     }
     return s;
@@ -529,12 +559,13 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   for (const r of D.removed) {
     const s = el('section', 'dr-slide dr-removed'); const h = el('h3');
     const t = el('span', 'tag removed', 'removed'); t.setAttribute('aria-label', 'Slide ' + r.n + ' of the old deck' + (r.title ? ': ' + r.title : '') + ', removed');
-    h.append(t); s.append(h, img(r.img)); list.append(s);
+    h.append(t); s.append(h, img(r.img, r, 'removed')); list.append(s);
   }
   const set = (v) => {
     root.querySelectorAll('.dr-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
     root.querySelectorAll('img[data-clean]').forEach((im) => {
       im.src = v === 'clean' ? im.dataset.clean : im.dataset.marked;
+      im.alt = v === 'clean' ? im.dataset.cleanAlt : im.dataset.markedAlt;
       const p = im.parentElement.querySelector('.dr-pair');
       if (p) { p.hidden = v !== 'before'; im.hidden = v === 'before'; }
     });

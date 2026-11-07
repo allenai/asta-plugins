@@ -1649,6 +1649,9 @@ class DeckRenderer:
             shutil.rmtree(os.path.join(self.img_root, rel), ignore_errors=True)
             print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
             return False
+        finally:
+            if self.renderer is not None:
+                self.renderer.release_deck(rel)
         self.used = self.used or body is not None
         return body
 
