@@ -356,7 +356,7 @@ jobs:
       - name: Upload rendered site
         uses: actions/upload-artifact@v4
         with:
-          name: site
+          name: site-${{ inputs.build-runner }}
           path: ${{ inputs.site-dir }}/_site
           include-hidden-files: true  # keep .nojekyll
 
@@ -394,7 +394,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: site
+          name: site-${{ inputs.build-runner }}
           path: _site
 
       - name: Publish to gh-pages

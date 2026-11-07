@@ -43,6 +43,42 @@ def deploy_preview(site):
         assert "noindex" in (preview / "what-changed.html").read_text()
 
 
+def deploy_main(site):
+    """Exercise the shared main publication script with the deck comparison."""
+    workflow = (ROOT / ".github/workflows/workspace-quarto-site.yml").read_text()
+    begin = workflow.index("# BEGIN main publication")
+    end = workflow.index("# END main publication", begin)
+    script = workflow[begin:end]
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp, "workspace")
+        shutil.copytree(site, workspace / "_site", symlinks=True)
+        published = Path(tmp, "published")
+        preview = published / "pr-preview/pr-1/index.html"
+        preview.parent.mkdir(parents=True)
+        preview.write_text("keep existing preview")
+        (published / "stale.html").write_text("remove old main page")
+        result = subprocess.run(
+            ["bash", "-eu", "-o", "pipefail", "-c", script],
+            env={
+                "PATH": os.environ["PATH"],
+                "GITHUB_WORKSPACE": str(workspace),
+                "tmp": str(published),
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert preview.read_text() == "keep existing preview"
+        assert not (published / "stale.html").exists()
+        assert 'class="deck-review"' in (published / "what-changed.html").read_text()
+        for image in site.glob("what-changed-assets/**/*.png"):
+            assert (
+                published / image.relative_to(site)
+            ).read_bytes() == image.read_bytes()
+        assert "noindex" not in (published / "what-changed.html").read_text()
+    print("Validated shared main publication with rendered deck images")
+
+
 def check(project, artifacts):
     artifacts.mkdir(parents=True, exist_ok=True)
     deck = project / "slides/attention/slides.qmd"
@@ -81,6 +117,7 @@ def check(project, artifacts):
     # A folder named *.html is handed to the deploy's noindex sed as a file.
     assert not [p for p in images.rglob("*.html") if p.is_dir()]
     deploy_preview(site)
+    deploy_main(site)
     server = review._serve(str(site))
     try:
         with sync_playwright() as pw:

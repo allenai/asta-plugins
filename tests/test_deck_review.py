@@ -246,6 +246,44 @@ def test_failed_browser_launch_is_not_retried_and_cleans_partial_images(tmp_path
     assert not partial.exists()
 
 
+def test_macos_sandbox_launch_failure_keeps_text_diff(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    def denied(*args):
+        raise RuntimeError("Mach port permission denied")
+
+    monkeypatch.setattr(
+        what_changed, "load_deck_review", lambda: SimpleNamespace(Renderer=denied)
+    )
+    old, new = tmp_path / "old", tmp_path / "new"
+    document = (
+        "<html><head><title>Talk</title></head><body>"
+        '<div class="reveal"><div class="slides">'
+        '<section id="a"><h2>{}</h2></section></div></div></body></html>'
+    )
+    for site, text in ((old, "Old finding"), (new, "New finding")):
+        site.mkdir()
+        (site / "slides.html").write_text(document.format(text))
+    output = new / "what-changed.html"
+    what_changed.main(
+        [
+            "--old",
+            str(old),
+            "--new",
+            str(new),
+            "--out",
+            str(output),
+            "--render-decks",
+            str(new / "images"),
+        ]
+    )
+    page = output.read_text()
+    assert "<ins" in page and "<del" in page
+    assert "Old" in page and "New" in page
+    assert 'class="deck-review"' not in page
+    assert "slides as text (Mach port permission denied)" in capsys.readouterr().err
+
+
 def test_output_images_are_relative_to_output_page_and_stale_files_removed(
     tmp_path, monkeypatch
 ):

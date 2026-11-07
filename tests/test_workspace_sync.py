@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from asta.cli import cli
@@ -1001,14 +1002,19 @@ def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
     assert "ASTA_WORKSPACE_ARCHIVE" not in recipe(full, "workspace-assets")
 
 
-def test_shared_workflow_installs_cli_from_its_own_commit_for_managed_projects() -> (
-    None
-):
+def test_shared_workflow_installs_cli_from_its_own_commit_for_all_projects() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github/workflows/workspace-quarto-site.yml"
     ).read_text()
-    assert "Install Asta CLI for managed workspace rules" in workflow
+    steps = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]["build"]["steps"]
+    installs = [step for step in steps if "uv tool install" in step.get("run", "")]
+    assert len(installs) == 1
+    install = installs[0]
+    assert "if" not in install
+    assert install["run"] == (
+        'uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"'
+    )
     assert "job.workflow_sha" in workflow
     assert "ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}" in workflow
     assert (

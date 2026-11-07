@@ -15,6 +15,22 @@ WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
 WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
 
 
+def test_site_artifacts_keep_runner_builds_separate():
+    jobs = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)["jobs"]
+    upload = next(
+        step
+        for step in jobs["build"]["steps"]
+        if step.get("name") == "Upload rendered site"
+    )
+    download = next(
+        step
+        for step in jobs["deploy"]["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    )
+    assert upload["with"]["name"] == "site-${{ inputs.build-runner }}"
+    assert download["with"]["name"] == upload["with"]["name"]
+
+
 def _run_paper_step(
     tmp_path: Path,
     *,
