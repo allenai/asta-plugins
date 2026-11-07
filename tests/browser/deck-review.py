@@ -435,7 +435,7 @@ def check(site, artifacts):
                 )
                 decode_review_images(page)
                 assert (
-                    page.locator("img[data-clean]")
+                    page.locator(".dr-shot[data-clean] img")
                     .first.get_attribute("alt")
                     .endswith("(clean)")
                 )

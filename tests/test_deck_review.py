@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -762,14 +764,53 @@ def test_view_carries_each_images_selectable_words():
     assert ".dr-text span" in deck_review.STYLE and "paint(" in deck_review.SCRIPT
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
-def test_view_script_parses(tmp_path):
-    """A Python escape such as an unescaped ``\\n`` must not break the view's JS."""
-    script = tmp_path / "view.js"
-    script.write_text(
-        deck_review.SCRIPT.removeprefix("<script>").removesuffix("</script>")
-    )
+INLINE_SCRIPT = re.compile(r"(?is)<script(?P<attrs>[^>]*)>(?P<body>.*?)</script>")
+
+
+def _node_check(tmp_path, name, source):
+    if shutil.which("node") is None:
+        if os.environ.get("CI"):
+            pytest.fail(
+                "node is required in CI to parse the What changed pages' scripts"
+            )
+        pytest.skip("needs node")
+    path = tmp_path / f"{name}.js"
+    path.write_text(source)
     result = subprocess.run(
-        ["node", "--check", str(script)], capture_output=True, text=True
+        ["node", "--check", str(path)], capture_output=True, text=True
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, f"{name}: {result.stderr}"
+
+
+def test_view_page_scripts_parse(tmp_path):
+    """Every executable inline script on a rendered deck view must parse.
+
+    A Python escape such as an unescaped ``\\n`` turns into a real line break
+    inside a JavaScript string, and the browser then runs none of the page.
+    """
+    item = {
+        "kind": "changed",
+        "n": 1,
+        "title": "Slide",
+        "marked": "m.png",
+        "clean": "c.png",
+        "before": "b.png",
+        "link": "slides.html#/1",
+    }
+    text = {"m.png": [["Hi", 0.1, 0.2, 0.05, 0.04]]}
+    page = (
+        deck_review.STYLE + deck_review.SCRIPT + deck_review.view([item], [], 1, text)
+    )
+    scripts = [
+        m["body"]
+        for m in INLINE_SCRIPT.finditer(page)
+        if "application/json" not in m["attrs"]
+    ]
+    assert scripts
+    for i, body in enumerate(scripts):
+        _node_check(tmp_path, f"deck-view-{i}", body)
+
+
+@pytest.mark.parametrize("name", ["MODE_JS", "FOLD_JS", "PAPER_JS"])
+def test_what_changed_page_scripts_parse(tmp_path, name):
+    _node_check(tmp_path, name, getattr(what_changed, name))
