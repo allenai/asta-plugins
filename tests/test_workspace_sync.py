@@ -1012,9 +1012,10 @@ def test_shared_workflow_installs_cli_from_its_own_commit_for_all_projects() -> 
     assert len(installs) == 1
     install = installs[0]
     assert "if" not in install
-    assert install["run"] == (
-        'uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"'
-    )
+    assert install["run"].splitlines() == [
+        'uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"',
+        'uv tool dir --bin >> "$GITHUB_PATH"',
+    ]
     assert "job.workflow_sha" in workflow
     assert "ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}" in workflow
     assert (
@@ -2334,3 +2335,34 @@ def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
         for p in cache.rglob("*")
         if p.is_file()
     }
+
+
+def test_default_comparison_ref_prefers_branch_over_same_named_tag(tmp_path) -> None:
+    import subprocess
+
+    from asta.commands.workspace import _default_comparison_ref
+
+    env = {
+        **__import__("os").environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("commit", "-q", "--allow-empty", "-m", "base")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "-q", "-b", "feature")
+    git("commit", "-q", "--allow-empty", "-m", "change")
+    git("tag", "main")
+    assert _default_comparison_ref(tmp_path) == base

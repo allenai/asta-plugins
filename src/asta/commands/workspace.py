@@ -1332,7 +1332,9 @@ def _default_comparison_ref(project):
     configured = _git(project, "config", "--get", "init.defaultBranch").stdout.strip()
     for branch in (upstream, configured, "main", "master", "trunk"):
         if branch:
-            base = _git(project, "merge-base", "HEAD", branch)
+            # Qualify bare names: Git resolves a same-named tag before a branch.
+            ref = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+            base = _git(project, "merge-base", "HEAD", ref)
             if base.returncode == 0:
                 return base.stdout.strip()
     raise click.ClickException("No default branch found; pass a Git ref")

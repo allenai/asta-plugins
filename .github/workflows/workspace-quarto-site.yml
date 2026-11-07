@@ -134,7 +134,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
       - name: Install Asta CLI at the workflow revision
-        run: uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
+        run: |
+          uv tool install "git+https://github.com/${{ job.workflow_repository }}.git@${{ job.workflow_sha }}"
+          uv tool dir --bin >> "$GITHUB_PATH"
 
       # Project script overrides are optional. Warn on drift without rejecting
       # intentional customizations.
