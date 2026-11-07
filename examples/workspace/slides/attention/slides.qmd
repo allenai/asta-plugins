@@ -21,7 +21,7 @@ $$
 \operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
 $$
 
-The weights combine values for each query.
+The weights combine values for each query, so every token can draw on distant context in one step.
 
 ## Follow the computation {.dim-previous}
 
