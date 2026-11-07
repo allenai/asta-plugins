@@ -660,6 +660,49 @@ def test_base_without_page_list_support_renders_whole_site(
     assert rendered_pages(log) == [[], []]
 
 
+@pytest.mark.parametrize("version", ["current", "base"])
+def test_prerequisite_printing_page_list_does_not_enable_partial_render(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
+    add_page(project, "other.qmd", "An untouched page.\n")
+    use_legacy_cached_rules(project)
+    custom_rules = (
+        (project / "workspace.mk")
+        .read_text()
+        .replace(
+            "render: workspace-assets workspace-viewers\n\tquarto render\n",
+            ".PHONY: show-render-files\n"
+            "show-render-files:\n"
+            "\t@echo '$(ASTA_WORKSPACE_RENDER_FILES)'\n"
+            "render: workspace-assets workspace-viewers show-render-files\n"
+            "\tquarto render . $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),"
+            "--output-dir '$(value ASTA_WORKSPACE_RENDER_OUTPUT)')\n",
+        )
+    )
+    (project / "workspace.mk").write_text(custom_rules)
+    git(project, "commit", "-qam", "custom render ignores page list")
+    git(project, "branch", "-f", "main")
+    if version == "current":
+        (project / ".asta/cache/workspace.mk").write_text(custom_rules)
+    # Otherwise the ignored cache retains current, supported rules. The base
+    # reconstructs its own custom rules from tracked files, just as sync does.
+    (project / "index.qmd").write_text(
+        "The baseline finding holds.\nA newly drafted paragraph.\n"
+    )
+    assert git(project, "diff", "--name-only", "main").strip() == "index.qmd"
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" not in result.stderr
+    assert rendered_pages(log) == [[], []]
+    report = (project / "_site/what-changed.html").read_text()
+    assert "newly drafted paragraph" in report
+    assert "other.html" not in report, "unchanged pages must not appear added/removed"
+
+
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
 def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules: str):
     (project / "second.qmd").write_text("Second page text.\n")
@@ -764,6 +807,10 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     assert git(project, "status", "--porcelain") == ""
     site = project / "_site"
     preview = (site / "index.html").read_text()
+    # An unstyled generated landing page sorts before the themed index. Theme
+    # lookup must continue to the index rather than falling back to deck CSS.
+    unstyled = site / "a-unstyled.html"
+    unstyled.write_text("<head></head><main>Unstyled landing page</main>")
     deck.write_text(deck.read_text().replace("original", "updated"))
     original_css = (site / "styles.css").read_text()
     if mode == "full":
@@ -809,6 +856,7 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     for href in css_links:
         assert (site / href).is_file(), f"missing comparison stylesheet: {href}"
     assert (site / "index.html").read_text() == preview
+    assert unstyled.read_text() == "<head></head><main>Unstyled landing page</main>"
     assert not list((project / ".asta/cache").glob("what-changed.*"))
     assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 

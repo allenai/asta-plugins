@@ -490,6 +490,39 @@ def test_partial_render_borrows_theme_from_full_site(tmp_path):
     assert 'href="site_libs/revealjs/reveal.css"' in fallback
 
 
+@pytest.mark.parametrize("separate_theme_root", [False, True])
+def test_template_search_continues_after_unstyled_pages(tmp_path, separate_theme_root):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        root.mkdir()
+    (new / "deck.html").write_text(
+        '<head><link rel="stylesheet" href="site_libs/revealjs/reveal.css"></head>'
+        '<body><div class="reveal"><section>New finding</section></div></body>'
+    )
+    theme_root = site if separate_theme_root else new
+    (theme_root / "index.html").write_text("<head></head><main>Unstyled index</main>")
+    (theme_root / "guide").mkdir()
+    (theme_root / "guide/themed.html").write_text(
+        '<head><link rel="stylesheet" href="../site_libs/site.css" '
+        'id="quarto-bootstrap" data-mode="dark"></head>'
+        '<body class="quarto-dark"><main>Styled site page</main></body>'
+    )
+
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        theme_root=site if separate_theme_root else None,
+        theme_url_prefix="what-changed-assets/",
+    )
+
+    prefix = "" if separate_theme_root else "what-changed-assets/"
+    assert f'href="{prefix}site_libs/site.css"' in result
+    assert "reveal.css" not in result
+    assert 'data-wc-mode="dark"' in result
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_previous_comparison_cannot_supply_the_partial_render_theme(tmp_path, legacy):
     old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"

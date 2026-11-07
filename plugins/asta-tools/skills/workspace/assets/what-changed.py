@@ -1215,11 +1215,12 @@ def _is_slide_deck(doc):
 
 
 def pick_template(new_pages):
-    """Choose the shallowest rendered site page to borrow the site theme from.
+    """Choose the shallowest styled site page to borrow the site theme from.
 
-    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase. A
-    reveal.js deck carries the deck's styling, not the site's, so it is used
-    only when no other page exists.
+    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase.
+    Pages without CSS cannot supply a theme and are skipped. A reveal.js deck
+    carries the deck's styling, not the site's, so it is used only when no styled
+    ordinary page exists.
     Returns (doc_html, depth) or (None, 0) if nothing suitable exists.
     """
     fallback = (None, 0)
@@ -1229,6 +1230,8 @@ def pick_template(new_pages):
             with open(new_pages[rel], encoding="utf-8") as f:
                 doc = f.read()
         except OSError:
+            continue
+        if not extract_theme_css(doc, depth):
             continue
         if not _is_slide_deck(doc):
             return doc, depth

@@ -168,10 +168,13 @@ preview: workspace-assets workspace-viewers
 
 # Optional output override for callers that must leave the preview's _site alone,
 # and an optional page list for callers that need only some pages rendered.
+# The recipe marker declares page-list support. Keep it only in recipes that
+# implement that contract; prerequisite output cannot declare this capability.
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
 	set -eu; \
+	: asta-workspace-render-page-selection-v1; \
 	set -f; \
 	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
 	if [ "$$#" -eq 0 ]; then \
@@ -259,11 +262,13 @@ what-changed:
 			done < "$$tmp/changed"; \
 		fi; \
 		if [ -n "$$partial" ]; then \
-			printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
+			printf '%s\n' "$$current_probe" | grep -Eq '^[[:space:]]*: asta-workspace-render-page-selection-v1;' && \
+				printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
 		fi; \
 		if [ -n "$$partial" ]; then \
 			probe=$$($(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null) || probe=; \
-			if printf '%s\n' "$$probe" | grep -q asta-what-changed-probe; then :; \
+			if printf '%s\n' "$$probe" | grep -Eq '^[[:space:]]*: asta-workspace-render-page-selection-v1;' && \
+				printf '%s\n' "$$probe" | grep -q asta-what-changed-probe; then :; \
 			elif printf '%s\n' "$$probe" | grep -Eq '^[[:space:]]*quarto render[[:space:]]*$$'; then legacy=1; \
 			else partial=; fi; \
 		fi; \
