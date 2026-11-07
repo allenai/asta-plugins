@@ -82,7 +82,7 @@ workspace-assets:
 			url="$$repo/archive/$$ref.tar.gz"; \
 		fi; \
 	fi; \
-	tmp=$$(mktemp -d); \
+	tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/asta-workspace.XXXXXXXX"); \
 	lock=_extensions/.evidence-install.lock; \
 	backup="$$tmp/previous"; \
 	lock_held=0; \
@@ -159,7 +159,7 @@ workspace-viewers:
 	if ! command -v "$$python" >/dev/null 2>&1; then \
 		echo "workspace-viewers: $$python is unavailable; keeping existing viewer pages" >&2; exit 0; \
 	fi; \
-	tmp=$$(mktemp); trap 'rm -f "$$tmp"' 0; \
+	tmp=$$(mktemp "$${TMPDIR:-/tmp}/asta-viewers.XXXXXXXX"); trap 'rm -f "$$tmp"' 0; \
 	"$$python" "$$discovery" > "$$tmp"; \
 	"$$python" "$$viewer" < "$$tmp"
 
