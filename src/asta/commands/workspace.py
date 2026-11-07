@@ -1100,14 +1100,20 @@ def diff_script(project: Path) -> Path:
     raise click.ClickException(guidance)
 
 
-def render_site(directory: Path, label: str) -> Path:
+def render_site(directory: Path, label: str, pages: list[str] | None = None) -> Path:
     if not directory.is_dir():
         raise click.ClickException(
             f"Project directory does not exist for {label}: {directory}"
         )
     click.echo(f"Rendering {label} with 'make render'", err=True)
+    command = ["make", "render"]
+    if pages is not None:
+        command += [
+            "ASTA_WORKSPACE_RENDER_OUTPUT=_site",
+            f"ASTA_WORKSPACE_RENDER_FILES={' '.join(pages)}",
+        ]
     with preview_process(
-        ["make", "render"],
+        command,
         directory,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1280,33 +1286,245 @@ def _publish(staged: Path, owned: Path) -> None:
         click.echo(f"Warning: previous comparison cleanup failed: {exc}", err=True)
 
 
+def _comparison_script():
+    bundled = Path(__file__).parents[1] / "workspace_assets/what-changed.py"
+    if bundled.is_file():
+        return bundled
+    return Path(__file__).parents[3] / ASSET_DIR / DIFF_SCRIPT
+
+
+def _comparison_python(decks):
+    """Only deck comparisons provision the pinned optional browser through uv."""
+    env = os.environ.copy()
+    if not decks:
+        return [sys.executable], env
+    command = ["uv", "run", "--no-project", "--with", "playwright==1.64.1", "python"]
+    relative = env.get("UV_CACHE_DIR") and not Path(env["UV_CACHE_DIR"]).is_absolute()
+    if relative:
+        # Resolved once, so every uv call below shares one cache.
+        env["UV_CACHE_DIR"] = str(Path(env["UV_CACHE_DIR"]).resolve())
+    try:
+        if relative:
+            # A relative cache is per project; keep one Chromium for all of them.
+            cache = tempfile.gettempdir()
+        else:
+            cache = subprocess.run(
+                ["uv", "cache", "dir"], capture_output=True, text=True, check=True
+            ).stdout.strip()
+        env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path(cache) / "asta-chromium"))
+        subprocess.run(
+            [*command, "-m", "playwright", "install", "chromium"], env=env, check=True
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        click.echo(
+            "Slides shown as text: the browser couldn't be set up here, possibly a"
+            f" sandbox; run outside it to see rendered slides ({exc})",
+            err=True,
+        )
+        return [sys.executable], env
+    return command, env
+
+
+def _default_comparison_ref(project):
+    upstream = _git(
+        project, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"
+    ).stdout.strip()
+    configured = _git(project, "config", "--get", "init.defaultBranch").stdout.strip()
+    for branch in (upstream, configured, "main", "master", "trunk"):
+        if branch:
+            # Qualify bare names: Git resolves a same-named tag before a branch.
+            ref = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+            base = _git(project, "merge-base", "HEAD", ref)
+            if base.returncode == 0:
+                return base.stdout.strip()
+    raise click.ClickException("No default branch found; pass a Git ref")
+
+
+def _changed_comparison_pages(project, baseline, ref):
+    """Conservatively select only standalone pages resolved by both projects."""
+    changed = _git(
+        project, "diff", "--name-only", "--no-renames", "-z", ref, "--"
+    ).stdout.split("\0")
+    changed += _ls_files(project, "--others", "--exclude-standard")
+    paths = sorted(set(filter(None, changed)))
+    prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
+    if prefix:
+        if any(not p.startswith(prefix) for p in paths):
+            return None
+        paths = [p[len(prefix) :] for p in paths]
+    if not paths or any(
+        not re.fullmatch(r"[A-Za-z0-9/+@.-]+", p)
+        or any(part.startswith(("_", ".")) for part in Path(p).parts)
+        or Path(p).suffix not in (".qmd", ".md", ".ipynb", ".Rmd")
+        or not (project / p).is_file()
+        for p in paths
+    ):
+        return None
+    for version in (project, baseline):
+        try:
+            inspected = subprocess.run(
+                ["quarto", "inspect", str(version)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            inputs = json.loads(inspected.stdout)["files"]["input"]
+            resolved = {(version / p).resolve() for p in inputs}
+            if any(
+                (version / p).exists() and (version / p).resolve() not in resolved
+                for p in paths
+            ):
+                return None
+            # Only a recipe explicitly declaring selection support may take this path.
+            with tempfile.TemporaryDirectory(prefix="asta-render-probe-") as probe_dir:
+                shim = Path(probe_dir) / "quarto"
+                shim.write_text("#!/bin/sh\nexit 0\n")
+                shim.chmod(0o700)
+                probe_env = {
+                    **os.environ,
+                    "PATH": probe_dir + os.pathsep + os.environ["PATH"],
+                }
+                recipe = subprocess.run(
+                    [
+                        "make",
+                        "-n",
+                        "render",
+                        "ASTA_WORKSPACE_RENDER_FILES=asta-probe.qmd",
+                    ],
+                    cwd=version,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env=probe_env,
+                )
+            if "asta-workspace-render-page-selection-v1" not in recipe.stdout:
+                return None
+        except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+            return None
+    return paths
+
+
+def _run_comparison(before, after, report, title, project, theme=None):
+    """The single comparison engine for local and CI builds."""
+    decks = _has_deck(before) or _has_deck(after)
+    python, env = _comparison_python(decks)
+    args = [
+        *python,
+        str(_comparison_script()),
+        "--old",
+        str(before),
+        "--new",
+        str(after),
+        "--out",
+        str(report),
+        "--title",
+        title,
+        "--reserved-local-output",
+    ]
+    if theme is not None:
+        args += ["--theme-root", str(theme)]
+    if decks:
+        args += [
+            f"--render-decks={after / DECK_IMAGES}",
+            f"--render-decks-url={DECK_IMAGES}",
+        ]
+    with preview_process(
+        args,
+        project,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
+        for line in process.stdout:
+            click.echo(line, nl=False, err=True)
+        status = process.wait()
+    if status:
+        raise click.ClickException(
+            f"{DIFF_SCRIPT} failed (exit {status}): {_comparison_script()}"
+        )
+    if report.is_symlink() or not report.is_file() or report.stat().st_size == 0:
+        raise click.ClickException(f"{DIFF_SCRIPT} did not write nonempty HTML")
+    return decks
+
+
+def compare_built_sites(before: Path, after: Path, title: str | None = None):
+    """Compare a published snapshot and PR build, publishing only on success."""
+    with tempfile.TemporaryDirectory(
+        prefix="asta-built-comparison-", dir=after.parent
+    ) as directory:
+        staged = Path(directory) / "site"
+        shutil.copytree(after, staged, symlinks=True)
+        report = staged / "what-changed.html"
+        report.unlink(missing_ok=True)
+        _run_comparison(
+            before,
+            staged,
+            report,
+            title or "Changes since published site",
+            after.parent,
+        )
+        _publish(staged, after)
+    click.echo(f"Wrote {after / 'what-changed.html'}")
+
+
 @workspace.command("what-changed")
-@click.argument("ref")
+@click.argument("ref", required=False)
 @click.option(
     "--project",
     type=click.Path(path_type=Path, file_okay=False, exists=True),
     default=Path("."),
 )
-def what_changed(ref: str, project: Path) -> None:
+@click.option(
+    "--before-site", type=click.Path(path_type=Path, file_okay=False, exists=True)
+)
+@click.option(
+    "--after-site", type=click.Path(path_type=Path, file_okay=False, exists=True)
+)
+@click.option("--title", default=None)
+@click.option(
+    "--full", is_flag=True, help="Render the full site, including dependent pages."
+)
+def what_changed(
+    ref: str | None,
+    project: Path,
+    before_site: Path | None,
+    after_site: Path | None,
+    title: str | None,
+    full: bool,
+) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
-    Renders REF and a private working-tree copy with the project's own 'make render' and
-    compares them with the what-changed.py the PR preview uses. The page is
-    written to a copy of the rendered site under .asta/cache/what-changed/,
-    which this command owns and replaces on each run. Live _site/ is untouched.
+    Renders REF and a private working-tree copy with the project's own 'make
+    render' (only changed pages when possible, themed from a running preview's
+    _site/) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    .asta/cache/what-changed/, which this command owns and replaces on each run.
+    A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
+    replacing any project page of that name until the next render.
     Requires Git 2.30 or newer. Choose a trusted REF: its
     build code runs locally. The baseline contains only committed files.
     """
     try:
         with preview_signals():
-            compare_workspace(ref, project)
+            if before_site is not None:
+                if ref or after_site is None:
+                    raise click.UsageError(
+                        "--before-site requires --after-site and cannot be combined with REF"
+                    )
+                compare_built_sites(before_site.resolve(), after_site.resolve(), title)
+            else:
+                if after_site is not None:
+                    raise click.UsageError("--after-site requires --before-site")
+                compare_workspace(
+                    ref or _default_comparison_ref(project), project, full=full
+                )
     except KeyboardInterrupt:
         raise click.exceptions.Exit(130) from None
     except PreviewTerminated as exc:
         raise click.exceptions.Exit(128 + exc.signum) from None
 
 
-def compare_workspace(ref: str, project: Path) -> None:
+def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
     project = project.resolve()
     if (project / ".asta").is_symlink() or (project / ".asta/cache").is_symlink():
         raise click.ClickException("Workspace cache must not be a symlink")
@@ -1363,14 +1581,32 @@ def compare_workspace(ref: str, project: Path) -> None:
                 raise click.ClickException(
                     f"Project directory does not exist for {ref}: {baseline_project}"
                 )
-            script = diff_script(project)
-            old_site = render_site(baseline_project, ref)
+            pages = (
+                None
+                if full
+                else _changed_comparison_pages(project, baseline_project, ref)
+            )
+            if pages:
+                base_pages = [
+                    name for name in pages if (baseline_project / name).is_file()
+                ]
+                if base_pages:
+                    old_site = render_site(baseline_project, ref, base_pages)
+                else:
+                    old_site = baseline_project / "_site"
+                    old_site.mkdir()
+            else:
+                old_site = render_site(baseline_project, ref)
             copied_project = working_copy(
                 Path(repository.stdout.rstrip("\n")),
                 prefix.stdout.rstrip("\n"),
                 tmp / "working",
             )
-            new_site = render_site(copied_project, "the working tree")
+            new_site = (
+                render_site(copied_project, "the working tree", pages)
+                if pages
+                else render_site(copied_project, "the working tree")
+            )
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():
@@ -1378,58 +1614,38 @@ def compare_workspace(ref: str, project: Path) -> None:
             owned.parent.mkdir(parents=True, exist_ok=True)
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
+                # Borrow the running preview's theme/assets for partial builds.
+                if pages and (project / "_site").is_dir():
+                    for entry in (project / "_site").iterdir():
+                        if entry.is_dir() and not entry.is_symlink():
+                            shutil.copytree(entry, staged / entry.name, symlinks=True)
+                        else:
+                            shutil.copy2(
+                                entry, staged / entry.name, follow_symlinks=False
+                            )
                 # Copy entries, not the root's metadata: staging stays 0700.
                 for entry in new_site.iterdir():
                     if entry.is_dir() and not entry.is_symlink():
-                        shutil.copytree(entry, staged / entry.name, symlinks=True)
+                        shutil.copytree(
+                            entry,
+                            staged / entry.name,
+                            symlinks=True,
+                            dirs_exist_ok=True,
+                        )
                     else:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
-                deck_images = new_site / DECK_IMAGES
-                deck_args = (
-                    [
-                        f"--render-decks={deck_images}",
-                        f"--render-decks-url={DECK_IMAGES}",
-                    ]
-                    if _has_deck(new_site)
-                    else []
+                theme = (
+                    project / "_site"
+                    if pages and (project / "_site").is_dir()
+                    else None
                 )
-                with preview_process(
-                    [
-                        sys.executable,
-                        str(script),
-                        "--old",
-                        str(old_site),
-                        "--new",
-                        str(new_site),
-                        "--out",
-                        str(report),
-                        "--title",
-                        f"Changes since {ref}",
-                        *deck_args,
-                    ],
-                    project,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                ) as process:
-                    for line in process.stdout:
-                        click.echo(line, nl=False, err=True)
-                    returncode = process.wait()
-                if returncode != 0:
-                    raise click.ClickException(
-                        f"{DIFF_SCRIPT} failed (exit {returncode}): {script}"
-                    )
-                if (
-                    report.is_symlink()
-                    or not report.is_file()
-                    or report.stat().st_size == 0
-                ):
-                    raise click.ClickException(
-                        f"{DIFF_SCRIPT} did not write nonempty HTML"
-                    )
-                if deck_args and deck_images.is_dir() and not deck_images.is_symlink():
+                decks = _run_comparison(
+                    old_site, new_site, report, f"Changes since {ref}", project, theme
+                )
+                deck_images = new_site / DECK_IMAGES
+                if decks and deck_images.is_dir() and not deck_images.is_symlink():
                     shutil.rmtree(staged / DECK_IMAGES, ignore_errors=True)
                     shutil.copytree(deck_images, staged / DECK_IMAGES, symlinks=True)
                 try:
@@ -1464,6 +1680,25 @@ def compare_workspace(ref: str, project: Path) -> None:
                         err=True,
                     )
     page = owned / "what-changed.html"
+    if (project / "_site").is_dir():
+        link = project / "_site/what-changed-snapshot"
+        if link.exists() and not link.is_symlink():
+            raise click.ClickException(
+                "_site/what-changed-snapshot is reserved for the comparison"
+            )
+        link.unlink(missing_ok=True)
+        link.symlink_to(owned, target_is_directory=True)
+        _atomic_write(
+            project / "_site/what-changed.html",
+            b'<meta http-equiv="refresh" content="0;url=what-changed-snapshot/what-changed.html"><a href="what-changed-snapshot/what-changed.html">What changed</a>',
+        )
+        if recorded_preview(project):
+            click.echo(f"Live preview: {preview_url(os.environ)}what-changed.html")
+    if (project / "_site").is_dir():
+        # The independent snapshot remains available after a preview rebuild.
+        click.echo(
+            f"Preview comparison: {preview_url(os.environ, WHAT_CHANGED_PORT)}what-changed.html"
+        )
     click.echo(f"Wrote {page}")
     url = preview_url(os.environ, WHAT_CHANGED_PORT) + page.name
     click.echo(f"View it with `asta workspace preview --what-changed`, at {url}")
