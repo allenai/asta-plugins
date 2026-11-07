@@ -40,7 +40,9 @@ CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
 # Cached when the selected ref ships it; `asta workspace what-changed` runs it.
 DIFF_SCRIPT = "what-changed.py"
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT,)
+# Optional beside DIFF_SCRIPT: renders a changed deck's slides when Playwright is installed.
+DECK_SCRIPT = "deck-review.py"
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, DECK_SCRIPT)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
@@ -1123,6 +1125,17 @@ def render_site(directory: Path, label: str) -> Path:
 
 
 COMPARISON_DIR = Path(".asta/cache/what-changed")
+# Rendered slide images, beside the comparison page in its site copy.
+DECK_IMAGES = "what-changed-decks"
+
+
+def _has_deck(site: Path) -> bool:
+    """Whether the rendered site holds a reveal.js deck, as the PR preview checks."""
+    for page in site.rglob("*.html"):
+        if page.is_file() and not page.is_symlink():
+            if 'class="reveal' in page.read_text(encoding="utf-8", errors="ignore"):
+                return True
+    return False
 
 
 def _ls_files(repository: Path, *args: str) -> list[str]:
@@ -1373,6 +1386,15 @@ def compare_workspace(ref: str, project: Path) -> None:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
+                deck_images = new_site / DECK_IMAGES
+                deck_args = (
+                    [
+                        f"--render-decks={deck_images}",
+                        f"--render-decks-url={DECK_IMAGES}",
+                    ]
+                    if _has_deck(new_site)
+                    else []
+                )
                 with preview_process(
                     [
                         sys.executable,
@@ -1385,6 +1407,7 @@ def compare_workspace(ref: str, project: Path) -> None:
                         str(report),
                         "--title",
                         f"Changes since {ref}",
+                        *deck_args,
                     ],
                     project,
                     stdout=subprocess.PIPE,
@@ -1406,6 +1429,9 @@ def compare_workspace(ref: str, project: Path) -> None:
                     raise click.ClickException(
                         f"{DIFF_SCRIPT} did not write nonempty HTML"
                     )
+                if deck_args and deck_images.is_dir() and not deck_images.is_symlink():
+                    shutil.rmtree(staged / DECK_IMAGES, ignore_errors=True)
+                    shutil.copytree(deck_images, staged / DECK_IMAGES, symlinks=True)
                 try:
                     _publish(staged, owned)
                 except OSError as exc:

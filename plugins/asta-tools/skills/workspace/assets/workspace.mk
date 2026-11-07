@@ -189,12 +189,13 @@ render: workspace-assets workspace-viewers
 # Compare the branch base with the working tree without rendering over the
 # preview's _site/. Publish the comparison and its supporting render assets there. Older plain
 # Quarto render recipes keep their prerequisites and get a temporary CLI adapter
-# for page selection; custom recipes retain the full-site fallback.
+# for page selection; custom recipes retain the full-site fallback. A changed deck's
+# slides render as images when PYTHON has Playwright, as in the PR preview.
 WHAT_CHANGED_BASE ?=
 WHAT_CHANGED_FULL ?=
 what-changed:
 	@set -eu; \
-	case "$${MAKEFLAGS%% *}" in --*) ;; *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac; \
+	set -f; variables=; for flag in $$MAKEFLAGS; do case "$$flag" in --) break;; *=*) variables=1;; --*|*[!A-Za-z-]*) ;; -*) case "$$flag" in *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac;; *) if [ -z "$$variables" ]; then case "$$flag" in *n*) echo 'what-changed: dry run; no renders or worktrees created'; exit 0;; esac; fi;; esac; done; set +f; \
 	base='$(subst ','"'"',$(value WHAT_CHANGED_BASE))'; \
 	source=$$base; \
 	if [ -z "$$base" ]; then \
@@ -344,8 +345,16 @@ what-changed:
 		echo "what-changed: current render produced no HTML in the temporary output; check the render recipe and HTML format" >&2; exit 1; }; \
 	mkdir -p _site; \
 	theme=; [ -z "$$partial" ] || theme="--theme-root=_site"; \
+	decks=; ! grep -rlq --include='*.html' 'class="reveal' "$$current" || decks="--render-decks=$$current/what-changed-decks"; \
+	if [ -n "$$decks" ] && [ ! -f '$(dir $(call workspace_script,what-changed.py))deck-review.py' ]; then \
+		echo "what-changed: showing slides as text: deck-review.py is missing beside $(call workspace_script,what-changed.py); upgrade the Asta CLI and run 'asta workspace sync --refresh'" >&2; \
+	fi; \
+	if [ -n "$$decks" ] && { [ -e "$$current/what-changed-decks" ] || [ -L "$$current/what-changed-decks" ]; }; then \
+		echo "what-changed: replacing generated deck-review images in what-changed-decks" >&2; \
+	fi; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
-		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/ --reserved-local-output; \
+		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/ --reserved-local-output \
+		$$decks --render-decks-url=what-changed-assets/what-changed-decks; \
 	publication=$$(mktemp -d _site/.what-changed-publish.XXXXXX); \
 	mv "$$current" "$$publication/new"; current=; \
 	mv "$$tmp/what-changed.html" "$$publication/report.html"; \

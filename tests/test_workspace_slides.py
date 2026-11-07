@@ -73,7 +73,9 @@ def test_changed_deck_diffs_leaf_slides_and_links_to_preview(tmp_path):
     assert "<del>old</del>" in output and "<ins>new</ins>" in output
     assert "Removed" in output and "Added" in output and "content" in output
     assert "alert(1)" not in output and "onerror" not in output
-    assert output.count('class="slide-diff changed"') == 2
+    assert output.count('class="slide-diff changed"') == 1
+    assert output.count('class="slide-diff new"') == 1
+    assert output.count('class="slide-diff removed"') == 1
 
 
 def test_unchanged_deck_does_not_diff_embedded_libraries(tmp_path):

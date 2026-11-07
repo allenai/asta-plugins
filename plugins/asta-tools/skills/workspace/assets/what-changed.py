@@ -50,6 +50,7 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import sys
 from collections import Counter
 from html.parser import HTMLParser
@@ -1512,22 +1513,169 @@ def match_slides(old, new):
     )
     unmatched_old = [index for index in range(len(old)) if index not in pairs.values()]
     unmatched_new = [index for index in range(len(new)) if index not in pairs]
-    matcher = difflib.SequenceMatcher(
-        None,
-        [old[i]["body"] for i in unmatched_old],
-        [new[i]["body"] for i in unmatched_new],
-        autojunk=False,
-    )
-    for operation, a, b, c, d in matcher.get_opcodes():
-        if operation in {"equal", "replace"}:
-            pairs.update(zip(unmatched_new[c:d], unmatched_old[a:b]))
+    pairs.update(_pair_similar(old, new, unmatched_old, unmatched_new))
     return pairs
 
 
-def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
+def _pair_similar(old, new, olds, news):
+    """Pair unmatched slides in order by text similarity, e.g. a retitled slide.
+
+    Positional pairing let an inserted slide take a retitled slide's place, so
+    the edit showed as one removed and one new slide. Unrelated additions and
+    removals stay unpaired.
+    """
+    if not olds or not news:
+        return {}
+    text = [re.sub(r"<[^>]+>", "", old[i]["body"]) for i in olds]
+    after = [re.sub(r"<[^>]+>", "", new[j]["body"]) for j in news]
+
+    def similar(a, b):
+        matcher = difflib.SequenceMatcher(None, text[a], after[b], autojunk=False)
+        if matcher.quick_ratio() < 0.5:
+            return 0.0
+        ratio = matcher.ratio()
+        return ratio if ratio >= 0.5 else 0.0
+
+    m, n = len(olds), len(news)
+    if m * n > 2500:
+        # Hirschberg alignment considers every shift, including insertions longer
+        # than a positional window. Rolling score rows keep auxiliary memory
+        # linear; splitting the old range bounds similarity work to O(m*n).
+        def scores(a0, a1, b0, b1, reverse=False):
+            row = [0.0] * (b1 - b0 + 1)
+            arange = range(a1 - 1, a0 - 1, -1) if reverse else range(a0, a1)
+            brange = range(b1 - 1, b0 - 1, -1) if reverse else range(b0, b1)
+            for a in arange:
+                diagonal = 0.0
+                for j, b in enumerate(brange, 1):
+                    above = row[j]
+                    row[j] = max(above, row[j - 1], diagonal + similar(a, b))
+                    diagonal = above
+            return row
+
+        result = {}
+
+        def align(a0, a1, b0, b1):
+            if a0 == a1 or b0 == b1:
+                return
+            if a1 - a0 == 1:
+                b = max(range(b0, b1), key=lambda b: similar(a0, b))
+                if similar(a0, b):
+                    result[news[b]] = olds[a0]
+                return
+            mid = (a0 + a1) // 2
+            left = scores(a0, mid, b0, b1)
+            right = scores(mid, a1, b0, b1, reverse=True)
+            cut = max(range(b1 - b0 + 1), key=lambda j: left[j] + right[-1 - j])
+            del left, right  # do not retain rows on the recursion stack
+            split = b0 + cut
+            align(a0, mid, b0, split)
+            align(mid, a1, split, b1)
+
+        align(0, m, 0, n)
+        return result
+    score = [[similar(a, b) for b in range(n)] for a in range(m)]
+    best = [[0.0] * (n + 1) for _ in range(m + 1)]
+    for a in range(m - 1, -1, -1):
+        for b in range(n - 1, -1, -1):
+            take = score[a][b] + best[a + 1][b + 1] if score[a][b] else 0.0
+            best[a][b] = max(best[a + 1][b], best[a][b + 1], take)
+    pairs, a, b = {}, 0, 0
+    while a < m and b < n:
+        if score[a][b] and best[a][b] == score[a][b] + best[a + 1][b + 1]:
+            pairs[news[b]] = olds[a]
+            a, b = a + 1, b + 1
+        elif best[a][b] == best[a + 1][b]:
+            a += 1
+        else:
+            b += 1
+    return pairs
+
+
+def load_deck_review():
+    """deck-review.py beside this script, or None if it or Playwright is missing."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deck-review.py")
+    if not os.path.exists(path):
+        return None
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("deck_review", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        import playwright.sync_api  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - any failure falls back to the text diff
+        print(f"what-changed: slides as text ({exc})", file=sys.stderr)
+        return None
+    return module
+
+
+def deck_image_dir(rel):
+    """Image folder for a deck page: `slides/x/slides.html` -> `slides/x/slides`.
+
+    A folder named `*.html` breaks tools that treat such paths as files
+    (e.g. the preview deploy's noindex `sed`)."""
+    return rel[: -len(".html")] if rel.endswith(".html") else rel + "-images"
+
+
+class DeckRenderer:
+    """Lazily starts one browser for every deck on the page."""
+
+    def __init__(self, module, old_root, new_root, img_root, img_url):
+        self.module, self.old_root, self.new_root = module, old_root, new_root
+        self.img_root, self.img_url = img_root, img_url.rstrip("/")
+        self.renderer = None
+        self.used = False
+        self.failed = False
+
+    def review(self, rel, link, old, new, pairs):
+        if (
+            self.failed or not new
+        ):  # failed launch or a removed deck keeps the text diff
+            return False
+        img_rel = deck_image_dir(rel)
+        try:
+            if self.renderer is None:
+                try:
+                    self.renderer = self.module.Renderer(self.old_root, self.new_root)
+                except Exception:
+                    self.failed = True
+                    raise
+            sub = quote(img_rel, safe="/")
+            body = self.module.review(
+                rel,
+                link,
+                os.path.join(self.img_root, img_rel),
+                f"{self.img_url}/{sub}",
+                old,
+                new,
+                pairs,
+                self.renderer,
+            )
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
+            print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
+            return False
+        finally:
+            if self.renderer is not None:
+                self.renderer.release_deck(rel)
+        self.used = self.used or body is not None
+        return body
+
+    def close(self):
+        if self.renderer is not None:
+            self.renderer.close()
+
+
+def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
     old = (reveal_slides(old_doc) if old is None else old) or []
     new = (reveal_slides(new_doc) if new is None else new) or []
     pairs = match_slides(old, new)
+    matched_order = [pairs[index] for index in sorted(pairs)]
+    reordered = matched_order != sorted(matched_order)
+    rendered = decks.review(rel, link, old, new, pairs) if decks else False
+    if rendered is None and not reordered:
+        return None
     entries = [(pairs.get(index), index) for index in range(len(new))]
     entries.extend(
         (index, None) for index in range(len(old)) if index not in pairs.values()
@@ -1562,8 +1710,11 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
         changes.append(
             f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
         )
-    matched_order = [pairs[index] for index in sorted(pairs)]
-    if matched_order != sorted(matched_order):
+    if rendered is None:
+        changes = []
+    elif rendered:
+        changes = [rendered]
+    if reordered:
         changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
     if not changes:
         return None
@@ -1610,6 +1761,7 @@ def build(
     out_path=None,
     theme_root=None,
     theme_url_prefix="",
+    decks=None,
     reserved_local_output=False,
 ):
     sections = []
@@ -1655,7 +1807,7 @@ def build(
             if preview_url
             else quote(rel, safe="/")
         )
-        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides)
+        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides, decks)
         if result:
             section, entry = result
             slide_sections.append(section)
@@ -1825,6 +1977,9 @@ def build(
         body = f'<div class="wc-scope wc-standalone">{inner}</div>'
         html_attrs = body_attrs = mode_js = ""
 
+    deck_assets = (
+        decks.module.STYLE + decks.module.SCRIPT if decks and decks.used else ""
+    )
     return (
         "<!doctype html>"
         f'<html lang="en"{html_attrs}><head><meta charset="utf-8">'
@@ -1832,7 +1987,7 @@ def build(
         f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body{body_attrs}>{mode_js}{body}"
-        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script></body></html>"
+        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script>{deck_assets}</body></html>"
     )
 
 
@@ -1861,21 +2016,83 @@ def main(argv=None):
         help="served asset prefix when the theme comes from --new",
     )
     ap.add_argument(
+        "--render-decks",
+        metavar="DIR",
+        help="render changed slides as images into generated DIR (needs deck-review.py"
+        " and Playwright; else slides as text); existing DIR contents are replaced",
+    )
+    ap.add_argument(
         "--reserved-local-output",
         action="store_true",
         help="exclude root what-changed.html and what-changed-assets/ (local Make target)",
     )
-    args = ap.parse_args(argv)
-    doc = build(
-        args.old,
-        args.new,
-        args.preview_url,
-        args.title,
-        out_path=args.out,
-        theme_root=args.theme_root,
-        theme_url_prefix=args.theme_url_prefix,
-        reserved_local_output=args.reserved_local_output,
+    ap.add_argument(
+        "--render-decks-url",
+        metavar="URL",
+        help="URL of --render-decks as served beside --out (default: its path relative to --out)",
     )
+    args = ap.parse_args(argv)
+    decks = None
+    if args.render_decks:
+        # Never recursively delete outside the candidate site or through a symlink.
+        site_path = os.path.abspath(args.new)
+        image_path = os.path.abspath(args.render_decks)
+        site_root, image_root = (
+            os.path.realpath(site_path),
+            os.path.realpath(image_path),
+        )
+        try:
+            unsafe = (
+                image_root == site_root
+                or os.path.commonpath([site_root, image_root]) != site_root
+                or os.path.commonpath([site_path, image_path]) != site_path
+                or os.path.commonpath([image_root, os.path.realpath(args.out)])
+                == image_root
+                or os.path.commonpath([image_root, os.path.realpath(args.old)])
+                == image_root
+            )
+        except ValueError:
+            unsafe = True
+        if unsafe:
+            ap.error(
+                "--render-decks must be a separate generated directory inside the new site"
+            )
+        component = image_path
+        while component != site_path:
+            if os.path.islink(component):
+                ap.error("--render-decks must not contain symlinks")
+            component = os.path.dirname(component)
+        shutil.rmtree(image_root, ignore_errors=True)
+        module = load_deck_review()
+        if module:
+            decks = DeckRenderer(
+                module,
+                args.old,
+                args.new,
+                args.render_decks,
+                args.render_decks_url
+                or quote(
+                    os.path.relpath(
+                        args.render_decks, os.path.dirname(os.path.abspath(args.out))
+                    ).replace(os.sep, "/"),
+                    safe="/",
+                ),
+            )
+    try:
+        doc = build(
+            args.old,
+            args.new,
+            args.preview_url,
+            args.title,
+            out_path=args.out,
+            theme_root=args.theme_root,
+            theme_url_prefix=args.theme_url_prefix,
+            decks=decks,
+            reserved_local_output=args.reserved_local_output,
+        )
+    finally:
+        if decks:
+            decks.close()
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
     print(f"wrote {args.out} ({len(doc)} bytes)", file=sys.stderr)
