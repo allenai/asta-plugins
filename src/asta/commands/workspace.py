@@ -1627,13 +1627,9 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             # Without a running preview, a deck-only render has no site page, so
             # render the home page too and take the theme from it.
             theme_page = None
-            if pages and theme is None:
+            if pages and theme is None and not set(THEME_PAGES) & set(pages):
                 theme_page = next(
-                    (
-                        name
-                        for name in THEME_PAGES
-                        if name not in pages and (copied_project / name).is_file()
-                    ),
+                    (name for name in THEME_PAGES if (copied_project / name).is_file()),
                     None,
                 )
             new_site = (
@@ -1650,6 +1646,9 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 theme = tmp / "theme"
                 theme.mkdir()
                 shutil.move(new_site / "index.html", theme / "index.html")
+                # The home page is not compared, so drop the redirect Quarto writes
+                # into a partial render without one, or it is reported as removed.
+                (old_site / "index.html").unlink(missing_ok=True)
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():

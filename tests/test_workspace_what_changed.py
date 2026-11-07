@@ -1522,6 +1522,12 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
                 (site / "index.html").write_text(THEMED.format(text))
             else:
                 (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
+        if not (site / "index.html").exists():
+            # Quarto writes a redirect home page for a site rendered without one.
+            (site / "index.html").write_text(
+                "<html><head><title>Redirect to slides.html</title>"
+                '<meta http-equiv="refresh" content="0;url=slides.html"></head></html>'
+            )
         return site
 
     monkeypatch.setattr(workspace_module, "render_site", render)
@@ -1539,6 +1545,7 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "<ins" in page and "edited" in page
     # The home page only supplies the theme; it is never reported as new.
     assert "Home" not in page and ">index.html<" not in page
+    assert "Redirect" not in page and "removed</span>" not in page
     after = dict(rendered)["the working tree"]
     expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", "index.qmd"]
     assert after == expected

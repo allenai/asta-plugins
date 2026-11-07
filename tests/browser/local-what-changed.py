@@ -194,6 +194,8 @@ def check_themed_without_preview(project, artifacts):
             page.goto(f"http://127.0.0.1:{server.server_address[1]}/what-changed.html")
             page.locator(".deck-review").wait_for()
             assert page.evaluate(THEMED_JS), "What changed page is unstyled"
+            # The home page rendered for the theme is not itself compared.
+            assert "Redirect" not in page.content(), "home page reported as changed"
             page.screenshot(path=str(artifacts / "local-what-changed-no-preview.png"))
             browser.close()
     finally:
