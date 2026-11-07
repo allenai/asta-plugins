@@ -1295,7 +1295,7 @@ margin-right: 0; }
 <p><span class="math display">
 \operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
 </span></p>
-<p>The weights combine values for each query.</p>
+<p>The weights combine values for each query, so every token can draw on distant context in one step.</p>
 </section>
 <section id="follow-the-computation" class="slide level2 dim-previous" data-asta-section="2" data-asta-section-name="The mechanism">
 <h2>Follow the computation</h2>
@@ -1318,6 +1318,7 @@ margin-right: 0; }
 <h2>Keep the talk beside its sources</h2>
 <p>Write the talk, review and paper in the same repository.</p>
 <p>Review changes together, then share the rendered talk as a single HTML file.</p>
+<p>Review local changes with <code>asta workspace what-changed</code>; PR previews use the same comparison.</p>
 
 
 </section></section>

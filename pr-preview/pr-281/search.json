@@ -61,7 +61,7 @@
     "href": "slides/attention/slides.html#attention-weights-the-available-context",
     "title": "Attention in sequence models",
     "section": "Attention weights the available context",
-    "text": "Attention weights the available context\n\n\\operatorname{Attention}(Q,K,V) = \\operatorname{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n\nThe weights combine values for each query."
+    "text": "Attention weights the available context\n\n\\operatorname{Attention}(Q,K,V) = \\operatorname{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n\nThe weights combine values for each query, so every token can draw on distant context in one step."
   },
   {
     "objectID": "slides/attention/slides.html#follow-the-computation",
@@ -75,6 +75,6 @@
     "href": "slides/attention/slides.html#keep-the-talk-beside-its-sources",
     "title": "Attention in sequence models",
     "section": "Keep the talk beside its sources",
-    "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file."
+    "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file.\nReview local changes with asta workspace what-changed; PR previews use the same comparison."
   }
 ]
