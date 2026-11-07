@@ -1483,3 +1483,62 @@ def test_site_with_deck_renders_slides_beside_the_page(project: Path, deck) -> N
     assert ("--render-decks=" in page) is deck
     assert (owned / "what-changed-decks/slide-1.png").is_file() is deck
     assert_single_worktree(project)
+
+
+THEMED = (
+    '<html><head><link href="site_libs/bootstrap/bootstrap.min.css" '
+    'rel="stylesheet" id="quarto-bootstrap"></head><body>{}</body></html>'
+)
+
+
+@pytest.mark.parametrize("preview", [None, "deck-only", "site"])
+def test_partial_render_keeps_site_theme_without_a_site_page(
+    project: Path, monkeypatch: pytest.MonkeyPatch, preview: str | None
+) -> None:
+    """A slide-only edit must still read like the site (no browser-default page)."""
+    (project / "slides.qmd").write_text("Slide one.\n")
+    git(project, "add", "slides.qmd")
+    git(project, "commit", "-qm", "deck")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    if preview:
+        site = project / "_site"
+        (site / "site_libs/bootstrap").mkdir(parents=True)
+        (site / "site_libs/bootstrap/bootstrap.min.css").write_text("body{}")
+        (site / "slides.html").write_text('<div class="reveal">Slide one.</div>')
+        if preview == "site":
+            (site / "index.html").write_text(THEMED.format("Home"))
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        for name in pages or []:
+            text = (directory / name).read_text()
+            if name == "index.qmd":
+                (site / "site_libs/bootstrap").mkdir(parents=True)
+                (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+                (site / "index.html").write_text(THEMED.format(text))
+            else:
+                (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    snapshot = project / workspace_module.COMPARISON_DIR
+    page = (snapshot / "what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
+    assert "<ins" in page and "edited" in page
+    # The home page only supplies the theme; it is never reported as new.
+    assert "Home" not in page and ">index.html<" not in page
+    after = dict(rendered)["the working tree"]
+    expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", "index.qmd"]
+    assert after == expected

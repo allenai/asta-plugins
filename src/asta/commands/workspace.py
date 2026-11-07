@@ -1135,6 +1135,22 @@ COMPARISON_DIR = Path(".asta/cache/what-changed")
 DECK_IMAGES = "what-changed-decks"
 
 
+# Rendered beside a deck-only edit when no preview supplies the site's theme.
+THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
+
+
+def _has_site_page(site: Path) -> bool:
+    """Whether a built site has a root-level ordinary page to take the theme from."""
+    for page in site.glob("*.html"):
+        if page.name.startswith("what-changed") or page.is_symlink():
+            continue
+        if page.is_file() and 'class="reveal' not in page.read_text(
+            encoding="utf-8", errors="ignore"
+        ):
+            return True
+    return False
+
+
 def _has_deck(site: Path) -> bool:
     """Whether the rendered site holds a reveal.js deck, as the PR preview checks."""
     for page in site.rglob("*.html"):
@@ -1497,7 +1513,7 @@ def what_changed(
 
     Renders REF and a private working-tree copy with the project's own 'make
     render' (only changed pages when possible, themed from a running preview's
-    _site/) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    _site/ or else the home page rendered alongside) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
     .asta/cache/what-changed/, which this command owns and replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
     replacing any project page of that name until the next render.
@@ -1602,11 +1618,38 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 prefix.stdout.rstrip("\n"),
                 tmp / "working",
             )
+            preview_site = project / "_site"
+            theme = (
+                preview_site
+                if pages and preview_site.is_dir() and _has_site_page(preview_site)
+                else None
+            )
+            # Without a running preview, a deck-only render has no site page, so
+            # render the home page too and take the theme from it.
+            theme_page = None
+            if pages and theme is None:
+                theme_page = next(
+                    (
+                        name
+                        for name in THEME_PAGES
+                        if name not in pages and (copied_project / name).is_file()
+                    ),
+                    None,
+                )
             new_site = (
-                render_site(copied_project, "the working tree", pages)
+                render_site(
+                    copied_project,
+                    "the working tree",
+                    [*pages, theme_page] if theme_page else pages,
+                )
                 if pages
                 else render_site(copied_project, "the working tree")
             )
+            if theme_page and (new_site / "index.html").is_file():
+                # Out of the comparison, so it is not reported as a new page.
+                theme = tmp / "theme"
+                theme.mkdir()
+                shutil.move(new_site / "index.html", theme / "index.html")
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():
@@ -1615,8 +1658,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
                 # Borrow the running preview's theme/assets for partial builds.
-                if pages and (project / "_site").is_dir():
-                    for entry in (project / "_site").iterdir():
+                if theme == preview_site:
+                    for entry in preview_site.iterdir():
                         if entry.is_dir() and not entry.is_symlink():
                             shutil.copytree(entry, staged / entry.name, symlinks=True)
                         else:
@@ -1636,11 +1679,6 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
-                theme = (
-                    project / "_site"
-                    if pages and (project / "_site").is_dir()
-                    else None
-                )
                 decks = _run_comparison(
                     old_site, new_site, report, f"Changes since {ref}", project, theme
                 )

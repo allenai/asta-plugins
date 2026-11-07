@@ -151,5 +151,58 @@ def check(project, artifacts):
         server.server_close()
 
 
+THEMED_JS = (
+    "() => [...document.styleSheets].some(s => s.href && s.href.includes('bootstrap')"
+    ' && s.cssRules.length) && !/^"?times/i.test(getComputedStyle(document.body)'
+    ".fontFamily)"
+)
+
+
+def check_themed_without_preview(project, artifacts):
+    """A slide-only edit with no running preview must still read like the site."""
+    deck = project / "slides/attention/slides.qmd"
+    original = deck.read_text()
+    preview = project / "_site"
+    parked = project.with_name(project.name + "-site-parked")
+    preview.rename(parked)
+    edited = original.replace(
+        "## Keep the talk beside its sources\n",
+        "## Keep the talk beside its sources and data\n",
+        1,
+    )
+    assert edited != original
+    deck.write_text(edited)
+    try:
+        result = subprocess.run(
+            ["asta", "workspace", "what-changed", "HEAD"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        deck.write_text(original)
+        shutil.rmtree(preview, ignore_errors=True)
+        parked.rename(preview)
+    assert result.returncode == 0, result.stdout + result.stderr
+    site = project / ".asta/cache/what-changed"
+    assert (site / "site_libs/bootstrap").is_dir(), "snapshot has no site theme"
+    server = review._serve(str(site))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.goto(f"http://127.0.0.1:{server.server_address[1]}/what-changed.html")
+            page.locator(".deck-review").wait_for()
+            assert page.evaluate(THEMED_JS), "What changed page is unstyled"
+            page.screenshot(path=str(artifacts / "local-what-changed-no-preview.png"))
+            browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 if __name__ == "__main__":
     check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+    check_themed_without_preview(
+        Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+    )
