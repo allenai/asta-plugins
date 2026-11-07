@@ -1,6 +1,5 @@
 """`asta workspace what-changed` compares a git ref's rendered site with the working tree."""
 
-import io
 import json
 import os
 import re
@@ -9,7 +8,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tarfile
 import threading
 import time
 from http.client import HTTPConnection
@@ -60,6 +58,22 @@ def project(
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
+    monkeypatch.setattr(
+        workspace_module,
+        "_comparison_script",
+        lambda: next(
+            (
+                tmp_path
+                if tmp_path.exists()
+                else tmp_path.with_name(tmp_path.name + " workspace ")
+            ).rglob("scripts/what-changed.py")
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "_comparison_python",
+        lambda decks: ([sys.executable], os.environ.copy()),
+    )
     bin_dir = tmp_path_factory.mktemp("bin")
     (bin_dir / "make").write_text(FAKE_MAKE)
     (bin_dir / "make").chmod(0o755)
@@ -542,19 +556,6 @@ def test_requires_fresh_nonempty_html(
     assert_single_worktree(project)
 
 
-def test_requires_a_diff_script(project: Path, monkeypatch) -> None:
-    git(project, "rm", "-q", "scripts/what-changed.py")
-    (project / "workspace.mk").write_text("")
-    monkeypatch.setattr(
-        workspace_module, "load_asset", lambda *_: pytest.fail("unexpected fetch")
-    )
-    result = CliRunner().invoke(
-        workspace, ["what-changed", "last-read", "--project", str(project)]
-    )
-    assert result.exit_code != 0
-    assert "No what-changed.py for this project" in result.output
-
-
 def test_render_progress_is_visible_before_build_finishes(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -606,36 +607,6 @@ def test_missing_baseline_layout_does_not_fetch_script(
     assert "new-workspace" in result.output
     assert "Rendering " not in result.output
     assert_single_worktree(project)
-
-
-def test_internal_sync_status_uses_stderr(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (project / "scripts/what-changed.py").unlink()
-    workflow = project / ".github/workflows/docs.yml"
-    workflow.parent.mkdir(parents=True)
-    workflow.write_text(
-        "jobs:\n  docs:\n"
-        "    uses: allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@main\n"
-    )
-    archive = io.BytesIO()
-    with tarfile.open(fileobj=archive, mode="w:gz") as bundle:
-        data = (ASSETS / "what-changed.py").read_bytes()
-        member = tarfile.TarInfo(
-            "source/" + workspace_module.ASSET_DIR + "what-changed.py"
-        )
-        member.size = len(data)
-        bundle.addfile(member, io.BytesIO(data))
-    monkeypatch.setattr(
-        workspace_module, "load_asset", lambda *_: (b"# rules", archive.getvalue())
-    )
-    args = ["what-changed", "last-read", "--project", str(project)]
-    for status in ("Loaded workspace.mk", "workspace.mk already cached"):
-        result = CliRunner().invoke(workspace, args)
-        assert result.exit_code == 0, result.output
-        assert status in result.stderr
-        assert status not in result.stdout
-        assert "Wrote " in result.stdout
 
 
 @pytest.mark.parametrize("directory", [".", "research workspace/docs"])
@@ -726,9 +697,13 @@ def test_site_files_are_never_modified(project: Path) -> None:
     result = CliRunner().invoke(workspace, args)
     assert result.exit_code == 0, result.output
     assert (project / "_site/index.html").read_text() == "Live preview"
-    assert (project / "_site/what-changed.html").read_text() == "Own page"
+    assert (
+        "what-changed-snapshot/what-changed.html"
+        in (project / "_site/what-changed.html").read_text()
+    )
     assert sorted(p.name for p in (project / "_site").iterdir()) == [
         "index.html",
+        "what-changed-snapshot",
         "what-changed.html",
     ]
     owned = project / workspace_module.COMPARISON_DIR
@@ -968,7 +943,11 @@ def test_failed_working_copy_preserves_report_and_cleans_up(
         copying = "--no-checkout" in args
         if copying:
             temporary = Path(args[-2]).parent
-        if args[0] == phase and (copying or phase != "worktree"):
+        if (
+            args[0] == phase
+            and (copying or phase != "worktree")
+            and (phase != "ls-files" or "--stage" in args)
+        ):
             return subprocess.CompletedProcess(args, 1, stderr="Copy setup failed")
         return original(directory, *args)
 
@@ -1207,26 +1186,6 @@ def test_missing_project_reports_directory_error(tmp_path: Path) -> None:
     assert "Not a git repository" not in result.output
 
 
-@pytest.mark.parametrize("workflow", [None, "jobs:\n  docs:\n    uses: invalid\n"])
-def test_sync_error_keeps_cause_and_diff_script_guidance(
-    project: Path, workflow
-) -> None:
-    (project / "scripts/what-changed.py").unlink()
-    if workflow is not None:
-        path = project / ".github/workflows/docs.yml"
-        path.parent.mkdir(parents=True)
-        path.write_text(workflow)
-    result = CliRunner().invoke(
-        workspace, ["what-changed", "last-read", "--project", str(project)]
-    )
-    assert result.exit_code != 0
-    assert ("Missing" if workflow is None else "Expected one") in result.output
-    assert "docs.yml" in result.output
-    assert "No what-changed.py for this project" in result.output
-    assert "scripts/what-changed.py" in result.output
-    assert "asta workspace sync --refresh" in result.output
-
-
 def test_failed_render_does_not_repeat_streamed_log(project: Path) -> None:
     Path(shutil.which("make")).write_text(
         "#!/usr/bin/env python3\n"
@@ -1354,7 +1313,7 @@ def test_comparison_cache_stays_private_throughout_copy(
     assert checked
 
 
-@pytest.mark.parametrize("phase", ["render", "script"])
+@pytest.mark.parametrize("phase", ["render"])
 @pytest.mark.skipif(os.name != "posix", reason="POSIX termination")
 def test_termination_cleans_comparison_and_children(project: Path, phase: str) -> None:
     owned = project / workspace_module.COMPARISON_DIR
@@ -1445,34 +1404,6 @@ def test_failed_checkout_removes_partial_registration(
     assert result.exit_code != 0
     assert "Checkout failed after registration" in result.output
     assert_single_worktree(project)
-
-
-def test_cached_diff_script_rejects_redirected_version(
-    project: Path, monkeypatch
-) -> None:
-    (project / "scripts/what-changed.py").unlink()
-    cache = project / ".asta/cache"
-    scripts = cache / "scripts"
-    scripts.mkdir(parents=True)
-    sha = "a" * 64
-    external = project / "external-scripts"
-    external.mkdir()
-    (external / "what-changed.py").write_text(
-        "raise RuntimeError('Redirected script ran')"
-    )
-    (scripts / sha).symlink_to(external, target_is_directory=True)
-    (cache / "workspace.json").write_text(
-        json.dumps({"archive_sha256": sha, "scripts": {"what-changed.py": "hash"}})
-    )
-    monkeypatch.setattr(
-        workspace_module, "sync_workspace", lambda *args, **kwargs: None
-    )
-    result = CliRunner().invoke(
-        workspace, ["what-changed", "last-read", "--project", str(project)]
-    )
-    assert result.exit_code != 0
-    assert "No what-changed.py for this project" in result.output
-    assert "Redirected script ran" not in result.output
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])

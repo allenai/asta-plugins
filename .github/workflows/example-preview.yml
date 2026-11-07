@@ -21,13 +21,27 @@ jobs:
       paper-strict: true
       render-paths: |
         examples/workspace/**
+        src/asta/commands/workspace.py
         plugins/asta-tools/skills/workspace/assets/**
         .github/workflows/workspace-quarto-site.yml
         .github/workflows/example-preview.yml
 
+  docs-arm:
+    needs: docs
+    uses: ./.github/workflows/workspace-quarto-site.yml
+    with:
+      build-runner: ubuntu-24.04-arm
+      site-dir: examples/workspace
+      paper-strict: true
+      render-paths: |
+        examples/workspace/**
+        src/asta/commands/workspace.py
+        plugins/asta-tools/skills/workspace/assets/**
+        .github/workflows/**
+
   check-preview:
     name: Example preview browser
-    needs: docs
+    needs: [docs, docs-arm]
     if: always() && github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
