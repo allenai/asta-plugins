@@ -73,6 +73,9 @@ jobs:
           set -euo pipefail
           export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
           uv tool install --force ../..
+          # The image ships a released asta; run the one just built from this checkout.
+          export PATH="$(uv tool dir --bin):$PATH"
+          test "$(command -v asta)" = "$(uv tool dir --bin)/asta"
           uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
           test -z "$(git status --porcelain --untracked-files=no)"
       - uses: actions/upload-artifact@v4
