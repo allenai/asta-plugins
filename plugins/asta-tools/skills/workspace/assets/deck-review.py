@@ -26,6 +26,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, urlsplit
 
 VIEWPORT = {"width": 1600, "height": 900}
+# Displayed slides are 2x so they stay sharp on high-density screens; the
+# comparison shots stay 1x (``scale="css"``), which is all equality needs.
+DISPLAY_SCALE = 2
 
 # Keep the token streams identical, excluding speaker-only and non-HTML content.
 TEXT_FILTER_JS = """const visibleText = (s) => {
@@ -134,6 +137,28 @@ READY_JS = r"""() => Promise.race([(async () => {
   }));
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 })(), new Promise((_, reject) => setTimeout(() => reject(new Error("Slide media did not settle")), 15000))])"""
+
+# Each visible word's box as viewport fractions, so the view can lay
+# transparent, selectable text over the slide image.
+WORDS_JS = (
+    "() => {"
+    + TEXT_FILTER_JS
+    + """
+  const W = innerWidth, H = innerHeight, out = [];
+  for (const nd of shownText(Reveal.getCurrentSlide())) {
+    if (!nd.parentElement.checkVisibility({visibilityProperty: true, opacityProperty: true})) continue;
+    const re = /\\S+/g; let m;
+    while ((m = re.exec(nd.textContent))) {
+      const r = document.createRange(); r.setStart(nd, m.index); r.setEnd(nd, m.index + m[0].length);
+      const b = r.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1 || b.right <= 0 || b.bottom <= 0 || b.left >= W || b.top >= H) continue;
+      const f = (v) => Math.round(v * 1e4) / 1e4;
+      out.push([m[0], f(b.left / W), f(b.top / H), f(b.width / W), f(b.height / H)]);
+    }
+  }
+  return out;
+}"""
+)
 
 GOTO_JS = """(i) => {
   const x = Reveal.getIndices(Reveal.getSlides()[i]);
@@ -249,7 +274,9 @@ class Renderer:
 
     def _open(self, side, deck):
         page = self._browser.new_page(
-            viewport=VIEWPORT, device_scale_factor=1, service_workers="block"
+            viewport=VIEWPORT,
+            device_scale_factor=DISPLAY_SCALE,
+            service_workers="block",
         )
         try:
             # PR-authored documents may request only these two isolated site origins.
@@ -306,10 +333,12 @@ class Renderer:
     def interactions(self, side, deck):
         return self.page(side, deck).evaluate(INTERACTIONS_JS)
 
-    def shoot(self, side, deck, index, path=None, mark=None, number=False):
+    def shoot(self, side, deck, index, path=None, mark=None, number=False, words=None):
         """Screenshot slide ``index``; ``mark`` is (js, arg) applied on a fresh page.
 
         ``number`` shows the deck's own slide number, for display rather than comparison.
+        A shot written to ``path`` is a display shot at ``DISPLAY_SCALE``; ``words``,
+        a list, receives its visible words' boxes.
         """
         page = self._open(side, deck) if mark else self.page(side, deck)
         try:
@@ -331,7 +360,13 @@ class Renderer:
                 page.evaluate(NUMBER_JS, True)
             if mark:
                 page.evaluate(*mark)
-            data = page.screenshot(type="png", animations="disabled")
+            if words is not None:
+                words.extend(page.evaluate(WORDS_JS))
+            data = page.screenshot(
+                type="png",
+                animations="disabled",
+                scale="device" if path else "css",
+            )
         finally:
             if number and not mark:
                 page.evaluate(NUMBER_JS, False)
@@ -417,18 +452,33 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
     shown = context(rows)
     if not removed and all(rows[k][0] == "unchanged" for k in shown):
         return None
+    text = {}
+
+    def display(side, index, name, mark=None, number=True):
+        words = []
+        renderer.shoot(
+            side,
+            deck,
+            index,
+            os.path.join(img_dir, name + ".png"),
+            mark,
+            number=number,
+            words=words,
+        )
+        url = f"{img_url}/{name}.png"
+        text[url] = words
+        return url
+
     items = []
     for k in shown:
         kind, n, o = rows[k]
         name = f"s{n + 1}"
-        renderer.shoot(
-            "new", deck, n, os.path.join(img_dir, name + ".png"), number=True
-        )
+        clean = display("new", n, name)
         item = {
             "n": n + 1,
             "kind": kind,
             "title": slide_title(new[n]),
-            "clean": f"{img_url}/{name}.png",
+            "clean": clean,
             "link": link + "#/" + new[n]["anchor"],
         }
         if o is not None and old_interactions[o] != new_interactions[n]:
@@ -442,34 +492,24 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
         elif kind == "changed":
             mark = (MARK_WORDS_JS, [MARK_CSS, old_text[o].split()])
         if mark:
-            renderer.shoot(
-                "new",
-                deck,
-                n,
-                os.path.join(img_dir, name + "-m.png"),
-                mark,
-                number=True,
-            )
-            item["marked"] = f"{img_url}/{name}-m.png"
+            item["marked"] = display("new", n, name + "-m", mark)
         if kind in {"changed", "look"}:
-            renderer.shoot(
-                "old", deck, o, os.path.join(img_dir, name + "-b.png"), number=True
-            )
-            item["before"] = f"{img_url}/{name}-b.png"
+            item["before"] = display("old", o, name + "-b")
         items.append(item)
     gone = []
     for o in removed:
         name = f"r{o + 1}"
         mark = (FRAME_JS, [MARK_CSS, "#fd4645", "Removed"])
-        renderer.shoot("old", deck, o, os.path.join(img_dir, name + ".png"), mark)
-        gone.append(
-            {"n": o + 1, "title": slide_title(old[o]), "img": f"{img_url}/{name}.png"}
-        )
-    return view(items, gone, len(new))
+        url = display("old", o, name, mark, number=False)
+        gone.append({"n": o + 1, "title": slide_title(old[o]), "img": url})
+    return view(items, gone, len(new), text)
 
 
-def view(items, removed, total):
-    data = json.dumps({"items": items, "removed": removed, "total": total})
+def view(items, removed, total, text=None):
+    """``text`` maps an image URL to its words' boxes, laid over it as selectable text."""
+    data = json.dumps(
+        {"items": items, "removed": removed, "total": total, "text": text or {}}
+    )
     return VIEW.replace("__DATA__", data.replace("<", "\\u003c"))
 
 
@@ -491,6 +531,10 @@ STYLE = """<style>
 .deck-review .dr-slide{margin:14px 0}
 .deck-review .dr-slide h3{font-size:1rem;margin:0 0 6px}
 .deck-review .dr-slide img{width:100%;display:block;border:1px solid rgba(127,127,127,.4);border-radius:6px}
+.deck-review .dr-shot{position:relative;container-type:inline-size}
+.deck-review .dr-text{position:absolute;inset:1px;overflow:hidden}
+.deck-review .dr-text span{position:absolute;color:transparent;white-space:pre;line-height:1;transform-origin:0 0;cursor:text}
+.deck-review .dr-text span::selection{background:rgba(0,120,255,.3);color:transparent}
 .deck-review .dr-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .deck-review .dr-pair figure{margin:0}.deck-review .dr-pair figcaption{font-size:.8rem;opacity:.75}
 .deck-review .dr-more{font:inherit;font-size:.9rem;background:none;color:inherit;border:1px dashed rgba(127,127,127,.6);border-radius:6px;padding:6px 12px;cursor:pointer;display:block;width:100%;text-align:left;margin:8px 0}
@@ -511,6 +555,28 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   const img = (src, slide, mode) => { const i = el('img'); i.src = src;
     i.alt = imageLabel(slide, mode);
     i.loading = 'lazy'; return i; };
+  // Transparent words over the image, each stretched to its box on the slide, so
+  // text selects and copies like the slide's own (one line break per line).
+  const font = getComputedStyle(root).fontFamily || 'sans-serif';
+  const ctx = document.createElement('canvas').getContext('2d'); ctx.font = '100px ' + font;
+  const paint = (w, src) => {
+    w.querySelector('img').src = src;
+    const layer = w.querySelector('.dr-text'); layer.replaceChildren();
+    const words = (D.text || {})[src] || [];
+    words.forEach(([t, x, y, ww, h], k) => {
+      const next = words[k + 1];
+      const s = el('span', null, t + (!next || next[2] > y + h / 2 ? '\n' : ' '));
+      const size = h * 56.25 * 0.85;
+      const natural = ctx.measureText(t).width || 1;
+      Object.assign(s.style, { left: x * 100 + '%', top: (y + h * 0.075) * 100 + '%', fontSize: size + 'cqw',
+        transform: 'scaleX(' + (ww * 100 * 100 / (natural * size)) + ')' });
+      layer.append(s);
+    });
+  };
+  const shot = (src, slide, mode) => {
+    const w = el('div', 'dr-shot'); const i = img(src, slide, mode); i.draggable = false;
+    w.append(i, el('div', 'dr-text')); paint(w, src); return w;
+  };
   const label = { new: 'new', changed: 'changed', look: 'changed look', removed: 'removed' };
   const card = (i) => {
     const s = el('section', 'dr-slide dr-' + i.kind);
@@ -518,9 +584,9 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     const word = label[i.kind] || 'unchanged';
     const h = el('h3'); const a = el('a', 'tag ' + (i.kind === 'look' ? 'changed' : i.kind), word + ' \u2197'); a.href = i.link;
     a.setAttribute('aria-label', 'Slide ' + i.n + (i.title ? ': ' + i.title : '') + ', ' + word); h.append(a);
-    const one = img(i.marked || i.clean, i, i.marked ? 'marked' : 'clean');
+    const one = shot(i.marked || i.clean, i, i.marked ? 'marked' : 'clean');
     one.dataset.clean = i.clean; one.dataset.marked = i.marked || i.clean;
-    one.dataset.cleanAlt = imageLabel(i, 'clean'); one.dataset.markedAlt = one.alt;
+    one.dataset.cleanAlt = imageLabel(i, 'clean'); one.dataset.markedAlt = one.querySelector('img').alt;
     s.append(h, one);
     if (i.interactions) {
       const note = el('div', 'dr-interactions');
@@ -535,7 +601,7 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     }
     if (i.before) {
       const p = el('div', 'dr-pair'); p.hidden = true;
-      [['Before', i.before], ['After', i.clean]].forEach(([c, src]) => { const f = el('figure'); f.append(el('figcaption', null, c), img(src, i, c.toLowerCase())); p.append(f); });
+      [['Before', i.before], ['After', i.clean]].forEach(([c, src]) => { const f = el('figure'); f.append(el('figcaption', null, c), shot(src, i, c.toLowerCase())); p.append(f); });
       s.append(p);
     }
     return s;
@@ -558,15 +624,15 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   for (const r of D.removed) {
     const s = el('section', 'dr-slide dr-removed'); const h = el('h3');
     const t = el('span', 'tag removed', 'removed'); t.setAttribute('aria-label', 'Slide ' + r.n + ' of the old deck' + (r.title ? ': ' + r.title : '') + ', removed');
-    h.append(t); s.append(h, img(r.img, r, 'removed')); list.append(s);
+    h.append(t); s.append(h, shot(r.img, r, 'removed')); list.append(s);
   }
   const set = (v) => {
     root.querySelectorAll('.dr-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
-    root.querySelectorAll('img[data-clean]').forEach((im) => {
-      im.src = v === 'clean' ? im.dataset.clean : im.dataset.marked;
-      im.alt = v === 'clean' ? im.dataset.cleanAlt : im.dataset.markedAlt;
-      const p = im.parentElement.querySelector('.dr-pair');
-      if (p) { p.hidden = v !== 'before'; im.hidden = v === 'before'; }
+    root.querySelectorAll('.dr-shot[data-clean]').forEach((w) => {
+      paint(w, v === 'clean' ? w.dataset.clean : w.dataset.marked);
+      w.querySelector('img').alt = v === 'clean' ? w.dataset.cleanAlt : w.dataset.markedAlt;
+      const p = w.parentElement.querySelector('.dr-pair');
+      if (p) { p.hidden = v !== 'before'; w.hidden = v === 'before'; }
     });
   };
   root.querySelectorAll('.dr-seg button').forEach((b) => { b.onclick = () => set(b.dataset.v); });

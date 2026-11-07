@@ -173,7 +173,7 @@ class _Renderer:
     def interactions(self, side, deck):
         return [[] for _ in self.slides[side]]
 
-    def shoot(self, side, deck, index, path=None, mark=None, number=False):
+    def shoot(self, side, deck, index, path=None, mark=None, number=False, words=None):
         self.calls.append((side, index, mark is not None) + ((True,) if number else ()))
         data = self.slides[side][index]["body"].encode()
         if path:
@@ -553,7 +553,9 @@ def test_link_destination_change_with_equal_text_and_image_is_retained(tmp_path)
                 ]
             ]
 
-        def shoot(self, side, deck, index, path=None, mark=None, number=False):
+        def shoot(
+            self, side, deck, index, path=None, mark=None, number=False, words=None
+        ):
             return b"same pixels"
 
     rendered = deck_review.review(
@@ -727,3 +729,32 @@ def test_a_failed_child_frame_does_not_discard_the_slide():
     assert renderer.shoot("new", "deck.html", 0) == b"PNG"
     good_frame.evaluate.assert_called_once_with(deck_review.READY_JS)
     page.close.assert_not_called()
+
+
+def test_display_shots_are_sharp_with_words_and_comparisons_stay_1x(tmp_path):
+    from unittest.mock import Mock
+
+    page = Mock()
+    page.main_frame = object()
+    page.frames = [page.main_frame]
+    page.screenshot.return_value = b"PNG"
+    page.evaluate.side_effect = lambda js, *a: (
+        [["Hello", 0.1, 0.2, 0.05, 0.04]] if js == deck_review.WORDS_JS else None
+    )
+    renderer = object.__new__(deck_review.Renderer)
+    renderer.page = lambda *args: page
+    assert renderer.shoot("new", "deck.html", 0) == b"PNG"
+    assert page.screenshot.call_args.kwargs["scale"] == "css"
+    words = []
+    renderer.shoot("new", "deck.html", 0, str(tmp_path / "s1.png"), words=words)
+    assert page.screenshot.call_args.kwargs["scale"] == "device"
+    assert words == [["Hello", 0.1, 0.2, 0.05, 0.04]]
+    assert deck_review.DISPLAY_SCALE >= 2
+
+
+def test_view_carries_each_images_selectable_words():
+    text = {"a.png": [["Hello", 0.1, 0.2, 0.05, 0.04]]}
+    page = deck_review.view([], [], 1, text)
+    data = page.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
+    assert json.loads(data)["text"] == text
+    assert ".dr-text span" in deck_review.STYLE and "paint(" in deck_review.SCRIPT
