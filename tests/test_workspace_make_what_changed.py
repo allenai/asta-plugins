@@ -666,6 +666,8 @@ def test_prerequisite_printing_page_list_does_not_enable_partial_render(
 ) -> None:
     add_page(project, "other.qmd", "An untouched page.\n")
     use_legacy_cached_rules(project)
+    cache = project / ".asta/cache/workspace.mk"
+    supported_rules = cache.read_text()
     custom_rules = (
         (project / "workspace.mk")
         .read_text()
@@ -682,10 +684,9 @@ def test_prerequisite_printing_page_list_does_not_enable_partial_render(
     (project / "workspace.mk").write_text(custom_rules)
     git(project, "commit", "-qam", "custom render ignores page list")
     git(project, "branch", "-f", "main")
-    if version == "current":
-        (project / ".asta/cache/workspace.mk").write_text(custom_rules)
-    # Otherwise the ignored cache retains current, supported rules. The base
-    # reconstructs its own custom rules from tracked files, just as sync does.
+    # Refresh after updating tracked rules so Make does not replace the ignored
+    # cache based on mtimes. The base reconstructs its own custom rules.
+    cache.write_text(custom_rules if version == "current" else supported_rules)
     (project / "index.qmd").write_text(
         "The baseline finding holds.\nA newly drafted paragraph.\n"
     )
