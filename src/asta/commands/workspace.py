@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import fnmatch
 import functools
 import hashlib
 import http.client
@@ -1180,8 +1181,41 @@ def _has_site_page(site: Path) -> bool:
     )
 
 
+def _project_render_list(project: Path) -> list[str] | None:
+    """The project's `project.render` patterns, or None when it renders everything."""
+    for config in ("_quarto.yml", "_quarto.yaml"):
+        path = project / config
+        if path.is_file():
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except yaml.YAMLError:
+                return None
+            render = ((data or {}).get("project") or {}).get("render")
+            if isinstance(render, list) and render:
+                return [str(item) for item in render]
+            return None
+    return None
+
+
+def _in_render_list(name: str, patterns: list[str] | None) -> bool:
+    """Whether Quarto renders a root-level source, given `project.render`.
+
+    Rendering a page outside that list fails with `--output-dir`.
+    """
+    if patterns is None:
+        return True
+    included = False
+    for pattern in patterns:
+        negated = pattern.startswith("!")
+        glob = (pattern[1:] if negated else pattern).removeprefix("./")
+        if any(fnmatch.fnmatchcase(name, g) for g in (glob, glob.removeprefix("**/"))):
+            included = not negated
+    return included
+
+
 def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
     """Source pages to render beside a deck-only edit to take the theme from."""
+    render_list = _project_render_list(project)
     names = [name for name in THEME_PAGES if (project / name).is_file()]
     for source in sorted(project.iterdir()):
         name = source.name
@@ -1195,7 +1229,11 @@ def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
             and "revealjs" not in source.read_text(encoding="utf-8", errors="ignore")
         ):
             names.append(name)
-    return [name for name in names if name not in pages][:THEME_CANDIDATES]
+    return [
+        name
+        for name in names
+        if name not in pages and _in_render_list(name, render_list)
+    ][:THEME_CANDIDATES]
 
 
 def _has_deck(site: Path) -> bool:

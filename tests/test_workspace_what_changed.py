@@ -16,6 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from asta.commands import workspace as workspace_module
@@ -1580,6 +1581,27 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
     expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", *candidates]
     assert after == expected
+
+
+@pytest.mark.parametrize(
+    "render, expected",
+    [
+        (None, ["index.qmd", "about.qmd", "notes.md"]),
+        (["index.qmd", "slides.qmd", "about.qmd"], ["index.qmd", "about.qmd"]),
+        (["*.qmd", "!about.qmd"], ["index.qmd"]),
+        (["**/*.md"], ["notes.md"]),
+    ],
+)
+def test_theme_candidates_honor_the_project_render_list(
+    tmp_path: Path, render: list[str] | None, expected: list[str]
+) -> None:
+    """Quarto refuses `--output-dir` for a page outside `project.render`."""
+    for name in ("index.qmd", "about.qmd", "notes.md", "slides.qmd"):
+        (tmp_path / name).write_text("Page.\n")
+    project = {"type": "website"} | ({"render": render} if render else {})
+    (tmp_path / "_quarto.yml").write_text(yaml.safe_dump({"project": project}))
+    candidates = workspace_module._theme_candidates(tmp_path, ["slides.qmd"])
+    assert candidates == expected
 
 
 def test_changed_home_page_supplies_the_theme_beside_a_deck(
