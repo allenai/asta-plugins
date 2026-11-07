@@ -152,9 +152,9 @@ def check(project, artifacts):
 
 
 THEMED_JS = (
-    "() => [...document.styleSheets].some(s => s.href && s.href.includes('bootstrap')"
-    ' && s.cssRules.length) && !/^"?times/i.test(getComputedStyle(document.body)'
-    ".fontFamily)"
+    "() => ['bootstrap', 'asta-theme'].every(name => [...document.styleSheets]"
+    ".some(s => s.href && s.href.includes(name) && s.cssRules.length))"
+    ' && !/^"?times/i.test(getComputedStyle(document.body).fontFamily)'
 )
 
 

@@ -1542,3 +1542,46 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     after = dict(rendered)["the working tree"]
     expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", "index.qmd"]
     assert after == expected
+
+
+def test_changed_home_page_supplies_the_theme_beside_a_deck(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the home page itself changed, its rendered page themes the report."""
+    (project / "slides.qmd").write_text("Slide one.\n")
+    (project / "index.qmd").write_text("Home.\n")
+    git(project, "add", "slides.qmd", "index.qmd")
+    git(project, "commit", "-qm", "deck and home")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    (project / "index.qmd").write_text("Home, edited.\n")
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        (site / "site_libs/bootstrap").mkdir(parents=True)
+        (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+        for name in pages or []:
+            text = (directory / name).read_text()
+            body = THEMED.format(text) if name == "index.qmd" else f"<p>{text}</p>"
+            (site / Path(name).with_suffix(".html")).write_text(body)
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module,
+        "_changed_comparison_pages",
+        lambda *_: ["slides.qmd", "index.qmd"],
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    snapshot = project / workspace_module.COMPARISON_DIR
+    page = (snapshot / "what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
+    assert "<ins" in page and "Home" in page
+    assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
