@@ -75,6 +75,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyhocon" },
+    { name = "pyyaml" },
     { name = "rich" },
 ]
 
@@ -82,7 +83,6 @@ dependencies = [
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "pyyaml" },
     { name = "requests" },
 ]
 
@@ -100,7 +100,7 @@ requires-dist = [
     { name = "pyhocon", specifier = ">=0.3.60" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
-    { name = "pyyaml", marker = "extra == 'test'", specifier = ">=6.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", marker = "extra == 'test'", specifier = ">=2.31" },
     { name = "rich", specifier = ">=13.7.0" },
 ]

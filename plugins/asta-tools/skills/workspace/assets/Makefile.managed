@@ -1,4 +1,5 @@
-# Optional compact entry point; CLI 0.105.0 supports rules with project scripts.
+# Optional compact entry point; CLI 0.105.0 supports a local workflow and project scripts.
+# Subfolder sites with a root candidate also require `sync --check-selection` support.
 # Before removing scripts, require a CLI supporting `sync --require-scripts`.
 # A local workspace.mk takes precedence when a project customizes shared rules.
 # Shared scripts are cached by `asta workspace sync`; commit scripts/<name> to customize one.
@@ -30,10 +31,32 @@ ifneq ($(ASTA_WORKSPACE_SYNC_STATE),$(shell cat $(ASTA_VERSION_STAMP) 2>/dev/nul
 endif
 endif
 include .asta/cache/workspace.mk
-.asta/cache/workspace.mk: .github/workflows/docs.yml
+# Watch both candidates conservatively: editing an unused one can also re-sync.
+# Relative paths keep checkout-directory spaces out of Make's prerequisite list.
+ASTA_WORKSPACE_WORKFLOWS := $(sort $(wildcard .github/workflows/docs.yml $(shell git rev-parse --show-cdup 2>/dev/null).github/workflows/docs.yml))
+# Keep a missing-workflow error even when managed rules are already cached.
+.asta/cache/workspace.mk: $(or $(ASTA_WORKSPACE_WORKFLOWS),.github/workflows/docs.yml)
 	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
 	@asta workspace sync
 	@printf '%s\n' '$(ASTA_WORKSPACE_SYNC_STATE)' > $(ASTA_VERSION_STAMP)
+# Validate a root candidate offline, without touching the cache or moving pins.
+# Order-only validation does not force a remake of otherwise up-to-date rules.
+# A validated site's recursive makes reuse its check. MAKELEVEL alone is not
+# sufficient: the site's first Make may itself be called by an outer Makefile.
+# Only a lone local workflow can skip root selection validation.
+ifneq ($(ASTA_WORKSPACE_WORKFLOWS),.github/workflows/docs.yml)
+ifneq ($(ASTA_WORKSPACE_SELECTION_CHECKED),$(CURDIR))
+# Re-export after an include restart so children retain the initial validation.
+export ASTA_WORKSPACE_SELECTION_CHECKED := $(CURDIR)
+ifeq ($(MAKE_RESTARTS),)
+.PHONY: asta-workspace-check-workflow
+.asta/cache/workspace.mk: | asta-workspace-check-workflow
+asta-workspace-check-workflow:
+	@command -v asta >/dev/null && asta workspace sync --help 2>/dev/null | grep -q -- --check-selection || { echo "Install an Asta CLI with 'workspace sync --check-selection' support from an asta-plugins ref containing root-workflow support, or add a local workspace.mk" >&2; exit 1; }
+	@asta workspace sync --check-selection
+endif
+endif
+endif
 endif
 
 .PHONY: update-workspace
