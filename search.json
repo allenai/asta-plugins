@@ -75,6 +75,6 @@
     "href": "slides/attention/slides.html#keep-the-talk-beside-its-sources",
     "title": "Attention in sequence models",
     "section": "Keep the talk beside its sources",
-    "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file."
+    "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file.\nReview local changes with asta workspace what-changed; PR previews use the same comparison."
   }
 ]
