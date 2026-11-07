@@ -1119,8 +1119,21 @@ def test_real_quarto_with_ignored_theme_installed_by_base_rules(
     assert "only pages changed" in result.stderr
     report = (site / "what-changed.html").read_text()
     assert "drafted" in report
-    assert "what-changed-assets/_extensions/asta-theme/asta.css" in report
-    assert (site / "what-changed-assets/_extensions/asta-theme/asta.css").is_file()
+    # Quarto versions relocate extension CSS differently (for example into
+    # site_libs/quarto-contrib/quarto-project/). Follow the rendered link rather
+    # than assuming that the source extension's directory survives publication.
+    theme_links = re.findall(
+        r'<link\b[^>]*\bhref="([^"]*/asta-theme/asta\.css)"', report
+    )
+    assert theme_links, report
+    for href in theme_links:
+        assert href.startswith("what-changed-assets/"), href
+        published_css = site / html.unescape(href)
+        assert published_css.is_file(), href
+        assert (
+            published_css.read_text()
+            == (ASSETS / "_extensions/asta-theme/asta.css").read_text()
+        )
     assert (site / "index.html").read_text() == "The live preview stays intact."
     assert not list(temporary.iterdir())
     assert not list((project / ".asta/cache").glob("what-changed.*"))
