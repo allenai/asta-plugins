@@ -51,6 +51,7 @@ import os
 import posixpath
 import re
 import sys
+from collections import Counter
 from html.parser import HTMLParser
 from urllib.parse import quote, urlsplit
 
@@ -621,10 +622,35 @@ def diff_content(old, new):
     # Align on the visible string of each token.
     ak = [t[1] for t in a]
     bk = [t[1] for t in b]
-    sm = difflib.SequenceMatcher(None, ak, bk, autojunk=False)
+    # SequenceMatcher without autojunk is quadratic; a local edit to a large
+    # page (a slide deck) only needs the span between the common ends.
+    lo = 0
+    while lo < min(len(ak), len(bk)) and ak[lo] == bk[lo]:
+        lo += 1
+    hi = 0
+    while hi < min(len(ak), len(bk)) - lo and ak[-1 - hi] == bk[-1 - hi]:
+        hi += 1
+    a_middle, b_middle = ak[lo : len(ak) - hi], bk[lo : len(bk) - hi]
+    # Distant edits can still leave a long, highly repetitive middle. Estimate
+    # candidate token matches before allowing the expensive exact matcher; its
+    # popular-token heuristic keeps those cases responsive, at the cost of
+    # coarser highlighting inside that changed span.
+    a_counts, b_counts = Counter(a_middle), Counter(b_middle)
+    candidates = sum(count * b_counts[token] for token, count in a_counts.items())
+    sm = difflib.SequenceMatcher(
+        None, a_middle, b_middle, autojunk=candidates > 1_000_000
+    )
+    opcodes = [
+        (op, i1 + lo, i2 + lo, j1 + lo, j2 + lo)
+        for op, i1, i2, j1, j2 in sm.get_opcodes()
+    ]
+    if lo:
+        opcodes.insert(0, ("equal", 0, lo, 0, lo))
+    if hi:
+        opcodes.append(("equal", len(ak) - hi, len(ak), len(bk) - hi, len(bk)))
     out = []
     changed = False
-    for op, i1, i2, j1, j2 in sm.get_opcodes():
+    for op, i1, i2, j1, j2 in opcodes:
         if op == "equal":
             out.append("".join(t[1] for t in a[i1:i2]))
         elif op == "insert":
@@ -640,18 +666,23 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None, paper_dirs=()):
+def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
-    Skips any page that is itself a "What changed" artifact — matched by output
-    exact output path (when it falls under this input root) or by the generator's
-    self-identifying marker — so the generator never diffs its own output while
-    preserving a legitimate same-named page in another directory. Paper output
+    Skips generated "What changed" artifacts by exact output path or the
+    generator's self-identifying marker. Local callers also reserve the root
+    comparison filename and asset directory; other callers preserve legitimate
+    pages with those names. Paper output
     stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
-    for dirpath, _dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
+        if reserved_local_output and os.path.abspath(dirpath) == os.path.abspath(root):
+            # Local comparisons retain their rendered assets here. They are
+            # supporting output, never another set of source pages to compare.
+            dirs[:] = [name for name in dirs if name != "what-changed-assets"]
+            files = [name for name in files if name != "what-changed.html"]
         for f in files:
             if not f.endswith(".html"):
                 continue
@@ -1154,7 +1185,44 @@ def rebase_urls(text, depth):
         return f"{attr}={quote}{url}{quote}"
 
     text = re.sub(r'(href|src)\s*=\s*(["\'])([^"\']*)\2', fix, text, flags=re.I)
-    return text
+    return rewrite_style_urls(
+        text, lambda url: url[len(prefix) :] if url.startswith(prefix) else url
+    )
+
+
+def rewrite_style_urls(text, rewrite):
+    """Rewrite CSS URLs in inline styles, preserving quoting and raw CSS text.
+
+    Tokenize comments and strings as well as url() and string-form @import so
+    apparent URLs inside comments or content strings are left alone. Quoted
+    paths can contain whitespace, parentheses, and backslash-escaped quotes.
+    """
+    string = r"""(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')"""
+    tokens = re.compile(
+        rf"(?P<comment>/\*[\s\S]*?\*/)"
+        rf"|\burl\(\s*(?P<url>{string}|(?:\\[\s\S]|[^\\\s\"'()])*)\s*\)"
+        rf"|@import\s+(?P<import>{string})"
+        rf"|{string}",
+        re.I,
+    )
+
+    def token(match):
+        group = "url" if match.group("url") is not None else "import"
+        value = match.group(group)
+        if value is None:
+            return match[0]
+        quote = value[:1] if value.startswith(('"', "'")) else ""
+        url = value[1:-1] if quote else value
+        start, end = match.span(group)
+        start -= match.start()
+        end -= match.start()
+        return match[0][:start] + quote + rewrite(url) + quote + match[0][end:]
+
+    return re.sub(
+        r"(?is)(<style\b[^>]*>)(.*?)(</style>)",
+        lambda match: match[1] + tokens.sub(token, match[2]) + match[3],
+        text,
+    )
 
 
 def page_title(doc, rel):
@@ -1172,20 +1240,41 @@ def anchor_id(rel):
     return "p-" + re.sub(r"[^a-zA-Z0-9]+", "-", rel).strip("-")
 
 
+def _is_slide_deck(doc):
+    # A site's own CSS may use a class named "reveal". Quarto reveal.js decks
+    # carry the runtime's stylesheet, which identifies the actual deck format.
+    return bool(
+        re.search(
+            r'(?is)<link\b[^>]*\bhref\s*=\s*["\'](?:[^"\']*/)?reveal(?:\.min)?\.css(?:[?#][^"\']*)?["\']',
+            doc,
+        )
+    )
+
+
 def pick_template(new_pages):
-    """Choose the shallowest rendered page to borrow the site theme from.
+    """Choose the shallowest styled site page to borrow the site theme from.
 
     A root-level page (e.g. index.html) keeps asset URLs simplest to rebase.
+    Pages without CSS cannot supply a theme and are skipped. A reveal.js deck
+    carries the deck's styling, not the site's, so it is used only when no styled
+    ordinary page exists.
     Returns (doc_html, depth) or (None, 0) if nothing suitable exists.
     """
-    if not new_pages:
-        return None, 0
-    rel = min(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r))
-    depth = rel.replace(os.sep, "/").count("/")
-    try:
-        return open(new_pages[rel], encoding="utf-8").read(), depth
-    except OSError:
-        return None, 0
+    fallback = (None, 0)
+    for rel in sorted(new_pages, key=lambda r: (r.replace(os.sep, "/").count("/"), r)):
+        depth = rel.replace(os.sep, "/").count("/")
+        try:
+            with open(new_pages[rel], encoding="utf-8") as f:
+                doc = f.read()
+        except OSError:
+            continue
+        if not extract_theme_css(doc, depth):
+            continue
+        if not _is_slide_deck(doc):
+            return doc, depth
+        if fallback[0] is None:
+            fallback = (doc, depth)
+    return fallback
 
 
 def paper_identity(paper_dir):
@@ -1490,7 +1579,39 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None):
     )
 
 
-def build(old_root, new_root, preview_url, title, out_path=None):
+def prefix_theme_urls(css, prefix):
+    """Rebase theme links, CSS url(), and @import into the retained asset tree."""
+
+    def prefixed(url, attribute=False):
+        # HTML attributes decode entities; <style> is raw text. Preserve CSS
+        # ampersands (including literal entity-looking strings) byte for byte.
+        value = html.unescape(url) if attribute else url
+        parsed = urlsplit(value)
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            return url
+        value = prefix.rstrip("/") + "/" + value.lstrip("/")
+        return html.escape(value, quote=True) if attribute else value
+
+    css = re.sub(
+        r"""(?i)(\bhref\s*=\s*)(["'])([^"']*)\2""",
+        lambda match: (
+            f"{match[1]}{match[2]}{prefixed(match[3], attribute=True)}{match[2]}"
+        ),
+        css,
+    )
+    return rewrite_style_urls(css, prefixed)
+
+
+def build(
+    old_root,
+    new_root,
+    preview_url,
+    title,
+    out_path=None,
+    theme_root=None,
+    theme_url_prefix="",
+    reserved_local_output=False,
+):
     sections = []
     toc = []
     paper_root = os.path.join(new_root, "paper-previews")
@@ -1501,8 +1622,8 @@ def build(old_root, new_root, preview_url, title, out_path=None):
                 paper_dirs.append(
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
-    old_pages = list_pages(old_root, out_path, paper_dirs)
-    new_pages = list_pages(new_root, out_path, paper_dirs)
+    old_pages = list_pages(old_root, out_path, paper_dirs, reserved_local_output)
+    new_pages = list_pages(new_root, out_path, paper_dirs, reserved_local_output)
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:
@@ -1655,8 +1776,26 @@ def build(old_root, new_root, preview_url, title, out_path=None):
     )
     escaped_title = html.escape(title)
 
-    template_doc, depth = pick_template(new_pages)
-    theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+    # A partial render holds only the changed pages, so the caller can name the
+    # full site this page is served from as the theme source.
+    template_doc, theme_css = None, None
+    for root, pages in (
+        (
+            theme_root,
+            list_pages(
+                theme_root, out_path, reserved_local_output=reserved_local_output
+            )
+            if theme_root
+            else {},
+        ),
+        (new_root, new_pages),
+    ):
+        template_doc, depth = pick_template(pages)
+        theme_css = extract_theme_css(template_doc, depth) if template_doc else None
+        if theme_css:
+            if root == new_root and theme_url_prefix:
+                theme_css = prefix_theme_urls(theme_css, theme_url_prefix)
+            break
 
     inner = (
         '<header class="diff-head"><h1>What changed</h1>'
@@ -1712,6 +1851,20 @@ def main(argv=None):
     ap.add_argument(
         "--title", default="PR preview diff", help="site/PR label for the header"
     )
+    ap.add_argument(
+        "--theme-root",
+        help="rendered full site to borrow the theme from (default: --new)",
+    )
+    ap.add_argument(
+        "--theme-url-prefix",
+        default="",
+        help="served asset prefix when the theme comes from --new",
+    )
+    ap.add_argument(
+        "--reserved-local-output",
+        action="store_true",
+        help="exclude root what-changed.html and what-changed-assets/ (local Make target)",
+    )
     args = ap.parse_args(argv)
     doc = build(
         args.old,
@@ -1719,6 +1872,9 @@ def main(argv=None):
         args.preview_url,
         args.title,
         out_path=args.out,
+        theme_root=args.theme_root,
+        theme_url_prefix=args.theme_url_prefix,
+        reserved_local_output=args.reserved_local_output,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(doc)
