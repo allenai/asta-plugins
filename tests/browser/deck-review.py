@@ -20,6 +20,8 @@ spec.loader.exec_module(changed)
 spec = importlib.util.spec_from_file_location("review", ASSETS / "deck-review.py")
 review = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(review)
+# Display shots are taken at device scale, so slide images are this wide.
+DISPLAY_WIDTH = review.VIEWPORT["width"] * review.DISPLAY_SCALE
 
 
 def capture_regressions(root, deck, original):
@@ -446,7 +448,7 @@ def check(site, artifacts):
                     image.scroll_into_view_if_needed()
                     image.wait_for(state="visible")
                     assert image.evaluate(
-                        "(i) => i.complete && i.naturalWidth === 1600"
+                        "(i, w) => i.complete && i.naturalWidth === w", DISPLAY_WIDTH
                     ), image.get_attribute("src")
                 for button in page.locator(".dr-more").all():
                     button.click()

@@ -17,6 +17,8 @@ spec = importlib.util.spec_from_file_location(
 )
 review = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(review)
+# Display shots are taken at device scale, so slide images are this wide.
+DISPLAY_WIDTH = review.VIEWPORT["width"] * review.DISPLAY_SCALE
 
 
 def deploy_preview(site):
@@ -135,8 +137,9 @@ def check(project, artifacts):
             for image in page.locator(".dr-slide:visible img:visible").all():
                 image.scroll_into_view_if_needed()
                 assert image.evaluate(
-                    "(i) => new Promise(r => i.complete ? r() : i.addEventListener('load', r, {once: true}))"
-                    ".then(() => i.naturalWidth === 1600)"
+                    "(i, w) => new Promise(r => i.complete ? r() : i.addEventListener('load', r, {once: true}))"
+                    ".then(() => i.naturalWidth === w)",
+                    DISPLAY_WIDTH,
                 ), image.get_attribute("src")
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
