@@ -130,11 +130,14 @@ preview: workspace-assets
 	quarto preview --no-browser
 
 # Optional output override for callers that must leave the preview's _site alone,
-# and an optional page list for callers that need only some pages rendered.
+# and an optional whitespace-separated page list (no spaces within filenames).
+# The recipe marker declares page-list support. Keep it only in recipes that
+# implement that contract; prerequisite output cannot declare this capability.
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets
 	set -eu; \
+	: asta-workspace-render-page-selection-v1; \
 	set -f; \
 	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
 	if [ "$$#" -eq 0 ]; then \

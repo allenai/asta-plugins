@@ -490,6 +490,39 @@ def test_partial_render_borrows_theme_from_full_site(tmp_path):
     assert 'href="site_libs/revealjs/reveal.css"' in fallback
 
 
+@pytest.mark.parametrize("separate_theme_root", [False, True])
+def test_template_search_continues_after_unstyled_pages(tmp_path, separate_theme_root):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        root.mkdir()
+    (new / "deck.html").write_text(
+        '<head><link rel="stylesheet" href="site_libs/revealjs/reveal.css"></head>'
+        '<body><div class="reveal"><section>New finding</section></div></body>'
+    )
+    theme_root = site if separate_theme_root else new
+    (theme_root / "index.html").write_text("<head></head><main>Unstyled index</main>")
+    (theme_root / "guide").mkdir()
+    (theme_root / "guide/themed.html").write_text(
+        '<head><link rel="stylesheet" href="../site_libs/site.css" '
+        'id="quarto-bootstrap" data-mode="dark"></head>'
+        '<body class="quarto-dark"><main>Styled site page</main></body>'
+    )
+
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        theme_root=site if separate_theme_root else None,
+        theme_url_prefix="what-changed-assets/",
+    )
+
+    prefix = "" if separate_theme_root else "what-changed-assets/"
+    assert f'href="{prefix}site_libs/site.css"' in result
+    assert "reveal.css" not in result
+    assert 'data-wc-mode="dark"' in result
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_previous_comparison_cannot_supply_the_partial_render_theme(tmp_path, legacy):
     old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
@@ -520,6 +553,7 @@ def test_previous_comparison_cannot_supply_the_partial_render_theme(tmp_path, le
         "Local comparison",
         out_path=tmp_path / "temporary/what-changed.html",
         theme_root=site,
+        reserved_local_output=True,
     )
     assert 'href="site_libs/site-theme.css"' in result
     assert ".stale-comparison" not in result
@@ -1138,4 +1172,82 @@ def test_retained_render_is_excluded_from_page_and_theme_discovery(tmp_path):
     assets = tmp_path / "what-changed-assets"
     assets.mkdir()
     (assets / "index.html").write_text("<main>Prior comparison render</main>")
-    assert list(WHAT_CHANGED.list_pages(tmp_path)) == ["index.html"]
+    assert list(WHAT_CHANGED.list_pages(tmp_path, reserved_local_output=True)) == [
+        "index.html"
+    ]
+
+
+def test_nonlocal_comparison_preserves_pages_with_local_reserved_names(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    (new / "what-changed-assets").mkdir(parents=True)
+    (new / "what-changed.html").write_text("<main>A legitimate site page.</main>")
+    (new / "what-changed-assets/details.html").write_text(
+        "<main>Legitimate project details.</main>"
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR comparison")
+
+    assert "A legitimate site page" in result
+    assert "Legitimate project details" in result
+
+
+@pytest.mark.parametrize("url", ["image.png?x=1&y=2", "image.png?x=1&amp;y=2"])
+def test_retained_inline_css_preserves_raw_url_ampersands(tmp_path, url):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        f'<head><style>body {{ background: url("{url}"); }}</style></head>'
+        "<main>A new finding.</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix="what-changed-assets/"
+    )
+
+    assert f'url("what-changed-assets/{url}")' in result
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_retained_theme_rebases_quoted_css_urls_and_imports(tmp_path, nested):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    page = new / "chapters/index.html" if nested else new / "index.html"
+    page.parent.mkdir(parents=True)
+    source_prefix = "../" if nested else ""
+    page.write_text(
+        "<head><style>\n"
+        f'@import "{source_prefix}themes/my theme.css" screen;\n'
+        f"@import '{source_prefix}themes/print.css' print;\n"
+        f'@import url("{source_prefix}themes/another theme.css");\n'
+        f"body {{ background: URL( '{source_prefix}images/picture (dark).png' ); }}\n"
+        f".icon {{ mask: url({source_prefix}images/icon.svg); }}\n"
+        f'.quoted {{ background: url("{source_prefix}images/a\\"b.png"); }}\n'
+        '@import "https://example.org/remote theme.css";\n'
+        '@import "//example.org/remote.css";\n'
+        '.remote { background: url("https://example.org/bg image.png"); }\n'
+        '.inline { background: url("data:image/svg+xml;utf8,(svg)"); }\n'
+        '.fragment { mask: url("#icon"); }\n'
+        '/* @import "ignored.css"; url("ignored image.png") */\n'
+        ".content { content: 'url(\"literal text.png\")'; }\n"
+        "</style></head><main>A new finding.</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix="what-changed-assets/"
+    )
+
+    assert '@import "what-changed-assets/themes/my theme.css" screen;' in result
+    assert "@import 'what-changed-assets/themes/print.css' print;" in result
+    assert '@import url("what-changed-assets/themes/another theme.css");' in result
+    assert "URL( 'what-changed-assets/images/picture (dark).png' )" in result
+    assert "url(what-changed-assets/images/icon.svg)" in result
+    assert 'url("what-changed-assets/images/a\\"b.png")' in result
+    assert '@import "https://example.org/remote theme.css";' in result
+    assert '@import "//example.org/remote.css";' in result
+    assert 'url("https://example.org/bg image.png")' in result
+    assert 'url("data:image/svg+xml;utf8,(svg)")' in result
+    assert 'url("#icon")' in result
+    assert '/* @import "ignored.css"; url("ignored image.png") */' in result
+    assert "content: 'url(\"literal text.png\")'" in result

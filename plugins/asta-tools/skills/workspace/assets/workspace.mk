@@ -167,11 +167,14 @@ preview: workspace-assets workspace-viewers
 	quarto preview --no-browser
 
 # Optional output override for callers that must leave the preview's _site alone,
-# and an optional page list for callers that need only some pages rendered.
+# and an optional whitespace-separated page list (no spaces within filenames).
+# The recipe marker declares page-list support. Keep it only in recipes that
+# implement that contract; prerequisite output cannot declare this capability.
 ASTA_WORKSPACE_RENDER_OUTPUT ?=
 ASTA_WORKSPACE_RENDER_FILES ?=
 render: workspace-assets workspace-viewers
 	set -eu; \
+	: asta-workspace-render-page-selection-v1; \
 	set -f; \
 	pages='$(subst ','"'"',$(value ASTA_WORKSPACE_RENDER_FILES))'; set -- $$pages; \
 	if [ "$$#" -eq 0 ]; then \
@@ -214,21 +217,54 @@ what-changed:
 	base=$$(git rev-parse --verify --end-of-options "$$base^{commit}") || { echo "what-changed: invalid base; set WHAT_CHANGED_BASE=<ref>" >&2; exit 1; }; \
 	label=$$(git rev-parse --short "$$base"); \
 	prefix=$$(git rev-parse --show-prefix); \
+	quarto=$$(command -v quarto) || { echo 'what-changed: quarto not found on PATH' >&2; exit 1; }; \
+	makefile='$(subst ','"'"',$(firstword $(MAKEFILE_LIST)))'; \
+	ignore_before=$$(git hash-object .gitignore 2>/dev/null || printf missing); \
 	echo "what-changed: base $$source ($$base); running its make render" >&2; \
-	tmp=; current=; \
+	tmp=; current=; publication=; assets_installed=; lock_held=; \
 	cleanup() { \
 		status=$$?; trap - 0; trap '' 1 2 15; \
+		ignore_after=$$(git hash-object .gitignore 2>/dev/null || printf missing); \
+		if [ "$$ignore_before" != "$$ignore_after" ]; then \
+			echo 'what-changed: .gitignore changed during the build (Quarto may add cache entries); review that edit. Page selection used the source changes from before the build.' >&2; \
+		fi; \
+		if [ -n "$$publication" ]; then \
+			if [ -e "$$publication/old" ] || [ -L "$$publication/old" ]; then \
+				rm -rf _site/what-changed-assets; \
+				mv "$$publication/old" _site/what-changed-assets || { echo "what-changed: could not restore previous assets from $$publication/old" >&2; exit 1; }; \
+			elif [ -n "$$assets_installed" ]; then rm -rf _site/what-changed-assets; fi; \
+			rm -rf "$$publication"; \
+		fi; \
 		[ -z "$$current" ] || rm -rf "$$current"; \
 		if [ -n "$$tmp" ] && [ -d "$$tmp/base" ] && ! git worktree remove --force "$$tmp/base" >/dev/null 2>&1; then \
 			echo "what-changed: cleanup failed; remove the worktree at $$tmp/base manually" >&2; exit 1; \
 		fi; \
-		[ -z "$$tmp" ] || rm -rf "$$tmp"; exit "$$status"; \
+		[ -z "$$tmp" ] || rm -rf "$$tmp"; \
+		[ -z "$$lock_held" ] || rmdir .asta/cache/what-changed.lock; exit "$$status"; \
 	}; \
 	trap cleanup 0; \
 	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
+	mkdir -p .asta/cache; \
+	mkdir .asta/cache/what-changed.lock 2>/dev/null || { echo 'what-changed: another comparison is in progress; after an uncatchable interruption, remove .asta/cache/what-changed.lock before retrying' >&2; exit 1; }; \
+	lock_held=1; \
 	tmp=$$(mktemp -d); \
-	current_probe=$$($(MAKE) -n render ASTA_WORKSPACE_RENDER_OUTPUT=asta-what-changed-output-probe ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-page-probe.qmd 2>/dev/null) || current_probe=; \
-	printf '%s\n' "$$current_probe" | grep -q asta-what-changed-output-probe || { \
+	(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u) > "$$tmp/changed"; \
+	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
+	mkdir "$$tmp/current-bin"; \
+	printf '%s\n' '#!/bin/sh' 'set -eu' \
+		'if [ "$${1:-}" = render ]; then' \
+		'  found=; previous=; for argument do' \
+		'    if [ "$$previous" = --output-dir ]; then found=$$argument; fi' \
+		'    previous=$$argument' '  done' \
+		'  [ "$$found" = "$$ASTA_WHAT_CHANGED_OUTPUT" ] || { echo "what-changed: current quarto render must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }' \
+		'fi' \
+		'[ "$${ASTA_WHAT_CHANGED_PROBE:-}" != 1 ] || exit 0' \
+		'exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"' > "$$tmp/current-bin/quarto"; \
+	chmod +x "$$tmp/current-bin/quarto"; \
+	: 'Recursive dry runs may execute recursive/+ lines; guard Quarto before probing and never render during the probe'; \
+	current_probe=$$(PATH="$$tmp/current-bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_OUTPUT="$$current" ASTA_WHAT_CHANGED_PROBE=1 \
+		$(MAKE) -f "$$makefile" -n render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-page-probe.qmd 2>/dev/null) || current_probe=; \
+	printf '%s\n' "$$current_probe" | grep -Fq -- "$$current" || { \
 		echo "what-changed: current render recipe must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }; \
 	git worktree add -q --detach "$$tmp/base" "$$base"; \
 	dir="$$tmp/base/$$prefix"; \
@@ -237,12 +273,19 @@ what-changed:
 		if [ ! -f "$$project/_quarto.yml" ] && [ ! -f "$$project/_quarto.yaml" ]; then \
 			echo "what-changed: missing Quarto project configuration at $$project; both versions must define a site with project.output-dir=_site" >&2; exit 1; \
 		fi; \
-		quarto inspect "$$project" > "$$tmp/inspect.json" || { echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
+		if ! "$$quarto" inspect "$$project" > "$$tmp/inspect.json" 2> "$$tmp/inspect.err"; then \
+			echo "what-changed: preparing $$version workspace assets before retrying project inspection" >&2; \
+			if [ "$$version" = base ]; then \
+				$(MAKE) -C "$$dir" workspace-assets >&2; \
+			else $(MAKE) -f "$$makefile" workspace-assets >&2; fi \
+				|| { cat "$$tmp/inspect.err" >&2; echo "what-changed: could not prepare $$version workspace assets for inspection" >&2; exit 1; }; \
+			"$$quarto" inspect "$$project" > "$$tmp/inspect.json" 2> "$$tmp/inspect.err" || { cat "$$tmp/inspect.err" >&2; echo "what-changed: could not inspect project configuration at $$project" >&2; exit 1; }; \
+		fi; \
+		cat "$$tmp/inspect.err" >&2; \
 		$(PYTHON) -c 'import json, pathlib, sys; data = json.load(open(sys.argv[1])); site = data.get("config", {}).get("project", {}).get("output-dir"); site_ok = isinstance(site, str) and pathlib.PurePosixPath(site).parts == ("_site",); root = pathlib.Path(sys.argv[2]).resolve(); inputs = data.get("files", {}).get("input", []); paths = [(root / p).resolve() for p in inputs]; print("\n".join(str(p.relative_to(root)) for p in paths if p.is_relative_to(root))); sys.exit(0 if site_ok else "what-changed: requires project.output-dir=_site in both versions; found " + repr(site) + " at " + sys.argv[2])' "$$tmp/inspect.json" "$$project" > "$$tmp/$$version-inputs"; \
 	done; \
 	files=; basefiles=; partial=; legacy=; \
 	if [ -z '$(subst ','"'"',$(value WHAT_CHANGED_FULL))' ]; then \
-		(cd "$$(git rev-parse --show-toplevel)" && { git diff --name-only --no-renames "$$base" -- && git ls-files --others --exclude-standard; } | sort -u) > "$$tmp/changed"; \
 		if [ -s "$$tmp/changed" ]; then \
 			partial=1; \
 			while IFS= read -r path; do \
@@ -260,29 +303,20 @@ what-changed:
 			done < "$$tmp/changed"; \
 		fi; \
 		if [ -n "$$partial" ]; then \
-			printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
+			printf '%s\n' "$$current_probe" | grep -Eq '^[[:space:]]*: asta-workspace-render-page-selection-v1;' && \
+				printf '%s\n' "$$current_probe" | grep -q asta-what-changed-page-probe || partial=; \
 		fi; \
 		if [ -n "$$partial" ]; then \
 			probe=$$($(MAKE) -n -C "$$dir" render ASTA_WORKSPACE_RENDER_OUTPUT= ASTA_WORKSPACE_RENDER_FILES=asta-what-changed-probe.qmd 2>/dev/null) || probe=; \
-			if printf '%s\n' "$$probe" | grep -q asta-what-changed-probe; then :; \
+			if printf '%s\n' "$$probe" | grep -Eq '^[[:space:]]*: asta-workspace-render-page-selection-v1;' && \
+				printf '%s\n' "$$probe" | grep -q asta-what-changed-probe; then :; \
 			elif printf '%s\n' "$$probe" | grep -Eq '^[[:space:]]*quarto render[[:space:]]*$$'; then legacy=1; \
 			else partial=; fi; \
 		fi; \
 	fi; \
-	mkdir -p .asta/cache; \
-	current=$$(mktemp -d .asta/cache/what-changed.XXXXXX); \
-	quarto=$$(command -v quarto); mkdir "$$tmp/current-bin"; \
-	printf '%s\n' '#!/bin/sh' 'set -eu' \
-		'if [ "$${1:-}" = render ]; then' \
-		'  found=; previous=; for argument do' \
-		'    if [ "$$previous" = --output-dir ]; then found=$$argument; fi' \
-		'    previous=$$argument' '  done' \
-		'  [ "$$found" = "$$ASTA_WHAT_CHANGED_OUTPUT" ] || { echo "what-changed: current quarto render must honour ASTA_WORKSPACE_RENDER_OUTPUT; refusing to overwrite the live preview" >&2; exit 1; }' \
-		'fi' 'exec "$$ASTA_WHAT_CHANGED_QUARTO" "$$@"' > "$$tmp/current-bin/quarto"; \
-	chmod +x "$$tmp/current-bin/quarto"; \
 	current_render() { \
 		PATH="$$tmp/current-bin:$$PATH" ASTA_WHAT_CHANGED_QUARTO="$$quarto" ASTA_WHAT_CHANGED_OUTPUT="$$current" \
-			$(MAKE) render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$1" >&2; \
+			$(MAKE) -f "$$makefile" render ASTA_WORKSPACE_RENDER_OUTPUT="$$current" ASTA_WORKSPACE_RENDER_FILES="$$1" >&2; \
 	}; \
 	if [ -n "$$partial" ]; then \
 		echo "what-changed: only pages changed; rendering$$files (WHAT_CHANGED_FULL=1 renders the whole site)" >&2; \
@@ -316,11 +350,19 @@ what-changed:
 		echo "what-changed: showing slides as text: deck-review.py is missing beside $(call workspace_script,what-changed.py); upgrade the Asta CLI and run 'asta workspace sync --refresh'" >&2; \
 	fi; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
-		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/ \
+		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/ --reserved-local-output \
 		$$decks --render-decks-url=what-changed-assets/what-changed-decks; \
-	rm -rf _site/what-changed-assets; \
-	mv "$$current" _site/what-changed-assets; current=; \
-	mv "$$tmp/what-changed.html" _site/what-changed.html; \
+	publication=$$(mktemp -d _site/.what-changed-publish.XXXXXX); \
+	mv "$$current" "$$publication/new"; current=; \
+	mv "$$tmp/what-changed.html" "$$publication/report.html"; \
+	trap '' 1 2 15; \
+	if [ -e _site/what-changed-assets ] || [ -L _site/what-changed-assets ]; then \
+		mv _site/what-changed-assets "$$publication/old"; \
+	fi; \
+	mv "$$publication/new" _site/what-changed-assets; assets_installed=1; \
+	mv "$$publication/report.html" _site/what-changed.html; \
+	completed=$$publication; publication=; assets_installed=; rm -rf "$$completed"; \
+	trap 'exit 129' 1; trap 'exit 130' 2; trap 'exit 143' 15; \
 	echo "what-changed: wrote _site/what-changed.html; open /what-changed.html in make preview (rerun after edits or a preview rebuild)"
 
 # Run the same quality gates CI runs, in one place so local and CI can't

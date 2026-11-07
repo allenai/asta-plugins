@@ -7,6 +7,7 @@ import re
 import shutil
 import signal
 import subprocess
+import tarfile
 import time
 from pathlib import Path
 
@@ -29,6 +30,12 @@ def input_pages(root):
 args = sys.argv[1:]
 if args[0] == "inspect":
     root = pathlib.Path(args[1])
+    if os.environ.get("QUARTO_INSPECT_NEEDS_EXTENSION"):
+        assert (root / "_extensions/evidence/version.txt").is_file(), "missing extension"
+    if os.environ.get("QUARTO_INSPECT_EDITS_IGNORE") and root == pathlib.Path("."):
+        ignore = root / ".gitignore"
+        if "/.quarto/" not in ignore.read_text():
+            ignore.write_text(ignore.read_text() + "/.quarto/\\n")
     config = root / "_quarto.yml"
     match = re.search(r"output-dir:\\s*([^\\s]+)", config.read_text())
     print(json.dumps({"config": {"project": {"output-dir": match[1] if match else "_site"}},
@@ -266,6 +273,80 @@ def test_baseline_keeps_its_recorded_extension(project: Path, tmp_path: Path) ->
     assert "<ins" in page and "<del" in page
 
 
+@pytest.mark.parametrize("uncached_current", [False, True])
+def test_inspection_prepares_each_versions_ignored_extensions(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    uncached_current: bool,
+) -> None:
+    git(project, "rm", "--cached", "_extensions/evidence/version.txt")
+    with (project / "Makefile").open("a") as file:
+        file.write(
+            "workspace-assets:\n\t@mkdir -p _extensions/evidence\n"
+            "\t@printf 'Baseline extension.' > _extensions/evidence/version.txt\n"
+        )
+    git(project, "add", "Makefile")
+    git(project, "commit", "-qm", "install ignored assets using the recorded rule")
+    git(project, "branch", "-f", "main")
+    if uncached_current:
+        shutil.rmtree(project / "_extensions")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    monkeypatch.setenv("QUARTO_INSPECT_NEEDS_EXTENSION", "1")
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "preparing base workspace assets" in result.stderr
+    if uncached_current:
+        assert "preparing current workspace assets" in result.stderr
+    assert "only pages changed" in result.stderr
+    assert "drafted" in (project / "_site/what-changed.html").read_text()
+    assert not list((tmp_path / "temporary").iterdir())
+
+
+@pytest.mark.parametrize("preexisting_ignore_edit", [False, True])
+def test_inspection_ignore_edits_do_not_change_source_selection(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    preexisting_ignore_edit: bool,
+) -> None:
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    if preexisting_ignore_edit:
+        with (project / ".gitignore").open("a") as file:
+            file.write("user-cache/\n")
+    monkeypatch.setenv("QUARTO_INSPECT_EDITS_IGNORE", "1")
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert ("only pages changed" in result.stderr) != preexisting_ignore_edit
+    expected = [[], []] if preexisting_ignore_edit else [["index.qmd"], ["index.qmd"]]
+    assert rendered_pages(log) == expected
+    assert ".gitignore changed during the build" in result.stderr
+    assert "/.quarto/" in (project / ".gitignore").read_text()
+    if preexisting_ignore_edit:
+        assert "user-cache/" in (project / ".gitignore").read_text()
+
+
+def test_explicit_makefile_is_used_for_current_probes_and_render(
+    project: Path, tmp_path: Path
+) -> None:
+    # The baseline uses its recorded default Makefile; current invocations must
+    # respect the outer -f even if a different default Makefile is present.
+    (project / "local.mk").write_text("include workspace.mk\n")
+    (project / "Makefile").write_text("render:\n\t@exit 99\n")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+
+    result = make(project, tmp_path, "-f", "local.mk")
+
+    assert result.returncode == 0, result.stderr
+    assert "drafted" in (project / "_site/what-changed.html").read_text()
+
+
 def test_baseline_does_not_borrow_ignored_extension(
     project: Path, tmp_path: Path
 ) -> None:
@@ -363,6 +444,155 @@ def test_empty_current_render_does_not_report_every_page_deleted(
     assert report.read_text() == "Previous comparison."
     assert not list((tmp_path / "temporary").iterdir())
     assert not list((project / ".asta/cache").glob("what-changed.*"))
+
+
+@pytest.mark.parametrize("recursive", [False, True])
+@pytest.mark.parametrize("honours_output", [False, True])
+def test_forced_dry_run_recipes_cannot_render_over_preview(
+    project: Path, tmp_path: Path, recursive: bool, honours_output: bool
+) -> None:
+    """GNU Make executes + and recursive lines even with -n; guard those too."""
+    output = " --output-dir '$(ASTA_WORKSPACE_RENDER_OUTPUT)'" if honours_output else ""
+    with (project / "Makefile").open("a") as file:
+        file.write("render:\n\t@echo '$(ASTA_WORKSPACE_RENDER_OUTPUT)'\n")
+        if recursive:
+            file.write("\t$(MAKE) forced-render\nforced-render:\n\t+")
+        else:
+            file.write("\t+")
+        file.write(f"quarto render{output}\n")
+    site = project / "_site"
+    site.mkdir()
+    live = site / "index.html"
+    live.write_text("Live preview must stay intact.")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    log = tmp_path / "quarto.log"
+    env = {**make_env(tmp_path), "QUARTO_LOG": str(log)}
+
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert live.read_text() == "Live preview must stay intact."
+    if honours_output:
+        assert result.returncode == 0, result.stderr
+        assert "drafted" in (site / "what-changed.html").read_text()
+        # Exactly one real current render: the forced probe must be a no-op.
+        assert (
+            sum(
+                row["cwd"] == str(project)
+                for row in map(json.loads, log.read_text().splitlines())
+            )
+            == 1
+        )
+    else:
+        assert result.returncode != 0
+        assert "must honour ASTA_WORKSPACE_RENDER_OUTPUT" in result.stderr
+        assert not log.exists(), "even a forced probe must not call real Quarto"
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+def test_concurrent_comparison_is_rejected_without_disturbing_first(
+    project: Path, tmp_path: Path
+) -> None:
+    site = project / "_site"
+    assets = site / "what-changed-assets"
+    assets.mkdir(parents=True)
+    (assets / "previous.css").write_text("Previous theme.")
+    (site / "what-changed.html").write_text("Previous comparison.")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    marker = tmp_path / "render-started"
+    env = {**make_env(tmp_path), "QUARTO_BLOCK_BASE_RENDER": str(marker)}
+    first = subprocess.Popen(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while (
+            not marker.exists() and first.poll() is None and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
+        assert marker.exists(), first.communicate(timeout=2)
+
+        second = make(project, tmp_path)
+
+        assert second.returncode != 0
+        assert "another comparison is in progress" in second.stderr
+        assert (project / ".asta/cache/what-changed.lock").is_dir()
+        assert (assets / "previous.css").read_text() == "Previous theme."
+        assert (site / "what-changed.html").read_text() == "Previous comparison."
+        assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 2
+        os.killpg(first.pid, signal.SIGTERM)
+        first.communicate(timeout=10)
+    finally:
+        if first.poll() is None:
+            os.killpg(first.pid, signal.SIGKILL)
+            first.communicate(timeout=5)
+
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert not list((tmp_path / "temporary").iterdir())
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
+    retry = make(project, tmp_path)
+    assert retry.returncode == 0, retry.stderr
+    assert "drafted" in (site / "what-changed.html").read_text()
+    assert not (assets / "previous.css").exists()
+    assert not (assets / "new").exists()
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+
+
+@pytest.mark.parametrize("failure", ["assets", "report"])
+def test_failed_publication_restores_previous_assets_and_report(
+    project: Path, tmp_path: Path, failure: str
+) -> None:
+    site = project / "_site"
+    assets = site / "what-changed-assets"
+    assets.mkdir(parents=True)
+    (assets / "previous.css").write_text("Previous theme.")
+    (site / "what-changed.html").write_text("Previous comparison.")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    env = make_env(tmp_path)
+    wrapper = tmp_path / "bin/mv"
+    real_mv = shutil.which("mv")
+    assert real_mv
+    wrapper.write_text(
+        "#!/usr/bin/env python3\nimport os, sys\nargs = sys.argv[1:]\n"
+        f"failure = {failure!r}\n"
+        "if (failure == 'assets' and args[-2].endswith('/new') "
+        "and args[-1] == '_site/what-changed-assets') or "
+        "(failure == 'report' and args[-1] == '_site/what-changed.html'):\n"
+        "    sys.exit(1)\n"
+        f"os.execv({real_mv!r}, [{real_mv!r}, *args])\n"
+    )
+    wrapper.chmod(0o755)
+
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert (assets / "previous.css").read_text() == "Previous theme."
+    assert (site / "what-changed.html").read_text() == "Previous comparison."
+    assert not list(site.glob(".what-changed-publish.*"))
+    assert not list((tmp_path / "temporary").iterdir())
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 
 
 @pytest.mark.parametrize("custom_at_base", [False, True])
@@ -660,6 +890,50 @@ def test_base_without_page_list_support_renders_whole_site(
     assert rendered_pages(log) == [[], []]
 
 
+@pytest.mark.parametrize("version", ["current", "base"])
+def test_prerequisite_printing_page_list_does_not_enable_partial_render(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
+    add_page(project, "other.qmd", "An untouched page.\n")
+    use_legacy_cached_rules(project)
+    cache = project / ".asta/cache/workspace.mk"
+    supported_rules = cache.read_text()
+    custom_rules = (
+        (project / "workspace.mk")
+        .read_text()
+        .replace(
+            "render: workspace-assets workspace-viewers\n\tquarto render\n",
+            ".PHONY: show-render-files\n"
+            "show-render-files:\n"
+            "\t@echo '$(ASTA_WORKSPACE_RENDER_FILES)'\n"
+            "render: workspace-assets workspace-viewers show-render-files\n"
+            "\tquarto render . $(if $(value ASTA_WORKSPACE_RENDER_OUTPUT),"
+            "--output-dir '$(value ASTA_WORKSPACE_RENDER_OUTPUT)')\n",
+        )
+    )
+    (project / "workspace.mk").write_text(custom_rules)
+    git(project, "commit", "-qam", "custom render ignores page list")
+    git(project, "branch", "-f", "main")
+    # Refresh after updating tracked rules so Make does not replace the ignored
+    # cache based on mtimes. The base reconstructs its own custom rules.
+    cache.write_text(custom_rules if version == "current" else supported_rules)
+    (project / "index.qmd").write_text(
+        "The baseline finding holds.\nA newly drafted paragraph.\n"
+    )
+    assert git(project, "diff", "--name-only", "main").strip() == "index.qmd"
+    log = tmp_path / "quarto.log"
+    monkeypatch.setenv("QUARTO_LOG", str(log))
+
+    result = make(project, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" not in result.stderr
+    assert rendered_pages(log) == [[], []]
+    report = (project / "_site/what-changed.html").read_text()
+    assert "newly drafted paragraph" in report
+    assert "other.html" not in report, "unchanged pages must not appear added/removed"
+
+
 @pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
 def test_render_page_list_keeps_every_page(project: Path, tmp_path: Path, rules: str):
     (project / "second.qmd").write_text("Second page text.\n")
@@ -764,6 +1038,10 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     assert git(project, "status", "--porcelain") == ""
     site = project / "_site"
     preview = (site / "index.html").read_text()
+    # An unstyled generated landing page sorts before the themed index. Theme
+    # lookup must continue to the index rather than falling back to deck CSS.
+    unstyled = site / "a-unstyled.html"
+    unstyled.write_text("<head></head><main>Unstyled landing page</main>")
     deck.write_text(deck.read_text().replace("original", "updated"))
     original_css = (site / "styles.css").read_text()
     if mode == "full":
@@ -809,6 +1087,7 @@ def test_real_quarto_slide_only_edit_keeps_site_theme(
     for href in css_links:
         assert (site / href).is_file(), f"missing comparison stylesheet: {href}"
     assert (site / "index.html").read_text() == preview
+    assert unstyled.read_text() == "<head></head><main>Unstyled landing page</main>"
     assert not list((project / ".asta/cache").glob("what-changed.*"))
     assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 
@@ -898,6 +1177,73 @@ def test_real_quarto_on_92_page_workspace(
     assert not list((project / ".asta/cache").glob("what-changed.*"))
     assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
     assert elapsed < 45, f"local comparison took {elapsed:.2f}s"
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="needs real Quarto")
+def test_real_quarto_with_ignored_theme_installed_by_base_rules(
+    project: Path, tmp_path: Path
+) -> None:
+    """The historical worktree must install its missing managed theme itself."""
+    git(project, "rm", "--cached", "_extensions/evidence/version.txt")
+    shutil.rmtree(project / "_extensions")
+    archive = tmp_path / "extensions.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(
+            ASSETS / "_extensions",
+            arcname="release/plugins/asta-tools/skills/workspace/assets/_extensions",
+        )
+    with (project / "Makefile").open("a") as file:
+        file.write(f"ASTA_PLUGINS_ARCHIVE_URL := {archive.as_uri()}\n")
+    (project / "_quarto.yml").write_text(
+        "project:\n  type: website\nformat:\n  html:\n"
+        "    theme: [cosmo, _extensions/asta-theme/light.scss]\n"
+        "    css: _extensions/asta-theme/asta.css\n"
+        "    include-in-header: _extensions/asta-theme/asta-head.html\n"
+    )
+    with (project / ".gitignore").open("a") as file:
+        file.write("/.quarto/\n")
+    git(project, "add", "Makefile", "_quarto.yml", ".gitignore")
+    git(project, "commit", "-qm", "managed theme installed from the selected archive")
+    git(project, "branch", "-f", "main")
+    (project / "index.qmd").write_text("A newly drafted paragraph.\n")
+    site = project / "_site"
+    site.mkdir()
+    (site / "index.html").write_text("The live preview stays intact.")
+    temporary = tmp_path / "real-temporary"
+    temporary.mkdir()
+
+    result = subprocess.run(
+        ["make", "what-changed", "ASTA_WORKSPACE_VIEWERS=0"],
+        cwd=project,
+        env={**os.environ, "TMPDIR": str(temporary)},
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "only pages changed" in result.stderr
+    report = (site / "what-changed.html").read_text()
+    assert "drafted" in report
+    # Quarto versions relocate extension CSS differently (for example into
+    # site_libs/quarto-contrib/quarto-project/). Follow the rendered link rather
+    # than assuming that the source extension's directory survives publication.
+    theme_links = re.findall(
+        r'<link\b[^>]*\bhref="([^"]*/asta-theme/asta\.css)"', report
+    )
+    assert theme_links, report
+    for href in theme_links:
+        assert href.startswith("what-changed-assets/"), href
+        published_css = site / html.unescape(href)
+        assert published_css.is_file(), href
+        assert (
+            published_css.read_text()
+            == (ASSETS / "_extensions/asta-theme/asta.css").read_text()
+        )
+    assert (site / "index.html").read_text() == "The live preview stays intact."
+    assert not list(temporary.iterdir())
+    assert not list((project / ".asta/cache").glob("what-changed.*"))
+    assert git(project, "worktree", "list", "--porcelain").count("worktree ") == 1
 
 
 def use_legacy_cached_rules(project: Path):
@@ -1051,7 +1397,12 @@ def test_real_quarto_render_allowlist_does_not_publish_excluded_pages(
         "format:\n  html:\n    theme: none\n"
     )
     (project / excluded).write_text("An excluded finding.\n")
-    # Inspection can add version-specific cache ignores. Record that setup
+    # Quarto 1.7 creates this cache without adding an ignore entry. Keep it
+    # out of source selection on every supported version.
+    (project / ".gitignore").write_text(
+        (project / ".gitignore").read_text() + "/.quarto/\n"
+    )
+    # Inspection can add other version-specific cache ignores. Record that setup
     # before the baseline so an unrelated .gitignore edit cannot force full
     # rendering and accidentally make this regression pass.
     subprocess.run(

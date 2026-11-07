@@ -667,19 +667,19 @@ def diff_content(old, new):
     return "".join(out), changed
 
 
-def list_pages(root, out_path=None, paper_dirs=()):
+def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
     """Map rel-path -> abs-path for every rendered `.html` under `root`.
 
-    Skips any page that is itself a "What changed" artifact — matched by output
-    reserved root filename, exact output path, or the generator's
-    self-identifying marker — so the generator never diffs its own output while
-    preserving a legitimate same-named page in another directory. Paper output
+    Skips generated "What changed" artifacts by exact output path or the
+    generator's self-identifying marker. Local callers also reserve the root
+    comparison filename and asset directory; other callers preserve legitimate
+    pages with those names. Paper output
     stays in each paper's own section, including when the old site lacks a manifest.
     """
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, dirs, files in os.walk(root):
-        if os.path.abspath(dirpath) == os.path.abspath(root):
+        if reserved_local_output and os.path.abspath(dirpath) == os.path.abspath(root):
             # Local comparisons retain their rendered assets here. They are
             # supporting output, never another set of source pages to compare.
             dirs[:] = [name for name in dirs if name != "what-changed-assets"]
@@ -1186,7 +1186,44 @@ def rebase_urls(text, depth):
         return f"{attr}={quote}{url}{quote}"
 
     text = re.sub(r'(href|src)\s*=\s*(["\'])([^"\']*)\2', fix, text, flags=re.I)
-    return text
+    return rewrite_style_urls(
+        text, lambda url: url[len(prefix) :] if url.startswith(prefix) else url
+    )
+
+
+def rewrite_style_urls(text, rewrite):
+    """Rewrite CSS URLs in inline styles, preserving quoting and raw CSS text.
+
+    Tokenize comments and strings as well as url() and string-form @import so
+    apparent URLs inside comments or content strings are left alone. Quoted
+    paths can contain whitespace, parentheses, and backslash-escaped quotes.
+    """
+    string = r"""(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')"""
+    tokens = re.compile(
+        rf"(?P<comment>/\*[\s\S]*?\*/)"
+        rf"|\burl\(\s*(?P<url>{string}|(?:\\[\s\S]|[^\\\s\"'()])*)\s*\)"
+        rf"|@import\s+(?P<import>{string})"
+        rf"|{string}",
+        re.I,
+    )
+
+    def token(match):
+        group = "url" if match.group("url") is not None else "import"
+        value = match.group(group)
+        if value is None:
+            return match[0]
+        quote = value[:1] if value.startswith(('"', "'")) else ""
+        url = value[1:-1] if quote else value
+        start, end = match.span(group)
+        start -= match.start()
+        end -= match.start()
+        return match[0][:start] + quote + rewrite(url) + quote + match[0][end:]
+
+    return re.sub(
+        r"(?is)(<style\b[^>]*>)(.*?)(</style>)",
+        lambda match: match[1] + tokens.sub(token, match[2]) + match[3],
+        text,
+    )
 
 
 def page_title(doc, rel):
@@ -1216,11 +1253,12 @@ def _is_slide_deck(doc):
 
 
 def pick_template(new_pages):
-    """Choose the shallowest rendered site page to borrow the site theme from.
+    """Choose the shallowest styled site page to borrow the site theme from.
 
-    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase. A
-    reveal.js deck carries the deck's styling, not the site's, so it is used
-    only when no other page exists.
+    A root-level page (e.g. index.html) keeps asset URLs simplest to rebase.
+    Pages without CSS cannot supply a theme and are skipped. A reveal.js deck
+    carries the deck's styling, not the site's, so it is used only when no styled
+    ordinary page exists.
     Returns (doc_html, depth) or (None, 0) if nothing suitable exists.
     """
     fallback = (None, 0)
@@ -1230,6 +1268,8 @@ def pick_template(new_pages):
             with open(new_pages[rel], encoding="utf-8") as f:
                 doc = f.read()
         except OSError:
+            continue
+        if not extract_theme_css(doc, depth):
             continue
         if not _is_slide_deck(doc):
             return doc, depth
@@ -1642,29 +1682,26 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
 
 
 def prefix_theme_urls(css, prefix):
-    """Rebase theme href attributes and CSS url() into the retained asset tree.
+    """Rebase theme links, CSS url(), and @import into the retained asset tree."""
 
-    Only stylesheet links and inline styles are copied from the template;
-    src attributes and bare-string @import rules are not rewritten.
-    """
-
-    def prefixed(url):
-        value = html.unescape(url)
+    def prefixed(url, attribute=False):
+        # HTML attributes decode entities; <style> is raw text. Preserve CSS
+        # ampersands (including literal entity-looking strings) byte for byte.
+        value = html.unescape(url) if attribute else url
         parsed = urlsplit(value)
         if parsed.scheme or parsed.netloc or not parsed.path:
             return url
-        return html.escape(prefix.rstrip("/") + "/" + value.lstrip("/"), quote=True)
+        value = prefix.rstrip("/") + "/" + value.lstrip("/")
+        return html.escape(value, quote=True) if attribute else value
 
     css = re.sub(
         r"""(?i)(\bhref\s*=\s*)(["'])([^"']*)\2""",
-        lambda match: f"{match[1]}{match[2]}{prefixed(match[3])}{match[2]}",
+        lambda match: (
+            f"{match[1]}{match[2]}{prefixed(match[3], attribute=True)}{match[2]}"
+        ),
         css,
     )
-    return re.sub(
-        r"""(?i)(url\(\s*)(["']?)([^"')\s]+)\2(\s*\))""",
-        lambda match: f"{match[1]}{match[2]}{prefixed(match[3])}{match[2]}{match[4]}",
-        css,
-    )
+    return rewrite_style_urls(css, prefixed)
 
 
 def build(
@@ -1676,6 +1713,7 @@ def build(
     theme_root=None,
     theme_url_prefix="",
     decks=None,
+    reserved_local_output=False,
 ):
     sections = []
     toc = []
@@ -1687,8 +1725,8 @@ def build(
                 paper_dirs.append(
                     os.path.relpath(directory, paper_root).replace(os.sep, "/")
                 )
-    old_pages = list_pages(old_root, out_path, paper_dirs)
-    new_pages = list_pages(new_root, out_path, paper_dirs)
+    old_pages = list_pages(old_root, out_path, paper_dirs, reserved_local_output)
+    new_pages = list_pages(new_root, out_path, paper_dirs, reserved_local_output)
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = paper_preview(old_root, new_root, paper_dir)
         if paper_section:
@@ -1845,7 +1883,14 @@ def build(
     # full site this page is served from as the theme source.
     template_doc, theme_css = None, None
     for root, pages in (
-        (theme_root, list_pages(theme_root, out_path) if theme_root else {}),
+        (
+            theme_root,
+            list_pages(
+                theme_root, out_path, reserved_local_output=reserved_local_output
+            )
+            if theme_root
+            else {},
+        ),
         (new_root, new_pages),
     ):
         template_doc, depth = pick_template(pages)
@@ -1928,6 +1973,11 @@ def main(argv=None):
         " and Playwright; else slides as text); existing DIR contents are replaced",
     )
     ap.add_argument(
+        "--reserved-local-output",
+        action="store_true",
+        help="exclude root what-changed.html and what-changed-assets/ (local Make target)",
+    )
+    ap.add_argument(
         "--render-decks-url",
         metavar="URL",
         help="URL of --render-decks as served beside --out (default: its path relative to --out)",
@@ -1989,6 +2039,7 @@ def main(argv=None):
             theme_root=args.theme_root,
             theme_url_prefix=args.theme_url_prefix,
             decks=decks,
+            reserved_local_output=args.reserved_local_output,
         )
     finally:
         if decks:

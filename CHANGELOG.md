@@ -5,8 +5,8 @@
 - Managed workspaces provide `make what-changed` for local branch comparisons
   at `/what-changed.html` in the existing preview. Page-only edits render just
   the changed pages when both versions support page selection and Quarto lists
-  them as project inputs; excluded files and other changes
-  and `WHAT_CHANGED_FULL=1` render both sites. Either way the page keeps the
+  them as project inputs. Other changes, excluded inputs, or
+  `WHAT_CHANGED_FULL=1` render both full sites. Either way the page keeps the
   site's theme. Base discovery uses local Git
   history, with `git fetch origin` optional for a fresher base. The target
   rejects incompatible output directories and render recipes before rendering
@@ -14,7 +14,14 @@
   produces no HTML. It checks the current Quarto invocation's output override
   and retains freshly rendered theme assets separately from live preview files.
   Previous comparison pages are excluded from theme selection even without a
-  generator marker, and dry runs create no output or worktrees.
+  generator marker, and theme lookup skips unstyled pages to find the site's CSS.
+  Partial rendering requires an explicit recipe capability marker (or the
+  supported legacy adapter), so prerequisite logging cannot enable it by mistake.
+  The output guard also covers forced/recursive dry-run Quarto calls without
+  rendering. A project lock prevents overlapping comparisons from replacing
+  each other's report assets. Retained theme URLs handle quoted paths with spaces
+  and string-form CSS imports, including in nested pages.
+  Dry runs create no output or worktrees.
 
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
