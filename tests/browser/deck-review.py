@@ -332,6 +332,24 @@ def decode_review_images(page):
     }""")
 
 
+def check_selectable_text(page):
+    """Hidden accessibility overlays still select, with their text in the image alt."""
+    for shot in page.locator(".dr-shot:visible").all():
+        layer = shot.locator(".dr-text")
+        assert layer.get_attribute("aria-hidden") == "true"
+        text = layer.text_content()
+        if not text:
+            continue
+        assert shot.locator("img").get_attribute("alt").endswith("\n" + text.strip())
+        selected = layer.evaluate("""layer => {
+          const range = document.createRange(); range.selectNodeContents(layer);
+          const selection = window.getSelection(); selection.removeAllRanges();
+          selection.addRange(range); const text = selection.toString();
+          selection.removeAllRanges(); return text;
+        }""")
+        assert selected == text
+
+
 def check(site, artifacts):
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporary:
@@ -421,6 +439,7 @@ def check(site, artifacts):
                 )
                 page.locator(".deck-review").scroll_into_view_if_needed()
                 decode_review_images(page)
+                check_selectable_text(page)
                 assert all(
                     image.get_attribute("alt").startswith("Slide ")
                     for image in page.locator(".dr-slide img").all()
@@ -434,15 +453,18 @@ def check(site, artifacts):
                     == "true"
                 )
                 decode_review_images(page)
+                check_selectable_text(page)
                 assert (
                     page.locator(".dr-shot[data-clean] img")
                     .first.get_attribute("alt")
+                    .splitlines()[0]
                     .endswith("(clean)")
                 )
                 page.screenshot(path=str(artifacts / "deck-review-clean.png"))
                 page.get_by_role("button", name="Before / after", exact=True).click()
                 assert page.locator(".dr-pair:visible").count() >= 2
                 decode_review_images(page)
+                check_selectable_text(page)
                 page.screenshot(path=str(artifacts / "deck-review-before-after.png"))
                 for image in page.locator(".dr-slide:visible img:visible").all():
                     image.scroll_into_view_if_needed()

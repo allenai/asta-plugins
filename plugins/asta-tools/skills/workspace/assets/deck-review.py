@@ -559,23 +559,30 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   // text selects and copies like the slide's own (one line break per line).
   const font = getComputedStyle(root).fontFamily || 'sans-serif';
   const ctx = document.createElement('canvas').getContext('2d'); ctx.font = '100px ' + font;
-  const paint = (w, src) => {
-    w.querySelector('img').src = src;
+  const paint = (w, src, label) => {
+    const image = w.querySelector('img'); image.src = src;
     const layer = w.querySelector('.dr-text'); layer.replaceChildren();
     const words = (D.text || {})[src] || [];
     words.forEach(([t, x, y, ww, h], k) => {
       const next = words[k + 1];
-      const s = el('span', null, t + (!next || next[2] > y + h / 2 ? '\\n' : ' '));
+      // Raised/lowered words can share a line despite having different tops.
+      const sameLine = next && Math.min(y + h, next[2] + next[4]) > Math.max(y, next[2]);
+      const s = el('span', null, t + (sameLine ? ' ' : '\\n'));
       const size = h * 56.25 * 0.85;
       const natural = ctx.measureText(t).width || 1;
       Object.assign(s.style, { left: x * 100 + '%', top: (y + h * 0.075) * 100 + '%', fontSize: size + 'cqw',
         transform: 'scaleX(' + (ww * 100 * 100 / (natural * size)) + ')' });
       layer.append(s);
     });
+    // Expose the slide's text once, as a continuous image description rather
+    // than a second reading of every positioned word in the selection overlay.
+    const text = layer.textContent.trim();
+    image.alt = label + (text ? '\\n' + text : '');
   };
   const shot = (src, slide, mode) => {
     const w = el('div', 'dr-shot'); const i = img(src, slide, mode); i.draggable = false;
-    w.append(i, el('div', 'dr-text')); paint(w, src); return w;
+    const layer = el('div', 'dr-text'); layer.setAttribute('aria-hidden', 'true');
+    w.append(i, layer); paint(w, src, imageLabel(slide, mode)); return w;
   };
   const label = { new: 'new', changed: 'changed', look: 'changed look', removed: 'removed' };
   const card = (i) => {
@@ -586,7 +593,7 @@ document.querySelectorAll('.deck-review').forEach((root) => {
     a.setAttribute('aria-label', 'Slide ' + i.n + (i.title ? ': ' + i.title : '') + ', ' + word); h.append(a);
     const one = shot(i.marked || i.clean, i, i.marked ? 'marked' : 'clean');
     one.dataset.clean = i.clean; one.dataset.marked = i.marked || i.clean;
-    one.dataset.cleanAlt = imageLabel(i, 'clean'); one.dataset.markedAlt = one.querySelector('img').alt;
+    one.dataset.cleanAlt = imageLabel(i, 'clean'); one.dataset.markedAlt = imageLabel(i, i.marked ? 'marked' : 'clean');
     s.append(h, one);
     if (i.interactions) {
       const note = el('div', 'dr-interactions');
@@ -629,8 +636,8 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   const set = (v) => {
     root.querySelectorAll('.dr-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
     root.querySelectorAll('.dr-shot[data-clean]').forEach((w) => {
-      paint(w, v === 'clean' ? w.dataset.clean : w.dataset.marked);
-      w.querySelector('img').alt = v === 'clean' ? w.dataset.cleanAlt : w.dataset.markedAlt;
+      paint(w, v === 'clean' ? w.dataset.clean : w.dataset.marked,
+        v === 'clean' ? w.dataset.cleanAlt : w.dataset.markedAlt);
       const p = w.parentElement.querySelector('.dr-pair');
       if (p) { p.hidden = v !== 'before'; w.hidden = v === 'before'; }
     });
