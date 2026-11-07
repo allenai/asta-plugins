@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Workspace `make check` creates temporary files under `${TMPDIR:-/tmp}` so it
+  works in agent sandboxes. SessionStart preserves a healthy newer shared Asta
+  CLI across projects, installs missing or older versions, and repairs a CLI
+  that cannot start.
+
 - The shared workspace site workflow supports a subfolder and render-path
   filtering. Keep `contents: write`, `pull-requests: write` and `pages: read`
   in existing `docs.yml` callers when upgrading (as in the shipped template):

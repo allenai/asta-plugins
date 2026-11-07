@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install missing/older Asta CLIs; keep newer versions shared by other projects.
+# Install missing/older Asta CLIs and repair broken ones; keep healthy newer CLIs.
 
 PLUGIN_VERSION=0.125.0
 INSTALL_URL="git+https://github.com/allenai/asta-plugins.git@v$PLUGIN_VERSION"
@@ -16,8 +16,18 @@ if ! command -v asta &> /dev/null; then
     exit 0
 fi
 
-# Get installed CLI version
-CLI_VERSION=$(asta --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+# Repair a CLI that cannot start, even when its executable is still on PATH.
+if ! CLI_OUTPUT=$(asta --version 2>/dev/null); then
+    echo "🔄 Repairing Asta CLI with version $PLUGIN_VERSION..."
+    if uv tool install --force "$INSTALL_URL"; then
+        echo "✅ Asta CLI repaired successfully"
+    else
+        echo "❌ Failed to repair Asta CLI"
+        exit 1
+    fi
+    exit 0
+fi
+CLI_VERSION=$(printf '%s\n' "$CLI_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
 
 # Do not replace a CLI whose version cannot be determined.
 if [ -z "$CLI_VERSION" ]; then

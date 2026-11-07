@@ -1848,6 +1848,7 @@ def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     real_mktemp = shutil.which("mktemp")
+    assert real_mktemp is not None, "Required test executable is missing: mktemp"
     wrapper = bin_dir / "mktemp"
     wrapper.write_text(
         "#!/bin/sh\n"
@@ -1856,19 +1857,24 @@ def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
         # Reject an omitted template even if the platform's mktemp honors TMPDIR.
         '[ "$#" -eq 1 ] || exit 99\n'
         'case "$1" in "${TMPDIR:-/tmp}"/asta-*) ;; *) exit 98 ;; esac\n'
-        'exec "$REAL_MKTEMP" $mode "$@"\n'
+        'created=$("$REAL_MKTEMP" $mode "$@") || exit $?\n'
+        'printf "%s\\n" "$created" >> "$TEMP_PATH_LOG"\n'
+        'printf "%s\\n" "$created"\n'
     )
     wrapper.chmod(0o755)
     quarto = bin_dir / "quarto"
     quarto.write_text("#!/bin/sh\nmkdir -p _site\necho OK > _site/index.html\n")
     quarto.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home),
         "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
         "REAL_MKTEMP": real_mktemp,
         "TEMP_LOG": str(tmp_path / "temps.log"),
+        "TEMP_PATH_LOG": str(tmp_path / "temp-paths.log"),
     }
-    env.pop("TMPDIR", None)
     if tmpdir is not None:
         env["TMPDIR"] = str(tmp_path / tmpdir) if tmpdir else ""
         if tmpdir:
@@ -1884,7 +1890,8 @@ def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
     temps = (tmp_path / "temps.log").read_text().splitlines()
     assert len(temps) == (2 if rules == "workspace.mk" else 1)
     assert (project / "_extensions/evidence/snippet.lua").is_file()
-    if tmpdir:
-        assert not list(Path(env["TMPDIR"]).iterdir()), (
-            "temporary files were not cleaned up"
-        )
+    created = (tmp_path / "temp-paths.log").read_text().splitlines()
+    assert len(created) == len(temps)
+    assert all(not Path(path).exists() for path in created), (
+        "temporary files were not cleaned up"
+    )
