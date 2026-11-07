@@ -170,8 +170,8 @@ class _Renderer:
     def texts(self, side, deck):
         return [s["body"] for s in self.slides[side]]
 
-    def shoot(self, side, deck, index, path=None, mark=None):
-        self.calls.append((side, index, mark is not None))
+    def shoot(self, side, deck, index, path=None, mark=None, number=False):
+        self.calls.append((side, index, mark is not None) + ((True,) if number else ()))
         data = self.slides[side][index]["body"].encode()
         if path:
             Path(path).write_bytes(data)
@@ -197,14 +197,18 @@ def test_parser_browser_order_mismatch_fails_before_capture(tmp_path):
     assert renderer.calls == []
 
 
-def test_review_reuses_captured_clean_images(tmp_path):
+def test_review_reuses_comparison_captures_and_numbers_display_shots(tmp_path):
     old, new = _slides("Before"), _slides("After")
     renderer = _Renderer(old, new)
     assert deck_review.review(
         "slides.html", "slides.html", str(tmp_path), "imgs", old, new, {0: 0}, renderer
     )
-    assert renderer.calls.count(("new", 0, False)) == 1
+    assert renderer.calls.count(("new", 0, False)) <= 1
     assert renderer.calls.count(("old", 0, False)) == 1
+    # The new deck's clean and marked images show its slide number; the old one's don't.
+    assert ("new", 0, False, True) in renderer.calls
+    assert ("new", 0, True, True) in renderer.calls
+    assert not [c for c in renderer.calls if c[0] == "old" and len(c) == 4]
 
 
 def test_notes_only_change_is_not_a_visible_edit():

@@ -104,6 +104,11 @@ def capture_regressions(root, deck, original):
         )
         assert page.locator("svg text").text_content() == "Graph"
         assert page.evaluate("() => Reveal.getConfig().autoSlide") == 0
+        # Display shots draw the deck's own slide number back; comparison shots never do.
+        plain = renderer.shoot("new", str(deck), 2)
+        numbered = renderer.shoot("new", str(deck), 2, number=True)
+        assert numbered != plain, "display shots show the deck's slide number"
+        assert renderer.shoot("new", str(deck), 2) == plain, "comparison shots omit it"
         # Missing assets must remain visible as missing assets, not force text fallback.
         page.evaluate("""() => {
           const slide = Reveal.getCurrentSlide();
@@ -299,6 +304,24 @@ def check(site, artifacts):
                     "Every unchanged run is inspectable"
                 )
                 assert page.locator(".dr-more").count() > 0
+                # Headings are only the status, linked to the slide; the image shows the title.
+                badges = page.locator(
+                    ".dr-slide:not(.dr-removed) h3 a"
+                ).all_text_contents()
+                assert badges and all(
+                    b
+                    in {
+                        "changed \u2197",
+                        "changed look \u2197",
+                        "new \u2197",
+                        "unchanged \u2197",
+                    }
+                    for b in badges
+                ), badges
+                assert not any(
+                    h.startswith("Slide")
+                    for h in page.locator(".dr-slide h3").all_text_contents()
+                )
                 page.locator(".deck-review").scroll_into_view_if_needed()
                 decode_review_images(page)
                 page.screenshot(path=str(artifacts / "deck-review-marked.png"))

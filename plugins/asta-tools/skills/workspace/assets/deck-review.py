@@ -67,6 +67,16 @@ CAPTURE_CSS = """
 .progress, .slide-number, .controls { visibility: hidden !important; }
 """
 
+# Display shots show the new deck's own slide number again, unmarked, where the deck shows it.
+NUMBER_JS = """(on) => {
+  document.getElementById('dr-number')?.remove();
+  if (!on) { Reveal.configure({slideNumber: false}); return; }
+  if (!window.__drSlideNumber) return;
+  const st = document.createElement('style'); st.id = 'dr-number';
+  st.textContent = '.slide-number { visibility: visible !important; }';
+  document.head.append(st); Reveal.configure({slideNumber: window.__drSlideNumber});
+}"""
+
 READY_JS = r"""() => Promise.race([(async () => {
   await document.fonts.ready;
   if (window.MathJax && MathJax.startup && MathJax.startup.promise) await MathJax.startup.promise;
@@ -227,6 +237,9 @@ class Renderer:
                 timeout=30000,
             )
             page.evaluate(
+                "() => { window.__drSlideNumber = Reveal.getConfig().slideNumber; }"
+            )
+            page.evaluate(
                 "() => Reveal.configure({transition: 'none', backgroundTransition: 'none', progress: false, slideNumber: false, controls: false, autoSlide: 0})"
             )
             page.add_style_tag(content=CAPTURE_CSS)
@@ -256,8 +269,11 @@ class Renderer:
     def texts(self, side, deck):
         return self.page(side, deck).evaluate(LIST_JS)
 
-    def shoot(self, side, deck, index, path=None, mark=None):
-        """Screenshot slide ``index``; ``mark`` is (js, arg) applied on a fresh page."""
+    def shoot(self, side, deck, index, path=None, mark=None, number=False):
+        """Screenshot slide ``index``; ``mark`` is (js, arg) applied on a fresh page.
+
+        ``number`` shows the deck's own slide number, for display rather than comparison.
+        """
         page = self._open(side, deck) if mark else self.page(side, deck)
         try:
             page.evaluate(GOTO_JS, index)
@@ -267,10 +283,14 @@ class Renderer:
                 if frame != page.main_frame and frame.frame_element().is_visible():
                     frame.add_style_tag(content=CAPTURE_CSS)
                     frame.evaluate(READY_JS)
+            if number:
+                page.evaluate(NUMBER_JS, True)
             if mark:
                 page.evaluate(*mark)
             data = page.screenshot(type="png", animations="disabled")
         finally:
+            if number and not mark:
+                page.evaluate(NUMBER_JS, False)
             if mark:
                 page.close()
         if path:
@@ -357,7 +377,9 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
     for k in shown:
         kind, n, o = rows[k]
         name = f"s{n + 1}"
-        save("new", n, os.path.join(img_dir, name + ".png"))
+        renderer.shoot(
+            "new", deck, n, os.path.join(img_dir, name + ".png"), number=True
+        )
         item = {
             "n": n + 1,
             "kind": kind,
@@ -371,7 +393,14 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
         elif kind == "changed":
             mark = (MARK_WORDS_JS, [MARK_CSS, old_text[o].split()])
         if mark:
-            renderer.shoot("new", deck, n, os.path.join(img_dir, name + "-m.png"), mark)
+            renderer.shoot(
+                "new",
+                deck,
+                n,
+                os.path.join(img_dir, name + "-m.png"),
+                mark,
+                number=True,
+            )
             item["marked"] = f"{img_url}/{name}-m.png"
         if kind in {"changed", "look"}:
             save("old", o, os.path.join(img_dir, name + "-b.png"))
@@ -431,8 +460,10 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   const label = { new: 'new', changed: 'changed', look: 'changed look', removed: 'removed' };
   const card = (i) => {
     const s = el('section', 'dr-slide dr-' + i.kind);
-    const h = el('h3'); const a = el('a', null, 'Slide ' + i.n + (i.title ? ': ' + i.title : '')); a.href = i.link; h.append(a);
-    if (label[i.kind]) h.append(' ', el('span', 'tag ' + (i.kind === 'look' ? 'changed' : i.kind), label[i.kind]));
+    // The slide image shows its title and number; the heading is just the status, linked to the slide.
+    const word = label[i.kind] || 'unchanged';
+    const h = el('h3'); const a = el('a', 'tag ' + (i.kind === 'look' ? 'changed' : i.kind), word + ' \u2197'); a.href = i.link;
+    a.setAttribute('aria-label', 'Slide ' + i.n + (i.title ? ': ' + i.title : '') + ', ' + word); h.append(a);
     const one = img(i.marked || i.clean); one.dataset.clean = i.clean; one.dataset.marked = i.marked || i.clean;
     s.append(h, one);
     if (i.before) {
@@ -458,8 +489,9 @@ document.querySelectorAll('.deck-review').forEach((root) => {
   }
   flush();
   for (const r of D.removed) {
-    const s = el('section', 'dr-slide dr-removed'); const h = el('h3', null, 'Slide ' + r.n + ' of the old deck' + (r.title ? ': ' + r.title : '') + ' ');
-    h.append(el('span', 'tag removed', 'removed')); s.append(h, img(r.img)); list.append(s);
+    const s = el('section', 'dr-slide dr-removed'); const h = el('h3');
+    const t = el('span', 'tag removed', 'removed'); t.setAttribute('aria-label', 'Slide ' + r.n + ' of the old deck' + (r.title ? ': ' + r.title : '') + ', removed');
+    h.append(t); s.append(h, img(r.img)); list.append(s);
   }
   const set = (v) => {
     root.querySelectorAll('.dr-seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
