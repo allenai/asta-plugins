@@ -165,11 +165,12 @@ Discovery stops at the nearest `.git` directory or file, including submodules;
 Git environment overrides such as `GIT_DIR` and `GIT_WORK_TREE` are unsupported.
 
 The managed Makefile watches local and root workflow candidates. For subfolder
-sites without a local workflow, it checks selection offline before starting the
-build; recursive makes reuse that check. `asta workspace sync --check-selection`
+sites with a root workflow candidate, it checks selection offline before starting
+the build, even when a local workflow also exists; recursive makes reuse that
+check. `asta workspace sync --check-selection`
 validates the workflow without fetching, changing cached rules or moving pins.
 CLI 0.105.0 supports managed rules with a local workflow and project scripts;
-it does not support root-only subfolder sites. Those require the root-workflow
+subfolder sites with root workflow candidates require the root-workflow
 discovery and `--check-selection` support introduced together after CLI 0.125.0.
 Install a CLI release containing this support, or install an unreleased build
 from an asta-plugins Git ref containing it with

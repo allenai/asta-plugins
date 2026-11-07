@@ -488,6 +488,77 @@ def test_thin_makefile_rejects_unrelated_root_with_newer_cached_rules(
     assert "stale-managed-preview" not in result.stdout
 
 
+@pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
+@pytest.mark.parametrize("site_dir", ["site", "research/site notes"])
+@pytest.mark.parametrize("invalid_root", ["yaml", "ambiguous"])
+@pytest.mark.parametrize("same_mtime", [False, True])
+def test_cached_subfolder_with_local_workflow_rejects_invalid_root(
+    tmp_path, site_dir, invalid_root, same_mtime
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    project = tmp_path / site_dir
+    local = project / workspace_module.WORKFLOW_FILE
+    local.parent.mkdir(parents=True)
+    local.write_text(
+        f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}v0.114.0\n"
+    )
+    root = tmp_path / workspace_module.WORKFLOW_FILE
+    root.parent.mkdir(parents=True)
+    original = (
+        f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}v0.115.0\n"
+        f"    with:\n      site-dir: {site_dir}\n"
+    )
+    root.write_text(original)
+    assert workspace_module.workflow_file(project) == root
+    assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
+    (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
+    rules = project / ".asta/cache/workspace.mk"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("preview:\n\t@echo stale-managed-preview\n")
+    if invalid_root == "yaml":
+        root.write_text(original + "broken: [\n")
+        diagnostic = "Invalid YAML"
+    else:
+        root.write_text(
+            original
+            + f"  other:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}v0.115.0\n"
+            "    with:\n      site-dir: other-site\n"
+        )
+        diagnostic = "Ambiguous workspace workflow"
+    # A restored/coarsely timestamped root must not bypass selection validation.
+    old = time.time() - 10
+    for path in (root, local):
+        os.utime(path, (old, old))
+    os.utime(rules, (old if same_mtime else old + 1,) * 2)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    executable = tools / "asta"
+    executable.write_text(
+        '#!/bin/sh\nif [ "$1" = --version ]; then exit 0; fi\n'
+        f"exec {shlex.quote(sys.executable)} -c 'from asta.cli import cli; cli()' \"$@\"\n"
+    )
+    executable.chmod(0o755)
+    before = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (root, local, rules)
+    }
+    result = subprocess.run(
+        ["make", "preview"],
+        cwd=project,
+        env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]},
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert diagnostic in result.stderr
+    assert str(root) in result.stderr
+    assert "stale-managed-preview" not in result.stdout
+    assert before == {
+        path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before
+    }
+
+
 @pytest.mark.parametrize("fail_once", [False, True])
 @pytest.mark.parametrize(
     "guard", ["CI", "GITHUB_ACTIONS", "ASTA_WORKSPACE_RESOLVED_SHA"]
@@ -652,9 +723,10 @@ def test_thin_makefile_explains_older_cli(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
 @pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("local_workflow", [False, True])
 @pytest.mark.parametrize("cli_support", ["missing", "no-workspace", "old-sync"])
 def test_subfolder_make_explains_missing_selection_support(
-    tmp_path, cached, cli_support
+    tmp_path, cached, local_workflow, cli_support
 ):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     workflow = tmp_path / workspace_module.WORKFLOW_FILE
@@ -665,6 +737,12 @@ def test_subfolder_make_explains_missing_selection_support(
     )
     project = tmp_path / "site"
     project.mkdir()
+    if local_workflow:
+        local = project / workspace_module.WORKFLOW_FILE
+        local.parent.mkdir(parents=True)
+        local.write_text(
+            f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}main\n"
+        )
     assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
     (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
     if cached:
@@ -2161,8 +2239,9 @@ def test_selection_check_rejects_mutating_sync_options(flag):
 @pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
 @pytest.mark.parametrize("ref", ["v0.115.0", "latest"])
 @pytest.mark.parametrize("outer_make", [False, True])
+@pytest.mark.parametrize("local_workflow", [False, True])
 def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
-    tmp_path, ref, outer_make
+    tmp_path, ref, outer_make, local_workflow
 ):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     workflow = tmp_path / workspace_module.WORKFLOW_FILE
@@ -2172,6 +2251,12 @@ def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
     )
     project = tmp_path / "site"
     project.mkdir()
+    local = project / workspace_module.WORKFLOW_FILE
+    if local_workflow:
+        local.parent.mkdir(parents=True)
+        local.write_text(
+            f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}v0.114.0\n"
+        )
     (project / ".gitignore").write_text(".asta/cache/\n")
     repo = Path(__file__).resolve().parents[1]
     assets = repo / "plugins/asta-tools/skills/workspace/assets"
@@ -2231,11 +2316,13 @@ def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
         if p.is_file()
     }
     original = workflow.read_bytes()
+    original_local = local.read_bytes() if local_workflow else None
     log.write_text("")
     offline.touch()
     build()
     assert log.read_text() == "check\n"
     assert workflow.read_bytes() == original
+    assert (local.read_bytes() if local_workflow else None) == original_local
     assert before == {
         p: (p.read_bytes(), p.stat().st_mtime_ns)
         for p in cache.rglob("*")
