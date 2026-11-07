@@ -1523,3 +1523,32 @@ def test_comparison_preview_preserves_http_file_behavior(
     finally:
         server.shutdown()
         server.server_close()
+
+
+# Records the arguments and writes one slide image, as deck rendering would.
+DECK_DIFF = """import pathlib, sys
+args = sys.argv[1:]
+option = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in args if "=" in a}
+pathlib.Path(args[args.index("--out") + 1]).write_text(" ".join(args))
+if "--render-decks" in option:
+    images = pathlib.Path(option["--render-decks"])
+    images.mkdir(parents=True)
+    (images / "slide-1.png").write_bytes(b"png")
+"""
+
+
+@pytest.mark.parametrize("deck", [True, False])
+def test_site_with_deck_renders_slides_beside_the_page(project: Path, deck) -> None:
+    (project / "scripts/what-changed.py").write_text(DECK_DIFF)
+    body = '<div class="reveal">Slides</div>' if deck else "Prose only"
+    (project / "index.qmd").write_text(body + "\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    owned = project / workspace_module.COMPARISON_DIR
+    page = (owned / "what-changed.html").read_text()
+    assert ("--render-decks-url=what-changed-decks" in page) is deck
+    assert ("--render-decks=" in page) is deck
+    assert (owned / "what-changed-decks/slide-1.png").is_file() is deck
+    assert_single_worktree(project)

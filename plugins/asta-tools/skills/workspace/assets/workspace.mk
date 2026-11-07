@@ -186,7 +186,8 @@ render: workspace-assets workspace-viewers
 # Compare the branch base with the working tree without rendering over the
 # preview's _site/. Publish the comparison and its supporting render assets there. Older plain
 # Quarto render recipes keep their prerequisites and get a temporary CLI adapter
-# for page selection; custom recipes retain the full-site fallback.
+# for page selection; custom recipes retain the full-site fallback. A changed deck's
+# slides render as images when PYTHON has Playwright, as in the PR preview.
 WHAT_CHANGED_BASE ?=
 WHAT_CHANGED_FULL ?=
 what-changed:
@@ -310,8 +311,10 @@ what-changed:
 		echo "what-changed: current render produced no HTML in the temporary output; check the render recipe and HTML format" >&2; exit 1; }; \
 	mkdir -p _site; \
 	theme=; [ -z "$$partial" ] || theme="--theme-root=_site"; \
+	decks=; ! grep -rlq --include='*.html' 'class="reveal' "$$current" || decks="--render-decks=$$current/what-changed-decks"; \
 	$(PYTHON) $(call workspace_script,what-changed.py) --old "$$dir/_site" --new "$$current" \
-		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/; \
+		--out "$$tmp/what-changed.html" --title "Changes since $$label" $$theme --theme-url-prefix=what-changed-assets/ \
+		$$decks --render-decks-url=what-changed-assets/what-changed-decks; \
 	rm -rf _site/what-changed-assets; \
 	mv "$$current" _site/what-changed-assets; current=; \
 	mv "$$tmp/what-changed.html" _site/what-changed.html; \

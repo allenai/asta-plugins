@@ -63,6 +63,23 @@ jobs:
           name: workspace-slide-fixtures
           path: tests/browser/fixtures
           retention-days: 30
+      # After the uploads: this adds what-changed output to the example's _site.
+      - name: Check local What changed renders a deck edit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/local-what-changed-venv"
+          "$RUNNER_TEMP/local-what-changed-venv/bin/python" -m pip install -q playwright==1.64.1
+          "$RUNNER_TEMP/local-what-changed-venv/bin/python" -m playwright install --with-deps chromium >/dev/null
+          "$RUNNER_TEMP/local-what-changed-venv/bin/python" ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-what-changed-screenshot
+          path: tests/browser/artifacts/local-what-changed-deck.png
+          if-no-files-found: ignore
+          retention-days: 30
 
   theme:
     needs: build
