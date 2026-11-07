@@ -2010,3 +2010,71 @@ def test_what_changed_reads_full_baseline_for_site_in_subfolder(
     assert "before" in text and "after" in text, text[-3000:]
     assert "about.html" not in page
     assert "pr-preview" not in page
+
+
+@pytest.mark.parametrize("rules", ["Makefile", "workspace.mk"])
+@pytest.mark.parametrize("tmpdir", ["sandbox temp", "", None])
+def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
+    """Deny implicit mktemp paths, as on macOS in an agent sandbox."""
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", str(project)], check=True, capture_output=True)
+    scripts = project / "scripts"
+    scripts.mkdir()
+    shutil.copy(WORKSPACE_ASSETS / "quarto-check.sh", scripts)
+    (scripts / "paper-discovery.py").write_text("print('[]')\n")
+    (scripts / "paper-viewer.py").write_text(
+        "import sys\nassert sys.stdin.read().strip() == '[]'\n"
+    )
+    archive = tmp_path / "source.tar.gz"
+    _make_evidence_archive(archive)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    real_mktemp = shutil.which("mktemp")
+    assert real_mktemp is not None, "Required test executable is missing: mktemp"
+    wrapper = bin_dir / "mktemp"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> "$TEMP_LOG"\n'
+        'mode=; if [ "$1" = -d ]; then mode=-d; shift; fi\n'
+        # Reject an omitted template even if the platform's mktemp honors TMPDIR.
+        '[ "$#" -eq 1 ] || exit 99\n'
+        'case "$1" in "${TMPDIR:-/tmp}"/asta-*) ;; *) exit 98 ;; esac\n'
+        'created=$("$REAL_MKTEMP" $mode "$@") || exit $?\n'
+        'printf "%s\\n" "$created" >> "$TEMP_PATH_LOG"\n'
+        'printf "%s\\n" "$created"\n'
+    )
+    wrapper.chmod(0o755)
+    quarto = bin_dir / "quarto"
+    quarto.write_text("#!/bin/sh\nmkdir -p _site\necho OK > _site/index.html\n")
+    quarto.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home),
+        "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        "REAL_MKTEMP": real_mktemp,
+        "TEMP_LOG": str(tmp_path / "temps.log"),
+        "TEMP_PATH_LOG": str(tmp_path / "temp-paths.log"),
+    }
+    if tmpdir is not None:
+        env["TMPDIR"] = str(tmp_path / tmpdir) if tmpdir else ""
+        if tmpdir:
+            Path(env["TMPDIR"]).mkdir()
+    result = subprocess.run(
+        ["make", "-f", str((WORKSPACE_ASSETS / rules).resolve()), "check"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    temps = (tmp_path / "temps.log").read_text().splitlines()
+    assert len(temps) == (2 if rules == "workspace.mk" else 1)
+    assert (project / "_extensions/evidence/snippet.lua").is_file()
+    created = (tmp_path / "temp-paths.log").read_text().splitlines()
+    assert len(created) == len(temps)
+    assert all(not Path(path).exists() for path in created), (
+        "temporary files were not cleaned up"
+    )
