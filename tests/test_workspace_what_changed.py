@@ -1648,12 +1648,12 @@ def test_changed_home_page_supplies_the_theme_beside_a_deck(
     assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
 
 
-def test_deck_only_edit_reuses_a_kept_theme_and_cleans_up(
+def test_deck_only_edit_renders_the_theme_and_cleans_up(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Later runs skip rendering theme pages until the theme sources change."""
+    """The temporary theme folder is removed with the comparison directory."""
     temporary = tmp_path_factory.mktemp("comparisons")
     monkeypatch.setattr(tempfile, "tempdir", str(temporary))
     (project / "slides.qmd").write_text("Slide one.\n")
@@ -1682,8 +1682,7 @@ def test_deck_only_edit_reuses_a_kept_theme_and_cleans_up(
         workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
     )
     snapshot = project / workspace_module.COMPARISON_DIR
-
-    def run(edit: str) -> list[str]:
+    for edit in ("first", "second"):
         rendered.clear()
         (project / "slides.qmd").write_text(f"Slide one, {edit}.\n")
         result = CliRunner().invoke(
@@ -1694,14 +1693,7 @@ def test_deck_only_edit_reuses_a_kept_theme_and_cleans_up(
         assert not list(temporary.glob("asta-what-changed-*"))
         page = (snapshot / "what-changed.html").read_text()
         assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
-        assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
         assert edit in page and "Home" not in page
-        return dict(rendered)["the working tree"]
-
-    assert run("first") == ["slides.qmd", "index.qmd"]
-    assert run("second") == ["slides.qmd"]
-    (project / "theme.scss").write_text("/*-- scss:defaults --*/\n")
-    git(project, "add", "theme.scss")
-    assert run("third") == ["slides.qmd", "index.qmd"]
-    assert run("fourth") == ["slides.qmd"]
+        assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+    assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)
