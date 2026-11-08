@@ -2075,3 +2075,164 @@ def test_unrelated_cleanup_failure_cannot_prevent_worktree_removal(
     assert "Unrelated cleanup denied" in result.stderr
     assert_single_worktree(project)
     original_rmtree(leftover.parent)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "about us.qmd",
+        "tabs\tpage.md",
+        "$(shell touch sentinel).qmd",
+        "dollar$.qmd",
+        "quotes'page.qmd",
+        "pages/a;b.qmd",
+    ],
+)
+def test_theme_candidates_skip_names_outside_make_page_contract(tmp_path, name):
+    source = tmp_path / name
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("Unrelated source")
+    (tmp_path / "valid.qmd").write_text("Theme source")
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == ["valid.qmd"]
+    assert not (tmp_path / "sentinel").exists()
+
+
+@pytest.mark.parametrize(
+    "directory, marker",
+    [
+        ("~backup", None),
+        ("renv", None),
+        ("packrat", None),
+        ("rsconnect", None),
+        ("venv", None),
+        ("env", None),
+        ("custom-python", "pyvenv.cfg"),
+        ("custom-conda", "conda-meta"),
+        ("nested/custom-python", "pyvenv.cfg"),
+    ],
+)
+def test_theme_candidates_prune_dependency_and_environment_directories(
+    tmp_path, directory, marker
+):
+    ignored = tmp_path / directory
+    ignored.mkdir(parents=True)
+    if marker == "conda-meta":
+        (ignored / marker).mkdir()
+    elif marker:
+        (ignored / marker).write_text("home = python")
+    for name in ("a.md", "b.md", "c.md"):
+        (ignored / name).write_text("Dependency documentation")
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages/about.qmd").write_text("Theme source")
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == [
+        "pages/about.qmd"
+    ]
+
+
+@pytest.mark.parametrize(
+    "name, markup, expected",
+    [
+        (
+            "index.html",
+            '<div class="revealed"></div><link rel="stylesheet" href="theme.css">',
+            True,
+        ),
+        (
+            "index.html",
+            "<div class='other reveal'></div><link rel='stylesheet' href='theme.css'>",
+            False,
+        ),
+        (
+            "index.html",
+            '<div class="other reveal"></div><link rel="stylesheet" href="theme.css">',
+            False,
+        ),
+        (
+            "index.html",
+            '<link rel="preload" title="stylesheet" href="theme.css">',
+            False,
+        ),
+        ("index.html", '<link data-rel="stylesheet" href="theme.css">', False),
+        ("index.html", '<link rel="not-a-stylesheet" href="theme.css">', False),
+        ("index.html", "<link rel=stylesheet href=theme.css>", True),
+        ("what-changed-in-v2.html", '<link rel="stylesheet" href="theme.css">', True),
+        ("what-changed.html", '<link rel="stylesheet" href="theme.css">', False),
+    ],
+)
+def test_theme_page_requires_actual_stylesheet_and_deck_class_tokens(
+    tmp_path, name, markup, expected
+):
+    (tmp_path / "theme.css").write_text("body{}")
+    page = tmp_path / name
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(markup)
+    assert workspace_module._is_themed_page(page, tmp_path) is expected
+
+
+def test_full_render_honors_custom_output_directory(project):
+    Path(shutil.which("make")).write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        "options = dict(arg.split('=', 1) for arg in sys.argv[2:])\n"
+        "pathlib.Path(options.get('ASTA_WORKSPACE_RENDER_OUTPUT', '_site')).mkdir()\n"
+    )
+    assert (
+        workspace_module.render_site(
+            project, "full custom output", output="_theme-full"
+        )
+        == project / "_theme-full"
+    )
+
+
+def test_comparison_directory_cleanup_continues_after_entry_error(monkeypatch):
+    original = shutil.rmtree
+    paths = []
+
+    def cleanup(path, *args, **kwargs):
+        if Path(path).name.startswith("blocked-"):
+            raise PermissionError("First entry is locked")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", cleanup)
+    with workspace_module._comparison_directory() as directory:
+        for name in ("blocked-first", "remove-next", "blocked-last", "remove-last"):
+            child = directory / name
+            child.mkdir()
+            paths.append(child)
+    assert paths[0].is_dir() and paths[2].is_dir()
+    assert not paths[1].exists() and not paths[3].exists()
+    original(directory)
+
+
+def test_fallback_discovery_does_not_expand_filenames_in_real_make(
+    tmp_path, monkeypatch
+):
+    if not shutil.which("make"):
+        pytest.skip("GNU Make is unavailable")
+    # Command-line variables are expanded for the environment even when the
+    # recipe uses $(value); never pass arbitrary discovered names to Make.
+    (tmp_path / "$(shell touch sentinel).qmd").write_text("Unrelated source")
+    (tmp_path / "about.qmd").write_text("Theme source")
+    rules = (ASSETS / "workspace.mk").read_text()
+    recipe = rules[
+        rules.index("ASTA_WORKSPACE_RENDER_OUTPUT ?=") : rules.index(
+            "# Run the same quality gates"
+        )
+    ]
+    (tmp_path / "Makefile").write_text(
+        recipe + "\nworkspace-assets workspace-viewers:\n\t@:\n"
+    )
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "quarto").write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        "assert sys.argv[1:4] == ['render', './about.qmd', '--no-clean'], sys.argv\n"
+        "pathlib.Path(sys.argv[-1]).mkdir()\n"
+    )
+    (tools / "quarto").chmod(0o755)
+    monkeypatch.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
+    pages = workspace_module._theme_candidates(tmp_path, ["slides.qmd"])
+    output = workspace_module.render_site(tmp_path, "fallback", pages, output="_theme")
+    assert output.is_dir()
+    assert not (tmp_path / "sentinel").exists()

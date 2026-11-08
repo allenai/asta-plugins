@@ -21,6 +21,7 @@ import tempfile
 import threading
 from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import unquote, urlsplit
@@ -1114,11 +1115,10 @@ def render_site(
         )
     click.echo(f"Rendering {label} with 'make render'", err=True)
     command = ["make", "render"]
+    if pages is not None or output != "_site":
+        command.append(f"ASTA_WORKSPACE_RENDER_OUTPUT={output}")
     if pages is not None:
-        command += [
-            f"ASTA_WORKSPACE_RENDER_OUTPUT={output}",
-            f"ASTA_WORKSPACE_RENDER_FILES={' '.join(pages)}",
-        ]
+        command.append(f"ASTA_WORKSPACE_RENDER_FILES={' '.join(pages)}")
     with preview_process(
         command,
         directory,
@@ -1149,8 +1149,33 @@ THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
 # Further candidates when the home page is missing or only redirects.
 THEME_SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd")
 THEME_CANDIDATES = 3
-_STYLESHEET = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
-_HREF = re.compile(r"""(?<![\w-])href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+# Make exports command-line variables with expansion; its page list also
+# splits on whitespace. Pass only conservative names found by the fallback.
+_THEME_SOURCE_NAME = re.compile(r"[\w./-]+")
+_THEME_IGNORED_DIRS = {
+    "node_modules",
+    "site_libs",
+    "venv",
+    "env",
+    "renv",
+    "packrat",
+    "rsconnect",
+}
+
+
+class _ThemePageParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.is_deck = False
+        self.stylesheets = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if "reveal" in (attrs.get("class") or "").split():
+            self.is_deck = True
+        if tag == "link" and "stylesheet" in (attrs.get("rel") or "").lower().split():
+            if href := attrs.get("href"):
+                self.stylesheets.append(href)
 
 
 def _is_themed_page(page: Path, site: Path) -> bool:
@@ -1159,16 +1184,13 @@ def _is_themed_page(page: Path, site: Path) -> bool:
     A Quarto redirect home page, a deck, or a page whose site_libs a partial
     render left out cannot supply the site's theme.
     """
-    if page.name.startswith("what-changed") or page.is_symlink() or not page.is_file():
+    if page == site / "what-changed.html" or page.is_symlink() or not page.is_file():
         return False
-    html = page.read_text(encoding="utf-8", errors="ignore")
-    if 'class="reveal' in html:
+    parsed = _ThemePageParser()
+    parsed.feed(page.read_text(encoding="utf-8", errors="ignore"))
+    if parsed.is_deck:
         return False
-    sheets = []
-    for tag in _STYLESHEET.findall(html):
-        href = _HREF.search(tag)
-        if "stylesheet" in tag.lower() and href:
-            sheets.append(href.group(1).split("?")[0].split("#")[0])
+    sheets = [href.split("?")[0].split("#")[0] for href in parsed.stylesheets]
     local = [h for h in sheets if not re.match(r"(?i)^(?:[a-z][a-z0-9+.-]*:|//)", h)]
     if not local:
         return False
@@ -1341,9 +1363,11 @@ def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
             children[:] = sorted(
                 name
                 for name in children
-                if not name.startswith(("_", "."))
-                and name not in ("node_modules", "site_libs")
+                if not name.startswith(("_", ".", "~"))
+                and name not in _THEME_IGNORED_DIRS
                 and not (Path(directory) / name).is_symlink()
+                and not (Path(directory) / name / "pyvenv.cfg").exists()
+                and not (Path(directory) / name / "conda-meta").is_dir()
             )
             for name in sorted(files):
                 relative = (Path(directory) / name).relative_to(project).as_posix()
@@ -1356,7 +1380,8 @@ def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
         source = project / name
         output = Path(name).with_suffix(".html")
         if (
-            source.suffix in THEME_SOURCE_SUFFIXES
+            _THEME_SOURCE_NAME.fullmatch(name)
+            and source.suffix in THEME_SOURCE_SUFFIXES
             and source.is_file()
             and not source.is_symlink()
             and output not in outputs
@@ -1496,14 +1521,18 @@ def _comparison_directory():
                 for entry in temporary.iterdir():
                     if entry.name in ("baseline", "working"):
                         continue
-                    if entry.is_dir() and not entry.is_symlink():
-                        shutil.rmtree(entry)
-                    else:
-                        entry.unlink()
+                    try:
+                        if entry.is_dir() and not entry.is_symlink():
+                            shutil.rmtree(entry)
+                        else:
+                            entry.unlink()
+                    except OSError as exc:
+                        click.echo(
+                            f"Warning: comparison directory cleanup failed for {entry}: {exc}",
+                            err=True,
+                        )
                 # Git owns both worktrees; keep failed removals recoverable.
-                if not any(
-                    (temporary / name).exists() for name in ("baseline", "working")
-                ):
+                if not any(temporary.iterdir()):
                     temporary.rmdir()
         except OSError as exc:
             click.echo(f"Warning: comparison directory cleanup failed: {exc}", err=True)

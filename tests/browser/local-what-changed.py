@@ -124,28 +124,32 @@ def check(project, artifacts):
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
-            page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.goto(f"http://127.0.0.1:{server.server_address[1]}/what-changed.html")
-            page.locator(".deck-review").wait_for()
-            data = json.loads(page.locator(".dr-data").text_content())
-            kinds = [item["kind"] for item in data["items"]]
-            assert kinds.count("new") == 1 and "changed" in kinds, kinds
-            assert "look" not in kinds and not data["removed"], data
-            # Served from the preview's _site, as the local page is.
-            for image in page.locator(".dr-slide:visible img:visible").all():
-                image.scroll_into_view_if_needed()
-                assert image.evaluate(
-                    "(i) => new Promise(r => i.complete ? r() : i.addEventListener('load', r, {once: true}))"
-                    ".then(() => i.naturalWidth === 1600)"
-                ), image.get_attribute("src")
-            # The page borrows the site's theme, as the PR preview does.
-            assert page.evaluate(
-                "() => [...document.styleSheets].some("
-                "s => s.href && s.href.includes('site_libs') && s.cssRules.length)"
-            ), "the site's theme did not load"
-            page.locator(".deck-review").scroll_into_view_if_needed()
-            page.screenshot(path=str(artifacts / "local-what-changed-deck.png"))
-            browser.close()
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page.goto(
+                    f"http://127.0.0.1:{server.server_address[1]}/what-changed.html"
+                )
+                page.locator(".deck-review").wait_for()
+                data = json.loads(page.locator(".dr-data").text_content())
+                kinds = [item["kind"] for item in data["items"]]
+                assert kinds.count("new") == 1 and "changed" in kinds, kinds
+                assert "look" not in kinds and not data["removed"], data
+                # Served from the preview's _site, as the local page is.
+                for image in page.locator(".dr-slide:visible img:visible").all():
+                    image.scroll_into_view_if_needed()
+                    assert image.evaluate(
+                        "(i) => new Promise(r => i.complete ? r() : i.addEventListener('load', r, {once: true}))"
+                        ".then(() => i.naturalWidth === 1600)"
+                    ), image.get_attribute("src")
+                # The page borrows the site's theme, as the PR preview does.
+                assert page.evaluate(
+                    "() => [...document.styleSheets].some("
+                    "s => s.href && s.href.includes('site_libs') && s.cssRules.length)"
+                ), "the site's theme did not load"
+                page.locator(".deck-review").scroll_into_view_if_needed()
+                page.screenshot(path=str(artifacts / "local-what-changed-deck.png"))
+            finally:
+                browser.close()
     finally:
         server.shutdown()
         server.server_close()
@@ -206,15 +210,19 @@ def check_themed_without_preview(project, artifacts, redirect_preview=False):
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
-            page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.goto(f"http://127.0.0.1:{server.server_address[1]}/what-changed.html")
-            page.locator(".deck-review").wait_for()
-            assert page.evaluate(THEMED_JS), "What changed page is unstyled"
-            # The home page rendered for the theme is not itself compared.
-            assert "Redirect" not in page.content(), "home page reported as changed"
-            name = "redirect-preview" if redirect_preview else "no-preview"
-            page.screenshot(path=str(artifacts / f"local-what-changed-{name}.png"))
-            browser.close()
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page.goto(
+                    f"http://127.0.0.1:{server.server_address[1]}/what-changed.html"
+                )
+                page.locator(".deck-review").wait_for()
+                assert page.evaluate(THEMED_JS), "What changed page is unstyled"
+                # The home page rendered for the theme is not itself compared.
+                assert "Redirect" not in page.content(), "home page reported as changed"
+                name = "redirect-preview" if redirect_preview else "no-preview"
+                page.screenshot(path=str(artifacts / f"local-what-changed-{name}.png"))
+            finally:
+                browser.close()
     finally:
         server.shutdown()
         server.server_close()
