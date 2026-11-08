@@ -1608,7 +1608,7 @@ def _changed_comparison_pages(project, baseline, ref):
 
 
 def _comparison_inputs(project):
-    """Inspect only the after copy, concurrently with its fresh render."""
+    """The files Quarto renders in this project, as `quarto inspect` lists them."""
     try:
         result = subprocess.run(
             ["quarto", "inspect", str(project)],
@@ -1621,8 +1621,18 @@ def _comparison_inputs(project):
             for p in json.loads(result.stdout)["files"]["input"]
         }
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
-        # An unavailable inspect must not hide any rendered page.
+        # An unavailable inspect must not hide any page; a render then fails loudly.
         return None
+
+
+def _quarto_rendered(project, pages, inputs):
+    """Selected pages that exist in this project and Quarto renders there."""
+    return [
+        name
+        for name in pages
+        if (project / name).is_file()
+        and (inputs is None or (project / name).resolve() in inputs)
+    ]
 
 
 def _run_comparison(before, after, report, title, project, theme=None):
@@ -1857,54 +1867,57 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             # Both sides are fresh, private builds. Never borrow a preview:
             # a source edit can arrive while that preview is still rendering.
             theme = None
-            theme_pages = _theme_candidates(baseline_project, pages) if pages else []
             with _timed("copy working tree"):
                 copied_project = working_copy(
                     Path(repository.stdout.rstrip("\n")),
                     prefix.stdout.rstrip("\n"),
                     tmp / "working",
                 )
+            before_pages = after_pages = theme_pages = []
+            if pages:
+                # Ask Quarto which files each side renders before rendering any:
+                # a README or notes file must never reach `quarto render`.
+                with _timed("list rendered files (quarto inspect)"):
+                    with _parallel_builds() as pool:
+                        before_inputs = pool.submit(
+                            _comparison_inputs, baseline_project
+                        )
+                        after_inputs = pool.submit(_comparison_inputs, copied_project)
+                        before_inputs = before_inputs.result()
+                        after_inputs = after_inputs.result()
+                before_pages = _quarto_rendered(baseline_project, pages, before_inputs)
+                after_pages = _quarto_rendered(copied_project, pages, after_inputs)
+                if before_pages or after_pages:
+                    theme_pages = _quarto_rendered(
+                        baseline_project,
+                        _theme_candidates(baseline_project, pages),
+                        before_inputs,
+                    )
 
-            def render_before():
-                if pages:
-                    selected = [
-                        name for name in pages if (baseline_project / name).is_file()
-                    ]
-                    selected = list(dict.fromkeys([*selected, *theme_pages]))
-                    if not selected:
-                        site = baseline_project / "_site"
-                        site.mkdir()
-                        return site
-                    return render_site(baseline_project, ref, selected)
-                return render_site(baseline_project, ref)
+            def render_side(project_dir, label, selected):
+                if pages is None:
+                    return render_site(project_dir, label)
+                if not selected:
+                    site = project_dir / "_site"
+                    site.mkdir(exist_ok=True)
+                    return site
+                return render_site(project_dir, label, selected)
 
             # Record the enclosing wall time, rather than adding overlapping
             # durations and reporting a negative remainder in --timings.
             with _timed("render before and after (parallel)"):
                 with _parallel_builds() as pool:
-                    inspection = pool.submit(_comparison_inputs, copied_project)
-                    before = pool.submit(render_before)
-                    after = (
-                        pool.submit(
-                            render_site, copied_project, "the working tree", pages
-                        )
-                        if pages
-                        else pool.submit(
-                            render_site, copied_project, "the working tree"
-                        )
+                    before = pool.submit(
+                        render_side,
+                        baseline_project,
+                        ref,
+                        list(dict.fromkeys([*before_pages, *theme_pages])),
+                    )
+                    after = pool.submit(
+                        render_side, copied_project, "the working tree", after_pages
                     )
                     old_site = before.result()
                     new_site = after.result()
-                    inputs = inspection.result()
-            if pages and inputs is not None:
-                for name in pages:
-                    # Keep deleted pages: only the before side can contain them.
-                    source = copied_project / name
-                    if source.exists() and source.resolve() not in inputs:
-                        for site in (old_site, new_site):
-                            (site / Path(name).with_suffix(".html")).unlink(
-                                missing_ok=True
-                            )
             if theme_pages:
                 theme = tmp / "theme"
                 theme.mkdir()

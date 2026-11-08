@@ -1721,3 +1721,58 @@ def test_local_paper_diff_skipped_with_note_without_tex(tmp_path, monkeypatch, c
 
     assert not (site / "paper-previews").exists()
     assert "paper diffs are skipped" in capsys.readouterr().err
+
+
+def test_files_quarto_does_not_render_never_reach_the_render(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A README or notes file changed beside a page is dropped before rendering."""
+    (project / "page.qmd").write_text("Page.\n")
+    (project / "README.md").write_text("Readme.\n")
+    git(project, "add", "page.qmd", "README.md")
+    git(project, "commit", "-qm", "base")
+    git(project, "tag", "-f", "last-read")
+    (project / "page.qmd").write_text("Page, edited.\n")
+    (project / "README.md").write_text("Readme, edited.\n")
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        assert pages is not None and "README.md" not in pages
+        site = directory / "_site"
+        site.mkdir(exist_ok=True)
+        for name in pages:
+            html = site / Path(name).with_suffix(".html")
+            html.write_text(f"<p>{(directory / name).read_text()}</p>")
+        return site
+
+    def inputs(directory):
+        # As `quarto inspect` reports it: README.md is not a project input.
+        return {p.resolve() for p in directory.glob("*.qmd") if p.name != "README.md"}
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(workspace_module, "_comparison_inputs", inputs)
+    monkeypatch.setattr(
+        workspace_module,
+        "_changed_comparison_pages",
+        lambda *_: ["README.md", "page.qmd"],
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert dict(rendered)["the working tree"] == ["page.qmd"]
+    assert "README.md" not in dict(rendered)["last-read"]
+    page = (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
+    assert "edited" in page and "Readme" not in page
+
+
+def test_quarto_rendered_keeps_pages_when_inspect_is_unavailable(tmp_path: Path):
+    for name in ("page.qmd", "README.md"):
+        (tmp_path / name).write_text("x\n")
+    names = ["page.qmd", "README.md", "deleted.qmd"]
+    rendered = workspace_module._quarto_rendered
+    assert rendered(tmp_path, names, {(tmp_path / "page.qmd").resolve()}) == [
+        "page.qmd"
+    ]
+    assert rendered(tmp_path, names, None) == ["page.qmd", "README.md"]
