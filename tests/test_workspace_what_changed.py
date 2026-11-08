@@ -1729,3 +1729,49 @@ def test_no_timings_without_flag(project: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "What changed timings:" not in result.output
+
+
+def _fake_paper_scripts(project):
+    scripts = project / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "paper-discovery.py").write_text(
+        "import json\n"
+        'print(json.dumps({"papers": ["paper"], "removed": ["old"], "warnings": []}))\n'
+    )
+    (scripts / "paper-preview.sh").write_text(
+        'out="_site/paper-previews/$2"; mkdir -p "$out"; printf %s "$1" > "$out/base"\n'
+        'printf \'{"changed":true,"diff":true}\\n\' > "$out/preview.json"\n'
+    )
+
+
+def test_local_paper_diff_built_when_tex_is_available(tmp_path, monkeypatch):
+    workspace = workspace_module
+    project = tmp_path / "project"
+    _fake_paper_scripts(project)
+    site = project / "_site"
+    site.mkdir()
+    monkeypatch.setattr(workspace.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    workspace._paper_previews(project, "abc123", site)
+
+    previews = site / "paper-previews"
+    assert json.loads((previews / "paper/preview.json").read_text())["diff"] is True
+    assert (previews / "paper/base").read_text() == "abc123"
+    assert json.loads((previews / "old/preview.json").read_text()) == {
+        "changed": True,
+        "removed": True,
+    }
+
+
+def test_local_paper_diff_skipped_with_note_without_tex(tmp_path, monkeypatch, capsys):
+    workspace = workspace_module
+    project = tmp_path / "project"
+    _fake_paper_scripts(project)
+    site = project / "_site"
+    site.mkdir()
+    monkeypatch.setattr(workspace.shutil, "which", lambda name: None)
+
+    workspace._paper_previews(project, "abc123", site)
+
+    assert not (site / "paper-previews").exists()
+    assert "paper diffs are skipped" in capsys.readouterr().err

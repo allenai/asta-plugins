@@ -1403,6 +1403,86 @@ def _comparison_script():
     return Path(__file__).parents[3] / ASSET_DIR / DIFF_SCRIPT
 
 
+def _asset_script(name: str) -> Path:
+    bundled = Path(__file__).parents[1] / "workspace_assets" / name
+    if bundled.is_file():
+        return bundled
+    return Path(__file__).parents[3] / ASSET_DIR / name
+
+
+def _paper_previews(project: Path, base: str, site: Path) -> None:
+    """Build each changed paper's marked diff PDF into the site, as the PR preview does.
+
+    Runs only where LaTeX is installed (e.g. the -tex dev container). As in the
+    PR preview, a project's own scripts/<asset> takes precedence.
+    """
+
+    def script(name):
+        own = project / "scripts" / name
+        return own if own.is_file() else _asset_script(name)
+
+    discovery = subprocess.run(
+        [sys.executable, str(script("paper-discovery.py")), base],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        found = json.loads(discovery.stdout) if discovery.returncode == 0 else None
+        papers, removed = list(found["papers"]), list(found["removed"])
+        if not all(isinstance(d, str) for d in [*papers, *removed]):
+            raise TypeError
+    except (TypeError, KeyError, ValueError):
+        click.echo(
+            "Warning: could not discover paper projects, so no paper diff is shown"
+            + (f" ({discovery.stderr.strip()})" if discovery.stderr.strip() else ""),
+            err=True,
+        )
+        return
+    if not papers and not removed:
+        return
+    missing = [tool for tool in ("latexmk", "latexdiff") if shutil.which(tool) is None]
+    if missing:
+        click.echo(
+            f"Note: paper diffs are skipped because {' and '.join(missing)} "
+            "isn't installed here; run in the -tex dev container to include them.",
+            err=True,
+        )
+        return
+    root = site / "paper-previews"
+    if root.exists():
+        click.echo(
+            "Warning: the site already uses paper-previews/, so no paper diff is shown",
+            err=True,
+        )
+        return
+    for directory in removed:
+        (root / directory).mkdir(parents=True, exist_ok=True)
+        (root / directory / "preview.json").write_text(
+            '{"changed":true,"removed":true}\n'
+        )
+    for directory in papers:
+        click.echo(f"Building the marked diff of {directory}", err=True)
+        built = subprocess.run(
+            ["bash", str(script("paper-preview.sh")), base, directory],
+            cwd=project,
+            capture_output=True,
+            text=True,
+        )
+        if built.returncode != 0:
+            out = root / directory
+            out.mkdir(parents=True, exist_ok=True)
+            tail = "\n".join((built.stdout + built.stderr).strip().splitlines()[-20:])
+            (out / "build-failed.txt").write_text(tail + "\n")
+            if not (out / "preview.json").is_file():
+                (out / "preview.json").write_text('{"changed":false}\n')
+            click.echo(
+                f"Warning: the paper build for {directory} failed; "
+                f"see {directory}/build in the comparison output",
+                err=True,
+            )
+
+
 def _comparison_python(decks):
     """Only deck comparisons provision the pinned optional browser through uv."""
     env = os.environ.copy()
@@ -1813,6 +1893,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     # writes into a partial render without one, or it is
                     # reported as removed.
                     (old_site / "index.html").unlink(missing_ok=True)
+            with _timed("build paper diffs"):
+                _paper_previews(copied_project, commit.stdout.strip(), new_site)
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():
