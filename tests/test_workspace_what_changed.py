@@ -1638,6 +1638,8 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
         (["index.qmd", "slides.qmd", "about.qmd"], ["index.qmd", "about.qmd"]),
         (["*.qmd", "!about.qmd"], ["index.qmd"]),
         (["**/*.md"], ["notes.md"]),
+        (["{index,about}.qmd"], ["index.qmd", "about.qmd"]),
+        (["*.qmd", "!{index,about}.qmd"], []),
         # Quarto 1.7's resolveGlobs expands only positive inclusions.
         (["!about.qmd"], []),
     ],
@@ -1767,11 +1769,19 @@ def test_theme_candidates_tolerate_non_mapping_config(tmp_path, config):
 @pytest.mark.parametrize(
     "candidate", ["failing", "unstyled", "missing-stylesheets", "themed", "retry"]
 )
-def test_theme_render_is_best_effort_and_separate(project, monkeypatch, candidate):
+@pytest.mark.parametrize("render_list", [None, ["{about,notes}.qmd", "slides.qmd"]])
+def test_theme_render_is_best_effort_and_separate(
+    project, monkeypatch, candidate, render_list
+):
     """An unrelated theme page must never break or contaminate a deck comparison."""
     import click
 
     (project / "index.qmd").unlink()
+    if render_list:
+        (project / "_quarto.yml").write_text(
+            yaml.safe_dump({"project": {"render": render_list}})
+        )
+        git(project, "add", "_quarto.yml")
     (project / "about.qmd").write_text("About.\n")
     (project / "slides.qmd").write_text("Slide one.\n")
     if candidate in ("retry", "themed"):
@@ -1960,6 +1970,19 @@ def test_theme_candidates_prefer_root_pages_and_stop_at_the_existing_limit(tmp_p
         ("pages/about.qmd", ["**/*.qmd", "!pages/"], False),
         ("pages/about.qmd", ["!pages/", "**/*.qmd"], False),
         ("pages/about.qmd", ["!drafts/"], False),
+        ("index.qmd", ["{index,about}.qmd"], True),
+        ("about.qmd", ["{index,about}.qmd"], True),
+        ("notes.qmd", ["{index,about}.qmd"], False),
+        ("pages/about.qmd", ["{index,{about,notes}}.qmd"], True),
+        ("pages/about.qmd", ["/{pages,posts}/{index,about}.{md,qmd}"], True),
+        ("pages/deeper/about.qmd", ["/{pages,posts}/{index,about}.qmd"], False),
+        ("pages/about.qmd", ["**/*.qmd", "!{about,notes}.qmd"], False),
+        ("pages/about.qmd", ["!{about,notes}.qmd", "**/*.qmd"], False),
+        ("pages/index.qmd", ["/{about,index}.qmd"], False),
+        ("about.qmd", ["{about}.qmd"], True),
+        ("about.qmd", ["{,about}.qmd"], True),
+        ("{about.qmd", ["{about.qmd"], True),
+        ("{.qmd", ["[{},].qmd"], True),
     ],
 )
 def test_theme_render_patterns_follow_quarto_path_segments(name, patterns, expected):

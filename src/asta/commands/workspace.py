@@ -1244,7 +1244,10 @@ def _in_render_list(name: str, patterns: list[str] | None) -> bool:
                 )
             return bool(
                 segments
-                and fnmatch.fnmatchcase(segments[0], remaining[0])
+                and any(
+                    fnmatch.fnmatchcase(segments[0], alternative)
+                    for alternative in _glob_brace_alternatives(remaining[0])
+                )
                 and match(remaining[1:], segments[1:])
             )
 
@@ -1255,6 +1258,42 @@ def _in_render_list(name: str, patterns: list[str] | None) -> bool:
     return any(matches(p) for p in patterns if not p.startswith("!")) and not any(
         matches(p[1:], exclude=True) for p in patterns if p.startswith("!")
     )
+
+
+def _glob_brace_alternatives(segment: str):
+    """Expand Deno/Quarto's brace alternatives within one path segment.
+
+    Support nested groups and leave braces inside character classes literal.
+    An unclosed group stays literal, as it does in Deno's glob parser.
+    """
+    depth = 0
+    in_class = False
+    alternatives = []
+    for i, char in enumerate(segment):
+        if char == "[":
+            in_class = True
+        elif char == "]" and in_class:
+            in_class = False
+        elif in_class:
+            continue
+        elif char == "{":
+            if depth == 0:
+                start = i
+                part = i + 1
+            depth += 1
+        elif char == "," and depth == 1:
+            alternatives.append(segment[part:i])
+            part = i + 1
+        elif char == "}" and depth:
+            depth -= 1
+            if depth == 0:
+                alternatives.append(segment[part:i])
+                for alternative in alternatives:
+                    yield from _glob_brace_alternatives(
+                        segment[:start] + alternative + segment[i + 1 :]
+                    )
+                return
+    yield segment
 
 
 def _source_is_deck(source: Path) -> bool:
