@@ -467,6 +467,7 @@ def test_renderer_routes_only_local_site_origins():
 
     renderer = object.__new__(deck_review.Renderer)
     renderer._bases = {"old": "http://127.0.0.1:123", "new": "http://127.0.0.1:456"}
+    renderer._loaded = {}
     for url, allowed in [
         ("http://127.0.0.1:123/image.png", True),
         ("http://127.0.0.1:456/deck", True),
@@ -814,3 +815,114 @@ def test_view_page_scripts_parse(tmp_path):
 @pytest.mark.parametrize("name", ["MODE_JS", "FOLD_JS", "PAPER_JS"])
 def test_what_changed_page_scripts_parse(tmp_path, name):
     _node_check(tmp_path, name, getattr(what_changed, name))
+
+
+def _deck(slides, head='<link rel="stylesheet" href="deck.css">'):
+    sections = "".join(slides)
+    return (
+        f'<html><head>{head}</head><body><div class="reveal">'
+        f'<div class="slides">{sections}</div></div></body></html>'
+    )
+
+
+def _static_renderer(tmp_path, old_doc, new_doc, files=None, new_files=None):
+    for side, doc, extra in (("old", old_doc, files), ("new", new_doc, new_files)):
+        root = tmp_path / side
+        (root / "d").mkdir(parents=True)
+        (root / "d" / "deck.html").write_text(doc)
+        for name, data in {
+            "d/deck.css": "h2{}",
+            "d/a.png": "A",
+            **(files or {}),
+            **(extra or {}),
+        }.items():
+            (root / name).write_text(data)
+    renderer = object.__new__(deck_review.Renderer)
+    renderer._roots = {"old": str(tmp_path / "old"), "new": str(tmp_path / "new")}
+    renderer._loaded = {"d/deck.html": {"/d/deck.html", "/d/deck.css"}}
+    renderer._same_files = {}
+    old = what_changed.reveal_slides(old_doc)
+    new = what_changed.reveal_slides(new_doc)
+    return renderer, old, new
+
+
+SLIDE = '<section id="one"><h2>One</h2><img src="a.png"></section>'
+EDITED = '<section id="two"><h2>Two</h2><p>edited</p></section>'
+
+
+def test_identical_slide_and_inputs_skip_the_pixel_comparison(tmp_path):
+    old_doc = _deck([SLIDE, '<section id="two"><h2>Two</h2></section>'])
+    new_doc = _deck([SLIDE, EDITED])
+    renderer, old, new = _static_renderer(tmp_path, old_doc, new_doc)
+    assert renderer.same_static("d/deck.html", old[0], new[0])
+    assert not renderer.same_static("d/deck.html", old[1], new[1])
+
+
+def test_changed_section_background_is_compared_as_pixels(tmp_path):
+    old_doc = _deck(
+        [SLIDE.replace("<section ", '<section data-background-image="a.png" ')]
+    )
+    new_doc = _deck(
+        [SLIDE.replace("<section ", '<section data-background-image="b.png" ')]
+    )
+    renderer, old, new = _static_renderer(tmp_path, old_doc, new_doc, {"d/b.png": "B"})
+    # The normalised body ignores the <section> tag's attributes; the raw tag does not.
+    assert old[0]["body"] == new[0]["body"]
+    assert not renderer.same_static("d/deck.html", old[0], new[0])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "image",  # a referenced file's bytes
+        "head",  # the deck outside the slides
+        "loaded",  # a file the deck loaded
+        "style",  # a style element inside another slide
+        "position",  # same slide, moved
+        "live",  # content whose pixels can change on their own
+    ],
+)
+def test_any_differing_input_falls_back_to_pixels(tmp_path, change):
+    slide = (
+        SLIDE.replace("<img", "<canvas></canvas><img") if change == "live" else SLIDE
+    )
+    old_doc = _deck([slide, '<section id="two"><h2>Two</h2></section>'])
+    new_slides = [slide, EDITED]
+    new_files = None
+    head = '<link rel="stylesheet" href="deck.css">'
+    if change == "image":
+        new_files = {"d/a.png": "changed"}
+    elif change == "head":
+        head += "<style>h2{color:red}</style>"
+    elif change == "loaded":
+        new_files = {"d/deck.css": "h2{color:red}"}
+    elif change == "style":
+        new_slides[1] = EDITED.replace(
+            "</section>", "<style>h2{color:red}</style></section>"
+        )
+    elif change == "position":
+        new_slides = ['<section id="zero"><h2>Zero</h2></section>', slide]
+    new_doc = _deck(new_slides, head)
+    renderer, old, new = _static_renderer(
+        tmp_path, old_doc, new_doc, new_files=new_files
+    )
+    index = 1 if change == "position" else 0
+    assert not renderer.same_static("d/deck.html", old[0], new[index])
+
+
+def test_review_takes_no_comparison_shots_of_statically_identical_slides(tmp_path):
+    old, new = _slides("Same", "Before"), _slides("Same", "After")
+    renderer = _Renderer(old, new)
+    renderer.same_static = lambda deck, before, after: before["body"] == "Same"
+    deck_review.review(
+        "slides.html",
+        "slides.html",
+        str(tmp_path),
+        "imgs",
+        old,
+        new,
+        {0: 0, 1: 1},
+        renderer,
+    )
+    comparison = [call for call in renderer.calls if len(call) == 3 and not call[2]]
+    assert ("old", 0, False) not in comparison and ("new", 0, False) not in comparison

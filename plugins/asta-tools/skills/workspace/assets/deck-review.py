@@ -9,7 +9,9 @@ expandable count. Static screenshots are compared exactly; animated GIFs, canvas
 and time-dependent custom scripts may produce extra visual-change cards.
 
 A slide is changed when its markup differs or, with the same markup, when its
-rendered image differs (an image swapped, a style fix). Slides are matched by
+rendered image differs (an image swapped, a style fix). That image comparison
+is skipped only when ``Renderer.same_static`` proves nothing that could change the
+pixels differs; anything else is still compared as pixels. Slides are matched by
 what-changed.py's ``match_slides``, so "Slide N" is the number the deck shows.
 
 The workspace CLI provisions pinned Playwright and Chromium lazily through uv.
@@ -18,12 +20,13 @@ The workspace CLI provisions pinned Playwright and Chromium lazily through uv.
 import html
 import json
 import os
+import posixpath
 import re
 import threading
 from contextlib import ExitStack
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 VIEWPORT = {"width": 1600, "height": 900}
 # Displayed slides are 2x so they stay sharp on high-density screens; the
@@ -241,6 +244,19 @@ def _serve(root):
     return server
 
 
+# Slide content whose pixels can change without its markup or files changing.
+LIVE_RE = re.compile(
+    r"<(?:script|iframe|canvas|video|audio|object|embed)\b|data-background-(?:iframe|video)",
+    re.I,
+)
+# Attribute values and CSS url()s that name files the slide shows.
+REF_RE = re.compile(
+    r"""\b(?:src|href|srcset|poster|data-src|data-background(?:-image)?)\s*=\s*["']([^"']*)["']"""
+    r"""|url\(\s*["']?([^"')]+)["']?\s*\)""",
+    re.I,
+)
+
+
 class Renderer:
     """One Chromium and an origin per site; root-relative assets retain their meaning."""
 
@@ -250,6 +266,12 @@ class Renderer:
         self._resources = ExitStack()
         self._bases = {}
         self._pages = {}
+        self._roots = {
+            "old": os.path.abspath(old_root),
+            "new": os.path.abspath(new_root),
+        }
+        self._loaded = {}
+        self._same_files = {}
         try:
             for side, root in (("old", old_root), ("new", new_root)):
                 server = _serve(os.path.abspath(root))
@@ -280,7 +302,7 @@ class Renderer:
         )
         try:
             # PR-authored documents may request only these two isolated site origins.
-            page.context.route("**/*", lambda route: self._route(route))
+            page.context.route("**/*", lambda route: self._route(route, deck))
             page.context.route_web_socket("**/*", lambda socket: socket.close())
             page.set_default_timeout(30000)
             page.goto(
@@ -303,10 +325,11 @@ class Renderer:
             raise
         return page
 
-    def _route(self, route):
+    def _route(self, route, deck=None):
         url = urlsplit(route.request.url)
         origin = f"{url.scheme}://{url.netloc}"
         if origin in self._bases.values():
+            self._loaded.setdefault(deck, set()).add(unquote(url.path))
             route.continue_()
         else:
             route.abort()
@@ -323,6 +346,51 @@ class Renderer:
             page = self._pages.pop((side, deck), None)
             if page is not None:
                 page.close()
+
+    def _same_file(self, path):
+        if path not in self._same_files:
+            data = []
+            for side in ("old", "new"):
+                target = os.path.join(self._roots[side], path.lstrip("/"))
+                if os.path.isdir(target):
+                    target = os.path.join(target, "index.html")
+                try:
+                    with open(target, "rb") as f:
+                        data.append(f.read())
+                except OSError:
+                    data.append(None)
+            self._same_files[path] = data[0] is not None and data[0] == data[1]
+        return self._same_files[path]
+
+    def same_static(self, deck, before, after):
+        """True only when nothing that could change the slide's pixels differs.
+
+        Same position, the same raw slide markup including its <section> tags,
+        the same deck HTML outside the slides, and byte-identical files for
+        every file the slide references and every file either deck has loaded.
+        Otherwise, or with live content, the pixels are compared.
+        """
+        if (
+            before.get("raw") is None
+            or before["raw"] != after.get("raw")
+            or before.get("position") != after.get("position")
+            or before.get("frame") != after.get("frame")
+            or LIVE_RE.search(after["raw"])
+        ):
+            return False
+        base = "/" + posixpath.dirname(deck)
+        # The deck documents themselves are compared as raw slides and frame.
+        paths = self._loaded.get(deck, set()) - {"/" + deck}
+        for ref in REF_RE.findall(after["raw"]):
+            for part in (ref[0] or ref[1]).split(","):
+                link = html.unescape(part.strip().split(" ")[0])
+                parts = urlsplit(link)
+                if not link or link.startswith("#") or parts.scheme == "data":
+                    continue
+                if parts.scheme or parts.netloc:
+                    return False
+                paths.add(posixpath.normpath(posixpath.join(base, unquote(parts.path))))
+        return all(self._same_file(path) for path in paths)
 
     def slide_ids(self, side, deck):
         return self.page(side, deck).evaluate("() => Reveal.getSlides().map(s => s.id)")
@@ -441,11 +509,18 @@ def review(deck, link, img_dir, img_url, old, new, pairs, renderer):
     new_text = renderer.texts("new", deck)
     old_interactions = renderer.interactions("old", deck) if old else []
     new_interactions = renderer.interactions("new", deck)
+    same_static = getattr(renderer, "same_static", None)
+
+    def same_image(o, n):
+        if same_static is not None and same_static(deck, old[o], new[n]):
+            return True
+        return shot("old", o) == shot("new", n)
+
     rows, removed = classify(
         old,
         new,
         pairs,
-        (lambda o, n: shot("old", o) == shot("new", n)) if old else None,
+        same_image if old else None,
         lambda o, n: old_text[o] == new_text[n],
         lambda o, n: old_interactions[o] == new_interactions[n],
     )

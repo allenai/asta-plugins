@@ -1487,12 +1487,28 @@ class SlideParser(HTMLParser):
         self.tags = []
         self.nodes = []
         self.root = None
+        self.doc = ""
+        self._lines = [0]
+
+    def feed(self, data):
+        # Offsets let a slide keep its raw markup and the deck its HTML outside the
+        # slides, which deck-review.py compares to skip unchanged slides' pixels.
+        for line in data[len(self.doc) :].splitlines(keepends=True):
+            self._lines.append(self._lines[-1] + len(line))
+        self.doc += data
+        super().feed(data)
+
+    def _offset(self):
+        line, column = self.getpos()
+        return self._lines[line - 1] + column
 
     def handle_starttag(self, tag, attrs):
         classes = (dict(attrs).get("class") or "").split()
         in_reveal = any("reveal" in classes for _, classes in self.tags)
+        start = self._offset()
         if self.root is None and tag == "div" and "slides" in classes and in_reveal:
             self.root = {"tag": tag, "attrs": dict(attrs), "parts": [], "open": ""}
+            self.root["inner"] = start + len(self.get_starttag_text())
             self.nodes.append(self.root)
         elif self.nodes:
             node = {
@@ -1500,6 +1516,7 @@ class SlideParser(HTMLParser):
                 "attrs": dict(attrs),
                 "parts": [],
                 "open": self.get_starttag_text(),
+                "start": start,
             }
             self.nodes[-1]["parts"].append(node)
             if tag not in VOID_TAGS:
@@ -1512,8 +1529,14 @@ class SlideParser(HTMLParser):
             self.nodes[-1]["parts"].append(self.get_starttag_text())
 
     def handle_endtag(self, tag):
+        start = self._offset()
+        end = self.doc.find(">", start) + 1 or len(self.doc)
         for index in range(len(self.nodes) - 1, -1, -1):
             if self.nodes[index]["tag"] == tag:
+                for node in self.nodes[index:]:
+                    node.setdefault("end", end)
+                if self.nodes[index] is self.root:
+                    self.root["close"] = start
                 del self.nodes[index:]
                 break
         for index in range(len(self.tags) - 1, -1, -1):
@@ -1543,6 +1566,18 @@ class SlideParser(HTMLParser):
         if self.root is None:
             return None
         slides = []
+        inner = self.doc[self.root["inner"] : self.root.get("close", len(self.doc))]
+        # Deck-wide inputs: the HTML outside the slides plus any style, script or
+        # link inside them, since those can restyle every slide.
+        frame = (
+            self.doc[: self.root["inner"]],
+            self.doc[self.root.get("close", len(self.doc)) :],
+            re.findall(
+                r"<style\b.*?</style\s*>|<script\b.*?</script\s*>|<link\b[^>]*>",
+                inner,
+                re.S | re.I,
+            ),
+        )
         horizontal = [
             part
             for part in self.root["parts"]
@@ -1560,10 +1595,15 @@ class SlideParser(HTMLParser):
             for v, node in enumerate(parts if stack else [section]):
                 ident = node["attrs"].get("id", "")
                 body = normalize("".join(self.markup(part) for part in node["parts"]))
+                raw = self.doc[node["start"] : node.get("end", len(self.doc))]
                 slides.append(
                     {
                         "id": ident,
                         "body": body,
+                        # The stack's own tag too: its attributes apply to its slides.
+                        "raw": (section["open"] if stack else "") + raw,
+                        "position": (h, v if stack else None),
+                        "frame": frame,
                         "anchor": quote(ident, safe="")
                         if ident
                         else f"{h}/{v}"
