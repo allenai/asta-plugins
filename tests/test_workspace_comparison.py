@@ -184,3 +184,26 @@ def test_unrelated_page_edit_skips_paper_build_and_tool_checks(tmp_path, monkeyp
     monkeypatch.setattr(module, "_commit_working_tree", unexpected)
     module._paper_previews(tmp_path, "base", site)
     assert not (site / "paper-previews").exists()
+
+
+def test_nested_untracked_page_is_not_dropped_by_repository_prefix(
+    tmp_path, monkeypatch
+):
+    before, after = tmp_path / "before", tmp_path / "after"
+    for root in (before, after):
+        root.mkdir()
+        (root / "page.qmd").write_text("page")
+    (after / "new.qmd").write_text("new")
+
+    def git(root, *args):
+        return subprocess.CompletedProcess(
+            args, 0, stdout="site/page.qmd\0" if args[0] == "diff" else "site/"
+        )
+
+    def files(root, *args):
+        assert args == ("--full-name", "--others", "--exclude-standard")
+        return ["site/new.qmd"]
+
+    monkeypatch.setattr(module, "_git", git)
+    monkeypatch.setattr(module, "_ls_files", files)
+    assert module._changed_comparison_pages(after, before, "base") is None

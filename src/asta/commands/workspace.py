@@ -1601,7 +1601,7 @@ def _changed_comparison_pages(project, baseline, ref):
     if diff.returncode:
         return None
     paths = diff.stdout.split("\0")
-    paths += _ls_files(project, "--others", "--exclude-standard")
+    paths += _ls_files(project, "--full-name", "--others", "--exclude-standard")
     prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
     paths = [p[len(prefix) :] for p in paths if p and p.startswith(prefix)]
     return select_pages(project, baseline, paths)
