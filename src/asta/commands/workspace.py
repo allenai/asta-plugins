@@ -19,6 +19,7 @@ import sys
 import tarfile
 import tempfile
 import threading
+import time
 from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -1593,6 +1594,9 @@ def compare_built_sites(before: Path, after: Path, title: str | None = None):
 @click.option(
     "--full", is_flag=True, help="Render the full site, including dependent pages."
 )
+@click.option(
+    "--timings", is_flag=True, help="Print how long each step took, on stderr."
+)
 def what_changed(
     ref: str | None,
     project: Path,
@@ -1600,6 +1604,7 @@ def what_changed(
     after_site: Path | None,
     title: str | None,
     full: bool,
+    timings: bool = False,
 ) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
@@ -1612,6 +1617,9 @@ def what_changed(
     Requires Git 2.30 or newer. Choose a trusted REF: its
     build code runs locally. The baseline contains only committed files.
     """
+    global _step_times
+    _step_times = [] if timings else None
+    started = time.perf_counter()
     try:
         with preview_signals():
             if before_site is not None:
@@ -1630,6 +1638,40 @@ def what_changed(
         raise click.exceptions.Exit(130) from None
     except PreviewTerminated as exc:
         raise click.exceptions.Exit(128 + exc.signum) from None
+    finally:
+        if timings:
+            _report_timings(time.perf_counter() - started)
+        _step_times = None
+
+
+_step_times: list[tuple[str, float]] | None = None
+
+
+def _record(step: str, start: float) -> None:
+    if _step_times is not None:
+        _step_times.append((step, time.perf_counter() - start))
+
+
+@contextmanager
+def _timed(step: str):
+    """Record STEP's wall time when --timings is on."""
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        _record(step, start)
+
+
+def _report_timings(total: float) -> None:
+    if not _step_times:
+        return
+    width = max(len(step) for step, _ in [*_step_times, ("other", 0)])
+    click.echo("What changed timings:", err=True)
+    for step, seconds in _step_times:
+        click.echo(f"  {step:<{width}}  {seconds:7.2f} s", err=True)
+    rest = total - sum(seconds for _, seconds in _step_times)
+    click.echo(f"  {'other':<{width}}  {rest:7.2f} s", err=True)
+    click.echo(f"  {'total':<{width}}  {total:7.2f} s", err=True)
 
 
 def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
@@ -1672,14 +1714,15 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
         baseline = tmp / "baseline"
         added = None
         try:
-            added = _git(
-                project,
-                "worktree",
-                "add",
-                "--detach",
-                str(baseline),
-                commit.stdout.strip(),
-            )
+            with _timed("check out baseline worktree"):
+                added = _git(
+                    project,
+                    "worktree",
+                    "add",
+                    "--detach",
+                    str(baseline),
+                    commit.stdout.strip(),
+                )
             if added.returncode != 0:
                 raise click.ClickException(
                     f"Could not check out {ref}: {added.stderr.strip()}"
@@ -1689,27 +1732,31 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 raise click.ClickException(
                     f"Project directory does not exist for {ref}: {baseline_project}"
                 )
-            pages = (
-                None
-                if full
-                else _changed_comparison_pages(project, baseline_project, ref)
-            )
+            with _timed("find changed pages"):
+                pages = (
+                    None
+                    if full
+                    else _changed_comparison_pages(project, baseline_project, ref)
+                )
             if pages:
                 base_pages = [
                     name for name in pages if (baseline_project / name).is_file()
                 ]
                 if base_pages:
-                    old_site = render_site(baseline_project, ref, base_pages)
+                    with _timed("render baseline (changed pages)"):
+                        old_site = render_site(baseline_project, ref, base_pages)
                 else:
                     old_site = baseline_project / "_site"
                     old_site.mkdir()
             else:
-                old_site = render_site(baseline_project, ref)
-            copied_project = working_copy(
-                Path(repository.stdout.rstrip("\n")),
-                prefix.stdout.rstrip("\n"),
-                tmp / "working",
-            )
+                with _timed("render baseline (full site)"):
+                    old_site = render_site(baseline_project, ref)
+            with _timed("copy working tree"):
+                copied_project = working_copy(
+                    Path(repository.stdout.rstrip("\n")),
+                    prefix.stdout.rstrip("\n"),
+                    tmp / "working",
+                )
             preview_site = project / "_site"
             theme = (
                 preview_site
@@ -1725,11 +1772,17 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 if pages and theme is None
                 else []
             )
-            new_site = (
-                render_site(copied_project, "the working tree", [*pages, *theme_pages])
-                if pages
-                else render_site(copied_project, "the working tree")
-            )
+            with _timed(
+                "render working tree"
+                + (" (changed + theme pages)" if pages else " (full site)")
+            ):
+                new_site = (
+                    render_site(
+                        copied_project, "the working tree", [*pages, *theme_pages]
+                    )
+                    if pages
+                    else render_site(copied_project, "the working tree")
+                )
             if theme_pages:
                 # Out of the comparison, so they are not reported as new pages.
                 theme = tmp / "theme"
@@ -1759,6 +1812,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             owned.parent.mkdir(parents=True, exist_ok=True)
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
+                stage_start = time.perf_counter()
                 # Borrow the running preview's theme/assets for partial builds.
                 if theme == preview_site:
                     for entry in preview_site.iterdir():
@@ -1779,17 +1833,25 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         )
                     else:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
+                _record("stage site copy", stage_start)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
-                decks = _run_comparison(
-                    old_site, new_site, report, f"Changes since {ref}", project, theme
-                )
+                with _timed("compare pages and picture slides"):
+                    decks = _run_comparison(
+                        old_site,
+                        new_site,
+                        report,
+                        f"Changes since {ref}",
+                        project,
+                        theme,
+                    )
                 deck_images = new_site / DECK_IMAGES
                 if decks and deck_images.is_dir() and not deck_images.is_symlink():
                     shutil.rmtree(staged / DECK_IMAGES, ignore_errors=True)
                     shutil.copytree(deck_images, staged / DECK_IMAGES, symlinks=True)
                 try:
-                    _publish(staged, owned)
+                    with _timed("publish snapshot"):
+                        _publish(staged, owned)
                 except OSError as exc:
                     raise click.ClickException(
                         f"Could not publish the comparison: {exc}"

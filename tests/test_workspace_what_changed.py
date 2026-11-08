@@ -1697,3 +1697,35 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
     assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)
+
+
+def test_timings_report_each_step(project: Path) -> None:
+    (project / "index.qmd").write_text("A timed paragraph.\n")
+    result = CliRunner().invoke(
+        workspace,
+        ["what-changed", "last-read", "--project", str(project), "--timings"],
+    )
+    assert result.exit_code == 0, result.output
+    log = result.output[result.output.index("What changed timings:") :]
+    for step in (
+        "check out baseline worktree",
+        "find changed pages",
+        "render baseline",
+        "copy working tree",
+        "render working tree",
+        "stage site copy",
+        "compare pages and picture slides",
+        "publish snapshot",
+        "other",
+        "total",
+    ):
+        assert re.search(rf"^  {re.escape(step)}\b.* +\d+\.\d\d s$", log, re.M), step
+
+
+def test_no_timings_without_flag(project: Path) -> None:
+    (project / "index.qmd").write_text("An untimed paragraph.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "What changed timings:" not in result.output
