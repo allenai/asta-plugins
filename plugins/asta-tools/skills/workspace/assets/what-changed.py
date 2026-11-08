@@ -1603,6 +1603,7 @@ class SlideParser(HTMLParser):
                         # The stack's own tag too: its attributes apply to its slides.
                         "raw": (section["open"] if stack else "") + raw,
                         "position": (h, v if stack else None),
+                        "span": (node["start"], node.get("end", len(self.doc))),
                         "frame": frame,
                         "anchor": quote(ident, safe="")
                         if ident

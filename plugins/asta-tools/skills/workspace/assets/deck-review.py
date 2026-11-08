@@ -477,6 +477,77 @@ class Renderer:
         return data
 
 
+# Live slides: the rendered deck itself, with changed words marked in its HTML.
+_TEXT_RE = re.compile(
+    r"(<(script|style)\b.*?</\2\s*>|<!--.*?-->|<[^>]*>)|([^<]+)", re.S | re.I
+)
+_WORD_RE = re.compile(r"\S+")
+
+
+def slide_words(raw):
+    """The words of a slide's raw markup, in order, outside tags, scripts and styles."""
+    return [
+        w.group()
+        for m in _TEXT_RE.finditer(raw)
+        if m.group(3)
+        for w in _WORD_RE.finditer(m.group(3))
+    ]
+
+
+def word_changes(old_raw, new_raw):
+    """(deleted indices into the old words, inserted indices into the new words)."""
+    import difflib
+
+    old, new = slide_words(old_raw), slide_words(new_raw)
+    deleted, inserted = set(), set()
+    for op, a0, a1, b0, b1 in difflib.SequenceMatcher(
+        None, old, new, autojunk=False
+    ).get_opcodes():
+        if op != "equal":
+            deleted.update(range(a0, a1))
+            inserted.update(range(b0, b1))
+    return deleted, inserted
+
+
+def mark_words(raw, indices, tag):
+    """Wrap the words at ``indices`` (as counted by slide_words) in ``<tag>``."""
+    out, k = [], 0
+    for m in _TEXT_RE.finditer(raw):
+        if not m.group(3):
+            out.append(m.group())
+            continue
+        text, pos = m.group(3), 0
+        for w in _WORD_RE.finditer(text):
+            out.append(text[pos : w.start()])
+            word = w.group()
+            out.append(
+                f'<{tag} class="dr-live">{word}</{tag}>' if k in indices else word
+            )
+            pos, k = w.end(), k + 1
+        out.append(text[pos:])
+    return "".join(out)
+
+
+LIVE_MARK_CSS = (
+    "<style>ins.dr-live,del.dr-live{text-decoration:none;border-radius:2px}"
+    "ins.dr-live{background:rgba(47,191,113,.35)}"
+    "del.dr-live{background:rgba(253,70,69,.35);text-decoration:line-through}</style>"
+)
+
+
+def marked_deck(doc, slides, marks, tag):
+    """``doc`` with each slide index in ``marks`` re-marked; ``slides`` from SlideParser.
+
+    Marks change only inline backgrounds, so slides keep their layout."""
+    for index in sorted(marks, key=lambda i: slides[i]["span"][0], reverse=True):
+        start, end = slides[index]["span"]
+        doc = doc[:start] + mark_words(doc[start:end], marks[index], tag) + doc[end:]
+    head = re.search(r"</head\s*>", doc, re.I)
+    if head:
+        doc = doc[: head.start()] + LIVE_MARK_CSS + doc[head.start() :]
+    return doc
+
+
 def classify(old, new, pairs, same_image=None, same_text=None, same_interactions=None):
     """Rows in deck order as (kind, new_index, old_index), and removed old indices.
 

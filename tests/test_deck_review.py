@@ -943,3 +943,33 @@ def test_inline_image_data_is_read_whole(tmp_path):
     assert renderer.same_static("d/deck.html", old[0], new[0])
     new[0]["raw"] = new[0]["raw"].replace("QUJDRA", "Rk9PQg")
     assert not renderer.same_static("d/deck.html", old[0], new[0])
+
+
+def test_live_marks_only_changed_words_outside_tags_and_scripts():
+    old = '<section id="a"><h2>Attention weights</h2><p>the context</p></section>'
+    new = (
+        '<section id="a"><h2>Attention weights</h2>'
+        "<script>var x = 1</script><p>the available context</p></section>"
+    )
+    deleted, inserted = deck_review.word_changes(old, new)
+    assert deleted == set()
+    assert [deck_review.slide_words(new)[i] for i in inserted] == ["available"]
+    marked = deck_review.mark_words(new, inserted, "ins")
+    assert '<ins class="dr-live">available</ins>' in marked
+    assert "<script>var x = 1</script>" in marked
+    assert deck_review.slide_words(marked) == deck_review.slide_words(new)
+
+
+def test_marked_deck_touches_only_the_marked_slide():
+    doc = (
+        "<html><head></head><body><div class='reveal'><div class='slides'>"
+        '<section id="a"><p>one two</p></section>'
+        '<section id="b"><p>three four</p></section>'
+        "</div></div></body></html>"
+    )
+    slides = what_changed.reveal_slides(doc)
+    assert [s["id"] for s in slides] == ["a", "b"]
+    out = deck_review.marked_deck(doc, slides, {1: {0}}, "del")
+    assert '<del class="dr-live">three</del> four' in out
+    assert '<section id="a"><p>one two</p></section>' in out
+    assert deck_review.LIVE_MARK_CSS + "</head>" in out
