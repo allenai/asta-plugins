@@ -1834,7 +1834,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
 
 
 def prefix_theme_urls(css, prefix):
-    """Rebase theme links, CSS url(), and @import into the retained asset tree."""
+    """Resolve local theme URLs within the report's (optionally retained) assets."""
 
     def prefixed(url, attribute=False):
         # HTML attributes decode entities; <style> is raw text. Preserve CSS
@@ -1843,7 +1843,7 @@ def prefix_theme_urls(css, prefix):
         parsed = urlsplit(value)
         if parsed.scheme or parsed.netloc or not parsed.path:
             return url
-        value = prefix.rstrip("/") + "/" + value.lstrip("/")
+        value = (prefix.rstrip("/") + "/" if prefix else "") + value.lstrip("/")
         return html.escape(value, quote=True) if attribute else value
 
     css = re.sub(
@@ -2049,8 +2049,11 @@ def build(
         template_doc, depth = pick_template(pages)
         theme_css = extract_theme_css(template_doc, depth) if template_doc else None
         if theme_css:
-            if root == new_root and theme_url_prefix:
-                theme_css = prefix_theme_urls(theme_css, theme_url_prefix)
+            # Root-absolute URLs must stay inside the snapshot when opened as a
+            # local file or served below a PR-preview/what-changed-snapshot path.
+            theme_css = prefix_theme_urls(
+                theme_css, theme_url_prefix if root == new_root else ""
+            )
             break
 
     inner = (

@@ -228,7 +228,56 @@ def check_themed_without_preview(project, artifacts, redirect_preview=False):
         server.server_close()
 
 
+def check_root_relative_theme():
+    """Root-relative source styles must load from files and mounted previews."""
+    with tempfile.TemporaryDirectory(prefix="asta-root-theme-") as tmp:
+        root = Path(tmp)
+        before, after = root / "before", root / "pr-preview/pr-1"
+        before.mkdir()
+        (after / "site_libs").mkdir(parents=True)
+        (after / "site_libs/theme.css").write_text("body { --root-theme-loaded: yes; }")
+        (after / "index.html").write_text(
+            '<head><link rel="stylesheet" href="/site_libs/theme.css"></head>'
+            "<main>A changed page</main>"
+        )
+        result = subprocess.run(
+            [
+                "asta",
+                "workspace",
+                "what-changed",
+                "--before-site",
+                str(before),
+                "--after-site",
+                str(after),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        server = review._serve(str(root))
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                try:
+                    page = browser.new_page()
+                    for url in (
+                        (after / "what-changed.html").as_uri(),
+                        f"http://127.0.0.1:{server.server_address[1]}/pr-preview/pr-1/what-changed.html",
+                    ):
+                        page.goto(url)
+                        assert page.evaluate(
+                            "() => getComputedStyle(document.body)"
+                            ".getPropertyValue('--root-theme-loaded').trim() === 'yes'"
+                        ), f"theme failed to load at {url}"
+                finally:
+                    browser.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
+    check_root_relative_theme()
     check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
     for redirect_preview in (False, True):
         check_themed_without_preview(

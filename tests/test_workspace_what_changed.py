@@ -1607,9 +1607,7 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     snapshot = project / workspace_module.COMPARISON_DIR
     page = (snapshot / "what-changed.html").read_text()
     stylesheet = (
-        "/site_libs/bootstrap/bootstrap.min.css"
-        if preview == "site-root"
-        else "site_libs/bootstrap/bootstrap%20space.css"
+        "site_libs/bootstrap/bootstrap%20space.css"
         if preview == "site-encoded"
         else "site_libs/bootstrap/bootstrap.min.css"
     )

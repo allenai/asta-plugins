@@ -1,11 +1,13 @@
 """Tests for the rendered Quarto preview diff generator."""
 
+import html
 import importlib.util
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urljoin, urlsplit
 
 import pytest
 
@@ -488,6 +490,85 @@ def test_partial_render_borrows_theme_from_full_site(tmp_path):
     # Without a themed full site, the changed pages remain the fallback source.
     fallback = WHAT_CHANGED.build(old, new, "", "Local", theme_root=tmp_path / "none")
     assert 'href="site_libs/revealjs/reveal.css"' in fallback
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("separate_theme_root", [False, True])
+@pytest.mark.parametrize("asset_prefix", ["", "what-changed-assets/"])
+def test_root_relative_theme_loads_from_local_snapshot(
+    tmp_path, nested, separate_theme_root, asset_prefix
+):
+    old, new, site = tmp_path / "old", tmp_path / "new", tmp_path / "site"
+    for root in (old, new, site):
+        root.mkdir()
+    root = site if separate_theme_root else new
+    page = root / ("guide/page.html" if nested else "index.html")
+    page.parent.mkdir(exist_ok=True)
+    href = "/site_libs/theme%20space.css?v=2&amp;x=1#theme"
+    page.write_text(
+        f'<head><link rel="stylesheet" href="{href}"></head><main>Site content</main>'
+    )
+    report = tmp_path / "snapshot/what-changed.html"
+    prefix = "" if separate_theme_root else asset_prefix
+    stylesheet = report.parent / prefix / "site_libs/theme space.css"
+    stylesheet.parent.mkdir(parents=True)
+    stylesheet.write_text("body { color: rgb(12, 34, 56); }")
+
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "Local comparison",
+        out_path=report,
+        theme_root=site if separate_theme_root else None,
+        theme_url_prefix=asset_prefix,
+    )
+    report.write_text(result)
+
+    expected = f"{prefix}site_libs/theme%20space.css?v=2&amp;x=1#theme"
+    assert f'href="{expected}"' in result
+    # Check browser resolution from the actual local report, not only its HTML.
+    href = re.search(r'<link rel="stylesheet" href="([^"]+)"', result)[1]
+    resolved = urlsplit(urljoin(report.as_uri(), html.unescape(href)))
+    assert resolved.scheme == "file"
+    assert Path(unquote(resolved.path)) == stylesheet
+    assert stylesheet.is_file()
+    assert resolved.query == "v=2&x=1"
+    assert resolved.fragment == "theme"
+
+
+@pytest.mark.parametrize("asset_prefix", ["", "what-changed-assets/"])
+def test_root_relative_inline_theme_urls_keep_external_urls(tmp_path, asset_prefix):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (new / "index.html").write_text(
+        '<head><link rel="stylesheet" href="/site_libs/site.css">'
+        '<link rel="stylesheet" href="https://example.org/remote.css">'
+        '<link rel="stylesheet" href="//example.org/remote.css">'
+        '<style>@import "/themes/print.css" print;'
+        '@font-face { src: url("/fonts/site.woff2?v=1&x=2"); }'
+        '.local { background: url("/images/bg%20image.png"); }'
+        '.remote { background: url("https://example.org/image.png"); }'
+        '.network { background: url("//example.org/image.png"); }'
+        '.data { background: url("data:image/png;base64,abc"); }'
+        '.icon { mask: url("#icon"); }'
+        "</style></head><main>Content</main>"
+    )
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "Local comparison", theme_url_prefix=asset_prefix
+    )
+
+    assert f'@import "{asset_prefix}themes/print.css" print;' in result
+    assert f'url("{asset_prefix}fonts/site.woff2?v=1&x=2")' in result
+    assert f'url("{asset_prefix}images/bg%20image.png")' in result
+    assert 'href="https://example.org/remote.css"' in result
+    assert 'href="//example.org/remote.css"' in result
+    assert 'url("https://example.org/image.png")' in result
+    assert 'url("//example.org/image.png")' in result
+    assert 'url("data:image/png;base64,abc")' in result
+    assert 'url("#icon")' in result
 
 
 @pytest.mark.parametrize("separate_theme_root", [False, True])
