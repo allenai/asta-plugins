@@ -1518,21 +1518,24 @@ REDIRECT = (
 )
 
 
-@pytest.mark.parametrize("home_redirects", [False, True])
+@pytest.mark.parametrize("home", ["themed", "redirect", "nested-redirect"])
 @pytest.mark.parametrize("preview", [None, "deck-only", "redirect", "unstyled", "site"])
 def test_partial_render_keeps_site_theme_without_a_site_page(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
     preview: str | None,
-    home_redirects: bool,
+    home: str,
 ) -> None:
     """A slide-only edit must still read like the site (no browser-default page)."""
+    home_redirects = home != "themed"
+    theme_page = "pages/about.qmd" if home == "nested-redirect" else "about.qmd"
     (project / "slides.qmd").write_text("Slide one.\n")
     if home_redirects:
         # The home page only redirects, so the theme must come from another page.
         (project / "index.qmd").write_text("REDIRECT to about.html\n")
-        (project / "about.qmd").write_text("About.\n")
-        git(project, "add", "index.qmd", "about.qmd")
+        (project / theme_page).parent.mkdir(parents=True, exist_ok=True)
+        (project / theme_page).write_text("About.\n")
+        git(project, "add", "index.qmd", theme_page)
     git(project, "add", "slides.qmd")
     git(project, "commit", "-qm", "deck")
     git(project, "tag", "-f", "last-read")
@@ -1562,12 +1565,16 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
             text = (directory / name).read_text()
             if text.startswith("REDIRECT"):
                 (site / "index.html").write_text(REDIRECT.format("about.html"))
-            elif name in ("index.qmd", "about.qmd"):
+            elif name in ("index.qmd", theme_page):
                 (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
                 (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
                 html = Path(name).with_suffix(".html")
+                (site / html).parent.mkdir(parents=True, exist_ok=True)
                 (site / html).write_text(
-                    THEMED.format("Home" if "dex" in name else text)
+                    THEMED.format("Home" if "dex" in name else text).replace(
+                        'href="site_libs/',
+                        'href="' + "../" * len(html.parent.parts) + "site_libs/",
+                    )
                 )
             else:
                 (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
@@ -1595,10 +1602,11 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     # The home page only supplies the theme; it is never reported as new.
     assert "Home" not in page and ">index.html<" not in page
     assert "About" not in page and ">about.html<" not in page
+    assert ">pages/about.html<" not in page
     assert "Redirect" not in page and "removed</span>" not in page
     assert "unstyled" not in result.stderr
     after = dict(rendered)["the working tree"]
-    candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
+    candidates = ["index.qmd", theme_page] if home_redirects else ["index.qmd"]
     assert after == ["slides.qmd"]
     theme_renders = [p for label, p in rendered if label.startswith("the theme")]
     assert theme_renders == (
@@ -1869,3 +1877,48 @@ def test_notebook_theme_candidate_reads_format_metadata(tmp_path, deck):
     assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == (
         [] if deck else ["index.ipynb"]
     )
+
+
+@pytest.mark.parametrize("render", [None, ["pages/**", "!pages/drafts/**"]])
+def test_theme_candidates_search_nested_sources_without_outputs_or_symlinks(
+    tmp_path, render
+):
+    for name in (
+        "pages/about.qmd",
+        "pages/deeper/notes.qmd",
+        "pages/drafts/draft.qmd",
+        "pages/_include.qmd",
+        "pages/_private/index.qmd",
+        "_site/copied.qmd",
+        ".asta/cache/copied.qmd",
+        "node_modules/package/index.md",
+        "site_libs/package/index.md",
+        "_extensions/extension/index.qmd",
+    ):
+        source = tmp_path / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("About.\n")
+    (tmp_path / "pages/talk.qmd").write_text("---\nformat: revealjs\n---\n")
+    (tmp_path / "pages/alias.qmd").symlink_to("about.qmd")
+    (tmp_path / "alias").symlink_to("pages", target_is_directory=True)
+    if render:
+        (tmp_path / "_quarto.yml").write_text(
+            yaml.safe_dump({"project": {"render": render}})
+        )
+    candidates = workspace_module._theme_candidates(tmp_path, ["slides.qmd"])
+    expected = ["pages/about.qmd", "pages/deeper/notes.qmd"]
+    if render is None:
+        expected.append("pages/drafts/draft.qmd")
+    assert candidates == expected
+
+
+def test_theme_candidates_prefer_root_pages_and_stop_at_the_existing_limit(tmp_path):
+    for name in ("index.qmd", "about.qmd", "notes.md", "pages/nested.qmd"):
+        source = tmp_path / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("About.\n")
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == [
+        "index.qmd",
+        "about.qmd",
+        "notes.md",
+    ]

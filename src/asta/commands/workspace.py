@@ -1211,7 +1211,7 @@ def _project_render_list(project: Path) -> list[str] | None:
 
 
 def _in_render_list(name: str, patterns: list[str] | None) -> bool:
-    """Whether Quarto renders a root-level source, given `project.render`.
+    """Whether Quarto renders a relative source path, given `project.render`.
 
     Rendering a page outside that list fails with `--output-dir`.
     """
@@ -1260,12 +1260,27 @@ def _source_is_deck(source: Path) -> bool:
 
 
 def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
-    """Bounded fallback sources, with home pages first and one source per output."""
+    """Bounded fallback sources, searching root pages before nested sources."""
     render_list = _project_render_list(project)
-    names = [*THEME_PAGES, *(source.name for source in sorted(project.iterdir()))]
+
+    def source_names():
+        yield from THEME_PAGES
+        for directory, children, files in os.walk(project):
+            # Avoid generated trees, dependencies, and linked directories. Walk
+            # lazily so finding three eligible sources stops further scanning.
+            children[:] = sorted(
+                name
+                for name in children
+                if not name.startswith(("_", "."))
+                and name not in ("node_modules", "site_libs")
+                and not (Path(directory) / name).is_symlink()
+            )
+            for name in sorted(files):
+                yield (Path(directory) / name).relative_to(project).as_posix()
+
     candidates = []
     outputs = {Path(name).with_suffix(".html") for name in pages}
-    for name in dict.fromkeys(names):
+    for name in source_names():
         source = project / name
         output = Path(name).with_suffix(".html")
         if (
@@ -1273,8 +1288,8 @@ def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
             and source.is_file()
             and not source.is_symlink()
             and output not in outputs
-            and not name.startswith(("_", "."))
-            and not name.upper().startswith(("README", "LICENSE", "CHANGELOG"))
+            and not source.name.startswith(("_", "."))
+            and not source.name.upper().startswith(("README", "LICENSE", "CHANGELOG"))
             and _in_render_list(name, render_list)
             and not _source_is_deck(source)
         ):
