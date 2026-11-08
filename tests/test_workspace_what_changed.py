@@ -2157,6 +2157,11 @@ def test_theme_candidates_prune_dependency_and_environment_directories(
         ("index.html", "<link rel=stylesheet href=theme.css>", True),
         ("what-changed-in-v2.html", '<link rel="stylesheet" href="theme.css">', True),
         ("what-changed.html", '<link rel="stylesheet" href="theme.css">', False),
+        (
+            "updates/what-changed.html",
+            '<link rel="stylesheet" href="../theme.css">',
+            True,
+        ),
     ],
 )
 def test_theme_page_requires_actual_stylesheet_and_deck_class_tokens(
