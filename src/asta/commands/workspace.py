@@ -1410,6 +1410,37 @@ def _asset_script(name: str) -> Path:
     return Path(__file__).parents[3] / ASSET_DIR / name
 
 
+def _commit_working_tree(project: Path) -> bool:
+    """Point the throwaway copy's HEAD at a commit of its files.
+
+    paper-preview.sh compares <base>..HEAD, which in the copy would miss the
+    uncommitted edit. commit-tree runs no hooks and never signs.
+    """
+    added = _git(project, "add", "-A")
+    tree = _git(project, "write-tree") if added.returncode == 0 else added
+    if tree.returncode != 0:
+        return False
+    commit = _git(
+        project,
+        "-c",
+        "user.name=asta",
+        "-c",
+        "user.email=asta@localhost",
+        "-c",
+        "commit.gpgSign=false",
+        "commit-tree",
+        tree.stdout.strip(),
+        "-p",
+        "HEAD",
+        "-m",
+        "What changed: working tree",
+    )
+    if commit.returncode != 0:
+        return False
+    moved = _git(project, "update-ref", "--no-deref", "HEAD", commit.stdout.strip())
+    return moved.returncode == 0
+
+
 def _paper_previews(project: Path, base: str, site: Path) -> None:
     """Build each changed paper's marked diff PDF into the site, as the PR preview does.
 
@@ -1456,6 +1487,12 @@ def _paper_previews(project: Path, base: str, site: Path) -> None:
             err=True,
         )
         return
+    if papers and not _commit_working_tree(project):
+        click.echo(
+            "Warning: could not snapshot the working tree, so paper diffs may "
+            "miss uncommitted edits",
+            err=True,
+        )
     for directory in removed:
         (root / directory).mkdir(parents=True, exist_ok=True)
         (root / directory / "preview.json").write_text(

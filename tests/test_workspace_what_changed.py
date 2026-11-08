@@ -1763,6 +1763,29 @@ def test_local_paper_diff_built_when_tex_is_available(tmp_path, monkeypatch):
     }
 
 
+def test_working_tree_snapshot_moves_head_to_uncommitted_edit(tmp_path):
+    workspace = workspace_module
+    project = tmp_path / "project"
+    project.mkdir()
+    git = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (project / "main.tex").write_text("old\n")
+    subprocess.run([*git, "add", "main.tex"], check=True)
+    subprocess.run([*git, "commit", "-qm", "base"], check=True)
+    base = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+    (project / "main.tex").write_text("new\n")
+    (project / "intro.tex").write_text("added\n")
+
+    assert workspace._commit_working_tree(project)
+
+    changed = subprocess.check_output(
+        [*git, "diff", "--name-only", base, "HEAD"], text=True
+    ).split()
+    assert sorted(changed) == ["intro.tex", "main.tex"]
+    parent = subprocess.check_output([*git, "rev-parse", "HEAD^"], text=True)
+    assert parent.strip() == base
+
+
 def test_local_paper_diff_skipped_with_note_without_tex(tmp_path, monkeypatch, capsys):
     workspace = workspace_module
     project = tmp_path / "project"
