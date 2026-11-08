@@ -131,7 +131,8 @@ def test_partial_selection_checks_both_projects_and_guards_recursive_probes(
     seen = []
 
     def run(command, **kwargs):
-        seen.append(command[0])
+        root = Path(command[2]) if command[0] == "quarto" else kwargs["cwd"]
+        seen.append((command[0], root))
         if command[0] == "quarto":
             return subprocess.CompletedProcess(
                 command, 0, stdout='{"files":{"input":["index.qmd"]}}'
@@ -145,4 +146,7 @@ def test_partial_selection_checks_both_projects_and_guards_recursive_probes(
     monkeypatch.setattr(module, "_git", git)
     monkeypatch.setattr(subprocess, "run", run)
     assert module._changed_comparison_pages(after, before, "main") == ["index.qmd"]
-    assert seen == ["quarto", "make", "quarto", "make"]
+    # Inspections run concurrently, so their relative order is unspecified.
+    assert sorted(seen) == sorted(
+        (command, root) for command in ("quarto", "make") for root in (before, after)
+    )
