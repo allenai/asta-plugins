@@ -973,3 +973,24 @@ def test_marked_deck_touches_only_the_marked_slide():
     assert '<del class="dr-live">three</del> four' in out
     assert '<section id="a"><p>one two</p></section>' in out
     assert deck_review.LIVE_MARK_CSS + "</head>" in out
+
+
+def test_live_rows_classifies_words_and_look_without_a_browser():
+    old = [
+        {"raw": "<section><p>same</p></section>", "body": "same"},
+        {"raw": "<section><p>old words</p></section>", "body": "old words"},
+        {"raw": '<section><img src="a.png"><p>pic</p></section>', "body": "pic"},
+        {"raw": "<section><p>gone</p></section>", "body": "gone"},
+    ]
+    new = [
+        {"raw": "<section><p>same</p></section>", "body": "same"},
+        {"raw": "<section><p>new words</p></section>", "body": "new words"},
+        {"raw": '<section><img src="a.png"><p>pic</p></section>', "body": "pic"},
+        {"raw": "<section><p>added</p></section>", "body": "added"},
+    ]
+    pairs = {0: 0, 1: 1, 2: 2}
+    rows, removed = deck_review.live_rows(
+        old, new, pairs, lambda before, after: "img" not in after["raw"]
+    )
+    assert [kind for kind, _, _ in rows] == ["unchanged", "changed", "look", "new"]
+    assert removed == [3]

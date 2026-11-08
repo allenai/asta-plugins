@@ -577,6 +577,23 @@ def classify(old, new, pairs, same_image=None, same_text=None, same_interactions
     return rows, removed
 
 
+def live_rows(old, new, pairs, same_static):
+    """classify() without a browser: words from raw markup; static bytes decide look.
+
+    ``same_static(old_slide, new_slide)`` is True only when nothing that could
+    change the slide's pixels differs; a text-equal slide failing it is "look".
+    """
+    old_words = [slide_words(slide.get("raw", "")) for slide in old]
+    new_words = [slide_words(slide.get("raw", "")) for slide in new]
+    return classify(
+        old,
+        new,
+        pairs,
+        lambda o, n: same_static(old[o], new[n]),
+        lambda o, n: old_words[o] == new_words[n],
+    )
+
+
 def context(rows):
     """Keep every slide; the view folds complete unchanged runs behind a count."""
     return list(range(len(rows)))
