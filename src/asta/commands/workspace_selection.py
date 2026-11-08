@@ -46,7 +46,11 @@ def _entries(path):
             raise ValueError("not an evidence mapping")
         return value["evidence"]
     # Deliberately reject BibTeX constructs we cannot partition reliably.
+    if re.search(r"(?i)@(string|preamble|comment)\s*[{(]", text):
+        raise ValueError("bibliography macros require full comparison")
     starts = list(re.finditer(r"(?im)^\s*@([a-z]+)\s*[{(]\s*([^,\s]+)\s*,", text))
+    if len(re.findall(r"(?i)@[a-z]+\s*[{(]", text)) != len(starts):
+        raise ValueError("bibliography entry boundaries are ambiguous")
     if not starts or any(
         m[1].lower() in {"string", "preamble", "comment"} for m in starts
     ):
@@ -72,6 +76,10 @@ def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | N
     tokens = set()
     for name in set(changed):
         path = Path(name)
+        if "_extensions" in path.parts or any(
+            part.startswith(".") for part in path.parts
+        ):
+            return None
         # Make's page-list interface is whitespace separated.
         if not re.fullmatch(r"[A-Za-z0-9_/+@.\-]+", name):
             return None

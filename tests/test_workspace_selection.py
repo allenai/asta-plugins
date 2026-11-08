@@ -95,3 +95,24 @@ def test_paper_dependency_filter(tmp_path):
         assert paper_affected(tmp_path, "paper", "main.tex", [name])
     (paper / "section.tex").write_text(r"\input{\generated}")
     assert paper_affected(tmp_path, "paper", "main.tex", ["slides.qmd"])
+
+
+def test_extension_source_edit_with_deck_edit_still_compares_all(trees):
+    (before, after), write = trees
+    write("slides.qmd", "old", "new")
+    write("_extensions/theme/template.qmd", "old", "new")
+    assert (
+        select_pages(after, before, ["slides.qmd", "_extensions/theme/template.qmd"])
+        is None
+    )
+
+
+def test_bibliography_macros_with_entry_edit_compare_all(trees):
+    (before, after), write = trees
+    write(
+        "references.bib",
+        '@string{journal="old"}\n@article{key,title={old}}',
+        '@string{journal="new"}\n@article{key,title={new}}',
+    )
+    write("page.qmd", "@key")
+    assert select_pages(after, before, ["references.bib"]) is None
