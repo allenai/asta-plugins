@@ -1683,10 +1683,6 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
     monkeypatch.setattr(
         workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
     )
-    # Stand in for Quarto's version so the baseline render is kept.
-    monkeypatch.setattr(
-        workspace_module, "_baseline_cache_key", lambda *args: "same-commit"
-    )
     snapshot = project / workspace_module.COMPARISON_DIR
     for edit in ("first", "second"):
         rendered.clear()
@@ -1701,8 +1697,8 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
         assert edit in page and "Home" not in page
         assert dict(rendered)["the working tree"] == ["slides.qmd"]
-        # The second run reuses the kept baseline, theme pages included.
-        assert ("last-read" in dict(rendered)) == (edit == "first")
+        # Nothing is kept: every run renders the baseline and its theme pages.
+        assert "last-read" in dict(rendered)
         assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)
@@ -1807,48 +1803,3 @@ def test_local_paper_diff_skipped_with_note_without_tex(tmp_path, monkeypatch, c
 
     assert not (site / "paper-previews").exists()
     assert "paper diffs are skipped" in capsys.readouterr().err
-
-
-def test_baseline_render_is_kept_per_commit_and_page_list(
-    tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setattr(
-        workspace_module.subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess(a, 0, "1.6.0\n", ""),
-    )
-    key = workspace_module._baseline_cache_key("abc", "", ["slides.qmd"])
-    assert key == workspace_module._baseline_cache_key("abc", "", ["slides.qmd"])
-    assert key != workspace_module._baseline_cache_key("abd", "", ["slides.qmd"])
-    assert key != workspace_module._baseline_cache_key("abc", "", ["paper.qmd"])
-    assert key != workspace_module._baseline_cache_key("abc", "sub/", ["slides.qmd"])
-    site = tmp_path / "site"
-    (site / "site_libs").mkdir(parents=True)
-    (site / "slides.html").write_text("<p>before</p>")
-    project = tmp_path / "project"
-    project.mkdir()
-    assert not workspace_module._cached_baseline(project, key, tmp_path / "miss")
-    workspace_module._store_baseline(project, key, site)
-    out = tmp_path / "hit"
-    assert workspace_module._cached_baseline(project, key, out)
-    assert (out / "slides.html").read_text() == "<p>before</p>"
-    assert (out / "site_libs").is_dir()
-    # An incomplete entry (interrupted store) is never reused.
-    (project / workspace_module.BASELINE_CACHE_DIR / key / "complete").unlink()
-    assert not workspace_module._cached_baseline(project, key, tmp_path / "again")
-    for n in range(workspace_module.BASELINE_CACHE_KEEP + 2):
-        workspace_module._store_baseline(project, f"k{n}", site)
-    kept = [
-        e
-        for e in (project / workspace_module.BASELINE_CACHE_DIR).iterdir()
-        if not e.name.startswith(".")
-    ]
-    assert len(kept) == workspace_module.BASELINE_CACHE_KEEP
-
-
-def test_no_quarto_version_means_no_kept_baseline(monkeypatch) -> None:
-    def missing(*args, **kwargs):
-        raise FileNotFoundError("quarto")
-
-    monkeypatch.setattr(workspace_module.subprocess, "run", missing)
-    assert workspace_module._baseline_cache_key("abc", "", ["a.qmd"]) is None

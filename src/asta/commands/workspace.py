@@ -1134,60 +1134,6 @@ def render_site(directory: Path, label: str, pages: list[str] | None = None) -> 
 
 
 COMPARISON_DIR = Path(".asta/cache/what-changed")
-BASELINE_CACHE_DIR = Path(".asta/cache/what-changed-baseline")
-BASELINE_CACHE_KEEP = 4
-
-
-def _baseline_cache_key(commit: str, prefix: str, pages: list[str]) -> str | None:
-    """Key a baseline render by everything that can change it.
-
-    A commit's files cannot change, so the render is reused only for the same
-    commit, project, page list, Quarto and CLI; anything else renders fresh.
-    """
-    try:
-        quarto = subprocess.run(
-            ["quarto", "--version"], capture_output=True, text=True, check=True
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    cli = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    payload = json.dumps([commit, prefix, sorted(pages), quarto, cli])
-    return hashlib.sha256(payload.encode()).hexdigest()[:40]
-
-
-def _cached_baseline(project: Path, key: str | None, destination: Path) -> bool:
-    entry = project / BASELINE_CACHE_DIR / key if key else None
-    if entry is None or entry.is_symlink() or not (entry / "complete").is_file():
-        return False
-    shutil.copytree(entry / "_site", destination, symlinks=True)
-    os.utime(entry)
-    return True
-
-
-def _store_baseline(project: Path, key: str | None, site: Path) -> None:
-    """Keep SITE for KEY; a failure only costs the next run a render."""
-    if key is None:
-        return
-    cache = project / BASELINE_CACHE_DIR
-    if (project / ".asta").is_symlink() or cache.is_symlink():
-        return
-    try:
-        cache.mkdir(parents=True, exist_ok=True)
-        staged = Path(tempfile.mkdtemp(prefix=".baseline-", dir=cache))
-        shutil.copytree(site, staged / "_site", symlinks=True)
-        (staged / "complete").touch()
-        target = cache / key
-        shutil.rmtree(target, ignore_errors=True)
-        staged.rename(target)
-        kept = sorted(
-            (e for e in cache.iterdir() if not e.name.startswith(".")),
-            key=lambda e: e.stat().st_mtime,
-            reverse=True,
-        )
-        for old in kept[BASELINE_CACHE_KEEP:]:
-            shutil.rmtree(old, ignore_errors=True)
-    except OSError as exc:
-        click.echo(f"Warning: could not keep the baseline render: {exc}", err=True)
 
 
 # Rendered slide images, beside the comparison page in its site copy.
@@ -1791,8 +1737,8 @@ def what_changed(
 
     Renders REF and a private working-tree copy with the project's own 'make
     render' (only changed pages when possible, themed from a running preview's
-    _site/ or else a few of REF's pages rendered with its baseline; the
-    baseline render is kept per commit under .asta/cache/what-changed-baseline/) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    _site/ or else a few of REF's pages rendered with its baseline; nothing is
+    kept between runs) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
     .asta/cache/what-changed/, which this command owns and replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
     replacing any project page of that name until the next render.
@@ -1927,8 +1873,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 else None
             )
             # Without a running preview, a deck-only edit has no site page to
-            # theme it, so a few ordinary pages of REF are rendered and kept with
-            # its baseline. Only pages changed (see _changed_comparison_pages), so
+            # theme it, so a few ordinary pages of REF are rendered beside its
+            # changed pages on every run; nothing is kept between runs. Only pages changed (see _changed_comparison_pages), so
             # REF's theme inputs are the working tree's.
             theme_pages = (
                 _theme_candidates(baseline_project, pages)
@@ -1941,20 +1887,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 ]
                 render_pages = [*base_pages, *theme_pages]
                 if render_pages:
-                    key = _baseline_cache_key(
-                        commit.stdout.strip(),
-                        prefix.stdout.rstrip("\n"),
-                        render_pages,
-                    )
-                    old_site = tmp / "baseline-site"
-                    with _timed("reuse kept baseline render"):
-                        reused = _cached_baseline(project, key, old_site)
-                    if reused:
-                        click.echo(f"Reusing the kept render of {ref}", err=True)
-                    else:
-                        with _timed("render baseline (changed + theme pages)"):
-                            old_site = render_site(baseline_project, ref, render_pages)
-                        _store_baseline(project, key, old_site)
+                    with _timed("render baseline (changed + theme pages)"):
+                        old_site = render_site(baseline_project, ref, render_pages)
                 else:
                     old_site = baseline_project / "_site"
                     old_site.mkdir()
@@ -2017,7 +1951,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                             shutil.copy2(
                                 entry, staged / entry.name, follow_symlinks=False
                             )
-                # The kept baseline's theme pages link REF's site_libs.
+                # The baseline's theme pages link REF's site_libs.
                 base_libs = old_site / "site_libs"
                 if theme_pages and base_libs.is_dir() and not base_libs.is_symlink():
                     shutil.copytree(base_libs, staged / "site_libs", symlinks=True)
