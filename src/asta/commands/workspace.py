@@ -1568,74 +1568,39 @@ def _default_comparison_ref(project):
 
 
 def _changed_comparison_pages(project, baseline, ref):
-    """Conservatively select only standalone pages resolved by both projects."""
-    changed = _git(
-        project, "diff", "--name-only", "--no-renames", "-z", ref, "--"
-    ).stdout.split("\0")
-    changed += _ls_files(project, "--others", "--exclude-standard")
-    paths = sorted(set(filter(None, changed)))
-    prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
-    if prefix:
-        if any(not p.startswith(prefix) for p in paths):
-            return None
-        paths = [p[len(prefix) :] for p in paths]
-    if not paths or any(
-        not re.fullmatch(r"[A-Za-z0-9/+@.-]+", p)
-        or any(part.startswith(("_", ".")) for part in Path(p).parts)
-        or Path(p).suffix not in (".qmd", ".md", ".ipynb", ".Rmd")
-        or not (project / p).is_file()
-        for p in paths
-    ):
+    """Select dependencies from both trees; unknown inputs force a full render.
+
+    No Quarto/setup or Makefile probe runs here. References are deliberately
+    over-selected: a token appearing in prose is enough to count as a dependency.
+    """
+    from asta.commands.workspace_selection import select_pages
+
+    diff = _git(project, "diff", "--name-only", "--no-renames", "-z", ref, "--")
+    if diff.returncode:
         return None
-    # Each inspect runs the project's setup; the two are independent, so overlap them.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        inspections = [
-            pool.submit(
-                subprocess.run,
-                ["quarto", "inspect", str(version)],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            for version in (project, baseline)
-        ]
-    for version, inspection in zip((project, baseline), inspections):
-        try:
-            inspected = inspection.result()
-            inputs = json.loads(inspected.stdout)["files"]["input"]
-            resolved = {(version / p).resolve() for p in inputs}
-            if any(
-                (version / p).exists() and (version / p).resolve() not in resolved
-                for p in paths
-            ):
-                return None
-            # Only a recipe explicitly declaring selection support may take this path.
-            with tempfile.TemporaryDirectory(prefix="asta-render-probe-") as probe_dir:
-                shim = Path(probe_dir) / "quarto"
-                shim.write_text("#!/bin/sh\nexit 0\n")
-                shim.chmod(0o700)
-                probe_env = {
-                    **os.environ,
-                    "PATH": probe_dir + os.pathsep + os.environ["PATH"],
-                }
-                recipe = subprocess.run(
-                    [
-                        "make",
-                        "-n",
-                        "render",
-                        "ASTA_WORKSPACE_RENDER_FILES=asta-probe.qmd",
-                    ],
-                    cwd=version,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=probe_env,
-                )
-            if "asta-workspace-render-page-selection-v1" not in recipe.stdout:
-                return None
-        except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
-            return None
-    return paths
+    paths = diff.stdout.split("\0")
+    paths += _ls_files(project, "--others", "--exclude-standard")
+    prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
+    paths = [p[len(prefix) :] for p in paths if p and p.startswith(prefix)]
+    return select_pages(project, baseline, paths)
+
+
+def _comparison_inputs(project):
+    """Inspect only the after copy, concurrently with its fresh render."""
+    try:
+        result = subprocess.run(
+            ["quarto", "inspect", str(project)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return {
+            Path(p).resolve() if Path(p).is_absolute() else (project / p).resolve()
+            for p in json.loads(result.stdout)["files"]["input"]
+        }
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+        # An unavailable inspect must not hide any rendered page.
+        return None
 
 
 def _run_comparison(before, after, report, title, project, theme=None):
@@ -1895,6 +1860,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             # durations and reporting a negative remainder in --timings.
             with _timed("render before and after (parallel)"):
                 with _parallel_builds() as pool:
+                    inspection = pool.submit(_comparison_inputs, copied_project)
                     before = pool.submit(render_before)
                     after = (
                         pool.submit(
@@ -1907,6 +1873,16 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     )
                     old_site = before.result()
                     new_site = after.result()
+                    inputs = inspection.result()
+            if pages and inputs is not None:
+                for name in pages:
+                    # Keep deleted pages: only the before side can contain them.
+                    source = copied_project / name
+                    if source.exists() and source.resolve() not in inputs:
+                        for site in (old_site, new_site):
+                            (site / Path(name).with_suffix(".html")).unlink(
+                                missing_ok=True
+                            )
             if theme_pages:
                 theme = tmp / "theme"
                 theme.mkdir()
@@ -2216,7 +2192,7 @@ def _parallel_builds():
     global _parallel_state
     state = (threading.Event(), threading.Lock(), [])
     _parallel_state = state
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=3)
     try:
         yield pool
     except BaseException:

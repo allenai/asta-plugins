@@ -1,6 +1,5 @@
 """The CLI owns both built-site comparisons and optional browser provisioning."""
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -115,9 +114,7 @@ def test_ambiguous_inputs_fail(arguments):
     assert result.exit_code != 0
 
 
-def test_partial_selection_checks_both_projects_and_guards_recursive_probes(
-    tmp_path, monkeypatch
-):
+def test_partial_selection_needs_no_external_probes(tmp_path, monkeypatch):
     before = tmp_path / "before"
     after = tmp_path / "after"
     for root in (before, after):
@@ -128,25 +125,28 @@ def test_partial_selection_checks_both_projects_and_guards_recursive_probes(
         stdout = "index.qmd\0" if args[0] == "diff" else ""
         return subprocess.CompletedProcess(args, 0, stdout=stdout)
 
-    seen = []
+    monkeypatch.setattr(module, "_git", git)
+    monkeypatch.setattr(module, "_ls_files", lambda *args: [])
+    assert module._changed_comparison_pages(after, before, "main") == ["index.qmd"]
+
+
+def test_after_inspect_normalizes_render_inputs(tmp_path, monkeypatch):
+    calls = []
 
     def run(command, **kwargs):
-        root = Path(command[2]) if command[0] == "quarto" else kwargs["cwd"]
-        seen.append((command[0], root))
-        if command[0] == "quarto":
-            return subprocess.CompletedProcess(
-                command, 0, stdout='{"files":{"input":["index.qmd"]}}'
-            )
-        shim = Path(kwargs["env"]["PATH"].split(os.pathsep)[0]) / "quarto"
-        assert shim.read_text() == "#!/bin/sh\nexit 0\n"
+        calls.append(command)
         return subprocess.CompletedProcess(
-            command, 0, stdout=": asta-workspace-render-page-selection-v1;"
+            command, 0, stdout='{"files":{"input":["page.qmd"]}}'
         )
 
-    monkeypatch.setattr(module, "_git", git)
     monkeypatch.setattr(subprocess, "run", run)
-    assert module._changed_comparison_pages(after, before, "main") == ["index.qmd"]
-    # Inspections run concurrently, so their relative order is unspecified.
-    assert sorted(seen) == sorted(
-        (command, root) for command in ("quarto", "make") for root in (before, after)
-    )
+    assert module._comparison_inputs(tmp_path) == {(tmp_path / "page.qmd").resolve()}
+    assert calls == [["quarto", "inspect", str(tmp_path)]]
+
+
+def test_failed_after_inspect_does_not_hide_pages(tmp_path, monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError("no quarto")
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    assert module._comparison_inputs(tmp_path) is None

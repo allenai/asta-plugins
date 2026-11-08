@@ -29,7 +29,8 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 # <main> Quarto emits, so the test needs neither make nor Quarto.
 FAKE_MAKE = """#!/usr/bin/env python3
 import pathlib, sys
-assert sys.argv[1:] in (["render"], ["-o", "workspace-assets", "-o", "workspace-viewers", "render"]), sys.argv
+assert sys.argv[1:6] == ["-o", "workspace-assets", "-o", "workspace-viewers", "render"], sys.argv
+assert all(arg.startswith("ASTA_WORKSPACE_RENDER_") for arg in sys.argv[6:]), sys.argv
 paras = "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
 pathlib.Path("_site").mkdir(exist_ok=True)
 pathlib.Path("_site/index.html").write_text(
@@ -224,12 +225,12 @@ def test_subdirectory_uses_git_prefix_with_repository_alias(project: Path, monke
     monkeypatch.setattr(workspace_module, "_git", alias_toplevel)
     original_render = workspace_module.render_site
 
-    def render(directory, label):
+    def render(directory, label, pages=None):
         if label == "the working tree":
             assert (
                 directory / ".asta/cache/workspace.mk"
             ).read_text() == "Cached build rules"
-        return original_render(directory, label)
+        return original_render(directory, label, pages)
 
     monkeypatch.setattr(workspace_module, "render_site", render)
     result = CliRunner().invoke(
