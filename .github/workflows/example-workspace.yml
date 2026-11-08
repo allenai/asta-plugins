@@ -87,6 +87,7 @@ jobs:
           path: |
             tests/browser/artifacts/local-what-changed-deck.png
             tests/browser/artifacts/local-what-changed-no-preview.png
+            tests/browser/artifacts/local-what-changed-redirect-preview.png
           if-no-files-found: ignore
           retention-days: 30
 

@@ -1101,7 +1101,13 @@ def diff_script(project: Path) -> Path:
     raise click.ClickException(guidance)
 
 
-def render_site(directory: Path, label: str, pages: list[str] | None = None) -> Path:
+def render_site(
+    directory: Path,
+    label: str,
+    pages: list[str] | None = None,
+    *,
+    output: str = "_site",
+) -> Path:
     if not directory.is_dir():
         raise click.ClickException(
             f"Project directory does not exist for {label}: {directory}"
@@ -1110,7 +1116,7 @@ def render_site(directory: Path, label: str, pages: list[str] | None = None) -> 
     command = ["make", "render"]
     if pages is not None:
         command += [
-            "ASTA_WORKSPACE_RENDER_OUTPUT=_site",
+            f"ASTA_WORKSPACE_RENDER_OUTPUT={output}",
             f"ASTA_WORKSPACE_RENDER_FILES={' '.join(pages)}",
         ]
     with preview_process(
@@ -1125,9 +1131,11 @@ def render_site(directory: Path, label: str, pages: list[str] | None = None) -> 
         process.wait()
     if process.returncode != 0:
         raise click.ClickException(f"'make render' failed for {label}")
-    site = directory / "_site"
+    site = directory / output
     if not site.is_dir():
-        raise click.ClickException(f"'make render' did not produce _site for {label}")
+        raise click.ClickException(
+            f"'make render' did not produce {output} for {label}"
+        )
     return site
 
 
@@ -1190,7 +1198,12 @@ def _project_render_list(project: Path) -> list[str] | None:
                 data = yaml.safe_load(path.read_text(encoding="utf-8"))
             except yaml.YAMLError:
                 return None
-            render = ((data or {}).get("project") or {}).get("render")
+            project_config = data.get("project") if isinstance(data, dict) else None
+            render = (
+                project_config.get("render")
+                if isinstance(project_config, dict)
+                else None
+            )
             if isinstance(render, list) and render:
                 return [str(item) for item in render]
             return None
@@ -1213,27 +1226,63 @@ def _in_render_list(name: str, patterns: list[str] | None) -> bool:
     return included
 
 
+def _source_is_deck(source: Path) -> bool:
+    """Read format metadata, not prose that may merely mention revealjs."""
+    try:
+        with source.open(encoding="utf-8", errors="ignore") as stream:
+            if source.suffix == ".ipynb":
+                notebook = json.load(stream)
+                cells = notebook.get("cells", [])
+                text = next(
+                    (
+                        "".join(cell.get("source", []))
+                        for cell in cells
+                        if cell.get("cell_type") in ("raw", "markdown")
+                    ),
+                    "",
+                )
+                stream = io.StringIO(text)
+            if stream.readline().strip() != "---":
+                return False
+            header = []
+            for line in stream:
+                if line.strip() in ("---", "..."):
+                    break
+                header.append(line)
+            metadata = yaml.safe_load("".join(header))
+        formats = metadata.get("format") if isinstance(metadata, dict) else None
+        return formats == "revealjs" or (
+            isinstance(formats, (list, dict)) and "revealjs" in formats
+        )
+    except (OSError, ValueError, AttributeError, TypeError, yaml.YAMLError):
+        # The actual render remains authoritative, including inherited formats.
+        return False
+
+
 def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
-    """Source pages to render beside a deck-only edit to take the theme from."""
+    """Bounded fallback sources, with home pages first and one source per output."""
     render_list = _project_render_list(project)
-    names = [name for name in THEME_PAGES if (project / name).is_file()]
-    for source in sorted(project.iterdir()):
-        name = source.name
+    names = [*THEME_PAGES, *(source.name for source in sorted(project.iterdir()))]
+    candidates = []
+    outputs = {Path(name).with_suffix(".html") for name in pages}
+    for name in dict.fromkeys(names):
+        source = project / name
+        output = Path(name).with_suffix(".html")
         if (
             source.suffix in THEME_SOURCE_SUFFIXES
             and source.is_file()
             and not source.is_symlink()
-            and name not in names
+            and output not in outputs
             and not name.startswith(("_", "."))
             and not name.upper().startswith(("README", "LICENSE", "CHANGELOG"))
-            and "revealjs" not in source.read_text(encoding="utf-8", errors="ignore")
+            and _in_render_list(name, render_list)
+            and not _source_is_deck(source)
         ):
-            names.append(name)
-    return [
-        name
-        for name in names
-        if name not in pages and _in_render_list(name, render_list)
-    ][:THEME_CANDIDATES]
+            candidates.append(name)
+            outputs.add(output)
+            if len(candidates) == THEME_CANDIDATES:
+                break
+    return candidates
 
 
 def _has_deck(site: Path) -> bool:
@@ -1604,9 +1653,13 @@ def what_changed(
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
     Renders REF and a private working-tree copy with the project's own 'make
-    render' (only changed pages when possible, themed from a running preview's
-    _site/ or else the home page rendered alongside) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
-    .asta/cache/what-changed/, which this command owns and replaces on each run.
+    render' (only changed pages when possible) and compares them with the
+    comparator the PR preview uses. Takes the theme from a running preview's
+    _site/ or the changed pages; otherwise tries ordinary pages separately,
+    stopping at the first whose stylesheets are present. A failed theme render
+    warns without breaking the comparison. The page is written to a copy of the
+    rendered site under .asta/cache/what-changed/, which this command owns and
+    replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
     replacing any project page of that name until the next render.
     Requires Git 2.30 or newer. Choose a trusted REF: its
@@ -1716,42 +1769,41 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 if pages and preview_site.is_dir() and _has_site_page(preview_site)
                 else None
             )
-            # Without a running preview, a deck-only render has no site page, so
-            # render the home page too and take the theme from it.
-            # A home page that only redirects carries no theme, so a few
-            # ordinary pages are rendered as candidates.
-            theme_pages = (
-                _theme_candidates(copied_project, pages)
-                if pages and theme is None
-                else []
-            )
             new_site = (
-                render_site(copied_project, "the working tree", [*pages, *theme_pages])
+                render_site(copied_project, "the working tree", pages)
                 if pages
                 else render_site(copied_project, "the working tree")
             )
-            if theme_pages:
-                # Out of the comparison, so they are not reported as new pages.
-                theme = tmp / "theme"
-                theme.mkdir()
-                themed = False
-                for name in theme_pages:
-                    built = new_site / Path(name).with_suffix(".html")
-                    if built.is_file() and not built.is_symlink():
-                        themed = themed or _is_themed_page(built, new_site)
-                        shutil.move(built, theme / built.name)
-                if not themed:
+            if pages and theme is None and not _has_site_page(new_site):
+                # An unrelated page may need unavailable data or an execution
+                # engine. Render it separately so failure cannot break the diff
+                # or change its pages/assets. Stop at the first usable theme.
+                for name in _theme_candidates(copied_project, pages):
+                    output = Path(
+                        tempfile.mkdtemp(prefix="_theme-", dir=copied_project)
+                    ).name
+                    try:
+                        candidate = render_site(
+                            copied_project,
+                            f"the theme ({name})",
+                            [name],
+                            output=output,
+                        )
+                    except (click.ClickException, OSError) as exc:
+                        click.echo(
+                            f"Warning: theme render failed for {name}: {exc}", err=True
+                        )
+                        continue
+                    if _has_site_page(candidate):
+                        theme = candidate
+                        break
+                if theme is None:
                     click.echo(
                         "Warning: no rendered page carries the site's theme "
                         "(a redirect home page or missing stylesheets), so "
                         "What changed may look unstyled.",
                         err=True,
                     )
-                if any(Path(name).stem == "index" for name in theme_pages):
-                    # The home page is not compared, so drop the redirect Quarto
-                    # writes into a partial render without one, or it is
-                    # reported as removed.
-                    (old_site / "index.html").unlink(missing_ok=True)
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():
@@ -1759,9 +1811,13 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             owned.parent.mkdir(parents=True, exist_ok=True)
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
-                # Borrow the running preview's theme/assets for partial builds.
-                if theme == preview_site:
-                    for entry in preview_site.iterdir():
+                # Borrow theme assets before overlaying the compared build.
+                # Fallback pages live in a separate output and are never listed
+                # as changes or published over the actual changed pages.
+                if theme is not None:
+                    for entry in theme.iterdir():
+                        if theme != preview_site and entry.suffix == ".html":
+                            continue
                         if entry.is_dir() and not entry.is_symlink():
                             shutil.copytree(entry, staged / entry.name, symlinks=True)
                         else:

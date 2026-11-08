@@ -167,23 +167,26 @@ def check_themed_without_preview(project, artifacts, redirect_preview=False):
     deck = project / "slides/attention/slides.qmd"
     original = deck.read_text()
     preview = project / "_site"
-    parked = project.with_name(project.name + "-site-parked")
-    preview.rename(parked)
-    if redirect_preview:
-        preview.mkdir()
-        (preview / "index.html").write_text(
-            "<html><head><title>Redirect to slides/attention/slides.html</title>"
-            '<meta http-equiv="refresh" content="0;url=slides/attention/slides.html">'
-            "</head></html>"
-        )
     edited = original.replace(
         "## Keep the talk beside its sources\n",
         "## Keep the talk beside its sources and data\n",
         1,
     )
     assert edited != original
-    deck.write_text(edited)
+    # Unique parking avoids collisions with an interrupted browser-check run.
+    parking = Path(tempfile.mkdtemp(prefix="asta-preview-", dir=project.parent))
+    parked = parking / "site"
+    if preview.exists():
+        preview.rename(parked)
     try:
+        if redirect_preview:
+            preview.mkdir()
+            (preview / "index.html").write_text(
+                "<html><head><title>Redirect to slides/attention/slides.html</title>"
+                '<meta http-equiv="refresh" content="0;url=slides/attention/slides.html">'
+                "</head></html>"
+            )
+        deck.write_text(edited)
         result = subprocess.run(
             ["asta", "workspace", "what-changed", "HEAD"],
             cwd=project,
@@ -193,7 +196,9 @@ def check_themed_without_preview(project, artifacts, redirect_preview=False):
     finally:
         deck.write_text(original)
         shutil.rmtree(preview, ignore_errors=True)
-        parked.rename(preview)
+        if parked.exists():
+            parked.rename(preview)
+        parking.rmdir()
     assert result.returncode == 0, result.stdout + result.stderr
     site = project / ".asta/cache/what-changed"
     assert (site / "site_libs/bootstrap").is_dir(), "snapshot has no site theme"

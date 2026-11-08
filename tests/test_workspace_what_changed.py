@@ -1493,6 +1493,25 @@ THEMED = (
 )
 
 
+def test_theme_render_uses_separate_output(project):
+    preview = project / "_site"
+    preview.mkdir()
+    (preview / "index.html").write_text("Live preview")
+    Path(shutil.which("make")).write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        "options = dict(arg.split('=', 1) for arg in sys.argv[2:])\n"
+        "site = pathlib.Path(options['ASTA_WORKSPACE_RENDER_OUTPUT'])\n"
+        "site.mkdir(exist_ok=True)\n"
+        "(site / 'index.html').write_text(options['ASTA_WORKSPACE_RENDER_FILES'])\n"
+    )
+    output = workspace_module.render_site(
+        project, "the theme", ["index.qmd"], output="_theme-test"
+    )
+    assert (output / "index.html").read_text() == "index.qmd"
+    assert (preview / "index.html").read_text() == "Live preview"
+
+
 REDIRECT = (
     "<html><head><title>Redirect to {0}</title>"
     '<meta http-equiv="refresh" content="0;url={0}"></head></html>'
@@ -1535,10 +1554,10 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
             )
     rendered = []
 
-    def render(directory, label, pages=None):
+    def render(directory, label, pages=None, *, output="_site"):
         rendered.append((label, pages))
-        site = directory / "_site"
-        site.mkdir()
+        site = directory / output
+        site.mkdir(exist_ok=True)
         for name in pages or []:
             text = (directory / name).read_text()
             if text.startswith("REDIRECT"):
@@ -1580,8 +1599,11 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "unstyled" not in result.stderr
     after = dict(rendered)["the working tree"]
     candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
-    expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", *candidates]
-    assert after == expected
+    assert after == ["slides.qmd"]
+    theme_renders = [p for label, p in rendered if label.startswith("the theme")]
+    assert theme_renders == (
+        [] if preview == "site" else [[name] for name in candidates]
+    )
 
 
 @pytest.mark.parametrize(
@@ -1591,6 +1613,8 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
         (["index.qmd", "slides.qmd", "about.qmd"], ["index.qmd", "about.qmd"]),
         (["*.qmd", "!about.qmd"], ["index.qmd"]),
         (["**/*.md"], ["notes.md"]),
+        # Quarto 1.7's resolveGlobs expands only positive inclusions.
+        (["!about.qmd"], []),
     ],
 )
 def test_theme_candidates_honor_the_project_render_list(
@@ -1611,17 +1635,19 @@ def test_changed_home_page_supplies_the_theme_beside_a_deck(
     """When the home page itself changed, its rendered page themes the report."""
     (project / "slides.qmd").write_text("Slide one.\n")
     (project / "index.qmd").write_text("Home.\n")
-    git(project, "add", "slides.qmd", "index.qmd")
+    # An unchanged candidate must not be rendered when a changed page themes it.
+    (project / "about.qmd").write_text("About.\n")
+    git(project, "add", "slides.qmd", "index.qmd", "about.qmd")
     git(project, "commit", "-qm", "deck and home")
     git(project, "tag", "-f", "last-read")
     (project / "slides.qmd").write_text("Slide one, edited.\n")
     (project / "index.qmd").write_text("Home, edited.\n")
     rendered = []
 
-    def render(directory, label, pages=None):
+    def render(directory, label, pages=None, *, output="_site"):
         rendered.append((label, pages))
-        site = directory / "_site"
-        site.mkdir()
+        site = directory / output
+        site.mkdir(exist_ok=True)
         (site / "site_libs/bootstrap").mkdir(parents=True)
         (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
         for name in pages or []:
@@ -1646,6 +1672,7 @@ def test_changed_home_page_supplies_the_theme_beside_a_deck(
     assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert "<ins" in page and "Home" in page
     assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+    assert len(rendered) == 2
 
 
 def test_deck_only_edit_renders_the_theme_and_cleans_up(
@@ -1663,10 +1690,10 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
     git(project, "tag", "-f", "last-read")
     rendered = []
 
-    def render(directory, label, pages=None):
+    def render(directory, label, pages=None, *, output="_site"):
         rendered.append((label, pages))
-        site = directory / "_site"
-        site.mkdir()
+        site = directory / output
+        site.mkdir(exist_ok=True)
         for name in pages or []:
             text = (directory / name).read_text()
             if name == "index.qmd":
@@ -1694,6 +1721,151 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         page = (snapshot / "what-changed.html").read_text()
         assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
         assert edit in page and "Home" not in page
-        assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+        assert dict(rendered)["the working tree"] == ["slides.qmd"]
+        assert dict(rendered)["the theme (index.qmd)"] == ["index.qmd"]
     assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)
+
+
+@pytest.mark.parametrize(
+    "config", ["website", "[website]", "project: website", "project: [website]"]
+)
+def test_theme_candidates_tolerate_non_mapping_config(tmp_path, config):
+    (tmp_path / "_quarto.yml").write_text(config)
+    (tmp_path / "about.qmd").write_text("About.\n")
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == ["about.qmd"]
+
+
+@pytest.mark.parametrize(
+    "candidate", ["failing", "unstyled", "missing-stylesheets", "themed", "retry"]
+)
+def test_theme_render_is_best_effort_and_separate(project, monkeypatch, candidate):
+    """An unrelated theme page must never break or contaminate a deck comparison."""
+    import click
+
+    (project / "index.qmd").unlink()
+    (project / "about.qmd").write_text("About.\n")
+    (project / "slides.qmd").write_text("Slide one.\n")
+    if candidate in ("retry", "themed"):
+        (project / "notes.qmd").write_text("Notes.\n")
+        git(project, "add", "notes.qmd")
+    git(project, "add", "index.qmd", "about.qmd", "slides.qmd")
+    git(project, "commit", "-qm", "deck without home source")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    rendered = []
+
+    def render(directory, label, pages=None, *, output="_site"):
+        rendered.append((label, pages))
+        site = directory / output
+        site.mkdir(exist_ok=True)
+        for name in pages or []:
+            if name in ("about.qmd", "notes.qmd"):
+                if candidate == "failing" or (
+                    candidate == "retry" and name == "about.qmd"
+                ):
+                    raise click.ClickException("Missing notebook kernel")
+                if candidate == "unstyled":
+                    body = REDIRECT.format("slides.html")
+                else:
+                    body = THEMED.format("About")
+                if candidate in ("themed", "retry"):
+                    (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
+                    (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+            else:
+                body = f"<p>{(directory / name).read_text()}</p>"
+            (site / Path(name).with_suffix(".html")).write_text(body)
+        # Different first pages make Quarto's generated redirects differ.
+        target = "about.html" if "about.qmd" in (pages or []) else "slides.html"
+        (site / "index.html").write_text(REDIRECT.format(target))
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    original = workspace_module._run_comparison
+    themes = []
+
+    def compare(*args, **kwargs):
+        themes.append(args[5] if len(args) > 5 else kwargs.get("theme"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(workspace_module, "_run_comparison", compare)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    page = (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
+    assert "edited" in page and "<ins" in page
+    assert "About" not in page and ">about.html<" not in page
+    assert "Redirect" not in page and ">index.html<" not in page
+    assert dict(rendered)["the working tree"] == ["slides.qmd"]
+    if candidate in ("themed", "retry"):
+        assert themes[0] is not None
+        assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+        assert (
+            project
+            / workspace_module.COMPARISON_DIR
+            / "site_libs/bootstrap/bootstrap.min.css"
+        ).is_file()
+        assert "unstyled" not in result.stderr
+        theme_renders = [p for label, p in rendered if label.startswith("the theme")]
+        assert theme_renders == (
+            [["about.qmd"], ["notes.qmd"]] if candidate == "retry" else [["about.qmd"]]
+        )
+    else:
+        assert themes == [None]
+        assert "What changed may look unstyled" in result.stderr
+        if candidate == "failing":
+            assert "Missing notebook kernel" in result.stderr
+    assert "cleanup failed" not in result.stderr
+    assert_single_worktree(project)
+
+
+def test_theme_candidates_filter_index_decks_and_front_matter_only(tmp_path):
+    (tmp_path / "index.qmd").write_text("---\nformat: revealjs\n---\nA deck.\n")
+    (tmp_path / "index.md").write_text("Home.\n")
+    (tmp_path / "about.qmd").write_text(
+        "---\ntitle: About\n---\nWe use revealjs for talks.\n"
+    )
+    (tmp_path / "talk.qmd").write_text(
+        "---\nformat:\n  revealjs:\n    theme: dark\n---\n"
+    )
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == [
+        "index.md",
+        "about.qmd",
+    ]
+
+
+def test_theme_candidates_use_one_source_for_each_output(tmp_path):
+    for name in ("index.qmd", "index.md", "index.ipynb", "about.qmd"):
+        (tmp_path / name).write_text("Home.\n")
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == [
+        "index.qmd",
+        "about.qmd",
+    ]
+
+
+@pytest.mark.parametrize("deck", [False, True])
+def test_notebook_theme_candidate_reads_format_metadata(tmp_path, deck):
+    (tmp_path / "index.ipynb").write_text(
+        json.dumps(
+            {
+                "cells": [
+                    {
+                        "cell_type": "raw",
+                        "source": [
+                            "---\n",
+                            "format: revealjs\n" if deck else "title: Home\n",
+                            "---\n",
+                        ],
+                    },
+                    {"cell_type": "markdown", "source": ["Talks use revealjs.\n"]},
+                ]
+            }
+        )
+    )
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == (
+        [] if deck else ["index.ipynb"]
+    )
