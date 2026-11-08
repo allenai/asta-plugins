@@ -1578,10 +1578,12 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "About" not in page and ">about.html<" not in page
     assert "Redirect" not in page and "removed</span>" not in page
     assert "unstyled" not in result.stderr
-    after = dict(rendered)["the working tree"]
+    # The theme pages render with the baseline, which is kept per commit, so
+    # the working tree renders only the changed page.
+    assert dict(rendered)["the working tree"] == ["slides.qmd"]
     candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
     expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", *candidates]
-    assert after == expected
+    assert dict(rendered)["last-read"] == expected
 
 
 @pytest.mark.parametrize(
@@ -1681,6 +1683,10 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
     monkeypatch.setattr(
         workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
     )
+    # Stand in for Quarto's version so the baseline render is kept.
+    monkeypatch.setattr(
+        workspace_module, "_baseline_cache_key", lambda *args: "same-commit"
+    )
     snapshot = project / workspace_module.COMPARISON_DIR
     for edit in ("first", "second"):
         rendered.clear()
@@ -1694,7 +1700,10 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         page = (snapshot / "what-changed.html").read_text()
         assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
         assert edit in page and "Home" not in page
-        assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+        assert dict(rendered)["the working tree"] == ["slides.qmd"]
+        # The second run reuses the kept baseline, theme pages included.
+        assert ("last-read" in dict(rendered)) == (edit == "first")
+        assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)
 

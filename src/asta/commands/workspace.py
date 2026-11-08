@@ -1791,7 +1791,8 @@ def what_changed(
 
     Renders REF and a private working-tree copy with the project's own 'make
     render' (only changed pages when possible, themed from a running preview's
-    _site/ or else the home page rendered alongside) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    _site/ or else a few of REF's pages rendered with its baseline; the
+    baseline render is kept per commit under .asta/cache/what-changed-baseline/) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
     .asta/cache/what-changed/, which this command owns and replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
     replacing any project page of that name until the next render.
@@ -1919,13 +1920,31 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     if full
                     else _changed_comparison_pages(project, baseline_project, ref)
                 )
+            preview_site = project / "_site"
+            theme = (
+                preview_site
+                if pages and preview_site.is_dir() and _has_site_page(preview_site)
+                else None
+            )
+            # Without a running preview, a deck-only edit has no site page to
+            # theme it, so a few ordinary pages of REF are rendered and kept with
+            # its baseline. Only pages changed (see _changed_comparison_pages), so
+            # REF's theme inputs are the working tree's.
+            theme_pages = (
+                _theme_candidates(baseline_project, pages)
+                if pages and theme is None
+                else []
+            )
             if pages:
                 base_pages = [
                     name for name in pages if (baseline_project / name).is_file()
                 ]
-                if base_pages:
+                render_pages = [*base_pages, *theme_pages]
+                if render_pages:
                     key = _baseline_cache_key(
-                        commit.stdout.strip(), prefix.stdout.rstrip("\n"), base_pages
+                        commit.stdout.strip(),
+                        prefix.stdout.rstrip("\n"),
+                        render_pages,
                     )
                     old_site = tmp / "baseline-site"
                     with _timed("reuse kept baseline render"):
@@ -1933,8 +1952,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     if reused:
                         click.echo(f"Reusing the kept render of {ref}", err=True)
                     else:
-                        with _timed("render baseline (changed pages)"):
-                            old_site = render_site(baseline_project, ref, base_pages)
+                        with _timed("render baseline (changed + theme pages)"):
+                            old_site = render_site(baseline_project, ref, render_pages)
                         _store_baseline(project, key, old_site)
                 else:
                     old_site = baseline_project / "_site"
@@ -1942,47 +1961,15 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             else:
                 with _timed("render baseline (full site)"):
                     old_site = render_site(baseline_project, ref)
-            with _timed("copy working tree"):
-                copied_project = working_copy(
-                    Path(repository.stdout.rstrip("\n")),
-                    prefix.stdout.rstrip("\n"),
-                    tmp / "working",
-                )
-            preview_site = project / "_site"
-            theme = (
-                preview_site
-                if pages and preview_site.is_dir() and _has_site_page(preview_site)
-                else None
-            )
-            # Without a running preview, a deck-only render has no site page, so
-            # render the home page too and take the theme from it.
-            # A home page that only redirects carries no theme, so a few
-            # ordinary pages are rendered as candidates.
-            theme_pages = (
-                _theme_candidates(copied_project, pages)
-                if pages and theme is None
-                else []
-            )
-            with _timed(
-                "render working tree"
-                + (" (changed + theme pages)" if pages else " (full site)")
-            ):
-                new_site = (
-                    render_site(
-                        copied_project, "the working tree", [*pages, *theme_pages]
-                    )
-                    if pages
-                    else render_site(copied_project, "the working tree")
-                )
             if theme_pages:
-                # Out of the comparison, so they are not reported as new pages.
+                # Out of the comparison, so they are not reported as removed pages.
                 theme = tmp / "theme"
                 theme.mkdir()
                 themed = False
                 for name in theme_pages:
-                    built = new_site / Path(name).with_suffix(".html")
+                    built = old_site / Path(name).with_suffix(".html")
                     if built.is_file() and not built.is_symlink():
-                        themed = themed or _is_themed_page(built, new_site)
+                        themed = themed or _is_themed_page(built, old_site)
                         shutil.move(built, theme / built.name)
                 if not themed:
                     click.echo(
@@ -1991,11 +1978,26 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         "What changed may look unstyled.",
                         err=True,
                     )
-                if any(Path(name).stem == "index" for name in theme_pages):
-                    # The home page is not compared, so drop the redirect Quarto
-                    # writes into a partial render without one, or it is
-                    # reported as removed.
-                    (old_site / "index.html").unlink(missing_ok=True)
+            with _timed("copy working tree"):
+                copied_project = working_copy(
+                    Path(repository.stdout.rstrip("\n")),
+                    prefix.stdout.rstrip("\n"),
+                    tmp / "working",
+                )
+            with _timed(
+                "render working tree"
+                + (" (changed pages)" if pages else " (full site)")
+            ):
+                new_site = (
+                    render_site(copied_project, "the working tree", pages)
+                    if pages
+                    else render_site(copied_project, "the working tree")
+                )
+            if any(Path(name).stem == "index" for name in theme_pages):
+                # The home page is not compared, so drop the redirect Quarto
+                # writes into a partial render without one, or it is reported
+                # as added.
+                (new_site / "index.html").unlink(missing_ok=True)
             with _timed("build paper diffs"):
                 _paper_previews(copied_project, commit.stdout.strip(), new_site)
             # The page sits at the root of a site copy so its relative links
@@ -2015,6 +2017,10 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                             shutil.copy2(
                                 entry, staged / entry.name, follow_symlinks=False
                             )
+                # The kept baseline's theme pages link REF's site_libs.
+                base_libs = old_site / "site_libs"
+                if theme_pages and base_libs.is_dir() and not base_libs.is_symlink():
+                    shutil.copytree(base_libs, staged / "site_libs", symlinks=True)
                 # Copy entries, not the root's metadata: staging stays 0700.
                 for entry in new_site.iterdir():
                     if entry.is_dir() and not entry.is_symlink():
