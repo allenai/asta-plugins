@@ -80,6 +80,18 @@ jobs:
           uv run --no-project --with playwright==1.64.1 python -m playwright install --with-deps chromium >/dev/null
           uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
           test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Check local What changed shows every content type of the demo edit
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
+          export PATH="$(uv tool dir --bin):$PATH"
+          top=$(git rev-parse --show-toplevel)
+          # The demo PR's sample edit, applied uncommitted as an agent's edit would be.
+          git fetch -q --depth=50 origin +refs/heads/main:refs/remotes/origin/main +refs/heads/example-demo-pr:refs/remotes/origin/example-demo-pr
+          git diff "$(git merge-base origin/main origin/example-demo-pr)" origin/example-demo-pr -- . | git -C "$top" apply
+          trap 'git -C "$top" checkout -- examples/workspace' EXIT
+          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed-demo.py . ../../tests/browser/artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -87,6 +99,7 @@ jobs:
           path: |
             tests/browser/artifacts/local-what-changed-deck.png
             tests/browser/artifacts/local-what-changed-no-preview.png
+            tests/browser/artifacts/local-what-changed-demo.png
           if-no-files-found: ignore
           retention-days: 30
 
