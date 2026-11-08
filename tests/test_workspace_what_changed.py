@@ -29,7 +29,7 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 # <main> Quarto emits, so the test needs neither make nor Quarto.
 FAKE_MAKE = """#!/usr/bin/env python3
 import pathlib, sys
-assert sys.argv[1:] == ["render"], sys.argv
+assert sys.argv[1:] in (["render"], ["-o", "workspace-assets", "-o", "workspace-viewers", "render"]), sys.argv
 paras = "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
 pathlib.Path("_site").mkdir(exist_ok=True)
 pathlib.Path("_site/index.html").write_text(
@@ -165,107 +165,37 @@ def test_baseline_missing_ignored_input_reports_build_stderr(
     assert_single_worktree(project)
 
 
-@pytest.mark.parametrize("phase", ["success", "render", "script", "checkout"])
-def test_locked_baseline_remains_recoverable(
-    project: Path, monkeypatch: pytest.MonkeyPatch, phase: str
-) -> None:
+@pytest.mark.parametrize("side", ["baseline", "working"])
+@pytest.mark.parametrize("outcome", ["success", "render", "clone"])
+def test_private_clones_leave_source_git_untouched(project, monkeypatch, side, outcome):
     original = workspace_module._git
-    baseline = None
+    clones = []
+    registration = project / ".git/worktrees"
 
-    def lock_baseline(directory, *args):
-        nonlocal baseline
+    def observe(directory, *args):
+        assert args[:2] != ("worktree", "add")
         result = original(directory, *args)
-        if args[:2] == ("worktree", "add") and "--no-checkout" not in args:
-            assert result.returncode == 0
-            baseline = Path(args[3])
-            git(project, "worktree", "lock", str(baseline))
-            if phase == "checkout":
-                return subprocess.CompletedProcess(
-                    args, 1, stderr="Checkout failed after registration"
-                )
+        if args[0] == "clone":
+            clone = Path(args[-1])
+            clones.append(clone)
+            assert (clone / ".git").is_dir()
+            if clone.name == side and outcome == "clone":
+                return subprocess.CompletedProcess(args, 1, stderr="Clone failed")
         return result
 
-    monkeypatch.setattr(workspace_module, "_git", lock_baseline)
-    if phase == "render":
-        Path(shutil.which("make")).write_text(
-            "#!/usr/bin/env python3\nraise SystemExit(2)\n"
-        )
-    elif phase == "script":
-        (project / "scripts/what-changed.py").write_text("raise SystemExit(2)\n")
-    try:
-        result = CliRunner().invoke(
-            workspace, ["what-changed", "last-read", "--project", str(project)]
-        )
-        assert result.exit_code == (0 if phase == "success" else 1), result.output
-        assert baseline is not None
-        assert (
-            f"Warning: baseline worktree cleanup failed for {baseline}" in result.output
-        )
-        assert baseline.is_dir()
-        assert (baseline / "index.qmd").read_text() == "The baseline finding holds.\n"
-        git(baseline, "status", "--porcelain")
-        worktrees = subprocess.check_output(
-            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
-        )
-        assert f"worktree {baseline}\n" in worktrees and "locked\n" in worktrees
-        if phase == "success":
-            assert (project / ".asta/cache/what-changed/what-changed.html").is_file()
-        else:
-            assert "Wrote " not in result.output
-    finally:
-        if baseline is not None:
-            git(project, "worktree", "unlock", str(baseline))
-            git(project, "worktree", "remove", "--force", str(baseline))
-            if baseline.parent.exists():
-                baseline.parent.rmdir()
-    assert_single_worktree(project)
-
-
-@pytest.mark.parametrize("phase", ["success", "render", "setup"])
-def test_locked_working_copy_remains_recoverable(project: Path, monkeypatch, phase):
-    original = workspace_module._git
-    working = None
-
-    def lock_working(directory, *args):
-        nonlocal working
-        result = original(directory, *args)
-        if args[:2] == ("worktree", "add") and "--no-checkout" in args:
-            assert result.returncode == 0
-            working = Path(args[4])
-            git(project, "worktree", "lock", str(working))
-            if phase == "setup":
-                return subprocess.CompletedProcess(
-                    args, 1, stderr="Setup failed after registration"
-                )
-        return result
-
-    monkeypatch.setattr(workspace_module, "_git", lock_working)
-    if phase == "render":
-        Path(shutil.which("make")).write_text(
+    monkeypatch.setattr(workspace_module, "_git", observe)
+    if outcome == "render":
+        make = Path(shutil.which("make"))
+        make.write_text(
             "#!/usr/bin/env python3\nimport pathlib\n"
-            "if pathlib.Path.cwd().name == 'working': raise SystemExit(2)\n" + FAKE_MAKE
+            f"if pathlib.Path.cwd().name == {side!r}: raise SystemExit(2)\n" + FAKE_MAKE
         )
-    try:
-        result = CliRunner().invoke(
-            workspace, ["what-changed", "last-read", "--project", str(project)]
-        )
-        assert result.exit_code == (0 if phase == "success" else 1), result.output
-        assert working is not None
-        assert (
-            f"Warning: working worktree cleanup failed for {working}" in result.output
-        )
-        assert working.is_dir() and (working / ".git").is_file()
-        git(working, "status", "--porcelain")
-        worktrees = subprocess.check_output(
-            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
-        )
-        assert f"worktree {working}\n" in worktrees and "locked\n" in worktrees
-        assert not (working.parent / "baseline").exists()
-    finally:
-        if working is not None:
-            git(project, "worktree", "unlock", str(working))
-            git(project, "worktree", "remove", "--force", str(working))
-            working.parent.rmdir()
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == (0 if outcome == "success" else 1), result.output
+    assert clones and all(not clone.parent.exists() for clone in clones)
+    assert not registration.exists()
     assert_single_worktree(project)
 
 
@@ -859,32 +789,20 @@ def test_working_copy_preserves_staged_changes(
             git(project, "worktree", "remove", "--force", str(project))
 
 
-def test_both_renders_find_the_main_checkout(project: Path) -> None:
-    # Renders that locate an ignored virtualenv via the main checkout, as
-    # `git rev-parse --git-common-dir` scripts do, must work in both copies.
-    (project / ".gitignore").write_text("_site/\n.asta/cache/\n.venv/\n")
-    git(project, "commit", "-qam", "ignore venv")
-    git(project, "tag", "-f", "last-read")
-    (project / ".venv").mkdir()
-    (project / ".venv/marker").write_text("main venv")
-    make = Path(shutil.which("make"))
-    make.write_text(
-        make.read_text() + "import subprocess\n"
-        "common = subprocess.check_output(\n"
-        "    ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],\n"
-        "    text=True,\n"
-        ").strip()\n"
-        "assert (pathlib.Path(common).parent / '.venv/marker').is_file(), common\n"
-    )
-    (project / "index.qmd").write_text("A finding that uses the venv.\n")
+def test_both_renders_are_parallel_private_clones(project, monkeypatch):
+    original = workspace_module.render_site
+    barrier = threading.Barrier(2, timeout=10)
+
+    def render(directory, label, pages=None):
+        assert (directory / ".git").is_dir()
+        barrier.wait()
+        return original(directory, label, pages)
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
     assert result.exit_code == 0, result.output
-    assert (
-        "uses the venv"
-        in (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
-    )
     assert_single_worktree(project)
 
 
@@ -930,7 +848,7 @@ def test_render_uses_staged_page_list(project: Path, intent_to_add: bool) -> Non
     )
 
 
-@pytest.mark.parametrize("phase", ["worktree", "ls-files", "update-index"])
+@pytest.mark.parametrize("phase", ["clone", "ls-files", "update-index"])
 def test_failed_working_copy_preserves_report_and_cleans_up(
     project: Path, monkeypatch, phase: str
 ) -> None:
@@ -942,12 +860,12 @@ def test_failed_working_copy_preserves_report_and_cleans_up(
 
     def fail_copy(directory, *args):
         nonlocal temporary
-        copying = "--no-checkout" in args
+        copying = args[0] == "clone" and Path(args[-1]).name == "working"
         if copying:
-            temporary = Path(args[-2]).parent
+            temporary = Path(args[-1]).parent
         if (
             args[0] == phase
-            and (copying or phase != "worktree")
+            and (copying or phase != "clone")
             and (phase != "ls-files" or "--stage" in args)
         ):
             return subprocess.CompletedProcess(args, 1, stderr="Copy setup failed")
@@ -1202,7 +1120,7 @@ def test_failed_render_does_not_repeat_streamed_log(project: Path) -> None:
     assert result.exit_code != 0
     assert "'make render' failed for last-read" in result.output
     for i in range(100):
-        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 1
+        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 2
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])
@@ -1392,7 +1310,7 @@ def test_failed_checkout_removes_partial_registration(
 
     def failed_add(directory, *args):
         result = original(directory, *args)
-        if args[:2] == ("worktree", "add"):
+        if args[0] == "clone":
             assert result.returncode == 0
             return subprocess.CompletedProcess(
                 args, 1, stderr="Checkout failed after registration"
@@ -1578,11 +1496,11 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "About" not in page and ">about.html<" not in page
     assert "Redirect" not in page and "removed</span>" not in page
     assert "unstyled" not in result.stderr
-    # The theme pages render with the baseline, which is kept per commit, so
+    # The theme pages render freshly with the baseline, so
     # the working tree renders only the changed page.
     assert dict(rendered)["the working tree"] == ["slides.qmd"]
     candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
-    expected = ["slides.qmd"] if preview == "site" else ["slides.qmd", *candidates]
+    expected = ["slides.qmd", *candidates]
     assert dict(rendered)["last-read"] == expected
 
 
@@ -1713,18 +1631,17 @@ def test_timings_report_each_step(project: Path) -> None:
     assert result.exit_code == 0, result.output
     log = result.output[result.output.index("What changed timings:") :]
     for step in (
-        "check out baseline worktree",
+        "check out baseline clone",
         "find changed pages",
-        "render baseline",
         "copy working tree",
-        "render working tree",
+        "render before and after (parallel)",
         "stage site copy",
         "compare pages and picture slides",
         "publish snapshot",
         "other",
         "total",
     ):
-        assert re.search(rf"^  {re.escape(step)}\b.* +\d+\.\d\d s$", log, re.M), step
+        assert re.search(rf"^  {re.escape(step)} +.*\d+\.\d\d s$", log, re.M), step
 
 
 def test_no_timings_without_flag(project: Path) -> None:

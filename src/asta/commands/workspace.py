@@ -11,7 +11,6 @@ import json
 import os
 import posixpath
 import re
-import shlex
 import shutil
 import signal
 import socket
@@ -1109,7 +1108,7 @@ def render_site(directory: Path, label: str, pages: list[str] | None = None) -> 
             f"Project directory does not exist for {label}: {directory}"
         )
     click.echo(f"Rendering {label} with 'make render'", err=True)
-    command = ["make", "render"]
+    command = ["make", "-o", "workspace-assets", "-o", "workspace-viewers", "render"]
     if pages is not None:
         command += [
             "ASTA_WORKSPACE_RENDER_OUTPUT=_site",
@@ -1140,7 +1139,7 @@ COMPARISON_DIR = Path(".asta/cache/what-changed")
 DECK_IMAGES = "what-changed-decks"
 
 
-# Rendered beside a deck-only edit when no preview supplies the site's theme.
+# Rendered beside a deck-only edit to supply the site's theme.
 THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
 # Further candidates when the home page is missing or only redirects.
 THEME_SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd")
@@ -1268,18 +1267,17 @@ def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
 
     Other ignored files (virtualenvs, outputs, caches) and untracked .env files
     stay out, so comparisons stay quick and do not duplicate secrets. The copy is
-    a linked worktree, like the baseline, so `git rev-parse --git-common-dir`
-    finds the main checkout (and its ignored .venv) from both renders.
+    a private shared clone: neither render registers a worktree or writes
+    into the source repository. Ignored virtualenvs are not copied.
     """
     project = repository / prefix
     added = _git(
         repository,
-        "worktree",
-        "add",
-        "--detach",
+        "clone",
+        "--shared",
         "--no-checkout",
+        str(repository),
         str(destination),
-        "HEAD",
     )
     if added.returncode != 0:
         raise click.ClickException(
@@ -1368,7 +1366,7 @@ def _comparison_directory():
                         shutil.rmtree(entry)
                     else:
                         entry.unlink()
-                # Git owns both worktrees; keep failed removals recoverable.
+                # Leave failed clone cleanup visible rather than hiding it.
                 if not any(
                     (temporary / name).exists() for name in ("baseline", "working")
                 ):
@@ -1736,8 +1734,7 @@ def what_changed(
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
     Renders REF and a private working-tree copy with the project's own 'make
-    render' (only changed pages when possible, themed from a running preview's
-    _site/ or else a few of REF's pages rendered with its baseline; nothing is
+    render' (only changed pages when possible, themed from ordinary pages rendered during this run; nothing is
     kept between runs) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
     .asta/cache/what-changed/, which this command owns and replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
@@ -1842,15 +1839,19 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
         baseline = tmp / "baseline"
         added = None
         try:
-            with _timed("check out baseline worktree"):
+            with _timed("check out baseline clone"):
                 added = _git(
                     project,
-                    "worktree",
-                    "add",
-                    "--detach",
+                    "clone",
+                    "--shared",
+                    "--no-checkout",
+                    repository.stdout.rstrip("\n"),
                     str(baseline),
-                    commit.stdout.strip(),
                 )
+                if added.returncode == 0:
+                    added = _git(
+                        baseline, "checkout", "--detach", commit.stdout.strip()
+                    )
             if added.returncode != 0:
                 raise click.ClickException(
                     f"Could not check out {ref}: {added.stderr.strip()}"
@@ -1866,37 +1867,47 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     if full
                     else _changed_comparison_pages(project, baseline_project, ref)
                 )
-            preview_site = project / "_site"
-            theme = (
-                preview_site
-                if pages and preview_site.is_dir() and _has_site_page(preview_site)
-                else None
-            )
-            # Without a running preview, a deck-only edit has no site page to
-            # theme it, so a few ordinary pages of REF are rendered beside its
-            # changed pages on every run; nothing is kept between runs. Only pages changed (see _changed_comparison_pages), so
-            # REF's theme inputs are the working tree's.
-            theme_pages = (
-                _theme_candidates(baseline_project, pages)
-                if pages and theme is None
-                else []
-            )
-            if pages:
-                base_pages = [
-                    name for name in pages if (baseline_project / name).is_file()
-                ]
-                render_pages = [*base_pages, *theme_pages]
-                if render_pages:
-                    with _timed("render baseline (changed + theme pages)"):
-                        old_site = render_site(baseline_project, ref, render_pages)
-                else:
-                    old_site = baseline_project / "_site"
-                    old_site.mkdir()
-            else:
-                with _timed("render baseline (full site)"):
-                    old_site = render_site(baseline_project, ref)
+            # Both sides are fresh, private builds. Never borrow a preview:
+            # a source edit can arrive while that preview is still rendering.
+            theme = None
+            theme_pages = _theme_candidates(baseline_project, pages) if pages else []
+            with _timed("copy working tree"):
+                copied_project = working_copy(
+                    Path(repository.stdout.rstrip("\n")),
+                    prefix.stdout.rstrip("\n"),
+                    tmp / "working",
+                )
+
+            def render_before():
+                if pages:
+                    selected = [
+                        name for name in pages if (baseline_project / name).is_file()
+                    ]
+                    selected = list(dict.fromkeys([*selected, *theme_pages]))
+                    if not selected:
+                        site = baseline_project / "_site"
+                        site.mkdir()
+                        return site
+                    return render_site(baseline_project, ref, selected)
+                return render_site(baseline_project, ref)
+
+            # Record the enclosing wall time, rather than adding overlapping
+            # durations and reporting a negative remainder in --timings.
+            with _timed("render before and after (parallel)"):
+                with _parallel_builds() as pool:
+                    before = pool.submit(render_before)
+                    after = (
+                        pool.submit(
+                            render_site, copied_project, "the working tree", pages
+                        )
+                        if pages
+                        else pool.submit(
+                            render_site, copied_project, "the working tree"
+                        )
+                    )
+                    old_site = before.result()
+                    new_site = after.result()
             if theme_pages:
-                # Out of the comparison, so they are not reported as removed pages.
                 theme = tmp / "theme"
                 theme.mkdir()
                 themed = False
@@ -1912,26 +1923,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         "What changed may look unstyled.",
                         err=True,
                     )
-            with _timed("copy working tree"):
-                copied_project = working_copy(
-                    Path(repository.stdout.rstrip("\n")),
-                    prefix.stdout.rstrip("\n"),
-                    tmp / "working",
-                )
-            with _timed(
-                "render working tree"
-                + (" (changed pages)" if pages else " (full site)")
-            ):
-                new_site = (
-                    render_site(copied_project, "the working tree", pages)
-                    if pages
-                    else render_site(copied_project, "the working tree")
-                )
-            if any(Path(name).stem == "index" for name in theme_pages):
-                # The home page is not compared, so drop the redirect Quarto
-                # writes into a partial render without one, or it is reported
-                # as added.
-                (new_site / "index.html").unlink(missing_ok=True)
+                if any(Path(name).stem == "index" for name in theme_pages):
+                    (new_site / "index.html").unlink(missing_ok=True)
             with _timed("build paper diffs"):
                 _paper_previews(copied_project, commit.stdout.strip(), new_site)
             # The page sits at the root of a site copy so its relative links
@@ -1942,15 +1935,6 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
                 stage_start = time.perf_counter()
-                # Borrow the running preview's theme/assets for partial builds.
-                if theme == preview_site:
-                    for entry in preview_site.iterdir():
-                        if entry.is_dir() and not entry.is_symlink():
-                            shutil.copytree(entry, staged / entry.name, symlinks=True)
-                        else:
-                            shutil.copy2(
-                                entry, staged / entry.name, follow_symlinks=False
-                            )
                 # The baseline's theme pages link REF's site_libs.
                 base_libs = old_site / "site_libs"
                 if theme_pages and base_libs.is_dir() and not base_libs.is_symlink():
@@ -1994,26 +1978,9 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     shutil.rmtree(staged, ignore_errors=True)
         finally:
             with preview_cleanup():
-                if (tmp / "working").exists():
-                    working = tmp / "working"
-                    removed = _git(
-                        project, "worktree", "remove", "--force", str(working)
-                    )
-                    if removed.returncode != 0:
-                        click.echo(
-                            f"Warning: working worktree cleanup failed for {working}: {removed.stderr.strip()}. "
-                            f"Resolve the cause, then run 'git worktree remove --force {shlex.quote(str(working))}'.",
-                            err=True,
-                        )
-                removed = _git(project, "worktree", "remove", "--force", str(baseline))
-                if removed.returncode != 0 and (
-                    added is None or added.returncode == 0 or baseline.exists()
-                ):
-                    click.echo(
-                        f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}. "
-                        f"Resolve the cause, then run 'git worktree remove --force {shlex.quote(str(baseline))}'.",
-                        err=True,
-                    )
+                for directory in (tmp / "working", baseline):
+                    if directory.exists():
+                        shutil.rmtree(directory)
     page = owned / "what-changed.html"
     if (project / "_site").is_dir():
         link = project / "_site/what-changed-snapshot"
@@ -2238,6 +2205,33 @@ def stop_preview(process: subprocess.Popen, signum: int) -> None:
             pass
 
 
+# A signal reaches the main thread, while parallel build processes belong
+# to worker threads. Track them so shutdown kills both process groups before
+# waiting for the workers, including a process spawned during cancellation.
+_parallel_state = None
+
+
+@contextmanager
+def _parallel_builds():
+    global _parallel_state
+    state = (threading.Event(), threading.Lock(), [])
+    _parallel_state = state
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    try:
+        yield pool
+    except BaseException:
+        state[0].set()
+        with state[1]:
+            processes = list(state[2])
+        for process in processes:
+            if process.poll() is None:
+                stop_preview(process, signal.SIGINT)
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+        _parallel_state = None
+
+
 @contextmanager
 def preview_process(command: list[str], project: Path, **kwargs):
     process = None
@@ -2248,6 +2242,13 @@ def preview_process(command: list[str], project: Path, **kwargs):
             )
         except FileNotFoundError as exc:
             raise click.ClickException(f"{command[0]} is not installed") from exc
+        state = _parallel_state
+        if state is not None:
+            with state[1]:
+                state[2].append(process)
+            if state[0].is_set():
+                stop_preview(process, signal.SIGINT)
+                raise KeyboardInterrupt
         yield process
     except BaseException as exc:
         if process is not None:
