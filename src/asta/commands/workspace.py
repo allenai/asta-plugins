@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import concurrent.futures
 import fnmatch
 import functools
 import hashlib
@@ -1469,14 +1470,21 @@ def _changed_comparison_pages(project, baseline, ref):
         for p in paths
     ):
         return None
-    for version in (project, baseline):
-        try:
-            inspected = subprocess.run(
+    # Each inspect runs the project's setup; the two are independent, so overlap them.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        inspections = [
+            pool.submit(
+                subprocess.run,
                 ["quarto", "inspect", str(version)],
                 capture_output=True,
                 text=True,
                 check=True,
             )
+            for version in (project, baseline)
+        ]
+    for version, inspection in zip((project, baseline), inspections):
+        try:
+            inspected = inspection.result()
             inputs = json.loads(inspected.stdout)["files"]["input"]
             resolved = {(version / p).resolve() for p in inputs}
             if any(
