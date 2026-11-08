@@ -150,3 +150,37 @@ def test_failed_after_inspect_does_not_hide_pages(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fail)
     assert module._comparison_inputs(tmp_path) is None
+
+
+def test_unrelated_page_edit_skips_paper_build_and_tool_checks(tmp_path, monkeypatch):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "main.tex").write_text(
+        r"\documentclass{article}\begin{document}Paper\end{document}"
+    )
+    site = tmp_path / "_site"
+    site.mkdir()
+
+    def git(project, *args):
+        return subprocess.CompletedProcess(
+            args, 0, stdout="page.qmd\0" if args[0] == "diff" else ""
+        )
+
+    def discovery(command, **kwargs):
+        assert command[1].endswith("paper-discovery.py")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"papers":["paper"],"removed":[],"main_files":{"paper":"main.tex"}}',
+        )
+
+    def unexpected(*args):
+        pytest.fail("unrelated edit must not check TeX or snapshot/build the paper")
+
+    monkeypatch.setattr(module, "_git", git)
+    monkeypatch.setattr(module, "_ls_files", lambda *args: [])
+    monkeypatch.setattr(subprocess, "run", discovery)
+    monkeypatch.setattr(module.shutil, "which", unexpected)
+    monkeypatch.setattr(module, "_commit_working_tree", unexpected)
+    module._paper_previews(tmp_path, "base", site)
+    assert not (site / "paper-previews").exists()

@@ -1472,6 +1472,28 @@ def _paper_previews(project: Path, base: str, site: Path) -> None:
         return
     if not papers and not removed:
         return
+    # Discovery defines the paper roots/main files; dependency filtering must
+    # happen before checking TeX or snapshotting the disposable working copy.
+    from asta.commands.workspace_selection import paper_affected
+
+    changed = _git(project, "diff", "--name-only", "--no-renames", "-z", base, "--")
+    main_files = found.get("main_files", {})
+    if changed.returncode == 0:
+        prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
+        names = [
+            p[len(prefix) :]
+            for p in changed.stdout.split("\0")
+            if p and p.startswith(prefix)
+        ]
+        names += _ls_files(project, "--others", "--exclude-standard")
+        papers = [
+            directory
+            for directory in papers
+            if directory not in main_files
+            or paper_affected(project, directory, main_files[directory], names)
+        ]
+    if not papers and not removed:
+        return
     missing = [tool for tool in ("latexmk", "latexdiff") if shutil.which(tool) is None]
     if missing:
         click.echo(

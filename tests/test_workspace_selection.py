@@ -80,3 +80,18 @@ def test_old_reference_still_selects_page(trees):
     write("image.svg", "old", "new")
     write("page.qmd", "image.svg", "no image")
     assert select_pages(after, before, ["image.svg"]) == ["page.qmd"]
+
+
+def test_paper_dependency_filter(tmp_path):
+    from asta.commands.workspace_selection import paper_affected
+
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "main.tex").write_text(r"\input{section}\bibliography{../shared}")
+    (paper / "section.tex").write_text(r"\includegraphics{../figure}")
+    assert not paper_affected(tmp_path, "paper", "main.tex", ["slides.qmd"])
+    assert not paper_affected(tmp_path, "paper", "main.tex", ["unrelated.bib"])
+    for name in ["shared.bib", "figure.png", "paper/section.tex", "Makefile"]:
+        assert paper_affected(tmp_path, "paper", "main.tex", [name])
+    (paper / "section.tex").write_text(r"\input{\generated}")
+    assert paper_affected(tmp_path, "paper", "main.tex", ["slides.qmd"])
