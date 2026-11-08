@@ -25,6 +25,7 @@ import re
 import threading
 from contextlib import ExitStack
 from functools import partial
+from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, unquote, urlsplit
 
@@ -249,12 +250,43 @@ LIVE_RE = re.compile(
     r"<(?:script|iframe|canvas|video|audio|object|embed)\b|data-background-(?:iframe|video)",
     re.I,
 )
-# Attribute values and CSS url()s that name files the slide shows.
-REF_RE = re.compile(
-    r"""\b(?:src|href|srcset|poster|data-src|data-background(?:-image)?)\s*=\s*["']([^"']*)["']"""
-    r"""|url\(\s*["']?([^"')]+)["']?\s*\)""",
-    re.I,
-)
+
+
+class ResourceRefs(HTMLParser):
+    """Loaded resources, excluding outbound links and entire inline data URLs."""
+
+    def __init__(self, source):
+        super().__init__(convert_charrefs=True)
+        self.refs = []
+        self.feed(source)
+        self.refs.extend(re.findall(r"url\(\s*[\"']?([^\"')]+)", source, re.I))
+
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if not value or (tag == "a" and name == "href"):
+                continue
+            if name in {
+                "src",
+                "href",
+                "poster",
+                "data-src",
+                "data-background",
+                "data-background-image",
+            }:
+                self.refs.append(value)
+            elif name == "srcset":
+                # Data contains commas: never split its payload into fake files.
+                # Mixed data/resource srcsets remain conservative.
+                if "data:" in value:
+                    self.refs.append("asta-unresolved-srcset:")
+                else:
+                    self.refs.extend(
+                        part.strip().split()[0]
+                        for part in value.split(",")
+                        if part.strip()
+                    )
+
+    handle_startendtag = handle_starttag
 
 
 class Renderer:
@@ -381,15 +413,14 @@ class Renderer:
         base = "/" + posixpath.dirname(deck)
         # The deck documents themselves are compared as raw slides and frame.
         paths = self._loaded.get(deck, set()) - {"/" + deck}
-        for ref in REF_RE.findall(after["raw"]):
-            for part in (ref[0] or ref[1]).split(","):
-                link = html.unescape(part.strip().split(" ")[0])
-                parts = urlsplit(link)
-                if not link or link.startswith("#") or parts.scheme == "data":
-                    continue
-                if parts.scheme or parts.netloc:
-                    return False
-                paths.add(posixpath.normpath(posixpath.join(base, unquote(parts.path))))
+        for link in ResourceRefs(after["raw"]).refs:
+            link = html.unescape(link.strip())
+            parts = urlsplit(link)
+            if not link or link.startswith("#") or parts.scheme == "data":
+                continue
+            if parts.scheme or parts.netloc:
+                return False
+            paths.add(posixpath.normpath(posixpath.join(base, unquote(parts.path))))
         return all(self._same_file(path) for path in paths)
 
     def slide_ids(self, side, deck):

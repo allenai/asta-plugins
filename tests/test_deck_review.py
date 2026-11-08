@@ -926,3 +926,20 @@ def test_review_takes_no_comparison_shots_of_statically_identical_slides(tmp_pat
     )
     comparison = [call for call in renderer.calls if len(call) == 3 and not call[2]]
     assert ("old", 0, False) not in comparison and ("new", 0, False) not in comparison
+
+
+def test_outbound_anchor_is_not_a_loaded_resource(tmp_path):
+    doc = _deck(
+        ['<section id="one"><a href="https://example.org/paper">Read</a></section>']
+    )
+    renderer, old, new = _static_renderer(tmp_path, doc, doc)
+    assert renderer.same_static("d/deck.html", old[0], new[0])
+
+
+def test_inline_image_data_is_read_whole(tmp_path):
+    slide = '<section id="one"><img src="data:image/svg+xml;base64,QUJDRA=="></section>'
+    doc = _deck([slide])
+    renderer, old, new = _static_renderer(tmp_path, doc, doc)
+    assert renderer.same_static("d/deck.html", old[0], new[0])
+    new[0]["raw"] = new[0]["raw"].replace("QUJDRA", "Rk9PQg")
+    assert not renderer.same_static("d/deck.html", old[0], new[0])
