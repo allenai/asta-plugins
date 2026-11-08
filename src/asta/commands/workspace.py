@@ -1262,6 +1262,58 @@ def _is_env_file(name: str) -> bool:
     return base == ".env" or base.startswith(".env.")
 
 
+IGNORED_RENDER_INPUTS = (".asta/cache", "_extensions")
+
+
+def copy_ignored_render_inputs(project: Path, destination: Path) -> None:
+    """Copy the project's git-ignored render inputs into a fresh copy.
+
+    A scaffolded workspace ignores its synced make rules (`.asta/cache`) and
+    fetched theme extensions, and `make -o workspace-assets` skips refetching
+    them, so each copy takes them from the project every run. Files the copy
+    already has (tracked at that commit) win; `.env*` files are never copied.
+    """
+    listed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(project),
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--",
+            *IGNORED_RENDER_INPUTS,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        raise click.ClickException(
+            f"Could not list ignored render inputs: {listed.stderr.strip()}"
+        )
+    comparison = project / COMPARISON_DIR
+    for name in filter(None, listed.stdout.split("\0")):
+        source = project / name
+        if (
+            _is_env_file(name)
+            or source == comparison
+            or comparison in source.parents
+            or Path(name).parts[:3] == (".asta", "cache", "what-changed")
+            or Path(name).name.startswith(".what-changed-")
+        ):
+            continue
+        target = destination / name
+        if os.path.lexists(target) or not os.path.lexists(source):
+            continue
+        if source.is_dir() and not source.is_symlink():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target, follow_symlinks=False)
+
+
 def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
     """Copy render inputs only: Git-visible files plus the synced workspace cache.
 
@@ -1328,26 +1380,7 @@ def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
         else:
             shutil.copy2(source, target, follow_symlinks=False)
 
-    # The Makefile includes rules synced here; reuse them instead of re-syncing.
-    cache = project / ".asta/cache"
-
-    def ignore(directory, names):
-        if Path(directory) != cache:
-            return set()
-        return {
-            name
-            for name in names
-            if name == "what-changed" or name.startswith(".what-changed-")
-        }
-
-    if cache.is_dir() and not cache.is_symlink():
-        shutil.copytree(
-            cache,
-            destination / prefix / ".asta/cache",
-            symlinks=True,
-            dirs_exist_ok=True,
-            ignore=ignore,
-        )
+    copy_ignored_render_inputs(project, destination / prefix)
     return destination / prefix
 
 
@@ -1858,6 +1891,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 raise click.ClickException(
                     f"Project directory does not exist for {ref}: {baseline_project}"
                 )
+            copy_ignored_render_inputs(project, baseline_project)
             with _timed("find changed pages"):
                 pages = (
                     None

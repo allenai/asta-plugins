@@ -1776,3 +1776,34 @@ def test_quarto_rendered_keeps_pages_when_inspect_is_unavailable(tmp_path: Path)
         "page.qmd"
     ]
     assert rendered(tmp_path, names, None) == ["page.qmd", "README.md"]
+
+
+def test_copy_ignored_render_inputs_fills_fresh_copies(
+    project: Path, tmp_path: Path
+) -> None:
+    """A scaffolded workspace's ignored make rules and extensions reach each copy."""
+    (project / ".gitignore").write_text(
+        "_extensions/asta-theme/\n_extensions/evidence/\n.asta/cache/\n.env*\n"
+    )
+    theme = project / "_extensions/asta-theme"
+    theme.mkdir(parents=True)
+    (theme / "light.scss").write_text("/* theme */")
+    (theme / ".env").write_text("SECRET=1")
+    (project / "_extensions/evidence").mkdir()
+    (project / "_extensions/evidence/snippet.lua").write_text("-- filter")
+    cache = project / ".asta/cache"
+    (cache / "what-changed").mkdir(parents=True)
+    (cache / "what-changed/what-changed.html").write_text("Old report")
+    (cache / "workspace.mk").write_text("Cached rules")
+    destination = tmp_path / "baseline"
+    (destination / "_extensions/evidence").mkdir(parents=True)
+    (destination / "_extensions/evidence/snippet.lua").write_text("-- tracked")
+    workspace_module.copy_ignored_render_inputs(project, destination)
+    assert (destination / ".asta/cache/workspace.mk").read_text() == "Cached rules"
+    assert (destination / "_extensions/asta-theme/light.scss").exists()
+    assert not (destination / "_extensions/asta-theme/.env").exists()
+    assert not (destination / ".asta/cache/what-changed").exists()
+    # A file the copy already has (tracked at its commit) is not overwritten.
+    assert (destination / "_extensions/evidence/snippet.lua").read_text() == (
+        "-- tracked"
+    )
