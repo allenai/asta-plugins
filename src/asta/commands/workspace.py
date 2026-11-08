@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import urlopen
 
 import click
@@ -1150,7 +1150,7 @@ THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
 THEME_SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd")
 THEME_CANDIDATES = 3
 _STYLESHEET = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
-_HREF = re.compile(r"""\bhref\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+_HREF = re.compile(r"""(?<![\w-])href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 
 
 def _is_themed_page(page: Path, site: Path) -> bool:
@@ -1169,12 +1169,15 @@ def _is_themed_page(page: Path, site: Path) -> bool:
         href = _HREF.search(tag)
         if "stylesheet" in tag.lower() and href:
             sheets.append(href.group(1).split("?")[0].split("#")[0])
-    local = [h for h in sheets if not re.match(r"(?i)^(?:[a-z]+:|//|/)", h)]
+    local = [h for h in sheets if not re.match(r"(?i)^(?:[a-z][a-z0-9+.-]*:|//)", h)]
     if not local:
         return False
     root = site.resolve()
     for href in local:
-        target = (page.parent / href).resolve()
+        path = unquote(href)
+        target = (
+            root / path.lstrip("/") if path.startswith("/") else page.parent / path
+        ).resolve()
         if not target.is_relative_to(root) or not target.is_file():
             return False
     return True
@@ -1182,10 +1185,13 @@ def _is_themed_page(page: Path, site: Path) -> bool:
 
 def _has_site_page(site: Path) -> bool:
     """Whether a built site has an ordinary page that carries the site's theme."""
+    if _is_themed_page(site / "index.html", site):
+        return True
     return any(
         _is_themed_page(page, site)
         for page in site.rglob("*.html")
-        if DECK_IMAGES not in page.relative_to(site).parts
+        if page != site / "index.html"
+        and DECK_IMAGES not in page.relative_to(site).parts
     )
 
 
@@ -1217,19 +1223,44 @@ def _in_render_list(name: str, patterns: list[str] | None) -> bool:
     """
     if patterns is None:
         return True
-    included = False
-    for pattern in patterns:
-        negated = pattern.startswith("!")
-        glob = (pattern[1:] if negated else pattern).removeprefix("./")
-        if any(fnmatch.fnmatchcase(name, g) for g in (glob, glob.removeprefix("**/"))):
-            included = not negated
-    return included
+
+    def matches(pattern: str, *, exclude: bool = False) -> bool:
+        glob = pattern.removeprefix("./").rstrip("/")
+        # Quarto's auto mode searches nested folders for globs, and treats
+        # exclusions the same way even when they are literal directory names.
+        if not glob.startswith("/") and (exclude or any(c in glob for c in "*?[]{}()")):
+            glob = "**/" + glob
+        parts = tuple(glob.lstrip("/").split("/"))
+        path = tuple(name.split("/"))
+
+        @functools.cache
+        def match(remaining, segments):
+            if not remaining:
+                # A matched directory includes its descendant source files.
+                return True
+            if remaining[0] == "**":
+                return match(remaining[1:], segments) or bool(
+                    segments and match(remaining, segments[1:])
+                )
+            return bool(
+                segments
+                and fnmatch.fnmatchcase(segments[0], remaining[0])
+                and match(remaining[1:], segments[1:])
+            )
+
+        return match(parts, path)
+
+    # Quarto expands inclusions and exclusions separately: an exclusion wins
+    # regardless of its position, and an exclusion-only list includes nothing.
+    return any(matches(p) for p in patterns if not p.startswith("!")) and not any(
+        matches(p[1:], exclude=True) for p in patterns if p.startswith("!")
+    )
 
 
 def _source_is_deck(source: Path) -> bool:
     """Read format metadata, not prose that may merely mention revealjs."""
     try:
-        with source.open(encoding="utf-8", errors="ignore") as stream:
+        with source.open(encoding="utf-8-sig", errors="ignore") as stream:
             if source.suffix == ".ipynb":
                 notebook = json.load(stream)
                 cells = notebook.get("cells", [])
@@ -1276,7 +1307,9 @@ def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
                 and not (Path(directory) / name).is_symlink()
             )
             for name in sorted(files):
-                yield (Path(directory) / name).relative_to(project).as_posix()
+                relative = (Path(directory) / name).relative_to(project).as_posix()
+                if relative not in THEME_PAGES:
+                    yield relative
 
     candidates = []
     outputs = {Path(name).with_suffix(".html") for name in pages}
@@ -1834,7 +1867,16 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         if theme != preview_site and entry.suffix == ".html":
                             continue
                         if entry.is_dir() and not entry.is_symlink():
-                            shutil.copytree(entry, staged / entry.name, symlinks=True)
+                            shutil.copytree(
+                                entry,
+                                staged / entry.name,
+                                symlinks=True,
+                                ignore=(
+                                    shutil.ignore_patterns("*.html")
+                                    if theme != preview_site
+                                    else None
+                                ),
+                            )
                         else:
                             shutil.copy2(
                                 entry, staged / entry.name, follow_symlinks=False

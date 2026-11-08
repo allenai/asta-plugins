@@ -1519,7 +1519,10 @@ REDIRECT = (
 
 
 @pytest.mark.parametrize("home", ["themed", "redirect", "nested-redirect"])
-@pytest.mark.parametrize("preview", [None, "deck-only", "redirect", "unstyled", "site"])
+@pytest.mark.parametrize(
+    "preview",
+    [None, "deck-only", "redirect", "unstyled", "site", "site-root", "site-encoded"],
+)
 def test_partial_render_keeps_site_theme_without_a_site_page(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1528,6 +1531,7 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
 ) -> None:
     """A slide-only edit must still read like the site (no browser-default page)."""
     home_redirects = home != "themed"
+    themed_preview = bool(preview and preview.startswith("site"))
     theme_page = "pages/about.qmd" if home == "nested-redirect" else "about.qmd"
     (project / "slides.qmd").write_text("Slide one.\n")
     if home_redirects:
@@ -1545,8 +1549,14 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
         (site / "site_libs/bootstrap").mkdir(parents=True)
         (site / "site_libs/bootstrap/bootstrap.min.css").write_text("body{}")
         (site / "slides.html").write_text('<div class="reveal">Slide one.</div>')
-        if preview == "site":
-            (site / "index.html").write_text(THEMED.format("Home"))
+        if themed_preview:
+            html = THEMED.format("Home")
+            if preview == "site-root":
+                html = html.replace('href="site_libs/', 'href="/site_libs/')
+            elif preview == "site-encoded":
+                (site / "site_libs/bootstrap/bootstrap space.css").write_text("body{}")
+                html = html.replace("bootstrap.min.css", "bootstrap%20space.css")
+            (site / "index.html").write_text(html)
         elif preview == "redirect":
             # A preview of only the deck: Quarto's redirect home, no stylesheets.
             (site / "index.html").write_text(REDIRECT.format("slides.html"))
@@ -1596,22 +1606,29 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert result.exit_code == 0, result.output
     snapshot = project / workspace_module.COMPARISON_DIR
     page = (snapshot / "what-changed.html").read_text()
-    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    stylesheet = (
+        "/site_libs/bootstrap/bootstrap.min.css"
+        if preview == "site-root"
+        else "site_libs/bootstrap/bootstrap%20space.css"
+        if preview == "site-encoded"
+        else "site_libs/bootstrap/bootstrap.min.css"
+    )
+    assert f'href="{stylesheet}"' in page
     assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert "<ins" in page and "edited" in page
     # The home page only supplies the theme; it is never reported as new.
     assert "Home" not in page and ">index.html<" not in page
     assert "About" not in page and ">about.html<" not in page
     assert ">pages/about.html<" not in page
+    if not themed_preview:
+        assert not (snapshot / Path(theme_page).with_suffix(".html")).exists()
     assert "Redirect" not in page and "removed</span>" not in page
     assert "unstyled" not in result.stderr
     after = dict(rendered)["the working tree"]
     candidates = ["index.qmd", theme_page] if home_redirects else ["index.qmd"]
     assert after == ["slides.qmd"]
     theme_renders = [p for label, p in rendered if label.startswith("the theme")]
-    assert theme_renders == (
-        [] if preview == "site" else [[name] for name in candidates]
-    )
+    assert theme_renders == ([] if themed_preview else [[name] for name in candidates])
 
 
 @pytest.mark.parametrize(
@@ -1697,9 +1714,12 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
     git(project, "commit", "-qm", "deck")
     git(project, "tag", "-f", "last-read")
     rendered = []
+    theme_outputs = []
 
     def render(directory, label, pages=None, *, output="_site"):
         rendered.append((label, pages))
+        if label.startswith("the theme"):
+            theme_outputs.append(directory / output)
         site = directory / output
         site.mkdir(exist_ok=True)
         for name in pages or []:
@@ -1731,7 +1751,7 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         assert edit in page and "Home" not in page
         assert dict(rendered)["the working tree"] == ["slides.qmd"]
         assert dict(rendered)["the theme (index.qmd)"] == ["index.qmd"]
-    assert not (project / ".asta/cache/what-changed-theme").exists()
+    assert theme_outputs and all(not path.exists() for path in theme_outputs)
     assert_single_worktree(project)
 
 
@@ -1922,3 +1942,113 @@ def test_theme_candidates_prefer_root_pages_and_stop_at_the_existing_limit(tmp_p
         "about.qmd",
         "notes.md",
     ]
+
+
+@pytest.mark.parametrize(
+    "name, patterns, expected",
+    [
+        # Quarto auto-mode globs search subdirectories, but a single * cannot
+        # consume a path separator inside the pattern itself.
+        ("pages/about.qmd", ["*.qmd"], True),
+        ("pages/deeper/about.qmd", ["pages/*.qmd"], False),
+        ("pages/deeper/about.qmd", ["pages/**/*.qmd"], True),
+        ("pages/about.qmd", ["pages"], True),
+        ("pages/deeper/about.qmd", ["pages/"], True),
+        ("other/pages/about.qmd", ["pages"], False),
+        ("pages/about.qmd", ["/about.qmd"], False),
+        ("pages/about.qmd", ["/pages/*.qmd"], True),
+        ("pages/about.qmd", ["**/*.qmd", "!pages/"], False),
+        ("pages/about.qmd", ["!pages/", "**/*.qmd"], False),
+        ("pages/about.qmd", ["!drafts/"], False),
+    ],
+)
+def test_theme_render_patterns_follow_quarto_path_segments(name, patterns, expected):
+    assert workspace_module._in_render_list(name, patterns) is expected
+
+
+@pytest.mark.parametrize("pattern", ["pages", "pages/", "pages/**", "pages/*.qmd"])
+def test_theme_candidates_accept_project_render_directories(tmp_path, pattern):
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "pages/about.qmd").write_text("About")
+    (tmp_path / "_quarto.yml").write_text(
+        yaml.safe_dump({"project": {"render": [pattern]}})
+    )
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == [
+        "pages/about.qmd"
+    ]
+
+
+@pytest.mark.parametrize(
+    "href, expected",
+    [
+        ("site_libs/theme.css", True),
+        ("/site_libs/theme.css", True),
+        ("/site_libs/theme%20space.css?version=1#theme", True),
+        ("site_libs/theme%20space.css", True),
+        ("/site_libs/missing.css", False),
+        ("//example.org/theme.css", False),
+        ("https://example.org/theme.css", False),
+        ("/%2e%2e/outside.css", False),
+    ],
+)
+def test_themed_page_resolves_local_stylesheet_urls(tmp_path, href, expected):
+    site = tmp_path / "site"
+    (site / "site_libs").mkdir(parents=True)
+    (site / "site_libs/theme.css").write_text("body{}")
+    (site / "site_libs/theme space.css").write_text("body{}")
+    (tmp_path / "outside.css").write_text("body{}")
+    page = site / "index.html"
+    page.write_text(f'<link rel="stylesheet" href="{href}">')
+    assert workspace_module._has_site_page(site) is expected
+
+
+def test_data_href_does_not_supply_a_theme(tmp_path):
+    (tmp_path / "theme.css").write_text("body{}")
+    page = tmp_path / "index.html"
+    page.write_text('<link rel="stylesheet" data-href="theme.css">')
+    assert not workspace_module._has_site_page(tmp_path)
+
+
+def test_deck_with_bom_is_not_a_theme_candidate(tmp_path):
+    (tmp_path / "index.qmd").write_text("\ufeff---\nformat: revealjs\n---\nDeck")
+    (tmp_path / "about.qmd").write_text("About")
+    assert workspace_module._theme_candidates(tmp_path, ["slides.qmd"]) == ["about.qmd"]
+
+
+def test_unrelated_cleanup_failure_cannot_prevent_worktree_removal(
+    project, monkeypatch
+):
+    (project / "index.qmd").write_text("Edited finding")
+    original_compare = workspace_module._run_comparison
+    original_rmtree = shutil.rmtree
+    original_git = workspace_module._git
+    removed = []
+    leftover = None
+
+    def compare(old, new, *args, **kwargs):
+        nonlocal leftover
+        leftover = old.parent.parent / "leftover"
+        leftover.mkdir()
+        return original_compare(old, new, *args, **kwargs)
+
+    def git_command(directory, *args):
+        if args[:2] == ("worktree", "remove"):
+            removed.append(Path(args[-1]).name)
+        return original_git(directory, *args)
+
+    def cleanup(path, *args, **kwargs):
+        if Path(path) == leftover:
+            assert set(removed) == {"baseline", "working"}
+            raise PermissionError("Unrelated cleanup denied")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(workspace_module, "_run_comparison", compare)
+    monkeypatch.setattr(workspace_module, "_git", git_command)
+    monkeypatch.setattr(shutil, "rmtree", cleanup)
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Unrelated cleanup denied" in result.stderr
+    assert_single_worktree(project)
+    original_rmtree(leftover.parent)
