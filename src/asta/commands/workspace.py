@@ -1132,6 +1132,12 @@ def render_site(directory: Path, label: str, pages: list[str] | None = None) -> 
 
 
 COMPARISON_DIR = Path(".asta/cache/what-changed")
+# Themed pages a previous deck-only run rendered, reused while the theme sources match.
+THEME_CACHE = Path(".asta/cache/what-changed-theme")
+THEME_KEY = ".theme-key"
+_THEME_INPUT = re.compile(
+    r"(?i)(?:^|/)(?:(?:_quarto|_metadata)\.ya?ml|Makefile)$|\.s?css$"
+)
 # Rendered slide images, beside the comparison page in its site copy.
 DECK_IMAGES = "what-changed-decks"
 
@@ -1156,12 +1162,7 @@ def _is_themed_page(page: Path, site: Path) -> bool:
     html = page.read_text(encoding="utf-8", errors="ignore")
     if 'class="reveal' in html:
         return False
-    sheets = []
-    for tag in _STYLESHEET.findall(html):
-        href = _HREF.search(tag)
-        if "stylesheet" in tag.lower() and href:
-            sheets.append(href.group(1).split("?")[0].split("#")[0])
-    local = [h for h in sheets if not re.match(r"(?i)^(?:[a-z]+:|//|/)", h)]
+    local = _local_stylesheets(html)
     if not local:
         return False
     root = site.resolve()
@@ -1170,6 +1171,82 @@ def _is_themed_page(page: Path, site: Path) -> bool:
         if not target.is_relative_to(root) or not target.is_file():
             return False
     return True
+
+
+def _local_stylesheets(html: str) -> list[str]:
+    sheets = []
+    for tag in _STYLESHEET.findall(html):
+        href = _HREF.search(tag)
+        if "stylesheet" in tag.lower() and href:
+            sheets.append(href.group(1).split("?")[0].split("#")[0])
+    return [h for h in sheets if not re.match(r"(?i)^(?:[a-z]+:|//|/)", h)]
+
+
+def _theme_key(project: Path) -> str:
+    """Digest of the sources a rendered page's theme depends on."""
+    digest = hashlib.sha256()
+    for path in sorted(project.rglob("*")):
+        parts = path.relative_to(project).parts
+        if parts[0] in ("_site", ".asta", ".git", ".quarto") or "site_libs" in parts:
+            continue
+        name = "/".join(parts)
+        if path.is_symlink() or not path.is_file():
+            continue
+        if parts[0] == "_extensions" or _THEME_INPUT.search(name):
+            digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()
+
+
+def _cached_theme(project: Path, key: str) -> Path | None:
+    cache = project / THEME_CACHE
+    if cache.is_symlink() or not cache.is_dir():
+        return None
+    try:
+        if (cache / THEME_KEY).read_text(encoding="utf-8").strip() != key:
+            return None
+    except OSError:
+        return None
+    return cache if _has_site_page(cache) else None
+
+
+def _save_theme(project: Path, key: str, site: Path, pages: list[Path]) -> None:
+    """Keep root-level themed pages and the assets they link for the next run."""
+    cache = project / THEME_CACHE
+    if (project / ".asta").is_symlink() or cache.parent.is_symlink():
+        return
+    root = site.resolve()
+    staged = None
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        staged = Path(tempfile.mkdtemp(prefix=".what-changed-theme-", dir=cache.parent))
+        libs = site / "site_libs"
+        if libs.is_dir() and not libs.is_symlink():
+            shutil.copytree(libs, staged / "site_libs", symlinks=True)
+        for page in pages:
+            shutil.copy2(page, staged / page.name, follow_symlinks=False)
+            for href in _local_stylesheets(
+                page.read_text(encoding="utf-8", errors="ignore")
+            ):
+                target = (site / href).resolve()
+                destination = (staged / href).resolve()
+                if (
+                    target.is_relative_to(root)
+                    and target.is_file()
+                    and destination.is_relative_to(staged.resolve())
+                    and not destination.exists()
+                ):
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(target, destination)
+        (staged / THEME_KEY).write_text(key, encoding="utf-8")
+        _publish(staged, cache)
+    except OSError as exc:
+        click.echo(
+            f"Warning: could not keep the theme for the next run: {exc}", err=True
+        )
+    finally:
+        if staged is not None:
+            with preview_cleanup():
+                shutil.rmtree(staged, ignore_errors=True)
 
 
 def _has_site_page(site: Path) -> bool:
@@ -1357,6 +1434,13 @@ def _comparison_directory():
     finally:
         try:
             with preview_cleanup():
+                for entry in temporary.iterdir():
+                    if entry.name in ("baseline", "working"):
+                        continue
+                    if entry.is_dir() and not entry.is_symlink():
+                        shutil.rmtree(entry)
+                    else:
+                        entry.unlink()
                 # Git owns both worktrees; keep failed removals recoverable.
                 if not any(
                     (temporary / name).exists() for name in ("baseline", "working")
@@ -1598,7 +1682,9 @@ def what_changed(
 
     Renders REF and a private working-tree copy with the project's own 'make
     render' (only changed pages when possible, themed from a running preview's
-    _site/ or else the home page rendered alongside) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    _site/, else from a themed page a previous run kept under
+    .asta/cache/what-changed-theme/ while the theme sources are unchanged, else
+    from the home page rendered alongside) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
     .asta/cache/what-changed/, which this command owns and replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
     replacing any project page of that name until the next render.
@@ -1709,8 +1795,12 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 if pages and preview_site.is_dir() and _has_site_page(preview_site)
                 else None
             )
-            # Without a running preview, a deck-only render has no site page, so
-            # render the home page too and take the theme from it.
+            theme_key = None
+            if pages and theme is None:
+                theme_key = _theme_key(copied_project)
+                theme = _cached_theme(project, theme_key)
+            # Without a running preview or a kept theme, a deck-only render has no
+            # site page, so render the home page too and take the theme from it.
             # A home page that only redirects carries no theme, so a few
             # ordinary pages are rendered as candidates.
             theme_pages = (
@@ -1727,12 +1817,19 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 # Out of the comparison, so they are not reported as new pages.
                 theme = tmp / "theme"
                 theme.mkdir()
-                themed = False
-                for name in theme_pages:
-                    built = new_site / Path(name).with_suffix(".html")
-                    if built.is_file() and not built.is_symlink():
-                        themed = themed or _is_themed_page(built, new_site)
-                        shutil.move(built, theme / built.name)
+                built = [
+                    page
+                    for page in (
+                        new_site / Path(name).with_suffix(".html")
+                        for name in theme_pages
+                    )
+                    if page.is_file() and not page.is_symlink()
+                ]
+                themed = [page for page in built if _is_themed_page(page, new_site)]
+                if themed and theme_key:
+                    _save_theme(project, theme_key, new_site, themed)
+                for page in built:
+                    shutil.move(page, theme / page.name)
                 if not themed:
                     click.echo(
                         "Warning: no rendered page carries the site's theme "
@@ -1752,9 +1849,11 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             owned.parent.mkdir(parents=True, exist_ok=True)
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
-                # Borrow the running preview's theme/assets for partial builds.
-                if theme == preview_site:
-                    for entry in preview_site.iterdir():
+                # Borrow the running preview's or kept theme/assets for partial builds.
+                if theme is not None and theme in (preview_site, project / THEME_CACHE):
+                    for entry in theme.iterdir():
+                        if entry.name == THEME_KEY:
+                            continue
                         if entry.is_dir() and not entry.is_symlink():
                             shutil.copytree(entry, staged / entry.name, symlinks=True)
                         else:

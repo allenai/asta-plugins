@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.client import HTTPConnection
@@ -1645,3 +1646,62 @@ def test_changed_home_page_supplies_the_theme_beside_a_deck(
     assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert "<ins" in page and "Home" in page
     assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+
+
+def test_deck_only_edit_reuses_a_kept_theme_and_cleans_up(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Later runs skip rendering theme pages until the theme sources change."""
+    temporary = tmp_path_factory.mktemp("comparisons")
+    monkeypatch.setattr(tempfile, "tempdir", str(temporary))
+    (project / "slides.qmd").write_text("Slide one.\n")
+    (project / "index.qmd").write_text("Home.\n")
+    git(project, "add", "slides.qmd", "index.qmd")
+    git(project, "commit", "-qm", "deck")
+    git(project, "tag", "-f", "last-read")
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        for name in pages or []:
+            text = (directory / name).read_text()
+            if name == "index.qmd":
+                (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
+                (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+                (site / "index.html").write_text(THEMED.format("Home"))
+            else:
+                (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    snapshot = project / workspace_module.COMPARISON_DIR
+
+    def run(edit: str) -> list[str]:
+        rendered.clear()
+        (project / "slides.qmd").write_text(f"Slide one, {edit}.\n")
+        result = CliRunner().invoke(
+            workspace, ["what-changed", "last-read", "--project", str(project)]
+        )
+        assert result.exit_code == 0, result.output
+        assert "cleanup failed" not in result.stderr
+        assert not list(temporary.glob("asta-what-changed-*"))
+        page = (snapshot / "what-changed.html").read_text()
+        assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+        assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
+        assert edit in page and "Home" not in page
+        return dict(rendered)["the working tree"]
+
+    assert run("first") == ["slides.qmd", "index.qmd"]
+    assert run("second") == ["slides.qmd"]
+    (project / "theme.scss").write_text("/*-- scss:defaults --*/\n")
+    git(project, "add", "theme.scss")
+    assert run("third") == ["slides.qmd", "index.qmd"]
+    assert run("fourth") == ["slides.qmd"]
+    assert_single_worktree(project)
