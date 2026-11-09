@@ -1243,7 +1243,9 @@ def test_termination_cleans_comparison_and_children(project: Path, phase: str) -
     ready = project / "child-ready"
     child_code = (
         "import os, pathlib, time\n"
-        f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        f"partial = pathlib.Path({str(ready) + '.partial'!r})\n"
+        "partial.write_text(str(os.getpid()))\n"
+        f"os.replace(partial, {str(ready)!r})\n"
         "time.sleep(60)\n"
     )
     if phase == "render":
