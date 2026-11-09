@@ -1,19 +1,14 @@
 """Run the local What changed on the example workspace with the demo PR's sample
 edit applied uncommitted: the page must show every content type it touches."""
 
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from site_server import _serve
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location(
-    "review", ROOT / "plugins/asta-tools/skills/workspace/assets/deck-review.py"
-)
-review = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(review)
 THEMED_JS = (
     "() => ['bootstrap', 'asta-theme'].every(name => [...document.styleSheets]"
     ".some(s => s.href && s.href.includes(name) && s.cssRules.length))"
@@ -35,7 +30,7 @@ def check_site(site, artifacts):
         missing.append("the literature review's prose diff")
     elif "wc-ev-chip" not in html and "ev-pop" not in html:
         missing.append("the literature review's evidence")
-    server = review._serve(str(site))
+    server = _serve(str(site))
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()

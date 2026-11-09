@@ -1746,20 +1746,6 @@ def load_deck_review():
     return module
 
 
-def deck_image_dir(rel):
-    """Image folder for a deck page: `slides/x/slides.html` -> `slides/x/slides`.
-
-    A folder named `*.html` breaks tools that treat such paths as files
-    (e.g. the preview deploy's noindex `sed`)."""
-    return rel[: -len(".html")] if rel.endswith(".html") else rel + "-images"
-
-
-BROWSER_UNAVAILABLE = (
-    "slides shown as text: the browser couldn't start here, possibly a sandbox;"
-    " run outside it to see rendered slides"
-)
-
-
 class DeckRenderer:
     """Publish marked live decks with their assets, without starting a browser."""
 

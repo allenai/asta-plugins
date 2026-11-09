@@ -1,6 +1,5 @@
 """Run the local `asta workspace what-changed` on an edit to the example deck; its slides must render."""
 
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -9,15 +8,9 @@ import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from site_server import _serve
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location(
-    "review", ROOT / "plugins/asta-tools/skills/workspace/assets/deck-review.py"
-)
-review = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(review)
-# Display shots are taken at device scale, so slide images are this wide.
-DISPLAY_WIDTH = review.VIEWPORT["width"] * review.DISPLAY_SCALE
 
 
 def deploy_preview(site):
@@ -134,7 +127,7 @@ def check(project, artifacts):
     assert not [p for p in images.rglob("*.html") if p.is_dir()]
     deploy_preview(site)
     deploy_main(site)
-    server = review._serve(str(site))
+    server = _serve(str(site))
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
@@ -255,7 +248,7 @@ def check_themed_without_preview(project, artifacts, redirect_preview=False):
     assert result.returncode == 0, result.stdout + result.stderr
     site = project / ".asta/cache/what-changed"
     assert (site / "site_libs/bootstrap").is_dir(), "snapshot has no site theme"
-    server = review._serve(str(site))
+    server = _serve(str(site))
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
