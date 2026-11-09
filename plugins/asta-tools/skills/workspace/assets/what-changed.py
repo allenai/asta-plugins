@@ -1775,7 +1775,7 @@ class DeckRenderer:
             return open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
 
         url = quote(rel, safe="/")
-        body, before, after = self.module.live_review(
+        body, before, after, marked = self.module.live_review(
             rel,
             read(self.old_root),
             read(self.new_root),
@@ -1798,9 +1798,13 @@ class DeckRenderer:
                     dirs_exist_ok=True,
                 )
             self.copied = True
-        for side, doc in (("before", before), ("after", after)):
+        for side, name, doc in (
+            ("before", rel, before),
+            ("after", rel, after),
+            ("after", self.module.marked_path(rel), marked),
+        ):
             if doc:
-                path = os.path.join(self.img_root, side, rel)
+                path = os.path.join(self.img_root, side, name)
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as stream:
                     stream.write(doc)

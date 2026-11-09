@@ -912,17 +912,39 @@ def test_live_report_marks_both_decks_without_browser(tmp_path):
         "deck.html", "deck.html", slides_old, slides_new, {0: 0, 1: 1}
     )
     assert "<iframe " in body and "details" in body and "<template>" in body
-    assert 'data-step="next"' in body
+    # No build controls: every build is shown and navigation is off in each frame.
+    assert "data-step" not in body and "fragments=false" in body
+    assert "keyboard=false" in body and "touch=false" in body
+    for view in ("Changes marked", "Clean", "Before / after"):
+        assert view in body
+    decks = new_root / "what-changed-decks"
     assert (
-        '<del class="dr-live">old</del>'
-        in (new_root / "what-changed-decks/before/deck.html").read_text()
+        'dr-live">'
+        not in (decks / "before/deck.html").read_text().split("</style>")[-1]
     )
     assert (
-        '<ins class="dr-live">new</ins>'
-        in (new_root / "what-changed-decks/after/deck.html").read_text()
+        'dr-live">' not in (decks / "after/deck.html").read_text().split("</style>")[-1]
     )
+    # Changes marked: removed words struck and added words marked on the one slide.
+    marked = (decks / "after/deck.marked.html").read_text()
+    assert (
+        'Hello <del class="dr-live">old</del> <ins class="dr-live">new</ins>' in marked
+    )
+    assert "deck.marked.html?" in body
     assert not list(new_root.rglob("*.png"))
     assert not (new_root / "what-changed-decks/after/what-changed-decks").exists()
+
+
+def test_marked_slide_strikes_deletions_where_they_were():
+    struck = deck_review.struck_before("<p>a b c d</p>", "<p>a c d e</p>")
+    assert struck == {1: ["b"]}
+    assert deck_review.mark_words("<p>a c d e</p>", {3}, "ins", struck) == (
+        '<p>a <del class="dr-live">b</del> c d <ins class="dr-live">e</ins></p>'
+    )
+    tail = deck_review.struck_before("<p>a b</p>", "<p>a</p>")
+    assert deck_review.mark_words("<p>a</p>", set(), "ins", tail) == (
+        '<p>a<del class="dr-live">b</del> </p>'
+    )
 
 
 def test_live_view_script_parses(tmp_path):
@@ -991,11 +1013,11 @@ def test_self_contained_deck_folds_its_unchanged_slides(tmp_path):
     new_doc = _deck([styled, EDITED], SELF_CONTAINED_HEAD)
     files, old, new = _static_files(tmp_path, old_doc, new_doc)
     assert files.same_static("d/deck.html", old[0], new[0])
-    body, _, _ = deck_review.live_review(
+    body, *_ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
     )
     assert "1 changed or new; 0 removed; 2 slides" in body
-    assert "1 unchanged slides" in body
+    assert "Expand 1 unchanged slide (1)" in body
     assert "changed in look" not in body
 
 
@@ -1003,11 +1025,11 @@ def test_live_frames_open_the_deck_full_page_not_embedded(tmp_path):
     old_doc = _deck(['<section id="one"><h2>One</h2></section>'])
     new_doc = _deck(['<section id="one"><h2>Uno</h2></section>'])
     files, old, new = _static_files(tmp_path, old_doc, new_doc)
-    body, _, _ = deck_review.live_review(
+    body, *_ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {0: 0}, files, "b", "a"
     )
     assert (
-        'src="a?view=slide&amp;scrollActivationWidth=0#/one"' in body
+        'data-src="a?view=slide&amp;scrollActivationWidth=0&amp;fragments=false' in body
         and "embedded" not in body
     )
 
@@ -1022,11 +1044,11 @@ def test_live_frames_open_at_their_own_slide(tmp_path):
     )
     new_doc = _deck(['<section id="one"><h2>One</h2></section>', EDITED])
     files, old, new = _static_files(tmp_path, old_doc, new_doc)
-    body, old_marked, new_marked = deck_review.live_review(
+    body, old_marked, new_marked, _ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
     )
     assert 'data-dr-slide-id="two"' in body
-    assert "?view=slide&amp;scrollActivationWidth=0#/two" in body
+    assert "#/two" in body and "keyboard=false" in body
     assert "dr-slide=" not in body
     for doc in (old_marked, new_marked):
         assert "function hook()" not in doc
@@ -1049,7 +1071,7 @@ def test_slides_shifted_by_an_inserted_slide_are_not_changed_in_look(tmp_path):
         ]
     )
     files, old, new = _static_files(tmp_path, old_doc, new_doc)
-    body, _, _ = deck_review.live_review(
+    body, *_ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {1: 0, 2: 1}, files, "b", "a"
     )
     assert "1 changed or new; 0 removed; 3 slides" in body

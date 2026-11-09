@@ -595,9 +595,31 @@ def word_changes(old_raw, new_raw):
     return deleted, inserted
 
 
-def mark_words(raw, indices, tag):
-    """Wrap the words at ``indices`` (as counted by slide_words) in ``<tag>``."""
+def struck_before(old_raw, new_raw):
+    """{new word index: deleted old words shown before it}; key len(new) is the tail."""
+    import difflib
+
+    old, new = slide_words(old_raw), slide_words(new_raw)
+    struck = {}
+    for op, a0, a1, b0, _ in difflib.SequenceMatcher(
+        None, old, new, autojunk=False
+    ).get_opcodes():
+        if op in {"delete", "replace"}:
+            struck.setdefault(b0, []).extend(old[a0:a1])
+    return struck
+
+
+def mark_words(raw, indices, tag, struck=None):
+    """Wrap the words at ``indices`` (as counted by slide_words) in ``<tag>``.
+
+    ``struck`` puts deleted words, struck through, before the word they preceded."""
+    struck = struck or {}
     out, k = [], 0
+
+    def strike(at):
+        if struck.get(at):
+            out.append('<del class="dr-live">' + " ".join(struck[at]) + "</del> ")
+
     for m in _TEXT_RE.finditer(raw):
         if not m.group(3):
             out.append(m.group())
@@ -605,29 +627,52 @@ def mark_words(raw, indices, tag):
         text, pos = m.group(3), 0
         for w in _WORD_RE.finditer(text):
             out.append(text[pos : w.start()])
+            strike(k)
             word = w.group()
             out.append(
                 f'<{tag} class="dr-live">{word}</{tag}>' if k in indices else word
             )
             pos, k = w.end(), k + 1
         out.append(text[pos:])
+    if struck.get(k):
+        # Deleted words after the last kept word go before the slide's last closing tag.
+        tail = "".join(out)
+        cut = tail.rfind("</")
+        out = [tail[:cut]] if cut > 0 else [tail]
+        strike(k)
+        out.append(tail[cut:] if cut > 0 else "")
     return "".join(out)
 
 
 LIVE_MARK_CSS = (
+    # Every build visible, so a changed word is never hidden behind a fragment.
+    "<style>.reveal .slides .fragment{opacity:1!important;visibility:inherit!important;"
+    "transform:none!important}</style>"
     "<style>ins.dr-live,del.dr-live{text-decoration:none;border-radius:2px}"
     "ins.dr-live{background:rgba(47,191,113,.35)}"
     "del.dr-live{background:rgba(253,70,69,.35);text-decoration:line-through}</style>"
 )
 
 
-def marked_deck(doc, slides, marks, tag):
+def marked_path(path):
+    """Where the after deck with insertions and deletions marked is published."""
+    root, ext = posixpath.splitext(path)
+    return root + ".marked" + ext
+
+
+def marked_deck(doc, slides, marks, tag, struck=None):
     """``doc`` with each slide index in ``marks`` re-marked; ``slides`` from SlideParser.
 
+    ``struck`` maps a slide index to struck_before() for deletions on that slide.
     Marks change only inline backgrounds, so slides keep their layout."""
+    struck = struck or {}
     for index in sorted(marks, key=lambda i: slides[i]["span"][0], reverse=True):
         start, end = slides[index]["span"]
-        doc = doc[:start] + mark_words(doc[start:end], marks[index], tag) + doc[end:]
+        doc = (
+            doc[:start]
+            + mark_words(doc[start:end], marks[index], tag, struck.get(index))
+            + doc[end:]
+        )
     head = re.search(r"</head\s*>", doc, re.I)
     if head:
         doc = doc[: head.start()] + LIVE_MARK_CSS + doc[head.start() :]
@@ -687,37 +732,42 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
     )
     if not removed and all(kind == "unchanged" for kind, _, _ in rows):
         return None, old_doc, new_doc
-    deleted, inserted = {}, {}
+    deleted, inserted, struck = {}, {}, {}
     for kind, n, o in rows:
         if o is not None:
             deleted[o], inserted[n] = word_changes(old[o]["raw"], new[n]["raw"])
+            struck[n] = struck_before(old[o]["raw"], new[n]["raw"])
         else:
             inserted[n] = set(range(len(slide_words(new[n]["raw"]))))
     for o in removed:
         deleted[o] = set(range(len(slide_words(old[o]["raw"]))))
     cards, folded = [], []
+    marked_url = marked_path(new_url)
 
-    def frame(url, slide, side):
+    def frame(url, slide, side, view):
         anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
-        # Reveal's narrow-screen scroll view ignores slide hashes. Query config
-        # takes precedence over deck settings, keeping even small frames in slides.
-        src = html.escape(
-            f"{url}?view=slide&scrollActivationWidth=0#/{anchor}", quote=True
-        )
+        # Reveal's narrow-screen scroll view ignores slide hashes; query config
+        # outranks the deck's. Navigation is off so a frame stays on its slide.
+        src = html.escape(f"{url}?{FRAME_CONFIG}#/{anchor}", quote=True)
         slide_id = html.escape(slide.get("id") or slide.get("anchor") or "", quote=True)
         return (
-            f"<figure><figcaption>{side}</figcaption>"
-            f'<iframe loading="lazy" title="{side} slide" data-dr-slide-id="{slide_id}" src="{src}"></iframe>'
-            '<button type="button" data-step="prev">Previous build</button> '
-            '<button type="button" data-step="next">Next build</button></figure>'
+            f'<figure data-view="{view}"><figcaption>{side}</figcaption>'
+            f'<iframe loading="lazy" title="{side} slide" data-dr-slide-id="{slide_id}" '
+            f'data-src="{src}"></iframe></figure>'
         )
 
     def card(kind, n, o):
         number = n + 1 if n is not None else o + 1
         slide = new[n] if n is not None else old[o]
         label = "changed in look" if kind == "look" else kind
-        body = frame(old_url, old[o], "Before") if o is not None else ""
-        body += frame(new_url, new[n], "After") if n is not None else ""
+        if n is None:
+            body = frame(old_url, old[o], "Removed", "marked clean before")
+        else:
+            body = frame(marked_url, new[n], "Changes marked", "marked")
+            body += frame(new_url, new[n], "Clean", "clean")
+            if o is not None:
+                body += frame(old_url, old[o], "Before", "before")
+            body += frame(new_url, new[n], "After", "before")
         return (
             f'<article class="dr-slide dr-{kind}"><h3>Slide {number}: '
             f"{html.escape(slide_title(slide))} — {label}</h3>"
@@ -726,16 +776,21 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
 
     def flush():
         if folded:
+            first, last = folded[0][0], folded[-1][0]
+            span = f"{first}" if first == last else f"{first}–{last}"
             # Inert templates ensure folded slides load no decks until opened.
             cards.append(
-                f'<details class="dr-unchanged"><summary>{len(folded)} unchanged slides</summary>'
-                "<template>" + "".join(folded) + "</template></details>"
+                f'<details class="dr-unchanged wc-expander"><summary>'
+                f'<span class="wc-expander-icon" aria-hidden="true">↕</span> '
+                f"Expand {len(folded)} unchanged slide{'s' if len(folded) > 1 else ''}"
+                f" ({span})</summary>"
+                "<template>" + "".join(c for _, c in folded) + "</template></details>"
             )
             folded.clear()
 
     for kind, n, o in rows:
         if kind == "unchanged":
-            folded.append(card(kind, n, o))
+            folded.append((n + 1, card(kind, n, o)))
         else:
             flush()
             cards.append(card(kind, n, o))
@@ -743,35 +798,67 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
     cards.extend(card("removed", None, o) for o in removed)
     count = sum(kind != "unchanged" for kind, _, _ in rows)
     body = (
-        f'<div class="deck-live deck-review"><p>{count} changed or new; {len(removed)} removed; '
-        f"{len(new)} slides</p>" + "".join(cards) + "</div>"
+        f'<div class="deck-live deck-review" data-view="marked"><div class="dr-bar">'
+        f'<span class="dr-count">{count} changed or new; {len(removed)} removed; '
+        f"{len(new)} slides</span>" + VIEW_SWITCH + "</div>" + "".join(cards) + "</div>"
     )
     return (
         body,
-        marked_deck(old_doc, old, deleted, "del"),
-        marked_deck(new_doc, new, inserted, "ins"),
+        marked_deck(old_doc, old, {}, "del"),
+        marked_deck(new_doc, new, {}, "ins"),
+        marked_deck(new_doc, new, inserted, "ins", struck),
     )
 
 
+# Query config outranks the deck's own (reveal.js reads it last).
+FRAME_CONFIG = (
+    "view=slide&scrollActivationWidth=0&fragments=false&keyboard=false&touch=false"
+    "&controls=false&mouseWheel=false&overview=false&help=false"
+)
+VIEW_SWITCH = (
+    '<span class="dr-seg" role="group" aria-label="Slide view">'
+    '<button type="button" data-v="marked" aria-pressed="true">Changes marked</button>'
+    '<button type="button" data-v="clean" aria-pressed="false">Clean</button>'
+    '<button type="button" data-v="before" aria-pressed="false">Before / after</button></span>'
+)
+
+
 LIVE_STYLE = """<style>
-.deck-live .dr-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.deck-live figure{margin:0;min-width:0}
-.deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888}
-.deck-live h3{font-size:1rem}.deck-live summary{cursor:pointer}
-.deck-live button{font:inherit;font-size:.85rem;color:inherit;background:rgba(127,127,127,.18);border:1px solid rgba(127,127,127,.6);border-radius:4px;padding:2px 10px;margin-top:4px;cursor:pointer}
+.deck-live .dr-bar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:.5rem 0}
+.deck-live .dr-seg{margin-left:auto;display:inline-flex;border:1px solid rgba(127,127,127,.6);border-radius:8px;overflow:hidden}
+.deck-live .dr-seg button{font:inherit;background:none;color:inherit;border:0;padding:4px 12px;cursor:pointer;opacity:.7}
+.deck-live .dr-seg button[aria-pressed=true]{background:rgba(127,127,127,.3);font-weight:600;opacity:1}
+.deck-live .dr-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.deck-live[data-view=before] .dr-pair{grid-template-columns:repeat(2,minmax(0,1fr))}
+.deck-live figure{margin:0;min-width:0}.deck-live figcaption{font-size:.8rem;opacity:.75}
+.deck-live[data-view=marked] figure:not([data-view~=marked]),
+.deck-live[data-view=clean] figure:not([data-view~=clean]),
+.deck-live[data-view=before] figure:not([data-view~=before]){display:none}
+.deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888;display:block}
+.deck-live h3{font-size:1rem}
+.wc-expander{margin:8px 0}
+.wc-expander>summary{list-style:none;cursor:pointer;font-size:.9rem;padding:4px 12px;background:rgba(84,174,255,.12);border:1px solid rgba(84,174,255,.35);border-radius:6px;color:inherit}
+.wc-expander>summary::-webkit-details-marker{display:none}
+.wc-expander>summary:hover{background:rgba(84,174,255,.25)}
+.wc-expander[open]>summary{margin-bottom:8px}
 </style>"""
 LIVE_SCRIPT = """<script>
 document.querySelectorAll('.deck-live').forEach(root => {
- root.addEventListener('click', e => {
-  const button = e.target.closest('[data-step]'); if (!button) return;
-  const frame = button.closest('figure').querySelector('iframe');
-  const reveal = frame.contentWindow.Reveal;
-  if (reveal) reveal[button.dataset.step + "Fragment"]();
+ // Load only the frames the current view shows.
+ const load = () => root.querySelectorAll('iframe[data-src]').forEach(f => {
+  if (f.closest('figure').offsetParent !== null) { f.src = f.dataset.src; f.removeAttribute('data-src'); }
  });
+ root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => {
+  root.dataset.view = b.dataset.v;
+  root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  load();
+ }));
  root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
   const template = details.querySelector('template');
   if (details.open && template) template.replaceWith(template.content.cloneNode(true));
+  load();
  }));
+ load();
 });
 </script>"""
 

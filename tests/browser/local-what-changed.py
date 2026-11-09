@@ -136,31 +136,56 @@ def check(project, artifacts):
             # Only the edited and added slides are shown; the rest fold away.
             assert page.locator(".dr-look").count() == 0
             assert page.locator("details.dr-unchanged").count() > 0
-            for frame in page.locator(".dr-slide iframe").all():
-                frame.scroll_into_view_if_needed()
-                page.wait_for_function(
-                    "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
-                    arg=frame.element_handle(),
-                )
-                child = frame.element_handle().content_frame()
-                assert child is not None
-                # Exercise the narrow frame that activates Reveal's scroll view
-                # by default, and verify identity rather than numeric position.
-                frame.evaluate(
-                    "f => { f.style.width = '378px'; f.style.height = '212px'; }"
-                )
-                child.wait_for_function(
-                    "id => !Reveal.isScrollView() && Reveal.getCurrentSlide().id === id",
-                    arg=frame.get_attribute("data-dr-slide-id"),
-                )
-                # The current slide must sit inside the frame, not below it.
-                box = child.evaluate(
-                    "() => { const r = Reveal.getCurrentSlide()"
-                    ".getBoundingClientRect(); return [r.top, r.bottom, r.height,"
-                    " innerHeight]; }"
-                )
-                top, bottom, height, viewport = box
-                assert height > 0 and top >= -1 and bottom <= viewport + 1, box
+            for view in ("marked", "clean", "before"):
+                live = page.locator(".deck-live").first
+                live.locator(f'.dr-seg button[data-v="{view}"]').click()
+                frames = live.locator(".dr-slide iframe:visible").all()
+                assert frames, view
+                marked_seen = set()
+                for frame in frames:
+                    frame.scroll_into_view_if_needed()
+                    page.wait_for_function(
+                        "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
+                        arg=frame.element_handle(),
+                    )
+                    child = frame.element_handle().content_frame()
+                    assert child is not None
+                    # Exercise the narrow frame that activates Reveal's scroll view
+                    # by default, and verify identity rather than numeric position.
+                    frame.evaluate(
+                        "f => { f.style.width = '378px'; f.style.height = '212px'; }"
+                    )
+                    child.wait_for_function(
+                        "id => !Reveal.isScrollView() && Reveal.getCurrentSlide().id === id",
+                        arg=frame.get_attribute("data-dr-slide-id"),
+                    )
+                    # The current slide must sit inside the frame, not below it.
+                    box = child.evaluate(
+                        "() => { const r = Reveal.getCurrentSlide()"
+                        ".getBoundingClientRect(); return [r.top, r.bottom, r.height,"
+                        " innerHeight]; }"
+                    )
+                    top, bottom, height, viewport = box
+                    assert height > 0 and top >= -1 and bottom <= viewport + 1, box
+                    # A frame stays on its slide: keys don't navigate, builds all show.
+                    child.press("body", "ArrowRight")
+                    assert child.evaluate(
+                        "() => Reveal.getCurrentSlide().id"
+                    ) == frame.get_attribute("data-dr-slide-id")
+                    assert child.evaluate(
+                        "() => [...Reveal.getCurrentSlide().querySelectorAll('.fragment')]"
+                        ".every(f => getComputedStyle(f).opacity === '1')"
+                    )
+                    if view == "marked":
+                        marked_seen.update(
+                            child.evaluate(
+                                "() => [...Reveal.getCurrentSlide()"
+                                ".querySelectorAll('.dr-live')].map(e => e.tagName)"
+                            )
+                        )
+                if view == "marked":
+                    # Removed words struck and added words marked, on the one slide.
+                    assert {"INS", "DEL"} <= marked_seen, marked_seen
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
                 "() => [...document.styleSheets].some("
