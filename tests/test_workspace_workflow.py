@@ -970,7 +970,7 @@ def test_artifact_command_checks_completed_site_before_upload(tmp_path, exit_cod
         "Upload rendered site"
     )
     assert build["permissions"]["contents"] == "read"
-    assert workflow["jobs"]["deploy"]["needs"] == "build"
+    assert workflow["jobs"]["deploy"]["needs"] == ["scope", "build"]
     assert (
         workflow["on"]["workflow_call"]["inputs"]["artifact-command"]["default"] == ""
     )
@@ -1082,8 +1082,12 @@ def _condition_enabled(expression, context):
     # and format() with positional {N} placeholders.
     # Fixtures use canonical casing; unlike Python, GitHub ignores string case.
     expression = re.sub(
-        r"\b(?:github|needs)\.[\w.]+",
-        lambda match: repr(context.get(match.group(), "")),
+        r"\b(?:github|needs|inputs)\.[\w.-]+",
+        lambda match: repr(
+            context.get(
+                match.group(), True if match.group() == "inputs.publish" else ""
+            )
+        ),
         expression,
     )
     expression = expression.replace("&&", " and ").replace("||", " or ")

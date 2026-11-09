@@ -8,6 +8,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
+    inputs:
+      preview-pr:
+        description: Refresh an open PR preview from its head branch (used by the release demo)
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -18,9 +23,12 @@ jobs:
   docs:
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
+      preview-pr: ${{ inputs.preview-pr || '' }}
       site-dir: examples/workspace
       paper-strict: true
       artifact-command: |
+        # The demo PR already carries the patch; its ordinary preview is the demo.
+        [ "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" != example-demo-pr ] || exit 0
         docker run --rm --cap-drop ALL --security-opt no-new-privileges \
           --user "$(id -u):$(id -g)" -e HOME=/tmp \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
@@ -41,14 +49,16 @@ jobs:
 
   # arm on main and on demand only; a PR waits on x86 alone.
   docs-arm:
-    needs: docs
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.preview-pr == ''
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
+      publish: false
       build-runner: ubuntu-24.04-arm
       site-dir: examples/workspace
       paper-strict: true
       artifact-command: |
+        # The demo PR already carries the patch; its ordinary preview is the demo.
+        [ "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" != example-demo-pr ] || exit 0
         docker run --rm --cap-drop ALL --security-opt no-new-privileges \
           --user "$(id -u):$(id -g)" -e HOME=/tmp \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
@@ -68,7 +78,7 @@ jobs:
   check-preview:
     name: Example preview browser
     needs: docs
-    if: always() && github.event_name == 'pull_request' && github.event.action != 'closed'
+    if: always() && github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,7 +90,7 @@ jobs:
       - name: Decide whether the preview browser runs
         id: browser
         env:
-          RUN: ${{ needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+          RUN: ${{ needs.docs.outputs.rendered == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
         run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
       - if: steps.browser.outputs.run == 'true'
         uses: actions/checkout@v4
@@ -89,16 +99,23 @@ jobs:
       - if: steps.browser.outputs.run == 'true'
         name: Read the published preview from gh-pages
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
         run: |
           set -euo pipefail
           git fetch --depth=1 origin gh-pages
-          if [ -z "$(git ls-tree FETCH_HEAD "pr-preview/pr-$PR_NUMBER")" ]; then
-            echo "::error::No published preview found at pr-preview/pr-$PR_NUMBER"
-            exit 1
+          if [ "$PR_NUMBER" = 0 ]; then
+            # Main has no PR diff. Inspect its published site with the same theme,
+            # slide and demo checks; the PR-only URL check below remains separate.
+            mkdir -p preview-site/pr-preview/pr-0
+            git archive FETCH_HEAD | tar -x --anchored --exclude=pr-preview -C preview-site/pr-preview/pr-0
+          else
+            if [ -z "$(git ls-tree FETCH_HEAD "pr-preview/pr-$PR_NUMBER")" ]; then
+              echo "::error::No published preview found at pr-preview/pr-$PR_NUMBER"
+              exit 1
+            fi
+            mkdir preview-site
+            git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
           fi
-          mkdir preview-site
-          git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
       - if: steps.browser.outputs.run == 'true'
         uses: actions/setup-node@v4
         with:
@@ -122,39 +139,38 @@ jobs:
         name: Check slide geometry and standalone behavior
         working-directory: tests/browser
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
         run: node workspace-slides.mjs "../../preview-site/pr-preview/pr-$PR_NUMBER" artifacts
       - if: steps.browser.outputs.run == 'true'
         name: Check both themes and evidence readability
         working-directory: tests/browser
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
         run: npm test -- "../../preview-site/pr-preview/pr-$PR_NUMBER" artifacts
-      - if: steps.browser.outputs.run == 'true'
+      - if: steps.browser.outputs.run == 'true' && (github.event_name == 'pull_request' || inputs.preview-pr != '')
         name: Check the preview and What changed in a browser
         working-directory: tests/browser
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
         run: node example-preview.mjs ../../preview-site artifacts
       - if: steps.browser.outputs.run == 'true'
         uses: astral-sh/setup-uv@v6
       - if: steps.browser.outputs.run == 'true'
         name: Check rendered deck review
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
         run: |
           uv run --no-project --with playwright==1.64.1 python -m playwright install chromium
           uv run --no-project --with playwright==1.64.1 python tests/browser/deck-review.py "preview-site/pr-preview/pr-$PR_NUMBER" tests/browser/artifacts
       - if: steps.browser.outputs.run == 'true'
         name: Check the demo What changed in the published preview
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "preview-site/pr-preview/pr-$PR_NUMBER/demo" tests/browser/artifacts
-      - if: steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'
-        name: Check every demo content type in the published preview
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "preview-site/pr-preview/pr-$PR_NUMBER" tests/browser/artifacts
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          site="preview-site/pr-preview/pr-$PR_NUMBER"
+          if [ "$HEAD_BRANCH" != example-demo-pr ]; then site="$site/demo"; fi
+          uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "$site" tests/browser/artifacts
       - if: steps.browser.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:

@@ -211,11 +211,12 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     assert gate["id"] == "browser"
     assert "needs.docs.outputs.rendered == 'true'" in gate["env"]["RUN"]
     assert "head.repo.full_name == github.repository" in gate["env"]["RUN"]
+    assert "github.event_name != 'pull_request'" in gate["env"]["RUN"]
     assert "github.actor != 'dependabot[bot]'" in gate["env"]["RUN"]
     for step in check["steps"][2:]:
         assert step["if"] in (
             "steps.browser.outputs.run == 'true'",
-            "steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'",
+            "steps.browser.outputs.run == 'true' && (github.event_name == 'pull_request' || inputs.preview-pr != '')",
         )
 
 
@@ -433,13 +434,18 @@ def test_example_uses_current_scaffold_and_managed_inputs():
 def test_published_demo_reuses_local_content_assertions():
     steps = load("example-preview")["jobs"]["check-preview"]["steps"]
     by_name = {s.get("name"): s for s in steps}
-    check = by_name["Check every demo content type in the published preview"]
-    assert "example-demo-pr" in check["if"]
-    assert "local-what-changed-demo.py --site" in check["run"]
-    assert "preview-site/pr-preview/pr-$PR_NUMBER" in check["run"]
     demo = by_name["Check the demo What changed in the published preview"]
     assert "local-what-changed-demo.py --site" in demo["run"]
-    assert "pr-$PR_NUMBER/demo" in demo["run"]
+    assert "preview-site/pr-preview/pr-$PR_NUMBER" in demo["run"]
+    assert (
+        'if [ "$HEAD_BRANCH" != example-demo-pr ]; then site="$site/demo"; fi'
+        in demo["run"]
+    )
+    command = load("example-preview")["jobs"]["docs"]["with"]["artifact-command"]
+    assert (
+        '[ "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" != example-demo-pr ] || exit 0'
+        in command
+    )
 
 
 def test_demo_what_changed_is_built_once_by_the_site_workflow():
@@ -477,7 +483,9 @@ def test_pr_waits_on_x86_only_and_main_adds_arm():
     assert "github.event_name == 'pull_request'" in runners
     assert example["on"]["push"]["branches"] == ["main"]
     site = load("example-preview")["jobs"]
-    assert site["docs-arm"]["if"] == "github.event_name != 'pull_request'"
+    assert "github.event_name != 'pull_request'" in site["docs-arm"]["if"]
+    assert "needs" not in site["docs-arm"]
+    assert site["docs-arm"]["with"]["publish"] == "false"
     assert site["check-preview"]["needs"] == "docs"
 
 
@@ -507,3 +515,106 @@ def test_one_browser_job_checks_the_built_preview():
     ):
         assert check in runs
     assert "examples/workspace/_site" not in runs
+
+
+@pytest.mark.parametrize(
+    "invalid", [None, "closed", "fork", "deleted", "ref", "sha", "event", "number"]
+)
+def test_dispatched_preview_requires_exact_open_same_repo_head(tmp_path, invalid):
+    pr = {
+        "state": "closed" if invalid == "closed" else "open",
+        "head": {
+            "repo": None
+            if invalid == "deleted"
+            else {"full_name": "fork/repo" if invalid == "fork" else "owner/repo"},
+            "ref": "example-demo-pr",
+            "sha": "a" * 40,
+        },
+        "base": {"sha": "b" * 40},
+    }
+    fake = tmp_path / "gh"
+    fake.write_text(f"#!{sys.executable}\nimport json\nprint({json.dumps(pr)!r})\n")
+    fake.chmod(0o755)
+    output = tmp_path / "out"
+    script = load("workspace-quarto-site")["jobs"]["scope"]["steps"][0]["run"]
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            PATH=f"{tmp_path}:{os.environ['PATH']}",
+            EVENT="push" if invalid == "event" else "workflow_dispatch",
+            ACTION="",
+            DISPATCH_PR="not-a-number" if invalid == "number" else "281",
+            SITE_DIR="examples/workspace",
+            GITHUB_REPOSITORY="owner/repo",
+            GITHUB_REF="refs/heads/other"
+            if invalid == "ref"
+            else "refs/heads/example-demo-pr",
+            GITHUB_SHA="c" * 40 if invalid == "sha" else "a" * 40,
+            GITHUB_OUTPUT=str(output),
+        ),
+    )
+    if invalid:
+        assert result.returncode != 0
+        assert not output.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == f"base-sha={'b' * 40}\nrender=true\n"
+
+
+@pytest.mark.parametrize(
+    "path,runs",
+    [
+        ("src/asta/commands/workspace.py", True),
+        ("src/asta/commands/workspace_selection.py", True),
+        ("src/asta/commands/workspace_versions.py", True),
+        ("plugins/asta-tools/skills/workspace/assets/what-changed.py", True),
+        ("examples/workspace/index.qmd", True),
+        ("README.md", False),
+        (".github/workflows/example-workspace.yml", False),
+    ],
+)
+def test_edit_comparison_gate_uses_the_pr_diff(tmp_path, path, runs):
+    def git(*args):
+        return subprocess.check_output(
+            [
+                "git",
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+                *args,
+            ],
+            cwd=tmp_path,
+            text=True,
+            stderr=subprocess.PIPE,
+        ).strip()
+
+    git("init", "-b", "main")
+    git("commit", "--allow-empty", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    changed = tmp_path / path
+    changed.parent.mkdir(parents=True, exist_ok=True)
+    changed.write_text("a change\n")
+    git("add", path)
+    git("commit", "-qm", "head")
+    project = tmp_path / "examples/workspace"
+    project.mkdir(parents=True, exist_ok=True)
+    steps = load("example-workspace")["jobs"]["build"]["steps"]
+    script = next(s["run"] for s in steps if s.get("id") == "differential")
+    result = subprocess.run(
+        ["bash", "-c", script.replace("${{ github.event_name }}", "pull_request")],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            BASE_SHA=base,
+            GITHUB_OUTPUT=str(tmp_path / "out"),
+            GITHUB_STEP_SUMMARY=str(tmp_path / "summary"),
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "out").read_text() == f"run={str(runs).lower()}\n"

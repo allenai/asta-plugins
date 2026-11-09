@@ -95,8 +95,7 @@ jobs:
           changed=$(git -C "$top" diff --name-only "$BASE_SHA" HEAD -- \
             src/asta/commands/workspace.py src/asta/commands/workspace_selection.py \
             src/asta/commands/workspace_versions.py plugins/asta-tools/skills/workspace/assets \
-            examples/workspace tests/browser/workspace-differential.py \
-            .github/workflows/example-workspace.yml)
+            examples/workspace tests/browser/workspace-differential.py)
           if [ -n "$changed" ]; then run=true; else run=false; fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "Edit comparison: run=$run" >> "$GITHUB_STEP_SUMMARY"

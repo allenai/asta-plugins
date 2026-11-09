@@ -1,6 +1,8 @@
 """Exercise the release step that fast-forwards the latest branch."""
 
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -126,3 +128,51 @@ def test_write_access_is_confined_to_branch_publication_jobs():
     assert JOB["needs"] == "latest"
     assert STEP["env"]["NEWEST"] == "${{ needs.latest.outputs.version }}"
     assert jobs["latest"]["outputs"]["version"] == "${{ steps.newest.outputs.version }}"
+
+
+def test_demo_release_rebuilds_the_patch_and_dispatches_its_preview(release, tmp_path):
+    origin, work, _, _ = release
+    # Populate the tagged release with the real patch's input files.
+    patch = ROOT / "examples/workspace-demo.patch"
+    for line in patch.read_text().splitlines():
+        if line.startswith("--- a/"):
+            relative = line.removeprefix("--- a/")
+            destination = work / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, destination)
+    (work / "examples/workspace-demo.patch").write_bytes(patch.read_bytes())
+    git(work, "add", "examples")
+    git(work, "commit", "-qm", "release with sample patch")
+    release_sha = git(work, "rev-parse", "HEAD")
+    git(work, "tag", "v3.0.0")
+    git(work, "push", "-q", "origin", "main", "--tags")
+    fake = tmp_path / "gh"
+    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DISPATCH_LOG"\n')
+    fake.chmod(0o755)
+    job = WORKFLOW["jobs"]["demo-pr"]
+    assert job["permissions"] == {"contents": "write", "actions": "write"}
+    script = job["steps"][-1]["run"]
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=work,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                **GIT_ENV,
+                "NEWEST": "v3.0.0",
+                "PATH": f"{tmp_path}:{os.environ['PATH']}",
+                "GITHUB_REPOSITORY": "owner/repo",
+                "DISPATCH_LOG": str(tmp_path / "dispatches"),
+            },
+        )
+        assert result.returncode == 0, result.stderr
+        head = git(origin, "rev-parse", "refs/heads/example-demo-pr")
+        assert git(work, "rev-parse", f"{head}^") == release_sha
+        assert re.sub(
+            r"^index .+\n", "", git(work, "diff", release_sha, head), flags=re.M
+        ) == re.sub(r"^index .+\n", "", patch.read_text().strip(), flags=re.M)
+    assert (tmp_path / "dispatches").read_text().splitlines() == [
+        "workflow run example-preview.yml --repo owner/repo --ref example-demo-pr -f preview-pr=281"
+    ] * 2

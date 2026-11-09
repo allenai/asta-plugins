@@ -24,7 +24,7 @@ def check(site, artifacts):
         # A published preview already carries its own What changed output, which
         # would otherwise be diffed as extra pages beside the deck under test.
         generated = shutil.ignore_patterns(
-            "what-changed.html", "what-changed-decks", "what-changed-assets"
+            "demo", "what-changed.html", "what-changed-decks", "what-changed-assets"
         )
         for side in ("old", "new"):
             shutil.copytree(site, root / side, ignore=generated)

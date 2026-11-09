@@ -92,7 +92,7 @@ def check_site(site, artifacts):
             if not page.evaluate(THEMED_JS):
                 missing.append("the site's theme")
             if page.locator(".deck-review").count():
-                page.locator(".deck-review").wait_for()
+                page.locator(".deck-review").first.wait_for()
                 if page.locator(".dr-changed, .dr-new, .dr-look").count() == 0:
                     missing.append("the changed slide")
                 check_frames(page, missing)
