@@ -1,9 +1,9 @@
-<!doctype html><html lang="en" data-wc-mode="dark"><head><meta name="robots" content="noindex, nofollow"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="asta-what-changed"><title>What changed &middot; PR 295 · Pages b0717d1f3ef1</title><link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<!doctype html><html lang="en" data-wc-mode="dark"><head><meta name="robots" content="noindex, nofollow"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="asta-what-changed"><title>What changed &middot; PR 295 · Pages 328811b2d49a</title><link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
 <link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-8b4c91e038287a4550e99eaaa3ddcee6.css" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
 <link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-dark-6140b9a27eb93fecbc70cd2d01251415.css" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-2617d1b9b368ef97bc58bbe2cfb3bbd7.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-93c0bd48314e0d8ea16fab734d9027f8.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-4bb35d43c7f0d252fd1d2350fe22612d.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-6eb288e5ef3e11c7c810d27065861b1a.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
 <link rel="stylesheet" href="site_libs/quarto-contrib/quarto-project/asta-theme/asta.css">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -371,8 +371,125 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 })();
 </script><div class="page-columns page-rows-contents page-layout-article wc-scope">
 <main class="content" id="quarto-document-content">
-<header class="diff-head"><h1>What changed</h1><p>PR 295 · Pages b0717d1f3ef1 &middot; No rendered content changed</p><p class="legend">Legend: <ins>added</ins> &middot; <del>removed</del>. Page titles link to the full preview.</p></header>
-<p class="empty">This PR changes no rendered page content relative to the deployed site. (It may still change source files, config, or metadata.)</p>
+<header class="diff-head"><h1>What changed</h1><p>PR 295 · Pages 328811b2d49a &middot; 1 page changed</p><p class="legend">Legend: <ins>added</ins> &middot; <del>removed</del>. Page titles link to the full preview.</p></header><nav class="toc"><a href="#p-appearance-html">Reading in Asta – Asta workspace example <span class="tag changed">changed</span></a></nav>
+<section class="page-diff changed" id="p-appearance-html">
+<h2><a href="appearance.html">Reading in Asta – Asta workspace example</a> <span class="tag changed">changed</span></h2>
+<p class="legend"><code>appearance.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Reading in Asta</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>The workspace is a place to read research notes, inspect supporting evidence, and review a paper as it develops. This page shows the shared reading surface in light and dark, including headings, links, tables, code and callouts.</p>
+<section class="level2">
+<h2 class="anchored">A familiar reading surface</h2>
+<p>Light mode uses a cream background with dark-teal text. Dark mode uses an extra-dark teal background with cream text. Both come from <a href="https://github.com/allenai/design/tree/main/asta">Asta’s design system</a>, and both use the same Manrope type and page layout. Changing the mode keeps the text in the same place, so you can keep reading where you left off.</p>
+<p>The page opens in dark mode on a fresh visit, regardless of your system setting. Use the light/dark toggle in the navigation to choose a mode yourself. Your choice persists as you move between pages or reload the site.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Keep your place
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Scroll through this section. Its heading stays above the text until the next section takes over. The table of contents also marks the section you are reading, and its links let you return to a heading directly.</p>
+</div>
+</div>
+<section class="level3">
+<h3 class="anchored">Reading the components</h3>
+<p>Links use Asta’s teal on the light surface and green on the dark surface. Inline code such as <code>asta workspace sync</code> uses a monospace face. A separate code block keeps commands easy to scan:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span><a href="#cb1-1" aria-hidden="true"></a><span class="ex">asta</span> workspace sync</span>
+<span><a href="#cb1-2" aria-hidden="true"></a><span class="fu">make</span> check</span>
+<span><a href="#cb1-3" aria-hidden="true"></a><span class="fu">make</span> preview</span></code></pre></div></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Part of the page</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Section heading</td>
+<td>Keep the current reading context in view</td>
+</tr>
+<tr class="even">
+<td>Table of contents</td>
+<td>Jump to another part of a long page</td>
+</tr>
+<tr class="odd">
+<td>Theme toggle</td>
+<td>Choose the light or dark reading surface</td>
+</tr>
+<tr class="even">
+<td>Evidence highlight</td>
+<td>Inspect the quote backing a research claim</td>
+</tr>
+</tbody>
+</table>
+<p>Read the <a href="lit-review/index.html">sample literature review</a> to try an evidence highlight. Hover over its marked claim, or focus it with the keyboard, to see the source quote alongside its citation.</p>
+<p><a href="lit-review/index.html" class="btn btn-primary">Read the sample review</a></p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">A project can choose its own appearance</h2>
+<p>The theme is a managed workspace asset. A project receives it from the same selected source as its shared build rules and evidence extension. A refresh updates those assets together instead of leaving a copied stylesheet behind.</p>
+<p>Existing projects adopt the Asta theme when their HTML theme still has the scaffold’s original <code>cosmo</code> value and their selected source supplies the new assets. A project with another theme keeps its choice. Older pinned sources keep their original appearance until the project selects a compatible release.</p>
+<section class="level3">
+<h3 class="anchored">Customize deliberately</h3>
+<p>For a different HTML theme, edit the project’s <code>_quarto.yml</code>. Keep any project-specific styles alongside it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span><a href="#cb2-1" aria-hidden="true"></a><span class="fu">format</span><span class="kw">:</span></span>
+<span><a href="#cb2-2" aria-hidden="true"></a><span class="at">  </span><span class="fu">html</span><span class="kw">:</span></span>
+<span><a href="#cb2-3" aria-hidden="true"></a><span class="at">    </span><span class="fu">theme</span><span class="kw">:</span><span class="at"> flatly</span></span>
+<span><a href="#cb2-4" aria-hidden="true"></a><span class="at">    </span><span class="fu">css</span><span class="kw">:</span><span class="at"> styles.css</span></span></code></pre></div></div>
+<p>To customize the Asta theme directly, commit a copy of <code>_extensions/asta-theme</code>. Managed refreshes preserve committed copies and local development symlinks. This keeps intentional project styling under the project’s own version control.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Share the rendered work
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>A workspace preview includes the same light/dark controls as the published site. Send a reader the preview URL so they can inspect the actual page, follow its links, and choose the reading surface they prefer.</p>
+</div>
+</div>
+
+
+
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored"><ins>Links between pages</ins></h2>
+<p><ins>The <a href="slides/attention/slides.html">attention slides</a> present the same question as a short talk. Supporting quotes live in <code>evidence.yml</code> under an id; the literature review’s first claim uses the id <code>transformer-attention</code>.</ins></p>
+
+
+</section>
+
+</div>
+</section>
 </main>
 </div><script>
 (function () {
