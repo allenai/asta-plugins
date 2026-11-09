@@ -2912,19 +2912,4 @@ window.QuartoSupport = function () {
       </script>
     
 
-<script>(function () {
-  var m = /[?&]dr-slide=(\d+)(?:\.(\d+))?/.exec(location.search);
-  if (!m) return;
-  var h = +m[1], v = m[2] ? +m[2] : 0, tries = 0;
-  function go() {
-    var i = window.Reveal.getIndices();
-    if (i.h !== h || (i.v || 0) !== v) window.Reveal.slide(h, v);
-  }
-  function hook() {
-    var R = window.Reveal;
-    if (!R || !R.on) { if (tries++ < 200) setTimeout(hook, 50); return; }
-    if (R.isReady && R.isReady()) go();
-    R.on('ready', go);
-  }
-  hook();
-})();</script></body></html>
+</body></html>
