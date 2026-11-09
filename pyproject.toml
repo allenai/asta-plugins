@@ -57,3 +57,4 @@ filterwarnings = [
 "plugins/asta-tools/skills/workspace/assets/deck-review.py" = "asta/workspace_assets/deck-review.py"
 "plugins/asta-tools/skills/workspace/assets/paper-discovery.py" = "asta/workspace_assets/paper-discovery.py"
 "plugins/asta-tools/skills/workspace/assets/paper-preview.sh" = "asta/workspace_assets/paper-preview.sh"
+"plugins/asta-tools/skills/workspace/assets/paper/latexmkrc" = "asta/workspace_assets/paper/latexmkrc"

@@ -87,3 +87,9 @@ A workspace preview includes the same light/dark controls as the published
 site. Send a reader the preview URL so they can inspect the actual page,
 follow its links, and choose the reading surface they prefer.
 :::
+
+## Links between pages
+
+The [attention slides](slides/attention/slides.qmd) present the same question
+as a short talk. Supporting quotes live in `evidence.yml` under an id; the
+literature review's first claim uses the id `transformer-attention`.

@@ -66,6 +66,65 @@ def _entries(path):
     return entries
 
 
+INCLUDE = re.compile(
+    r"\{\{<\s*(?:include|embed)\s+([^>]*?)\s*>\}\}"
+    r"|\bchild\s*=\s*(?:c\(\s*)?[\"']([^\"']+)[\"']"
+)
+
+
+def _includes(page, text):
+    """Files a page includes or embeds; None for a target it can't resolve."""
+    for match in INCLUDE.finditer(text):
+        argument = (match[1] or match[2] or "").split()
+        target = argument[0].strip("\"'").split("#")[0] if argument else ""
+        if not target or re.search(r"[<>{}$\\]", target):
+            yield None
+            continue
+        base = "" if target.startswith("/") else os.path.dirname(page)
+        yield os.path.normpath(os.path.join(base, target.lstrip("/"))).replace(
+            os.sep, "/"
+        )
+
+
+def _citing(documents, key, patterns):
+    """Pages citing key; None when it's mentioned but no citation is recognised."""
+    found = {
+        name
+        for docs in documents
+        for name, text in docs.items()
+        if any(re.search(pattern.format(re.escape(key)), text) for pattern in patterns)
+    }
+    return found or None
+
+
+EVIDENCE = [r"\bkey\s*=\s*[\"']?{}(?![\w:.#$%&+?<>~/-]*\w)"]
+BIB = [
+    r"(?<![\w@])@{}(?!\w)",
+    r"@\{{{}\}}",
+    r"\bcite\s*=\s*[\"']?{}(?![\w])",
+    r"\bnocite\b",
+]
+
+
+def _evidence_citing_bib(roots, keys):
+    """Evidence entries whose cite field names a changed bibliography key."""
+    result = set()
+    for root in roots:
+        for path in root.rglob("evidence.yml"):
+            if IGNORE & set(path.relative_to(root).parts):
+                continue
+            entries = _entries(path)
+            for name, entry in entries.items():
+                cite = entry.get("cite") if isinstance(entry, dict) else None
+                if cite is None or not isinstance(cite, str):
+                    if isinstance(entry, dict) and "cite" in entry:
+                        raise ValueError("unrecognised cite field")
+                    continue
+                if any(key in cite for key in keys):
+                    result.add(str(name))
+    return result
+
+
 def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | None:
     """None means compare everything. Never infer safety from a missing match."""
     if not changed:
@@ -73,7 +132,6 @@ def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | N
     documents = [_documents(root) for root in (before, after)]
     all_names = set(documents[0]) | set(documents[1])
     selected = set()
-    tokens = set()
     for name in set(changed):
         path = Path(name)
         if "_extensions" in path.parts or any(
@@ -85,54 +143,64 @@ def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | N
             return None
         if path.suffix in PAGES:
             selected.add(name)
-            tokens.update((name, path.name))
             if name not in documents[0] or name not in documents[1]:
                 # Creation/deletion/rename may change any listing or navigation.
                 return None
         elif path.name == "evidence.yml" or path.suffix == ".bib":
             try:
                 old, new = (_entries(root / name) for root in (before, after))
-            except (OSError, ValueError, yaml.YAMLError):
+                keys = {
+                    str(k) for k in old.keys() | new.keys() if old.get(k) != new.get(k)
+                }
+                evidence = set()
+                if path.suffix == ".bib":
+                    evidence = _evidence_citing_bib((before, after), keys)
+            except (OSError, ValueError, AttributeError, yaml.YAMLError):
                 return None
-            keys = {k for k in old.keys() | new.keys() if old.get(k) != new.get(k)}
             if not keys:
                 return None
-            if any(
-                not any(
-                    str(key) in text for docs in documents for text in docs.values()
-                )
-                for key in keys
-            ):
-                return None
-            tokens.update(str(key) for key in keys)
+            pattern = EVIDENCE if path.suffix != ".bib" else BIB
+            for key in keys:
+                pages = _citing(documents, key, pattern)
+                if pages is None:
+                    return None
+                selected |= pages
+            for key in evidence:
+                pages = _citing(documents, key, EVIDENCE)
+                if pages is None:
+                    return None
+                selected |= pages
         elif path.suffix in ASSETS:
-            if not any(
-                name in text or path.name in text
+            pages = {
+                page
                 for docs in documents
-                for text in docs.values()
-            ):
+                for page, text in docs.items()
+                if name in text or path.name in text
+            }
+            if not pages:
                 return None
-            tokens.update((name, path.name))
+            selected |= pages
         else:
             return None
-    # Follow includes in both revisions, including ordinary non-underscore files.
-    # Basename matching also handles ../ paths; false positives cost only time.
+    # Follow only real includes/embeds, in both revisions; a page that merely
+    # links to or names a selected file renders the same.
     while True:
-        added = {
-            name
-            for docs in documents
-            for name, text in docs.items()
-            if any(token in text for token in tokens)
-        } - selected
+        added = set()
+        for docs in documents:
+            for page, text in docs.items():
+                if page in selected:
+                    continue
+                for target in _includes(page, text):
+                    if target is None or target in selected:
+                        added.add(page)
+                        break
         if not added:
             break
-        selected.update(added)
-        for name in added:
-            tokens.update((name, Path(name).name))
+        selected |= added
     if not selected:
         return None
-    # Includes starting with '_' aren't standalone pages. Quarto's after-side
-    # inspect provides the authoritative render set after the builds.
+    # Includes starting with '_' aren't standalone pages. Quarto's inspect
+    # provides the authoritative render set before the builds.
     return (
         sorted(
             name
@@ -143,6 +211,17 @@ def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | N
     )
 
 
+def _stock_latexmkrc():
+    here = Path(__file__).resolve()
+    for path in (
+        here.parents[1] / "workspace_assets" / "paper" / "latexmkrc",
+        here.parents[3] / "plugins/asta-tools/skills/workspace/assets/paper/latexmkrc",
+    ):
+        if path.is_file():
+            return path.read_bytes()
+    return None
+
+
 def paper_affected(
     project: Path, directory: str, main: str, changed: list[str]
 ) -> bool:
@@ -150,11 +229,23 @@ def paper_affected(
     root = (project / directory).resolve()
     if any((project / name).resolve().is_relative_to(root) for name in changed):
         return True
-    if any((root / name).exists() for name in ("latexmkrc", ".latexmkrc")):
-        return True
+    stock = _stock_latexmkrc()
+    for name in ("latexmkrc", ".latexmkrc"):
+        rc = root / name
+        # The scaffold's own rc only searches up for references.bib; any other
+        # rc can add inputs we can't see.
+        if rc.exists() and (stock is None or rc.read_bytes() != stock):
+            return True
+    dependencies = set()
+    if stock is not None and (root / "latexmkrc").exists():
+        directory_ = root
+        while True:
+            dependencies.add(directory_ / "references.bib")
+            if directory_ == project.resolve() or directory_.parent == directory_:
+                break
+            directory_ = directory_.parent
     pending = [root / main]
     seen = set()
-    dependencies = set()
     pattern = re.compile(
         r"\\(input|include|bibliography|addbibresource|includegraphics)\s*(?:\[[^\]]*\]\s*)?\{([^{}]+)\}"
     )
