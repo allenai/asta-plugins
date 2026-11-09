@@ -10,15 +10,8 @@ on:
         description: Final release tag whose -tex image and assets build the example
         type: string
         required: true
+  # Every PR must exercise the same scaffold and uncommitted demo edit.
   pull_request:
-    paths:
-      - examples/workspace/**
-      - .asta/overleaf/examples/workspace/**
-      - .github/workflows/example-workspace.yml
-      - plugins/asta-tools/skills/workspace/assets/**
-      - src/asta/commands/workspace*.py
-      - tests/test_example_workspace_workflow.py
-      - tests/browser/**
   workflow_dispatch:
 
 permissions:
