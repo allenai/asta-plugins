@@ -260,6 +260,7 @@ class ResourceRefs(HTMLParser):
         self.refs = []
         self.feed(source)
         self.refs.extend(re.findall(r"url\(\s*[\"']?([^\"')]+)", source, re.I))
+        self.refs.extend(re.findall(r"@import\s+[\"']([^\"']+)", source, re.I))
 
     def handle_starttag(self, tag, attrs):
         for name, value in attrs:
@@ -287,6 +288,37 @@ class ResourceRefs(HTMLParser):
                     )
 
     handle_startendtag = handle_starttag
+
+
+def _local_paths(source, base):
+    """Site paths ``source`` loads relative to ``base``, or None for a remote file."""
+    paths = set()
+    for link in ResourceRefs(source).refs:
+        link = html.unescape(link.strip())
+        parts = urlsplit(link)
+        if not link or link.startswith("#") or parts.scheme == "data":
+            continue
+        if parts.scheme or parts.netloc:
+            return None
+        paths.add(posixpath.normpath(posixpath.join(base, unquote(parts.path))))
+    return paths
+
+
+def _same_static(files, loaded, deck, before, after):
+    if (
+        before.get("raw") is None
+        or before["raw"] != after.get("raw")
+        or before.get("position") != after.get("position")
+        or before.get("frame") != after.get("frame")
+        or LIVE_RE.search(after["raw"])
+    ):
+        return False
+    # The deck documents themselves are compared as raw slides and frame.
+    paths = set(loaded.get(deck, set())) - {"/" + deck}
+    refs = _local_paths(after["raw"], "/" + posixpath.dirname(deck))
+    if refs is None:
+        return False
+    return all(files._same_file(path) for path in paths | refs)
 
 
 class Renderer:
@@ -402,26 +434,7 @@ class Renderer:
         every file the slide references and every file either deck has loaded.
         Otherwise, or with live content, the pixels are compared.
         """
-        if (
-            before.get("raw") is None
-            or before["raw"] != after.get("raw")
-            or before.get("position") != after.get("position")
-            or before.get("frame") != after.get("frame")
-            or LIVE_RE.search(after["raw"])
-        ):
-            return False
-        base = "/" + posixpath.dirname(deck)
-        # The deck documents themselves are compared as raw slides and frame.
-        paths = self._loaded.get(deck, set()) - {"/" + deck}
-        for link in ResourceRefs(after["raw"]).refs:
-            link = html.unescape(link.strip())
-            parts = urlsplit(link)
-            if not link or link.startswith("#") or parts.scheme == "data":
-                continue
-            if parts.scheme or parts.netloc:
-                return False
-            paths.add(posixpath.normpath(posixpath.join(base, unquote(parts.path))))
-        return all(self._same_file(path) for path in paths)
+        return _same_static(self, self._loaded, deck, before, after)
 
     def slide_ids(self, side, deck):
         return self.page(side, deck).evaluate("() => Reveal.getSlides().map(s => s.id)")
@@ -478,6 +491,58 @@ class Renderer:
 
 
 # Live slides: the rendered deck itself, with changed words marked in its HTML.
+class StaticFiles:
+    """same_static() without a browser: the deck's files come from its HTML.
+
+    Files the deck loads are read from the HTML outside the slides, following
+    ``url()`` and ``@import`` in local stylesheets; a remote file there is the
+    same URL on both sides, since that HTML must match.
+    """
+
+    def __init__(self, old_root, new_root):
+        self._roots = {"old": old_root, "new": new_root}
+        self._same_files = {}
+        self._loaded = {}
+
+    def _same_file(self, path):
+        return Renderer._same_file(self, path)
+
+    def loaded(self, deck, frame):
+        # The frame is the deck HTML outside the slides, as one or more pieces.
+        if not isinstance(frame, str):
+            head, tail, inner = frame
+            frame = head + tail + "".join(inner)
+        key = (deck, frame)
+        if key not in self._loaded:
+            seen, todo = set(), [("/" + posixpath.dirname(deck), frame)]
+            while todo:
+                base, source = todo.pop()
+                for link in ResourceRefs(source).refs:
+                    link = html.unescape(link.strip())
+                    parts = urlsplit(link)
+                    if not link or link.startswith("#") or parts.scheme or parts.netloc:
+                        continue
+                    path = posixpath.normpath(posixpath.join(base, unquote(parts.path)))
+                    if path in seen:
+                        continue
+                    seen.add(path)
+                    if path.endswith(".css"):
+                        target = os.path.join(self._roots["new"], path.lstrip("/"))
+                        try:
+                            with open(target, encoding="utf-8", errors="replace") as f:
+                                todo.append((posixpath.dirname(path), f.read()))
+                        except OSError:
+                            pass
+            self._loaded[key] = seen
+        return self._loaded[key]
+
+    def same_static(self, deck, before, after):
+        if after.get("frame") is None:
+            return False
+        loaded = {deck: self.loaded(deck, after["frame"])}
+        return _same_static(self, loaded, deck, before, after)
+
+
 _TEXT_RE = re.compile(
     r"(<(script|style)\b.*?</\2\s*>|<!--.*?-->|<[^>]*>)|([^<]+)", re.S | re.I
 )

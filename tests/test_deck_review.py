@@ -994,3 +994,48 @@ def test_live_rows_classifies_words_and_look_without_a_browser():
     )
     assert [kind for kind, _, _ in rows] == ["unchanged", "changed", "look", "new"]
     assert removed == [3]
+
+
+def _static_files(tmp_path, old_doc, new_doc, files=None, new_files=None):
+    _, old, new = _static_renderer(tmp_path, old_doc, new_doc, files, new_files)
+    return (
+        deck_review.StaticFiles(str(tmp_path / "old"), str(tmp_path / "new")),
+        old,
+        new,
+    )
+
+
+def test_static_files_skip_identical_slides_without_a_browser(tmp_path):
+    old_doc = _deck([SLIDE, '<section id="two"><h2>Two</h2></section>'])
+    new_doc = _deck([SLIDE, EDITED])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+    assert not files.same_static("d/deck.html", old[1], new[1])
+
+
+def test_static_files_follow_the_decks_stylesheets(tmp_path):
+    doc = _deck([SLIDE])
+    css = {"d/deck.css": '@import "more.css";', "d/more.css": "h2{}"}
+    files, old, new = _static_files(
+        tmp_path, doc, doc, css, {"d/more.css": "h2{color:red}"}
+    )
+    assert "/d/more.css" in files.loaded("d/deck.html", new[0]["frame"])
+    assert not files.same_static("d/deck.html", old[0], new[0])
+
+
+def test_static_files_compare_slide_images_and_ignore_outbound_links(tmp_path):
+    slide = SLIDE.replace(
+        "</section>", '<a href="https://arxiv.org/abs/1706.03762">paper</a></section>'
+    )
+    doc = _deck([slide])
+    files, old, new = _static_files(tmp_path, doc, doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+    files, old, new = _static_files(tmp_path / "b", doc, doc, None, {"d/a.png": "B"})
+    assert not files.same_static("d/deck.html", old[0], new[0])
+
+
+def test_static_files_read_inline_data_images_whole(tmp_path):
+    data = '<img src="data:image/svg+xml,%3Csvg%20a=%221,2%22/%3E">'
+    doc = _deck([SLIDE.replace("</section>", data + "</section>")])
+    files, old, new = _static_files(tmp_path, doc, doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
