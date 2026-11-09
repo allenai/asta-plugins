@@ -41,7 +41,7 @@ CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
 # Cached when the selected ref ships it; `asta workspace what-changed` runs it.
 DIFF_SCRIPT = "what-changed.py"
-# Optional beside DIFF_SCRIPT: renders a changed deck's slides when Playwright is installed.
+# Optional beside DIFF_SCRIPT: publishes marked live decks without browser dependencies.
 DECK_SCRIPT = "deck-review.py"
 SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, DECK_SCRIPT)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
@@ -1586,35 +1586,8 @@ def _paper_previews(project: Path, base: str, site: Path) -> None:
 
 
 def _comparison_python(decks):
-    """Only deck comparisons provision the pinned optional browser through uv."""
-    env = os.environ.copy()
-    if not decks:
-        return [sys.executable], env
-    command = ["uv", "run", "--no-project", "--with", "playwright==1.64.1", "python"]
-    relative = env.get("UV_CACHE_DIR") and not Path(env["UV_CACHE_DIR"]).is_absolute()
-    if relative:
-        # Resolved once, so every uv call below shares one cache.
-        env["UV_CACHE_DIR"] = str(Path(env["UV_CACHE_DIR"]).resolve())
-    try:
-        if relative:
-            # A relative cache is per project; keep one Chromium for all of them.
-            cache = tempfile.gettempdir()
-        else:
-            cache = subprocess.run(
-                ["uv", "cache", "dir"], capture_output=True, text=True, check=True
-            ).stdout.strip()
-        env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path(cache) / "asta-chromium"))
-        subprocess.run(
-            [*command, "-m", "playwright", "install", "chromium"], env=env, check=True
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        click.echo(
-            "Slides shown as text: the browser couldn't be set up here, possibly a"
-            f" sandbox; run outside it to see rendered slides ({exc})",
-            err=True,
-        )
-        return [sys.executable], env
-    return command, env
+    """Live deck comparisons use the CLI's Python, with no browser dependency."""
+    return [sys.executable], os.environ.copy()
 
 
 def _default_comparison_ref(project):

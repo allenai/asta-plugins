@@ -1729,7 +1729,7 @@ def _pair_similar(old, new, olds, news):
 
 
 def load_deck_review():
-    """deck-review.py beside this script, or None if it or Playwright is missing."""
+    """deck-review.py beside this script, or None if it cannot be loaded."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deck-review.py")
     if not os.path.exists(path):
         return None
@@ -1739,7 +1739,6 @@ def load_deck_review():
         spec = importlib.util.spec_from_file_location("deck_review", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        import playwright.sync_api  # noqa: F401
     except Exception as exc:  # noqa: BLE001 - any failure falls back to the text diff
         print(f"what-changed: slides as text ({exc})", file=sys.stderr)
         return None
@@ -1761,54 +1760,55 @@ BROWSER_UNAVAILABLE = (
 
 
 class DeckRenderer:
-    """Lazily starts one browser for every deck on the page."""
+    """Publish marked live decks with their assets, without starting a browser."""
 
     def __init__(self, module, old_root, new_root, img_root, img_url):
         self.module, self.old_root, self.new_root = module, old_root, new_root
         self.img_root, self.img_url = img_root, img_url.rstrip("/")
-        self.renderer = None
+        self.files = module.StaticFiles(old_root, new_root)
         self.used = False
-        self.failed = False
+        self.copied = False
 
     def review(self, rel, link, old, new, pairs):
-        if (
-            self.failed or not new
-        ):  # failed launch or a removed deck keeps the text diff
-            return False
-        img_rel = deck_image_dir(rel)
-        if self.renderer is None:
-            try:
-                self.renderer = self.module.Renderer(self.old_root, self.new_root)
-            except Exception as exc:  # noqa: BLE001
-                self.failed = True
-                shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
-                print(f"what-changed: {BROWSER_UNAVAILABLE} ({exc})", file=sys.stderr)
-                return False
-        try:
-            sub = quote(img_rel, safe="/")
-            body = self.module.review(
-                rel,
-                link,
-                os.path.join(self.img_root, img_rel),
-                f"{self.img_url}/{sub}",
-                old,
-                new,
-                pairs,
-                self.renderer,
-            )
-        except Exception as exc:  # noqa: BLE001
-            shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
-            print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
-            return False
-        finally:
-            if self.renderer is not None:
-                self.renderer.release_deck(rel)
-        self.used = self.used or body is not None
+        def read(root):
+            path = os.path.join(root, rel)
+            return open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
+
+        url = quote(rel, safe="/")
+        body, before, after = self.module.live_review(
+            rel,
+            read(self.old_root),
+            read(self.new_root),
+            old,
+            new,
+            pairs,
+            self.files,
+            f"{self.img_url}/before/{url}",
+            f"{self.img_url}/after/{url}",
+        )
+        if body is None:
+            return None
+        if not self.copied:
+            generated = os.path.basename(self.img_root)
+            for side, root in (("before", self.old_root), ("after", self.new_root)):
+                shutil.copytree(
+                    root,
+                    os.path.join(self.img_root, side),
+                    ignore=shutil.ignore_patterns(generated),
+                    dirs_exist_ok=True,
+                )
+            self.copied = True
+        for side, doc in (("before", before), ("after", after)):
+            if doc:
+                path = os.path.join(self.img_root, side, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as stream:
+                    stream.write(doc)
+        self.used = True
         return body
 
     def close(self):
-        if self.renderer is not None:
-            self.renderer.close()
+        pass
 
 
 def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
@@ -2123,7 +2123,9 @@ def build(
         html_attrs = body_attrs = mode_js = ""
 
     deck_assets = (
-        decks.module.STYLE + decks.module.SCRIPT if decks and decks.used else ""
+        decks.module.LIVE_STYLE + decks.module.LIVE_SCRIPT
+        if decks and decks.used
+        else ""
     )
     return (
         "<!doctype html>"
@@ -2163,8 +2165,8 @@ def main(argv=None):
     ap.add_argument(
         "--render-decks",
         metavar="DIR",
-        help="render changed slides as images into generated DIR (needs deck-review.py"
-        " and Playwright; else slides as text); existing DIR contents are replaced",
+        help="publish marked live decks into generated DIR (needs deck-review.py"
+        "; else slides as text); existing DIR contents are replaced",
     )
     ap.add_argument(
         "--reserved-local-output",

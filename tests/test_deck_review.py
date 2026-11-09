@@ -228,108 +228,6 @@ def test_notes_only_change_is_not_a_visible_edit():
     assert rows == [("unchanged", 0, 0)]
 
 
-def test_failed_browser_launch_is_not_retried_and_cleans_partial_images(tmp_path):
-    from types import SimpleNamespace
-
-    def fail(*args):
-        calls.append(args)
-        raise RuntimeError("no browser")
-
-    calls = []
-    partial = tmp_path / "slides"
-    partial.mkdir()
-    (partial / "partial.png").touch()
-    decks = what_changed.DeckRenderer(
-        SimpleNamespace(Renderer=fail), "old", "new", str(tmp_path), "imgs"
-    )
-    for _ in range(2):
-        assert (
-            decks.review("slides.html", "slides.html", [], _slides("One"), {}) is False
-        )
-    assert len(calls) == 1
-    assert not partial.exists()
-
-
-def test_macos_sandbox_launch_failure_keeps_text_diff(tmp_path, monkeypatch, capsys):
-    from types import SimpleNamespace
-
-    def denied(*args):
-        raise RuntimeError("Mach port permission denied")
-
-    monkeypatch.setattr(
-        what_changed, "load_deck_review", lambda: SimpleNamespace(Renderer=denied)
-    )
-    old, new = tmp_path / "old", tmp_path / "new"
-    document = (
-        "<html><head><title>Talk</title></head><body>"
-        '<div class="reveal"><div class="slides">'
-        '<section id="a"><h2>{}</h2></section></div></div></body></html>'
-    )
-    for site, text in ((old, "Old finding"), (new, "New finding")):
-        site.mkdir()
-        (site / "slides.html").write_text(document.format(text))
-    output = new / "what-changed.html"
-    what_changed.main(
-        [
-            "--old",
-            str(old),
-            "--new",
-            str(new),
-            "--out",
-            str(output),
-            "--render-decks",
-            str(new / "images"),
-        ]
-    )
-    page = output.read_text()
-    assert "<ins" in page and "<del" in page
-    assert "Old" in page and "New" in page
-    assert 'class="deck-review"' not in page
-    err = capsys.readouterr().err
-    assert "the browser couldn't start here, possibly a sandbox" in err
-    assert "run outside it to see rendered slides" in err
-
-
-def test_output_images_are_relative_to_output_page_and_stale_files_removed(
-    tmp_path, monkeypatch
-):
-    from types import SimpleNamespace
-
-    old, new = tmp_path / "old", tmp_path / "new"
-    old.mkdir()
-    new.mkdir()
-    images = new / "assets/review"
-    images.mkdir(parents=True)
-    (images / "stale.png").touch()
-    captured = []
-
-    class Decks:
-        def __init__(self, *args):
-            captured.append(args)
-            self.used = False
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(what_changed, "load_deck_review", lambda: SimpleNamespace())
-    monkeypatch.setattr(what_changed, "DeckRenderer", Decks)
-    out = new / "what-changed.html"
-    what_changed.main(
-        [
-            "--old",
-            str(old),
-            "--new",
-            str(new),
-            "--out",
-            str(out),
-            "--render-decks",
-            str(images),
-        ]
-    )
-    assert captured[0][-1] == "assets/review"
-    assert not (images / "stale.png").exists()
-
-
 def test_failed_renderer_initialization_closes_all_started_resources(
     tmp_path, monkeypatch
 ):
@@ -664,61 +562,6 @@ def test_release_deck_closes_only_its_cached_documents():
     assert renderer._pages == {("new", "two.html"): other}
 
 
-def test_deck_image_folders_are_not_named_like_html_pages(tmp_path):
-    """The preview deploy hands every `*.html` path to `sed`; image folders must not match."""
-    from types import SimpleNamespace
-
-    seen = []
-
-    def capture(rel, link, img_dir, img_url, *args):
-        seen.append((img_dir, img_url))
-        return "<div></div>"
-
-    decks = what_changed.DeckRenderer(
-        SimpleNamespace(
-            Renderer=lambda *a: SimpleNamespace(release_deck=print), review=capture
-        ),
-        "old",
-        "new",
-        str(tmp_path),
-        "what-changed-decks",
-    )
-    decks.review("slides/attention/slides.html", "x", [], _slides("One"), {})
-    assert seen == [
-        (
-            str(tmp_path / "slides/attention/slides"),
-            "what-changed-decks/slides/attention/slides",
-        )
-    ]
-    assert what_changed.deck_image_dir("talk.html") == "talk"
-    assert not what_changed.deck_image_dir("odd").endswith(".html")
-
-
-@pytest.mark.parametrize("failed", [False, True])
-def test_each_deck_releases_documents_even_after_capture_failure(tmp_path, failed):
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-
-    renderer = Mock()
-    capture = (
-        Mock(side_effect=RuntimeError("bad deck"))
-        if failed
-        else Mock(return_value=None)
-    )
-    decks = what_changed.DeckRenderer(
-        SimpleNamespace(Renderer=lambda *args: renderer, review=capture),
-        "old",
-        "new",
-        str(tmp_path),
-        "imgs",
-    )
-    assert decks.review("deck.html", "deck.html", [], _slides("Slide"), {}) is (
-        False if failed else None
-    )
-    renderer.release_deck.assert_called_once_with("deck.html")
-    renderer.close.assert_not_called()  # the browser remains reusable
-
-
 def test_a_failed_child_frame_does_not_discard_the_slide():
     from unittest.mock import Mock
 
@@ -1039,3 +882,92 @@ def test_static_files_read_inline_data_images_whole(tmp_path):
     doc = _deck([SLIDE.replace("</section>", data + "</section>")])
     files, old, new = _static_files(tmp_path, doc, doc)
     assert files.same_static("d/deck.html", old[0], new[0])
+
+
+def test_live_report_marks_both_decks_without_browser(tmp_path):
+    old_root, new_root = tmp_path / "old", tmp_path / "new"
+    old_root.mkdir()
+    new_root.mkdir()
+
+    def deck(word):
+        return (
+            '<html><head></head><body><div class="reveal"><div class="slides">'
+            '<section id="a"><h2>Hello ' + word + "</h2></section>"
+            '<section id="b"><h2>Same</h2></section></div></div></body></html>'
+        )
+
+    before, after = deck("old"), deck("new")
+    (old_root / "deck.html").write_text(before)
+    (new_root / "deck.html").write_text(after)
+    slides_old = what_changed.reveal_slides(before)
+    slides_new = what_changed.reveal_slides(after)
+    renderer = what_changed.DeckRenderer(
+        deck_review,
+        str(old_root),
+        str(new_root),
+        str(new_root / "what-changed-decks"),
+        "what-changed-decks",
+    )
+    body = renderer.review(
+        "deck.html", "deck.html", slides_old, slides_new, {0: 0, 1: 1}
+    )
+    assert "<iframe " in body and "details" in body and "<template>" in body
+    assert 'data-step="next"' in body
+    assert (
+        '<del class="dr-live">old</del>'
+        in (new_root / "what-changed-decks/before/deck.html").read_text()
+    )
+    assert (
+        '<ins class="dr-live">new</ins>'
+        in (new_root / "what-changed-decks/after/deck.html").read_text()
+    )
+    assert not list(new_root.rglob("*.png"))
+    assert not (new_root / "what-changed-decks/after/what-changed-decks").exists()
+
+
+def test_live_view_script_parses(tmp_path):
+    _node_check(
+        tmp_path,
+        "live-view",
+        deck_review.LIVE_SCRIPT.removeprefix("<script>").removesuffix("</script>"),
+    )
+
+
+def test_output_images_are_relative_to_output_page_and_stale_files_removed(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    images = new / "assets/review"
+    images.mkdir(parents=True)
+    (images / "stale.png").touch()
+    captured = []
+
+    class Decks:
+        def __init__(self, *args):
+            captured.append(args)
+            self.used = False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(what_changed, "load_deck_review", lambda: SimpleNamespace())
+    monkeypatch.setattr(what_changed, "DeckRenderer", Decks)
+    out = new / "what-changed.html"
+    what_changed.main(
+        [
+            "--old",
+            str(old),
+            "--new",
+            str(new),
+            "--out",
+            str(out),
+            "--render-decks",
+            str(images),
+        ]
+    )
+    assert captured[0][-1] == "assets/review"
+    assert not (images / "stale.png").exists()

@@ -29,7 +29,7 @@ def check_site(site, artifacts):
         "paper-previews/paper/what-changed.pdf" not in html
     ):
         missing.append("the marked paper diff")
-    if 'class="deck-review"' not in html:
+    if 'class="deck-live deck-review"' not in html:
         missing.append("the changed slide")
     if "lit-review/index.html" not in html:
         missing.append("the literature review's prose diff")
@@ -45,11 +45,7 @@ def check_site(site, artifacts):
                 missing.append("the site's theme")
             if page.locator(".deck-review").count():
                 page.locator(".deck-review").wait_for()
-                kinds = page.evaluate(
-                    "() => JSON.parse(document.querySelector('.dr-data').textContent)"
-                    ".items.map(i => i.kind)"
-                )
-                if "changed" not in kinds:
+                if page.locator(".dr-changed, .dr-new, .dr-look").count() == 0:
                     missing.append("the changed slide")
             page.screenshot(
                 path=str(artifacts / "local-what-changed-demo.png"), full_page=True

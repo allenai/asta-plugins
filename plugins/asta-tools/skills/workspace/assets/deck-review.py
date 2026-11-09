@@ -659,6 +659,96 @@ def live_rows(old, new, pairs, same_static):
     )
 
 
+def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url):
+    """Browser-free live cards and marked deck documents; no persistent state."""
+    rows, removed = live_rows(
+        old, new, pairs, lambda a, b: files.same_static(deck, a, b)
+    )
+    if not removed and all(kind == "unchanged" for kind, _, _ in rows):
+        return None, old_doc, new_doc
+    deleted, inserted = {}, {}
+    for kind, n, o in rows:
+        if o is not None:
+            deleted[o], inserted[n] = word_changes(old[o]["raw"], new[n]["raw"])
+        else:
+            inserted[n] = set(range(len(slide_words(new[n]["raw"]))))
+    for o in removed:
+        deleted[o] = set(range(len(slide_words(old[o]["raw"]))))
+    cards, folded = [], []
+
+    def frame(url, slide, side):
+        anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
+        src = html.escape(url + "?embedded=true#/" + anchor, quote=True)
+        return (
+            f"<figure><figcaption>{side}</figcaption>"
+            f'<iframe loading="lazy" title="{side} slide" src="{src}"></iframe>'
+            '<button type="button" data-step="prev">Previous build</button> '
+            '<button type="button" data-step="next">Next build</button></figure>'
+        )
+
+    def card(kind, n, o):
+        number = n + 1 if n is not None else o + 1
+        slide = new[n] if n is not None else old[o]
+        label = "changed in look" if kind == "look" else kind
+        body = frame(old_url, old[o], "Before") if o is not None else ""
+        body += frame(new_url, new[n], "After") if n is not None else ""
+        return (
+            f'<article class="dr-slide dr-{kind}"><h3>Slide {number}: '
+            f"{html.escape(slide_title(slide))} — {label}</h3>"
+            f'<div class="dr-pair">{body}</div></article>'
+        )
+
+    def flush():
+        if folded:
+            # Inert templates ensure folded slides load no decks until opened.
+            cards.append(
+                f'<details class="dr-unchanged"><summary>{len(folded)} unchanged slides</summary>'
+                "<template>" + "".join(folded) + "</template></details>"
+            )
+            folded.clear()
+
+    for kind, n, o in rows:
+        if kind == "unchanged":
+            folded.append(card(kind, n, o))
+        else:
+            flush()
+            cards.append(card(kind, n, o))
+    flush()
+    cards.extend(card("removed", None, o) for o in removed)
+    count = sum(kind != "unchanged" for kind, _, _ in rows)
+    body = (
+        f'<div class="deck-live deck-review"><p>{count} changed or new; {len(removed)} removed; '
+        f"{len(new)} slides</p>" + "".join(cards) + "</div>"
+    )
+    return (
+        body,
+        marked_deck(old_doc, old, deleted, "del"),
+        marked_deck(new_doc, new, inserted, "ins"),
+    )
+
+
+LIVE_STYLE = """<style>
+.deck-live .dr-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.deck-live figure{margin:0;min-width:0}
+.deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888}
+.deck-live h3{font-size:1rem}.deck-live summary{cursor:pointer}
+</style>"""
+LIVE_SCRIPT = """<script>
+document.querySelectorAll('.deck-live').forEach(root => {
+ root.addEventListener('click', e => {
+  const button = e.target.closest('[data-step]'); if (!button) return;
+  const frame = button.closest('figure').querySelector('iframe');
+  const reveal = frame.contentWindow.Reveal;
+  if (reveal) reveal[button.dataset.step + "Fragment"]();
+ });
+ root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
+  const template = details.querySelector('template');
+  if (details.open && template) template.replaceWith(template.content.cloneNode(true));
+ }));
+});
+</script>"""
+
+
 def context(rows):
     """Keep every slide; the view folds complete unchanged runs behind a count."""
     return list(range(len(rows)))

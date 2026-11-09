@@ -414,73 +414,24 @@ def check(site, artifacts):
                     f"http://127.0.0.1:{server.server_address[1]}/what-changed.html"
                 )
                 page.locator(".deck-review").wait_for()
-                data = json.loads(page.locator(".dr-data").inner_text())
-                kinds = [item["kind"] for item in data["items"]]
-                assert "changed" in kinds and "look" in kinds and "new" in kinds, kinds
-                assert len(data["removed"]) == 1, data
-                assert "new deck has" in page.locator(".dr-count").inner_text()
-                assert len(data["items"]) == len(slides), (
-                    "Every unchanged run is inspectable"
-                )
-                assert page.locator(".dr-more").count() > 0
-                # Headings are only the status, linked to the slide; the image shows the title.
-                badges = page.locator(
-                    ".dr-slide:not(.dr-removed) h3 a"
-                ).all_text_contents()
-                assert badges and all(
-                    b
-                    in {
-                        "changed \u2197",
-                        "changed look \u2197",
-                        "new \u2197",
-                        "unchanged \u2197",
-                    }
-                    for b in badges
-                ), badges
-                assert not any(
-                    h.startswith("Slide")
-                    for h in page.locator(".dr-slide h3").all_text_contents()
-                )
-                page.locator(".deck-review").scroll_into_view_if_needed()
-                decode_review_images(page)
-                check_selectable_text(page)
-                assert all(
-                    image.get_attribute("alt").startswith("Slide ")
-                    for image in page.locator(".dr-slide img").all()
-                )
-                page.screenshot(path=str(artifacts / "deck-review-marked.png"))
-                page.get_by_role("button", name="Clean", exact=True).click()
-                assert (
-                    page.locator('.dr-seg button[data-v="clean"]').get_attribute(
-                        "aria-pressed"
+                assert page.locator(".dr-changed").count() > 0
+                assert page.locator(".dr-look").count() > 0
+                assert page.locator(".dr-new").count() > 0
+                assert page.locator(".dr-removed").count() == 1
+                assert page.locator("details.dr-unchanged").count() > 0
+                for frame in page.locator(".dr-slide iframe").all():
+                    frame.scroll_into_view_if_needed()
+                    page.wait_for_function(
+                        "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
+                        arg=frame.element_handle(),
                     )
-                    == "true"
-                )
-                decode_review_images(page)
-                check_selectable_text(page)
                 assert (
-                    page.locator(".dr-shot[data-clean] img")
-                    .first.get_attribute("alt")
-                    .splitlines()[0]
-                    .endswith("(clean)")
+                    page.locator("iframe")
+                    .first.content_frame.locator(".reveal")
+                    .count()
+                    == 1
                 )
-                page.screenshot(path=str(artifacts / "deck-review-clean.png"))
-                page.get_by_role("button", name="Before / after", exact=True).click()
-                assert page.locator(".dr-pair:visible").count() >= 2
-                decode_review_images(page)
-                check_selectable_text(page)
-                page.screenshot(path=str(artifacts / "deck-review-before-after.png"))
-                for image in page.locator(".dr-slide:visible img:visible").all():
-                    image.scroll_into_view_if_needed()
-                    image.wait_for(state="visible")
-                    assert image.evaluate(
-                        "(i, w) => i.complete && i.naturalWidth === w", DISPLAY_WIDTH
-                    ), image.get_attribute("src")
-                for button in page.locator(".dr-more").all():
-                    button.click()
-                assert page.locator(".dr-unchanged:visible").count() == kinds.count(
-                    "unchanged"
-                )
+                page.screenshot(path=str(artifacts / "deck-review-live.png"))
                 browser.close()
         finally:
             server.shutdown()

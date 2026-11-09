@@ -1,7 +1,6 @@
 """Run the local `asta workspace what-changed` on an edit to the example deck; its slides must render."""
 
 import importlib.util
-import json
 import os
 import shutil
 import subprocess
@@ -72,7 +71,10 @@ def deploy_main(site):
         assert result.returncode == 0, result.stderr
         assert preview.read_text() == "keep existing preview"
         assert not (published / "stale.html").exists()
-        assert 'class="deck-review"' in (published / "what-changed.html").read_text()
+        assert (
+            'class="deck-live deck-review"'
+            in (published / "what-changed.html").read_text()
+        )
         images = list(site.glob("what-changed-decks/**/*.png"))
         assert images
         for image in images:
@@ -115,9 +117,9 @@ def check(project, artifacts):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "slides as text" not in result.stderr, result.stderr
     site = project / ".asta/cache/what-changed"
-    assert 'class="deck-review"' in (site / "what-changed.html").read_text()
+    assert 'class="deck-live deck-review"' in (site / "what-changed.html").read_text()
     images = site / "what-changed-decks"
-    assert list(images.rglob("*.png"))
+    assert list(images.rglob("*.html"))
     # A folder named *.html is handed to the deploy's noindex sed as a file.
     assert not [p for p in images.rglob("*.html") if p.is_dir()]
     deploy_preview(site)
@@ -129,18 +131,17 @@ def check(project, artifacts):
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(f"http://127.0.0.1:{server.server_address[1]}/what-changed.html")
             page.locator(".deck-review").wait_for()
-            data = json.loads(page.locator(".dr-data").text_content())
-            kinds = [item["kind"] for item in data["items"]]
-            assert kinds.count("new") == 1 and "changed" in kinds, kinds
-            assert "look" not in kinds and not data["removed"], data
-            # Served from the preview's _site, as the local page is.
-            for image in page.locator(".dr-slide:visible img:visible").all():
-                image.scroll_into_view_if_needed()
-                assert image.evaluate(
-                    "(i, w) => new Promise(r => i.complete ? r() : i.addEventListener('load', r, {once: true}))"
-                    ".then(() => i.naturalWidth === w)",
-                    DISPLAY_WIDTH,
-                ), image.get_attribute("src")
+            assert page.locator(".dr-changed").count() > 0
+            assert page.locator(".dr-new").count() == 1
+            for frame in page.locator(".dr-slide iframe").all():
+                frame.scroll_into_view_if_needed()
+                page.wait_for_function(
+                    "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
+                    arg=frame.element_handle(),
+                )
+                assert (
+                    frame.content_frame.locator(".reveal .slides section").count() > 0
+                )
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
                 "() => [...document.styleSheets].some("
