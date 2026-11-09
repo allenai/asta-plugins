@@ -1,0 +1,94 @@
+diff --git a/examples/workspace/evidence.yml b/examples/workspace/evidence.yml
+index d565e6e..ac686f3 100644
+--- a/examples/workspace/evidence.yml
++++ b/examples/workspace/evidence.yml
+@@ -3,3 +3,7 @@ evidence:
+     quote: "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms"
+     cite: vaswani2017attention
+     locator: "abstract"
++  bert-encoder:
++    quote: "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers."
++    cite: devlin2019bert
++    locator: "abstract"
+diff --git a/examples/workspace/lit-review/index.qmd b/examples/workspace/lit-review/index.qmd
+index b1bb0fa..2469f9a 100644
+--- a/examples/workspace/lit-review/index.qmd
++++ b/examples/workspace/lit-review/index.qmd
+@@ -5,7 +5,7 @@ documentclass: article
+ 
+ This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)). This review cites the project-root `references.bib`. The separate `paper/main.tex` is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.
+ 
+-## Example claim
++## Example claims
+ 
+-[Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. The highlighted claim exposes its source quote on hover or keyboard focus.
++[Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. [BERT later applied the Transformer encoder to bidirectional language representation]{.ev key="bert-encoder"} [@devlin2019bert]. Each highlighted claim shows its source quote on hover or keyboard focus.
+ 
+diff --git a/examples/workspace/paper/main.tex b/examples/workspace/paper/main.tex
+index ee1f080..e44b568 100644
+--- a/examples/workspace/paper/main.tex
++++ b/examples/workspace/paper/main.tex
+@@ -13,14 +13,14 @@
+ \maketitle
+ 
+ \section{A paper paired with Overleaf}
+-This paper is paired with an Overleaf project, so co-authors can edit it there while the workspace reviews every change in a pull request. Overleaf sees only this \texttt{paper} directory, so the paper keeps its own \texttt{references.bib} here, which co-authors can edit too. Vaswani and colleagues proposed the Transformer architecture based on attention mechanisms~\cite{vaswani2017attention}. That entry was copied from the workspace's \texttt{references.bib}, which the companion Quarto page cites.
++This paper is paired with an Overleaf project, so co-authors can edit it there while the workspace reviews every change in a pull request. Overleaf sees only this \texttt{paper} directory, so the paper keeps its own \texttt{references.bib} here, which co-authors can edit too. Vaswani and colleagues proposed the Transformer, an architecture based solely on attention~\cite{vaswani2017attention}. Its core operation is scaled dot-product attention, $\mathrm{softmax}(QK^\top/\sqrt{d_k})V$. BERT later pre-trained a bidirectional Transformer encoder~\cite{devlin2019bert}. Both entries were copied from the workspace's \texttt{references.bib}, which the companion Quarto page cites.
+ 
+ \section{A compact figure}
+ Figure~\ref{fig:workspace} shows where each writing format gets its citations.
+ \begin{figure}[htbp]
+   \centering
+   \fcolorbox{astateal}{astagreen!15}{\parbox{0.72\linewidth}{\centering\vspace{0.7em}Quarto page \quad $\longleftarrow$ \quad \textbf{references.bib}\\[0.5em]copied entries \quad $\longrightarrow$ \quad \textbf{paper/references.bib} \quad $\longleftrightarrow$ \quad Overleaf\vspace{0.7em}}}
+-  \caption{The workspace bibliography feeds the Quarto page directly and the paired paper through copied entries.}
++  \caption{The Quarto page cites the workspace bibliography; the paired paper cites its own copies.}
+   \label{fig:workspace}
+ \end{figure}
+ 
+diff --git a/examples/workspace/paper/references.bib b/examples/workspace/paper/references.bib
+index 0f02951..977c2bf 100644
+--- a/examples/workspace/paper/references.bib
++++ b/examples/workspace/paper/references.bib
+@@ -6,3 +6,12 @@
+   archivePrefix = {arXiv},
+   url = {https://arxiv.org/abs/1706.03762}
+ }
++
++@misc{devlin2019bert,
++  title = {{BERT}: Pre-training of Deep Bidirectional Transformers for Language Understanding},
++  author = {Devlin, Jacob and Chang, Ming-Wei and Lee, Kenton and Toutanova, Kristina},
++  year = {2019},
++  eprint = {1810.04805},
++  archivePrefix = {arXiv},
++  url = {https://arxiv.org/abs/1810.04805}
++}
+diff --git a/examples/workspace/references.bib b/examples/workspace/references.bib
+index 0f02951..977c2bf 100644
+--- a/examples/workspace/references.bib
++++ b/examples/workspace/references.bib
+@@ -6,3 +6,12 @@
+   archivePrefix = {arXiv},
+   url = {https://arxiv.org/abs/1706.03762}
+ }
++
++@misc{devlin2019bert,
++  title = {{BERT}: Pre-training of Deep Bidirectional Transformers for Language Understanding},
++  author = {Devlin, Jacob and Chang, Ming-Wei and Lee, Kenton and Toutanova, Kristina},
++  year = {2019},
++  eprint = {1810.04805},
++  archivePrefix = {arXiv},
++  url = {https://arxiv.org/abs/1810.04805}
++}
+diff --git a/examples/workspace/slides/attention/slides.qmd b/examples/workspace/slides/attention/slides.qmd
+index 30e14f8..2ecea59 100644
+--- a/examples/workspace/slides/attention/slides.qmd
++++ b/examples/workspace/slides/attention/slides.qmd
+@@ -21,7 +21,7 @@ $$
+ \operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+ $$
+ 
+-The weights combine values for each query.
++The weights combine values for each query, so every token can draw on distant context in one step.
+ 
+ ## Follow the computation {.dim-previous}
+ 

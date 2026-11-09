@@ -98,9 +98,12 @@ jobs:
           # No preview or prebuilt site may mask missing render inputs.
           rm -rf _site
           top=$(git rev-parse --show-toplevel)
-          # The demo PR's sample edit, applied uncommitted as an agent's edit would be.
-          git fetch -q --depth=50 origin +refs/heads/main:refs/remotes/origin/main +refs/heads/example-demo-pr:refs/remotes/origin/example-demo-pr
-          git diff "$(git merge-base origin/main origin/example-demo-pr)" origin/example-demo-pr -- . | git -C "$top" apply
+          # The demo edit, applied uncommitted as an agent's edit would be. main
+          # publishes the same patch's What changed, so it must keep applying.
+          if ! git -C "$top" apply examples/workspace-demo.patch; then
+            echo "::error file=examples/workspace-demo.patch::The demo edit no longer applies to the example; update examples/workspace-demo.patch with this change"
+            exit 1
+          fi
           trap 'git -C "$top" checkout -- examples/workspace' EXIT
           uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed-demo.py . ../../tests/browser/artifacts
       - uses: actions/upload-artifact@v4
