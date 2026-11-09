@@ -466,7 +466,7 @@ def test_demo_publication_is_checked_separately_from_local_report():
 def test_all_example_browser_checks_use_the_installed_browser_path():
     build = load("example-workspace")["jobs"]["build"]
     assert (
-        build["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.temp }}/asta-chromium"
+        build["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "/tmp/asta-test-chromium"
     )
     browser_steps = [s for s in build["steps"] if "playwright==" in s.get("run", "")]
     install = next(

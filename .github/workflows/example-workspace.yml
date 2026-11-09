@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 30
     env:
       # Browser acceptance tests share the install path across separate steps.
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/asta-chromium
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/asta-test-chromium
       ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
       ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
     container:
