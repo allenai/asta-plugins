@@ -63,6 +63,15 @@
   box-sizing: border-box;
   padding: var(--asta-slide-padding, 48px);
 }
+/* Reveal sizes a stretched element to the full slide width, past the padding. */
+.reveal .slides section > .r-stretch {
+  max-width: 100%;
+  margin-inline: auto;
+}
+.reveal .slides section > .r-stretch img {
+  max-width: 100%;
+  object-fit: contain;
+}
 /* Room for the section line (28px) and a 12px gap below the top padding. */
 .asta-slides-with-section .reveal .slides section.slide.level2:not(.center) {
   padding-top: calc(var(--asta-slide-padding, 48px) + 40px);
