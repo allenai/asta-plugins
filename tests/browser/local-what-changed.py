@@ -189,6 +189,23 @@ def check(project, artifacts):
                 if view == "marked":
                     # Removed words struck and added words marked, on the one slide.
                     assert {"INS", "DEL"} <= marked_seen, marked_seen
+            # Opening every unchanged-slide fold keeps the page responsive, and
+            # each shown frame reaches its labelled slide within a few seconds.
+            live = page.locator(".deck-live").first
+            live.locator('.dr-seg button[data-v="marked"]').click()
+            for fold in live.locator("details.dr-unchanged").all():
+                fold.locator("summary").click()
+            frames = live.locator(".dr-unchanged .dr-slide iframe:visible").all()
+            assert frames, "no unchanged slides after opening the folds"
+            for frame in frames:
+                frame.scroll_into_view_if_needed(timeout=5000)
+                page.wait_for_function(
+                    "f => { const w = f.contentWindow; return !!w && !!w.Reveal"
+                    " && w.Reveal.isReady()"
+                    " && w.Reveal.getCurrentSlide().id === f.dataset.drSlideId; }",
+                    arg=frame.element_handle(),
+                    timeout=5000,
+                )
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
                 "() => [...document.styleSheets].some("

@@ -452,9 +452,30 @@ LIVE_STYLE = """<style>
 
 LIVE_SCRIPT = """<script>
 document.querySelectorAll('.deck-live').forEach(root => {
- // Load only the frames the current view shows.
+ // Load only shown frames, near the viewport and two at a time: each frame
+ // parses the whole deck, so an opened fold must not start dozens at once.
+ const shown = f => f.closest('figure').offsetParent !== null;
+ const queue = []; let active = 0;
+ const start = f => {
+  active++; let done = false;
+  const finish = () => { if (!done) { done = true; active--; pump(); } };
+  f.addEventListener('load', finish, {once: true}); setTimeout(finish, 8000);
+  f.src = f.dataset.src; f.removeAttribute('data-src');
+ };
+ const near = 'IntersectionObserver' in window && new IntersectionObserver(entries => entries.forEach(e => {
+  if (e.isIntersecting && e.target.dataset.src) { near.unobserve(e.target); queue.push(e.target); }
+ }) || pump(), {rootMargin: '300px 0px'});
+ const pump = () => {
+  queue.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  while (active < 2 && queue.length) {
+   const f = queue.shift();
+   if (!f.dataset.src) continue;
+   if (shown(f)) start(f); else near.observe(f);
+  }
+ };
  const load = () => root.querySelectorAll('iframe[data-src]').forEach(f => {
-  if (f.closest('figure').offsetParent !== null) { f.src = f.dataset.src; f.removeAttribute('data-src'); }
+  if (!near) { if (shown(f)) { f.src = f.dataset.src; f.removeAttribute('data-src'); } return; }
+  near.observe(f);
  });
  root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => {
   root.dataset.view = b.dataset.v;
