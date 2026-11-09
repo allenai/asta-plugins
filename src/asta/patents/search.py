@@ -5,6 +5,7 @@ import json
 import click
 
 from asta.patents.client import PatentClient
+from asta.patents.format import format_patent_results
 
 DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 
@@ -18,13 +19,13 @@ DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 )
 @click.option(
     "--limit",
-    type=int,
+    type=click.IntRange(1, 100),
     default=10,
-    help="max results, up to 100.",
+    help="max results, 1 to 100.",
 )
 @click.option(
     "--offset",
-    type=int,
+    type=click.IntRange(min=0),
     default=0,
     help="start of the batch.",
 )
@@ -53,26 +54,7 @@ def search(query: str, fields: str, limit: int, offset: int, output_format: str)
         if output_format == "json":
             click.echo(json.dumps(result, indent=2))
         else:
-            _format_patent_results(result)
+            format_patent_results(result)
 
     except Exception as e:
         raise click.ClickException(str(e))
-
-
-def _format_patent_results(result: dict) -> None:
-    """print search or citation results as text."""
-    patents = result.get("data", [])
-    click.echo(f"Found {result.get('total', len(patents))} patents\n")
-
-    for i, patent in enumerate(patents, 1):
-        click.echo(f"{i}. {patent.get('title', 'N/A')}")
-        if ucid := patent.get("ucid"):
-            click.echo(f"   UCID: {ucid}")
-        if assignees := patent.get("assignees"):
-            names = ", ".join(assignees[:3])
-            if len(assignees) > 3:
-                names += " et al."
-            click.echo(f"   Assignees: {names}")
-        if date := patent.get("publicationDate"):
-            click.echo(f"   Published: {date}")
-        click.echo()

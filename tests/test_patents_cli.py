@@ -203,3 +203,33 @@ class TestPatentClient:
             client.get_patent("US10123456B2", fields="ucid,title")
         path = req.call_args[0][0]
         assert path == "/graph/v1/patent/US10123456B2"
+
+    def test_outbound_citations_quotes_paper_id(self):
+        client = self._client()
+        with patch.object(client, "_request", return_value={}) as req:
+            client.outbound_citations("DOI:10.1/a?b#c")
+        path = req.call_args[0][0]
+        assert path == "/graph/v1/patent/outbound-citations/DOI:10.1%2Fa%3Fb%23c"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [["search", "widget"], ["outbound-citations", "CorpusId:1"]],
+)
+@pytest.mark.parametrize(
+    "option", [["--limit", "0"], ["--limit", "101"], ["--offset", "-1"]]
+)
+def test_rejects_out_of_range_paging(runner, command, option):
+    result = runner.invoke(cli, ["patents", *command, *option])
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+
+
+def test_request_sets_timeout():
+    from asta.patents.client import PatentClient
+
+    client = PatentClient(base_url="https://api.example.com", access_token="tok")
+    with patch("asta.patents.client.urllib.request.urlopen") as urlopen:
+        urlopen.return_value.read.return_value = b"{}"
+        client.get_patent("US1A")
+    assert urlopen.call_args.kwargs["timeout"] == 30

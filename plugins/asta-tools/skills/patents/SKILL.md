@@ -1,7 +1,7 @@
 ---
 name: patents
 description: Look up, BM25-search, and trace citations for USPTO patents (grants and applications) via the S2 public API. Use to pull patent context into a session, e.g. find patents on a topic, fetch a patent's full detail by UCID, or list patents that cite a given paper.
-allowed-tools: Bash(asta patents *)
+allowed-tools: Bash(asta patents *) Bash(asta papers get *)
 ---
 
 # Patent Lookup

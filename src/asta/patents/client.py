@@ -24,6 +24,8 @@ from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config, get_config_path
 from asta.utils.headers import identity_headers
 
+_TIMEOUT = 30  # seconds
+
 
 class PatentClient:
     """client for the s2 public api patent endpoints."""
@@ -33,15 +35,12 @@ class PatentClient:
         base_url: str | None = None,
         access_token: str | None = None,
     ):
-        # fall back to semantic_scholar so patents work with no extra config.
+        # asta.conf defaults apis.patent.base_url to the semantic_scholar base.
         if base_url is None:
-            for api_name in ("patent", "semantic_scholar"):
-                try:
-                    base_url = get_api_config(api_name).get("base_url")
-                except (KeyError, FileNotFoundError):
-                    base_url = None
-                if base_url:
-                    break
+            try:
+                base_url = get_api_config("patent").get("base_url")
+            except (KeyError, FileNotFoundError):
+                base_url = None
 
         if not base_url:
             raise ValueError(
@@ -68,7 +67,7 @@ class PatentClient:
 
         req = urllib.request.Request(url, headers=self.headers)
         try:
-            response = urllib.request.urlopen(req)
+            response = urllib.request.urlopen(req, timeout=_TIMEOUT)
             return json.loads(response.read())
         except urllib.error.HTTPError as e:
             error_body = e.read().decode() if e.fp else ""
@@ -132,4 +131,7 @@ class PatentClient:
             "limit": min(limit, 100),
             "offset": offset,
         }
-        return self._request(f"/graph/v1/patent/outbound-citations/{paper_id}", params)
+        paper_id_quoted = urllib.parse.quote(paper_id, safe=":")
+        return self._request(
+            f"/graph/v1/patent/outbound-citations/{paper_id_quoted}", params
+        )

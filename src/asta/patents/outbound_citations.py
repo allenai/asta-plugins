@@ -5,7 +5,7 @@ import json
 import click
 
 from asta.patents.client import PatentClient
-from asta.patents.search import _format_patent_results
+from asta.patents.format import format_patent_results
 
 DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 
@@ -19,13 +19,13 @@ DEFAULT_FIELDS = "ucid,title,publicationDate,assignees"
 )
 @click.option(
     "--limit",
-    type=int,
+    type=click.IntRange(1, 100),
     default=10,
-    help="max results, up to 100.",
+    help="max results, 1 to 100.",
 )
 @click.option(
     "--offset",
-    type=int,
+    type=click.IntRange(min=0),
     default=0,
     help="start of the batch.",
 )
@@ -59,7 +59,7 @@ def outbound_citations(
         if output_format == "json":
             click.echo(json.dumps(result, indent=2))
         else:
-            _format_patent_results(result)
+            format_patent_results(result)
 
     except Exception as e:
         raise click.ClickException(str(e))
