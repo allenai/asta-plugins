@@ -419,12 +419,18 @@ def check(site, artifacts):
                 assert page.locator(".dr-new").count() > 0
                 assert page.locator(".dr-removed").count() == 1
                 assert page.locator("details.dr-unchanged").count() > 0
-                for frame in page.locator(".dr-slide iframe").all():
-                    frame.scroll_into_view_if_needed()
-                    page.wait_for_function(
-                        "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
-                        arg=frame.element_handle(),
-                    )
+                # Each view hides the other views' frames (display: none), which
+                # never become stable, so only the shown frames are waited on.
+                for view in ["before", "clean", "marked"]:
+                    page.locator(f'.dr-seg button[data-v="{view}"]').click()
+                    frames = page.locator(".dr-slide iframe:visible").all()
+                    assert frames, view
+                    for frame in frames:
+                        frame.scroll_into_view_if_needed()
+                        page.wait_for_function(
+                            "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
+                            arg=frame.element_handle(),
+                        )
                 assert (
                     page.locator("iframe")
                     .first.content_frame.locator(".reveal")
