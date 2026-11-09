@@ -35,7 +35,7 @@ print(json.dumps({"body": body, "script": review.LIVE_SCRIPT}))
 assert.equal(generated.status, 0, generated.stderr);
 const { body, script } = JSON.parse(generated.stdout);
 
-function page() {
+function page(withObserver = false) {
   const { document, window } = parseHTML(`<!doctype html><html><body>${body}</body></html>`);
   // linkedom has no layout: a figure shows when its view is the page's (LIVE_STYLE's rule).
   Object.defineProperty(window.HTMLElement.prototype, "offsetParent", {
@@ -46,8 +46,17 @@ function page() {
       return root && views.includes(root.getAttribute("data-view")) ? document.body : null;
     },
   });
-  Function("document", script.replace(/^<script>|<\/script>$/g, ""))(document);
-  return { document, window };
+  let observer;
+  if (withObserver) {
+    window.IntersectionObserver = class {
+      constructor(callback) { this.callback = callback; this.targets = new Set(); observer = this; }
+      observe(frame) { this.targets.add(frame); }
+      unobserve(frame) { this.targets.delete(frame); }
+    };
+    window.HTMLElement.prototype.getBoundingClientRect = () => ({top: 0});
+  }
+  Function("document", "window", "IntersectionObserver", "setTimeout", script.replace(/^<script>|<\/script>$/g, ""))(document, window, window.IntersectionObserver, () => 0);
+  return { document, window, observer };
 }
 
 const loaded = (scope) =>
@@ -85,4 +94,20 @@ test("folded unchanged slides load no deck until expanded", () => {
   assert.deepEqual([...ids], ["s1", "s2"]);
   assert.deepEqual(loaded(first), ["marked", "marked"], "only the shown view's frames load");
   assert.equal(second.querySelectorAll("iframe").length, 0);
+});
+
+
+test("viewport loader starts at most two frames and advances when one loads", () => {
+  const { document, window, observer } = page(true);
+  const fold = document.querySelector("details.wc-expander");
+  Object.defineProperty(fold, "open", { get() { return this.hasAttribute("open"); } });
+  fold.setAttribute("open", "");
+  fold.dispatchEvent(new window.Event("toggle"));
+  assert.equal(loaded(document).length, 0, "observation alone does not load decks");
+  const visible = [...observer.targets].filter(f => f.closest("figure").offsetParent !== null);
+  assert.equal(visible.length, 3);
+  observer.callback(visible.map(target => ({target, isIntersecting: true})));
+  assert.equal(loaded(document).length, 2, "only two loads in flight");
+  document.querySelector("iframe[src]").dispatchEvent(new window.Event("load"));
+  assert.equal(loaded(document).length, 3, "the next frame starts after a load");
 });

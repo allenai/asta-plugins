@@ -17,13 +17,13 @@ from report_signature import report_signature
 ROOT = Path(__file__).resolve().parents[2]
 DECK = "slides/attention/slides.qmd"
 LOOK = "asta-what-changed-look.qmd"
+# Only committed source pages: paper/slides index.qmd files are generated,
+# ignored build outputs and are absent in the fresh differential clone.
 ALL = {
     "index.qmd",
     "appearance.qmd",
     "lit-review/index.qmd",
-    "paper/html/index.qmd",
     DECK,
-    "slides/attention/index.qmd",
 }
 
 
