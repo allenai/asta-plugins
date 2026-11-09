@@ -46,6 +46,13 @@ function page(withObserver = false) {
       return root && views.includes(root.getAttribute("data-view")) ? document.body : null;
     },
   });
+  // linkedom frames have no window: stand in for a loaded, ready Reveal, counting layouts.
+  Object.defineProperty(window.HTMLElement.prototype, "contentWindow", {
+    configurable: true,
+    get() {
+      return { Reveal: { isReady: () => true, layout: () => { this.layouts = (this.layouts || 0) + 1; } } };
+    },
+  });
   let observer;
   if (withObserver) {
     window.IntersectionObserver = class {
@@ -77,6 +84,19 @@ test("each view loads only its own frames, opened at the changed slide", () => {
     );
     assert.deepEqual(loaded(document), expected);
   }
+});
+
+test("showing a view lays out its loaded frames, and only those", () => {
+  const { document } = page();
+  const frame = view => document.querySelector(`figure[data-view="${view}"] iframe`);
+  const click = view => document.querySelector(`.dr-seg button[data-v="${view}"]`).click();
+  const marked = frame("marked");
+  click("clean");
+  assert.equal(marked.layouts, undefined, "a hidden frame is left alone");
+  assert.equal(frame("clean").layouts, 1, "the shown frame is laid out");
+  click("marked");
+  assert.equal(marked.layouts, 1, "a frame shown again is laid out at its size");
+  assert.equal(frame("clean").layouts, 1);
 });
 
 test("folded unchanged slides load no deck until expanded", () => {

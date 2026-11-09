@@ -590,6 +590,11 @@ document.querySelectorAll('.deck-live').forEach(root => {
   root.dataset.view = b.dataset.v;
   root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   load();
+  // A frame that finished loading while hidden laid out at no size: fit it now.
+  root.querySelectorAll('iframe[src]').forEach(f => {
+   const reveal = f.contentWindow.Reveal;
+   if (shown(f) && reveal && reveal.isReady()) reveal.layout();
+  });
  }));
  root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
   const template = details.querySelector('template');

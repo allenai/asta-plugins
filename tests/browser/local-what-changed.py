@@ -78,6 +78,85 @@ def deploy_main(site):
     print("Validated shared main publication with live marked decks")
 
 
+SHOWN_SCALES_JS = """async () => {
+  const shown = () => [...document.querySelectorAll('.deck-live iframe[src]')]
+    .filter(f => f.closest('figure').offsetParent);
+  const deadline = Date.now() + 20000;
+  while (!shown().length) {
+    if (Date.now() > deadline) throw new Error('no frame started loading');
+    await new Promise(r => setTimeout(r, 50));
+  }
+  const frames = shown();
+  while (!frames.every(f => f.contentWindow.Reveal && f.contentWindow.Reveal.isReady())) {
+    if (Date.now() > deadline) throw new Error('shown frames never became ready');
+    await new Promise(r => setTimeout(r, 50));
+  }
+  await new Promise(r => setTimeout(r, 500));
+  return frames.map(f => [
+    f.closest('figure').dataset.view + ' ' + f.title + ' ' + f.dataset.drSlideId,
+    f.contentWindow.Reveal.getScale(),
+  ]);
+}"""
+
+
+def check_frames_fit_after_view_switch(browser, url):
+    """Frames that finish loading while their view is hidden fit when it is shown."""
+    for view, other in (("clean", "before"), ("before", "clean")):
+        figures = f"[...document.querySelectorAll('.deck-live figure[data-view~={view}] iframe[src]')]"
+
+        def open_page():
+            page = browser.new_page(viewport={"width": 1440, "height": 1000})
+            page.goto(url)
+            page.locator(".deck-review").wait_for()
+            return page
+
+        def switch(page, to):
+            page.locator(f'.dr-seg button[data-v="{to}"]').click()
+
+        # What a frame loaded in view measures; the minimum scale is Reveal's floor.
+        reference_page = open_page()
+        switch(reference_page, view)
+        scales = [scale for _, scale in reference_page.evaluate(SHOWN_SCALES_JS)]
+        assert scales and min(scales) > 0.21, (view, scales)
+        fitted = scales[0]
+        # Switch away once the view's first frame is mid-load. A lazy frame never
+        # shown stays at about:blank, so only navigated frames count.
+        page = open_page()
+        page.evaluate(
+            """([view, other]) => {
+              const frames = () => [...document.querySelectorAll(
+                `.deck-live figure[data-view~=${view}] iframe[src]`)];
+              const midLoad = f => f.closest('figure').offsetParent
+                && f.contentWindow.location.href !== 'about:blank'
+                && !(f.contentWindow.Reveal && f.contentWindow.Reveal.isReady());
+              const poll = setInterval(() => {
+                if (!frames().some(midLoad)) return;
+                clearInterval(poll);
+                document.querySelector(`.dr-seg button[data-v="${other}"]`).click();
+              }, 1);
+            }""",
+            [view, other],
+        )
+        switch(page, view)
+        navigated = (
+            f"{figures}.filter(f => f.contentWindow.location.href !== 'about:blank')"
+        )
+        # Every frame that began loading finishes while its view is hidden.
+        page.wait_for_function(
+            f"() => document.querySelector('.deck-live').dataset.view === '{other}'"
+            f" && {navigated}.length > 0 && {navigated}.every("
+            "f => f.contentWindow.Reveal && f.contentWindow.Reveal.isReady())",
+            timeout=30000,
+        )
+        switch(page, view)
+        shown = page.evaluate(SHOWN_SCALES_JS)
+        assert shown, f"no frames shown in {view}"
+        for key, scale in shown:
+            assert abs(scale - fitted) < 0.01, (view, key, scale, fitted)
+        reference_page.close()
+        page.close()
+
+
 def check(project, artifacts):
     artifacts.mkdir(parents=True, exist_ok=True)
     deck = project / "slides/attention/slides.qmd"
@@ -143,6 +222,10 @@ def check(project, artifacts):
                 shutil.copytree(site, artifacts / "unexpected-look", dirs_exist_ok=True)
             assert looks.count() == 0, looks.locator("h3").all_text_contents()
             assert page.locator("details.dr-unchanged").count() > 0
+            check_frames_fit_after_view_switch(
+                browser,
+                f"http://127.0.0.1:{server.server_address[1]}/what-changed.html",
+            )
             for view in ("marked", "clean", "before"):
                 live = page.locator(".deck-live").first
                 live.locator(f'.dr-seg button[data-v="{view}"]').click()
