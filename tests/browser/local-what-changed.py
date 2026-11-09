@@ -137,7 +137,11 @@ def check(project, artifacts):
             assert page.locator(".dr-changed").count() > 0
             assert page.locator(".dr-new").count() == 1
             # Only the edited and added slides are shown; the rest fold away.
-            assert page.locator(".dr-look").count() == 0
+            looks = page.locator(".dr-look")
+            if looks.count():
+                # Preserve the actual inputs to diagnose static comparison failures.
+                shutil.copytree(site, artifacts / "unexpected-look", dirs_exist_ok=True)
+            assert looks.count() == 0, looks.locator("h3").all_text_contents()
             assert page.locator("details.dr-unchanged").count() > 0
             for view in ("marked", "clean", "before"):
                 live = page.locator(".deck-live").first

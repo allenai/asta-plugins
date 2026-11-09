@@ -31,10 +31,18 @@ def check_evidence(page, missing):
         ev = claims.nth(i)
         ev.scroll_into_view_if_needed()
         ev.hover()
-        hovered = ev.evaluate(POP_SHOWN_JS)
+        try:
+            page.wait_for_function(POP_SHOWN_JS, arg=ev.element_handle(), timeout=2000)
+            hovered = True
+        except Exception:
+            hovered = False
         page.mouse.move(0, 0)
         ev.focus()
-        focused = ev.evaluate(POP_SHOWN_JS)
+        try:
+            page.wait_for_function(POP_SHOWN_JS, arg=ev.element_handle(), timeout=2000)
+            focused = True
+        except Exception:
+            focused = False
         if not (hovered and focused):
             missing.append(f"evidence claim {i + 1}'s quote on hover/focus")
 

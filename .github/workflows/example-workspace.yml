@@ -164,6 +164,7 @@ jobs:
         with:
           name: local-what-changed-screenshot-${{ matrix.runner }}
           path: |
+            tests/browser/artifacts/unexpected-look
             tests/browser/artifacts/local-what-changed-deck.png
             tests/browser/artifacts/local-what-changed-no-preview.png
             tests/browser/artifacts/local-what-changed-demo.png
