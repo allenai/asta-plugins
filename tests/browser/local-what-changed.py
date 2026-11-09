@@ -153,6 +153,14 @@ def check(project, artifacts):
                 )
                 top, bottom, height, viewport = box
                 assert height > 0 and top >= -1 and bottom <= viewport + 1, box
+                # Each frame shows the slide it is labelled with, not the first.
+                want = frame.get_attribute("data-dr-slide").split(".")
+                frame.content_frame.wait_for_function(
+                    "w => { const i = Reveal.getIndices();"
+                    " return i.h === w[0] && (i.v || 0) === w[1]; }",
+                    arg=[int(want[0]), int(want[1]) if len(want) > 1 else 0],
+                    timeout=10000,
+                )
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
                 "() => [...document.styleSheets].some("

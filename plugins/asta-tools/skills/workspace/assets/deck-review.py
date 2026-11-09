@@ -323,11 +323,12 @@ def _local_paths(source, base):
     return paths
 
 
-def _same_static(files, loaded, deck, before, after):
+def _same_static(files, loaded, deck, before, after, positional=True):
+    # Pixels include the slide number; a live frame's own number isn't a change.
     if (
         before.get("raw") is None
         or before["raw"] != after.get("raw")
-        or before.get("position") != after.get("position")
+        or (positional and before.get("position") != after.get("position"))
         or before.get("frame") != after.get("frame")
         or LIVE_RE.search(after["raw"])
     ):
@@ -560,7 +561,7 @@ class StaticFiles:
         if after.get("frame") is None:
             return False
         loaded = {deck: self.loaded(deck, after["frame"])}
-        return _same_static(self, loaded, deck, before, after)
+        return _same_static(self, loaded, deck, before, after, positional=False)
 
 
 _TEXT_RE = re.compile(
@@ -613,6 +614,22 @@ def mark_words(raw, indices, tag):
     return "".join(out)
 
 
+GOTO_SCRIPT = """<script>(function () {
+  var m = /[?&]dr-slide=(\\d+)(?:\\.(\\d+))?/.exec(location.search);
+  if (!m) return;
+  var h = +m[1], v = m[2] ? +m[2] : 0, tries = 0;
+  function go() {
+    var i = window.Reveal.getIndices();
+    if (i.h !== h || (i.v || 0) !== v) window.Reveal.slide(h, v);
+  }
+  function hook() {
+    var R = window.Reveal;
+    if (!R || !R.on) { if (tries++ < 200) setTimeout(hook, 50); return; }
+    if (R.isReady && R.isReady()) go();
+    R.on('ready', go);
+  }
+  hook();
+})();</script>"""
 LIVE_MARK_CSS = (
     "<style>ins.dr-live,del.dr-live{text-decoration:none;border-radius:2px}"
     "ins.dr-live{background:rgba(47,191,113,.35)}"
@@ -630,7 +647,11 @@ def marked_deck(doc, slides, marks, tag):
     head = re.search(r"</head\s*>", doc, re.I)
     if head:
         doc = doc[: head.start()] + LIVE_MARK_CSS + doc[head.start() :]
-    return doc
+    body = None
+    for body in re.finditer(r"</body\s*>", doc, re.I):
+        pass
+    at = body.start() if body else len(doc)
+    return doc[:at] + GOTO_SCRIPT + doc[at:]
 
 
 def classify(old, new, pairs, same_image=None, same_text=None, same_interactions=None):
@@ -698,12 +719,15 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
 
     def frame(url, slide, side):
         anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
+        h, v = slide.get("position") or (0, None)
+        at = f"{h}.{v}" if v is not None else str(h)
         # Not embedded mode: there Reveal sizes to .reveal's content height, which
-        # can exceed the frame and push the slide out of view.
-        src = html.escape(url + "#/" + anchor, quote=True)
+        # can exceed the frame and push the slide out of view. Reveal may ignore
+        # the hash, so the marked deck's GOTO_SCRIPT moves to ``dr-slide``.
+        src = html.escape(f"{url}?dr-slide={at}#/{anchor}", quote=True)
         return (
             f"<figure><figcaption>{side}</figcaption>"
-            f'<iframe loading="lazy" title="{side} slide" src="{src}"></iframe>'
+            f'<iframe loading="lazy" title="{side} slide" data-dr-slide="{at}" src="{src}"></iframe>'
             '<button type="button" data-step="prev">Previous build</button> '
             '<button type="button" data-step="next">Next build</button></figure>'
         )
@@ -754,6 +778,7 @@ LIVE_STYLE = """<style>
 .deck-live figure{margin:0;min-width:0}
 .deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888}
 .deck-live h3{font-size:1rem}.deck-live summary{cursor:pointer}
+.deck-live button{font:inherit;font-size:.85rem;color:inherit;background:rgba(127,127,127,.18);border:1px solid rgba(127,127,127,.6);border-radius:4px;padding:2px 10px;margin-top:4px;cursor:pointer}
 </style>"""
 LIVE_SCRIPT = """<script>
 document.querySelectorAll('.deck-live').forEach(root => {

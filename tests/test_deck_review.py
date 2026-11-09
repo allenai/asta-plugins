@@ -1006,4 +1006,46 @@ def test_live_frames_open_the_deck_full_page_not_embedded(tmp_path):
     body, _, _ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {0: 0}, files, "b", "a"
     )
-    assert 'src="a#/one"' in body and "embedded" not in body
+    assert 'src="a?dr-slide=0#/one"' in body and "embedded" not in body
+
+
+def test_live_frames_open_at_their_own_slide(tmp_path):
+    """Reveal can ignore the hash, so each marked deck moves to ``dr-slide`` itself."""
+    old_doc = _deck(
+        [
+            '<section id="one"><h2>One</h2></section>',
+            '<section id="two"><h2>Two</h2></section>',
+        ]
+    )
+    new_doc = _deck(['<section id="one"><h2>One</h2></section>', EDITED])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, old_marked, new_marked = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
+    )
+    assert 'data-dr-slide="1"' in body and "?dr-slide=1#/" in body
+    for doc in (old_marked, new_marked):
+        assert deck_review.GOTO_SCRIPT in doc
+        assert doc.index(deck_review.GOTO_SCRIPT) < doc.lower().rindex("</body>")
+
+
+def test_slides_shifted_by_an_inserted_slide_are_not_changed_in_look(tmp_path):
+    """A live frame's slide number is no change; only a new slide is shown."""
+    old_doc = _deck(
+        [
+            '<section id="one"><h2>One</h2></section>',
+            '<section id="two"><h2>Two</h2></section>',
+        ]
+    )
+    new_doc = _deck(
+        [
+            '<section id="new"><h2>New</h2></section>',
+            '<section id="one"><h2>One</h2></section>',
+            '<section id="two"><h2>Two</h2></section>',
+        ]
+    )
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, _, _ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {1: 0, 2: 1}, files, "b", "a"
+    )
+    assert "1 changed or new; 0 removed; 3 slides" in body
+    assert "changed in look" not in body
