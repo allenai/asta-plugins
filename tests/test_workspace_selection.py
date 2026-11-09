@@ -210,6 +210,23 @@ def test_example_quote_edit_renders_only_pages_citing_it(example):
     assert not paper_affected(after, "paper", _paper_main(after), ["evidence.yml"])
 
 
+def test_example_include_edit_renders_only_the_including_page(example):
+    """appearance.qmd includes _sharing.qmd; no other page names it."""
+    before, after = example
+    assert "{{< include _sharing.qmd >}}" in (after / "appearance.qmd").read_text()
+    _edit(after, "_sharing.qmd", "Every page", "Each page")
+    assert select_pages(after, before, ["_sharing.qmd"]) == ["appearance.qmd"]
+    assert not paper_affected(after, "paper", _paper_main(after), ["_sharing.qmd"])
+
+
+def test_example_deck_has_the_cases_real_sites_hit(example):
+    """An ordinary web link and an inline data: image, both in the deck."""
+    _, after = example
+    deck = (after / "slides/attention/slides.qmd").read_text()
+    assert "](https://arxiv.org/abs/1706.03762)" in deck
+    assert "](data:image/svg+xml;base64," in deck
+
+
 def _paper_main(root):
     return next(
         p.name

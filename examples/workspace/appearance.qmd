@@ -88,6 +88,8 @@ site. Send a reader the preview URL so they can inspect the actual page,
 follow its links, and choose the reading surface they prefer.
 :::
 
+{{< include _sharing.qmd >}}
+
 ## Links between pages
 
 The [attention slides](slides/attention/slides.qmd) present the same question
