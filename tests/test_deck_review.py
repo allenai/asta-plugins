@@ -971,3 +971,39 @@ def test_output_images_are_relative_to_output_page_and_stale_files_removed(
     )
     assert captured[0][-1] == "assets/review"
     assert not (images / "stale.png").exists()
+
+
+SELF_CONTAINED_HEAD = (
+    '<style>.reveal{background:url("data:image/svg+xml,%3Csvg/%3E")}</style>'
+    '<script>const css = "h2{background:url(\\"x.png\\")}";</script>'
+)
+
+
+def test_self_contained_deck_folds_its_unchanged_slides(tmp_path):
+    """Text in scripts, quoted data URLs and absent paths load no differing file."""
+    styled = (
+        '<section id="one" style="background-image:url(&quot;data:image/png;'
+        'base64,AAAA&quot;)"><h2>One</h2></section>'
+    )
+    old_doc = _deck(
+        [styled, '<section id="two"><h2>Two</h2></section>'], SELF_CONTAINED_HEAD
+    )
+    new_doc = _deck([styled, EDITED], SELF_CONTAINED_HEAD)
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+    body, _, _ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
+    )
+    assert "1 changed or new; 0 removed; 2 slides" in body
+    assert "1 unchanged slides" in body
+    assert "changed in look" not in body
+
+
+def test_live_frames_open_the_deck_full_page_not_embedded(tmp_path):
+    old_doc = _deck(['<section id="one"><h2>One</h2></section>'])
+    new_doc = _deck(['<section id="one"><h2>Uno</h2></section>'])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, _, _ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0}, files, "b", "a"
+    )
+    assert 'src="a#/one"' in body and "embedded" not in body

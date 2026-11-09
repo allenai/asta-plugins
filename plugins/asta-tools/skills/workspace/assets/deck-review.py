@@ -255,15 +255,34 @@ LIVE_RE = re.compile(
 class ResourceRefs(HTMLParser):
     """Loaded resources, excluding outbound links and entire inline data URLs."""
 
-    def __init__(self, source):
+    def __init__(self, source, css=False):
         super().__init__(convert_charrefs=True)
         self.refs = []
-        self.feed(source)
-        self.refs.extend(re.findall(r"url\(\s*[\"']?([^\"')]+)", source, re.I))
-        self.refs.extend(re.findall(r"@import\s+[\"']([^\"']+)", source, re.I))
+        self._in_style = False
+        if css:
+            self._css(source)
+        else:
+            self.feed(source)
+
+    def _css(self, text):
+        # Only CSS loads url()/@import; the same text in a script or prose loads nothing.
+        self.refs.extend(re.findall(r"url\(\s*[\"']?([^\"')]+)", text, re.I))
+        self.refs.extend(re.findall(r"@import\s+[\"']([^\"']+)", text, re.I))
+
+    def handle_data(self, data):
+        if self._in_style:
+            self._css(data)
+
+    def handle_endtag(self, tag):
+        if tag == "style":
+            self._in_style = False
 
     def handle_starttag(self, tag, attrs):
+        if tag == "style":
+            self._in_style = True
         for name, value in attrs:
+            if name == "style" and value:
+                self._css(value)
             if not value or (tag == "a" and name == "href"):
                 continue
             if name in {
@@ -423,7 +442,8 @@ class Renderer:
                         data.append(f.read())
                 except OSError:
                     data.append(None)
-            self._same_files[path] = data[0] is not None and data[0] == data[1]
+            # Absent on both sides loads nothing either way, so it cannot differ.
+            self._same_files[path] = data[0] == data[1]
         return self._same_files[path]
 
     def same_static(self, deck, before, after):
@@ -514,10 +534,10 @@ class StaticFiles:
             frame = head + tail + "".join(inner)
         key = (deck, frame)
         if key not in self._loaded:
-            seen, todo = set(), [("/" + posixpath.dirname(deck), frame)]
+            seen, todo = set(), [("/" + posixpath.dirname(deck), frame, False)]
             while todo:
-                base, source = todo.pop()
-                for link in ResourceRefs(source).refs:
+                base, source, css = todo.pop()
+                for link in ResourceRefs(source, css).refs:
                     link = html.unescape(link.strip())
                     parts = urlsplit(link)
                     if not link or link.startswith("#") or parts.scheme or parts.netloc:
@@ -530,7 +550,7 @@ class StaticFiles:
                         target = os.path.join(self._roots["new"], path.lstrip("/"))
                         try:
                             with open(target, encoding="utf-8", errors="replace") as f:
-                                todo.append((posixpath.dirname(path), f.read()))
+                                todo.append((posixpath.dirname(path), f.read(), True))
                         except OSError:
                             pass
             self._loaded[key] = seen
@@ -678,7 +698,9 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
 
     def frame(url, slide, side):
         anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
-        src = html.escape(url + "?embedded=true#/" + anchor, quote=True)
+        # Not embedded mode: there Reveal sizes to .reveal's content height, which
+        # can exceed the frame and push the slide out of view.
+        src = html.escape(url + "#/" + anchor, quote=True)
         return (
             f"<figure><figcaption>{side}</figcaption>"
             f'<iframe loading="lazy" title="{side} slide" src="{src}"></iframe>'

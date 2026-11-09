@@ -75,14 +75,14 @@ def deploy_main(site):
             'class="deck-live deck-review"'
             in (published / "what-changed.html").read_text()
         )
-        images = list(site.glob("what-changed-decks/**/*.png"))
+        images = [p for p in site.glob("what-changed-decks/**/*.html") if p.is_file()]
         assert images
         for image in images:
             assert (
                 published / image.relative_to(site)
             ).read_bytes() == image.read_bytes()
         assert "noindex" not in (published / "what-changed.html").read_text()
-    print("Validated shared main publication with rendered deck images")
+    print("Validated shared main publication with live marked decks")
 
 
 def check(project, artifacts):
@@ -133,6 +133,9 @@ def check(project, artifacts):
             page.locator(".deck-review").wait_for()
             assert page.locator(".dr-changed").count() > 0
             assert page.locator(".dr-new").count() == 1
+            # Only the edited and added slides are shown; the rest fold away.
+            assert page.locator(".dr-look").count() == 0
+            assert page.locator("details.dr-unchanged").count() > 0
             for frame in page.locator(".dr-slide iframe").all():
                 frame.scroll_into_view_if_needed()
                 page.wait_for_function(
@@ -142,6 +145,14 @@ def check(project, artifacts):
                 assert (
                     frame.content_frame.locator(".reveal .slides section").count() > 0
                 )
+                # The current slide must sit inside the frame, not below it.
+                box = frame.content_frame.evaluate(
+                    "() => { const r = Reveal.getCurrentSlide()"
+                    ".getBoundingClientRect(); return [r.top, r.bottom, r.height,"
+                    " innerHeight]; }"
+                )
+                top, bottom, height, viewport = box
+                assert height > 0 and top >= -1 and bottom <= viewport + 1, box
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
                 "() => [...document.styleSheets].some("

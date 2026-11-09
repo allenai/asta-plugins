@@ -2,8 +2,6 @@
 
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -56,49 +54,13 @@ def test_prose_never_provisions_browser(monkeypatch):
     assert command == [sys.executable]
 
 
-def test_deck_browser_is_pinned_and_cached(tmp_path, monkeypatch):
-    calls = []
+def test_decks_never_provision_a_browser(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("live decks must not run uv or install Playwright")
 
-    def run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, stdout=str(tmp_path))
-
-    monkeypatch.setattr(subprocess, "run", run)
-    command, env = module._comparison_python(True)
-    assert "playwright==1.64.1" in command
-    assert calls[1][0][-4:] == ["-m", "playwright", "install", "chromium"]
-    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "asta-chromium")
-
-
-def test_relative_uv_cache_is_resolved_once_and_browser_shared(tmp_path, monkeypatch):
-    calls = []
-
-    def run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, stdout="")
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("UV_CACHE_DIR", ".uv-cache")
-    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
-    monkeypatch.setattr(subprocess, "run", run)
-    _, env = module._comparison_python(True)
-    assert env["UV_CACHE_DIR"] == str(tmp_path / ".uv-cache")
-    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(
-        Path(tempfile.gettempdir()) / "asta-chromium"
-    )
-    assert all(
-        kwargs["env"]["UV_CACHE_DIR"] == env["UV_CACHE_DIR"] for _, kwargs in calls
-    )
-
-
-def test_unavailable_browser_dependencies_fall_back(monkeypatch, capsys):
-    def fail(*args, **kwargs):
-        raise OSError("cache unavailable")
-
-    monkeypatch.setattr(subprocess, "run", fail)
+    monkeypatch.setattr(subprocess, "run", unexpected)
     command, _ = module._comparison_python(True)
     assert command == [sys.executable]
-    assert "run outside it to see rendered slides" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
