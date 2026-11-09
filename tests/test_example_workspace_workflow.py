@@ -420,6 +420,9 @@ def test_example_uses_current_scaffold_and_managed_inputs():
     )
     assert build["env"]["ASTA_WORKSPACE_RESOLVED_SHA"] == "${{ github.sha }}"
     assert step["run"].index("uv tool install") < step["run"].index("make check")
+    assert 'state["source_ref"] == os.environ["GITHUB_SHA"]' in step["run"]
+    assert 'for extension in asta-theme evidence asta-slides' in step["run"]
+    assert 'diff -r' in step["run"]
 
 
 def test_published_demo_reuses_local_content_assertions():

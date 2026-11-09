@@ -55,6 +55,11 @@ jobs:
           test -f _extensions/asta-theme/light.scss
           test -f _extensions/evidence/snippet.lua
           test -f _extensions/asta-slides/_extension.yml
+          # Verify the resolved source, not just the requested workflow pin.
+          python3 -c 'import json, os; from pathlib import Path; state = json.loads(Path(".asta/cache/workspace.json").read_text()); assert state["source_ref"] == os.environ["GITHUB_SHA"], state; assert Path(".asta/cache/workspace.mk").read_bytes().endswith(Path("../../plugins/asta-tools/skills/workspace/assets/workspace.mk").read_bytes())'
+          for extension in asta-theme evidence asta-slides; do
+            diff -r "../../plugins/asta-tools/skills/workspace/assets/_extensions/$extension" "_extensions/$extension"
+          done
           git check-ignore .asta/cache/workspace.mk _extensions/asta-theme/light.scss
           make preview-artifact-check
           git diff --exit-code  # prints any tracked file a build or sync modified
