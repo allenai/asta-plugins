@@ -21,8 +21,13 @@ def check(site, artifacts):
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
+        # A published preview already carries its own What changed output, which
+        # would otherwise be diffed as extra pages beside the deck under test.
+        generated = shutil.ignore_patterns(
+            "what-changed.html", "what-changed-decks", "what-changed-assets"
+        )
         for side in ("old", "new"):
-            shutil.copytree(site, root / side)
+            shutil.copytree(site, root / side, ignore=generated)
         deck = Path("slides/attention/slides.html")
         original = (root / "old" / deck).read_text()
         slides = changed.reveal_slides(original)
