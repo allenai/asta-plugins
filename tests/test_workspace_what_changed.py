@@ -1887,3 +1887,31 @@ def test_copy_ignored_render_inputs_fills_fresh_copies(
     assert (destination / "_extensions/evidence/snippet.lua").read_text() == (
         "-- tracked"
     )
+
+
+@pytest.mark.parametrize("source_kind", ["detached", "linked"])
+def test_working_copy_matches_source_head_in_every_checkout(tmp_path, source_kind):
+    source = tmp_path / "repository"
+    source.mkdir()
+    git(source, "init", "-b", "main")
+    (source / "index.qmd").write_text("Base")
+    git(source, "add", "index.qmd")
+    git(source, "commit", "-m", "Base")
+    git(source, "checkout", "-b", "feature")
+    (source / "index.qmd").write_text("Feature")
+    git(source, "add", "index.qmd")
+    git(source, "commit", "-m", "Feature")
+    if source_kind == "linked":
+        linked = tmp_path / "linked"
+        git(source, "worktree", "add", "--detach", str(linked), "HEAD")
+        source = linked
+    else:
+        git(source, "checkout", "--detach")
+    expected = workspace_module._git(source, "rev-parse", "HEAD").stdout.strip()
+    destination = tmp_path / "copy"
+    workspace_module.working_copy(source, "", destination)
+    assert (
+        workspace_module._git(destination, "rev-parse", "HEAD").stdout.strip()
+        == expected
+    )
+    assert (destination / "index.qmd").read_text() == "Feature"

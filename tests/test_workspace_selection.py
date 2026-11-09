@@ -243,3 +243,17 @@ def test_example_bibliography_edit_builds_paper(example):
     # Any latexmkrc, e.g. an older scaffold's, leaves a slide edit paper-free.
     (after / "paper" / "latexmkrc").write_text("$pdf_mode = 1;\n")
     assert not paper_affected(after, "paper", main, ["slides/attention/slides.qmd"])
+
+
+def test_frontmatter_edit_selects_all_for_listings_and_navigation(trees):
+    (before, after), write = trees
+    write("article.qmd", "---\ntitle: Old\n---\nText", "---\ntitle: New\n---\nText")
+    write("index.qmd", "---\nlisting: true\n---\n")
+    assert select_pages(after, before, ["article.qmd"]) is None
+
+
+def test_body_edit_keeps_selection_narrow_with_unchanged_frontmatter(trees):
+    (before, after), write = trees
+    write("article.qmd", "---\ntitle: Same\n---\nOld", "---\ntitle: Same\n---\nNew")
+    write("index.qmd", "---\nlisting: true\n---\n")
+    assert select_pages(after, before, ["article.qmd"]) == ["article.qmd"]

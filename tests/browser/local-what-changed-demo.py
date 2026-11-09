@@ -5,7 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
 from site_server import _serve
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +16,8 @@ THEMED_JS = (
 
 def check_site(site, artifacts):
     """Shared acceptance contract for local reports and the published demo."""
+    from playwright.sync_api import sync_playwright
+
     artifacts.mkdir(parents=True, exist_ok=True)
     html = (site / "what-changed.html").read_text()
     missing = []
@@ -56,16 +57,18 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("project", type=Path)
+    parser.add_argument("project", type=Path, nargs="?")
     parser.add_argument("artifacts", type=Path)
-    parser.add_argument(
-        "--site", action="store_true", help="Check an already-built report"
-    )
+    parser.add_argument("--site", type=Path, help="Check an already-built report")
     args = parser.parse_args()
-    project = args.project.resolve()
     if args.site:
-        site = project
+        if args.project:
+            parser.error("use a project or --site, not both")
+        site = args.site.resolve()
     else:
+        if args.project is None:
+            parser.error("a project or --site is required")
+        project = args.project.resolve()
         result = subprocess.run(
             ["asta", "workspace", "what-changed", "--timings", "HEAD"],
             cwd=project,

@@ -143,6 +143,17 @@ def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | N
             return None
         if path.suffix in PAGES:
             selected.add(name)
+            if name in documents[0] and name in documents[1]:
+                # Metadata may feed listings, navigation and cross references.
+                # Compare the raw YAML conservatively (including malformed YAML).
+                def front(text):
+                    if not re.match(r"\A---[ \t]*\r?\n", text):
+                        return ""
+                    end = re.search(r"\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)", text[3:])
+                    return text[: 3 + end.end()] if end else text
+
+                if front(documents[0][name]) != front(documents[1][name]):
+                    return None
             if name not in documents[0] or name not in documents[1]:
                 # Creation/deletion/rename may change any listing or navigation.
                 return None

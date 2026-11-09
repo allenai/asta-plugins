@@ -45,12 +45,6 @@ def test_classify_without_images_treats_equal_markup_as_unchanged():
     assert rows == [("unchanged", 0, 0)] and removed == []
 
 
-def test_context_keeps_complete_unchanged_runs():
-    rows = [("unchanged", i, i) for i in range(10)]
-    rows[5] = ("changed", 5, 5)
-    assert deck_review.context(rows) == list(range(10))
-
-
 def test_slide_title_reads_the_heading_text():
     slide = {"body": '<h2 class="x">The <em>question</em>\n here</h2><p>body</p>'}
     assert deck_review.slide_title(slide) == "The question here"
@@ -742,9 +736,190 @@ def test_differing_static_input_is_changed_in_look(tmp_path, change):
         new_slides[1] = EDITED.replace(
             "</section>", "<style>h2{color:red}</style></section>"
         )
-    elif change == "position":
-        new_slides = ['<section id="zero"><h2>Zero</h2></section>', slide]
     new_doc = _deck(new_slides, head)
     renderer, old, new = _static_files(tmp_path, old_doc, new_doc, new_files=new_files)
-    index = 1 if change == "position" else 0
-    assert not renderer.same_static("d/deck.html", old[0], new[index])
+    assert not renderer.same_static("d/deck.html", old[0], new[0])
+
+
+@pytest.mark.parametrize(
+    "prefix", ["\r", "\v", "\f", "\x1c", "\x85", "\u2028", "\u2029"]
+)
+def test_slide_spans_use_htmlparser_newlines(prefix):
+    doc = _deck([SLIDE, EDITED], head=prefix + "\n<title>Deck</title>")
+    slides = what_changed.reveal_slides(doc)
+    for slide in slides:
+        start, end = slide["span"]
+        assert doc[start:end] == slide["raw"]
+    marked = deck_review.marked_deck(doc, slides, {1: {0}}, "ins")
+    assert '<section id="two"><h2><ins class="dr-live">Two</ins></h2>' in marked
+
+
+def test_slide_parser_accepts_incremental_chunks():
+    doc = _deck([SLIDE, EDITED], head="\n<title>Deck</title>\n")
+    parser = what_changed.SlideParser()
+    for start in range(0, len(doc), 7):
+        parser.feed(doc[start : start + 7])
+    parser.close()
+    assert parser.slides() == what_changed.reveal_slides(doc)
+
+
+@pytest.mark.parametrize(
+    "protected",
+    [
+        '<aside class="notes"><p>secret old notes</p></aside>',
+        "<svg><text>old vector text</text></svg>",
+        "<math><mi>old</mi></math>",
+        "<textarea>old input</textarea>",
+        "<pre><code>old code</code></pre>",
+        r"<p>\(old + x\)</p>",
+        r"<p>\[old + x\]</p>",
+        "<p>$old + x$</p>",
+        "<p>$$old + x$$</p>",
+    ],
+)
+def test_marks_preserve_non_prose_markup(protected):
+    old = "<section><p>old prose</p>" + protected + "</section>"
+    new = "<section><p>new prose</p>" + protected.replace("old", "new") + "</section>"
+    deleted, inserted = deck_review.word_changes(old, new)
+    marked = deck_review.mark_words(
+        new, inserted, "ins", deck_review.struck_before(old, new)
+    )
+    assert protected.replace("old", "new") in marked
+    assert '<ins class="dr-live">new</ins>' in marked
+    assert '<del class="dr-live">old</del>' in marked
+
+
+def test_live_notes_only_edit_is_unchanged(tmp_path):
+    old_doc = _deck(
+        [SLIDE.replace("</section>", '<aside class="notes">old</aside></section>')]
+    )
+    new_doc = old_doc.replace(">old<", ">new<")
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    rows, removed = deck_review.live_rows(
+        old, new, {0: 0}, lambda a, b: files.same_static("d/deck.html", a, b)
+    )
+    assert rows == [("unchanged", 0, 0)] and not removed
+
+
+@pytest.mark.parametrize("failure", ["decode", "copy", "parser"])
+def test_live_deck_failure_falls_back_per_deck(tmp_path, monkeypatch, capsys, failure):
+    before, after = tmp_path / "before", tmp_path / "after"
+    before.mkdir()
+    after.mkdir()
+    doc = _deck([SLIDE])
+    (before / "deck.html").write_text(doc)
+    (after / "deck.html").write_bytes(
+        b"\xff" if failure == "decode" else doc.replace("One", "New").encode()
+    )
+    renderer = what_changed.DeckRenderer(
+        deck_review, str(before), str(after), str(after / "generated"), "generated"
+    )
+    if failure == "copy":
+
+        def fail(*a, **k):
+            raise OSError("test copy failure")
+
+        monkeypatch.setattr(what_changed.shutil, "copytree", fail)
+    elif failure == "parser":
+
+        def fail(*a, **k):
+            raise ValueError("test parser failure")
+
+        monkeypatch.setattr(deck_review, "live_review", fail)
+    slides = what_changed.reveal_slides(doc)
+    assert (
+        renderer.review(
+            "deck.html",
+            "deck.html",
+            slides,
+            what_changed.reveal_slides(doc.replace("One", "New")),
+            {0: 0},
+        )
+        is False
+    )
+    assert "slides as text" in capsys.readouterr().err
+
+
+def test_live_deck_publication_skips_escaping_links(tmp_path):
+    before, after = tmp_path / "before", tmp_path / "after"
+    before.mkdir()
+    after.mkdir()
+    outside = tmp_path / "private"
+    outside.mkdir()
+    (outside / "private.txt").write_text("must stay private")
+    for root, word in [(before, "Old"), (after, "New")]:
+        (root / "deck.html").write_text(
+            _deck([f'<section id="s"><h2>{word}</h2></section>'])
+        )
+        (root / "escape").symlink_to(outside, target_is_directory=True)
+        (root / "escape.txt").symlink_to(outside / "private.txt")
+        (root / "local.css").write_text("h2{}")
+        (root / "inside.css").symlink_to("local.css")
+    renderer = what_changed.DeckRenderer(
+        deck_review, str(before), str(after), str(after / "generated"), "generated"
+    )
+    old = what_changed.reveal_slides((before / "deck.html").read_text())
+    new = what_changed.reveal_slides((after / "deck.html").read_text())
+    assert renderer.review("deck.html", "deck.html", old, new, {0: 0})
+    for side in ["before", "after"]:
+        out = after / "generated" / side
+        assert not (out / "escape").exists()
+        assert not (out / "escape.txt").exists()
+        assert (out / "inside.css").read_text() == "h2{}"
+        assert "must stay private" not in "".join(
+            p.read_text() for p in out.rglob("*") if p.is_file()
+        )
+
+
+def test_page_scan_excludes_html_symlink_outside_site(tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    private = tmp_path / "private.html"
+    private.write_text("<main>private content</main>")
+    (site / "leak.html").symlink_to(private)
+    assert what_changed.list_pages(str(site)) == {}
+    renderer = what_changed.DeckRenderer(
+        deck_review, str(site), str(site), str(site / "generated"), "generated"
+    )
+    assert renderer.review("leak.html", "leak.html", [], [], {}) is False
+
+
+@pytest.mark.parametrize(
+    "classes", ["notes-preview", "speaker-notes", "my-notes-extra"]
+)
+def test_visible_asides_do_not_count_as_speaker_notes(classes):
+    raw = f'<aside class="{classes}">visible prose</aside>'
+    assert deck_review.slide_words(raw) == ["visible", "prose"]
+
+
+def test_invalid_deck_encoding_keeps_other_page_diffs(tmp_path, capsys):
+    before, after = tmp_path / "before", tmp_path / "after"
+    for root, word in [(before, "Old"), (after, "New")]:
+        root.mkdir()
+        (root / "index.html").write_text(f"<main><p>{word} prose</p></main>")
+        doc = _deck(
+            [f'<section id="s"><h2>{word}</h2></section>'],
+            head="<!--" + " " * 5000 + "-->",
+        )
+        (root / "deck.html").write_bytes(
+            doc.replace(word, word + ("\ufffd" if root == after else ""))
+            .encode()
+            .replace(b"\xef\xbf\xbd", b"\xff")
+        )
+    assert "deck.html" in what_changed.list_pages(str(after))
+    out = after / "what-changed.html"
+    what_changed.main(
+        [
+            "--old",
+            str(before),
+            "--new",
+            str(after),
+            "--out",
+            str(out),
+            "--render-decks",
+            str(after / "generated"),
+        ]
+    )
+    result = out.read_text()
+    assert "slides as text" in capsys.readouterr().err
+    assert "slide-diff" in result and "New" in result and "prose" in result

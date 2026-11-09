@@ -19,7 +19,7 @@ from report_signature import report_signature
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check_preview(artifacts):
+def check_preview(artifacts, local_report):
     started = time.perf_counter()
     env = dict(os.environ)
     env["ASTA_WORKSPACE_RESOLVED_SHA"] = subprocess.check_output(
@@ -124,8 +124,7 @@ def check_preview(artifacts):
         acceptance = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(acceptance)
         acceptance.check_site(after / "_site", artifacts)
-        local = ROOT / "examples/workspace/.asta/cache/what-changed"
-        assert report_signature(after / "_site") == report_signature(local), (
+        assert report_signature(after / "_site") == report_signature(local_report), (
             "Independent preview and local demo disagree on pages or marked words"
         )
         # Retain the independent result for comparing with the local report.
@@ -138,4 +137,4 @@ def check_preview(artifacts):
 
 
 if __name__ == "__main__":
-    check_preview(Path(sys.argv[1]).resolve())
+    check_preview(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())

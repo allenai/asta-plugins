@@ -2,6 +2,10 @@
 
 Run with this checkout's CLI and the -tex toolchain. The caller publishes the
 result through the ordinary site's existing artifact-command hook.
+
+This publication helper requires HEAD to have been pushed to allenai/asta-plugins
+and network access to fetch that commit's managed rules and extensions. It is
+run by this repository's Pages jobs; it is not an offline workspace command.
 """
 
 import argparse

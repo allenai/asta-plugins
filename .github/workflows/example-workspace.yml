@@ -125,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$(uv tool dir --bin):$PATH"
-          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/workspace-preview-path.py ../../tests/browser/artifacts/preview-path 2>&1 | tee "$RUNNER_TEMP/preview-path.log"
+          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/workspace-preview-path.py ../../tests/browser/artifacts/preview-path .asta/cache/what-changed 2>&1 | tee "$RUNNER_TEMP/preview-path.log"
           {
             echo '### Independent PR-preview path timings'
             echo '```text'

@@ -771,6 +771,10 @@ def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
             if not f.endswith(".html"):
                 continue
             full = os.path.join(dirpath, f)
+            if os.path.commonpath(
+                (os.path.realpath(root), os.path.realpath(full))
+            ) != os.path.realpath(root):
+                continue
             if excluded and os.path.realpath(full) == excluded:
                 continue
             rel = os.path.relpath(full, root)
@@ -788,7 +792,7 @@ def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
             ):
                 continue
             try:
-                with open(full, encoding="utf-8") as fh:
+                with open(full, encoding="utf-8", errors="replace") as fh:
                     if is_what_changed_artifact(fh.read(4096)):
                         continue
             except (OSError, UnicodeDecodeError):
@@ -1363,7 +1367,7 @@ def pick_template(new_pages):
         try:
             with open(new_pages[rel], encoding="utf-8") as f:
                 doc = f.read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if not extract_theme_css(doc, depth):
             continue
@@ -1494,8 +1498,11 @@ class SlideParser(HTMLParser):
     def feed(self, data):
         # Offsets let a slide keep its raw markup and the deck its HTML outside the
         # slides, which deck-review.py compares to skip unchanged slides' pixels.
-        for line in data[len(self.doc) :].splitlines(keepends=True):
-            self._lines.append(self._lines[-1] + len(line))
+        # HTMLParser counts only LF as a newline, and feed() receives a chunk.
+        # Other Unicode line separators remain ordinary source characters.
+        self._lines.extend(
+            len(self.doc) + match.end() for match in re.finditer("\n", data)
+        )
         self.doc += data
         super().feed(data)
 
@@ -1757,9 +1764,23 @@ class DeckRenderer:
         self.copied = False
 
     def review(self, rel, link, old, new, pairs):
+        try:
+            return self._review(rel, old, new, pairs)
+        except Exception as exc:  # noqa: BLE001 - a deck must not abort other pages
+            print(f"what-changed: slides as text ({rel}: {exc})", file=sys.stderr)
+            return False
+
+    def _review(self, rel, old, new, pairs):
         def read(root):
             path = os.path.join(root, rel)
-            return open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
+            if os.path.commonpath(
+                (os.path.realpath(root), os.path.realpath(path))
+            ) != os.path.realpath(root):
+                raise ValueError("deck resolves outside the site")
+            if not os.path.isfile(path):
+                return ""
+            with open(path, encoding="utf-8") as stream:
+                return stream.read()
 
         url = quote(rel, safe="/")
         body, before, after, marked = self.module.live_review(
@@ -1778,10 +1799,28 @@ class DeckRenderer:
         if not self.copied:
             generated = os.path.basename(self.img_root)
             for side, root in (("before", self.old_root), ("after", self.new_root)):
+
+                def ignore(directory, names):
+                    # Preserve relative in-site links without dereferencing them.
+                    # Never let runner-local files enter the Pages artifact.
+                    skipped = {generated} & set(names)
+                    for name in names:
+                        path = os.path.join(directory, name)
+                        if os.path.islink(path) and (
+                            os.path.isabs(os.readlink(path))
+                            or os.path.commonpath(
+                                (os.path.realpath(root), os.path.realpath(path))
+                            )
+                            != os.path.realpath(root)
+                        ):
+                            skipped.add(name)
+                    return skipped
+
                 shutil.copytree(
                     root,
                     os.path.join(self.img_root, side),
-                    ignore=shutil.ignore_patterns(generated),
+                    symlinks=True,
+                    ignore=ignore,
                     dirs_exist_ok=True,
                 )
             self.copied = True
@@ -1924,12 +1963,16 @@ def build(
     slide_sections, slide_toc = [], []
     documents = {}
     for rel in sorted(set(old_pages) | set(new_pages)):
-        old_doc = (
-            open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
-        )
-        new_doc = (
-            open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
-        )
+
+        def read(pages):
+            if rel not in pages:
+                return None
+            # Invalid HTML encoding still has a usable text fallback. The live
+            # deck reader stays strict and reports why frames cannot be built.
+            with open(pages[rel], encoding="utf-8", errors="replace") as stream:
+                return stream.read()
+
+        old_doc, new_doc = read(old_pages), read(new_pages)
         documents[rel] = old_doc, new_doc
         old_slides, new_slides = reveal_slides(old_doc), reveal_slides(new_doc)
         # Format transitions need the ordinary page diff to retain both sides.

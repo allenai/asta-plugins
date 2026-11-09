@@ -37,6 +37,9 @@ def edit(project, case):
     if case == "prose":
         replace("lit-review/index.qmd", "## ", "## Revised ")
         return {"lit-review/index.qmd"}, False
+    if case == "metadata":
+        replace("lit-review/index.qmd", 'title: "', 'title: "Revised ')
+        return ALL, False
     if case == "slide":
         replace(DECK, "## ", "## Revised ")
         return {DECK, LOOK}, False
@@ -189,6 +192,7 @@ def check(artifacts):
             assert (project / required).is_file(), f"bootstrap missed {required}"
         for case in (
             "prose",
+            "metadata",
             "slide",
             "quote",
             "bibliography",

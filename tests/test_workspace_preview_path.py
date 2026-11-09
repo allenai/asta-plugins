@@ -73,7 +73,7 @@ def test_preview_build_renders_both_sides_and_does_not_mutate_source(
     )
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
-    preview.check_preview(artifacts)
+    preview.check_preview(artifacts, tmp_path / "reference-report")
     assert sorted(text for _, text in builds) == ["After\n", "Before\n"]
     assert checks and (artifacts / "preview-path-site/what-changed.html").is_file()
     assert all(not path.exists() for path, _ in builds)

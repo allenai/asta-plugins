@@ -127,7 +127,7 @@ The version lives in three places:
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
    This is bookkeeping only — the Docker image is already published by step 5, so
    a release is not a prerequisite for anything.
-6. Refresh the demo PR (#281, branch `example-demo-pr`): merge `origin/main`
+8. Refresh the demo PR (#281, branch `example-demo-pr`): merge `origin/main`
    into it and make its diff against `main` equal `examples/workspace-demo.patch`,
    so the preview the READMEs link to shows the released What changed. `main`
    publishes the same patch's What changed itself; CI fails when the patch stops

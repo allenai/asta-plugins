@@ -22,6 +22,7 @@ spec.loader.exec_module(matrix)
     "case",
     [
         "prose",
+        "metadata",
         "slide",
         "quote",
         "bibliography",
@@ -63,6 +64,7 @@ def test_edit_matrix_expected_selection(tmp_path, case):
     else:
         assert case in {
             "config",
+            "metadata",
             "new",
             "deleted",
             "renamed",

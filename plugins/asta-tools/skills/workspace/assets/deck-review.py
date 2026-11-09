@@ -84,19 +84,27 @@ def _local_paths(source, base):
     return paths
 
 
+# Notes are not displayed by Reveal and must not turn an invisible edit into a
+# slide change. Keep other markup byte-sensitive, including math and code.
+NOTES_RE = re.compile(
+    r"<aside\b(?=[^>]*\bclass\s*=\s*(?:\"(?:[^\"]*\s)?notes(?:\s[^\"]*)?\"|'(?:[^']*\s)?notes(?:\s[^']*)?'|notes(?=[\s>])))[^>]*>.*?</aside\s*>",
+    re.S | re.I,
+)
+
+
 def _same_static(files, loaded, deck, before, after, positional=True):
     # Pixels include the slide number; a live frame's own number isn't a change.
     if (
         before.get("raw") is None
-        or before["raw"] != after.get("raw")
+        or NOTES_RE.sub("", before["raw"]) != NOTES_RE.sub("", after.get("raw", ""))
         or (positional and before.get("position") != after.get("position"))
         or before.get("frame") != after.get("frame")
-        or LIVE_RE.search(after["raw"])
+        or LIVE_RE.search(NOTES_RE.sub("", after["raw"]))
     ):
         return False
     # The deck documents themselves are compared as raw slides and frame.
     paths = set(loaded.get(deck, set())) - {"/" + deck}
-    refs = _local_paths(after["raw"], "/" + posixpath.dirname(deck))
+    refs = _local_paths(NOTES_RE.sub("", after["raw"]), "/" + posixpath.dirname(deck))
     if refs is None:
         return False
     return all(files._same_file(path) for path in paths | refs)
@@ -168,20 +176,41 @@ class StaticFiles:
 
 
 _TEXT_RE = re.compile(
-    r"(<(script|style)\b.*?</\2\s*>|<!--.*?-->|<[^>]*>)|([^<]+)", re.S | re.I
+    "("
+    + NOTES_RE.pattern
+    + r"|<(?P<block>script|style|svg|math|textarea|pre|code)\b.*?</(?P=block)\s*>|<!--.*?-->|<[^>]*>)|(?P<text>[^<]+)",
+    re.S | re.I,
 )
-
-
+MATH_RE = re.compile(
+    r"(\\\(.*?\\\)|\\\[.*?\\\]|\$\$.*?\$\$|(?<!\\)\$(?!\s).*?(?<!\\)\$)",
+    re.S,
+)
 _WORD_RE = re.compile(r"\S+")
 
 
+def text_parts(raw):
+    """Raw, lossless pieces with only ordinary visible prose eligible for marks.
+
+    TeX delimiters and markup interpreted by another renderer stay intact.
+    They still participate in the static comparison as appearance changes.
+    """
+    for match in _TEXT_RE.finditer(raw):
+        text = match.group("text")
+        if text is None:
+            yield match.group(), False
+        else:
+            for i, part in enumerate(MATH_RE.split(text)):
+                if part:
+                    yield part, i % 2 == 0
+
+
 def slide_words(raw):
-    """The words of a slide's raw markup, in order, outside tags, scripts and styles."""
+    """Words of visible prose only; protected rendering markup is left intact."""
     return [
         w.group()
-        for m in _TEXT_RE.finditer(raw)
-        if m.group(3)
-        for w in _WORD_RE.finditer(m.group(3))
+        for text, visible in text_parts(raw)
+        if visible
+        for w in _WORD_RE.finditer(text)
     ]
 
 
@@ -225,11 +254,11 @@ def mark_words(raw, indices, tag, struck=None):
         if struck.get(at):
             out.append('<del class="dr-live">' + " ".join(struck[at]) + "</del> ")
 
-    for m in _TEXT_RE.finditer(raw):
-        if not m.group(3):
-            out.append(m.group())
+    for text, visible in text_parts(raw):
+        if not visible:
+            out.append(text)
             continue
-        text, pos = m.group(3), 0
+        pos = 0
         for w in _WORD_RE.finditer(text):
             out.append(text[pos : w.start()])
             strike(k)
@@ -490,11 +519,6 @@ document.querySelectorAll('.deck-live').forEach(root => {
  load();
 });
 </script>"""
-
-
-def context(rows):
-    """Keep every slide; the view folds complete unchanged runs behind a count."""
-    return list(range(len(rows)))
 
 
 def slide_title(slide):
