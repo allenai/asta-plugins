@@ -12,6 +12,50 @@ THEMED_JS = (
     "() => ['bootstrap', 'asta-theme'].every(name => [...document.styleSheets]"
     ".some(s => s.href && s.href.includes(name) && s.cssRules.length))"
 )
+POP_SHOWN_JS = (
+    "ev => { const p = ev.querySelector(':scope > .ev-pop');"
+    " if (!p) return false; const s = getComputedStyle(p);"
+    " return s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0; }"
+)
+NAV_SHOWN_JS = (
+    "() => [...document.querySelectorAll('.reveal .controls, .slide-menu-button')]"
+    ".some(e => getComputedStyle(e).display !== 'none' && e.getClientRects().length)"
+)
+
+
+def check_evidence(page, missing):
+    """Every claim on a changed page opens its quote on hover and on focus."""
+    page.evaluate("document.querySelectorAll('details').forEach(d => d.open = true)")
+    claims = page.locator(".wc-scope .ev")
+    for i in range(claims.count()):
+        ev = claims.nth(i)
+        ev.scroll_into_view_if_needed()
+        ev.hover()
+        hovered = ev.evaluate(POP_SHOWN_JS)
+        page.mouse.move(0, 0)
+        ev.focus()
+        focused = ev.evaluate(POP_SHOWN_JS)
+        if not (hovered and focused):
+            missing.append(f"evidence claim {i + 1}'s quote on hover/focus")
+
+
+def check_frames(page, missing):
+    """No slide frame offers navigation to another slide."""
+    frames = page.locator(".deck-live iframe:visible")
+    for i in range(frames.count()):
+        el = frames.nth(i)
+        el.scroll_into_view_if_needed()
+        frame = el.element_handle().content_frame()
+        try:
+            frame.wait_for_function(
+                "() => window.Reveal && Reveal.isReady && Reveal.isReady()",
+                timeout=15000,
+            )
+        except Exception:
+            missing.append(f"slide frame {i + 1} becoming ready")
+            continue
+        if frame.evaluate(NAV_SHOWN_JS):
+            missing.append(f"slide frame {i + 1} without Reveal controls")
 
 
 def check_site(site, artifacts):
@@ -43,6 +87,8 @@ def check_site(site, artifacts):
                 page.locator(".deck-review").wait_for()
                 if page.locator(".dr-changed, .dr-new, .dr-look").count() == 0:
                     missing.append("the changed slide")
+                check_frames(page, missing)
+            check_evidence(page, missing)
             page.screenshot(
                 path=str(artifacts / "local-what-changed-demo.png"), full_page=True
             )

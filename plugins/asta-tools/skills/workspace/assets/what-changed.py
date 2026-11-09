@@ -269,6 +269,7 @@ DROP_CONTENT_TAGS = {
 GLOBAL_SAFE_ATTRS = {"class", "dir", "lang", "role", "title"}
 TAG_SAFE_ATTRS = {
     "a": {"href"},
+    "span": {"tabindex"},
     "blockquote": {"cite"},
     "col": {"span"},
     "colgroup": {"span"},
@@ -339,6 +340,8 @@ class _SafeFragmentParser(HTMLParser):
             name = name.lower()
             if name not in allowed and not name.startswith("aria-"):
                 continue
+            if name == "tabindex" and value not in ("0", "-1"):
+                continue  # focusable evidence claims only; no tab-order jumps
             if value is None:
                 clean.append(name)
                 continue
@@ -541,6 +544,17 @@ def is_inline_tag(tok):
     return tag_name(tok) in INLINE_TAGS
 
 
+EV_CLAIM_RE = re.compile(
+    r"""(?is)<span(?=\s|>)[^>]*?\sclass\s*=\s*(["'])(?:[^"']*\s)?ev(?:\s[^"']*)?\1"""
+)
+
+
+def is_ev_claim(tok):
+    """An evidence claim's own `<span class="ev">`: structural, never wrapped
+    in <ins>/<del>, so its popover stays the direct child the hover CSS needs."""
+    return bool(EV_CLAIM_RE.match(tok))
+
+
 def balanced_inline(tokens):
     """Indices of inline tags whose matching partner is inside this same run.
 
@@ -562,8 +576,9 @@ def balanced_inline(tokens):
             for si in range(len(stack) - 1, -1, -1):
                 if stack[si][0] == name:
                     _, open_idx = stack.pop(si)
-                    balanced.add(open_idx)
-                    balanced.add(idx)
+                    if not is_ev_claim(tokens[open_idx][1]):
+                        balanced.add(open_idx)
+                        balanced.add(idx)
                     break
         elif text.rstrip().rstrip(">").endswith("/") or name in ("br", "wbr", "img"):
             balanced.add(idx)  # void/self-closing: needs no partner

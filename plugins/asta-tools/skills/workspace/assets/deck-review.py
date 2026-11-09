@@ -358,6 +358,10 @@ LIVE_MARK_CSS = (
     # Every build visible, so a changed word is never hidden behind a fragment.
     "<style>.reveal .slides .fragment{opacity:1!important;visibility:inherit!important;"
     "transform:none!important}</style>"
+    # No in-frame navigation: the page's list of slides is the one way through.
+    # Hidden in CSS because a deck's own scripts can re-enable `controls`.
+    "<style>.reveal .controls,.reveal .progress,.slide-menu-button,"
+    ".reveal .slide-menu,.reveal .slide-chalkboard-buttons{display:none!important}</style>"
     "<style>ins.dr-live,del.dr-live{text-decoration:none;border-radius:2px}"
     "ins.dr-live{background:rgba(47,191,113,.35)}"
     "del.dr-live{background:rgba(253,70,69,.35);text-decoration:line-through}</style>"
