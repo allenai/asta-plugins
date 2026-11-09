@@ -19,6 +19,9 @@ on:
       rendered:
         description: Whether this event affects the rendered site
         value: ${{ jobs.scope.outputs.render }}
+      published:
+        description: Whether this run published the built site to gh-pages
+        value: ${{ jobs.deploy.result == 'success' }}
     inputs:
       preview-pr:
         description: Open same-repository PR to publish when explicitly dispatched on its head branch

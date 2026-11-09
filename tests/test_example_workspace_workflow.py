@@ -210,12 +210,12 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     gate = check["steps"][1]
     assert gate["id"] == "browser"
     assert "needs.docs.outputs.rendered == 'true'" in gate["env"]["RUN"]
-    assert "head.repo.full_name == github.repository" in gate["env"]["RUN"]
-    assert "github.event_name != 'pull_request'" in gate["env"]["RUN"]
-    assert "github.actor != 'dependabot[bot]'" in gate["env"]["RUN"]
+    assert gate["env"]["RUN"] == "${{ needs.docs.outputs.rendered == 'true' }}"
     for step in check["steps"][2:]:
         assert step["if"] in (
             "steps.browser.outputs.run == 'true'",
+            "steps.browser.outputs.run == 'true' && needs.docs.outputs.published == 'true'",
+            "steps.browser.outputs.run == 'true' && needs.docs.outputs.published != 'true'",
             "steps.browser.outputs.run == 'true' && (github.event_name == 'pull_request' || inputs.preview-pr != '')",
         )
 
@@ -618,3 +618,21 @@ def test_edit_comparison_gate_uses_the_pr_diff(tmp_path, path, runs):
     )
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "out").read_text() == f"run={str(runs).lower()}\n"
+
+
+def test_unpublished_prs_check_the_same_build_without_write_access():
+    shared = load("workspace-quarto-site")
+    assert (
+        shared["on"]["workflow_call"]["outputs"]["published"]["value"]
+        == "${{ jobs.deploy.result == 'success' }}"
+    )
+    browser = load("example-preview")["jobs"]["check-preview"]
+    assert browser["permissions"] == {"contents": "read"}
+    download = next(
+        s
+        for s in browser["steps"]
+        if s.get("uses", "").startswith("actions/download-artifact@")
+    )
+    assert "needs.docs.outputs.published != 'true'" in download["if"]
+    assert download["with"]["name"] == "site-ubuntu-latest"
+    assert download["with"]["path"].startswith("preview-site/pr-preview/pr-")

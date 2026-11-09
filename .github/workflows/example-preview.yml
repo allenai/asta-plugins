@@ -90,13 +90,13 @@ jobs:
       - name: Decide whether the preview browser runs
         id: browser
         env:
-          RUN: ${{ needs.docs.outputs.rendered == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
+          RUN: ${{ needs.docs.outputs.rendered == 'true' }}
         run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
       - if: steps.browser.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - if: steps.browser.outputs.run == 'true'
+      - if: steps.browser.outputs.run == 'true' && needs.docs.outputs.published == 'true'
         name: Read the published preview from gh-pages
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
@@ -116,6 +116,13 @@ jobs:
             mkdir preview-site
             git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
           fi
+      # Forks and Dependabot cannot publish, but all browser properties still
+      # run read-only against the same build's artifact, without another build.
+      - if: steps.browser.outputs.run == 'true' && needs.docs.outputs.published != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: site-ubuntu-latest
+          path: preview-site/pr-preview/pr-${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
       - if: steps.browser.outputs.run == 'true'
         uses: actions/setup-node@v4
         with:

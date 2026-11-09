@@ -47,23 +47,43 @@ def check_evidence(page, missing):
             missing.append(f"evidence claim {i + 1}'s quote on hover/focus")
 
 
+FRAME_FIT_JS = """() => {
+  const box = Reveal.getSlidesElement().getBoundingClientRect();
+  const scale = Math.min(innerWidth / 1600, innerHeight / 900);
+  const expected = [(innerWidth - 1600 * scale) / 2,
+    (innerHeight - 900 * scale) / 2, 1600 * scale, 900 * scale];
+  return Reveal.getConfig().margin === 0 &&
+    [box.left, box.top, box.width, box.height].every(
+      (value, i) => Math.abs(value - expected[i]) <= 1.5);
+}"""
+
+
 def check_frames(page, missing):
-    """No slide frame offers navigation to another slide."""
-    frames = page.locator(".deck-live iframe:visible")
-    for i in range(frames.count()):
-        el = frames.nth(i)
-        el.scroll_into_view_if_needed()
-        frame = el.element_handle().content_frame()
-        try:
-            frame.wait_for_function(
-                "() => window.Reveal && Reveal.isReady && Reveal.isReady()",
-                timeout=15000,
-            )
-        except Exception:
-            missing.append(f"slide frame {i + 1} becoming ready")
-            continue
-        if frame.evaluate(NAV_SHOWN_JS):
-            missing.append(f"slide frame {i + 1} without Reveal controls")
+    """Every shown slide fills its frame and offers no slide navigation."""
+    for review_number, review in enumerate(page.locator(".deck-review").all(), 1):
+        # Include the unchanged slides a reviewer can unfold, in each actual view.
+        for fold in review.locator("details.dr-unchanged").all():
+            fold.evaluate("node => node.open = true")
+        for view in ("marked", "clean", "before"):
+            review.locator(f'.dr-seg button[data-v="{view}"]').click()
+            for i, el in enumerate(review.locator("iframe:visible").all(), 1):
+                label = f"deck {review_number}, {view}, slide frame {i}"
+                el.scroll_into_view_if_needed()
+                frame = el.element_handle().content_frame()
+                try:
+                    frame.wait_for_function(
+                        "() => window.Reveal && Reveal.isReady && Reveal.isReady()",
+                        timeout=15000,
+                    )
+                except Exception:
+                    missing.append(f"{label} becoming ready")
+                    continue
+                if frame.evaluate(NAV_SHOWN_JS):
+                    missing.append(f"{label} without Reveal controls")
+                try:
+                    frame.wait_for_function(FRAME_FIT_JS, timeout=5000)
+                except Exception:
+                    missing.append(f"{label} filling its frame")
 
 
 def check_site(site, artifacts):

@@ -1864,3 +1864,32 @@ def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
     assert all(not Path(path).exists() for path in created), (
         "temporary files were not cleaned up"
     )
+
+
+@pytest.mark.parametrize("publish", [True, False])
+@pytest.mark.parametrize("preview_pr", ["", "281"])
+def test_dispatched_preview_uses_pr_directory_and_arm_never_publishes(
+    publish, preview_pr
+):
+    jobs = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)["jobs"]
+    context = {
+        "inputs.publish": publish,
+        "inputs.preview-pr": preview_pr,
+        "github.event_name": "workflow_dispatch",
+        "github.event.action": "",
+        "github.ref": "refs/heads/example-demo-pr",
+        "github.event.repository.default_branch": "main",
+    }
+    assert _condition_enabled(jobs["deploy"]["if"], context) == bool(
+        publish and preview_pr
+    )
+    env = next(
+        s["env"]
+        for s in jobs["deploy"]["steps"]
+        if s.get("name") == "Publish to gh-pages"
+    )
+    assert _condition_enabled(env["PUBLISH_MAIN"][3:-2], context) == (not preview_pr)
+    assert (
+        env["PR_NUMBER"]
+        == "${{ github.event.pull_request.number || inputs.preview-pr }}"
+    )
