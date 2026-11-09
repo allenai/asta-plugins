@@ -1,8 +1,9 @@
 name: Example workspace
 
-# Builds examples/workspace in the published -tex image. Releases call this after
-# `latest` moves; this workflow validates only and never publishes the site.
-# The check is not required.
+# Checks examples/workspace from a checkout, as a researcher runs it, in the
+# published -tex image: cold `make check` and the local What changed of a deck edit.
+# Example site builds the site and demo once and checks them in a browser.
+# Releases call this after `latest` moves; it never publishes. Not required.
 on:
   workflow_call:
     inputs:
@@ -10,8 +11,10 @@ on:
         description: Final release tag whose -tex image and assets build the example
         type: string
         required: true
-  # Every PR must exercise the same scaffold and uncommitted demo edit.
+  # PRs check the local checkout path on x86; main and releases add arm.
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -26,7 +29,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
     timeout-minutes: 60
     env:
       # Browser acceptance tests share the install path across separate steps.
@@ -65,19 +68,6 @@ jobs:
           git check-ignore .asta/cache/workspace.mk _extensions/asta-theme/light.scss
           make preview-artifact-check
           git diff --exit-code  # prints any tracked file a build or sync modified
-      - name: Render slide customization fixtures
-        run: python3 ../../tests/browser/render-slides.py ../../tests/browser/fixtures
-      - uses: actions/upload-artifact@v4
-        with:
-          name: example-workspace-site-${{ matrix.runner }}
-          path: examples/workspace/_site
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workspace-slide-fixtures-${{ matrix.runner }}
-          path: tests/browser/fixtures
-          retention-days: 30
-      # After the uploads: this adds what-changed output to the example's _site.
       - name: Check local What changed renders a deck edit
         shell: bash
         run: |
@@ -90,49 +80,28 @@ jobs:
           uv run --no-project --with playwright==1.64.1 python -m playwright install --with-deps chromium >/dev/null
           uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
           git diff --exit-code  # prints any tracked file a build or sync modified
-      - name: Check local What changed shows every content type of the demo edit
+      - name: Decide whether the edit comparison runs
+        id: differential
         shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          export PATH="$(uv tool dir --bin):$PATH"
-          # No preview or prebuilt site may mask missing render inputs.
-          rm -rf _site
-          top=$(git rev-parse --show-toplevel)
-          # The demo edit, applied uncommitted as an agent's edit would be. main
-          # publishes the same patch's What changed, so it must keep applying.
-          if ! git -C "$top" apply examples/workspace-demo.patch; then
-            echo "::error file=examples/workspace-demo.patch::The demo edit no longer applies to the example; update examples/workspace-demo.patch with this change"
-            exit 1
+          # Always on main and releases; on a PR only when What changed or the scaffold changes.
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          trap 'git -C "$top" checkout -- examples/workspace' EXIT
-          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed-demo.py . ../../tests/browser/artifacts
-      - name: Check the demo artifact built for main publication
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$(uv tool dir --bin):$PATH"
-          # Build separately from the local check, from a clean disposable clone.
-          python3 ../../scripts/build-workspace-demo.py "$RUNNER_TEMP/published-demo" 2>&1 | tee "$RUNNER_TEMP/published-demo.log"
-          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed-demo.py --site "$RUNNER_TEMP/published-demo" ../../tests/browser/artifacts
-          {
-            echo '### Main demo What changed timings'
-            echo '```text'
-            cat "$RUNNER_TEMP/published-demo.log"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Check independently rendered PR preview path
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$(uv tool dir --bin):$PATH"
-          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/workspace-preview-path.py ../../tests/browser/artifacts/preview-path .asta/cache/what-changed 2>&1 | tee "$RUNNER_TEMP/preview-path.log"
-          {
-            echo '### Independent PR-preview path timings'
-            echo '```text'
-            cat "$RUNNER_TEMP/preview-path.log"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          top=$(git rev-parse --show-toplevel)
+          changed=$(git -C "$top" diff --name-only "$BASE_SHA" HEAD -- \
+            src/asta/commands/workspace.py src/asta/commands/workspace_selection.py \
+            src/asta/commands/workspace_versions.py plugins/asta-tools/skills/workspace/assets \
+            examples/workspace tests/browser/workspace-differential.py \
+            .github/workflows/example-workspace.yml)
+          if [ -n "$changed" ]; then run=true; else run=false; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "Edit comparison: run=$run" >> "$GITHUB_STEP_SUMMARY"
       - name: Compare selected edits with same-run full reports
+        if: steps.differential.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -167,51 +136,6 @@ jobs:
             tests/browser/artifacts/unexpected-look
             tests/browser/artifacts/local-what-changed-deck.png
             tests/browser/artifacts/local-what-changed-no-preview.png
-            tests/browser/artifacts/local-what-changed-demo.png
           if-no-files-found: ignore
           retention-days: 30
 
-  theme:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: example-workspace-site-ubuntu-latest
-          path: examples/workspace/_site
-      - uses: actions/download-artifact@v4
-        with:
-          name: workspace-slide-fixtures-ubuntu-latest
-          path: tests/browser/fixtures
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: tests/browser/package-lock.json
-      - name: Install browser checks
-        working-directory: tests/browser
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-      - name: Check slide geometry and standalone behavior
-        working-directory: tests/browser
-        run: node workspace-slides.mjs ../../examples/workspace/_site artifacts
-      - name: Check rendered deck review
-        run: |
-          python3 -m venv "$RUNNER_TEMP/deck-review-venv"
-          "$RUNNER_TEMP/deck-review-venv/bin/python" -m pip install playwright==1.64.1
-          "$RUNNER_TEMP/deck-review-venv/bin/python" -m playwright install --with-deps chromium
-          "$RUNNER_TEMP/deck-review-venv/bin/python" tests/browser/deck-review.py examples/workspace/_site tests/browser/artifacts
-      - name: Check both themes and evidence readability
-        working-directory: tests/browser
-        run: npm test -- ../../examples/workspace/_site artifacts
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: workspace-theme-screenshots
-          path: tests/browser/artifacts
-          retention-days: 30

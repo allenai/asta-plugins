@@ -102,7 +102,7 @@ def test_write_access_is_confined_to_branch_publication_jobs():
         for name, job in jobs.items()
         if job["permissions"].get("contents") == "write"
     }
-    assert writers == {"latest-branch"}
+    assert writers == {"latest-branch", "demo-pr"}
     example = jobs["example-workspace"]
     assert example["uses"] == "./.github/workflows/example-workspace.yml"
     assert example["needs"] == "latest"

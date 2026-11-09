@@ -181,7 +181,7 @@ def test_example_has_one_publisher_and_unfiltered_close():
         == "./.github/workflows/workspace-quarto-site.yml"
     )
     release = load("example-workspace")
-    assert set(release["jobs"]) == {"build", "theme"}
+    assert set(release["jobs"]) == {"build"}
     assert not (ROOT / "scripts/request-example-pages-build.sh").exists()
     shared = load("workspace-quarto-site")
     cleanup = shared["jobs"]["cleanup-preview"]
@@ -432,35 +432,27 @@ def test_example_uses_current_scaffold_and_managed_inputs():
 
 def test_published_demo_reuses_local_content_assertions():
     steps = load("example-preview")["jobs"]["check-preview"]["steps"]
-    check = next(
-        s
-        for s in steps
-        if s.get("name") == "Check every demo content type in the published preview"
-    )
+    by_name = {s.get("name"): s for s in steps}
+    check = by_name["Check every demo content type in the published preview"]
     assert "example-demo-pr" in check["if"]
     assert "local-what-changed-demo.py --site" in check["run"]
     assert "preview-site/pr-preview/pr-$PR_NUMBER" in check["run"]
-    local = load("example-workspace")["jobs"]["build"]["steps"]
-    demo = next(
-        s
-        for s in local
-        if s.get("name")
-        == "Check local What changed shows every content type of the demo edit"
-    )
-    assert "rm -rf _site" in demo["run"]
-    assert "local-what-changed-demo.py" in demo["run"]
+    demo = by_name["Check the demo What changed in the published preview"]
+    assert "local-what-changed-demo.py --site" in demo["run"]
+    assert "pr-$PR_NUMBER/demo" in demo["run"]
 
 
-def test_demo_publication_is_checked_separately_from_local_report():
-    steps = load("example-workspace")["jobs"]["build"]["steps"]
-    step = next(
-        s
-        for s in steps
-        if s.get("name") == "Check the demo artifact built for main publication"
-    )
-    assert "scripts/build-workspace-demo.py" in step["run"]
-    assert "--site" in step["run"]
-    assert "GITHUB_STEP_SUMMARY" in step["run"]
+def test_demo_what_changed_is_built_once_by_the_site_workflow():
+    local = yaml.dump(load("example-workspace"))
+    for built_elsewhere in (
+        "build-workspace-demo.py",
+        "workspace-preview-path.py",
+        "local-what-changed-demo.py",
+        "render-slides.py",
+    ):
+        assert built_elsewhere not in local
+    command = load("example-preview")["jobs"]["docs"]["with"]["artifact-command"]
+    assert "build-workspace-demo.py" in command
 
 
 def test_all_example_browser_checks_use_the_installed_browser_path():
@@ -471,22 +463,47 @@ def test_all_example_browser_checks_use_the_installed_browser_path():
         i for i, s in enumerate(browser_steps) if "playwright install" in s["run"]
     )
     assert install == 0
-    assert len(browser_steps) >= 3
+    assert browser_steps
     assert all(
         "export PLAYWRIGHT_BROWSERS_PATH=" not in s["run"] for s in browser_steps
     )
 
 
-def test_preview_contract_builds_independent_sites_in_both_architectures():
-    build = load("example-workspace")["jobs"]["build"]
-    assert set(build["strategy"]["matrix"]["runner"]) == {
-        "ubuntu-latest",
-        "ubuntu-24.04-arm",
-    }
-    step = next(
-        s
-        for s in build["steps"]
-        if s.get("name") == "Check independently rendered PR preview path"
-    )
-    assert "workspace-preview-path.py" in step["run"]
-    assert "GITHUB_STEP_SUMMARY" in step["run"]
+def test_pr_waits_on_x86_only_and_main_adds_arm():
+    example = load("example-workspace")
+    runners = example["jobs"]["build"]["strategy"]["matrix"]["runner"]
+    assert '["ubuntu-latest"]' in runners
+    assert '"ubuntu-24.04-arm"' in runners
+    assert "github.event_name == 'pull_request'" in runners
+    assert example["on"]["push"]["branches"] == ["main"]
+    site = load("example-preview")["jobs"]
+    assert site["docs-arm"]["if"] == "github.event_name != 'pull_request'"
+    assert site["check-preview"]["needs"] == "docs"
+
+
+def test_edit_comparison_runs_on_main_and_on_what_changed_prs():
+    steps = load("example-workspace")["jobs"]["build"]["steps"]
+    by_name = {s.get("name"): s for s in steps}
+    gate = by_name["Decide whether the edit comparison runs"]
+    for path in (
+        "src/asta/commands/workspace.py",
+        "plugins/asta-tools/skills/workspace/assets",
+        "examples/workspace",
+    ):
+        assert path in gate["run"]
+    compare = by_name["Compare selected edits with same-run full reports"]
+    assert compare["if"] == "steps.differential.outputs.run == 'true'"
+
+
+def test_one_browser_job_checks_the_built_preview():
+    steps = load("example-preview")["jobs"]["check-preview"]["steps"]
+    runs = "\n".join(s.get("run", "") for s in steps)
+    for check in (
+        "workspace-slides.mjs",
+        "deck-review.py",
+        "npm test --",
+        "example-preview.mjs",
+        "local-what-changed-demo.py",
+    ):
+        assert check in runs
+    assert "examples/workspace/_site" not in runs

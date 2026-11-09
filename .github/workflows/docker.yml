@@ -245,6 +245,36 @@ jobs:
           }
           git push origin "$target:refs/heads/latest"
 
+  # The demo PR's branch is the release plus examples/workspace-demo.patch, the one
+  # copy of the sample edit, so the demo the READMEs link to is the edit CI checks.
+  demo-pr:
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
+    needs: latest
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-release-demo-pr
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rebuild example-demo-pr from the release and the demo patch
+        env:
+          NEWEST: ${{ needs.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          git checkout --detach "refs/tags/$NEWEST^{commit}"
+          if ! git apply --index examples/workspace-demo.patch; then
+            echo "::error file=examples/workspace-demo.patch::The demo edit no longer applies to $NEWEST"
+            exit 1
+          fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Demo: the sample edit (examples/workspace-demo.patch) on $NEWEST"
+          git push --force origin HEAD:refs/heads/example-demo-pr
+
   example-workspace:
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
     needs: latest

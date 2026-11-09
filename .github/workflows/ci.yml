@@ -55,7 +55,47 @@ jobs:
       - name: Run tests
         env:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
+          # workspace-test runs these in parallel shards.
+          PYTEST_ADDOPTS: >-
+            --ignore-glob=tests/test_workspace_*.py
+            --ignore-glob=tests/test_overleaf_*.py
+            --ignore=tests/test_example_workspace_workflow.py
         run: make test
+
+  # The workspace and Overleaf tests, sharded so none sets a PR's wait.
+  workspace-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+        shard:
+          - tests/test_workspace_overleaf.py
+          - tests/test_overleaf_sync.py
+          - tests/test_workspace_sync.py
+          - tests/test_workspace_bump_pin.py
+          - rest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Run ${{ matrix.shard }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          if [ "$SHARD" != rest ]; then
+            uv run --extra test pytest -v "$SHARD"
+            exit 0
+          fi
+          uv run --extra test pytest -v \
+            tests/test_workspace_*.py tests/test_overleaf_*.py tests/test_example_workspace_workflow.py \
+            --ignore=tests/test_workspace_overleaf.py --ignore=tests/test_overleaf_sync.py \
+            --ignore=tests/test_workspace_sync.py --ignore=tests/test_workspace_bump_pin.py
 
   dom-test:
     runs-on: ubuntu-latest
