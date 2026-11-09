@@ -1146,6 +1146,44 @@ THEME_PAGE = "asta-what-changed-look.qmd"
 THEME_PAGE_SOURCE = (
     "---\ntitle: What changed\nformat: html\n---\n\nThe site's look for What changed.\n"
 )
+
+
+def _add_theme_page(project: Path) -> tuple[Path, bytes] | None | bool:
+    """Write the look page so Quarto renders it in this project.
+
+    A project that lists its pages in `project.render` gets the page appended
+    there. Returns the config to restore after the render, None when the
+    config is unchanged, or False when the page can't be listed.
+    """
+    (project / THEME_PAGE).write_text(THEME_PAGE_SOURCE, encoding="utf-8")
+    config = next(
+        (
+            project / name
+            for name in ("_quarto.yml", "_quarto.yaml")
+            if (project / name).is_file()
+        ),
+        None,
+    )
+    if config is None:
+        return None
+    original = config.read_bytes()
+    try:
+        data = yaml.safe_load(original)
+    except yaml.YAMLError:
+        return False
+    settings = data.get("project") if isinstance(data, dict) else None
+    listed = settings.get("render") if isinstance(settings, dict) else None
+    if listed is None:
+        return None
+    if not isinstance(listed, list) or config.is_symlink():
+        return False
+    settings["render"] = [*listed, THEME_PAGE]
+    config.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+    return config, original
+
+
 _REDIRECT = re.compile(
     r"http-equiv\s*=\s*[\"']?refresh|window\.location", re.IGNORECASE
 )
@@ -1880,9 +1918,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     tmp / "working",
                 )
             before_pages = after_pages = theme_pages = []
+            restore = []
             if pages:
-                for side in (baseline_project, copied_project):
-                    (side / THEME_PAGE).write_text(THEME_PAGE_SOURCE, encoding="utf-8")
                 # Ask Quarto which files each side renders before rendering any:
                 # a README or notes file must never reach `quarto render`.
                 with _timed("list rendered files (quarto inspect)"):
@@ -1905,9 +1942,20 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     )
                     for name in names
                 ):
-                    theme_pages = _quarto_rendered(
-                        copied_project, [THEME_PAGE], after_inputs
-                    )
+                    added = [
+                        _add_theme_page(side)
+                        for side in (baseline_project, copied_project)
+                    ]
+                    restore = [a for a in added if isinstance(a, tuple)]
+                    if False in added:
+                        click.echo(
+                            "Warning: could not add a page for the site's look to "
+                            "project.render in _quarto.yml, so What changed may "
+                            "look unstyled.",
+                            err=True,
+                        )
+                    else:
+                        theme_pages = [THEME_PAGE]
 
             def render_side(project_dir, label, selected):
                 if pages is None:
@@ -1961,6 +2009,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             if pages:
                 for side in (baseline_project, copied_project):
                     (side / THEME_PAGE).unlink(missing_ok=True)
+                for config, original in restore:
+                    config.write_bytes(original)
             with _timed("build paper diffs"):
                 _paper_previews(copied_project, commit.stdout.strip(), new_site)
             # The page sits at the root of a site copy so its relative links

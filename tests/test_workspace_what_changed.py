@@ -17,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from asta.commands import workspace as workspace_module
@@ -1508,6 +1509,64 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     expected = ["slides.qmd", workspace_module.THEME_PAGE]
     assert dict(rendered)["the working tree"] == expected
     assert dict(rendered)["last-read"] == expected
+
+
+def test_look_page_joins_a_project_render_list(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A project listing its pages in project.render still gets the look page."""
+    (project / "_metadata.yml").write_text("format: revealjs\n")
+    (project / "slides.qmd").write_text("Slide one.\n")
+    config = "# kept\nproject:\n  type: website\n  render:\n    - slides.qmd\n"
+    (project / "_quarto.yml").write_text(config)
+    git(project, "add", "slides.qmd", "_metadata.yml", "_quarto.yml")
+    git(project, "commit", "-qm", "deck")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    rendered = []
+
+    def inputs(directory):
+        # As `quarto inspect` lists them: only the render list.
+        listed = yaml.safe_load((directory / "_quarto.yml").read_text())
+        return {(directory / n).resolve() for n in listed["project"]["render"]}
+
+    def render(directory, label, pages=None):
+        listed = yaml.safe_load((directory / "_quarto.yml").read_text())
+        # Quarto refuses a page outside project.render with --output-dir.
+        assert set(pages) <= set(listed["project"]["render"])
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        for name in pages:
+            if name == workspace_module.THEME_PAGE:
+                (site / "site_libs/bootstrap").mkdir(parents=True)
+                (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+                (site / Path(name).with_suffix(".html")).write_text(
+                    THEMED.format("Look")
+                )
+            else:
+                text = (directory / name).read_text()
+                (site / Path(name).with_suffix(".html")).write_text(
+                    f'<div class="reveal">{text}</div>'
+                )
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(workspace_module, "_comparison_inputs", inputs)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    expected = ["slides.qmd", workspace_module.THEME_PAGE]
+    assert dict(rendered) == {"the working tree": expected, "last-read": expected}
+    snapshot = project / workspace_module.COMPARISON_DIR
+    page = (snapshot / "what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert "unstyled" not in result.stderr
+    assert (project / "_quarto.yml").read_text() == config
 
 
 def test_changed_home_page_supplies_the_theme_beside_a_deck(
