@@ -1345,10 +1345,20 @@ def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
         raise click.ClickException(
             f"Could not copy the working tree: {added.stderr.strip()}"
         )
+    checked = _git(destination, "checkout", "--detach", "HEAD")
+    if checked.returncode != 0:
+        raise click.ClickException(
+            f"Could not check out the working tree: {checked.stderr.strip()}"
+        )
     entries = _git(repository, "ls-files", "--stage", "-z")
     if entries.returncode != 0:
         raise click.ClickException(
             f"Could not read the working-tree index: {entries.stderr.strip()}"
+        )
+    cleared = _git(destination, "read-tree", "--empty")
+    if cleared.returncode != 0:
+        raise click.ClickException(
+            f"Could not clear the copied index: {cleared.stderr.strip()}"
         )
     # Rebuild a standalone index, including staging in linked/split-index worktrees.
     indexed = subprocess.run(
@@ -1368,15 +1378,33 @@ def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
         if not _is_env_file(name)
     ]
     live = (project / "_site", project / ".quarto")
-    files = dict.fromkeys(_ls_files(repository, "--cached") + untracked)
-    click.echo(f"Copying {len(files)} Git-visible render inputs", err=True)
+    changed = _git(
+        repository, "diff", "--name-only", "--no-renames", "-z", "HEAD", "--"
+    )
+    if changed.returncode != 0:
+        raise click.ClickException(
+            f"Could not list changed render inputs: {changed.stderr.strip()}"
+        )
+    files = dict.fromkeys(
+        [name for name in changed.stdout.split("\0") if name] + untracked
+    )
+    click.echo(f"Overlaying {len(files)} changed/untracked render inputs", err=True)
     for name in files:
         source = repository / name
+        target = destination / name
         if not os.path.lexists(source) or any(
             source == path or path in source.parents for path in live
         ):
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            elif os.path.lexists(target):
+                target.unlink()
             continue
-        target = destination / name
+        if os.path.lexists(target):
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir() and not source.is_symlink():
             # A submodule or nested repository checkout.

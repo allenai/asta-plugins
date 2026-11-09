@@ -100,8 +100,11 @@ def test_highlights_edit_since_ref(project: Path) -> None:
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
     assert result.exit_code == 0, result.output
-    assert "Copying " in result.stderr and "Git-visible render inputs" in result.stderr
-    assert "Copying " not in result.stdout
+    assert (
+        "Overlaying " in result.stderr
+        and "changed/untracked render inputs" in result.stderr
+    )
+    assert "Overlaying " not in result.stdout
     page = (project / ".asta/cache/what-changed/what-changed.html").read_text()
     assert "Changes since last-read" in page
     assert "<ins" in page and "newly drafted paragraph" in page
@@ -681,6 +684,26 @@ def test_working_copy_preserves_spaces_in_repository_path(project: Path) -> None
         "newly drafted paragraph"
         in (renamed / workspace_module.COMPARISON_DIR / "index.html").read_text()
     )
+
+
+def test_working_copy_overlays_only_changes(project: Path, tmp_path: Path, monkeypatch):
+    """HEAD supplies unchanged files; copying is limited to the working edit."""
+    import shutil
+
+    unchanged = (project / "scripts/what-changed.py").read_bytes()
+    (project / "index.qmd").write_text("Changed page")
+    copied = []
+    original = shutil.copy2
+
+    def record(source, target, **kwargs):
+        copied.append(Path(source).relative_to(project).as_posix())
+        return original(source, target, **kwargs)
+
+    monkeypatch.setattr(workspace_module.shutil, "copy2", record)
+    destination = workspace_module.working_copy(project, "", tmp_path / "overlay")
+    assert (destination / "scripts/what-changed.py").read_bytes() == unchanged
+    assert (destination / "index.qmd").read_text() == "Changed page"
+    assert copied == ["index.qmd"]
 
 
 @pytest.mark.parametrize("linked_worktree", [False, True])
