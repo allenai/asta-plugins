@@ -1,7 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
 import concurrent.futures
-import fnmatch
 import functools
 import hashlib
 import http.client
@@ -1139,10 +1138,14 @@ COMPARISON_DIR = Path(".asta/cache/what-changed")
 DECK_IMAGES = "what-changed-decks"
 
 
-# Rendered beside a deck-only edit to supply the site's theme.
-THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
-# Other root pages when the home page is missing or only redirects.
-THEME_SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd")
+# A page that exists only in each temporary copy, rendered beside a
+# slide-only edit so the report takes the site's look from the project's
+# own config without running any project page.
+THEME_PAGE = "asta-what-changed-look.qmd"
+# `format: html` keeps it an ordinary page under a deck-format _metadata.yml.
+THEME_PAGE_SOURCE = (
+    "---\ntitle: What changed\nformat: html\n---\n\nThe site's look for What changed.\n"
+)
 _REDIRECT = re.compile(
     r"http-equiv\s*=\s*[\"']?refresh|window\.location", re.IGNORECASE
 )
@@ -1184,67 +1187,6 @@ def _has_site_page(site: Path) -> bool:
         for page in site.rglob("*.html")
         if DECK_IMAGES not in page.relative_to(site).parts
     )
-
-
-def _project_render_list(project: Path) -> list[str] | None:
-    """The project's `project.render` patterns, or None when it renders everything."""
-    for config in ("_quarto.yml", "_quarto.yaml"):
-        path = project / config
-        if path.is_file():
-            try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8"))
-            except yaml.YAMLError:
-                return None
-            render = ((data or {}).get("project") or {}).get("render")
-            if isinstance(render, list) and render:
-                return [str(item) for item in render]
-            return None
-    return None
-
-
-def _in_render_list(name: str, patterns: list[str] | None) -> bool:
-    """Whether Quarto renders a root-level source, given `project.render`.
-
-    Rendering a page outside that list fails with `--output-dir`.
-    """
-    if patterns is None:
-        return True
-    included = False
-    for pattern in patterns:
-        negated = pattern.startswith("!")
-        glob = (pattern[1:] if negated else pattern).removeprefix("./")
-        if any(fnmatch.fnmatchcase(name, g) for g in (glob, glob.removeprefix("**/"))):
-            included = not negated
-    return included
-
-
-def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
-    """Source pages to render beside a deck-only edit to take the theme from."""
-    render_list = _project_render_list(project)
-    names = [name for name in THEME_PAGES if (project / name).is_file()]
-    for source in sorted(project.iterdir()):
-        name = source.name
-        if (
-            source.suffix in THEME_SOURCE_SUFFIXES
-            and source.is_file()
-            and not source.is_symlink()
-            and name not in names
-            and not name.startswith(("_", "."))
-            and not name.upper().startswith(("README", "LICENSE", "CHANGELOG"))
-        ):
-            names.append(name)
-    for name in names:
-        text = (project / name).read_text(encoding="utf-8", errors="ignore")
-        # One ordinary page, rendered in the same build as the changed pages;
-        # a deck or a redirect home page carries no site theme.
-        if (
-            name not in pages
-            and _in_render_list(name, render_list)
-            and "revealjs" not in text
-            and not _REDIRECT.search(text)
-        ):
-            return [name]
-    return []
 
 
 def _is_ordinary_source(project: Path, name: str) -> bool:
@@ -1939,6 +1881,8 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 )
             before_pages = after_pages = theme_pages = []
             if pages:
+                for side in (baseline_project, copied_project):
+                    (side / THEME_PAGE).write_text(THEME_PAGE_SOURCE, encoding="utf-8")
                 # Ask Quarto which files each side renders before rendering any:
                 # a README or notes file must never reach `quarto render`.
                 with _timed("list rendered files (quarto inspect)"):
@@ -1962,13 +1906,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     for name in names
                 ):
                     theme_pages = _quarto_rendered(
-                        copied_project,
-                        _theme_candidates(copied_project, pages),
-                        after_inputs,
-                    ) or _quarto_rendered(
-                        baseline_project,
-                        _theme_candidates(baseline_project, pages),
-                        before_inputs,
+                        copied_project, [THEME_PAGE], after_inputs
                     )
 
             def render_side(project_dir, label, selected):
@@ -2020,8 +1958,9 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         "What changed may look unstyled.",
                         err=True,
                     )
-                if any(Path(name).stem == "index" for name in theme_pages):
-                    (new_site / "index.html").unlink(missing_ok=True)
+            if pages:
+                for side in (baseline_project, copied_project):
+                    (side / THEME_PAGE).unlink(missing_ok=True)
             with _timed("build paper diffs"):
                 _paper_previews(copied_project, commit.stdout.strip(), new_site)
             # The page sits at the root of a site copy so its relative links

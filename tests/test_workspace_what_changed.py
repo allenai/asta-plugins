@@ -17,7 +17,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pytest
-import yaml
 from click.testing import CliRunner
 
 from asta.commands import workspace as workspace_module
@@ -1469,7 +1468,7 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
             text = (directory / name).read_text()
             if "http-equiv" in text:
                 (site / "index.html").write_text(REDIRECT.format("about.html"))
-            elif name in ("index.qmd", "about.qmd"):
+            elif name in ("index.qmd", "about.qmd", workspace_module.THEME_PAGE):
                 (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
                 (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
                 html = Path(name).with_suffix(".html")
@@ -1504,33 +1503,11 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "About" not in page and ">about.html<" not in page
     assert "Redirect" not in page and "removed</span>" not in page
     assert "unstyled" not in result.stderr
-    # Exactly one ordinary page joins the deck, in the same build on both
-    # sides; a redirect home page is skipped by its source.
-    expected = ["slides.qmd", "about.qmd" if home_redirects else "index.qmd"]
+    # Only the tiny look page joins the deck, in the same build on both
+    # sides; no project page (home, redirect or other) is rendered for it.
+    expected = ["slides.qmd", workspace_module.THEME_PAGE]
     assert dict(rendered)["the working tree"] == expected
     assert dict(rendered)["last-read"] == expected
-
-
-@pytest.mark.parametrize(
-    "render, expected",
-    [
-        (None, ["index.qmd"]),
-        (["index.qmd", "slides.qmd", "about.qmd"], ["index.qmd"]),
-        (["about.qmd", "notes.md"], ["about.qmd"]),
-        (["*.qmd", "!about.qmd"], ["index.qmd"]),
-        (["**/*.md"], ["notes.md"]),
-    ],
-)
-def test_theme_candidates_honor_the_project_render_list(
-    tmp_path: Path, render: list[str] | None, expected: list[str]
-) -> None:
-    """Quarto refuses `--output-dir` for a page outside `project.render`."""
-    for name in ("index.qmd", "about.qmd", "notes.md", "slides.qmd"):
-        (tmp_path / name).write_text("Page.\n")
-    project = {"type": "website"} | ({"render": render} if render else {})
-    (tmp_path / "_quarto.yml").write_text(yaml.safe_dump({"project": project}))
-    candidates = workspace_module._theme_candidates(tmp_path, ["slides.qmd"])
-    assert candidates == expected
 
 
 def test_changed_home_page_supplies_the_theme_beside_a_deck(
@@ -1574,7 +1551,13 @@ def test_changed_home_page_supplies_the_theme_beside_a_deck(
     assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
     assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert "<ins" in page and "Home" in page
-    assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+    # Under a root deck format the home page isn't surely ordinary, so the
+    # look page joins it; either supplies the theme.
+    assert dict(rendered)["the working tree"] == [
+        "slides.qmd",
+        "index.qmd",
+        workspace_module.THEME_PAGE,
+    ]
 
 
 def test_deck_only_edit_renders_the_theme_and_cleans_up(
@@ -1599,7 +1582,7 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         site.mkdir()
         for name in pages or []:
             text = (directory / name).read_text()
-            if name == "index.qmd":
+            if name in ("index.qmd", workspace_module.THEME_PAGE):
                 (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
                 (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
                 (site / "index.html").write_text(THEMED.format("Home"))
@@ -1625,8 +1608,14 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
         assert edit in page and "Home" not in page
         # Nothing is kept: every run adds the one theme page to both builds.
-        assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
-        assert dict(rendered)["last-read"] == ["slides.qmd", "index.qmd"]
+        assert dict(rendered)["the working tree"] == [
+            "slides.qmd",
+            workspace_module.THEME_PAGE,
+        ]
+        assert dict(rendered)["last-read"] == [
+            "slides.qmd",
+            workspace_module.THEME_PAGE,
+        ]
         assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)
