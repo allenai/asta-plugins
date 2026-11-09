@@ -614,22 +614,6 @@ def mark_words(raw, indices, tag):
     return "".join(out)
 
 
-GOTO_SCRIPT = """<script>(function () {
-  var m = /[?&]dr-slide=(\\d+)(?:\\.(\\d+))?/.exec(location.search);
-  if (!m) return;
-  var h = +m[1], v = m[2] ? +m[2] : 0, tries = 0;
-  function go() {
-    var i = window.Reveal.getIndices();
-    if (i.h !== h || (i.v || 0) !== v) window.Reveal.slide(h, v);
-  }
-  function hook() {
-    var R = window.Reveal;
-    if (!R || !R.on) { if (tries++ < 200) setTimeout(hook, 50); return; }
-    if (R.isReady && R.isReady()) go();
-    R.on('ready', go);
-  }
-  hook();
-})();</script>"""
 LIVE_MARK_CSS = (
     "<style>ins.dr-live,del.dr-live{text-decoration:none;border-radius:2px}"
     "ins.dr-live{background:rgba(47,191,113,.35)}"
@@ -647,11 +631,7 @@ def marked_deck(doc, slides, marks, tag):
     head = re.search(r"</head\s*>", doc, re.I)
     if head:
         doc = doc[: head.start()] + LIVE_MARK_CSS + doc[head.start() :]
-    body = None
-    for body in re.finditer(r"</body\s*>", doc, re.I):
-        pass
-    at = body.start() if body else len(doc)
-    return doc[:at] + GOTO_SCRIPT + doc[at:]
+    return doc
 
 
 def classify(old, new, pairs, same_image=None, same_text=None, same_interactions=None):
@@ -719,15 +699,15 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
 
     def frame(url, slide, side):
         anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
-        h, v = slide.get("position") or (0, None)
-        at = f"{h}.{v}" if v is not None else str(h)
-        # Not embedded mode: there Reveal sizes to .reveal's content height, which
-        # can exceed the frame and push the slide out of view. Reveal may ignore
-        # the hash, so the marked deck's GOTO_SCRIPT moves to ``dr-slide``.
-        src = html.escape(f"{url}?dr-slide={at}#/{anchor}", quote=True)
+        # Reveal's narrow-screen scroll view ignores slide hashes. Query config
+        # takes precedence over deck settings, keeping even small frames in slides.
+        src = html.escape(
+            f"{url}?view=slide&scrollActivationWidth=0#/{anchor}", quote=True
+        )
+        slide_id = html.escape(slide.get("id") or slide.get("anchor") or "", quote=True)
         return (
             f"<figure><figcaption>{side}</figcaption>"
-            f'<iframe loading="lazy" title="{side} slide" data-dr-slide="{at}" src="{src}"></iframe>'
+            f'<iframe loading="lazy" title="{side} slide" data-dr-slide-id="{slide_id}" src="{src}"></iframe>'
             '<button type="button" data-step="prev">Previous build</button> '
             '<button type="button" data-step="next">Next build</button></figure>'
         )

@@ -142,25 +142,25 @@ def check(project, artifacts):
                     "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
                     arg=frame.element_handle(),
                 )
-                assert (
-                    frame.content_frame.locator(".reveal .slides section").count() > 0
+                child = frame.element_handle().content_frame()
+                assert child is not None
+                # Exercise the narrow frame that activates Reveal's scroll view
+                # by default, and verify identity rather than numeric position.
+                frame.evaluate(
+                    "f => { f.style.width = '378px'; f.style.height = '212px'; }"
+                )
+                child.wait_for_function(
+                    "id => !Reveal.isScrollView() && Reveal.getCurrentSlide().id === id",
+                    arg=frame.get_attribute("data-dr-slide-id"),
                 )
                 # The current slide must sit inside the frame, not below it.
-                box = frame.content_frame.evaluate(
+                box = child.evaluate(
                     "() => { const r = Reveal.getCurrentSlide()"
                     ".getBoundingClientRect(); return [r.top, r.bottom, r.height,"
                     " innerHeight]; }"
                 )
                 top, bottom, height, viewport = box
                 assert height > 0 and top >= -1 and bottom <= viewport + 1, box
-                # Each frame shows the slide it is labelled with, not the first.
-                want = frame.get_attribute("data-dr-slide").split(".")
-                frame.content_frame.wait_for_function(
-                    "w => { const i = Reveal.getIndices();"
-                    " return i.h === w[0] && (i.v || 0) === w[1]; }",
-                    arg=[int(want[0]), int(want[1]) if len(want) > 1 else 0],
-                    timeout=10000,
-                )
             # The page borrows the site's theme, as the PR preview does.
             assert page.evaluate(
                 "() => [...document.styleSheets].some("
