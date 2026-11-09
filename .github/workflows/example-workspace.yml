@@ -29,6 +29,8 @@ jobs:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
     timeout-minutes: 30
     env:
+      # Browser acceptance tests share the install path across separate steps.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/asta-chromium
       ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
       ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
     container:
@@ -80,12 +82,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
           uv tool install --force ../..
           # The image ships a released asta; run the one just built from this checkout.
           export PATH="$(uv tool dir --bin):$PATH"
           test "$(command -v asta)" = "$(uv tool dir --bin)/asta"
-          # The CLI installs only the browser; this container also lacks Chromium's system libraries.
+          # Only acceptance tests need a browser; the CLI compares live decks without one.
           uv run --no-project --with playwright==1.64.1 python -m playwright install --with-deps chromium >/dev/null
           uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
           git diff --exit-code  # prints any tracked file a build or sync modified
@@ -93,7 +94,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
           export PATH="$(uv tool dir --bin):$PATH"
           # No preview or prebuilt site may mask missing render inputs.
           rm -rf _site
@@ -118,6 +118,18 @@ jobs:
             echo '### Main demo What changed timings'
             echo '```text'
             cat "$RUNNER_TEMP/published-demo.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Check independently rendered PR preview path
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$(uv tool dir --bin):$PATH"
+          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/workspace-preview-path.py ../../tests/browser/artifacts/preview-path 2>&1 | tee "$RUNNER_TEMP/preview-path.log"
+          {
+            echo '### Independent PR-preview path timings'
+            echo '```text'
+            cat "$RUNNER_TEMP/preview-path.log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

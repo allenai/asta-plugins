@@ -461,3 +461,34 @@ def test_demo_publication_is_checked_separately_from_local_report():
     assert "scripts/build-workspace-demo.py" in step["run"]
     assert "--site" in step["run"]
     assert "GITHUB_STEP_SUMMARY" in step["run"]
+
+
+def test_all_example_browser_checks_use_the_installed_browser_path():
+    build = load("example-workspace")["jobs"]["build"]
+    assert (
+        build["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "${{ runner.temp }}/asta-chromium"
+    )
+    browser_steps = [s for s in build["steps"] if "playwright==" in s.get("run", "")]
+    install = next(
+        i for i, s in enumerate(browser_steps) if "playwright install" in s["run"]
+    )
+    assert install == 0
+    assert len(browser_steps) >= 3
+    assert all(
+        "export PLAYWRIGHT_BROWSERS_PATH=" not in s["run"] for s in browser_steps
+    )
+
+
+def test_preview_contract_builds_independent_sites_in_both_architectures():
+    build = load("example-workspace")["jobs"]["build"]
+    assert set(build["strategy"]["matrix"]["runner"]) == {
+        "ubuntu-latest",
+        "ubuntu-24.04-arm",
+    }
+    step = next(
+        s
+        for s in build["steps"]
+        if s.get("name") == "Check independently rendered PR preview path"
+    )
+    assert "workspace-preview-path.py" in step["run"]
+    assert "GITHUB_STEP_SUMMARY" in step["run"]
