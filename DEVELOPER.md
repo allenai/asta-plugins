@@ -154,3 +154,10 @@ TeX is the full TeX Live 2026 install.
 - **Extending the CLI** (commands, API endpoints, dependencies, passthrough tools) — [docs/cli-commands.md](docs/cli-commands.md)
 - **Authoring skills and hooks** — [docs/plugins.md](docs/plugins.md)
 - **Docker image (build, manual test, troubleshooting)** — [docs/docker.md](docs/docker.md)
+
+The public example also publishes `/demo/what-changed.html` on each main build.
+`scripts/build-workspace-demo.py` applies `examples/workspace-demo.patch` in a
+fresh shared clone and runs the checkout's CLI with the TeX toolchain. The
+example's existing after-render artifact command includes that report in the
+normal Pages artifact; it adds no publishing workflow or credential. Every PR
+checks patch applicability and the built demo's paper, slide, evidence and theme.

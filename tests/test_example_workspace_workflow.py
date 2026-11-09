@@ -377,17 +377,22 @@ def test_cleanup_fails_when_stale_comment_removal_cannot_be_verified(tmp_path, f
         assert not log.exists()
 
 
-def test_example_has_no_demo_copy_and_links_a_real_pr_preview():
+def test_example_publishes_one_patch_through_existing_artifact_hook():
     example = ROOT / "examples/workspace"
     for name in ("build-demo.py", "refresh-demo.py", "demo-edits.patch"):
         assert not (example / "scripts" / name).exists()
     assert "demo" not in (example / "Makefile").read_text()
-    assert "artifact-command" not in load("example-preview")["jobs"]["docs"]["with"]
+    jobs = load("example-preview")["jobs"]
+    command = jobs["docs"]["with"]["artifact-command"]
+    assert command == jobs["docs-arm"]["with"]["artifact-command"]
+    assert "uv tool install --force ." in command
+    assert "build-workspace-demo.py examples/workspace/_site/demo" in command
+    assert "latest-tex" in command
+    assert (ROOT / "examples/workspace-demo.patch").is_file()
     build = load("example-workspace")["jobs"]["build"]
     assert not any("upload-pages-artifact" in s.get("uses", "") for s in build["steps"])
     for readme in (ROOT / "README.md", example / "README.md"):
         text = readme.read_text()
-        assert "asta-plugins/demo/" not in text
         assert "https://allenai.github.io/asta-plugins/pr-preview/pr-" in text
 
 
@@ -444,3 +449,15 @@ def test_published_demo_reuses_local_content_assertions():
     )
     assert "rm -rf _site" in demo["run"]
     assert "local-what-changed-demo.py" in demo["run"]
+
+
+def test_demo_publication_is_checked_separately_from_local_report():
+    steps = load("example-workspace")["jobs"]["build"]["steps"]
+    step = next(
+        s
+        for s in steps
+        if s.get("name") == "Check the demo artifact built for main publication"
+    )
+    assert "scripts/build-workspace-demo.py" in step["run"]
+    assert "--site" in step["run"]
+    assert "GITHUB_STEP_SUMMARY" in step["run"]

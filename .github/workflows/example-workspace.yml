@@ -106,6 +106,20 @@ jobs:
           fi
           trap 'git -C "$top" checkout -- examples/workspace' EXIT
           uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed-demo.py . ../../tests/browser/artifacts
+      - name: Check the demo artifact built for main publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$(uv tool dir --bin):$PATH"
+          # Build separately from the local check, from a clean disposable clone.
+          python3 ../../scripts/build-workspace-demo.py "$RUNNER_TEMP/published-demo" 2>&1 | tee "$RUNNER_TEMP/published-demo.log"
+          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed-demo.py --site "$RUNNER_TEMP/published-demo" ../../tests/browser/artifacts
+          {
+            echo '### Main demo What changed timings'
+            echo '```text'
+            cat "$RUNNER_TEMP/published-demo.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
