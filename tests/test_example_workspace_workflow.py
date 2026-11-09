@@ -386,3 +386,34 @@ def test_example_has_no_demo_copy_and_links_a_real_pr_preview():
         text = readme.read_text()
         assert "asta-plugins/demo/" not in text
         assert "https://allenai.github.io/asta-plugins/pr-preview/pr-" in text
+
+
+def test_example_uses_current_scaffold_and_managed_inputs():
+    example = ROOT / "examples/workspace"
+    assets = ROOT / "plugins/asta-tools/skills/workspace/assets"
+    assert (
+        (example / "Makefile")
+        .read_text()
+        .startswith((assets / "Makefile.managed").read_text())
+    )
+    assert not (example / "workspace.mk").exists()
+    for path in ("_extensions/asta-theme/light.scss", ".asta/cache/workspace.mk"):
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", path],
+            cwd=example,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+    source = yaml.load(
+        (example / ".github/workflows/docs.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    assert source["jobs"]["docs"]["uses"].startswith(
+        "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
+    )
+    build = load("example-workspace")["jobs"]["build"]
+    step = next(
+        s for s in build["steps"] if s.get("name") == "Build and validate the example"
+    )
+    assert build["env"]["ASTA_WORKSPACE_RESOLVED_SHA"] == "${{ github.sha }}"
+    assert step["run"].index("uv tool install") < step["run"].index("make check")

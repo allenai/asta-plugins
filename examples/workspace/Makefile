@@ -1,14 +1,74 @@
-# This release-owned example loads shared rules from the same checkout.
+# Optional compact entry point; CLI 0.105.0 supports a local workflow and project scripts.
+# Subfolder sites with a root candidate also require `sync --check-selection` support.
+# Before removing scripts, require a CLI supporting `sync --require-scripts`.
+# A local workspace.mk takes precedence when a project customizes shared rules.
+# Shared scripts are cached by `asta workspace sync`; commit scripts/<name> to customize one.
 .DEFAULT_GOAL := preview
+ifneq ($(wildcard workspace.mk),)
 include workspace.mk
+else ifeq ($(filter-out dev $(ASTA_WORKSPACE_LOCAL_GOALS),$(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))),)
+# Project-only goals and host container startup do not need managed rules.
+.PHONY: dev
+dev:
+	@code --folder-uri "vscode-remote://dev-container+$$(printf '%s' "$$(pwd)" | xxd -p | tr -d '\n')/workspaces/$$(basename "$$(pwd)")"
+else
+ifneq ($(origin ASTA_PLUGINS_REF),undefined)
+$(error ASTA_PLUGINS_REF cannot select managed rules; unset ASTA_PLUGINS_REF and change the ref in .github/workflows/docs.yml)
+endif
+# Re-sync when asta or its pin-movement guards change, including CI -> local use.
+# Each managed-rules parse runs a version probe and a guard checksum.
+ASTA_VERSION_STAMP := .asta/cache/asta-version
+ASTA_WORKSPACE_CLI_VERSION := $(shell asta --version 2>/dev/null)
+# Fingerprint guard inputs rather than duplicating the CLI's boolean parsing.
+ASTA_WORKSPACE_SYNC_CONTEXT := $(shell printf '%s\n' "$$CI" "$$GITHUB_ACTIONS" "$$ASTA_WORKSPACE_RESOLVED_SHA" | cksum)
+ASTA_WORKSPACE_SYNC_STATE := $(ASTA_WORKSPACE_CLI_VERSION) $(ASTA_WORKSPACE_SYNC_CONTEXT)
+ifneq ($(ASTA_WORKSPACE_CLI_VERSION),)
+ifneq ($(ASTA_WORKSPACE_SYNC_STATE),$(shell cat $(ASTA_VERSION_STAMP) 2>/dev/null))
+# Compare the state itself, including when file mtimes have coarse resolution.
+# On the include restart the successful sync's stamp removes this prerequisite.
+.PHONY: asta-workspace-cli-changed
+.asta/cache/workspace.mk: asta-workspace-cli-changed
+endif
+endif
+include .asta/cache/workspace.mk
+# Watch both candidates conservatively: editing an unused one can also re-sync.
+# Relative paths keep checkout-directory spaces out of Make's prerequisite list.
+ASTA_WORKSPACE_WORKFLOWS := $(sort $(wildcard .github/workflows/docs.yml $(shell git rev-parse --show-cdup 2>/dev/null).github/workflows/docs.yml))
+# Keep a missing-workflow error even when managed rules are already cached.
+.asta/cache/workspace.mk: $(or $(ASTA_WORKSPACE_WORKFLOWS),.github/workflows/docs.yml)
+	@command -v asta >/dev/null && asta workspace sync --help >/dev/null 2>&1 || { echo 'Install the Asta CLI 0.105.0 or newer to load workspace rules, or add a local workspace.mk' >&2; exit 1; }
+	@asta workspace sync
+	@printf '%s\n' '$(ASTA_WORKSPACE_SYNC_STATE)' > $(ASTA_VERSION_STAMP)
+# Validate a root candidate offline, without touching the cache or moving pins.
+# Order-only validation does not force a remake of otherwise up-to-date rules.
+# A validated site's recursive makes reuse its check. MAKELEVEL alone is not
+# sufficient: the site's first Make may itself be called by an outer Makefile.
+# Only a lone local workflow can skip root selection validation.
+ifneq ($(ASTA_WORKSPACE_WORKFLOWS),.github/workflows/docs.yml)
+ifneq ($(ASTA_WORKSPACE_SELECTION_CHECKED),$(CURDIR))
+# Re-export after an include restart so children retain the initial validation.
+export ASTA_WORKSPACE_SELECTION_CHECKED := $(CURDIR)
+ifeq ($(MAKE_RESTARTS),)
+.PHONY: asta-workspace-check-workflow
+.asta/cache/workspace.mk: | asta-workspace-check-workflow
+asta-workspace-check-workflow:
+	@command -v asta >/dev/null && asta workspace sync --help 2>/dev/null | grep -q -- --check-selection || { echo "Install an Asta CLI with 'workspace sync --check-selection' support from an asta-plugins ref containing root-workflow support, or add a local workspace.mk" >&2; exit 1; }
+	@asta workspace sync --check-selection
+endif
+endif
+endif
+endif
 
-# Project-owned checks stay here; shared rules also provide paper builds.
+.PHONY: update-workspace
+update-workspace:
+	asta workspace sync --refresh
+
+# Project-owned checks; shared rules provide the build and paper targets.
 .PHONY: check preview-artifact-check workspace-check-gate
-
 check: workspace-check-gate
 workspace-check-gate:
 	@test "$(ASTA_WORKSPACE_CHECK)" = 1 || { echo "shared workspace check rules are missing" >&2; exit 1; }
 
 preview-artifact-check:
-	ASTA_PAPER_STRICT=1 bash ../../plugins/asta-tools/skills/workspace/assets/paper-preview.sh "" paper
+	ASTA_PAPER_STRICT=1 bash $(call workspace_script,paper-preview.sh) "" paper
 	sh scripts/check-paper.sh "$${SITE_DIR:-_site}"

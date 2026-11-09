@@ -3,9 +3,8 @@
 _site/
 quarto-render.*
 
-# A committed symlink loads the evidence extension from this checkout.
-_extensions/evidence/
-!_extensions/evidence
+# Managed extensions, fetched by the scaffold rules.
+_extensions/
 
 # LaTeX build artifacts
 paper/build/

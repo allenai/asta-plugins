@@ -16,6 +16,7 @@ on:
       - .asta/overleaf/examples/workspace/**
       - .github/workflows/example-workspace.yml
       - plugins/asta-tools/skills/workspace/assets/**
+      - src/asta/commands/workspace*.py
       - tests/test_example_workspace_workflow.py
       - tests/browser/**
   workflow_dispatch:
@@ -34,6 +35,9 @@ jobs:
       matrix:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
     timeout-minutes: 30
+    env:
+      ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
+      ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
     container:
       image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
     defaults:
@@ -46,12 +50,19 @@ jobs:
           persist-credentials: false
       - name: Build and validate the example
         shell: bash
-        env:
-          ASTA_EXAMPLE_REF: ${{ inputs.ref-name || github.sha }}
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          uv tool install --force ../..
+          export PATH="$(uv tool dir --bin):$PATH"
+          # Start cold: the example must fetch its own managed rules and extensions.
+          rm -rf .asta/cache _extensions
           make check
+          test -f .asta/cache/workspace.mk
+          test -f _extensions/asta-theme/light.scss
+          test -f _extensions/evidence/snippet.lua
+          test -f _extensions/asta-slides/_extension.yml
+          git check-ignore .asta/cache/workspace.mk _extensions/asta-theme/light.scss
           make preview-artifact-check
           test -z "$(git status --porcelain --untracked-files=no)"
       - name: Render slide customization fixtures
